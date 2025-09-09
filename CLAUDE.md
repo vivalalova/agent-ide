@@ -98,10 +98,18 @@ agent-ide/
 │   │   ├── analysis/
 │   │   └── refactor/
 │   ├── infrastructure/ # 基礎設施
-│   │   ├── parser/     # AST 解析器
+│   │   ├── parser/     # Parser 核心框架
+│   │   │   ├── registry.ts    # Parser 註冊中心
+│   │   │   ├── interface.ts   # Parser 介面定義
+│   │   │   └── factory.ts     # Parser 工廠
 │   │   ├── cache/      # 快取管理
 │   │   ├── storage/    # 儲存管理
 │   │   └── utils/      # 工具函式
+│   ├── plugins/        # 語言 Parser 插件
+│   │   ├── typescript/
+│   │   ├── javascript/
+│   │   ├── swift/
+│   │   └── plugin-template/ # 插件開發模板
 │   ├── application/    # 應用服務
 │   │   ├── services/
 │   │   └── dto/
@@ -114,6 +122,7 @@ agent-ide/
 │       └── errors/
 ├── tests/             # 測試檔案
 ├── docs/              # 文件
+├── plugins-external/  # 外部插件目錄
 └── scripts/           # 腳本工具
 ```
 
@@ -154,11 +163,11 @@ agent-ide/
 - **執行環境**：Node.js 20+
 - **套件管理**：pnpm
 - **測試框架**：Vitest
-- **AST 解析**：
+- **Parser 架構**：可插拔的 Parser 插件系統
+- **內建 Parser 插件**：
   - TypeScript: typescript compiler API
   - JavaScript: @babel/parser
-  - Python: tree-sitter-python
-  - Go: tree-sitter-go
+  - Swift: tree-sitter-swift
 
 ### 開發工具
 - **程式碼檢查**：ESLint + TypeScript ESLint
@@ -180,6 +189,7 @@ Commands:
   analyze   分析程式碼品質
   refactor  執行重構操作
   deps      分析依賴關係
+  plugins   管理 Parser 插件
 ```
 
 ### 範例使用
@@ -195,6 +205,12 @@ agent-ide move --from ./src/old.ts --to ./src/new/location.ts
 
 # 搜尋程式碼
 agent-ide search --pattern "function.*test" --type regex
+
+# 管理插件
+agent-ide plugins list
+agent-ide plugins install typescript-advanced
+agent-ide plugins enable swift
+agent-ide plugins disable javascript
 ```
 
 ## MCP 介面設計
@@ -220,6 +236,7 @@ interface MCPTool {
 5. `code_analyze` - 執行程式碼分析
 6. `code_refactor` - 執行重構操作
 7. `code_deps` - 分析依賴關係
+8. `parser_plugins` - 管理 Parser 插件
 
 ## 效能優化策略
 
@@ -253,6 +270,99 @@ interface MCPTool {
 
 ## 開發指南
 
+## Parser 插件系統設計
+
+### Parser 插件介面
+```typescript
+interface ParserPlugin {
+  // 基本資訊
+  readonly name: string;
+  readonly version: string;
+  readonly supportedExtensions: readonly string[];
+  readonly supportedLanguages: readonly string[];
+  
+  // 核心功能
+  parse(code: string, filePath: string): Promise<AST>;
+  extractSymbols(ast: AST): Promise<Symbol[]>;
+  findReferences(ast: AST, symbol: Symbol): Promise<Reference[]>;
+  extractDependencies(ast: AST): Promise<Dependency[]>;
+  
+  // 重構支援
+  rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]>;
+  extractFunction(ast: AST, selection: Range): Promise<CodeEdit[]>;
+  
+  // 查詢支援
+  findDefinition(ast: AST, position: Position): Promise<Definition | null>;
+  findUsages(ast: AST, symbol: Symbol): Promise<Usage[]>;
+  
+  // 驗證和清理
+  validate(): Promise<ValidationResult>;
+  dispose(): Promise<void>;
+}
+
+interface AST {
+  readonly type: string;
+  readonly root: ASTNode;
+  readonly sourceFile: string;
+  readonly metadata: ASTMetadata;
+}
+
+interface Symbol {
+  readonly name: string;
+  readonly type: SymbolType;
+  readonly position: Position;
+  readonly scope: Scope;
+  readonly modifiers: readonly string[];
+}
+
+interface Reference {
+  readonly symbol: Symbol;
+  readonly position: Position;
+  readonly type: ReferenceType; // definition | usage | declaration
+}
+
+interface Dependency {
+  readonly path: string;
+  readonly type: DependencyType; // import | require | include
+  readonly isRelative: boolean;
+  readonly importedSymbols: readonly string[];
+}
+```
+
+### Parser 註冊系統
+```typescript
+class ParserRegistry {
+  private parsers = new Map<string, ParserPlugin>();
+  private extensionMap = new Map<string, string[]>();
+  
+  register(plugin: ParserPlugin): void;
+  unregister(pluginName: string): void;
+  getParser(extension: string): ParserPlugin | null;
+  getSupportedExtensions(): string[];
+  listParsers(): ParserInfo[];
+}
+```
+
+### 插件載入機制
+- **動態載入**：runtime 動態發現和載入插件
+- **配置驅動**：透過設定檔控制插件載入
+- **版本管理**：支援插件版本相容性檢查
+- **錯誤隔離**：插件錯誤不影響核心系統
+- **熱重載**：開發時支援插件熱重載
+
+### 插件開發規範
+- **標準化介面**：所有插件必須實作 ParserPlugin 介面
+- **錯誤處理**：插件內部錯誤必須適當捕獲和報告
+- **效能要求**：解析速度和記憶體使用量標準
+- **測試覆蓋**：插件必須包含完整測試套件
+- **文件完整**：提供使用說明和 API 文件
+
+### 插件發現機制
+1. **內建插件**：`src/plugins/` 目錄下的插件
+2. **外部插件**：`plugins-external/` 目錄下的插件
+3. **npm 插件**：以 `agent-ide-parser-` 為前綴的 npm 套件
+4. **全域插件**：系統全域安裝的插件
+
 ### 新增功能流程
 1. 在 `docs/features/` 建立功能規格文件
 2. 設計模組介面和 API
@@ -264,6 +374,71 @@ interface MCPTool {
 8. 更新文件
 9. 效能測試和優化
 
+### 新增 Parser 插件流程
+1. 使用插件模板建立新插件專案
+2. 實作 ParserPlugin 介面所有方法
+3. 編寫插件測試套件（覆蓋率 > 80%）
+4. 編寫插件文件和使用範例
+5. 效能測試和記憶體洩漏檢查
+6. 與核心系統整合測試
+7. 發布到插件市集或 npm
+
+### 插件管理命令
+```bash
+# 查看已安裝插件
+agent-ide plugins list [--enabled] [--disabled]
+
+# 安裝插件
+agent-ide plugins install <plugin-name> [--version <version>]
+
+# 啟用/停用插件
+agent-ide plugins enable <plugin-name>
+agent-ide plugins disable <plugin-name>
+
+# 更新插件
+agent-ide plugins update [plugin-name] [--all]
+
+# 移除插件
+agent-ide plugins uninstall <plugin-name>
+
+# 插件資訊
+agent-ide plugins info <plugin-name>
+
+# 搜尋可用插件
+agent-ide plugins search <keyword>
+```
+
+### 插件配置檔案
+```json
+{
+  "parser": {
+    "plugins": {
+      "typescript": {
+        "enabled": true,
+        "version": "^1.0.0",
+        "config": {
+          "strictMode": true,
+          "experimentalDecorators": true
+        }
+      },
+      "swift": {
+        "enabled": true,
+        "version": "^1.0.0",
+        "config": {
+          "swiftVersion": "5.9",
+          "enableAsyncAwait": true
+        }
+      }
+    },
+    "discovery": {
+      "npm": true,
+      "local": true,
+      "global": false
+    }
+  }
+}
+```
+
 ### 程式碼審查檢查清單
 - [ ] 測試覆蓋率達標
 - [ ] 型別定義完整
@@ -272,6 +447,8 @@ interface MCPTool {
 - [ ] 無 lint 錯誤
 - [ ] 效能測試通過
 - [ ] CLI 和 MCP 介面一致
+- [ ] Parser 插件相容性檢查
+- [ ] 插件隔離性驗證
 
 ## 版本管理
 
