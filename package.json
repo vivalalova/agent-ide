@@ -1,0 +1,49 @@
+{
+  "name": "agent-ide",
+  "version": "0.1.0",
+  "description": "程式碼智能工具集 for AI Agents",
+  "type": "module",
+  "main": "dist/shared/index.js",
+  "types": "dist/shared/index.d.ts",
+  "bin": {
+    "agent-ide": "./bin/agent-ide.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest",
+    "test:watch": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest --watch",
+    "test:run": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run",
+    "test:memory": "node --expose-gc --max-old-space-size=2048 --trace-gc node_modules/.bin/vitest run --reporter=verbose",
+    "test:coverage": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --coverage",
+    "test:single": "node --expose-gc --max-old-space-size=2048 node_modules/.bin/vitest run --pool=forks --poolOptions.forks.singleFork=true",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent-ide",
+    "ast",
+    "parser",
+    "typescript",
+    "code-intelligence"
+  ],
+  "author": "Agent IDE Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "@vitest/coverage-v8": "^2.1.9",
+    "chokidar": "^4.0.3",
+    "memfs": "^4.38.2",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "commander": "^12.1.0",
+    "glob": "^11.0.3"
+  }
+}

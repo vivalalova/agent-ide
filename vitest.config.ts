@@ -1,0 +1,48 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    
+    // 測試設定檔案
+    setupFiles: ['./tests/setup.ts'],
+    
+    // 記憶體優化設定
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
+    
+    // 超時設定
+    testTimeout: 30000,
+    hookTimeout: 10000,
+    
+    // 並發控制
+    maxConcurrency: 5,
+    
+    // 清理設定
+    clearMocks: true,
+    restoreMocks: true,
+    unstubEnvs: true,
+    unstubGlobals: true,
+    
+    // 記憶體報告
+    logHeapUsage: true,
+    
+    // 覆蓋率設定
+    coverage: {
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'tests/',
+        'dist/',
+        '**/*.d.ts',
+        '**/*.test.ts',
+        '**/*.spec.ts'
+      ]
+    },
+  },
+});
