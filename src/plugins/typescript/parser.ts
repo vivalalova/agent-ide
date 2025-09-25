@@ -222,19 +222,24 @@ export class TypeScriptParser implements ParserPlugin {
   async findDefinition(ast: AST, position: Position): Promise<Definition | null> {
     const typedAst = ast as TypeScriptAST;
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
-    
+
     const node = this.findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
     if (!node) {
       return null;
     }
-    
+
+    // 檢查節點是否有效
+    if (!node.kind) {
+      return null;
+    }
+
     // 如果當前節點本身就是定義，返回它
     if (this.isDefinitionNode(node)) {
       const location = {
         filePath: typedAst.tsSourceFile.fileName,
         range: tsNodeToRange(node, typedAst.tsSourceFile)
       };
-      
+
       return createDefinition(location, this.getDefinitionKind(node));
     }
     

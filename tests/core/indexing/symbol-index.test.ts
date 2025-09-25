@@ -267,7 +267,7 @@ describe('SymbolIndex', () => {
           createSymbol(
             `function${i}`,
             SymbolType.Function,
-            createLocation('/test/file.ts', createRange(createPosition(i, 1), createPosition(i, 10)))
+            createLocation('/test/file.ts', createRange(createPosition(i + 1, 1), createPosition(i + 1, 10)))
           )
         );
       }
