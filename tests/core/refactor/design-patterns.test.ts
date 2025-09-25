@@ -551,7 +551,7 @@ describe('設計模式重構', () => {
       const factoryFile = result.edits.find(e => e.path === 'factory.ts');
       expect(factoryFile).toBeDefined();
       expect(factoryFile!.content).toContain('interface Factory');
-      expect(factoryFile!.content).toContain('Car | Truck | Motorcycle');
+      expect(factoryFile!.content).toContain("'Car' | 'Truck' | 'Motorcycle'");
 
       // 檢查具體工廠檔案
       const concreteFactoryFile = result.edits.find(e => e.path === 'concrete-factory.ts');
@@ -601,7 +601,7 @@ describe('設計模式重構', () => {
       expect(result.success).toBe(true);
 
       const factoryFile = result.edits.find(e => e.path === 'factory.ts');
-      expect(factoryFile!.content).toContain('SimpleClass | ComplexClass');
+      expect(factoryFile!.content).toContain("'SimpleClass' | 'ComplexClass'");
     }, { testName: 'different-parameter-patterns' }));
   });
 

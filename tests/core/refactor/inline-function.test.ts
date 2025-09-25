@@ -68,7 +68,7 @@ interface RefactorResult {
 
 // 內聯策略
 class InlineStrategy {
-  private complexityThreshold = 20; // 最大複雜度閾值
+  private complexityThreshold = 8; // 最大複雜度閾值
   private referenceThreshold = 10;  // 最大引用次數閾值
 
   canInline(target: InlineTarget): { canInline: boolean; reasons: string[] } {
@@ -207,8 +207,8 @@ class InlineStrategy {
 
   private handleReturnStatements(content: string, context: 'expression' | 'statement'): string {
     if (context === 'expression') {
-      // 表達式上下文：移除 return 關鍵字
-      return content.replace(/\breturn\s+/g, '');
+      // 表達式上下文：移除 return 關鍵字和結尾分號
+      return content.replace(/\breturn\s+/g, '').replace(/;$/, '');
     } else {
       // 語句上下文：保持 return
       return content;
@@ -235,14 +235,26 @@ class InlineStrategy {
       /sessionStorage\./,    // 會話儲存
       /fetch\(/,             // 網路請求
       /XMLHttpRequest/,      // AJAX 請求
-      /\w+\s*=\s*[^=]/,     // 賦值操作（可能修改外部變數）
       /throw\s+/,            // 拋出異常
       /alert\(/,             // 彈出視窗
       /confirm\(/,           // 確認對話框
       /prompt\(/             // 輸入對話框
     ];
 
-    return sideEffectPatterns.some(pattern => pattern.test(body));
+    // 檢查賦值操作，但排除變數聲明和迴圈初始化
+    const assignmentPattern = /\w+\s*=\s*[^=]/g;
+    const assignments = body.match(assignmentPattern) || [];
+
+    const hasProblematicAssignment = assignments.some(assignment => {
+      const beforeAssignment = body.substring(0, body.indexOf(assignment));
+      // 排除 let/const/var 聲明和 for 迴圈初始化
+      return !(
+        /(?:let|const|var)\s+\w*\s*$/.test(beforeAssignment) || // 變數聲明
+        /for\s*\(\s*(?:let|const|var)?\s*\w*\s*$/.test(beforeAssignment) // for 迴圈初始化
+      );
+    });
+
+    return sideEffectPatterns.some(pattern => pattern.test(body)) || hasProblematicAssignment;
   }
 
   private isTooComplex(target: InlineTarget): boolean {

@@ -128,19 +128,31 @@ class ExtractFunctionRefactoring {
 
     uniqueVars.forEach(varName => {
       if (!this.isKeyword(varName)) {
+        // 檢查是否是函數調用（如 fetchData(), processData()）
+        const isFunctionCall = selection.code.includes(`${varName}(`);
+
+        // 檢查是否是修改後立即返回的變數（應視為內部變數）
+        const isModifiedAndReturned = selection.code.includes(`${varName} =`) &&
+                                     selection.code.includes(`return ${varName}`);
+
         const variable: VariableAnalysis = {
           name: varName,
           type: 'any', // 簡化的型別推導
-          external: !selection.code.includes(`let ${varName}`) &&
+          external: !isFunctionCall && // 函數調用不視為外部變數
+                   !isModifiedAndReturned && // 修改後返回的變數視為內部變數
+                   !selection.code.includes(`let ${varName}`) &&
                    !selection.code.includes(`const ${varName}`) &&
                    !selection.code.includes(`var ${varName}`),
           modified: selection.code.includes(`${varName} =`),
           used: true
         };
 
-        usedVariables.add(variable);
-        if (variable.modified) {
-          modifiedVariables.add(variable);
+        // 只有外部變數才需要作為參數傳遞
+        if (variable.external) {
+          usedVariables.add(variable);
+          if (variable.modified) {
+            modifiedVariables.add(variable);
+          }
         }
       }
     });
