@@ -5,30 +5,47 @@
 
 import { vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { TestCleanup } from './test-utils/cleanup';
+import { registerTestParsers, cleanupTestParsers } from './test-utils/test-parsers';
 
-// 設定記憶體限制警告
-const MEMORY_THRESHOLD_MB = 100;
+// 設定記憶體限制警告（提高閾值以減少不必要的警告）
+const MEMORY_THRESHOLD_MB = 150;
+
+// 設定 EventEmitter 最大監聽器數量
+const { EventEmitter } = require('events');
+EventEmitter.defaultMaxListeners = 50;
+
+// 註冊測試用 Parser 插件
+registerTestParsers();
 
 // 全域測試清理
 afterEach(async () => {
   await TestCleanup.cleanupAll();
   
-  // 檢查記憶體使用
-  const usage = process.memoryUsage();
-  const heapUsedMB = usage.heapUsed / 1024 / 1024;
-  
-  if (heapUsedMB > MEMORY_THRESHOLD_MB) {
-    console.warn(`記憶體使用超過閾值: ${heapUsedMB.toFixed(2)} MB`);
-  }
-  
   // 強制垃圾回收（如果可用）
   if (global.gc) {
     global.gc();
+  }
+
+  // 檢查記憶體使用（在垃圾回收後）
+  const usage = process.memoryUsage();
+  const heapUsedMB = usage.heapUsed / 1024 / 1024;
+
+  if (heapUsedMB > MEMORY_THRESHOLD_MB) {
+    console.warn(`記憶體使用超過閾值: ${heapUsedMB.toFixed(2)} MB`);
+
+    // 嘗試更積極的清理
+    if (global.gc) {
+      // 多次垃圾回收
+      for (let i = 0; i < 3; i++) {
+        global.gc();
+      }
+    }
   }
 });
 
 // 全域清理
 afterAll(async () => {
+  cleanupTestParsers();
   TestCleanup.clearGlobals();
   TestCleanup.clearModuleCache(/test/);
 });

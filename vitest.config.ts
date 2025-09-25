@@ -13,6 +13,7 @@ export default defineConfig({
     poolOptions: {
       forks: {
         singleFork: true,
+        maxWorkers: 2, // 限制 Worker 數量
       },
     },
     
@@ -20,8 +21,8 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 10000,
     
-    // 並發控制
-    maxConcurrency: 5,
+    // 並發控制 - 降低並發數減少 Worker 負載
+    maxConcurrency: 3,
     
     // 清理設定
     clearMocks: true,
