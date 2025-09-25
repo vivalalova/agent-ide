@@ -44,7 +44,15 @@ export class IndexEngine {
     this.config = config;
     this.fileIndex = new FileIndex(config);
     this.symbolIndex = new SymbolIndex();
-    this.parserRegistry = ParserRegistry.getInstance();
+
+    // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
+    const registry = ParserRegistry.getInstance();
+    if (registry.isDisposed) {
+      ParserRegistry.resetInstance();
+      this.parserRegistry = ParserRegistry.getInstance();
+    } else {
+      this.parserRegistry = registry;
+    }
   }
 
   /**
