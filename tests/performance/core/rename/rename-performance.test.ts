@@ -182,11 +182,28 @@ describe('重新命名模組效能基準測試', () => {
     for (const operation of renameOperations) {
       const startTime = Date.now();
 
-      const result = await renameEngine.rename(
-        testFiles.map(f => f.path),
-        operation.oldName,
-        operation.newName
-      );
+      // 創建模擬的 Symbol 對象進行測試
+      const mockSymbol = {
+        name: operation.oldName,
+        type: 'class' as const,
+        location: {
+          filePath: testFiles[0].path,
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: operation.oldName.length + 1 }
+          }
+        },
+        scope: {
+          type: 'global' as const,
+          name: 'global'
+        }
+      };
+
+      const result = await renameEngine.rename({
+        symbol: mockSymbol,
+        newName: operation.newName,
+        filePaths: testFiles.map(f => f.path)
+      });
 
       const renameTime = Date.now() - startTime;
 
@@ -194,13 +211,13 @@ describe('重新命名模組效能基準測試', () => {
         operation,
         time: renameTime,
         affectedFiles: result.affectedFiles.length,
-        changes: result.changes.length
+        changes: result.operations.length
       });
 
       console.log(`重新命名 "${operation.oldName}" -> "${operation.newName}":`);
       console.log(`  時間: ${renameTime}ms`);
       console.log(`  影響檔案: ${result.affectedFiles.length}`);
-      console.log(`  變更數量: ${result.changes.length}`);
+      console.log(`  變更數量: ${result.operations.length}`);
       console.log(`  成功: ${result.success ? 'Yes' : 'No'}`);
 
       // 效能要求
@@ -231,11 +248,27 @@ describe('重新命名模組效能基準測試', () => {
 
     const startTime = Date.now();
 
-    const result = await renameEngine.rename(
-      [largeFilePath],
-      'LargeFunction',
-      'RenamedLargeFunction'
-    );
+    const mockSymbol = {
+      name: 'LargeFunction',
+      type: 'function' as const,
+      location: {
+        filePath: largeFilePath,
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 1, column: 14 }
+        }
+      },
+      scope: {
+        type: 'global' as const,
+        name: 'global'
+      }
+    };
+
+    const result = await renameEngine.rename({
+      symbol: mockSymbol,
+      newName: 'RenamedLargeFunction',
+      filePaths: [largeFilePath]
+    });
 
     const renameTime = Date.now() - startTime;
     const fileSize = Buffer.byteLength(largeContent);
@@ -243,7 +276,7 @@ describe('重新命名模組效能基準測試', () => {
 
     console.log(`大檔案重新命名結果:`);
     console.log(`  重新命名時間: ${renameTime}ms`);
-    console.log(`  變更數量: ${result.changes.length}`);
+    console.log(`  變更數量: ${result.operations.length}`);
     console.log(`  處理速度: ${(throughput / 1024).toFixed(2)} KB/sec`);
     console.log(`  成功: ${result.success ? 'Yes' : 'No'}`);
 
@@ -251,7 +284,7 @@ describe('重新命名模組效能基準測試', () => {
     expect(renameTime).toBeLessThan(10000); // 不超過10秒
     expect(throughput).toBeGreaterThan(50 * 1024); // 至少50KB/sec
     expect(result.success).toBe(true);
-    expect(result.changes.length).toBeGreaterThan(0);
+    expect(result.operations.length).toBeGreaterThan(0);
 
     await fs.unlink(largeFilePath);
   });
@@ -272,13 +305,29 @@ describe('重新命名模組效能基準測試', () => {
     // 並發執行重新命名操作
     const concurrentStartTime = Date.now();
 
-    const concurrentPromises = operations.map(op =>
-      renameEngine.rename(
-        testFiles.slice(0, 5).map(f => f.path), // 只處理部分檔案避免衝突
-        op.oldName,
-        op.newName
-      )
-    );
+    const concurrentPromises = operations.map(op => {
+      const mockSymbol = {
+        name: op.oldName,
+        type: 'variable' as const,
+        location: {
+          filePath: testFiles[0].path,
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: op.oldName.length + 1 }
+          }
+        },
+        scope: {
+          type: 'global' as const,
+          name: 'global'
+        }
+      };
+
+      return renameEngine.rename({
+        symbol: mockSymbol,
+        newName: op.newName,
+        filePaths: testFiles.slice(0, 5).map(f => f.path)
+      });
+    });
 
     const concurrentResults = await Promise.all(concurrentPromises);
     const concurrentTime = Date.now() - concurrentStartTime;
@@ -288,18 +337,34 @@ describe('重新命名模組效能基準測試', () => {
     const sequentialResults = [];
 
     for (const op of operations) {
-      const result = await renameEngine.rename(
-        testFiles.slice(5, 10).map(f => f.path), // 使用不同的檔案避免干擾
-        op.oldName,
-        op.newName
-      );
+      const mockSymbol = {
+        name: op.oldName,
+        type: 'variable' as const,
+        location: {
+          filePath: testFiles[5].path,
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: op.oldName.length + 1 }
+          }
+        },
+        scope: {
+          type: 'global' as const,
+          name: 'global'
+        }
+      };
+
+      const result = await renameEngine.rename({
+        symbol: mockSymbol,
+        newName: op.newName,
+        filePaths: testFiles.slice(5, 10).map(f => f.path)
+      });
       sequentialResults.push(result);
     }
 
     const sequentialTime = Date.now() - sequentialStartTime;
 
     const speedup = sequentialTime / concurrentTime;
-    const totalConcurrentChanges = concurrentResults.reduce((sum, r) => sum + r.changes.length, 0);
+    const totalConcurrentChanges = concurrentResults.reduce((sum, r) => sum + r.operations.length, 0);
 
     console.log('並發重新命名結果:');
     console.log(`  並發時間: ${concurrentTime}ms`);
@@ -324,11 +389,27 @@ describe('重新命名模組效能基準測試', () => {
     }));
 
     for (const op of operations) {
-      await renameEngine.rename(
-        testFiles.slice(0, 10).map(f => f.path),
-        op.oldName,
-        op.newName
-      );
+      const mockSymbol = {
+        name: op.oldName,
+        type: 'variable' as const,
+        location: {
+          filePath: testFiles[0].path,
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: op.oldName.length + 1 }
+          }
+        },
+        scope: {
+          type: 'global' as const,
+          name: 'global'
+        }
+      };
+
+      await renameEngine.rename({
+        symbol: mockSymbol,
+        newName: op.newName,
+        filePaths: testFiles.slice(0, 10).map(f => f.path)
+      });
     }
 
     const finalMemory = process.memoryUsage();

@@ -11,6 +11,7 @@ import { tmpdir } from 'os';
 import { withMemoryOptimization } from '../test-utils/cleanup';
 import { AgentIdeCLI } from '../../src/interfaces/cli/cli';
 import { ParserRegistry } from '../../src/infrastructure/parser/registry';
+import { registerTestParsers } from '../test-utils/test-parsers';
 
 // CLI 執行結果介面
 interface CLIResult {
@@ -46,6 +47,14 @@ class CLITestRunner {
     let exitCode = 0;
     let stdout = '';
     let stderr = '';
+
+    // 確保測試環境
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+
+    // 重置並註冊測試 Parser
+    ParserRegistry.resetInstance();
+    registerTestParsers();
 
     // 攔截 console 輸出和 process.stdout
     const originalLog = console.log;
@@ -113,13 +122,14 @@ class CLITestRunner {
         exitCode = 1;
       }
     } finally {
-      // 恢復原始函式
+      // 恢復原始函式和環境
       console.log = originalLog;
       console.error = originalError;
       process.exit = originalProcessExit;
       process.cwd = originalProcessCwd;
       process.stdout.write = originalStdoutWrite;
       process.stderr.write = originalStderrWrite;
+      process.env.NODE_ENV = originalNodeEnv;
     }
 
     return {
