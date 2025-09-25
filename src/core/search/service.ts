@@ -28,6 +28,7 @@ import { TextSearchEngine } from './engines/text-engine.js';
 export class SearchService {
   private textEngine: TextSearchEngine;
   private searchHistory: string[] = [];
+  private queryFrequency = new Map<string, number>();
   private searchStats: Partial<SearchStats> = {
     totalSearches: 0,
     averageSearchTime: 0,
@@ -49,12 +50,13 @@ export class SearchService {
 
     try {
       const result = await this.textEngine.search(query);
-      
+
       // 更新搜尋歷史
       this.updateSearchHistory(query.query);
-      
-      // 更新統計
-      this.updateStats(Date.now() - startTime);
+
+      // 更新統計 - 優先使用引擎返回的時間
+      const searchTime = result.searchTime || (Date.now() - startTime);
+      this.updateStats(searchTime);
 
       return result;
     } catch (error) {
@@ -190,6 +192,7 @@ export class SearchService {
    */
   clearSearchHistory(): void {
     this.searchHistory = [];
+    this.queryFrequency.clear();
     this.searchStats.recentSearches = [];
   }
 
@@ -199,6 +202,9 @@ export class SearchService {
    * 更新搜尋歷史
    */
   private updateSearchHistory(query: string): void {
+    // 更新頻率統計
+    this.queryFrequency.set(query, (this.queryFrequency.get(query) || 0) + 1);
+
     // 避免重複
     const index = this.searchHistory.indexOf(query);
     if (index > -1) {
@@ -211,11 +217,24 @@ export class SearchService {
     // 限制歷史長度
     if (this.searchHistory.length > 100) {
       this.searchHistory.pop();
+      // 清理不再在歷史中的查詢頻率
+      const historySet = new Set(this.searchHistory);
+      for (const [q] of this.queryFrequency) {
+        if (!historySet.has(q)) {
+          this.queryFrequency.delete(q);
+        }
+      }
     }
 
     // 更新最近搜尋
     if (!this.searchStats.recentSearches) {
       this.searchStats.recentSearches = [];
+    }
+
+    // 避免重複 - 先移除現有的相同查詢
+    const existingIndex = this.searchStats.recentSearches.findIndex(s => s.query === query);
+    if (existingIndex > -1) {
+      this.searchStats.recentSearches.splice(existingIndex, 1);
     }
 
     this.searchStats.recentSearches.unshift({
@@ -370,15 +389,8 @@ export class SearchService {
    * 獲取熱門搜尋
    */
   private getTopQueries(): Array<{ query: string; count: number }> {
-    const queryCounts = new Map<string, number>();
-
-    // 計算每個查詢的頻率
-    for (const query of this.searchHistory) {
-      queryCounts.set(query, (queryCounts.get(query) || 0) + 1);
-    }
-
-    // 排序並返回前 10 個
-    return Array.from(queryCounts.entries())
+    // 使用頻率統計並排序返回前 10 個
+    return Array.from(this.queryFrequency.entries())
       .map(([query, count]) => ({ query, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);

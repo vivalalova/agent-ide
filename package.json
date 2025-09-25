@@ -32,6 +32,7 @@
     "@vitest/coverage-v8": "^2.1.9",
     "chokidar": "^4.0.3",
     "memfs": "^4.38.2",
+    "tsx": "^4.20.5",
     "typescript": "^5.0.0",
     "vitest": "^2.0.0"
   },

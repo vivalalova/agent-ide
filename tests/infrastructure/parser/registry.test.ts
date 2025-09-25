@@ -232,23 +232,23 @@ describe('ParserRegistry', () => {
 
   describe('並發安全', () => {
     it('應該能處理並發註冊', async () => {
-      // const plugins = Array.from({ length: 10 }, (_, i) => 
-      //   new MockParserPlugin(`plugin-${i}`, '1.0.0', [`.ext${i}`], [`lang${i}`])
-      // );
+      const plugins = Array.from({ length: 10 }, (_, i) =>
+        new MockParserPlugin(`plugin-${i}`, '1.0.0', [`.ext${i}`], [`lang${i}`])
+      );
 
-      // await Promise.all(plugins.map(p => Promise.resolve(registry.register(p))));
-      // expect(registry.listParsers()).toHaveLength(10);
+      await Promise.all(plugins.map(p => Promise.resolve(registry.register(p))));
+      expect(registry.listParsers()).toHaveLength(10);
     });
 
     it('應該能處理並發查詢', async () => {
-      // registry.register(tsPlugin);
-      
-      // const queries = Array.from({ length: 100 }, () => 
-      //   Promise.resolve(registry.getParser('.ts'))
-      // );
+      registry.register(tsPlugin);
 
-      // const results = await Promise.all(queries);
-      // results.forEach(result => expect(result).toBe(tsPlugin));
+      const queries = Array.from({ length: 100 }, () =>
+        Promise.resolve(registry.getParser('.ts'))
+      );
+
+      const results = await Promise.all(queries);
+      results.forEach(result => expect(result).toBe(tsPlugin));
     });
   });
 });

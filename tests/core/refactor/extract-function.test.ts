@@ -608,4 +608,329 @@ return sum;`
       expect(functionEdit!.content).toContain('for (let i = 0');
     }, { testName: 'loop-code-extraction' }));
   });
+
+  describe('現代 JavaScript 語法提取', () => {
+    it('應該能提取箭頭函式', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 3, column: 1 }
+        },
+        code: `const processItems = (items) => {
+  return items.map(item => item.value * 2);
+};`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+      expect(result.newFunctionName).toBeTruthy();
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('items:');
+      expect(functionEdit!.content).toContain('=>');
+    }, { testName: 'arrow-function-extraction' }));
+
+    it('應該能提取 async/await 程式碼', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 4, column: 1 }
+        },
+        code: `const data = await fetch('/api/users');
+const users = await data.json();
+console.log('Users loaded:', users.length);
+return users;`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('async function');
+      expect(functionEdit!.content).toContain('await');
+    }, { testName: 'async-await-extraction' }));
+
+    it('應該能提取解構賦值程式碼', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 4, column: 1 }
+        },
+        code: `const { name, age, ...rest } = user;
+const [first, second] = items;
+const merged = { ...rest, displayName: name };
+return merged;`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('user:');
+      expect(functionEdit!.content).toContain('items:');
+      expect(functionEdit!.content).toContain('const { name, age');
+    }, { testName: 'destructuring-extraction' }));
+
+    it('應該能提取 Promise 鏈式呼叫', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 6, column: 1 }
+        },
+        code: `return fetchUserData(userId)
+  .then(user => user.profile)
+  .then(profile => enhanceProfile(profile))
+  .catch(error => handleError(error))
+  .finally(() => cleanup());`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('userId:');
+      expect(functionEdit!.content).toContain('.then(');
+      expect(functionEdit!.content).toContain('.catch(');
+    }, { testName: 'promise-chain-extraction' }));
+  });
+
+  describe('參數化重構測試', () => {
+    it.each([
+      {
+        type: 'simple-calculation',
+        code: 'const result = a + b * c;\\nreturn result;',
+        expectedParams: ['a', 'b', 'c'],
+        hasReturn: true
+      },
+      {
+        type: 'string-manipulation',
+        code: 'const formatted = str.trim().toLowerCase();\\nreturn formatted;',
+        expectedParams: ['str'],
+        hasReturn: true
+      },
+      {
+        type: 'array-processing',
+        code: 'const filtered = arr.filter(x => x > 0);\\nreturn filtered;',
+        expectedParams: ['arr'],
+        hasReturn: true
+      }
+    ])('應該能提取 $type 程式碼', async ({ code, expectedParams, hasReturn }) => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 3, column: 1 }
+        },
+        code: code.replace(/\\n/g, '\\n')
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit).toBeDefined();
+
+      expectedParams.forEach(param => {
+        expect(functionEdit!.content).toContain(`${param}:`);
+      });
+
+      if (hasReturn) {
+        expect(functionEdit!.content).toContain('return');
+      }
+    });
+  });
+
+  describe('複雜場景重構', () => {
+    it('應該能提取包含異常處理的程式碼', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 8, column: 1 }
+        },
+        code: `try {
+  const result = riskyOperation(data);
+  return result.value;
+} catch (error) {
+  console.error('操作失敗:', error);
+  return defaultValue;
+} finally {
+  cleanup();
+}`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('data:');
+      expect(functionEdit!.content).toContain('defaultValue:');
+      expect(functionEdit!.content).toContain('try {');
+      expect(functionEdit!.content).toContain('catch (error)');
+      expect(functionEdit!.content).toContain('finally {');
+    }, { testName: 'exception-handling-extraction' }));
+
+    it('應該能提取包含類別操作的程式碼', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 5, column: 1 }
+        },
+        code: `const instance = new MyClass(config);
+instance.initialize();
+const result = instance.process(data);
+instance.cleanup();
+return result;`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('config:');
+      expect(functionEdit!.content).toContain('data:');
+      expect(functionEdit!.content).toContain('new MyClass');
+    }, { testName: 'class-operation-extraction' }));
+
+    it('應該能處理複雜的變數相依性', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 6, column: 1 }
+        },
+        code: `let temp = input * 2;
+temp = temp + offset;
+const processed = transform(temp);
+output = processed.result;
+meta.count = processed.itemCount;
+return { output, meta };`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      expect(functionEdit!.content).toContain('input:');
+      expect(functionEdit!.content).toContain('offset:');
+      expect(functionEdit!.content).toContain('output:');
+      expect(functionEdit!.content).toContain('meta:');
+    }, { testName: 'complex-dependency-extraction' }));
+  });
+
+  describe('重構品質驗證', () => {
+    it('應該產生語法正確的函式', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 4, column: 1 }
+        },
+        code: `const x = Math.max(a, b);
+const y = Math.min(c, d);
+const result = x + y;
+return result;`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      const functionCode = functionEdit!.content;
+
+      // 驗證函式語法結構
+      expect(functionCode).toMatch(/function\s+\w+\s*\(/);
+      expect(functionCode).toMatch(/\{[\s\S]*\}/);
+      expect(functionCode.split('{').length).toBe(functionCode.split('}').length);
+    }, { testName: 'syntax-correctness' }));
+
+    it('應該保持程式碼格式和縮排', withMemoryOptimization(async () => {
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 6, column: 1 }
+        },
+        code: `if (condition) {
+  const nested = {
+    property: value,
+    method: () => action()
+  };
+  return nested.method();
+}`
+      };
+
+      const result = await refactoring.execute(selection);
+
+      expect(result.success).toBe(true);
+
+      const functionEdit = result.edits.find(e => e.type === 'insert');
+      const functionCode = functionEdit!.content;
+
+      // 驗證縮排保持
+      expect(functionCode).toMatch(/  const nested/);
+      expect(functionCode).toMatch(/    property:/);
+      expect(functionCode).toMatch(/  return nested/);
+    }, { testName: 'formatting-preservation' }));
+  });
+
+  describe('效能和記憶體最佳化', () => {
+    it('應該快速處理大型程式碼選擇', withMemoryOptimization(async () => {
+      // 產生大型程式碼選擇
+      const largeCode = Array.from({ length: 100 }, (_, i) =>
+        `const var${i} = input${i % 10} * ${i + 1};`
+      ).join('\n') + '\nreturn [' + Array.from({ length: 100 }, (_, i) => `var${i}`).join(', ') + '];';
+
+      const selection: CodeSelection = {
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 102, column: 1 }
+        },
+        code: largeCode
+      };
+
+      const startTime = performance.now();
+      const result = await refactoring.execute(selection);
+      const endTime = performance.now();
+
+      expect(result.success).toBe(true);
+      expect(endTime - startTime).toBeLessThan(1000); // 1 秒內完成
+    }, { testName: 'large-code-performance' }));
+
+    it('應該在處理後釋放記憶體', withMemoryOptimization(async () => {
+      const initialHeap = process.memoryUsage().heapUsed;
+
+      // 執行多個重構操作
+      for (let i = 0; i < 20; i++) {
+        const selection: CodeSelection = {
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 5, column: 1 }
+          },
+          code: `const result${i} = process${i}(data${i});
+const transformed${i} = transform${i}(result${i});
+output${i}.push(transformed${i});
+cache${i}.set(key${i}, transformed${i});
+return transformed${i};`
+        };
+
+        await refactoring.execute(selection);
+      }
+
+      // 強制垃圾回收
+      if (global.gc) {
+        global.gc();
+      }
+
+      const finalHeap = process.memoryUsage().heapUsed;
+      const heapIncrease = finalHeap - initialHeap;
+
+      // 記憶體增長應該在合理範圍內 (小於 15MB)
+      expect(heapIncrease).toBeLessThan(15 * 1024 * 1024);
+    }, { testName: 'memory-cleanup' }));
+  });
 });

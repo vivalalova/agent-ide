@@ -393,7 +393,7 @@ export class RenameEngine {
    * 驗證選項
    */
   private validateOptions(options: RenameOptions): void {
-    if (!options.newName.trim()) {
+    if (!options.newName || !options.newName.trim()) {
       throw new Error('新名稱不能為空');
     }
 
