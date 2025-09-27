@@ -369,7 +369,7 @@ export class TextSearchEngine {
 
       case 'directory':
         searchPath = scope.path || process.cwd();
-        pattern = scope.recursive ? '**/*' : '*';
+        pattern = scope.recursive !== false ? '**/*' : '*';  // 預設遞迴搜尋
         break;
 
       case 'project':

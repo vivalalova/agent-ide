@@ -41,6 +41,9 @@ export class IndexEngine {
   private readonly parserRegistry: ParserRegistry;
 
   constructor(config: IndexConfig) {
+    // 驗證配置
+    this.validateConfig(config);
+
     this.config = config;
     this.fileIndex = new FileIndex(config);
     this.symbolIndex = new SymbolIndex();
@@ -56,18 +59,70 @@ export class IndexEngine {
   }
 
   /**
+   * 驗證配置
+   */
+  private validateConfig(config: any): void {
+    // 檢查配置物件
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('索引配置必須是物件');
+    }
+
+    // 檢查根路徑
+    const rootPath = config.workspacePath;
+    if (!rootPath || typeof rootPath !== 'string' || rootPath.trim() === '') {
+      throw new Error('根路徑必須是有效字串');
+    }
+
+    // 檢查包含副檔名
+    if (config.includeExtensions !== undefined) {
+      if (!Array.isArray(config.includeExtensions)) {
+        throw new Error('包含副檔名必須是陣列');
+      }
+    }
+
+    // 檢查排除模式
+    if (config.excludePatterns !== undefined) {
+      if (!Array.isArray(config.excludePatterns)) {
+        throw new Error('排除模式必須是陣列');
+      }
+    }
+
+    // 檢查最大檔案大小
+    if (config.maxFileSize !== undefined) {
+      if (typeof config.maxFileSize !== 'number' || config.maxFileSize <= 0) {
+        throw new Error('最大檔案大小必須是正數');
+      }
+    }
+  }
+
+  /**
    * 索引整個專案
    */
-  async indexProject(projectPath?: string): Promise<void> {
+  async indexProject(projectPath?: string | any): Promise<void> {
+    // 驗證路徑參數
+    if (projectPath !== undefined) {
+      if (projectPath === null || projectPath === '' || typeof projectPath !== 'string') {
+        throw new Error('索引路徑必須是有效字串');
+      }
+    }
+
     const workspacePath = projectPath || this.config.workspacePath;
-    
+
+    // 再次驗證最終路徑
+    if (!workspacePath || typeof workspacePath !== 'string' || workspacePath.trim() === '') {
+      throw new Error('索引路徑必須是有效字串');
+    }
+
     try {
       const stat = await fs.stat(workspacePath);
       if (!stat.isDirectory()) {
-        throw new Error(`路徑不是有效的目錄: ${workspacePath}`);
+        throw new Error('索引路徑必須是目錄');
       }
-    } catch (error) {
-      throw new Error(`無法存取專案路徑: ${workspacePath}`);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new Error('路徑不存在');
+      }
+      throw error;
     }
 
     await this.indexDirectory(workspacePath);
@@ -121,12 +176,14 @@ export class IndexEngine {
   async indexFile(filePath: string): Promise<void> {
     try {
       const stat = await fs.stat(filePath);
-      const content = await fs.readFile(filePath, 'utf-8');
-      
-      // 檢查檔案大小
+
+      // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
-        throw new Error(`檔案過大: ${filePath} (${stat.size} bytes)`);
+        // 靜默跳過大檔案，不報錯
+        return;
       }
+
+      const content = await fs.readFile(filePath, 'utf-8');
 
       const fileInfo = await this.createFileInfoFromStat(filePath, stat);
       
