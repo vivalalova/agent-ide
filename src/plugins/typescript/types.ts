@@ -367,9 +367,24 @@ export function createTypeScriptASTNode(
   
   // 遞歸處理子節點
   const children: TypeScriptASTNode[] = [];
+
+  // 使用 forEachChild 遍歷結構化子節點
   tsNode.forEachChild(child => {
     children.push(createTypeScriptASTNode(child, sourceFile));
   });
+
+  // 對於某些節點，還需要檢查語法結構，特別是 export 語句
+  if (ts.isExportDeclaration(tsNode) && tsNode.exportClause && ts.isNamedExports(tsNode.exportClause)) {
+    // Export 可能包含額外的符號
+    for (const element of tsNode.exportClause.elements) {
+      children.push(createTypeScriptASTNode(element, sourceFile));
+    }
+  } else if (ts.isVariableStatement(tsNode)) {
+    // VariableStatement 中的聲明
+    for (const declaration of tsNode.declarationList.declarations) {
+      children.push(createTypeScriptASTNode(declaration, sourceFile));
+    }
+  }
   
   const node: TypeScriptASTNode = {
     type,

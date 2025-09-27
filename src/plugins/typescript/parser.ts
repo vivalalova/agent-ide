@@ -81,7 +81,28 @@ export class TypeScriptParser implements ParserPlugin {
         this.getScriptKind(filePath)
       );
 
-      // 跳過語法錯誤檢查，因為 parseDiagnostics 在某些 TypeScript 版本中不可用
+      // 檢查語法錯誤 - 使用 TypeScript Program 來檢查語法錯誤
+      const program = ts.createProgram([filePath], this.compilerOptions, {
+        getSourceFile: (fileName) => fileName === filePath ? sourceFile : undefined,
+        writeFile: () => {},
+        getCurrentDirectory: () => process.cwd(),
+        getDirectories: () => [],
+        fileExists: () => true,
+        readFile: () => code,
+        getCanonicalFileName: (fileName) => fileName,
+        useCaseSensitiveFileNames: () => true,
+        getNewLine: () => '\n',
+        getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options)
+      });
+
+      const syntacticDiagnostics = program.getSyntacticDiagnostics(sourceFile);
+      if (syntacticDiagnostics.length > 0) {
+        const firstError = syntacticDiagnostics[0];
+        const message = typeof firstError.messageText === 'string'
+          ? firstError.messageText
+          : firstError.messageText.messageText;
+        throw createParseError(`語法錯誤: ${message}`);
+      }
 
       // 建立我們的 AST 結構
       const rootNode = createTypeScriptASTNode(sourceFile, sourceFile);

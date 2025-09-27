@@ -56,10 +56,10 @@ export class TypeScriptSymbolExtractor {
    */
   private visitNode(node: TypeScriptASTNode): void {
     const tsNode = node.tsNode;
-    
+
     // 處理作用域變化
     const scopeChange = this.handleScopeChange(tsNode);
-    
+
     // 提取符號
     if (isSymbolDeclaration(tsNode)) {
       const symbol = this.extractSymbolFromNode(tsNode);
@@ -67,12 +67,12 @@ export class TypeScriptSymbolExtractor {
         this.symbols.push(symbol);
       }
     }
-    
+
     // 遞歸處理子節點
     for (const child of node.children) {
       this.visitNode(child as TypeScriptASTNode);
     }
-    
+
     // 恢復作用域
     if (scopeChange) {
       this.scopeStack.pop();
