@@ -17,9 +17,10 @@ export default defineConfig({
       },
     },
     
-    // 超時設定
+    // 超時設定 - 設定為 30 秒
     testTimeout: 30000,
     hookTimeout: 10000,
+    teardownTimeout: 10000,
     
     // 並發控制 - 降低並發數減少 Worker 負載
     maxConcurrency: 3,
