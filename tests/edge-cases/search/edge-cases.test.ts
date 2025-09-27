@@ -18,7 +18,7 @@ enum SearchType {
 // 模擬搜尋引擎
 class TextEngine {
   async search(files: string[], pattern: string, options: { type: SearchType; caseSensitive?: boolean }): Promise<Array<{ file: string; line: number; content: string }>> {
-    // 輸入驗證
+    // 輸入驗證 - 按測試期待的順序
     if (!Array.isArray(files)) {
       throw new Error('檔案列表必須是陣列');
     }
@@ -107,7 +107,7 @@ class SearchService {
     options?: { caseSensitive?: boolean; wholeWord?: boolean; maxResults?: number };
   }): Promise<{ results: Array<{ file: string; line: number; content: string }>; searchTime: number }> {
     // 參數驗證
-    if (!params || typeof params !== 'object') {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
       throw new Error('搜尋參數必須是物件');
     }
 
@@ -130,7 +130,7 @@ class SearchService {
       });
 
       // 應用結果限制
-      if (options.maxResults && options.maxResults > 0) {
+      if (typeof options.maxResults === 'number' && options.maxResults >= 0) {
         results = results.slice(0, options.maxResults);
       }
 
@@ -205,14 +205,15 @@ describe('Search 模組邊界條件測試', () => {
       ['undefined 檔案列表', undefined, 'test', { type: SearchType.TEXT }, '檔案列表必須是陣列'],
       ['字串檔案列表', '/path/file.ts', 'test', { type: SearchType.TEXT }, '檔案列表必須是陣列'],
       ['數字檔案列表', 123, 'test', { type: SearchType.TEXT }, '檔案列表必須是陣列'],
-      ['null 模式', testFiles, null, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
-      ['undefined 模式', testFiles, undefined, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
-      ['數字模式', testFiles, 123, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
-      ['null 選項', testFiles, 'test', null, '選項必須是物件'],
-      ['undefined 選項', testFiles, 'test', undefined, '選項必須是物件'],
-      ['無效搜尋類型', testFiles, 'test', { type: 'invalid' as any }, '無效的搜尋類型'],
+      ['null 模式', 'testFiles', null, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
+      ['undefined 模式', 'testFiles', undefined, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
+      ['數字模式', 'testFiles', 123, { type: SearchType.TEXT }, '搜尋模式必須是字串'],
+      ['null 選項', 'testFiles', 'test', null, '選項必須是物件'],
+      ['undefined 選項', 'testFiles', 'test', undefined, '選項必須是物件'],
+      ['無效搜尋類型', 'testFiles', 'test', { type: 'invalid' as any }, '無效的搜尋類型'],
     ])('應該拒絕無效輸入：%s', withMemoryOptimization(async (description, files, pattern, options, expectedError) => {
-      await expect(textEngine.search(files as any, pattern as any, options as any)).rejects.toThrow(expectedError);
+      const actualFiles = files === 'testFiles' ? testFiles : files;
+      await expect(textEngine.search(actualFiles as any, pattern as any, options as any)).rejects.toThrow(expectedError);
     }, { testName: 'search-invalid-test' }));
 
     it.each([
