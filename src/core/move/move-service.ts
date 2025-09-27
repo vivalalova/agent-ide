@@ -228,7 +228,17 @@ export class MoveService {
     if (importPath.startsWith('.')) {
       // 相對路徑
       const fromDir = path.dirname(fromFile);
-      return path.resolve(fromDir, importPath);
+      let resolved = path.resolve(fromDir, importPath);
+
+      // 如果沒有副檔名，嘗試加上常見的副檔名
+      if (!path.extname(resolved)) {
+        for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
+          const withExt = resolved + ext;
+          // 直接返回可能的路徑（在 pathsMatch 中會處理）
+          return resolved;
+        }
+      }
+      return resolved;
     }
 
     // 嘗試解析別名
