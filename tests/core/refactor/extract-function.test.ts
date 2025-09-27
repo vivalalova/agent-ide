@@ -6,6 +6,9 @@ import { withMemoryOptimization } from '../../test-utils/cleanup';
  * 測試從程式碼片段中提取函式的功能
  */
 
+// 控制是否輸出 debug 訊息
+const DEBUG = process.env.DEBUG_TESTS === 'true';
+
 // 程式碼選擇區域
 interface CodeSelection {
   range: {
@@ -126,14 +129,14 @@ class ExtractFunctionRefactoring {
     const variableMatches = selection.code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
     const uniqueVars = [...new Set(variableMatches)];
 
-    console.log(`=== Analyzing selection for variables ===`);
-    console.log(`Selection code: "${selection.code}"`);
-    console.log(`Variable matches: ${JSON.stringify(variableMatches)}`);
-    console.log(`Unique vars: ${JSON.stringify(uniqueVars)}`);
+    if (DEBUG) console.log(`=== Analyzing selection for variables ===`);
+    if (DEBUG) console.log(`Selection code: "${selection.code}"`);
+    if (DEBUG) console.log(`Variable matches: ${JSON.stringify(variableMatches)}`);
+    if (DEBUG) console.log(`Unique vars: ${JSON.stringify(uniqueVars)}`);
 
     uniqueVars.forEach(varName => {
       if (!this.isKeyword(varName)) {
-        console.log(`\n--- Analyzing variable: "${varName}" ---`);
+        if (DEBUG) console.log(`\n--- Analyzing variable: "${varName}" ---`);
 
         // 檢查是否是修改後立即返回的變數（應視為內部變數）
         // 更精確的檢查：只有直接返回變數的情況才視為內部變數
@@ -152,12 +155,12 @@ class ExtractFunctionRefactoring {
         const isBeingAssigned = assignmentPattern.test(selection.code);
         const isFunctionCall = selection.code.includes(`${varName}(`) && !isBeingAssigned;
 
-        console.log(`  assignmentPattern.test(): ${assignmentPattern.test(selection.code)}`);
-        console.log(`  directReturnPattern.test(): ${directReturnPattern.test(selection.code)}`);
-        console.log(`  isModifiedAndReturned: ${isModifiedAndReturned}`);
-        console.log(`  isLocalVariable: ${isLocalVariable}`);
-        console.log(`  isBeingAssigned: ${isBeingAssigned}`);
-        console.log(`  isFunctionCall: ${isFunctionCall}`);
+        if (DEBUG) console.log(`  assignmentPattern.test(): ${assignmentPattern.test(selection.code)}`);
+        if (DEBUG) console.log(`  directReturnPattern.test(): ${directReturnPattern.test(selection.code)}`);
+        if (DEBUG) console.log(`  isModifiedAndReturned: ${isModifiedAndReturned}`);
+        if (DEBUG) console.log(`  isLocalVariable: ${isLocalVariable}`);
+        if (DEBUG) console.log(`  isBeingAssigned: ${isBeingAssigned}`);
+        if (DEBUG) console.log(`  isFunctionCall: ${isFunctionCall}`);
 
         // 檢查修改模式：直接賦值、屬性賦值、或方法調用（如push, set）
         const directAssignment = assignmentPattern.test(selection.code);
@@ -166,32 +169,40 @@ class ExtractFunctionRefactoring {
         const methodCall = selection.code.includes(`${varName}.`) &&
                           !!selection.code.match(new RegExp(`\\b${varName}\\.(push|set|add|delete|clear|splice)\\(`));
 
+        // 特別處理：如果變數被直接賦值但沒有宣告（var1 = ...），則視為外部變數修改
+        const isExternalAssignment = directAssignment && !isLocalVariable && !isFunctionCall;
+
         const variable: VariableAnalysis = {
           name: varName,
           type: 'any', // 簡化的型別推導
-          external: !isFunctionCall && // 函數調用不視為外部變數
-                   !isModifiedAndReturned && // 修改後返回的變數視為內部變數
-                   !isLocalVariable, // 本地宣告的變數不是外部變數
-          modified: directAssignment || propertyAssignment || methodCall,
+          external: isExternalAssignment || // 外部變數賦值
+                   (!isFunctionCall && // 函數調用不視為外部變數
+                    !isModifiedAndReturned && // 修改後返回的變數視為內部變數
+                    !isLocalVariable), // 本地宣告的變數不是外部變數
+          modified: isExternalAssignment || directAssignment || propertyAssignment || methodCall,
           used: true
         };
 
-        console.log(`  Final variable analysis: external=${variable.external}, modified=${variable.modified}`);
+        if (DEBUG) console.log(`  Final variable analysis: external=${variable.external}, modified=${variable.modified}`);
 
         // 只有外部變數才需要作為參數傳遞
-        if (variable.external) {
-          usedVariables.add(variable);
-          if (variable.modified) {
+        if (variable.external || isExternalAssignment) {
+          if (isExternalAssignment || variable.modified) {
+            // 外部變數賦值必定是修改
+            variable.external = true;
+            variable.modified = true;
             modifiedVariables.add(variable);
-            console.log(`  Added to modifiedVariables: ${varName}`);
+            if (DEBUG) console.log(`  Added to modifiedVariables: ${varName} (external assignment)`);
+          } else {
+            usedVariables.add(variable);
+            if (DEBUG) console.log(`  Added to usedVariables: ${varName}`);
           }
-          console.log(`  Added to usedVariables: ${varName}`);
         }
       }
     });
 
-    console.log(`Final analysis: usedVariables=${usedVariables.size}, modifiedVariables=${modifiedVariables.size}`);
-    console.log(`Modified variables:`, Array.from(modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) console.log(`Final analysis: usedVariables=${usedVariables.size}, modifiedVariables=${modifiedVariables.size}`);
+    if (DEBUG) console.log(`Modified variables:`, Array.from(modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
 
     return {
       usedVariables,
@@ -209,10 +220,10 @@ class ExtractFunctionRefactoring {
     const modifiedExternalVars = Array.from(analysis.modifiedVariables)
       .filter(v => v.external);
 
-    console.log('Validation Debug:');
-    console.log('  modifiedExternalVars:', modifiedExternalVars.map(v => v.name));
-    console.log('  hasReturn:', analysis.hasReturn);
-    console.log('  modifiedExternalVars.length:', modifiedExternalVars.length);
+    if (DEBUG) console.log('Validation Debug:');
+    if (DEBUG) console.log('  modifiedExternalVars:', modifiedExternalVars.map(v => v.name));
+    if (DEBUG) console.log('  hasReturn:', analysis.hasReturn);
+    if (DEBUG) console.log('  modifiedExternalVars.length:', modifiedExternalVars.length);
 
     // 檢查複雜控制流
     const hasComplexControlFlow = code?.includes('break') ||
@@ -245,11 +256,11 @@ class ExtractFunctionRefactoring {
       return assignmentPattern.test(code);
     }).length > 1;
 
-    console.log('  hasComplexControlFlow:', hasComplexControlFlow);
-    console.log('  hasMultipleReturns:', hasMultipleReturns);
-    console.log('  hasConditionalModification:', hasConditionalModification);
-    console.log('  hasMultipleExternalModificationsWithReturn:', hasMultipleExternalModificationsWithReturn);
-    console.log('  isValidMultipleModification:', isValidMultipleModification);
+    if (DEBUG) console.log('  hasComplexControlFlow:', hasComplexControlFlow);
+    if (DEBUG) console.log('  hasMultipleReturns:', hasMultipleReturns);
+    if (DEBUG) console.log('  hasConditionalModification:', hasConditionalModification);
+    if (DEBUG) console.log('  hasMultipleExternalModificationsWithReturn:', hasMultipleExternalModificationsWithReturn);
+    if (DEBUG) console.log('  isValidMultipleModification:', isValidMultipleModification);
 
     // 拒絕條件
     if (hasComplexControlFlow) {
@@ -265,7 +276,7 @@ class ExtractFunctionRefactoring {
     }
 
 
-    console.log('  validation result:', errors.length === 0);
+    if (DEBUG) console.log('  validation result:', errors.length === 0);
 
     return {
       valid: errors.length === 0,
@@ -285,9 +296,9 @@ class ExtractFunctionRefactoring {
     const parameters: Parameter[] = [];
     const modifiedExternalVars = Array.from(analysis.modifiedVariables).filter(v => v.external);
 
-    console.log('=== Signature Determination Debug ===');
-    console.log('usedVariables:', Array.from(analysis.usedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
-    console.log('modifiedVariables:', Array.from(analysis.modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) console.log('=== Signature Determination Debug ===');
+    if (DEBUG) console.log('usedVariables:', Array.from(analysis.usedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) console.log('modifiedVariables:', Array.from(analysis.modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
 
     // 使用但未修改的外部變數 -> 參數
     const parameterVariables = Array.from(analysis.usedVariables)
@@ -296,8 +307,8 @@ class ExtractFunctionRefactoring {
     // 修改的外部變數也需要作為參數傳入
     const modifiedVariablesAsParameters = modifiedExternalVars;
 
-    console.log('parameterVariables:', parameterVariables.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
-    console.log('modifiedVariablesAsParameters:', modifiedVariablesAsParameters.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) console.log('parameterVariables:', parameterVariables.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) console.log('modifiedVariablesAsParameters:', modifiedVariablesAsParameters.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
 
     // 將未修改的外部變數作為參數
     parameterVariables.forEach(variable => {
@@ -599,13 +610,7 @@ describe('提取函式重構', () => {
         code: 'var1 = calculateValue1();\nvar2 = calculateValue2();\nreturn result;'
       };
 
-      console.log('\n🔍 RUNNING FAILING TEST - Multiple External Modifications');
-      console.log('Code to analyze:', JSON.stringify(selection.code));
-
       const result = await refactoring.execute(selection);
-
-      console.log('Result success:', result.success);
-      console.log('Result errors:', result.errors);
 
       expect(result.success).toBe(false);
       expect(result.errors).toContain('無法提取：函式有多個返回值');
