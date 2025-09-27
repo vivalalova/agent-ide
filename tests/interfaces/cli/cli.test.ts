@@ -26,7 +26,7 @@ vi.mock('../../../src/plugins/typescript/parser', () => ({
   TypeScriptParser: vi.fn().mockImplementation(() => ({}))
 }));
 
-describe.skip('AgentIdeCLI', () => {
+describe('AgentIdeCLI', () => {
   let cli: AgentIdeCLI;
   let mockConsoleLog: any;
   let mockProcessExit: any;

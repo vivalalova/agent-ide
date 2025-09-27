@@ -23,7 +23,7 @@ const mockImportResolver = {
   calculateRelativePath: vi.fn()
 };
 
-describe.skip('MoveService', () => {
+describe('MoveService', () => {
   let moveService: MoveService;
   
   beforeEach(() => {
@@ -185,19 +185,32 @@ describe.skip('MoveService', () => {
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       
-      // Mock project files discovery
+      // Mock project files discovery - 需要正確處理遞迴目錄讀取
       mockFs.readdir.mockImplementation((dir: any) => {
         if (dir.includes('node_modules')) {
           throw new Error('Access denied');
         }
-        return Promise.resolve([
-          { name: 'file1.ts', isDirectory: () => false, isFile: () => true },
-          { name: 'file2.js', isDirectory: () => false, isFile: () => true }
-        ] as any);
+        if (dir === process.cwd() || dir === '/') {
+          return Promise.resolve([
+            { name: 'src', isDirectory: () => true, isFile: () => false }
+          ] as any);
+        }
+        if (dir.includes('src')) {
+          return Promise.resolve([
+            { name: 'file1.ts', isDirectory: () => false, isFile: () => true },
+            { name: 'file2.js', isDirectory: () => false, isFile: () => true }
+          ] as any);
+        }
+        return Promise.resolve([]);
       });
 
-      // Mock file content reading
-      mockFs.readFile.mockResolvedValue("import { Component } from './components/old';\n");
+      // Mock file content reading - 正確回傳符合預期的檔案內容
+      mockFs.readFile.mockImplementation((filePath: any) => {
+        if (typeof filePath === 'string' && filePath.includes('file1')) {
+          return Promise.resolve("import { Component } from './components/old';\n");
+        }
+        return Promise.resolve("// no imports\n");
+      });
       mockFs.writeFile.mockResolvedValue();
 
       // Mock import resolver

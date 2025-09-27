@@ -70,7 +70,7 @@ vi.mock('../../../src/infrastructure/parser/registry', () => ({
   }
 }));
 
-describe.skip('MCP 介面測試', () => {
+describe('MCP 介面測試', () => {
   let mcp: AgentIdeMCP;
 
   beforeEach(() => {

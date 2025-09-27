@@ -11,7 +11,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe.skip('搜尋模組效能基準測試', () => {
+describe('搜尋模組效能基準測試', () => {
   let testDir: string;
   let searchService: SearchService;
   let textEngine: TextSearchEngine;

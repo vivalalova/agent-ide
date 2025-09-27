@@ -158,7 +158,7 @@ class SearchService {
   }
 }
 
-describe.skip('Search 模組邊界條件測試', () => {
+describe('Search 模組邊界條件測試', () => {
   let testDir: string;
   let testFiles: string[];
   let searchService: SearchService;
@@ -182,7 +182,7 @@ describe.skip('Search 模組邊界條件測試', () => {
     }
   });
 
-  describe.skip('TextEngine 邊界條件測試', () => {
+  describe('TextEngine 邊界條件測試', () => {
     it.each([
       // [描述, 檔案列表, 模式, 選項, 預期結果類型, 應該拋出錯誤]
       ['空檔案列表', [], 'test', { type: SearchType.TEXT }, 'success', false],
@@ -233,7 +233,7 @@ describe.skip('Search 模組邊界條件測試', () => {
       await expect(textEngine.search(files as any, pattern, { type: SearchType.TEXT })).rejects.toThrow(expectedError);
     }, { testName: 'search-invalid-paths-test' }));
 
-    describe.skip('正則表達式邊界測試', () => {
+    describe('正則表達式邊界測試', () => {
       it.each([
         ['簡單正則', 'test\\d+', false],
         ['複雜正則', '(function|class)\\s+\\w+', false],
@@ -262,7 +262,7 @@ describe.skip('Search 模組邊界條件測試', () => {
     });
   });
 
-  describe.skip('SearchService 邊界條件測試', () => {
+  describe('SearchService 邊界條件測試', () => {
     it.each([
       ['null 參數', null, '搜尋參數必須是物件'],
       ['undefined 參數', undefined, '搜尋參數必須是物件'],
@@ -363,7 +363,7 @@ describe.skip('Search 模組邊界條件測試', () => {
     }, { testName: 'service-history-limit', timeout: 10000 }));
   });
 
-  describe.skip('極端情況壓力測試', () => {
+  describe('極端情況壓力測試', () => {
     it('應該處理極大檔案', withMemoryOptimization(async () => {
       // 建立一個大檔案
       const largeFilePath = join(testDir, 'large-file.txt');

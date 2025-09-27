@@ -40,7 +40,7 @@ function createIndexConfig(config?: Partial<IndexConfig>): IndexConfig {
 
 // 使用真實的 IndexEngine，已在檔案頂部導入
 
-describe.skip('Indexing 模組邊界條件測試 (暫時跳過)', () => {
+describe('Indexing 模組邊界條件測試 (暫時跳過)', () => {
   let testDir: string;
   let validConfig: IndexConfig;
 
@@ -59,7 +59,7 @@ describe.skip('Indexing 模組邊界條件測試 (暫時跳過)', () => {
     }
   });
 
-  describe.skip('IndexEngine 配置驗證測試', () => {
+  describe('IndexEngine 配置驗證測試', () => {
     it.each([
       // [描述, 配置, 預期錯誤訊息]
       ['null 配置', null, '索引配置必須是物件'],
@@ -104,7 +104,7 @@ describe.skip('Indexing 模組邊界條件測試 (暫時跳過)', () => {
     }, { testName: 'config-valid-test' }));
   });
 
-  describe.skip('IndexEngine 索引操作邊界測試', () => {
+  describe('IndexEngine 索引操作邊界測試', () => {
     it.each([
       ['空目錄', async (dir: string) => {
         // 目錄已存在但為空
@@ -216,7 +216,7 @@ describe.skip('Indexing 模組邊界條件測試 (暫時跳過)', () => {
     }, { testName: 'indexing-size-limit' }));
   });
 
-  describe.skip('IndexEngine 查詢邊界測試', () => {
+  describe('IndexEngine 查詢邊界測試', () => {
     let indexedEngine: IndexEngine;
 
     beforeEach(async () => {
@@ -289,7 +289,7 @@ const testConstant = 'value';
     }, { testName: 'query-content-test' }));
   });
 
-  describe.skip('IndexEngine 資源管理測試', () => {
+  describe('IndexEngine 資源管理測試', () => {
     it('應該正確處理 dispose', withMemoryOptimization(async () => {
       const engine = new IndexEngine(validConfig);
       await engine.indexProject();
@@ -319,7 +319,7 @@ const testConstant = 'value';
     }, { testName: 'resource-multiple-dispose' }));
   });
 
-  describe.skip('createIndexConfig 輔助函數測試', () => {
+  describe('createIndexConfig 輔助函數測試', () => {
     it.each([
       ['null 配置', null, '根路徑為必要參數'],
       ['undefined 配置', undefined, '根路徑為必要參數'],

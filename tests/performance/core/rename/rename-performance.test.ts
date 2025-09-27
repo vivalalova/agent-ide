@@ -11,7 +11,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe.skip('重新命名模組效能基準測試', () => {
+describe('重新命名模組效能基準測試', () => {
   let testDir: string;
   let testFiles: Array<{ path: string; content: string; symbols: string[] }>;
 

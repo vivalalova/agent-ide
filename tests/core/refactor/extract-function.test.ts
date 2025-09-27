@@ -421,7 +421,7 @@ ${asyncKeyword}function ${signature.name}(${paramList})${returnAnnotation} {
   }
 }
 
-describe.skip('提取函式重構', () => {
+describe('提取函式重構', () => {
   let refactoring: ExtractFunctionRefactoring;
 
   beforeEach(() => {

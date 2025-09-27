@@ -4,12 +4,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ExtractFunction } from '../../../../src/core/refactor/extract-function';
+import { FunctionExtractor } from '../../../../src/core/refactor/extract-function';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe.skip('重構模組效能基準測試', () => {
+describe('重構模組效能基準測試', () => {
   let testDir: string;
   let testFiles: Array<{ path: string; content: string; size: number }>;
 
@@ -25,7 +25,7 @@ describe.skip('重構模組效能基準測試', () => {
   });
 
   it('函式提取效能測試', async () => {
-    const extractor = new ExtractFunction();
+    const extractor = new FunctionExtractor();
 
     console.log('函式提取效能測試開始...');
     console.log(`測試檔案數量: ${testFiles.length}`);
@@ -168,7 +168,7 @@ describe.skip('重構模組效能基準測試', () => {
     const largeContent = generateLargeFileForRefactor(3000); // 3000行
     await fs.writeFile(largeFilePath, largeContent);
 
-    const extractor = new ExtractFunction();
+    const extractor = new FunctionExtractor();
 
     console.log('大型檔案重構效能測試開始...');
     console.log(`檔案大小: ${(Buffer.byteLength(largeContent) / 1024).toFixed(2)} KB`);
@@ -215,7 +215,7 @@ describe.skip('重構模組效能基準測試', () => {
   });
 
   it('並發重構效能測試', async () => {
-    const extractor = new ExtractFunction();
+    const extractor = new FunctionExtractor();
 
     console.log('並發重構效能測試開始...');
 
@@ -288,7 +288,7 @@ describe.skip('重構模組效能基準測試', () => {
   });
 
   it('記憶體使用量監控', async () => {
-    const extractor = new ExtractFunction();
+    const extractor = new FunctionExtractor();
     const initialMemory = process.memoryUsage();
 
     // 執行多個重構操作

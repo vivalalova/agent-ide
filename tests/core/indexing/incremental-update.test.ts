@@ -137,7 +137,7 @@ class MockTypeScriptParser implements ParserPlugin {
   async dispose(): Promise<void> {}
 }
 
-describe.skip('增量更新功能', () => {
+describe('增量更新功能', () => {
   let indexEngine: IndexEngine;
   let fileWatcher: FileWatcher;
   let config: any;

@@ -12,7 +12,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe.skip('程式碼分析模組效能基準測試', () => {
+describe('程式碼分析模組效能基準測試', () => {
   let testDir: string;
   let testFiles: Array<{ path: string; content: string; size: number }>;
 

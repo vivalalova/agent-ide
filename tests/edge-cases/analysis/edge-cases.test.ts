@@ -80,7 +80,7 @@ class DuplicationDetector {
   }
 }
 
-describe.skip('Analysis 模組邊界條件測試', () => {
+describe('Analysis 模組邊界條件測試', () => {
   let analyzer: ComplexityAnalyzer;
   let qualityMetrics: QualityMetrics;
   let duplicationDetector: DuplicationDetector;
@@ -91,7 +91,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     duplicationDetector = new DuplicationDetector();
   });
 
-  describe.skip('ComplexityAnalyzer 邊界條件測試', () => {
+  describe('ComplexityAnalyzer 邊界條件測試', () => {
     it.each([
       // [描述, 輸入, 期望結果類型, 是否應該拋出錯誤]
       ['空字串輸入', '', 'success', false],
@@ -155,7 +155,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     }, { testName: 'complexity-oversized-rejection' }));
   });
 
-  describe.skip('QualityMetrics 邊界條件測試', () => {
+  describe('QualityMetrics 邊界條件測試', () => {
     it.each([
       ['空字串', '', true, { maintainability: 100, readability: 100 }],
       ['僅空白', '   \t\n  ', true, { maintainability: 100, readability: 100 }],
@@ -195,7 +195,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     }, { testName: 'quality-invalid-test' }));
   });
 
-  describe.skip('DuplicationDetector 邊界條件測試', () => {
+  describe('DuplicationDetector 邊界條件測試', () => {
     it.each([
       ['空陣列', [], true, []],
       ['單一檔案', ['/path/to/file.ts'], true, []],
@@ -255,7 +255,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     }, { testName: 'duplication-invalid-files-test' }));
   });
 
-  describe.skip('極端輸入壓力測試', () => {
+  describe('極端輸入壓力測試', () => {
     it.each([
       [1000, '大量短程式碼'],
       [100, '中量長程式碼'],
@@ -320,7 +320,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     }, { testName: 'deep-nested-structure' }));
   });
 
-  describe.skip('並發異常處理測試', () => {
+  describe('並發異常處理測試', () => {
     it('應該處理並發分析時的異常', withMemoryOptimization(async () => {
       const invalidInputs = [null, undefined, 123, {}, [], true, () => 'test'];
 
@@ -358,7 +358,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
     }, { testName: 'mixed-concurrent-requests' }));
   });
 
-  describe.skip('記憶體壓力測試', () => {
+  describe('記憶體壓力測試', () => {
     it('應該在記憶體壓力下正常運作', withMemoryOptimization(async () => {
       // 創建大量物件來增加記憶體壓力
       const memoryPressure = Array.from({ length: 10000 }, (_, i) => ({
@@ -378,7 +378,7 @@ describe.skip('Analysis 模組邊界條件測試', () => {
   });
 });
 
-describe.skip('Analysis 模組錯誤恢復測試', () => {
+describe('Analysis 模組錯誤恢復測試', () => {
   it.each([
     ['部分損壞的程式碼', 'function broken( { console.log("test");'],
     ['語法錯誤程式碼', 'if (true { console.log("missing closing brace");'],

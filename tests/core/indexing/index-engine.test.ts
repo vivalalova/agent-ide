@@ -66,7 +66,7 @@ vi.mock('glob', () => ({
   })
 }));
 
-describe.skip('IndexEngine', () => {
+describe('IndexEngine', () => {
   let indexEngine: IndexEngine;
   let config: any;
 

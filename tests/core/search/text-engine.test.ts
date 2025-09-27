@@ -8,7 +8,7 @@ import type { TextQuery } from '../../../src/core/search/types.js';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 
-describe.skip('TextSearchEngine', () => {
+describe('TextSearchEngine', () => {
   let engine: TextSearchEngine;
   let testDir: string;
   
