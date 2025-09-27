@@ -49,7 +49,6 @@ export class SearchService {
     const textQuery: TextQuery = {
       type: 'text',
       query: query.pattern,
-      paths: query.paths || [],
       options: query.options || {}
     };
 

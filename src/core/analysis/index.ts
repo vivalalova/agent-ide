@@ -36,11 +36,8 @@ export {
 // 品質指標分析
 export {
   QualityMetricsAnalyzer,
-  MaintainabilityIndexCalculator,
-  HalsteadComplexityCalculator,
+  MaintainabilityIndex,
   CodeSmellDetector,
   type QualityAssessment,
-  type HalsteadMetrics,
-  type CodeSmell,
-  type QualityConfig
+  type CodeSmell
 } from './quality-metrics';

@@ -58,16 +58,8 @@ export class AgentIdeCLI {
           registry.register(tsParser);
         }
       } catch (tsError) {
-        // 如果 TypeScript Parser 載入失敗，嘗試載入測試 Parser
-        if (process.env.NODE_ENV === 'test') {
-          // 動態載入測試 Parser（如果可用）
-          try {
-            const { registerTestParsers } = await import('../../../tests/test-utils/test-parsers');
-            registerTestParsers();
-          } catch (testParserError) {
-            console.debug('Test parser loading failed:', testParserError);
-          }
-        }
+        // 如果 TypeScript Parser 載入失敗，記錄錯誤
+        console.debug('TypeScript parser loading failed:', tsError);
         console.debug('TypeScript Parser initialization warning:', tsError);
       }
     } catch (error) {

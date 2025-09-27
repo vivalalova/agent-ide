@@ -18,13 +18,13 @@ import type {
   SearchOptions,
   IndexProgress,
   BatchIndexOptions
-} from './types';
+} from './types.js';
 import { 
   createFileInfo, 
   createSearchOptions, 
   shouldIndexFile,
   calculateProgress
-} from './types';
+} from './types.js';
 
 import { FileIndex } from './file-index';
 import { SymbolIndex } from './symbol-index';

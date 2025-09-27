@@ -10,8 +10,8 @@ import type {
   IndexConfig, 
   IndexStats,
   IndexUpdateEvent
-} from './types';
-import { UpdateOperation } from './types';
+} from './types.js';
+import { UpdateOperation } from './types.js';
 
 /**
  * 檔案索引類別

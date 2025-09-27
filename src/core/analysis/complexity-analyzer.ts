@@ -291,7 +291,3 @@ export class ComplexityAnalyzer {
     return results;
   }
 }
-
-// 匯出所有分析器
-export { CyclomaticComplexityAnalyzer as CyclomaticComplexityAnalyzer };
-export { CognitiveComplexityAnalyzer as CognitiveComplexityAnalyzer };

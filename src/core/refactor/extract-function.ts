@@ -112,9 +112,7 @@ export class ExtractionAnalyzer {
    */
   private checkExtractionConstraints(ast: ASTNode, selection: Range, issues: string[]): void {
     // 檢查是否包含 return 語句
-    if (this.containsReturn(ast)) {
-      issues.push('選取範圍包含 return 語句，可能影響控制流程');
-    }
+    const hasReturn = this.containsReturn(ast);
 
     // 檢查是否包含 break/continue
     if (this.containsJumpStatement(ast)) {
@@ -129,6 +127,48 @@ export class ExtractionAnalyzer {
     // 檢查巢狀函式定義
     if (this.containsFunctionDefinition(ast)) {
       issues.push('選取範圍包含函式定義');
+    }
+
+    // 檢查外部變數修改
+    if (ast.code) {
+      // 尋找所有變數賦值
+      const assignmentPattern = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=/g;
+      const assignments: string[] = [];
+      let match;
+
+      // 先找出所有宣告的變數
+      const declaredVars = new Set<string>();
+      const declarationPattern = /(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g;
+      while ((match = declarationPattern.exec(ast.code)) !== null) {
+        declaredVars.add(match[1]);
+      }
+
+      // 然後找出所有賦值
+      assignmentPattern.lastIndex = 0; // 重置正則表達式
+      while ((match = assignmentPattern.exec(ast.code)) !== null) {
+        const varName = match[1];
+        // 檢查是否為外部變數（沒有在程式碼中宣告）
+        if (!declaredVars.has(varName) &&
+            !['return', 'function', 'if', 'else', 'for', 'while'].includes(varName)) {
+          // 確認這不是變數宣告的一部分
+          const position = match.index || 0;
+          const beforeAssignment = ast.code.substring(Math.max(0, position - 10), position);
+          if (!/(?:const|let|var)\s+$/.test(beforeAssignment)) {
+            assignments.push(varName);
+          }
+        }
+      }
+
+      // 如果有多個外部變數修改，不能提取
+      if (assignments.length > 1) {
+        issues.push('無法提取：函式有多個返回值');
+      } else if (assignments.length === 1 && hasReturn) {
+        // 如果有外部變數修改又有 return，也不能提取
+        issues.push('無法提取：混合了返回語句和外部變數修改');
+      } else if (hasReturn) {
+        // 只有 return 語句，可能影響控制流程（警告但不阻止）
+        issues.push('選取範圍包含 return 語句，可能影響控制流程');
+      }
     }
   }
 
