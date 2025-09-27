@@ -131,30 +131,30 @@ export class TestMemoryMonitor {
  * 大型測試的記憶體優化 helper
  */
 export function withMemoryOptimization<T>(
-  testFn: () => Promise<T> | T,
+  testFn: (...args: any[]) => Promise<T> | T,
   options: {
     cleanup?: boolean;
     gc?: boolean;
     monitor?: boolean;
     testName?: string;
   } = {}
-): () => Promise<T> {
-  return async () => {
+): (...args: any[]) => Promise<T> {
+  return async (...args: any[]) => {
     const {
       cleanup = true,
       gc = true,
       monitor = false,
       testName = 'unknown'
     } = options;
-    
+
     let memoryMonitor: TestMemoryMonitor | undefined;
-    
+
     if (monitor) {
       memoryMonitor = new TestMemoryMonitor(testName);
     }
-    
+
     try {
-      const result = await testFn();
+      const result = await testFn(...args);
       
       if (cleanup) {
         await TestCleanup.cleanupAll();

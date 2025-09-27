@@ -336,7 +336,7 @@ describe('Dependency 模組邊界條件測試', () => {
       ['單一依賴', 'import { test } from "./test";', 1],
       ['多個依賴', 'import a from "./a";\nimport b from "./b";', 2],
       ['混合依賴類型', 'import a from "./a";\nconst b = require("./b");', 2],
-    ])('應該處理不同檔案內容：%s', withMemoryOptimization(async (description, content, expectedDepCount) => {
+    ])('應該處理不同檔案內容：%s', withMemoryOptimization(async (unusedDescription, content, expectedDepCount) => {
       const testFile = join(testDir, `test-content-${Date.now()}.ts`);
       await fs.writeFile(testFile, content);
 
@@ -408,7 +408,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['物件節點', { name: 'node' }, '節點必須是字串'],
         ['空字串節點', '', '節點不能為空字串'],
         ['僅空白節點', '   \t\n  ', '節點不能為空字串'],
-      ])('應該拒絕無效節點：%s', withMemoryOptimization((description, node, expectedError) => {
+      ])('應該拒絕無效節點：%s', withMemoryOptimization((unusedDescription, node, expectedError) => {
         expect(() => graph.addNode(node as any)).toThrow(expectedError);
       }, { testName: 'graph-node-invalid-test' }));
 
@@ -420,7 +420,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['帶空格節點', 'node with spaces'],
         ['Unicode 節點', '測試節點'],
         ['特殊字符節點', 'node!@#$%^&*()'],
-      ])('應該接受有效節點：%s', withMemoryOptimization((description, node) => {
+      ])('應該接受有效節點：%s', withMemoryOptimization((unusedDescription, node) => {
         expect(() => graph.addNode(node)).not.toThrow();
         expect(graph.getAllNodes()).toContain(node);
         expect(graph.getNodeCount()).toBe(1);
@@ -445,7 +445,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['空字串 from', '', 'valid', '邊的節點不能為空字串'],
         ['空字串 to', 'valid', '', '邊的節點不能為空字串'],
         ['自循環', 'node', 'node', '不能建立自循環邊'],
-      ])('應該拒絕無效邊：%s', withMemoryOptimization((description, from, to, expectedError) => {
+      ])('應該拒絕無效邊：%s', withMemoryOptimization((unusedDescription, from, to, expectedError) => {
         expect(() => graph.addEdge(from as any, to as any)).toThrow(expectedError);
       }, { testName: 'graph-edge-invalid-test' }));
 
@@ -480,7 +480,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['undefined 節點', undefined, '節點必須是字串'],
         ['數字節點', 123, '節點必須是字串'],
         ['不存在的節點', 'nonexistent', '節點不存在'],
-      ])('應該驗證查詢節點：%s', withMemoryOptimization((description, node, expectedError) => {
+      ])('應該驗證查詢節點：%s', withMemoryOptimization((unusedDescription, node, expectedError) => {
         expect(() => graph.getDependencies(node as any)).toThrow(expectedError);
         expect(() => graph.getDependents(node as any)).toThrow(expectedError);
       }, { testName: 'graph-query-invalid-test' }));
@@ -537,7 +537,7 @@ describe('Dependency 模組邊界條件測試', () => {
       ['字串檔案列表', '/path/file.ts', '檔案列表必須是陣列'],
       ['數字檔案列表', 123, '檔案列表必須是陣列'],
       ['物件檔案列表', { files: ['test'] }, '檔案列表必須是陣列'],
-    ])('應該拒絕無效檔案列表：%s', withMemoryOptimization(async (description, files, expectedError) => {
+    ])('應該拒絕無效檔案列表：%s', withMemoryOptimization(async (unusedDescription, files, expectedError) => {
       await expect(detector.detectCycles(files as any)).rejects.toThrow(expectedError);
     }, { testName: 'detector-invalid-list-test' }));
 
@@ -548,7 +548,7 @@ describe('Dependency 模組邊界條件測試', () => {
       ['包含空字串', (files: string[]) => [files[0], ''], '無效的檔案路徑'],
       ['包含僅空白', (files: string[]) => [files[0], '   '], '無效的檔案路徑'],
       ['包含物件', (files: string[]) => [files[0], { path: 'test' }], '無效的檔案路徑'],
-    ])('應該拒絕包含無效路徑的檔案列表：%s', withMemoryOptimization(async (description, getFiles, expectedError) => {
+    ])('應該拒絕包含無效路徑的檔案列表：%s', withMemoryOptimization(async (unusedDescription, getFiles, expectedError) => {
       const files = getFiles(testFiles);
       await expect(detector.detectCycles(files as any)).rejects.toThrow(expectedError);
     }, { testName: 'detector-invalid-paths-test' }));

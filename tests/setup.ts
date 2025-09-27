@@ -8,7 +8,7 @@ import { TestCleanup } from './test-utils/cleanup';
 import { registerTestParsers, cleanupTestParsers } from './test-utils/test-parsers';
 
 // 設定記憶體限制警告（提高閾值以減少不必要的警告）
-const MEMORY_THRESHOLD_MB = 150;
+const MEMORY_THRESHOLD_MB = 300;  // 提高到 300MB 以減少警告
 
 // 設定 EventEmitter 最大監聽器數量，避免記憶體洩漏警告
 const { EventEmitter } = require('events');

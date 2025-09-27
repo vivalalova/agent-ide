@@ -10,14 +10,61 @@ import { SymbolType } from '../../../src/shared/types';
 import { vol } from 'memfs';
 
 // Mock file system
-vi.mock('fs/promises', () => ({
-  readFile: vi.fn(),
-  stat: vi.fn(),
-  readdir: vi.fn(),
-  access: vi.fn()
-}));
+vi.mock('fs/promises', async () => {
+  const { vol } = await import('memfs');
+  return {
+    readFile: vi.fn((path: string) => vol.promises.readFile(path, 'utf-8')),
+    stat: vi.fn((path: string) => vol.promises.stat(path)),
+    readdir: vi.fn((path: string) => vol.promises.readdir(path)),
+    access: vi.fn((path: string) => vol.promises.access(path))
+  };
+});
 
 vi.mock('fs', () => vol);
+
+// Mock glob to work with memfs
+vi.mock('glob', () => ({
+  glob: vi.fn(async (pattern: string) => {
+    const fs = vol as any;
+    const files: string[] = [];
+
+    // Simple glob pattern matching for memfs
+    const walkDir = (dir: string) => {
+      try {
+        const items = fs.readdirSync(dir);
+        for (const item of items) {
+          const fullPath = `${dir}/${item}`;
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            // 排除 node_modules 和 test 目錄
+            if (!item.includes('node_modules') && !item.includes('test')) {
+              walkDir(fullPath);
+            }
+          } else if (stat.isFile()) {
+            // Check file extension
+            if (pattern.includes('*.ts') && fullPath.endsWith('.ts')) {
+              files.push(fullPath);
+            } else if (pattern.includes('*.tsx') && fullPath.endsWith('.tsx')) {
+              files.push(fullPath);
+            } else if (pattern.includes('*.js') && fullPath.endsWith('.js')) {
+              files.push(fullPath);
+            } else if (pattern.includes('*.jsx') && fullPath.endsWith('.jsx')) {
+              files.push(fullPath);
+            }
+          }
+        }
+      } catch (e) {
+        // Directory doesn't exist
+      }
+    };
+
+    // Extract base directory from pattern
+    const baseDir = pattern.split('/**')[0];
+    walkDir(baseDir);
+
+    return files;
+  })
+}));
 
 describe('IndexEngine', () => {
   let indexEngine: IndexEngine;
