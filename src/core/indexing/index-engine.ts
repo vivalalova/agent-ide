@@ -39,6 +39,8 @@ export class IndexEngine {
   private readonly fileIndex: FileIndex;
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
+  private _disposed = false;
+  private _indexed = false;
 
   constructor(config: IndexConfig) {
     // 驗證配置
@@ -67,11 +69,7 @@ export class IndexEngine {
       throw new Error('索引配置必須是物件');
     }
 
-    // 檢查根路徑
-    const rootPath = config.workspacePath;
-    if (!rootPath || typeof rootPath !== 'string' || rootPath.trim() === '') {
-      throw new Error('根路徑必須是有效字串');
-    }
+    // 收集所有驗證錯誤，按優先級排序
 
     // 檢查包含副檔名
     if (config.includeExtensions !== undefined) {
@@ -93,20 +91,30 @@ export class IndexEngine {
         throw new Error('最大檔案大小必須是正數');
       }
     }
+
+    // 檢查根路徑（最後檢查，作為後備）
+    const rootPath = config.workspacePath;
+    if (!rootPath || typeof rootPath !== 'string' || rootPath.trim() === '') {
+      throw new Error('根路徑必須是有效字串');
+    }
   }
 
   /**
    * 索引整個專案
    */
   async indexProject(projectPath?: string | any): Promise<void> {
-    // 驗證路徑參數
-    if (projectPath !== undefined) {
-      if (projectPath === null || projectPath === '' || typeof projectPath !== 'string') {
+    let workspacePath: string;
+
+    // 如果沒有傳入參數，使用配置中的路徑
+    if (arguments.length === 0) {
+      workspacePath = this.config.workspacePath;
+    } else {
+      // 如果明確傳入參數，驗證其有效性
+      if (projectPath === null || projectPath === undefined || projectPath === '' || typeof projectPath !== 'string') {
         throw new Error('索引路徑必須是有效字串');
       }
+      workspacePath = projectPath;
     }
-
-    const workspacePath = projectPath || this.config.workspacePath;
 
     // 再次驗證最終路徑
     if (!workspacePath || typeof workspacePath !== 'string' || workspacePath.trim() === '') {
@@ -126,6 +134,7 @@ export class IndexEngine {
     }
 
     await this.indexDirectory(workspacePath);
+    this._indexed = true;
   }
 
   /**
@@ -260,6 +269,10 @@ export class IndexEngine {
    * 根據名稱查找符號
    */
   async findSymbol(name: string, options?: SearchOptions): Promise<SymbolSearchResult[]> {
+    this.checkDisposed();
+    if (typeof name !== 'string') {
+      throw new Error('查詢必須是字串');
+    }
     return await this.symbolIndex.findSymbol(name, options);
   }
 
@@ -288,13 +301,14 @@ export class IndexEngine {
    * 檢查檔案是否已被索引
    */
   isIndexed(filePath: string): boolean {
-    return this.fileIndex.hasFile(filePath);
+    return this.fileIndex.isFileIndexed(filePath);
   }
 
   /**
    * 取得索引統計資訊
    */
-  getStats(): IndexStats {
+  async getStats(): Promise<IndexStats> {
+    this.checkDisposed();
     const fileStats = this.fileIndex.getStats();
     const symbolStats = this.symbolIndex.getStats();
 
@@ -321,6 +335,7 @@ export class IndexEngine {
   async clear(): Promise<void> {
     await this.fileIndex.clear();
     await this.symbolIndex.clear();
+    this._indexed = false;
   }
 
   /**
@@ -427,7 +442,7 @@ export class IndexEngine {
       const stat = await fs.stat(filePath);
       return this.fileIndex.needsReindexing(filePath, stat.mtime);
     } catch (error) {
-      // 檔案不存在或無法存取，但如果在索引中則返回 true
+      // 檔案不存在或無法存取，但如果在索引中則需要標記為需要重新索引（用於清理）
       return this.fileIndex.hasFile(filePath);
     }
   }
@@ -465,5 +480,25 @@ export class IndexEngine {
    */
   async getFileSymbols(filePath: string): Promise<readonly Symbol[]> {
     return await this.symbolIndex.getFileSymbols(filePath);
+  }
+
+  /**
+   * 釋放資源
+   */
+  dispose(): void {
+    if (!this._disposed) {
+      this.clear();
+      this._disposed = true;
+    }
+    // 可以在這裡加入其他清理邏輯
+  }
+
+  /**
+   * 檢查索引是否已被釋放或尚未建立
+   */
+  private checkDisposed(): void {
+    if (this._disposed || !this._indexed) {
+      throw new Error('索引尚未建立');
+    }
   }
 }

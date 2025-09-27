@@ -79,6 +79,14 @@ export class FileIndex {
   }
 
   /**
+   * 檢查檔案是否已成功索引（存在且已解析）
+   */
+  isFileIndexed(filePath: string): boolean {
+    const entry = this.fileEntries.get(filePath);
+    return entry ? entry.isIndexed : false;
+  }
+
+  /**
    * 取得檔案資訊
    */
   getFileInfo(filePath: string): FileInfo | null {
@@ -293,8 +301,12 @@ export class FileIndex {
     }
 
     // 檢查檔案修改時間
-    const timeDiff = currentModified.getTime() - entry.fileInfo.lastModified.getTime();
-    return timeDiff > 0; // 任何時間差異都表示需要重新索引
+    const currentTime = currentModified.getTime();
+    const indexedTime = entry.fileInfo.lastModified.getTime();
+    const timeDiff = currentTime - indexedTime;
+
+    // 只有當檔案確實變新時才需要重新索引
+    return timeDiff > 0;
   }
 
   /**
