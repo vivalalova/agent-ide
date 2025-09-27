@@ -292,8 +292,9 @@ export class FileIndex {
       return true; // 尚未被索引
     }
 
-    // 檢查檔案修改時間
-    return entry.fileInfo.lastModified < currentModified;
+    // 檢查檔案修改時間 (允許 1 秒的誤差，避免浮點數精度問題)
+    const timeDiff = currentModified.getTime() - entry.fileInfo.lastModified.getTime();
+    return timeDiff > 1000; // 只有相差超過 1 秒才認為需要重新索引
   }
 
   /**

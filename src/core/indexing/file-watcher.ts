@@ -242,14 +242,18 @@ export class FileWatcher extends EventEmitter {
         try {
           // 檢查檔案是否存在
           await fs.access(filePath);
-          
+
           if (this.indexEngine.isIndexed(filePath)) {
             await this.indexEngine.updateFile(filePath);
           } else {
             await this.indexEngine.indexFile(filePath);
           }
         } catch (error) {
-          // 檔案可能在處理過程中被刪除
+          // 如果是 change 事件但檔案不存在，拋出錯誤
+          if (changeType === 'change') {
+            throw new Error(`檔案不存在: ${filePath}`);
+          }
+          // 對於 add 事件，檔案可能在處理過程中被刪除
           if (this.indexEngine.isIndexed(filePath)) {
             await this.indexEngine.removeFile(filePath);
           }

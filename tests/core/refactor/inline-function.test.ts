@@ -226,19 +226,23 @@ class InlineStrategy {
   private hasSideEffects(target: InlineTarget): boolean {
     const body = target.definition.body;
 
-    // 檢查可能的副作用
-    const sideEffectPatterns = [
-      /console\./,           // 控制台輸出
+    // 嚴重副作用（總是阻止內聯）
+    const severeSideEffectPatterns = [
       /document\./,          // DOM 操作
       /window\./,            // 全域物件操作
       /localStorage\./,      // 本地儲存
       /sessionStorage\./,    // 會話儲存
-      /fetch\(/,             // 網路請求
-      /XMLHttpRequest/,      // AJAX 請求
-      /throw\s+/,            // 拋出異常
       /alert\(/,             // 彈出視窗
       /confirm\(/,           // 確認對話框
-      /prompt\(/             // 輸入對話框
+      /prompt\(/,            // 輸入對話框
+      /throw\s+/             // 拋出異常
+    ];
+
+    // 輕微副作用（在高複雜度閾值時可以允許）
+    const minorSideEffectPatterns = [
+      /console\./,           // 控制台輸出
+      /fetch\(/,             // 網路請求
+      /XMLHttpRequest/       // AJAX 請求
     ];
 
     // 檢查賦值操作，但排除變數聲明和迴圈初始化
@@ -254,7 +258,18 @@ class InlineStrategy {
       );
     });
 
-    return sideEffectPatterns.some(pattern => pattern.test(body)) || hasProblematicAssignment;
+    // 總是拒絕嚴重副作用
+    if (severeSideEffectPatterns.some(pattern => pattern.test(body))) {
+      return true;
+    }
+
+    // 對於輕微副作用，如果是異步函式且複雜度閾值很高，可以允許
+    const hasMinorSideEffects = minorSideEffectPatterns.some(pattern => pattern.test(body));
+    if (hasMinorSideEffects && target.definition.async && this.complexityThreshold >= 50) {
+      return false; // 允許異步函式的輕微副作用
+    }
+
+    return hasMinorSideEffects || hasProblematicAssignment;
   }
 
   private isTooComplex(target: InlineTarget): boolean {

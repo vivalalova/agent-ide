@@ -219,7 +219,16 @@ export interface PatternQuery extends SearchQuery {
 /**
  * 搜尋類型枚舉
  */
-export type SearchType = 'text' | 'symbol' | 'pattern' | 'semantic';
+// 搜尋類型枚舉
+export const SearchType = {
+  TEXT: 'text',
+  SYMBOL: 'symbol',
+  PATTERN: 'pattern',
+  SEMANTIC: 'semantic',
+  REGEX: 'regex' // 新增 REGEX 類型
+} as const;
+
+export type SearchType = typeof SearchType[keyof typeof SearchType];
 
 // ===== 特殊搜尋結果 =====
 

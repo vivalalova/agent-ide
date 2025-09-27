@@ -225,7 +225,7 @@ describe('Move 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `move-param-type-${description}` }));
+    }, { testName: 'move-param-type-test' }));
 
     it.each([
       ['空字串來源', '', '/target', '來源路徑不能為空'],
@@ -238,7 +238,7 @@ describe('Move 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `move-param-content-${description}` }));
+    }, { testName: 'move-param-content-test' }));
   });
 
   describe('MoveService 檔案系統測試', () => {
@@ -331,7 +331,7 @@ describe('Move 模組邊界條件測試', () => {
       ['僅空白檔案路徑', '   ', 'content', '檔案路徑不能為空'],
     ])('應該驗證 analyzeImports 參數：%s', withMemoryOptimization(async (description, filePath, content, expectedError) => {
       await expect(importResolver.analyzeImports(filePath as any, content as any)).rejects.toThrow(expectedError);
-    }, { testName: `analyze-imports-param-${description}` }));
+    }, { testName: 'analyze-imports-param-test' }));
 
     it.each([
       ['null 檔案路徑', null, '/old', '/new', '檔案路徑必須是有效字串'],
@@ -343,7 +343,7 @@ describe('Move 模組邊界條件測試', () => {
       ['相同路徑', '/file', '/same', '/same', '新舊路徑不能相同'],
     ])('應該驗證 updateImportPath 參數：%s', withMemoryOptimization(async (description, filePath, oldPath, newPath, expectedError) => {
       await expect(importResolver.updateImportPath(filePath as any, oldPath as any, newPath as any)).rejects.toThrow(expectedError);
-    }, { testName: `update-import-param-${description}` }));
+    }, { testName: 'update-import-param-test' }));
   });
 
   describe('ImportResolver 功能測試', () => {
@@ -367,7 +367,7 @@ describe('Move 模組邊界條件測試', () => {
         expect(['import', 'require'].includes(imp.type)).toBe(true);
         expect(typeof imp.isRelative).toBe('boolean');
       });
-    }, { testName: `analyze-imports-content-${description}` }));
+    }, { testName: 'analyze-imports-content-test' }));
 
     it('應該正確識別相對和絕對路徑', withMemoryOptimization(async () => {
       const content = `

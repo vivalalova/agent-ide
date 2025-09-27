@@ -313,7 +313,7 @@ describe('Dependency 模組邊界條件測試', () => {
     ])('應該拒絕無效檔案路徑：%s', withMemoryOptimization(async (description, filePath, expectedError) => {
       const analyzer = new DependencyAnalyzer();
       await expect(analyzer.analyzeDependencies(filePath as any)).rejects.toThrow(expectedError);
-    }, { testName: `analyzer-invalid-path-${description}` }));
+    }, { testName: 'analyzer-invalid-path-test' }));
 
     it.each([
       ['不存在的檔案', '/nonexistent/file.ts', '檔案不存在'],
@@ -327,7 +327,7 @@ describe('Dependency 模組邊界條件測試', () => {
       }
 
       await expect(analyzer.analyzeDependencies(actualPath)).rejects.toThrow(expectedError);
-    }, { testName: `analyzer-filesystem-${description}` }));
+    }, { testName: 'analyzer-filesystem-test' }));
 
     it.each([
       ['空檔案', '', 0],
@@ -359,7 +359,7 @@ describe('Dependency 模組邊界條件測試', () => {
       });
 
       await fs.unlink(testFile);
-    }, { testName: `analyzer-content-${description}` }));
+    }, { testName: 'analyzer-content-test' }));
 
     it('應該處理大檔案', withMemoryOptimization(async () => {
       const largeContent = Array.from({ length: 1000 }, (_, i) =>
@@ -410,7 +410,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['僅空白節點', '   \t\n  ', '節點不能為空字串'],
       ])('應該拒絕無效節點：%s', withMemoryOptimization((description, node, expectedError) => {
         expect(() => graph.addNode(node as any)).toThrow(expectedError);
-      }, { testName: `graph-node-invalid-${description}` }));
+      }, { testName: 'graph-node-invalid-test' }));
 
       it.each([
         ['單字符節點', 'a'],
@@ -424,7 +424,7 @@ describe('Dependency 模組邊界條件測試', () => {
         expect(() => graph.addNode(node)).not.toThrow();
         expect(graph.getAllNodes()).toContain(node);
         expect(graph.getNodeCount()).toBe(1);
-      }, { testName: `graph-node-valid-${description}` }));
+      }, { testName: 'graph-node-valid-test' }));
 
       it('應該處理重複節點', withMemoryOptimization(() => {
         graph.addNode('test');
@@ -447,7 +447,7 @@ describe('Dependency 模組邊界條件測試', () => {
         ['自循環', 'node', 'node', '不能建立自循環邊'],
       ])('應該拒絕無效邊：%s', withMemoryOptimization((description, from, to, expectedError) => {
         expect(() => graph.addEdge(from as any, to as any)).toThrow(expectedError);
-      }, { testName: `graph-edge-invalid-${description}` }));
+      }, { testName: 'graph-edge-invalid-test' }));
 
       it('應該自動建立節點當添加邊時', withMemoryOptimization(() => {
         graph.addEdge('node1', 'node2');
@@ -483,7 +483,7 @@ describe('Dependency 模組邊界條件測試', () => {
       ])('應該驗證查詢節點：%s', withMemoryOptimization((description, node, expectedError) => {
         expect(() => graph.getDependencies(node as any)).toThrow(expectedError);
         expect(() => graph.getDependents(node as any)).toThrow(expectedError);
-      }, { testName: `graph-query-invalid-${description}` }));
+      }, { testName: 'graph-query-invalid-test' }));
 
       it('應該返回正確的依賴關係', withMemoryOptimization(() => {
         expect(graph.getDependencies('node1')).toEqual(['node2']);
@@ -539,18 +539,19 @@ describe('Dependency 模組邊界條件測試', () => {
       ['物件檔案列表', { files: ['test'] }, '檔案列表必須是陣列'],
     ])('應該拒絕無效檔案列表：%s', withMemoryOptimization(async (description, files, expectedError) => {
       await expect(detector.detectCycles(files as any)).rejects.toThrow(expectedError);
-    }, { testName: `detector-invalid-list-${description}` }));
+    }, { testName: 'detector-invalid-list-test' }));
 
     it.each([
-      ['包含 null', [testFiles[0], null], '無效的檔案路徑'],
-      ['包含 undefined', [testFiles[0], undefined], '無效的檔案路徑'],
-      ['包含數字', [testFiles[0], 123], '無效的檔案路徑'],
-      ['包含空字串', [testFiles[0], ''], '無效的檔案路徑'],
-      ['包含僅空白', [testFiles[0], '   '], '無效的檔案路徑'],
-      ['包含物件', [testFiles[0], { path: 'test' }], '無效的檔案路徑'],
-    ])('應該拒絕包含無效路徑的檔案列表：%s', withMemoryOptimization(async (description, files, expectedError) => {
+      ['包含 null', (files: string[]) => [files[0], null], '無效的檔案路徑'],
+      ['包含 undefined', (files: string[]) => [files[0], undefined], '無效的檔案路徑'],
+      ['包含數字', (files: string[]) => [files[0], 123], '無效的檔案路徑'],
+      ['包含空字串', (files: string[]) => [files[0], ''], '無效的檔案路徑'],
+      ['包含僅空白', (files: string[]) => [files[0], '   '], '無效的檔案路徑'],
+      ['包含物件', (files: string[]) => [files[0], { path: 'test' }], '無效的檔案路徑'],
+    ])('應該拒絕包含無效路徑的檔案列表：%s', withMemoryOptimization(async (description, getFiles, expectedError) => {
+      const files = getFiles(testFiles);
       await expect(detector.detectCycles(files as any)).rejects.toThrow(expectedError);
-    }, { testName: `detector-invalid-paths-${description}` }));
+    }, { testName: 'detector-invalid-paths-test' }));
 
     it('應該處理空檔案列表', withMemoryOptimization(async () => {
       const cycles = await detector.detectCycles([]);

@@ -10,9 +10,12 @@ import { registerTestParsers, cleanupTestParsers } from './test-utils/test-parse
 // 設定記憶體限制警告（提高閾值以減少不必要的警告）
 const MEMORY_THRESHOLD_MB = 150;
 
-// 設定 EventEmitter 最大監聽器數量
+// 設定 EventEmitter 最大監聽器數量，避免記憶體洩漏警告
 const { EventEmitter } = require('events');
-EventEmitter.defaultMaxListeners = 50;
+EventEmitter.defaultMaxListeners = 100;
+
+// 設定 process 的最大監聽器數量
+process.setMaxListeners(100);
 
 // 註冊測試用 Parser 插件
 registerTestParsers();

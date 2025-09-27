@@ -270,7 +270,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['數字根路徑', { rootPath: 123 }, '根路徑必須是有效字串'],
     ])('應該拒絕無效配置：%s', withMemoryOptimization((description, config, expectedError) => {
       expect(() => new IndexEngine(config as any)).toThrow(expectedError);
-    }, { testName: `config-invalid-${description}` }));
+    }, { testName: 'config-invalid-test' }));
 
     it.each([
       ['字串包含副檔名', { rootPath: testDir, includeExtensions: '.ts' }, '包含副檔名必須是陣列'],
@@ -283,7 +283,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['字串最大檔案大小', { rootPath: testDir, maxFileSize: '1MB' }, '最大檔案大小必須是正數'],
     ])('應該拒絕無效選項：%s', withMemoryOptimization((description, config, expectedError) => {
       expect(() => new IndexEngine(config as any)).toThrow(expectedError);
-    }, { testName: `config-options-${description}` }));
+    }, { testName: 'config-options-test' }));
 
     it.each([
       ['基本配置', { rootPath: testDir }],
@@ -298,7 +298,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['多個排除模式', { rootPath: testDir, excludePatterns: ['node_modules', '.git', 'dist'] }],
     ])('應該接受有效配置：%s', withMemoryOptimization((description, config) => {
       expect(() => new IndexEngine(config)).not.toThrow();
-    }, { testName: `config-valid-${description}` }));
+    }, { testName: 'config-valid-test' }));
   });
 
   describe('IndexEngine 索引操作邊界測試', () => {
@@ -337,7 +337,7 @@ describe('Indexing 模組邊界條件測試', () => {
       } else {
         await expect(engine.indexProject()).rejects.toThrow();
       }
-    }, { testName: `indexing-structure-${description}` }));
+    }, { testName: 'indexing-structure-test' }));
 
     it.each([
       ['不存在的路徑', '/nonexistent/path', '路徑不存在'],
@@ -357,7 +357,7 @@ describe('Indexing 模組邊界條件測試', () => {
       }
 
       await expect(engine.indexProject(actualPath as any)).rejects.toThrow(expectedError);
-    }, { testName: `indexing-invalid-path-${description}` }));
+    }, { testName: 'indexing-invalid-path-test' }));
 
     it('應該處理權限被拒絕的目錄', withMemoryOptimization(async () => {
       const restrictedDir = join(testDir, 'restricted');
@@ -387,7 +387,7 @@ describe('Indexing 模組邊界條件測試', () => {
 
       const stats = await engine.getStats();
       expect(stats.totalFiles).toBe(1);
-    }, { testName: `indexing-file-size-${description}` }));
+    }, { testName: 'indexing-file-size-test' }));
 
     it('應該跳過超過大小限制的檔案', withMemoryOptimization(async () => {
       const smallConfig = createIndexConfig({
@@ -449,7 +449,7 @@ const testConstant = 'value';
         await expect(engine.getStats()).resolves.not.toThrow();
         await expect(engine.findSymbol('test')).resolves.not.toThrow();
       }
-    }, { testName: `query-index-state-${description}` }));
+    }, { testName: 'query-index-state-test' }));
 
     it.each([
       ['null 查詢', null, '查詢必須是字串'],
@@ -460,7 +460,7 @@ const testConstant = 'value';
       ['布林查詢', true, '查詢必須是字串'],
     ])('應該驗證查詢參數：%s', withMemoryOptimization(async (description, query, expectedError) => {
       await expect(indexedEngine.findSymbol(query as any)).rejects.toThrow(expectedError);
-    }, { testName: `query-invalid-${description}` }));
+    }, { testName: 'query-invalid-test' }));
 
     it.each([
       ['空字串', '', 0],
@@ -481,7 +481,7 @@ const testConstant = 'value';
         expect(result).toHaveProperty('line');
         expect(result).toHaveProperty('type');
       }
-    }, { testName: `query-content-${description}` }));
+    }, { testName: 'query-content-test' }));
   });
 
   describe('IndexEngine 資源管理測試', () => {
@@ -522,7 +522,7 @@ const testConstant = 'value';
       ['無根路徑配置', { includeExtensions: ['.ts'] }, '根路徑為必要參數'],
     ])('應該驗證必要參數：%s', withMemoryOptimization((description, config, expectedError) => {
       expect(() => createIndexConfig(config as any)).toThrow(expectedError);
-    }, { testName: `create-config-required-${description}` }));
+    }, { testName: 'create-config-required-test' }));
 
     it.each([
       ['基本配置', { rootPath: '/test' }, {
@@ -548,6 +548,6 @@ const testConstant = 'value';
     ])('應該產生正確配置：%s', withMemoryOptimization((description, input, expected) => {
       const result = createIndexConfig(input);
       expect(result).toEqual(expected);
-    }, { testName: `create-config-valid-${description}` }));
+    }, { testName: 'create-config-valid-test' }));
   });
 });

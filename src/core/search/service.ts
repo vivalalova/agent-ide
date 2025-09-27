@@ -42,6 +42,21 @@ export class SearchService {
   // ===== 核心搜尋方法 =====
 
   /**
+   * 通用搜尋方法 - 根據查詢類型分發到對應引擎
+   */
+  async search(query: { pattern: string; type: string; paths?: string[]; options?: any }): Promise<SearchResult> {
+    // 轉換為內部查詢格式
+    const textQuery: TextQuery = {
+      type: 'text',
+      query: query.pattern,
+      paths: query.paths || [],
+      options: query.options || {}
+    };
+
+    return this.searchText(textQuery);
+  }
+
+  /**
    * 執行文字搜尋
    */
   async searchText(query: TextQuery): Promise<SearchResult> {

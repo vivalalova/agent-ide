@@ -180,6 +180,11 @@ export class TextSearchEngine {
       flags += 'm';
     }
 
+    // 確保 pattern 是字符串
+    if (typeof pattern !== 'string') {
+      throw new Error('搜尋模式必須是字符串');
+    }
+
     if (!options.regex) {
       // 轉義正則表達式特殊字符
       pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

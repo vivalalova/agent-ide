@@ -209,7 +209,7 @@ describe('Rename 模組邊界條件測試', () => {
       expect(result.error).toBe(expectedError);
       expect(result.affectedFiles).toEqual([]);
       expect(result.changes).toEqual([]);
-    }, { testName: `rename-param-type-${description}` }));
+    }, { testName: 'rename-param-type-test' }));
 
     it.each([
       ['空字串舊名稱', [], '', 'newName', '舊名稱不能為空'],
@@ -222,7 +222,7 @@ describe('Rename 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `rename-param-content-${description}` }));
+    }, { testName: 'rename-param-content-test' }));
 
     it.each([
       ['數字開頭', 'validName', '1invalidName', '新名稱不是有效識別符'],
@@ -235,7 +235,7 @@ describe('Rename 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `rename-identifier-${description}` }));
+    }, { testName: 'rename-identifier-test' }));
 
     it.each([
       ['單字符', 'a', 'b'],
@@ -249,21 +249,22 @@ describe('Rename 模組邊界條件測試', () => {
 
       expect(result.success).toBe(true);
       expect(result.error).toBeUndefined();
-    }, { testName: `rename-valid-identifier-${description}` }));
+    }, { testName: 'rename-valid-identifier-test' }));
   });
 
   describe('檔案處理邊界測試', () => {
     it.each([
-      ['包含 null 檔案', [testFiles[0], null], '無效的檔案路徑'],
-      ['包含 undefined 檔案', [testFiles[0], undefined], '無效的檔案路徑'],
-      ['包含數字檔案', [testFiles[0], 123], '無效的檔案路徑'],
-      ['包含物件檔案', [testFiles[0], { path: '/test' }], '無效的檔案路徑'],
-    ])('應該驗證檔案路徑：%s', withMemoryOptimization(async (description, files, expectedError) => {
+      ['包含 null 檔案', (files: string[]) => [files[0], null], '無效的檔案路徑'],
+      ['包含 undefined 檔案', (files: string[]) => [files[0], undefined], '無效的檔案路徑'],
+      ['包含數字檔案', (files: string[]) => [files[0], 123], '無效的檔案路徑'],
+      ['包含物件檔案', (files: string[]) => [files[0], { path: '/test' }], '無效的檔案路徑'],
+    ])('應該驗證檔案路徑：%s', withMemoryOptimization(async (description, getFiles, expectedError) => {
+      const files = getFiles(testFiles);
       const result = await renameEngine.rename(files as any, 'oldName', 'newName');
 
       expect(result.success).toBe(false);
       expect(result.error).toContain(expectedError);
-    }, { testName: `rename-file-path-${description}` }));
+    }, { testName: 'rename-file-path-test' }));
 
     it('應該處理不存在的檔案', withMemoryOptimization(async () => {
       const nonExistentFile = join(testDir, 'nonexistent.ts');
@@ -319,7 +320,7 @@ describe('Rename 模組邊界條件測試', () => {
       ['空白符號', [], '   ', '符號不能為空'],
     ])('應該驗證查找參數：%s', withMemoryOptimization(async (description, files, symbol, expectedError) => {
       await expect(renameEngine.findReferences(files as any, symbol as any)).rejects.toThrow(expectedError);
-    }, { testName: `find-ref-param-${description}` }));
+    }, { testName: 'find-ref-param-test' }));
 
     it('應該處理無匹配的符號', withMemoryOptimization(async () => {
       const references = await renameEngine.findReferences(testFiles, 'nonExistentSymbol');

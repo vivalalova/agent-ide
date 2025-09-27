@@ -222,7 +222,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `extract-param-type-${description}` }));
+    }, { testName: 'extract-param-type-test' }));
 
     it.each([
       ['負數起始行', validCode, -1, 1, 'extracted', '起始行號不能為負數'],
@@ -235,7 +235,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `extract-param-range-${description}` }));
+    }, { testName: 'extract-param-range-test' }));
 
     it.each([
       ['數字開頭', validCode, 0, 1, '1invalidName', '函式名稱不是有效識別符'],
@@ -248,7 +248,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `extract-name-format-${description}` }));
+    }, { testName: 'extract-name-format-test' }));
 
     it.each([
       ['單字符', 'a'],
@@ -266,7 +266,7 @@ describe('Refactor 模組邊界條件測試', () => {
       }
 
       expect(result.error).not.toContain('函式名稱');
-    }, { testName: `extract-valid-name-${description}` }));
+    }, { testName: 'extract-valid-name-test' }));
   });
 
   describe('ExtractFunction 程式碼範圍測試', () => {
@@ -286,7 +286,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `extract-range-check-${description}` }));
+    }, { testName: 'extract-range-check-test' }));
 
     it('應該處理空程式碼', withMemoryOptimization(async () => {
       const result = await extractor.extractFunction('', 0, 0, 'extracted');
@@ -344,7 +344,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(expectedError);
-    }, { testName: `inline-param-${description}` }));
+    }, { testName: 'inline-param-test' }));
 
     it.each([
       ['數字開頭', '1invalid'],
@@ -356,7 +356,7 @@ describe('Refactor 模組邊界條件測試', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('變數名稱不是有效識別符');
-    }, { testName: `inline-name-format-${description}` }));
+    }, { testName: 'inline-name-format-test' }));
 
     it('應該處理找不到變數定義的情況', withMemoryOptimization(async () => {
       const code = 'const otherVariable = 1;\nconsole.log(otherVariable);';

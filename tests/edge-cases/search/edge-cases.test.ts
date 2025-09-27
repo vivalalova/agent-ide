@@ -198,7 +198,7 @@ describe('Search 模組邊界條件測試', () => {
         const result = await textEngine.search(files, pattern, options);
         expect(Array.isArray(result)).toBe(true);
       }
-    }, { testName: `search-boundary-${description}` }));
+    }, { testName: 'search-boundary-test' }));
 
     it.each([
       ['null 檔案列表', null, 'test', { type: SearchType.TEXT }, '檔案列表必須是陣列'],
@@ -213,23 +213,25 @@ describe('Search 模組邊界條件測試', () => {
       ['無效搜尋類型', testFiles, 'test', { type: 'invalid' as any }, '無效的搜尋類型'],
     ])('應該拒絕無效輸入：%s', withMemoryOptimization(async (description, files, pattern, options, expectedError) => {
       await expect(textEngine.search(files as any, pattern as any, options as any)).rejects.toThrow(expectedError);
-    }, { testName: `search-invalid-${description}` }));
+    }, { testName: 'search-invalid-test' }));
 
     it.each([
       ['不存在的檔案', ['/nonexistent/file.txt'], 'test', '檔案不存在'],
-      ['混合存在和不存在的檔案', [...testFiles, '/nonexistent/file.txt'], 'test', '檔案不存在'],
-    ])('應該處理檔案系統錯誤：%s', withMemoryOptimization(async (description, files, pattern, expectedError) => {
+      ['混合存在和不存在的檔案', (files: string[]) => [...files, '/nonexistent/file.txt'], 'test', '檔案不存在'],
+    ])('應該處理檔案系統錯誤：%s', withMemoryOptimization(async (description, filesOrGetter, pattern, expectedError) => {
+      const files = typeof filesOrGetter === 'function' ? filesOrGetter(testFiles) : filesOrGetter;
       await expect(textEngine.search(files, pattern, { type: SearchType.TEXT })).rejects.toThrow(expectedError);
-    }, { testName: `search-filesystem-${description}` }));
+    }, { testName: 'search-filesystem-test' }));
 
     it.each([
-      ['包含 null 的檔案列表', [testFiles[0], null, testFiles[1]], 'test', '無效的檔案路徑'],
-      ['包含 undefined 的檔案列表', [testFiles[0], undefined, testFiles[1]], 'test', '無效的檔案路徑'],
-      ['包含數字的檔案列表', [testFiles[0], 123, testFiles[1]], 'test', '無效的檔案路徑'],
-      ['包含物件的檔案列表', [testFiles[0], { path: 'test' }, testFiles[1]], 'test', '無效的檔案路徑'],
-    ])('應該處理無效檔案路徑：%s', withMemoryOptimization(async (description, files, pattern, expectedError) => {
+      ['包含 null 的檔案列表', (files: string[]) => [files[0], null, files[1]], 'test', '無效的檔案路徑'],
+      ['包含 undefined 的檔案列表', (files: string[]) => [files[0], undefined, files[1]], 'test', '無效的檔案路徑'],
+      ['包含數字的檔案列表', (files: string[]) => [files[0], 123, files[1]], 'test', '無效的檔案路徑'],
+      ['包含物件的檔案列表', (files: string[]) => [files[0], { path: 'test' }, files[1]], 'test', '無效的檔案路徑'],
+    ])('應該處理無效檔案路徑：%s', withMemoryOptimization(async (description, getFiles, pattern, expectedError) => {
+      const files = getFiles(testFiles);
       await expect(textEngine.search(files as any, pattern, { type: SearchType.TEXT })).rejects.toThrow(expectedError);
-    }, { testName: `search-invalid-paths-${description}` }));
+    }, { testName: 'search-invalid-paths-test' }));
 
     describe('正則表達式邊界測試', () => {
       it.each([
@@ -246,7 +248,7 @@ describe('Search 模組邊界條件測試', () => {
           const result = await textEngine.search(testFiles, pattern, { type: SearchType.REGEX });
           expect(Array.isArray(result)).toBe(true);
         }
-      }, { testName: `regex-valid-${description}` }));
+      }, { testName: 'regex-valid-test' }));
 
       it.each([
         ['未配對括號', '[abc', '無效的正則表達式'],
@@ -256,7 +258,7 @@ describe('Search 模組邊界條件測試', () => {
         ['無效轉義', '\\', '無效的正則表達式'],
       ])('應該處理無效正則表達式：%s', withMemoryOptimization(async (description, pattern, expectedError) => {
         await expect(textEngine.search(testFiles, pattern, { type: SearchType.REGEX })).rejects.toThrow(expectedError);
-      }, { testName: `regex-invalid-${description}` }));
+      }, { testName: 'regex-invalid-test' }));
     });
   });
 
@@ -268,7 +270,7 @@ describe('Search 模組邊界條件測試', () => {
       ['陣列參數', ['pattern', 'type'], '搜尋參數必須是物件'],
     ])('應該驗證搜尋參數：%s', withMemoryOptimization(async (description, params, expectedError) => {
       await expect(searchService.search(params as any)).rejects.toThrow(expectedError);
-    }, { testName: `service-params-${description}` }));
+    }, { testName: 'service-params-test' }));
 
     it.each([
       [
@@ -293,7 +295,7 @@ describe('Search 模組邊界條件測試', () => {
       ],
     ])('應該驗證必要參數：%s', withMemoryOptimization(async (description, params, expectedError) => {
       await expect(searchService.search(params as any)).rejects.toThrow(expectedError);
-    }, { testName: `service-required-${description}` }));
+    }, { testName: 'service-required-test' }));
 
     it.each([
       [0, '零結果限制'],
@@ -313,7 +315,7 @@ describe('Search 模組邊界條件測試', () => {
       if (maxResults === 0) {
         expect(result.results.length).toBe(0);
       }
-    }, { testName: `service-limit-${description}` }));
+    }, { testName: 'service-limit-test' }));
 
     it('應該處理搜尋歷史', withMemoryOptimization(async () => {
       const patterns = ['test1', 'test2', 'test3', 'test4', 'test5'];
