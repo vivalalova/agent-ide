@@ -209,12 +209,12 @@ export class IndexEngine {
         await this.symbolIndex.addSymbols(symbols, fileInfo);
 
       } catch (parseError) {
-        // 記錄解析錯誤但不阻止索引過程
+        // 記錄解析錯誤
         const errorMessage = parseError instanceof Error ? parseError.message : '未知解析錯誤';
         await this.fileIndex.setFileParseErrors(filePath, [errorMessage]);
-        
-        // 重新拋出錯誤讓調用者知道解析失敗
-        throw parseError;
+
+        // 重新拋出解析錯誤
+        throw new Error(`解析檔案失敗 ${filePath}: ${errorMessage}`);
       }
 
     } catch (error) {
@@ -427,8 +427,8 @@ export class IndexEngine {
       const stat = await fs.stat(filePath);
       return this.fileIndex.needsReindexing(filePath, stat.mtime);
     } catch (error) {
-      // 檔案不存在或無法存取
-      return false;
+      // 檔案不存在或無法存取，但如果在索引中則返回 true
+      return this.fileIndex.hasFile(filePath);
     }
   }
 
