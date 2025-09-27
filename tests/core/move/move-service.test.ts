@@ -171,34 +171,51 @@ describe('MoveService', () => {
 
   describe('Import 路徑更新功能', () => {
     it('應該能更新 import 路徑', async () => {
+      const testRoot = process.cwd();
       const operation: MoveOperation = {
-        source: '/src/components/old.ts',
-        target: '/src/utils/new.ts',
+        source: path.join(testRoot, 'src/components/old.ts'),
+        target: path.join(testRoot, 'src/utils/new.ts'),
         updateImports: true
       };
 
       // Mock filesystem operations
-      mockFs.access
-        .mockResolvedValueOnce() // source exists
-        .mockResolvedValueOnce() // target dir exists
-        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
+      mockFs.access.mockImplementation((filePath: string) => {
+        if (filePath.includes('old.ts')) {
+          return Promise.resolve(); // source exists
+        }
+        if (filePath.includes('utils')) {
+          return Promise.resolve(); // target dir exists
+        }
+        if (filePath.includes('new.ts')) {
+          const error = new Error('ENOENT');
+          (error as any).code = 'ENOENT';
+          throw error; // target doesn't exist
+        }
+        return Promise.resolve();
+      });
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
-      
+
       // Mock project files discovery - 需要正確處理遞迴目錄讀取
       mockFs.readdir.mockImplementation((dir: any) => {
         if (dir.includes('node_modules')) {
           throw new Error('Access denied');
         }
-        if (dir === process.cwd() || dir === '/') {
+        if (dir === testRoot) {
           return Promise.resolve([
             { name: 'src', isDirectory: () => true, isFile: () => false }
           ] as any);
         }
-        if (dir.includes('src')) {
+        if (dir === path.join(testRoot, 'src')) {
           return Promise.resolve([
             { name: 'file1.ts', isDirectory: () => false, isFile: () => true },
-            { name: 'file2.js', isDirectory: () => false, isFile: () => true }
+            { name: 'file2.js', isDirectory: () => false, isFile: () => true },
+            { name: 'components', isDirectory: () => true, isFile: () => false }
+          ] as any);
+        }
+        if (dir.includes('components')) {
+          return Promise.resolve([
+            { name: 'old.ts', isDirectory: () => false, isFile: () => true }
           ] as any);
         }
         return Promise.resolve([]);
