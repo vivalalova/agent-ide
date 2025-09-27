@@ -51,6 +51,19 @@ export class TextSearchEngine {
       // 2. 執行搜尋
       const matches: Match[] = [];
       let totalCount = 0;
+      let regexError: Error | null = null;
+
+      // 確保 query.query 是字符串
+      const searchQuery = typeof query.query === 'string' ? query.query : String(query.query || '');
+
+      // 如果是正則表達式模式，先驗證正則表達式
+      if (options.regex) {
+        try {
+          this.buildSearchRegex(searchQuery, options);
+        } catch (error) {
+          throw error;  // 直接拋出正則表達式錯誤
+        }
+      }
 
       for (const filePath of files) {
         // 檢查是否超時
@@ -64,7 +77,7 @@ export class TextSearchEngine {
         }
 
         try {
-          const fileMatches = await this.searchInFile(filePath, query.query, options);
+          const fileMatches = await this.searchInFile(filePath, searchQuery, options);
           matches.push(...fileMatches.slice(0, options.maxResults - matches.length));
           totalCount += fileMatches.length;
         } catch (error) {
@@ -74,7 +87,7 @@ export class TextSearchEngine {
       }
 
       // 3. 排序結果
-      const sortedMatches = this.sortMatches(matches, query.query);
+      const sortedMatches = this.sortMatches(matches, searchQuery);
 
       const searchTime = Date.now() - startTime;
       const truncated = totalCount > options.maxResults;
@@ -169,6 +182,17 @@ export class TextSearchEngine {
    * 建立搜尋正則表達式
    */
   private buildSearchRegex(query: string, options: Required<TextSearchOptions>): RegExp {
+    // 確保 query 是字符串
+    if (typeof query !== 'string') {
+      throw new Error('搜尋模式必須是字符串');
+    }
+
+    // 處理空字符串
+    if (query === '') {
+      // 空查詢不匹配任何內容
+      return new RegExp('(?!.*)', 'g');
+    }
+
     let pattern = query;
     let flags = 'g'; // 總是使用全域搜尋
 
@@ -178,11 +202,6 @@ export class TextSearchEngine {
 
     if (options.multiline) {
       flags += 'm';
-    }
-
-    // 確保 pattern 是字符串
-    if (typeof pattern !== 'string') {
-      throw new Error('搜尋模式必須是字符串');
     }
 
     if (!options.regex) {
@@ -373,8 +392,7 @@ export class TextSearchEngine {
         '**/.git/**',
         '**/coverage/**',
         '**/*.min.js',
-        '**/*.min.css',
-        ...(options.excludeFiles || [])
+        '**/*.min.css'
       ],
       nodir: true
     });
@@ -395,10 +413,33 @@ export class TextSearchEngine {
 
     // 應用包含過濾器
     if (options.includeFiles && options.includeFiles.length > 0) {
-      const includePatterns = options.includeFiles.map(p => new RegExp(p));
+      const includePatterns = options.includeFiles.map(p => {
+        // 將 glob 模式轉換為正則表達式
+        const regexPattern = p
+          .replace(/\./g, '\\.')  // 轉義點
+          .replace(/\*/g, '.*')     // * 轉換為 .*
+          .replace(/\?/g, '.');     // ? 轉換為 .
+        return new RegExp(regexPattern + '$');  // 加上結束符
+      });
       files = files.filter(file =>
         includePatterns.some(pattern => pattern.test(file))
       );
+    }
+
+    // 應用排除過濾器
+    if (options.excludeFiles && options.excludeFiles.length > 0) {
+      const excludePatterns = options.excludeFiles.map(p => {
+        // 將 glob 模式轉換為正則表達式
+        const regexPattern = p
+          .replace(/\./g, '\\.')  // 轉義點
+          .replace(/\*/g, '.*')     // * 轉換為 .*
+          .replace(/\?/g, '.');     // ? 轉換為 .
+        return new RegExp(regexPattern + '$');  // 加上結束符
+      });
+      files = files.filter(file => {
+        const fileName = path.basename(file);
+        return !excludePatterns.some(pattern => pattern.test(fileName));
+      });
     }
 
     // 限制最大深度
