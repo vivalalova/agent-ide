@@ -15,6 +15,13 @@ export class ImportResolver {
   }
 
   /**
+   * 分析 import 語句 (別名，保持向後相容)
+   */
+  analyzeImports(filePath: string, code: string): ImportStatement[] {
+    return this.parseImportStatements(code, filePath);
+  }
+
+  /**
    * 解析程式碼中的 import 語句
    */
   parseImportStatements(code: string, filePath: string): ImportStatement[] {
