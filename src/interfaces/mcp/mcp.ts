@@ -6,7 +6,7 @@
 import { IndexEngine } from '../../core/indexing/index-engine';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer';
 import { RenameEngine } from '../../core/rename/rename-engine';
-import { ImportResolver } from '../../core/move/import-resolver';
+import { ImportResolver } from '../../core/move/index.js';
 import { createIndexConfig } from '../../core/indexing/types';
 import { ParserRegistry } from '../../infrastructure/parser/registry';
 
