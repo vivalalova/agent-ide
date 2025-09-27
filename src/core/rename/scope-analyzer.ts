@@ -23,15 +23,24 @@ export class ScopeAnalyzer {
     this.currentScopes = [];
     this.symbolTable.clear();
 
+    // 檢查 AST 是否有效
+    if (!ast || !ast.root) {
+      // 返回空的作用域列表
+      return [];
+    }
+
     // 建立全域作用域
     const globalScope: ScopeAnalysisResult = {
       type: 'global',
       symbols: [],
-      range: ast.root.range
+      range: ast.root.range || {
+        start: { line: 1, column: 0 },
+        end: { line: 1, column: 0 }
+      }
     };
 
     this.currentScopes.push(globalScope);
-    
+
     // 遞歸分析 AST 節點
     await this.analyzeNode(ast.root, globalScope);
 
