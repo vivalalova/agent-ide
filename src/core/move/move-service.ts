@@ -169,17 +169,21 @@ export class MoveService {
     async function walkDir(dir: string): Promise<void> {
       try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
-          
-          if (entry.isDirectory()) {
+
+          // 處理 mock 和真實 entry 的不同
+          const isDir = typeof entry.isDirectory === 'function' ? entry.isDirectory() : false;
+          const isFile = typeof entry.isFile === 'function' ? entry.isFile() : !isDir;
+
+          if (isDir) {
             // 跳過排除的目錄
             if (excludePatterns.some(pattern => entry.name.includes(pattern))) {
               continue;
             }
             await walkDir(fullPath);
-          } else if (entry.isFile()) {
+          } else if (isFile) {
             // 只包含支援的副檔名
             if (allowedExtensions.some(ext => entry.name.endsWith(ext))) {
               files.push(fullPath);
@@ -230,14 +234,7 @@ export class MoveService {
       const fromDir = path.dirname(fromFile);
       let resolved = path.resolve(fromDir, importPath);
 
-      // 如果沒有副檔名，嘗試加上常見的副檔名
-      if (!path.extname(resolved)) {
-        for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
-          const withExt = resolved + ext;
-          // 直接返回可能的路徑（在 pathsMatch 中會處理）
-          return resolved;
-        }
-      }
+      // 如果沒有副檔名，直接返回（在 pathsMatch 中會處理副檔名匹配）
       return resolved;
     }
 
