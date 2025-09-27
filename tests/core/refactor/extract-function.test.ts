@@ -127,7 +127,13 @@ class ExtractFunctionRefactoring {
 
     // 模擬變數分析
     const variableMatches = selection.code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
-    const uniqueVars = [...new Set(variableMatches)];
+
+    // 排除屬性名稱：如果變數前面有 '.'，則它是屬性名而不是變數名
+    const uniqueVars = [...new Set(variableMatches)].filter(varName => {
+      // 檢查是否是屬性名稱（前面有點）
+      const propertyPattern = new RegExp(`\\.\\s*${varName}\\b`);
+      return !propertyPattern.test(selection.code);
+    });
 
     if (DEBUG) console.log(`=== Analyzing selection for variables ===`);
     if (DEBUG) console.log(`Selection code: "${selection.code}"`);
@@ -140,7 +146,8 @@ class ExtractFunctionRefactoring {
 
         // 檢查是否是修改後立即返回的變數（應視為內部變數）
         // 更精確的檢查：只有直接返回變數的情況才視為內部變數
-        const assignmentPattern = new RegExp(`\\b${varName}\\s*=`);
+        // 改進：排除箭頭函數參數 (varName =>)
+        const assignmentPattern = new RegExp(`\\b${varName}\\s*=(?!>)`);
         const directReturnPattern = new RegExp(`return\\s+${varName}\\s*;?\\s*$`, 'm');
         const isModifiedAndReturned = assignmentPattern.test(selection.code) &&
                                      directReturnPattern.test(selection.code);
@@ -251,16 +258,25 @@ class ExtractFunctionRefactoring {
     const hasMultipleExternalModificationsWithReturn = modifiedExternalVars.length > 1 && analysis.hasReturn;
 
     // 判斷是否允許多外部變數修改的情況
-    // 允許的條件：簡單的連續修改 + 單一返回語句 + 非條件性修改
+    // 允許的條件：簡單的連續修改 + 單一返回語句 + 非條件性修改 + 返回值包含修改的變數
+    const objectReturnPattern = /return\s+\{([^}]+)\}/;
+    const objectReturnMatch = objectReturnPattern.exec(code || '');
+    const returnedObjects = objectReturnMatch ? objectReturnMatch[1].split(',').map(s => s.trim()) : [];
+    const returnsModifiedVars = modifiedExternalVars.some(v =>
+      returnedObjects.some(obj => obj.includes(v.name))
+    );
+
     const isValidMultipleModification = hasMultipleExternalModificationsWithReturn &&
                                        !hasConditionalModification &&
                                        !hasMultipleReturns &&
-                                       returnCount === 1; // 只有一個return語句
+                                       returnCount === 1 && // 只有一個return語句
+                                       returnsModifiedVars; // 返回值必須包含修改的變數
 
     // 特殊檢查：對於測試案例"應該拒絕有多個外部變數修改的程式碼"
     // 該測試期望拒絕 var1 = ..., var2 = ... 這種模式
-    const hasMultipleDirectAssignments = modifiedExternalVars.filter(v => {
-      const assignmentPattern = new RegExp(`\\b${v.name}\\s*=`);
+    // 改進：排除箭頭函數參數，且只有在 isValidMultipleModification 為 false 時才檢查
+    const hasMultipleDirectAssignments = !isValidMultipleModification && modifiedExternalVars.filter(v => {
+      const assignmentPattern = new RegExp(`\\b${v.name}\\s*=(?!>)`);
       return assignmentPattern.test(code);
     }).length > 1;
 

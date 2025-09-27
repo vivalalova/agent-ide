@@ -15,21 +15,16 @@ import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range 
 import type { CodeEdit, Definition, Usage, ValidationResult } from '../../../src/infrastructure/parser/types';
 
 // Mock file system
-vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn(),
-  stat: vi.fn(),
-  readdir: vi.fn(),
-  access: vi.fn(),
-  watch: vi.fn()
-}));
-
-vi.mock('fs/promises', () => ({
-  readFile: vi.fn(),
-  stat: vi.fn(),
-  readdir: vi.fn(),
-  access: vi.fn(),
-  watch: vi.fn()
-}));
+vi.mock('fs/promises', async () => {
+  const { vol } = await import('memfs');
+  return {
+    readFile: vi.fn((path: string) => vol.promises.readFile(path, 'utf-8')),
+    stat: vi.fn((path: string) => vol.promises.stat(path)),
+    readdir: vi.fn((path: string) => vol.promises.readdir(path)),
+    access: vi.fn((path: string) => vol.promises.access(path)),
+    watch: vi.fn()
+  };
+});
 
 // Mock fs with watch support
 vi.mock('fs', () => {
@@ -149,7 +144,7 @@ describe('增量更新功能', () => {
     // Setup mocked file system
     (fs.stat as any).mockImplementation(async (path: string) => {
       if (path === '/test/workspace') {
-        return { 
+        return {
           isDirectory: () => true,
           isFile: () => false,
           mtime: new Date(),
@@ -157,11 +152,13 @@ describe('增量更新功能', () => {
         };
       }
       if (vol.existsSync(path)) {
-        return { 
-          isDirectory: () => false, 
+        // 從 memfs 獲取實際的檔案統計資訊，包含正確的 mtime
+        const stat = vol.statSync(path);
+        return {
+          isDirectory: () => false,
           isFile: () => true,
-          mtime: new Date(),
-          size: (vol.readFileSync(path, 'utf8') as string).length
+          mtime: stat.mtime,
+          size: stat.size
         };
       }
       throw new Error(`ENOENT: no such file or directory '${path}'`);
@@ -421,19 +418,24 @@ describe('增量更新功能', () => {
 
     it('應該能檢查檔案是否需要重新索引', async () => {
       const originalTime = new Date('2023-01-01T00:00:00Z');
+
+      // 創建檔案
       vol.fromJSON({
         '/test/workspace/test.ts': 'export function test() {}'
-      }, '/test/workspace', { mtime: originalTime });
-      
+      });
+
+      // 手動設置檔案時間
+      vol.utimesSync('/test/workspace/test.ts', originalTime, originalTime);
+
       await indexEngine.indexProject('/test/workspace');
-      
+
       // 檔案沒有變更，不需要重新索引
       expect(await indexEngine.needsReindexing('/test/workspace/test.ts')).toBe(false);
-      
+
       // 修改檔案時間
       const newTime = new Date('2023-01-02T00:00:00Z');
       vol.utimesSync('/test/workspace/test.ts', newTime, newTime);
-      
+
       // 現在需要重新索引
       expect(await indexEngine.needsReindexing('/test/workspace/test.ts')).toBe(true);
     });

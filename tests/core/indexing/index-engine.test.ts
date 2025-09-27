@@ -8,6 +8,9 @@ import { IndexEngine } from '../../../src/core/indexing/index-engine';
 import { createIndexConfig, createSearchOptions } from '../../../src/core/indexing/types';
 import { SymbolType } from '../../../src/shared/types';
 import { vol } from 'memfs';
+import { ParserRegistry } from '../../../src/infrastructure/parser/registry';
+import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range } from '../../../src/shared/types';
+import type { CodeEdit, Definition, Usage, ValidationResult } from '../../../src/infrastructure/parser/types';
 
 // Mock file system
 vi.mock('fs/promises', async () => {
@@ -66,6 +69,119 @@ vi.mock('glob', () => ({
   })
 }));
 
+// Mock TypeScript Parser Plugin
+class MockTypeScriptParser implements ParserPlugin {
+  readonly name = 'typescript';
+  readonly version = '1.0.0';
+  readonly supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
+  readonly supportedLanguages = ['typescript', 'javascript'] as const;
+
+  async parse(code: string, filePath: string): Promise<AST> {
+    // 檢查語法錯誤，模擬解析失敗
+    if (code.includes('export function broken(') && !code.includes(') {')) {
+      throw new Error(`語法錯誤：函數定義不完整`);
+    }
+
+    const root = {
+      type: 'Program',
+      children: [],
+      range: { start: 0, end: code.length },
+      loc: { start: { line: 1, column: 0 }, end: { line: 1, column: code.length } }
+    };
+
+    return {
+      type: 'Program',
+      root,
+      sourceFile: filePath,
+      metadata: { version: '1.0' }
+    };
+  }
+
+  async extractSymbols(ast: AST): Promise<Symbol[]> {
+    const symbols: Symbol[] = [];
+    const sourceCode = vol.readFileSync(ast.sourceFile, 'utf8') as string;
+
+    // Extract function declarations
+    const functionMatches = sourceCode.matchAll(/(?:export\s+)?function\s+(\w+)/g);
+    for (const match of functionMatches) {
+      symbols.push({
+        name: match[1],
+        type: 'function' as const,
+        position: {
+          start: match.index || 0,
+          end: (match.index || 0) + match[0].length,
+          line: 1,
+          column: match.index || 0
+        },
+        scope: 'global',
+        modifiers: match[0].includes('export') ? ['export'] : []
+      });
+    }
+
+    // Extract class declarations
+    const classMatches = sourceCode.matchAll(/(?:export\s+)?class\s+(\w+)/g);
+    for (const match of classMatches) {
+      symbols.push({
+        name: match[1],
+        type: 'class' as const,
+        position: {
+          start: match.index || 0,
+          end: (match.index || 0) + match[0].length,
+          line: 1,
+          column: match.index || 0
+        },
+        scope: 'global',
+        modifiers: match[0].includes('export') ? ['export'] : []
+      });
+    }
+
+    // Extract interface declarations (TypeScript)
+    const interfaceMatches = sourceCode.matchAll(/(?:export\s+)?interface\s+(\w+)/g);
+    for (const match of interfaceMatches) {
+      symbols.push({
+        name: match[1],
+        type: 'interface' as const,
+        position: {
+          start: match.index || 0,
+          end: (match.index || 0) + match[0].length,
+          line: 1,
+          column: match.index || 0
+        },
+        scope: 'global',
+        modifiers: match[0].includes('export') ? ['export'] : []
+      });
+    }
+
+    // Extract const declarations
+    const constMatches = sourceCode.matchAll(/(?:export\s+)?const\s+(\w+)\s*=/g);
+    for (const match of constMatches) {
+      symbols.push({
+        name: match[1],
+        type: 'variable' as const,
+        position: {
+          start: match.index || 0,
+          end: (match.index || 0) + match[0].length,
+          line: 1,
+          column: match.index || 0
+        },
+        scope: 'global',
+        modifiers: match[0].includes('export') ? ['export'] : []
+      });
+    }
+
+    return symbols;
+  }
+
+  async findReferences(): Promise<Reference[]> { return []; }
+  async extractDependencies(): Promise<Dependency[]> { return []; }
+  async rename(): Promise<CodeEdit[]> { return []; }
+  async extractFunction(): Promise<CodeEdit[]> { return []; }
+  async findDefinition(): Promise<Definition | null> { return null; }
+  async findUsages(): Promise<Usage[]> { return []; }
+  async validate(): Promise<ValidationResult> { return { valid: true, errors: [], warnings: [] }; }
+  async dispose(): Promise<void> {}
+}
+
 describe('IndexEngine', () => {
   let indexEngine: IndexEngine;
   let config: any;
@@ -73,12 +189,18 @@ describe('IndexEngine', () => {
   beforeEach(async () => {
     // 清理 mock file system
     vol.reset();
-    
+
+    // 重設 ParserRegistry 並註冊 mock parser
+    ParserRegistry.resetInstance();
+    const registry = ParserRegistry.getInstance();
+    const mockParser = new MockTypeScriptParser();
+    registry.register(mockParser);
+
     config = createIndexConfig('/test/workspace', {
       includeExtensions: ['.ts', '.js'],
       excludePatterns: ['node_modules/**', '*.test.ts']
     });
-    
+
     indexEngine = new IndexEngine(config);
   });
 
@@ -376,7 +498,7 @@ describe('IndexEngine', () => {
       await indexEngine.indexProject('/test/workspace');
 
       const stats = indexEngine.getStats();
-      
+
       expect(stats.totalFiles).toBe(2);
       expect(stats.indexedFiles).toBe(2);
       expect(stats.totalSymbols).toBe(5); // 2 functions + 1 class + 1 interface + 1 variable

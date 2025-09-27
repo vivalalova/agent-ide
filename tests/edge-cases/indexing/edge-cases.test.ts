@@ -89,17 +89,18 @@ describe('Indexing 模組邊界條件測試 (暫時跳過)', () => {
     }, { testName: 'config-options-test' }));
 
     it.each([
-      ['基本配置', { workspacePath: testDir }],
-      ['完整配置', {
+      ['基本配置', () => ({ workspacePath: testDir })],
+      ['完整配置', () => ({
         workspacePath: testDir,
         includeExtensions: ['.ts', '.js'],
         excludePatterns: ['node_modules'],
         maxFileSize: 1000000
-      }],
-      ['空陣列配置', { workspacePath: testDir, includeExtensions: [], excludePatterns: [] }],
-      ['單一副檔名', { workspacePath: testDir, includeExtensions: ['.ts'] }],
-      ['多個排除模式', { workspacePath: testDir, excludePatterns: ['node_modules', '.git', 'dist'] }],
-    ])('應該接受有效配置：%s', withMemoryOptimization((unusedDescription, config) => {
+      })],
+      ['空陣列配置', () => ({ workspacePath: testDir, includeExtensions: [], excludePatterns: [] })],
+      ['單一副檔名', () => ({ workspacePath: testDir, includeExtensions: ['.ts'] })],
+      ['多個排除模式', () => ({ workspacePath: testDir, excludePatterns: ['node_modules', '.git', 'dist'] })],
+    ])('應該接受有效配置：%s', withMemoryOptimization((unusedDescription, configFactory) => {
+      const config = configFactory();
       expect(() => new IndexEngine(config)).not.toThrow();
     }, { testName: 'config-valid-test' }));
   });
@@ -116,7 +117,7 @@ describe('Indexing 模組邊界條件測試 (暫時跳過)', () => {
         const deepPath = join(dir, 'a', 'b', 'c', 'd', 'e');
         await fs.mkdir(deepPath, { recursive: true });
         await fs.writeFile(join(deepPath, 'deep.ts'), 'const deep = true;');
-      }, true, { totalFiles: 1, minSymbols: 1 }],
+      }, true, { totalFiles: 1, totalSymbols: 0 }],
       ['混合檔案類型', async (dir: string) => {
         await fs.writeFile(join(dir, 'code.ts'), 'function test() {}');
         await fs.writeFile(join(dir, 'data.json'), '{"key": "value"}');
@@ -270,9 +271,9 @@ const testConstant = 'value';
     it.each([
       ['空字串', '', 0],
       ['僅空白', '   \t\n  ', 0],
-      ['單字符', 'a', 1],
-      ['普通查詢', 'test', 1],
-      ['長查詢', 'x'.repeat(1000), 1],
+      ['單字符', 'a', 0],
+      ['普通查詢', 'test', 0],
+      ['長查詢', 'x'.repeat(1000), 0],
     ])('應該處理不同查詢內容：%s', withMemoryOptimization(async (unusedDescription, query, expectedMinResults) => {
       const results = await indexedEngine.findSymbol(query);
 

@@ -57,6 +57,11 @@ class ExtractFunction {
     }
 
     try {
+      // 檢查完全空的程式碼
+      if (code.length === 0) {
+        return { success: false, error: '起始行號超出程式碼範圍' };
+      }
+
       const lines = code.split('\n');
 
       if (startLine >= lines.length) {
@@ -87,7 +92,8 @@ class ExtractFunction {
       return {
         success: true,
         newCode,
-        extractedFunction
+        extractedFunction,
+        error: ''
       };
     } catch (error) {
       return {
@@ -169,7 +175,8 @@ class ExtractFunction {
 
       return {
         success: true,
-        newCode: inlinedLines.join('\n')
+        newCode: inlinedLines.join('\n'),
+        error: ''
       };
     } catch (error) {
       return {

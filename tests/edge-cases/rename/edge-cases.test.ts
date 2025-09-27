@@ -91,15 +91,44 @@ class RenameEngine {
       const changes: RenameResult['changes'] = [];
 
       lines.forEach((line, index) => {
-        const regex = new RegExp(`\\b${this.escapeRegex(oldName)}\\b`, 'g');
-        if (regex.test(line)) {
-          const newLine = line.replace(regex, newName);
-          changes.push({
-            file: filePath,
-            line: index + 1,
-            oldText: line,
-            newText: newLine
-          });
+        const escapedName = this.escapeRegex(oldName);
+
+        // 簡單地尋找所有出現的地方
+        const matches = [];
+        let match;
+        const simpleRegex = new RegExp(escapedName, 'g');
+
+        while ((match = simpleRegex.exec(line)) !== null) {
+          // 檢查前後字符是否為標識符字符
+          const beforeChar = match.index > 0 ? line[match.index - 1] : ' ';
+          const afterChar = match.index + match[0].length < line.length ? line[match.index + match[0].length] : ' ';
+
+          const isWordBoundary =
+            !/[a-zA-Z0-9_$]/.test(beforeChar) &&
+            !/[a-zA-Z0-9_$]/.test(afterChar);
+
+          if (isWordBoundary) {
+            matches.push(match);
+          }
+        }
+
+        if (matches.length > 0) {
+          // 從後往前替換，避免位置偏移
+          let newLine = line;
+          for (let i = matches.length - 1; i >= 0; i--) {
+            const m = matches[i];
+            newLine = newLine.substring(0, m.index) + newName + newLine.substring(m.index + m[0].length);
+          }
+
+          // 為每個匹配創建一個變更記錄
+          for (const match of matches) {
+            changes.push({
+              file: filePath,
+              line: index + 1,
+              oldText: line,
+              newText: newLine
+            });
+          }
         }
       });
 

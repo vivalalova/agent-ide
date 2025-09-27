@@ -114,10 +114,22 @@ class ImportResolver {
     const lines = content.split('\n');
 
     for (const line of lines) {
-      // 匹配 import 語句
-      const importMatch = line.match(/import\s+.*\s+from\s+['"]([^'"]+)['"]/);
-      if (importMatch) {
-        const importPath = importMatch[1];
+      // 匹配有 from 的 import 語句
+      const importFromMatch = line.match(/import\s+.*\s+from\s+['"]([^'"]+)['"]/);
+      if (importFromMatch) {
+        const importPath = importFromMatch[1];
+        imports.push({
+          path: importPath,
+          type: 'import',
+          isRelative: importPath.startsWith('.') || importPath.startsWith('/'),
+          resolvedPath: this.resolvePath(filePath, importPath)
+        });
+      }
+
+      // 匹配 side effect import 語句 (沒有 from)
+      const sideEffectMatch = line.match(/import\s+['"]([^'"]+)['"]/);
+      if (sideEffectMatch && !importFromMatch) { // 確保不是已經被上面匹配的語句
+        const importPath = sideEffectMatch[1];
         imports.push({
           path: importPath,
           type: 'import',
@@ -198,7 +210,12 @@ describe('Move 模組邊界條件測試', () => {
     await fs.mkdir(testDir, { recursive: true });
 
     moveService = new MoveService();
-    importResolver = new ImportResolver();
+    importResolver = new ImportResolver({
+      supportedExtensions: ['.ts', '.js', '.tsx', '.jsx'],
+      pathAliases: {},
+      baseUrl: '/',
+      includeNodeModules: false
+    });
   });
 
   afterEach(async () => {
@@ -395,14 +412,12 @@ import module from "external-module";
     }, { testName: 'analyze-imports-relative-absolute' }));
 
     it('應該處理複雜的 import 語法', withMemoryOptimization(async () => {
-      const content = `
-import defaultExport from './default';
+      const content = `import defaultExport from './default';
 import { named1, named2 } from './named';
 import * as namespace from './namespace';
 import defaultExport, { named } from './mixed';
 import './side-effect';
-const dynamic = require('./dynamic');
-      `.trim();
+const dynamic = require('./dynamic');`;
 
       const imports = await importResolver.analyzeImports('/test/file.ts', content);
 
