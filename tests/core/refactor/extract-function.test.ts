@@ -235,9 +235,17 @@ class ExtractFunctionRefactoring {
     const hasMultipleReturns = returnCount > 1;
 
     // 檢查條件性修改（if語句中修改外部變數）
+    // 但如果只修改一個變數且返回它，是合法的
+    const modifiedVarNames = modifiedExternalVars.map(v => v.name);
+    const returnPattern = /return\s+([^;\s]+)/;
+    const returnMatch = returnPattern.exec(code || '');
+    const returnedVar = returnMatch ? returnMatch[1] : null;
+    const isReturningModifiedVar = modifiedExternalVars.length === 1 &&
+                                   returnedVar === modifiedExternalVars[0]?.name;
     const hasConditionalModification = code?.includes('if') &&
                                       modifiedExternalVars.length > 0 &&
-                                      analysis.hasReturn;
+                                      analysis.hasReturn &&
+                                      !isReturningModifiedVar; // 排除返回同一個變數的情況
 
     // 檢查是否同時修改多個外部變數且有返回值（但允許特定模式）
     const hasMultipleExternalModificationsWithReturn = modifiedExternalVars.length > 1 && analysis.hasReturn;
@@ -272,6 +280,11 @@ class ExtractFunctionRefactoring {
     }
 
     if (hasMultipleExternalModificationsWithReturn && !isValidMultipleModification) {
+      errors.push('無法提取：函式有多個返回值');
+    }
+
+    // 特殊檢查：如果有多個不同的外部變數被修改（無論是否有 return）
+    if (hasMultipleDirectAssignments) {
       errors.push('無法提取：函式有多個返回值');
     }
 
