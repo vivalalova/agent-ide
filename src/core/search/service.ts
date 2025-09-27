@@ -130,9 +130,12 @@ export class SearchService {
         
         results.push(result);
       } catch (error) {
-        console.error(`批次搜尋失敗:`, error);
+        // 只在 debug 模式下輸出錯誤
+        if (process.env.NODE_ENV !== 'test') {
+          console.error(`批次搜尋失敗:`, error);
+        }
         allSucceeded = false;
-        
+
         // 添加錯誤結果
         results.push({
           matches: [],
