@@ -145,6 +145,7 @@ export class ExtractionAnalyzer {
 
       // 然後找出所有賦值
       assignmentPattern.lastIndex = 0; // 重置正則表達式
+      const uniqueAssignments = new Set<string>();
       while ((match = assignmentPattern.exec(ast.code)) !== null) {
         const varName = match[1];
         // 檢查是否為外部變數（沒有在程式碼中宣告）
@@ -154,20 +155,23 @@ export class ExtractionAnalyzer {
           const position = match.index || 0;
           const beforeAssignment = ast.code.substring(Math.max(0, position - 10), position);
           if (!/(?:const|let|var)\s+$/.test(beforeAssignment)) {
-            assignments.push(varName);
+            uniqueAssignments.add(varName); // 使用 Set 來避免重複
           }
         }
       }
 
-      // 如果有多個外部變數修改，不能提取
-      if (assignments.length > 1) {
+      // 如果有多個不同的外部變數修改，不能提取
+      const uniqueCount = uniqueAssignments.size;
+      if (uniqueCount > 1) {
         issues.push('無法提取：函式有多個返回值');
-      } else if (assignments.length === 1 && hasReturn) {
-        // 如果有外部變數修改又有 return，也不能提取
-        issues.push('無法提取：混合了返回語句和外部變數修改');
-      } else if (hasReturn) {
-        // 只有 return 語句，可能影響控制流程（警告但不阻止）
-        issues.push('選取範圍包含 return 語句，可能影響控制流程');
+      } else if (uniqueCount === 1 && hasReturn) {
+        // 特殊情況：如果外部變數最後被 return，是允許的
+        const assignedVar = Array.from(uniqueAssignments)[0];
+        const returnPattern = new RegExp(`return\\s+${assignedVar}\\s*;?\\s*$`);
+        if (!returnPattern.test(ast.code)) {
+          // 只有當 return 的不是同一個變數時才拒絕
+          issues.push('無法提取：混合了返回語句和外部變數修改');
+        }
       }
     }
   }
@@ -329,6 +333,40 @@ export class ExtractionAnalyzer {
  */
 export class FunctionExtractor {
   private analyzer = new ExtractionAnalyzer();
+
+  /**
+   * 提取函式 (別名，保持向後相容)
+   * 支援兩種呼叫方式：
+   * 1. extractFunction(code, selection, config)
+   * 2. extractFunction(code, start, end, name) - 舊格式
+   */
+  async extractFunction(
+    code: string,
+    selectionOrStart: Range | number,
+    configOrEnd?: ExtractConfig | number,
+    nameOrUndefined?: string
+  ): Promise<ExtractionResult> {
+    // 檢查是否為舊格式呼叫 (4 個參數)
+    if (typeof selectionOrStart === 'number' && typeof configOrEnd === 'number') {
+      // 將行號轉換為 Range 格式
+      const startLine = selectionOrStart;
+      const endLine = configOrEnd;
+      const selection: Range = {
+        start: { line: startLine, column: 0 },
+        end: { line: endLine, column: 0 }
+      };
+      const config: ExtractConfig = {
+        functionName: nameOrUndefined,
+        generateComments: true,
+        preserveFormatting: true,
+        validateExtraction: true
+      };
+      return this.extract(code, selection, config);
+    }
+
+    // 新格式呼叫
+    return this.extract(code, selectionOrStart as Range, configOrEnd as ExtractConfig);
+  }
 
   /**
    * 提取函式
