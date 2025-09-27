@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest",
+    "test": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run",
     "test:watch": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest --watch",
     "test:run": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run",
     "test:memory": "node --expose-gc --max-old-space-size=2048 --trace-gc node_modules/.bin/vitest run --reporter=verbose",
