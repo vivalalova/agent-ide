@@ -51,17 +51,38 @@ export class RenameEngine {
   ): Promise<Array<{ filePath: string; line: number; column: number; text: string }>> {
     const references: Array<{ filePath: string; line: number; column: number; text: string }> = [];
 
-    // 簡化實作：為每個檔案產生模擬引用
-    for (const filePath of filePaths) {
-      // 模擬找到一些引用
-      if (Math.random() > 0.5) {
-        references.push({
-          filePath,
-          line: Math.floor(Math.random() * 100) + 1,
-          column: Math.floor(Math.random() * 80) + 1,
-          text: symbol.name
-        });
+    // 使用簡單的文字匹配來查找引用
+    try {
+      for (const filePath of filePaths) {
+        try {
+          // 使用 fs 模組讀取檔案內容
+          const fs = await import('fs/promises');
+          const content = await fs.readFile(filePath, 'utf-8');
+          const lines = content.split('\n');
+
+          // 查找所有包含符號名稱的行
+          lines.forEach((line, lineIndex) => {
+            // 使用單詞邊界進行精確匹配
+            const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+            let match;
+
+            while ((match = regex.exec(line)) !== null) {
+              references.push({
+                filePath,
+                line: lineIndex + 1,
+                column: match.index + 1,
+                text: line.trim()
+              });
+            }
+          });
+        } catch (error) {
+          // 忽略無法讀取的檔案
+          console.debug(`無法讀取檔案 ${filePath}:`, error);
+        }
       }
+    } catch (error) {
+      // 備援錯誤處理
+      console.error('查找引用時發生錯誤:', error);
     }
 
     return references;
