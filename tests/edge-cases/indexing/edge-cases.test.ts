@@ -18,6 +18,21 @@ interface IndexConfig {
   followSymlinks?: boolean;
 }
 
+// 建立索引配置的輔助函數
+function createIndexConfig(config?: Partial<IndexConfig>): IndexConfig {
+  if (!config || !config.rootPath) {
+    throw new Error('根路徑為必要參數');
+  }
+
+  return {
+    rootPath: config.rootPath,
+    includeExtensions: config.includeExtensions || ['.ts', '.js'],
+    excludePatterns: config.excludePatterns || ['node_modules', '.git'],
+    maxFileSize: config.maxFileSize || (10 * 1024 * 1024),
+    followSymlinks: config.followSymlinks !== undefined ? config.followSymlinks : false
+  };
+}
+
 // 模擬索引引擎
 class IndexEngine {
   private config: IndexConfig;
@@ -222,21 +237,6 @@ class IndexEngine {
   }
 }
 
-// 建立索引配置的輔助函數
-function createIndexConfig(config: Partial<IndexConfig>): IndexConfig {
-  if (!config.rootPath) {
-    throw new Error('根路徑為必要參數');
-  }
-
-  return {
-    rootPath: config.rootPath,
-    includeExtensions: config.includeExtensions || ['.ts', '.js'],
-    excludePatterns: config.excludePatterns || ['node_modules', '.git'],
-    maxFileSize: config.maxFileSize || 10 * 1024 * 1024, // 10MB
-    followSymlinks: config.followSymlinks || false
-  };
-}
-
 describe('Indexing 模組邊界條件測試', () => {
   let testDir: string;
   let validConfig: IndexConfig;
@@ -268,7 +268,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['undefined 根路徑', { rootPath: undefined }, '根路徑必須是有效字串'],
       ['空字串根路徑', { rootPath: '' }, '根路徑必須是有效字串'],
       ['數字根路徑', { rootPath: 123 }, '根路徑必須是有效字串'],
-    ])('應該拒絕無效配置：%s', withMemoryOptimization((description, config, expectedError) => {
+    ])('應該拒絕無效配置：%s', withMemoryOptimization((unusedDescription, config, expectedError) => {
       expect(() => new IndexEngine(config as any)).toThrow(expectedError);
     }, { testName: 'config-invalid-test' }));
 
@@ -281,7 +281,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['零最大檔案大小', { rootPath: testDir, maxFileSize: 0 }, '最大檔案大小必須是正數'],
       ['負數最大檔案大小', { rootPath: testDir, maxFileSize: -100 }, '最大檔案大小必須是正數'],
       ['字串最大檔案大小', { rootPath: testDir, maxFileSize: '1MB' }, '最大檔案大小必須是正數'],
-    ])('應該拒絕無效選項：%s', withMemoryOptimization((description, config, expectedError) => {
+    ])('應該拒絕無效選項：%s', withMemoryOptimization((unusedDescription, config, expectedError) => {
       expect(() => new IndexEngine(config as any)).toThrow(expectedError);
     }, { testName: 'config-options-test' }));
 
@@ -296,7 +296,7 @@ describe('Indexing 模組邊界條件測試', () => {
       ['空陣列配置', { rootPath: testDir, includeExtensions: [], excludePatterns: [] }],
       ['單一副檔名', { rootPath: testDir, includeExtensions: ['.ts'] }],
       ['多個排除模式', { rootPath: testDir, excludePatterns: ['node_modules', '.git', 'dist'] }],
-    ])('應該接受有效配置：%s', withMemoryOptimization((description, config) => {
+    ])('應該接受有效配置：%s', withMemoryOptimization((unusedDescription, config) => {
       expect(() => new IndexEngine(config)).not.toThrow();
     }, { testName: 'config-valid-test' }));
   });
@@ -319,8 +319,10 @@ describe('Indexing 模組邊界條件測試', () => {
         await fs.writeFile(join(dir, 'data.json'), '{"key": "value"}');
         await fs.writeFile(join(dir, 'readme.md'), '# Title');
       }, true, { totalFiles: 1, minSymbols: 1 }], // 只會索引 .ts 檔案
-    ])('應該處理不同目錄結構：%s', withMemoryOptimization(async (description, setupFn, shouldSucceed, expected) => {
-      await setupFn(testDir);
+    ])('應該處理不同目錄結構：%s', withMemoryOptimization(async (unusedDescription, setupFn, shouldSucceed, expected) => {
+      if (typeof setupFn === 'function') {
+        await setupFn(testDir);
+      }
 
       const engine = new IndexEngine(validConfig);
 
@@ -377,7 +379,7 @@ describe('Indexing 模組邊界條件測試', () => {
       [1, '單位元組檔案'],
       [1000, '小檔案'],
       [100000, '中型檔案'],
-    ])('應該處理不同大小的檔案：%d 位元組', withMemoryOptimization(async (size, description) => {
+    ])('應該處理不同大小的檔案：%d 位元組', withMemoryOptimization(async (size, unusedDescription) => {
       const content = 'x'.repeat(size);
       const filePath = join(testDir, 'test-file.ts');
       await fs.writeFile(filePath, content);
@@ -435,7 +437,7 @@ const testConstant = 'value';
     it.each([
       ['查詢索引前', false, '索引尚未建立'],
       ['查詢索引後', true, null],
-    ])('應該驗證索引狀態：%s', withMemoryOptimization(async (description, indexed, expectedError) => {
+    ])('應該驗證索引狀態：%s', withMemoryOptimization(async (unusedDescription, indexed, expectedError) => {
       const engine = new IndexEngine(validConfig);
 
       if (indexed) {
@@ -458,7 +460,7 @@ const testConstant = 'value';
       ['物件查詢', { query: 'test' }, '查詢必須是字串'],
       ['陣列查詢', ['test'], '查詢必須是字串'],
       ['布林查詢', true, '查詢必須是字串'],
-    ])('應該驗證查詢參數：%s', withMemoryOptimization(async (description, query, expectedError) => {
+    ])('應該驗證查詢參數：%s', withMemoryOptimization(async (unusedDescription, query, expectedError) => {
       await expect(indexedEngine.findSymbol(query as any)).rejects.toThrow(expectedError);
     }, { testName: 'query-invalid-test' }));
 
@@ -468,7 +470,7 @@ const testConstant = 'value';
       ['單字符', 'a', 1],
       ['普通查詢', 'test', 1],
       ['長查詢', 'x'.repeat(1000), 1],
-    ])('應該處理不同查詢內容：%s', withMemoryOptimization(async (description, query, expectedMinResults) => {
+    ])('應該處理不同查詢內容：%s', withMemoryOptimization(async (unusedDescription, query, expectedMinResults) => {
       const results = await indexedEngine.findSymbol(query);
 
       expect(Array.isArray(results)).toBe(true);
@@ -520,7 +522,7 @@ const testConstant = 'value';
       ['undefined 配置', undefined, '根路徑為必要參數'],
       ['空物件配置', {}, '根路徑為必要參數'],
       ['無根路徑配置', { includeExtensions: ['.ts'] }, '根路徑為必要參數'],
-    ])('應該驗證必要參數：%s', withMemoryOptimization((description, config, expectedError) => {
+    ])('應該驗證必要參數：%s', withMemoryOptimization((unusedDescription, config, expectedError) => {
       expect(() => createIndexConfig(config as any)).toThrow(expectedError);
     }, { testName: 'create-config-required-test' }));
 
@@ -545,7 +547,7 @@ const testConstant = 'value';
         maxFileSize: 5000000,
         followSymlinks: true
       }],
-    ])('應該產生正確配置：%s', withMemoryOptimization((description, input, expected) => {
+    ])('應該產生正確配置：%s', withMemoryOptimization((unusedDescription, input, expected) => {
       const result = createIndexConfig(input);
       expect(result).toEqual(expected);
     }, { testName: 'create-config-valid-test' }));
