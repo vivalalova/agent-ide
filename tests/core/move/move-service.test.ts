@@ -61,7 +61,21 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access.mockImplementation((path: string) => {
+        if (path === '/src/old.ts') {
+          // 來源檔案存在
+          return Promise.resolve();
+        } else if (path === '/src/new.ts') {
+          // 目標檔案不存在 (這是好的)
+          const error = new Error('ENOENT');
+          (error as any).code = 'ENOENT';
+          throw error;
+        } else if (path === '/src') {
+          // 目標目錄存在
+          return Promise.resolve();
+        }
+        return Promise.resolve();
+      });
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
 
@@ -86,7 +100,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.readdir.mockResolvedValue([]);
 
       const result = await moveService.moveFile(operation, options);
@@ -161,7 +178,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       
@@ -208,7 +228,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -263,7 +286,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -287,7 +313,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -316,7 +345,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -353,7 +385,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -398,7 +433,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -456,7 +494,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       mockFs.readdir.mockResolvedValue([
@@ -494,7 +535,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
       
@@ -521,7 +565,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
 
@@ -548,7 +595,10 @@ describe('MoveService', () => {
       };
 
       // Mock filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
 
@@ -589,7 +639,10 @@ describe('MoveService', () => {
       };
 
       // Mock quick filesystem operations
-      mockFs.access.mockResolvedValue();
+      mockFs.access
+        .mockResolvedValueOnce() // source exists
+        .mockResolvedValueOnce() // target dir exists
+        .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockImplementation(() => 
         new Promise(resolve => setTimeout(resolve, 10))
       );
