@@ -16,6 +16,8 @@
     "test:memory": "node --expose-gc --max-old-space-size=2048 --trace-gc node_modules/.bin/vitest run --reporter=verbose",
     "test:coverage": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --coverage",
     "test:single": "node --expose-gc --max-old-space-size=2048 node_modules/.bin/vitest run --pool=forks --poolOptions.forks.singleFork=true",
+    "test:failed": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --reporter=dot",
+    "test:bail": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --bail=1",
     "typecheck": "tsc --noEmit",
     "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\""
   },

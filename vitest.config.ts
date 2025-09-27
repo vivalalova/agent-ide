@@ -4,7 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    
+
+    // 只顯示失敗的測試
+    reporters: process.env.CI ? ['dot'] : ['default'],
+    hideSkipped: true,
+
     // 測試設定檔案
     setupFiles: ['./tests/setup.ts'],
     
