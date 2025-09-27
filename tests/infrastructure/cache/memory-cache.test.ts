@@ -69,40 +69,48 @@ describe('MemoryCache', () => {
       expect(configuredCache).toBeInstanceOf(MemoryCache);
     });
 
-    it('應該使用預設 TTL', () => {
+    it('應該使用預設 TTL', async () => {
+      vi.useFakeTimers();
+
       const options: CacheOptions = {
         defaultTTL: 100
       };
-      
+
       const ttlCache = new MemoryCache<string, string>(options);
       ttlCache.set('key1', 'value1');
-      
+
       // 立即應該還能取得
       expect(ttlCache.get('key1')).toBe('value1');
-      
-      // 等待過期
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          expect(ttlCache.get('key1')).toBeUndefined();
-          resolve();
-        }, 150);
-      });
+
+      // 前進時間到過期後
+      vi.advanceTimersByTime(150);
+
+      // 應該已經過期
+      expect(ttlCache.get('key1')).toBeUndefined();
+
+      vi.useRealTimers();
     });
 
-    it('應該支援自訂 TTL 覆蓋預設值', () => {
+    it('應該支援自訂 TTL 覆蓋預設值', async () => {
+      vi.useFakeTimers();
+
       const options: CacheOptions = {
         defaultTTL: 1000
       };
-      
+
       const ttlCache = new MemoryCache<string, string>(options);
       ttlCache.set('key1', 'value1', 100);
-      
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          expect(ttlCache.get('key1')).toBeUndefined();
-          resolve();
-        }, 150);
-      });
+
+      // 立即應該還能取得
+      expect(ttlCache.get('key1')).toBe('value1');
+
+      // 前進時間到自訂 TTL 過期後
+      vi.advanceTimersByTime(150);
+
+      // 應該已經過期
+      expect(ttlCache.get('key1')).toBeUndefined();
+
+      vi.useRealTimers();
     });
   });
 
