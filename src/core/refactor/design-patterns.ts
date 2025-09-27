@@ -140,7 +140,19 @@ export class DesignPatternAnalyzer {
         reasons.push('類別被廣泛使用，適合 Singleton 模式');
       }
 
-      if (confidence >= 0.6) {
+      // 檢查是否有 static config 或類似管理狀態的屬性
+      if (cls.properties.some(p => p.isStatic && (p.name.includes('config') || p.name.includes('Config')))) {
+        confidence += 0.3;
+        reasons.push('有靜態配置管理，適合 Singleton 模式');
+      }
+
+      // 檢查 loadConfig 或類似方法
+      if (cls.methods.some(m => m.isStatic && m.name.toLowerCase().includes('load'))) {
+        confidence += 0.3;
+        reasons.push('有靜態載入方法，適合 Singleton 模式');
+      }
+
+      if (confidence >= 0.5) {
         suggestions.push({
           pattern: 'singleton',
           confidence,
@@ -422,7 +434,14 @@ export class DesignPatternRefactorer {
   ): Promise<PatternRefactorResult> {
     // 輸入驗證
     if (!code || !pattern || !className) {
-      throw new Error('輸入參數無效');
+      return {
+        success: false,
+        pattern: pattern || 'unknown' as DesignPattern,
+        edits: [],
+        modifiedClasses: [],
+        errors: ['輸入參數無效'],
+        warnings: []
+      };
     }
 
     try {
@@ -462,18 +481,34 @@ export class DesignPatternRefactorer {
   ): Promise<PatternRefactorResult> {
     const edits: CodeEdit[] = [];
 
-    // 找到類別定義
-    const classMatch = code.match(new RegExp(`class\\s+${className}[^{]*{([^}]*)}`, 's'));
-    if (!classMatch) {
+    // 找到類別定義 - 使用更準確的正則表達式
+    // 使用遞迴匹配來處理嵌套的大括號
+    const classPattern = `class\\s+${className}[^{]*{`;
+    const classStartMatch = code.match(new RegExp(classPattern));
+    if (!classStartMatch) {
       throw new Error(`找不到類別: ${className}`);
     }
 
-    const classBody = classMatch[1];
+    // 找到類別的完整內容（包含嵌套的大括號）
+    const classStartIndex = code.indexOf(classStartMatch[0]);
+    let braceCount = 1;
+    let classEndIndex = classStartIndex + classStartMatch[0].length;
+
+    while (braceCount > 0 && classEndIndex < code.length) {
+      if (code[classEndIndex] === '{') braceCount++;
+      if (code[classEndIndex] === '}') braceCount--;
+      classEndIndex++;
+    }
+
+    const classBody = code.substring(
+      classStartIndex + classStartMatch[0].length,
+      classEndIndex - 1
+    );
     const singletonCode = this.generateSingletonCode(className, classBody, config);
 
     // 替換整個類別
-    const classStart = code.indexOf(classMatch[0]);
-    const classEnd = classStart + classMatch[0].length;
+    const classStart = classStartIndex;
+    const classEnd = classEndIndex;
 
     edits.push({
       range: {
@@ -501,10 +536,10 @@ export class DesignPatternRefactorer {
   private generateSingletonCode(className: string, originalBody: string, config: PatternRefactorConfig): string {
     const typescript = config.useTypeScript;
     const instanceType = typescript ? `: ${className} | null` : '';
-    const staticType = typescript ? 'static ' : '';
 
+    // 修正：static 關鍵字應該在屬性前，而不是型別前
     return `${config.addDocumentation ? `/**\n * ${className} - Singleton 模式實作\n * 確保全域只有一個實例\n */\n` : ''}class ${className} {
-  private ${staticType}instance${instanceType} = null;
+  private static instance${instanceType} = null;
 
   private constructor() {
     ${this.extractConstructorBody(originalBody)}
@@ -717,13 +752,56 @@ export class DesignPatternRefactorer {
 
   // 輔助方法
   private extractConstructorBody(classBody: string): string {
-    const constructorMatch = classBody.match(/constructor\s*\([^)]*\)\s*{([^}]*)}/);
-    return constructorMatch ? constructorMatch[1].trim() : '// 建構子邏輯';
+    // 找到 constructor 並提取其內容
+    const constructorStart = classBody.indexOf('constructor');
+    if (constructorStart === -1) return '// 建構子邏輯';
+
+    // 找到 constructor 的開始大括號
+    let braceStart = classBody.indexOf('{', constructorStart);
+    if (braceStart === -1) return '// 建構子邏輯';
+
+    // 找到對應的結束大括號
+    let braceCount = 1;
+    let braceEnd = braceStart + 1;
+    while (braceCount > 0 && braceEnd < classBody.length) {
+      if (classBody[braceEnd] === '{') braceCount++;
+      if (classBody[braceEnd] === '}') braceCount--;
+      braceEnd++;
+    }
+
+    const constructorBody = classBody.substring(braceStart + 1, braceEnd - 1).trim();
+    return constructorBody || '// 建構子邏輯';
   }
 
   private extractMethodsAndProperties(classBody: string): string {
-    // 簡化實作：移除 constructor 並返回其餘內容
-    return classBody.replace(/constructor\s*\([^)]*\)\s*{[^}]*}/, '').trim();
+    // 找到並移除 constructor
+    const constructorStart = classBody.indexOf('constructor');
+    if (constructorStart === -1) {
+      // 沒有 constructor，返回整個類別體
+      return classBody.trim();
+    }
+
+    // 找到 constructor 的結束位置
+    let braceStart = classBody.indexOf('{', constructorStart);
+    if (braceStart === -1) return classBody.trim();
+
+    let braceCount = 1;
+    let braceEnd = braceStart + 1;
+    while (braceCount > 0 && braceEnd < classBody.length) {
+      if (classBody[braceEnd] === '{') braceCount++;
+      if (classBody[braceEnd] === '}') braceCount--;
+      braceEnd++;
+    }
+
+    // 移除 constructor 並保留其餘部分
+    const beforeConstructor = classBody.substring(0, constructorStart).trim();
+    const afterConstructor = classBody.substring(braceEnd).trim();
+
+    let result = '';
+    if (beforeConstructor) result += beforeConstructor + '\n\n  ';
+    if (afterConstructor) result += afterConstructor;
+
+    return result.trim();
   }
 
   private offsetToPosition(code: string, offset: number): { line: number; column: number } {
