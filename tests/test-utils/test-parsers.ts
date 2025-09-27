@@ -105,6 +105,9 @@ export class TestTypeScriptParser extends BaseTestParser {
     const hasClass = code.includes('class ');
     const hasFunction = code.includes('function ');
     const hasInterface = code.includes('interface ');
+    const hasConst = code.includes('const ');
+    const hasLet = code.includes('let ');
+    const hasVar = code.includes('var ');
     const hasExport = code.includes('export ');
     const hasImport = code.includes('import ');
 
@@ -150,6 +153,40 @@ export class TestTypeScriptParser extends BaseTestParser {
         properties: { value: intMatch ? intMatch[1] : 'TestInterface' },
         children: []
       });
+    }
+
+    if (hasConst) {
+      const constMatch = code.match(/const\s+(\w+)/);
+      children.push({
+        type: 'VariableDeclaration',
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: constMatch ? constMatch[1] : 'testConst' },
+        children: []
+      });
+    }
+
+    if (hasLet) {
+      const letMatch = code.match(/let\s+(\w+)/);
+      if (letMatch && !hasConst) { // 避免重複
+        children.push({
+          type: 'VariableDeclaration',
+          range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+          properties: { value: letMatch[1] },
+          children: []
+        });
+      }
+    }
+
+    if (hasVar) {
+      const varMatch = code.match(/var\s+(\w+)/);
+      if (varMatch && !hasConst && !hasLet) { // 避免重複
+        children.push({
+          type: 'VariableDeclaration',
+          range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+          properties: { value: varMatch[1] },
+          children: []
+        });
+      }
     }
 
     return {
@@ -201,6 +238,16 @@ export class TestTypeScriptParser extends BaseTestParser {
           symbols.push({
             name: ((child as any).properties?.value || (child as any).value) as string,
             type: SymbolType.Interface,
+            position,
+            scope: { type: 'global', name: 'global', parent: null },
+            modifiers: ['export']
+          });
+          break;
+
+        case 'VariableDeclaration':
+          symbols.push({
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Variable,
             position,
             scope: { type: 'global', name: 'global', parent: null },
             modifiers: ['export']
