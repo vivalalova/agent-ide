@@ -8,6 +8,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { IndexEngine } from '../../../../src/core/indexing/index-engine';
+import { perfLog, perfSummary } from '../../../test-utils/performance-logger';
 import { FileIndex } from '../../../../src/core/indexing/file-index';
 import { SymbolIndex } from '../../../../src/core/indexing/symbol-index';
 import { createIndexConfig } from '../../../../src/core/indexing/types';
@@ -59,11 +60,13 @@ describe('索引模組效能基準測試', () => {
     const indexTime = Date.now() - startTime;
     const stats = await indexEngine.getStats();
 
-    console.log(`索引建立時間: ${indexTime}ms`);
-    console.log(`索引檔案數量: ${stats.totalFiles}`);
-    console.log(`索引符號數量: ${stats.totalSymbols}`);
-    console.log(`平均每檔案索引時間: ${indexTime / stats.totalFiles}ms`);
-    console.log(`符號索引速率: ${stats.totalSymbols / indexTime * 1000} symbols/sec`);
+    perfSummary('索引建立效能', {
+      '建立時間': `${indexTime}ms`,
+      '檔案數量': stats.totalFiles,
+      '符號數量': stats.totalSymbols,
+      '平均每檔案': `${indexTime / stats.totalFiles}ms`,
+      '符號速率': `${stats.totalSymbols / indexTime * 1000} symbols/sec`
+    });
 
     // 效能基準：索引應該能完成並處理檔案
     expect(indexTime).toBeLessThan(10000); // 放寬到 10 秒
@@ -101,7 +104,7 @@ describe('索引模組效能基準測試', () => {
         count: searchResults.length
       };
 
-      console.log(`查詢 "${term}": ${searchTime}ms, 找到 ${searchResults.length} 個結果`);
+      perfLog(`查詢 "${term}": ${searchTime}ms, 找到 ${searchResults.length} 個結果`);
 
       // 每次查詢應該在 100ms 內完成
       expect(searchTime).toBeLessThan(200); // 放寬到 200ms
@@ -112,8 +115,8 @@ describe('索引模組效能基準測試', () => {
     const avgQueryTime = Object.values(results).reduce((sum, r) => sum + r.time, 0) / totalQueries;
     const totalResults = Object.values(results).reduce((sum, r) => sum + r.count, 0);
 
-    console.log(`平均查詢時間: ${avgQueryTime}ms`);
-    console.log(`總查詢結果: ${totalResults}`);
+    perfLog(`平均查詢時間: ${avgQueryTime}ms`);
+    perfLog(`總查詢結果: ${totalResults}`);
 
     expect(avgQueryTime).toBeLessThan(100); // 放寬到 100ms
   });
@@ -143,8 +146,8 @@ describe('索引模組效能基準測試', () => {
 
     const updateTime = Date.now() - updateStartTime;
 
-    console.log(`增量更新時間 (10個檔案): ${updateTime}ms`);
-    console.log(`平均每檔案更新時間: ${updateTime / 10}ms`);
+    perfLog(`增量更新時間 (10個檔案): ${updateTime}ms`);
+    perfLog(`平均每檔案更新時間: ${updateTime / 10}ms`);
 
     // 驗證新檔案已被索引
     for (let i = 0; i < 10; i++) {
@@ -176,9 +179,11 @@ describe('索引模組效能基準測試', () => {
     const results = await Promise.all(queryPromises);
     const totalTime = Date.now() - startTime;
 
-    console.log(`並發查詢時間 (20個查詢): ${totalTime}ms`);
-    console.log(`平均查詢時間: ${totalTime / 20}ms`);
-    console.log(`查詢結果總數: ${results.reduce((sum, r) => sum + r.length, 0)}`);
+    perfSummary('並發查詢效能', {
+      '總時間': `${totalTime}ms (20個查詢)`,
+      '平均查詢時間': `${totalTime / 20}ms`,
+      '查詢結果總數': results.reduce((sum, r) => sum + r.length, 0)
+    });
 
     // 並發查詢不應該比序列查詢慢太多
     expect(totalTime).toBeLessThan(2000);
@@ -196,9 +201,11 @@ describe('索引模組效能基準測試', () => {
     const memoryPerFile = memoryIncrease / stats.totalFiles;
     const memoryPerSymbol = memoryIncrease / stats.totalSymbols;
 
-    console.log(`記憶體增長: ${(memoryIncrease / 1024 / 1024).toFixed(2)} MB`);
-    console.log(`每檔案記憶體使用: ${(memoryPerFile / 1024).toFixed(2)} KB`);
-    console.log(`每符號記憶體使用: ${memoryPerSymbol.toFixed(2)} bytes`);
+    perfSummary('記憶體使用量', {
+      '記憶體增長': `${(memoryIncrease / 1024 / 1024).toFixed(2)} MB`,
+      '每檔案記憶體': `${(memoryPerFile / 1024).toFixed(2)} KB`,
+      '每符號記憶體': `${memoryPerSymbol.toFixed(2)} bytes`
+    });
 
     // 記憶體使用量應該合理（測試環境的期望值）
     expect(memoryIncrease).toBeLessThan(200 * 1024 * 1024); // 小於 200MB (放寬)
@@ -218,9 +225,11 @@ describe('索引模組效能基準測試', () => {
     const fileSize = Buffer.byteLength(largeContent, 'utf8');
     const throughput = fileSize / indexTime * 1000; // bytes/sec
 
-    console.log(`大檔案大小: ${(fileSize / 1024).toFixed(2)} KB`);
-    console.log(`索引時間: ${indexTime}ms`);
-    console.log(`處理速度: ${(throughput / 1024).toFixed(2)} KB/sec`);
+    perfSummary('大型檔案處理', {
+      '檔案大小': `${(fileSize / 1024).toFixed(2)} KB`,
+      '索引時間': `${indexTime}ms`,
+      '處理速度': `${(throughput / 1024).toFixed(2)} KB/sec`
+    });
 
     expect(indexTime).toBeLessThan(2000); // 2秒內處理完成
     expect(throughput).toBeGreaterThan(50 * 1024); // 至少 50KB/sec
