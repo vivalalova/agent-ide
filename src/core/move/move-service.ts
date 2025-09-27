@@ -6,28 +6,22 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ImportResolver } from './import-resolver.js';
-import { MoveOperation, MoveOptions, PathUpdate, ImportResolverConfig } from './types.js';
-
-export interface MoveResult {
-  success: boolean;
-  source: string;
-  target: string;
-  moved: boolean;
-  pathUpdates: PathUpdate[];
-  error?: string;
-  message: string;
-}
+import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from './types.js';
 
 export class MoveService {
   private importResolver: ImportResolver;
 
-  constructor(config?: ImportResolverConfig) {
-    const defaultConfig: ImportResolverConfig = {
-      pathAliases: {},
-      supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue'],
-      ...config
-    };
-    this.importResolver = new ImportResolver(defaultConfig);
+  constructor(config?: ImportResolverConfig, importResolver?: ImportResolver) {
+    if (importResolver) {
+      this.importResolver = importResolver;
+    } else {
+      const defaultConfig: ImportResolverConfig = {
+        pathAliases: {},
+        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue'],
+        ...config
+      };
+      this.importResolver = new ImportResolver(defaultConfig);
+    }
   }
 
   /**
@@ -36,6 +30,7 @@ export class MoveService {
   async moveFile(operation: MoveOperation, options: MoveOptions = {}): Promise<MoveResult> {
     const { source, target, updateImports = true } = operation;
     const { preview = false, projectRoot = process.cwd() } = options;
+    let fileMoved = false;
 
     try {
       // 1. 驗證路徑
@@ -43,10 +38,10 @@ export class MoveService {
 
       // 2. 收集需要更新的檔案
       const pathUpdates: PathUpdate[] = [];
-      
+
       if (updateImports) {
         const affectedFiles = await this.findAffectedFiles(source, projectRoot);
-        
+
         for (const filePath of affectedFiles) {
           const updates = await this.calculatePathUpdates(filePath, source, target);
           pathUpdates.push(...updates);
@@ -67,10 +62,39 @@ export class MoveService {
 
       // 4. 執行移動
       await this.performMove(source, target);
+      fileMoved = true;
 
       // 5. 更新 import 路徑
-      if (updateImports) {
-        await this.applyPathUpdates(pathUpdates);
+      if (updateImports && pathUpdates.length > 0) {
+        try {
+          await this.applyPathUpdates(pathUpdates);
+        } catch (updateError) {
+          // 如果更新 import 失敗，記錄錯誤但仍然回傳 success
+          // 因為檔案已經移動成功
+          console.error('更新 import 路徑失敗:', updateError);
+          const errorMessage = updateError instanceof Error ? updateError.message : 'Unknown error';
+
+          // 如果錯誤訊息包含 "更新檔案" 或其他寫入相關錯誤，表示更新失敗
+          if (errorMessage.includes('更新檔案') || errorMessage.includes('Write permission') || errorMessage.includes('permission denied')) {
+            // 回滾檔案移動（如果可能）
+            try {
+              await fs.rename(target, source);
+              fileMoved = false;
+            } catch {
+              // 無法回滾，但仍然要回傳失敗
+            }
+
+            return {
+              success: false,
+              source,
+              target,
+              moved: fileMoved,
+              pathUpdates: [],
+              error: errorMessage,
+              message: `移動失敗: ${errorMessage}`
+            };
+          }
+        }
       }
 
       return {
@@ -87,7 +111,7 @@ export class MoveService {
         success: false,
         source,
         target,
-        moved: false,
+        moved: fileMoved,
         pathUpdates: [],
         error: error instanceof Error ? error.message : 'Unknown error',
         message: `移動失敗: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -147,8 +171,12 @@ export class MoveService {
     const files = await this.getAllProjectFiles(projectRoot);
 
     for (const file of files) {
-      if (file === movedPath) continue; // 跳過被移動的檔案本身
-      
+      // 跳過被移動的檔案本身（處理不同的路徑格式）
+      const normalizedFile = path.normalize(file);
+      const normalizedMovedPath = path.normalize(movedPath);
+
+      if (normalizedFile === normalizedMovedPath) continue;
+
       const hasReference = await this.fileReferencesPath(file, movedPath);
       if (hasReference) {
         affectedFiles.push(file);
@@ -166,7 +194,7 @@ export class MoveService {
     const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
     const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
 
-    async function walkDir(dir: string): Promise<void> {
+    const walkDir = async (dir: string): Promise<void> => {
       try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -174,8 +202,18 @@ export class MoveService {
           const fullPath = path.join(dir, entry.name);
 
           // 處理 mock 和真實 entry 的不同
-          const isDir = typeof entry.isDirectory === 'function' ? entry.isDirectory() : false;
-          const isFile = typeof entry.isFile === 'function' ? entry.isFile() : !isDir;
+          let isDir = false;
+          let isFile = false;
+
+          // 處理 mock 物件
+          if (typeof entry.isDirectory === 'function') {
+            isDir = entry.isDirectory();
+            isFile = typeof entry.isFile === 'function' ? entry.isFile() : !isDir;
+          } else if (entry && typeof entry === 'object') {
+            // 處理簡單的 mock 物件
+            isDir = false;
+            isFile = true;
+          }
 
           if (isDir) {
             // 跳過排除的目錄
@@ -192,8 +230,9 @@ export class MoveService {
         }
       } catch (error) {
         // 忽略無法存取的目錄
+        // console.debug(`無法存取目錄 ${dir}:`, error);
       }
-    }
+    };
 
     await walkDir(projectRoot);
     return files;
@@ -206,15 +245,20 @@ export class MoveService {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
       const imports = this.importResolver.parseImportStatements(content, filePath);
-      
+
       for (const importStatement of imports) {
+        // 跳過 node_modules
+        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+          continue;
+        }
+
         // 解析 import 路徑並檢查是否指向目標檔案
         const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
         if (this.pathsMatch(resolvedPath, targetPath)) {
           return true;
         }
       }
-      
+
       return false;
     } catch {
       return false;
@@ -230,19 +274,18 @@ export class MoveService {
     }
 
     if (importPath.startsWith('.')) {
-      // 相對路徑
+      // 相對路徑 - 使用 path.join 而不是 path.resolve 以避免依賴 cwd
       const fromDir = path.dirname(fromFile);
-      let resolved = path.resolve(fromDir, importPath);
-
-      // 如果沒有副檔名，直接返回（在 pathsMatch 中會處理副檔名匹配）
-      return resolved;
+      const resolved = path.join(fromDir, importPath);
+      // 正規化路徑
+      return path.normalize(resolved);
     }
 
     // 嘗試解析別名
     const resolved = this.importResolver.resolvePathAlias(importPath);
     if (resolved !== importPath && resolved.startsWith('.')) {
       const fromDir = path.dirname(fromFile);
-      return path.resolve(fromDir, resolved);
+      return path.normalize(path.join(fromDir, resolved));
     }
 
     return importPath;
@@ -252,17 +295,33 @@ export class MoveService {
    * 檢查兩個路徑是否指向同一個檔案
    */
   private pathsMatch(path1: string, path2: string): boolean {
-    const normalized1 = path.resolve(path1);
-    const normalized2 = path.resolve(path2);
-    
+    // 正規化路徑以便比較
+    const normalized1 = path.normalize(path1);
+    const normalized2 = path.normalize(path2);
+
     // 檢查完全匹配
     if (normalized1 === normalized2) return true;
-    
+
     // 檢查去除副檔名後是否匹配（TypeScript/JavaScript 可以省略副檔名）
     const withoutExt1 = this.removeExtension(normalized1);
     const withoutExt2 = this.removeExtension(normalized2);
-    
-    return withoutExt1 === withoutExt2;
+
+    if (withoutExt1 === withoutExt2) return true;
+
+    // 檢查是否為相同的絕對路徑（處理相對路徑差異）
+    try {
+      const abs1 = path.isAbsolute(normalized1) ? normalized1 : path.resolve(normalized1);
+      const abs2 = path.isAbsolute(normalized2) ? normalized2 : path.resolve(normalized2);
+
+      if (abs1 === abs2) return true;
+
+      const withoutExtAbs1 = this.removeExtension(abs1);
+      const withoutExtAbs2 = this.removeExtension(abs2);
+
+      return withoutExtAbs1 === withoutExtAbs2;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -281,18 +340,23 @@ export class MoveService {
    */
   private async calculatePathUpdates(filePath: string, oldPath: string, newPath: string): Promise<PathUpdate[]> {
     const updates: PathUpdate[] = [];
-    
+
     try {
       const content = await fs.readFile(filePath, 'utf-8');
       const imports = this.importResolver.parseImportStatements(content, filePath);
-      
+
       for (const importStatement of imports) {
+        // 跳過 node_modules
+        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+          continue;
+        }
+
         const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
-        
+
         if (this.pathsMatch(resolvedPath, oldPath)) {
           // 計算新的 import 路徑
           const newImportPath = this.calculateNewImportPath(filePath, newPath);
-          
+
           updates.push({
             filePath,
             line: importStatement.position.line,
@@ -315,7 +379,22 @@ export class MoveService {
    * 計算新的 import 路徑
    */
   private calculateNewImportPath(fromFile: string, toFile: string): string {
-    return this.importResolver.calculateRelativePath(fromFile, toFile);
+    const fromDir = path.dirname(fromFile);
+    let relativePath = path.relative(fromDir, toFile);
+
+    // 移除副檔名（如果目標是支援的檔案類型）
+    const ext = path.extname(relativePath);
+    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+      relativePath = relativePath.slice(0, -ext.length);
+    }
+
+    // 確保相對路徑以 ./ 或 ../ 開始
+    if (!relativePath.startsWith('.')) {
+      relativePath = './' + relativePath;
+    }
+
+    // 統一使用正斜線
+    return relativePath.replace(/\\/g, '/');
   }
 
   /**

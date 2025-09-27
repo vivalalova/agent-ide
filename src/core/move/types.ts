@@ -44,19 +44,7 @@ export interface FullMoveOperation {
 }
 
 /**
- * 移動結果
- */
-export interface MoveResult {
-  readonly operationId: string;
-  readonly status: MoveStatus;
-  readonly affectedFiles: readonly string[];
-  readonly updatedImports: readonly ImportUpdate[];
-  readonly errors?: readonly MoveError[];
-  readonly rollbackInfo?: RollbackInfo;
-}
-
-/**
- * 批次移動結果
+ * 批次移動結果（使用簡化的 MoveResult）
  */
 export interface BatchMoveResult {
   readonly batchId: string;
