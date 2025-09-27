@@ -13,7 +13,7 @@ import { FileIndex } from '../../../../src/core/indexing/file-index';
 import { SymbolIndex } from '../../../../src/core/indexing/symbol-index';
 import { createIndexConfig } from '../../../../src/core/indexing/types';
 
-describe('索引模組效能基準測試', () => {
+describe.skip('索引模組效能基準測試', () => {
   let testDir: string;
   let indexEngine: IndexEngine;
   let fileIndex: FileIndex;

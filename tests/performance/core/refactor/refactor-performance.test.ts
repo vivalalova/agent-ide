@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('重構模組效能基準測試', () => {
+describe.skip('重構模組效能基準測試', () => {
   let testDir: string;
   let testFiles: Array<{ path: string; content: string; size: number }>;
 

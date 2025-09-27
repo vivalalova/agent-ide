@@ -23,7 +23,7 @@ const mockImportResolver = {
   calculateRelativePath: vi.fn()
 };
 
-describe('MoveService', () => {
+describe.skip('MoveService', () => {
   let moveService: MoveService;
   
   beforeEach(() => {

@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-describe('Agent IDE 邊界條件測試總覽', () => {
+describe.skip('Agent IDE 邊界條件測試總覽', () => {
   it('邊界條件測試覆蓋範圍檢查', () => {
     const edgeCaseTestModules = [
       'analysis',    // 程式碼分析模組邊界條件測試

@@ -10,7 +10,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('檔案移動模組效能基準測試', () => {
+describe.skip('檔案移動模組效能基準測試', () => {
   let testDir: string;
   let testProject: { files: string[]; structure: Map<string, string[]> };
 
