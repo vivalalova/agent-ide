@@ -274,7 +274,20 @@ export class AgentIdeCLI {
       if (options.preview) {
         console.log('🔍 預覽變更...');
         try {
-          const filePaths = targetSymbol.location?.filePath ? [targetSymbol.location.filePath] : [options.path || process.cwd()];
+          // 確保有有效的檔案路徑
+          let filePaths: string[];
+          if (targetSymbol.location && targetSymbol.location.filePath) {
+            filePaths = [targetSymbol.location.filePath];
+          } else {
+            // 如果沒有 location，使用所有已索引的檔案
+            const allFiles = this.indexEngine.getAllIndexedFiles();
+            filePaths = allFiles.map(f => f.filePath);
+
+            if (filePaths.length === 0) {
+              filePaths = [options.path || process.cwd()];
+            }
+          }
+
           const preview = await this.renameEngine.previewRename({
             symbol: targetSymbol,
             newName: options.to,

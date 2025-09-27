@@ -3,8 +3,9 @@
  * 為所有測試提供統一的 Mock Parser 實作
  */
 
-import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range } from '../../src/shared/types';
-import type { CodeEdit, Definition, Usage, ValidationResult } from '../../src/infrastructure/parser/types';
+import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range, Scope, ASTNode } from '../../src/shared/types';
+import { SymbolType, ReferenceType, DependencyType } from '../../src/shared/types';
+import type { CodeEdit, Definition, Usage, ValidationResult, DefinitionKind } from '../../src/infrastructure/parser/types';
 import { ParserRegistry } from '../../src/infrastructure/parser/registry';
 
 /**
@@ -23,9 +24,9 @@ abstract class BaseTestParser implements ParserPlugin {
     for (const node of content) {
       if (node.type === 'ImportStatement' && node.value) {
         dependencies.push({
-          path: node.value as string,
-          type: 'import',
-          isRelative: (node.value as string).startsWith('./'),
+          path: (node as any).properties?.value || (node as any).value as string,
+          type: DependencyType.Import,
+          isRelative: ((node as any).properties?.value || (node as any).value as string).startsWith('./'),
           importedSymbols: []
         });
       }
@@ -37,19 +38,17 @@ abstract class BaseTestParser implements ParserPlugin {
   async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
     return [{
       symbol,
-      position: symbol.position,
-      type: 'definition'
+      location: symbol.location,
+      type: ReferenceType.Definition
     }];
   }
 
   async rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]> {
     return [{
-      type: 'replace',
-      range: {
-        start: position,
-        end: { line: position.line, column: position.column + 10 }
-      },
-      text: newName
+      filePath: '',
+      startOffset: position.offset || 0,
+      oldText: '',
+      newText: newName
     }];
   }
 
@@ -109,14 +108,16 @@ export class TestTypeScriptParser extends BaseTestParser {
     const hasExport = code.includes('export ');
     const hasImport = code.includes('import ');
 
-    const children = [];
+    const children: ASTNode[] = [];
 
     if (hasImport) {
       const importMatch = code.match(/import\s+.*?\s+from\s+['"]([^'"]+)['"]/);
       if (importMatch) {
         children.push({
           type: 'ImportStatement',
-          value: importMatch[1]
+          range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+          properties: { value: importMatch[1] },
+          children: []
         });
       }
     }
@@ -125,7 +126,9 @@ export class TestTypeScriptParser extends BaseTestParser {
       const classMatch = code.match(/class\s+(\w+)/);
       children.push({
         type: 'ClassDeclaration',
-        value: classMatch ? classMatch[1] : 'TestClass'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: classMatch ? classMatch[1] : 'TestClass' },
+        children: []
       });
     }
 
@@ -133,7 +136,9 @@ export class TestTypeScriptParser extends BaseTestParser {
       const funcMatch = code.match(/function\s+(\w+)/);
       children.push({
         type: 'FunctionDeclaration',
-        value: funcMatch ? funcMatch[1] : 'testFunction'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: funcMatch ? funcMatch[1] : 'testFunction' },
+        children: []
       });
     }
 
@@ -141,7 +146,9 @@ export class TestTypeScriptParser extends BaseTestParser {
       const intMatch = code.match(/interface\s+(\w+)/);
       children.push({
         type: 'InterfaceDeclaration',
-        value: intMatch ? intMatch[1] : 'TestInterface'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: intMatch ? intMatch[1] : 'TestInterface' },
+        children: []
       });
     }
 
@@ -149,6 +156,8 @@ export class TestTypeScriptParser extends BaseTestParser {
       type: 'Program',
       root: {
         type: 'Program',
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 10, column: 1, offset: 100 } },
+        properties: {},
         children
       },
       sourceFile: filePath,
@@ -170,30 +179,30 @@ export class TestTypeScriptParser extends BaseTestParser {
       switch (child.type) {
         case 'ClassDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'class',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Class,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: ['export']
           });
           break;
 
         case 'FunctionDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'function',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Function,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: []
           });
           break;
 
         case 'InterfaceDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'interface',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Interface,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: ['export']
           });
           break;
@@ -219,13 +228,15 @@ export class TestJavaScriptParser extends BaseTestParser {
     const hasConst = code.includes('const ');
     const hasLet = code.includes('let ');
 
-    const children = [];
+    const children: ASTNode[] = [];
 
     if (hasFunction) {
       const funcMatch = code.match(/function\s+(\w+)/);
       children.push({
         type: 'FunctionDeclaration',
-        value: funcMatch ? funcMatch[1] : 'jsFunction'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: funcMatch ? funcMatch[1] : 'jsFunction' },
+        children: []
       });
     }
 
@@ -233,7 +244,9 @@ export class TestJavaScriptParser extends BaseTestParser {
       const classMatch = code.match(/class\s+(\w+)/);
       children.push({
         type: 'ClassDeclaration',
-        value: classMatch ? classMatch[1] : 'JSClass'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: classMatch ? classMatch[1] : 'JSClass' },
+        children: []
       });
     }
 
@@ -241,7 +254,9 @@ export class TestJavaScriptParser extends BaseTestParser {
       const constMatch = code.match(/const\s+(\w+)/);
       children.push({
         type: 'VariableDeclaration',
-        value: constMatch ? constMatch[1] : 'jsConst'
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 10, offset: 10 } },
+        properties: { value: constMatch ? constMatch[1] : 'jsConst' },
+        children: []
       });
     }
 
@@ -249,6 +264,8 @@ export class TestJavaScriptParser extends BaseTestParser {
       type: 'Program',
       root: {
         type: 'Program',
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 10, column: 1, offset: 100 } },
+        properties: {},
         children
       },
       sourceFile: filePath,
@@ -270,30 +287,30 @@ export class TestJavaScriptParser extends BaseTestParser {
       switch (child.type) {
         case 'FunctionDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'function',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Function,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: []
           });
           break;
 
         case 'ClassDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'class',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Class,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: []
           });
           break;
 
         case 'VariableDeclaration':
           symbols.push({
-            name: child.value as string,
-            type: 'variable',
+            name: ((child as any).properties?.value || (child as any).value) as string,
+            type: SymbolType.Variable,
             position,
-            scope,
+            scope: { type: 'global', name: 'global', parent: null },
             modifiers: []
           });
           break;

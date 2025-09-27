@@ -158,13 +158,16 @@ export class RenameEngine {
     this.validateOptions(options);
 
     const validation = await this.validateRename(options);
-    
-    const operations = validation.isValid ? [
+
+    // 確保 symbol 有 location
+    const hasLocation = options.symbol.location && options.symbol.location.filePath;
+
+    const operations = validation.isValid && hasLocation ? [
       createRenameOperation(
-        options.symbol.location.filePath,
+        options.symbol.location!.filePath,
         options.symbol.name,
         options.newName,
-        options.symbol.location.range
+        options.symbol.location!.range
       )
     ] : [];
 
@@ -177,7 +180,7 @@ export class RenameEngine {
 
     return {
       operations,
-      affectedFiles: operations.length > 0 ? [options.symbol.location.filePath] : [],
+      affectedFiles: operations.length > 0 && hasLocation ? [options.symbol.location!.filePath] : [],
       conflicts: validation.conflicts,
       summary
     };

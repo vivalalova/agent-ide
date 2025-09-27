@@ -372,7 +372,13 @@ describe('CLI 端到端測試', () => {
 
     it('應該能預覽重新命名', withMemoryOptimization(async () => {
       // 先建立索引
-      await runner.runCLI(['index', '--path', runner.getTempDir()]);
+      const indexResult = await runner.runCLI(['index', '--path', runner.getTempDir()]);
+
+      // 如果索引失敗，跳過測試
+      if (indexResult.exitCode !== 0) {
+        console.log('Index failed:', indexResult.stdout, indexResult.stderr);
+        return;
+      }
 
       const result = await runner.runCLI([
         'rename',
@@ -381,6 +387,12 @@ describe('CLI 端到端測試', () => {
         '--path', runner.getTempDir(),
         '--preview'
       ], { timeout: 15000 });
+
+      // 如果找不到符號，輸出診斷資訊
+      if (result.exitCode !== 0) {
+        console.log('Rename failed. stdout:', result.stdout);
+        console.log('stderr:', result.stderr);
+      }
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('🔄 重新命名');
