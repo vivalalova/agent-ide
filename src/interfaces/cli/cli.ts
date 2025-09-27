@@ -592,11 +592,18 @@ export class AgentIdeCLI {
 
   private async handlePluginsListCommand(options: any): Promise<void> {
     console.log('🔌 插件列表:');
-    
+
     const registry = ParserRegistry.getInstance();
+
+    // 確保 registry 存在且有 listParsers 方法
+    if (!registry || typeof registry.listParsers !== 'function') {
+      console.log('📝 插件系統尚未初始化');
+      return;
+    }
+
     const parsers = registry.listParsers();
 
-    if (parsers.length === 0) {
+    if (!parsers || parsers.length === 0) {
       console.log('📝 未找到已註冊的插件');
       return;
     }
@@ -612,6 +619,13 @@ export class AgentIdeCLI {
 
   private async handlePluginInfoCommand(pluginName: string): Promise<void> {
     const registry = ParserRegistry.getInstance();
+
+    // 確保 registry 存在且有 getParserByName 方法
+    if (!registry || typeof registry.getParserByName !== 'function') {
+      console.error(`❌ 插件系統尚未初始化`);
+      process.exit(1);
+    }
+
     const plugin = registry.getParserByName(pluginName);
 
     if (!plugin) {
