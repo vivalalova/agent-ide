@@ -155,6 +155,11 @@ export class FileWatcher extends EventEmitter {
    * 手動處理檔案變更事件
    */
   async handleFileChange(filePath: string, changeType: FileChangeType): Promise<void> {
+    // 如果暫停中，不處理事件
+    if (this.isPaused) {
+      return;
+    }
+
     const event: FileChangeEvent = {
       filePath,
       type: changeType,
@@ -163,14 +168,14 @@ export class FileWatcher extends EventEmitter {
 
     try {
       await this.processFileChange(filePath, changeType);
-      
+
       event.error = undefined;
       this.emit('fileChanged', event);
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知錯誤';
       event.error = errorMessage;
-      
+
       this.emit('error', new Error(`處理檔案變更失敗 ${filePath}: ${errorMessage}`));
       this.emit('fileChanged', event);
     }
