@@ -1,5 +1,27 @@
 # TypeScript Parser 插件開發規範
 
+## 實作狀態 ✅
+
+### 實際檔案結構
+```
+typescript/
+├── index.ts                    ✅ 插件入口
+├── parser.ts                   ✅ 主要 Parser 實作
+├── symbol-extractor.ts         ✅ 符號提取器
+├── dependency-analyzer.ts      ✅ 依賴分析器
+├── types.ts                    ✅ 型別定義
+└── 其他進階功能              ⏳ 待實作
+```
+
+### 實作功能狀態
+- ✅ 基本 TypeScript 解析功能
+- ✅ 符號提取與索引
+- ✅ 依賴關係分析
+- ✅ 基本重新命名功能
+- ⏳ JSX/TSX 支援
+- ⏳ 裝飾器解析
+- ⏳ 增量編譯支援
+
 ## 模組職責
 提供 TypeScript 程式碼的完整語法解析能力，利用 TypeScript Compiler API 產生準確的 AST，並轉換為框架統一格式。
 

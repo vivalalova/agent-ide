@@ -1,9 +1,30 @@
 # JavaScript Parser 插件開發規範
 
+## 實作狀態 ⏳
+
+### 實際檔案結構
+```
+javascript/
+├── index.ts (如需要)           ⏳ 插件入口
+├── parser.ts (如需要)          ⏳ 主要 Parser 實作
+├── symbol-extractor.ts (如需要)  ⏳ 符號提取器
+├── dependency-analyzer.ts (如需要) ⏳ 依賴分析器
+└── types.ts (如需要)            ⏳ 型別定義
+```
+
+### 實作功能狀態
+- ⏳ 基本 JavaScript 解析功能
+- ⏳ JSX 支援
+- ⏳ ES6+ 語法支援
+- ⏳ Flow 型別註解支援
+- ⏳ 符號提取與索引
+- ⏳ 依賴關係分析
+- ⏳ 增量解析支援
+
 ## 模組職責
 使用 Babel 提供完整的 JavaScript 語法解析，支援最新 ECMAScript 標準和實驗性特性，轉換為統一 AST 格式。
 
-## 開發原則
+## 核心開發原則
 
 ### 1. Babel 生態系統
 - **@babel/parser**：作為核心解析器
@@ -23,775 +44,320 @@
 - 漸進式解析
 - Source Map 支援
 
-## 實作規範
+### 4. 容錯處理
+- 語法錯誤恢復
+- 部分解析支援
+- 漸進式修復機制
+- 錯誤位置精確定位
 
-### 檔案結構
+### 5. 現代 JavaScript 特性
+- 完整的 ES2023+ 支援
+- Decorators 和 Private Fields
+- Top-level await
+- 動態 import
+
+## 實作檔案
+
+### 核心架構
 ```
 javascript/
 ├── index.ts                 # 插件入口
 ├── plugin.ts                # JavaScriptParserPlugin 實作
 ├── babel/
-│   ├── parser-config.ts        # Babel 解析器設定
-│   ├── parser-wrapper.ts       # 解析器封裝
-│   ├── plugin-manager.ts       # 插件管理
-│   └── preset-manager.ts       # Preset 管理
+│   ├── parser-wrapper.ts       # Babel Parser 封裝
+│   ├── traverser.ts            # AST 遍歷器
+│   ├── generator.ts            # 程式碼生成器
+│   └── plugin-loader.ts        # Babel 插件載入器
 ├── ast/
 │   ├── converter.ts            # AST 轉換器
-│   ├── visitor.ts              # AST 訪問器
-│   ├── transformer.ts          # AST 轉換器
-│   └── scope-analyzer.ts       # 作用域分析
+│   ├── node-mapper.ts          # 節點類型映射
+│   ├── scope-analyzer.ts       # 作用域分析器
+│   └── symbol-extractor.ts     # 符號提取器
 ├── features/
-│   ├── jsx-processor.ts        # JSX 處理
-│   ├── flow-handler.ts         # Flow 處理
-│   ├── es-features.ts          # ES 特性處理
-│   └── comment-extractor.ts    # 註釋提取
-├── optimization/
-│   ├── cache-manager.ts        # 快取管理
-│   ├── incremental-parser.ts   # 增量解析
-│   └── worker-pool.ts          # Worker 池
+│   ├── jsx-handler.ts          # JSX 處理器
+│   ├── flow-handler.ts         # Flow 類型處理器
+│   ├── import-analyzer.ts      # Import 分析器
+│   ├── export-analyzer.ts      # Export 分析器
+│   └── modern-syntax.ts        # 現代語法處理器
+├── dependencies/
+│   ├── dependency-tracker.ts   # 依賴追蹤器
+│   ├── module-resolver.ts      # 模組解析器
+│   └── import-mapper.ts        # Import 映射器
 └── types.ts                 # 型別定義
 ```
 
-## Babel 整合
+## 主要功能介面
 
-### 解析器設定
+### Babel Parser 封裝介面
 ```typescript
-class BabelParserConfig {
-  // 生成 Babel 解析器選項
-  getParserOptions(customOptions?: Partial<ParserOptions>): ParserOptions {
-    const defaultOptions: ParserOptions = {
-      sourceType: 'module',
-      allowImportExportEverywhere: true,
-      allowReturnOutsideFunction: true,
-      startLine: 1,
-      tokens: true,
-      ranges: true,
-      attachComment: true,
-      
-      // 插件設定
-      plugins: [
-        // ES 提案
-        'asyncGenerators',
-        'bigInt',
-        'classProperties',
-        'classPrivateProperties',
-        'classPrivateMethods',
-        'decorators-legacy',
-        'doExpressions',
-        'dynamicImport',
-        'exportDefaultFrom',
-        'exportNamespaceFrom',
-        'functionBind',
-        'functionSent',
-        'importMeta',
-        'logicalAssignment',
-        'nullishCoalescingOperator',
-        'numericSeparator',
-        'objectRestSpread',
-        'optionalCatchBinding',
-        'optionalChaining',
-        'partialApplication',
-        'privateIn',
-        'throwExpressions',
-        'topLevelAwait',
-        
-        // JSX
-        'jsx',
-        
-        // Flow (可選)
-        // 'flow',
-        // 'flowComments'
-      ]
-    };
-    
-    return { ...defaultOptions, ...customOptions };
-  }
-  
-  // 動態調整插件
-  adjustPlugins(code: string): string[] {
-    const plugins: string[] = [];
-    
-    // 檢測 JSX
-    if (this.hasJSX(code)) {
-      plugins.push('jsx');
-    }
-    
-    // 檢測 Flow
-    if (this.hasFlow(code)) {
-      plugins.push('flow');
-      plugins.push('flowComments');
-    }
-    
-    // 檢測裝飾器
-    if (this.hasDecorators(code)) {
-      plugins.push('decorators-legacy');
-    }
-    
-    return plugins;
-  }
-}
-```
-
-### 解析器封裝
-```typescript
-import * as parser from '@babel/parser';
+import { parse } from '@babel/parser';
 import traverse from '@babel/traverse';
 import * as t from '@babel/types';
-import generate from '@babel/generator';
 
-class BabelParserWrapper {
-  private config: BabelParserConfig;
-  
-  // 解析程式碼
-  parse(code: string, options?: ParseOptions): BabelAST {
-    try {
-      // 動態調整選項
-      const parserOptions = this.config.getParserOptions({
-        ...options,
-        plugins: [
-          ...this.config.getParserOptions().plugins,
-          ...this.config.adjustPlugins(code)
-        ]
-      });
-      
-      // 解析
-      const ast = parser.parse(code, parserOptions);
-      
-      // 附加元資料
-      this.attachMetadata(ast, code);
-      
-      return ast;
-    } catch (error) {
-      // 處理解析錯誤
-      throw this.handleParseError(error);
-    }
-  }
-  
-  // 遍歷 AST
-  traverse(ast: BabelAST, visitor: Visitor): void {
-    traverse(ast, visitor);
-  }
-  
-  // 生成程式碼
-  generate(ast: BabelAST, options?: GeneratorOptions): GeneratorResult {
-    return generate(ast, {
-      sourceMaps: true,
-      comments: true,
-      compact: false,
-      ...options
-    });
-  }
-  
-  // 附加元資料
-  private attachMetadata(ast: BabelAST, code: string): void {
-    // 附加原始程式碼
-    ast.code = code;
-    
-    // 附加檔案資訊
-    ast.loc = {
-      start: { line: 1, column: 0 },
-      end: this.getEndLocation(code)
-    };
-    
-    // 附加範圍資訊
-    ast.range = [0, code.length];
-  }
+class BabelWrapper {
+  private options: BabelParseOptions;
+
+  constructor(options?: BabelParseOptions);
+  parse(code: string, filename?: string): BabelAST;
+  traverse(ast: BabelAST, visitor: TraversalVisitor): void;
+  generate(ast: BabelAST, options?: GeneratorOptions): GeneratedCode;
 }
 ```
 
-## AST 轉換
-
-### Babel AST 轉換器
+### AST 轉換器介面
 ```typescript
-class BabelASTConverter {
-  // 轉換 Babel AST 到統一格式
-  convert(babelAST: BabelAST): UnifiedAST {
-    const unified: UnifiedAST = {
-      type: 'Program',
-      root: this.convertNode(babelAST),
-      sourceFile: babelAST.filename || 'unknown',
-      language: 'javascript',
-      parser: 'babel',
-      metadata: {
-        babelVersion: this.getBabelVersion(),
-        sourceType: babelAST.sourceType,
-        hasJSX: this.hasJSXElements(babelAST),
-        hasFlow: this.hasFlowTypes(babelAST),
-        ecmaVersion: this.detectECMAVersion(babelAST)
-      },
-      errors: this.extractErrors(babelAST),
-      comments: this.extractComments(babelAST),
-      tokens: this.extractTokens(babelAST)
-    };
-    
-    return unified;
-  }
-  
-  // 遞迴轉換節點
-  private convertNode(node: BabelNode): UnifiedASTNode {
-    const unified: UnifiedASTNode = {
-      type: this.mapNodeType(node.type),
-      range: node.range || { start: node.start, end: node.end },
-      loc: node.loc,
-      children: []
-    };
-    
-    // 處理特定節點屬性
-    this.processNodeProperties(node, unified);
-    
-    // 處理子節點
-    this.processChildren(node, unified);
-    
-    return unified;
-  }
-  
-  // 節點類型映射
-  private mapNodeType(babelType: string): string {
-    const mapping: Record<string, string> = {
-      'File': 'Program',
-      'Program': 'Program',
-      'FunctionDeclaration': 'FunctionDeclaration',
-      'FunctionExpression': 'FunctionExpression',
-      'ArrowFunctionExpression': 'ArrowFunction',
-      'ClassDeclaration': 'ClassDeclaration',
-      'ClassExpression': 'ClassExpression',
-      'VariableDeclaration': 'VariableDeclaration',
-      'VariableDeclarator': 'VariableDeclarator',
-      'Identifier': 'Identifier',
-      'CallExpression': 'CallExpression',
-      'MemberExpression': 'MemberExpression',
-      'NewExpression': 'NewExpression',
-      'ImportDeclaration': 'ImportDeclaration',
-      'ExportNamedDeclaration': 'ExportNamedDeclaration',
-      'ExportDefaultDeclaration': 'ExportDefaultDeclaration',
-      'JSXElement': 'JSXElement',
-      'JSXFragment': 'JSXFragment',
-      'JSXOpeningElement': 'JSXOpeningElement',
-      'JSXClosingElement': 'JSXClosingElement',
-      'JSXAttribute': 'JSXAttribute',
-      'JSXSpreadAttribute': 'JSXSpreadAttribute',
-      'JSXText': 'JSXText',
-      'JSXExpressionContainer': 'JSXExpressionContainer'
-    };
-    
-    return mapping[babelType] || `Babel_${babelType}`;
-  }
-  
-  // 處理子節點
-  private processChildren(node: BabelNode, unified: UnifiedASTNode): void {
-    traverse(node, {
-      enter: (path) => {
-        // 只處理直接子節點
-        if (path.parent === node) {
-          unified.children.push(this.convertNode(path.node));
-          path.skip(); // 不遞迴處理
-        }
-      }
-    });
-  }
+class JavaScriptASTConverter {
+  convert(ast: BabelAST, source: string): UnifiedAST;
+  convertNode(node: BabelNode): UnifiedASTNode;
+  mapNodeType(babelType: string): string;
+  extractMetadata(node: BabelNode): NodeMetadata;
 }
 ```
 
-## 作用域分析
+### 符號提取器介面
+```typescript
+class JavaScriptSymbolExtractor {
+  extractSymbols(ast: BabelAST): JavaScriptSymbol[];
+  extractFunctions(ast: BabelAST): FunctionSymbol[];
+  extractClasses(ast: BabelAST): ClassSymbol[];
+  extractVariables(ast: BabelAST): VariableSymbol[];
+  extractImports(ast: BabelAST): ImportSymbol[];
+  extractExports(ast: BabelAST): ExportSymbol[];
+}
+```
 
-### 作用域分析器
+### JSX 處理器介面
+```typescript
+class JSXHandler {
+  processJSXElements(ast: BabelAST): JSXElement[];
+  extractComponents(ast: BabelAST): ReactComponent[];
+  analyzeProps(element: JSXElement): PropInfo[];
+  findComponentUsages(ast: BabelAST, componentName: string): ComponentUsage[];
+}
+```
+
+### Flow 處理器介面
+```typescript
+class FlowHandler {
+  extractTypeAnnotations(ast: BabelAST): TypeAnnotation[];
+  extractInterfaces(ast: BabelAST): FlowInterface[];
+  extractTypeAliases(ast: BabelAST): TypeAlias[];
+  analyzeTypeUsage(ast: BabelAST): TypeUsageInfo[];
+}
+```
+
+### 依賴分析器介面
+```typescript
+class DependencyTracker {
+  analyzeDependencies(ast: BabelAST): DependencyInfo[];
+  extractImports(ast: BabelAST): ImportDeclaration[];
+  extractRequires(ast: BabelAST): RequireCall[];
+  extractDynamicImports(ast: BabelAST): DynamicImport[];
+  buildDependencyGraph(files: string[]): DependencyGraph;
+}
+```
+
+### 作用域分析器介面
 ```typescript
 class ScopeAnalyzer {
-  // 分析作用域
-  analyzeScope(ast: BabelAST): ScopeInfo {
-    const scopes: Scope[] = [];
-    const bindings: Map<string, Binding[]> = new Map();
-    
-    traverse(ast, {
-      // 函式作用域
-      'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression': (path) => {
-        const scope = this.createScope(path, 'function');
-        scopes.push(scope);
-        
-        // 收集參數綁定
-        this.collectParameterBindings(path, scope);
-      },
-      
-      // 塊級作用域
-      BlockStatement: (path) => {
-        const scope = this.createScope(path, 'block');
-        scopes.push(scope);
-      },
-      
-      // 變數綁定
-      VariableDeclarator: (path) => {
-        const binding = this.createBinding(path);
-        const scope = path.scope;
-        
-        if (!bindings.has(scope.uid)) {
-          bindings.set(scope.uid, []);
-        }
-        
-        bindings.get(scope.uid)!.push(binding);
-      },
-      
-      // 識別符引用
-      Identifier: (path) => {
-        if (path.isReferencedIdentifier()) {
-          this.recordReference(path);
-        }
-      }
-    });
-    
-    return {
-      scopes,
-      bindings,
-      globals: this.findGlobals(ast)
-    };
-  }
-  
-  // 建立作用域
-  private createScope(path: any, type: ScopeType): Scope {
-    return {
-      id: path.scope.uid,
-      type,
-      parent: path.scope.parent?.uid,
-      bindings: Object.keys(path.scope.bindings),
-      references: [],
-      range: {
-        start: path.node.start,
-        end: path.node.end
-      }
-    };
-  }
-  
-  // 建立綁定
-  private createBinding(path: any): Binding {
-    const node = path.node;
-    const id = node.id;
-    
-    return {
-      name: id.name,
-      kind: path.parent.kind, // const, let, var
-      scope: path.scope.uid,
-      references: [],
-      constant: path.scope.getBinding(id.name)?.constant || false,
-      range: {
-        start: node.start,
-        end: node.end
-      }
-    };
-  }
-  
-  // 找出全域變數
-  private findGlobals(ast: BabelAST): string[] {
-    const globals = new Set<string>();
-    
-    traverse(ast, {
-      ReferencedIdentifier(path) {
-        const binding = path.scope.getBinding(path.node.name);
-        if (!binding) {
-          globals.add(path.node.name);
-        }
-      }
-    });
-    
-    return Array.from(globals);
-  }
+  analyzeScopes(ast: BabelAST): ScopeTree;
+  extractBindings(scope: Scope): Binding[];
+  findReferences(binding: Binding): Reference[];
+  analyzeClosures(ast: BabelAST): ClosureInfo[];
 }
 ```
 
-## 特殊語法處理
+## 核心型別定義
 
-### JSX 處理器
+### 基本型別
 ```typescript
-class JSXProcessor {
-  // 處理 JSX 元素
-  processJSX(node: JSXElement | JSXFragment): JSXInfo {
-    return {
-      type: node.type === 'JSXFragment' ? 'Fragment' : 'Element',
-      name: this.getElementName(node),
-      attributes: this.extractAttributes(node),
-      children: this.extractChildren(node),
-      selfClosing: this.isSelfClosing(node),
-      range: node.range,
-      loc: node.loc
-    };
-  }
-  
-  // 提取元素名稱
-  private getElementName(node: JSXElement | JSXFragment): string {
-    if (node.type === 'JSXFragment') {
-      return 'Fragment';
-    }
-    
-    const opening = node.openingElement;
-    const name = opening.name;
-    
-    if (t.isJSXIdentifier(name)) {
-      return name.name;
-    } else if (t.isJSXMemberExpression(name)) {
-      return this.getMemberExpressionName(name);
-    } else if (t.isJSXNamespacedName(name)) {
-      return `${name.namespace.name}:${name.name.name}`;
-    }
-    
-    return 'unknown';
-  }
-  
-  // 提取屬性
-  private extractAttributes(node: JSXElement | JSXFragment): JSXAttribute[] {
-    if (node.type === 'JSXFragment') {
-      return [];
-    }
-    
-    const attributes: JSXAttribute[] = [];
-    const opening = node.openingElement;
-    
-    for (const attr of opening.attributes) {
-      if (t.isJSXAttribute(attr)) {
-        attributes.push({
-          name: attr.name.name,
-          value: this.extractAttributeValue(attr.value),
-          spread: false
-        });
-      } else if (t.isJSXSpreadAttribute(attr)) {
-        attributes.push({
-          name: '...spread',
-          value: attr.argument,
-          spread: true
-        });
-      }
-    }
-    
-    return attributes;
-  }
-  
-  // 提取屬性值
-  private extractAttributeValue(value: any): any {
-    if (!value) return true; // 無值屬性
-    
-    if (t.isJSXExpressionContainer(value)) {
-      return value.expression;
-    } else if (t.isStringLiteral(value)) {
-      return value.value;
-    } else if (t.isJSXElement(value)) {
-      return this.processJSX(value);
-    }
-    
-    return value;
-  }
+interface JavaScriptParserPlugin extends ParserPlugin {
+  readonly name: 'javascript';
+  readonly supportedExtensions: readonly ['.js', '.jsx', '.mjs', '.cjs'];
+  readonly supportedLanguages: readonly ['javascript', 'jsx'];
+}
+
+interface BabelParseOptions {
+  sourceType?: 'module' | 'script' | 'unambiguous';
+  allowImportExportEverywhere?: boolean;
+  allowAwaitOutsideFunction?: boolean;
+  allowReturnOutsideFunction?: boolean;
+  plugins?: BabelParserPlugin[];
+  strictMode?: boolean;
+  ranges?: boolean;
+  tokens?: boolean;
+}
+
+interface BabelAST {
+  type: 'File';
+  program: Program;
+  comments?: Comment[];
+  tokens?: Token[];
+  loc?: SourceLocation;
 }
 ```
 
-### ES 特性處理
+### JavaScript 符號型別
 ```typescript
-class ESFeaturesHandler {
-  // 處理非同步函式
-  handleAsync(node: Function): AsyncInfo {
-    return {
-      isAsync: node.async || false,
-      isGenerator: node.generator || false,
-      awaitExpressions: this.findAwaitExpressions(node)
-    };
-  }
-  
-  // 處理解構賦值
-  handleDestructuring(node: Pattern): DestructuringInfo {
-    if (t.isObjectPattern(node)) {
-      return {
-        type: 'object',
-        properties: node.properties.map(prop => ({
-          key: this.getPropertyKey(prop),
-          value: prop.value,
-          computed: prop.computed,
-          shorthand: prop.shorthand
-        }))
-      };
-    } else if (t.isArrayPattern(node)) {
-      return {
-        type: 'array',
-        elements: node.elements.map(elem => 
-          elem ? this.handleDestructuring(elem) : null
-        )
-      };
-    }
-    
-    return { type: 'identifier', name: node.name };
-  }
-  
-  // 處理展開運算符
-  handleSpread(node: SpreadElement): SpreadInfo {
-    return {
-      type: 'spread',
-      argument: node.argument,
-      context: this.getSpreadContext(node)
-    };
-  }
-  
-  // 處理模板字串
-  handleTemplateLiteral(node: TemplateLiteral): TemplateInfo {
-    return {
-      type: 'template',
-      quasis: node.quasis.map(q => q.value.raw),
-      expressions: node.expressions,
-      tag: node.tag // Tagged template
-    };
-  }
-  
-  // 處理動態 import
-  handleDynamicImport(node: CallExpression): DynamicImportInfo {
-    if (node.callee.type === 'Import') {
-      return {
-        type: 'dynamic-import',
-        source: node.arguments[0],
-        isAsync: true
-      };
-    }
-    return null;
-  }
+interface JavaScriptSymbol extends Symbol {
+  jsType: 'function' | 'class' | 'variable' | 'import' | 'export';
+  scope: string;
+  hoisted?: boolean;
+  kind?: 'var' | 'let' | 'const' | 'function' | 'class';
+}
+
+interface FunctionSymbol extends JavaScriptSymbol {
+  jsType: 'function';
+  parameters: Parameter[];
+  returnType?: TypeAnnotation;
+  isAsync: boolean;
+  isGenerator: boolean;
+  isArrow: boolean;
+}
+
+interface ClassSymbol extends JavaScriptSymbol {
+  jsType: 'class';
+  superClass?: string;
+  methods: MethodInfo[];
+  properties: PropertyInfo[];
+  isAbstract?: boolean;
+}
+
+interface VariableSymbol extends JavaScriptSymbol {
+  jsType: 'variable';
+  kind: 'var' | 'let' | 'const';
+  typeAnnotation?: TypeAnnotation;
+  initializer?: Expression;
 }
 ```
 
-## 錯誤處理
-
-### 解析錯誤處理
+### JSX 型別
 ```typescript
-class ParseErrorHandler {
-  // 處理解析錯誤
-  handleParseError(error: any): ParseError {
-    if (error.code === 'BABEL_PARSER_SYNTAX_ERROR') {
-      return {
-        type: 'SyntaxError',
-        message: error.message,
-        line: error.loc?.line,
-        column: error.loc?.column,
-        pos: error.pos,
-        code: error.code,
-        reasonCode: error.reasonCode,
-        recovery: this.suggestRecovery(error)
-      };
-    }
-    
-    return {
-      type: 'ParseError',
-      message: error.message || 'Unknown parse error',
-      stack: error.stack
-    };
-  }
-  
-  // 建議復原策略
-  private suggestRecovery(error: any): RecoverySuggestion[] {
-    const suggestions: RecoverySuggestion[] = [];
-    
-    // 缺少分號
-    if (error.reasonCode === 'MissingSemicolon') {
-      suggestions.push({
-        type: 'insert',
-        position: error.pos,
-        content: ';',
-        message: 'Insert semicolon'
-      });
-    }
-    
-    // 未關閉的括號
-    if (error.reasonCode === 'UnterminatedString') {
-      suggestions.push({
-        type: 'insert',
-        position: error.pos,
-        content: '"',
-        message: 'Close string literal'
-      });
-    }
-    
-    // 非法的 await
-    if (error.reasonCode === 'AwaitNotInAsyncFunction') {
-      suggestions.push({
-        type: 'modify',
-        message: 'Add async to containing function'
-      });
-    }
-    
-    return suggestions;
-  }
-  
-  // 容錯解析
-  tolerantParse(code: string): { ast?: BabelAST; errors: ParseError[] } {
-    const errors: ParseError[] = [];
-    
-    try {
-      // 嘗試正常解析
-      const ast = this.parse(code);
-      return { ast, errors: [] };
-    } catch (error) {
-      errors.push(this.handleParseError(error));
-      
-      // 嘗試復原
-      const recovered = this.attemptRecovery(code, error);
-      if (recovered) {
-        return { ast: recovered, errors };
-      }
-      
-      // 返回部分 AST
-      const partial = this.parsePartial(code, error.pos);
-      return { ast: partial, errors };
-    }
-  }
+interface JSXElement {
+  type: 'JSXElement';
+  openingElement: JSXOpeningElement;
+  closingElement?: JSXClosingElement;
+  children: JSXChild[];
+  location: SourceLocation;
+}
+
+interface ReactComponent {
+  name: string;
+  type: 'functional' | 'class';
+  props: PropInfo[];
+  hooks?: HookUsage[];
+  state?: StateInfo[];
+  lifecycle?: LifecycleMethod[];
+}
+
+interface PropInfo {
+  name: string;
+  type?: TypeAnnotation;
+  required: boolean;
+  defaultValue?: any;
+}
+
+interface HookUsage {
+  name: string;
+  arguments: any[];
+  dependencies?: string[];
+  location: SourceLocation;
 }
 ```
 
-## 效能優化
-
-### Worker 池
+### Flow 型別
 ```typescript
-class WorkerPool {
-  private workers: Worker[] = [];
-  private queue: ParseTask[] = [];
-  private busy: Set<Worker> = new Set();
-  
-  constructor(size: number = 4) {
-    for (let i = 0; i < size; i++) {
-      const worker = new Worker('./babel-worker.js');
-      this.workers.push(worker);
-    }
-  }
-  
-  // 非同步解析
-  async parseAsync(code: string, options?: ParseOptions): Promise<BabelAST> {
-    const worker = await this.getAvailableWorker();
-    
-    return new Promise((resolve, reject) => {
-      const handler = (event: MessageEvent) => {
-        if (event.data.type === 'parse-result') {
-          worker.removeEventListener('message', handler);
-          this.releaseWorker(worker);
-          
-          if (event.data.error) {
-            reject(event.data.error);
-          } else {
-            resolve(event.data.ast);
-          }
-        }
-      };
-      
-      worker.addEventListener('message', handler);
-      worker.postMessage({
-        type: 'parse',
-        code,
-        options
-      });
-    });
-  }
-  
-  // 取得可用 Worker
-  private async getAvailableWorker(): Promise<Worker> {
-    // 有空閒 Worker
-    const available = this.workers.find(w => !this.busy.has(w));
-    if (available) {
-      this.busy.add(available);
-      return available;
-    }
-    
-    // 等待 Worker 釋放
-    return new Promise(resolve => {
-      const check = setInterval(() => {
-        const worker = this.workers.find(w => !this.busy.has(w));
-        if (worker) {
-          clearInterval(check);
-          this.busy.add(worker);
-          resolve(worker);
-        }
-      }, 10);
-    });
-  }
-  
-  // 釋放 Worker
-  private releaseWorker(worker: Worker): void {
-    this.busy.delete(worker);
-    this.processQueue();
-  }
+interface FlowInterface {
+  name: string;
+  properties: InterfaceProperty[];
+  extends?: string[];
+  location: SourceLocation;
+}
+
+interface TypeAlias {
+  name: string;
+  type: FlowType;
+  typeParameters?: TypeParameter[];
+  location: SourceLocation;
+}
+
+interface TypeAnnotation {
+  type: string;
+  raw: string;
+  flowType?: FlowType;
+  location: SourceLocation;
 }
 ```
 
-### 增量解析
+### 依賴型別
 ```typescript
-class IncrementalParser {
-  private cache = new Map<string, CachedAST>();
-  
-  // 增量解析
-  async parseIncremental(
-    code: string,
-    changes: TextChange[],
-    previousAST?: BabelAST
-  ): Promise<BabelAST> {
-    // 如果沒有先前的 AST，完整解析
-    if (!previousAST) {
-      return this.parse(code);
-    }
-    
-    // 判斷是否可增量更新
-    if (!this.canIncrementalUpdate(changes)) {
-      return this.parse(code);
-    }
-    
-    // 對每個變更應用增量更新
-    let ast = previousAST;
-    for (const change of changes) {
-      ast = await this.applyChange(ast, change);
-    }
-    
-    return ast;
-  }
-  
-  // 應用單個變更
-  private async applyChange(
-    ast: BabelAST,
-    change: TextChange
-  ): Promise<BabelAST> {
-    // 找出受影響的節點
-    const affectedNodes = this.findAffectedNodes(ast, change.range);
-    
-    // 重新解析受影響的節點
-    const newNodes = await this.reparseNodes(affectedNodes, change.text);
-    
-    // 更新 AST
-    return this.updateAST(ast, affectedNodes, newNodes);
-  }
+interface DependencyInfo {
+  source: string;
+  type: 'import' | 'require' | 'dynamic-import';
+  imports: ImportSpecifier[];
+  location: SourceLocation;
+  resolved?: string;
+}
+
+interface ImportSpecifier {
+  type: 'default' | 'named' | 'namespace';
+  imported?: string;
+  local: string;
+}
+
+interface DependencyGraph {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+  cycles: DependencyCycle[];
+}
+
+interface DependencyNode {
+  id: string;
+  path: string;
+  type: 'internal' | 'external';
+  size?: number;
 }
 ```
 
-## 開發檢查清單
+### 作用域型別
+```typescript
+interface ScopeTree {
+  global: Scope;
+  functions: Map<string, Scope>;
+  blocks: Map<string, Scope>;
+}
 
-### 功能完整性
-- [ ] Babel 解析器完整整合
-- [ ] 所有 ES 特性支援
-- [ ] JSX 正確處理
-- [ ] Flow 類型支援
-- [ ] 作用域分析準確
-- [ ] 錯誤復原機制
+interface Scope {
+  type: 'global' | 'function' | 'block' | 'module';
+  bindings: Map<string, Binding>;
+  references: Reference[];
+  parent?: Scope;
+  children: Scope[];
+}
 
-### 效能指標
-- [ ] 單檔案解析 < 30ms
-- [ ] Worker 並行處理
-- [ ] 增量更新 < 10ms
-- [ ] 記憶體使用 < 50MB
+interface Binding {
+  name: string;
+  kind: 'var' | 'let' | 'const' | 'function' | 'class' | 'param';
+  path: NodePath;
+  referenced: boolean;
+  constant: boolean;
+}
+```
 
-## 疑難排解
+### 錯誤處理型別
+```typescript
+interface ParseError {
+  type: 'SyntaxError' | 'ReferenceError' | 'TypeError';
+  message: string;
+  location: SourceLocation;
+  code?: string;
+  suggestions?: string[];
+}
 
-### 常見問題
-
-1. **解析失敗**
-   - 檢查插件設定
-   - 確認 ECMAScript 版本
-   - 啟用容錯模式
-
-2. **JSX 解析錯誤**
-   - 確保啟用 jsx 插件
-   - 檢查檔案副檔名
-   - 設定正確的 pragma
-
-3. **效能問題**
-   - 使用 Worker 池
-   - 啟用快取
-   - 減少 traverse 次數
-
-## 未來改進
-1. 支援更多 Babel 插件
-2. Source Map 完整支援
-3. 與 Babel 轉換整合
-4. 支援自訂語法擴展
+interface ErrorRecoveryInfo {
+  recovered: boolean;
+  partialAST?: BabelAST;
+  errors: ParseError[];
+  warnings: ParseWarning[];
+}
+```
