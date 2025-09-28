@@ -80,7 +80,7 @@ describe('ErrorHandlerService', () => {
       await errorHandler.handle(error, context);
 
       // Assert
-      expect(eventSpy).toHaveBeenCalledWith('error-event', expect.objectContaining({
+      expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
         type: 'error-event',
         priority: EventPriority.NORMAL,
         payload: expect.objectContaining({

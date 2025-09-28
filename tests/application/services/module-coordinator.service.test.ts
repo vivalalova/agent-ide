@@ -19,13 +19,26 @@ import type {
 
 // Mock fs 模組
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn().mockResolvedValue('const example = "test code";')
+  readFile: vi.fn().mockResolvedValue('const example = "test code";'),
+  access: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined)
+}));
+
+// Mock node:fs 模組 (可能被其他模組使用)
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn().mockResolvedValue('const example = "test code";'),
+  access: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined)
 }));
 
 // Mock 所有核心模組
 vi.mock('../../../src/core/analysis/complexity-analyzer.js', () => ({
   ComplexityAnalyzer: vi.fn().mockImplementation(() => ({
-    analyze: vi.fn().mockResolvedValue({ complexity: 5, recommendation: 'low' })
+    analyzeCode: vi.fn().mockResolvedValue({ complexity: 5, recommendation: 'low' })
   }))
 }));
 
@@ -33,11 +46,15 @@ vi.mock('../../../src/core/refactor/extract-function.js', () => ({
   FunctionExtractor: vi.fn().mockImplementation(() => ({
     extract: vi.fn().mockResolvedValue({
       success: true,
+      functionName: 'extractedFunction',
       edits: [{
         range: { start: { line: 1, column: 0 }, end: { line: 2, column: 0 } },
         newText: 'function extracted() {}',
         type: 'insert'
-      }]
+      }],
+      parameters: [],
+      errors: [],
+      warnings: []
     })
   }))
 }));
@@ -55,27 +72,38 @@ vi.mock('../../../src/core/rename/rename-engine.js', () => ({
   RenameEngine: vi.fn().mockImplementation(() => ({
     rename: vi.fn().mockResolvedValue({
       success: true,
-      filesChanged: 1,
-      changes: [{ filePath: 'test.ts', oldContent: '', newContent: '' }]
+      operations: [{
+        filePath: 'test.ts',
+        oldText: 'oldContent',
+        newText: 'newContent',
+        range: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } }
+      }],
+      affectedFiles: ['test.ts'],
+      renameId: 'test-rename-id'
     })
   }))
 }));
 
 vi.mock('../../../src/core/move/move-service.js', () => ({
   MoveService: vi.fn().mockImplementation(() => ({
-    move: vi.fn().mockResolvedValue({
+    moveFile: vi.fn().mockResolvedValue({
       success: true,
-      from: 'src/old.ts',
-      to: 'src/new.ts',
-      filesUpdated: 2,
-      importUpdates: []
+      source: 'src/old.ts',
+      target: 'src/new.ts',
+      moved: true,
+      pathUpdates: [{
+        filePath: 'test.ts',
+        oldImport: './old',
+        newImport: './new'
+      }],
+      message: 'Move successful'
     })
   }))
 }));
 
 vi.mock('../../../src/core/dependency/dependency-analyzer.js', () => ({
   DependencyAnalyzer: vi.fn().mockImplementation(() => ({
-    analyze: vi.fn().mockResolvedValue({
+    analyzeFile: vi.fn().mockResolvedValue({
       dependencies: [],
       impact: { affectedFiles: [] }
     })
@@ -114,17 +142,21 @@ describe('ModuleCoordinatorService', () => {
 
     // Mock 核心模組實例的方法
     vi.spyOn(service as any, 'complexityAnalyzer', 'get').mockReturnValue({
-      analyze: vi.fn().mockResolvedValue({ complexity: 5, recommendation: 'low' })
+      analyzeCode: vi.fn().mockResolvedValue({ complexity: 5, recommendation: 'low' })
     });
 
     vi.spyOn(service as any, 'functionExtractor', 'get').mockReturnValue({
       extract: vi.fn().mockResolvedValue({
         success: true,
+        functionName: 'extractedFunction',
         edits: [{
           range: { start: { line: 1, column: 0 }, end: { line: 2, column: 0 } },
           newText: 'function extracted() {}',
           type: 'insert'
-        }]
+        }],
+        parameters: [],
+        errors: [],
+        warnings: []
       })
     });
 
@@ -138,23 +170,34 @@ describe('ModuleCoordinatorService', () => {
     vi.spyOn(service as any, 'renameEngine', 'get').mockReturnValue({
       rename: vi.fn().mockResolvedValue({
         success: true,
-        filesChanged: 1,
-        changes: [{ filePath: 'test.ts', oldContent: '', newContent: '' }]
+        operations: [{
+          filePath: 'test.ts',
+          oldText: 'oldContent',
+          newText: 'newContent',
+          range: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } }
+        }],
+        affectedFiles: ['test.ts'],
+        renameId: 'test-rename-id'
       })
     });
 
     vi.spyOn(service as any, 'moveService', 'get').mockReturnValue({
-      move: vi.fn().mockResolvedValue({
+      moveFile: vi.fn().mockResolvedValue({
         success: true,
-        from: 'src/old.ts',
-        to: 'src/new.ts',
-        filesUpdated: 2,
-        importUpdates: []
+        source: 'src/old.ts',
+        target: 'src/new.ts',
+        moved: true,
+        pathUpdates: [{
+          filePath: 'test.ts',
+          oldImport: './old',
+          newImport: './new'
+        }],
+        message: 'Move successful'
       })
     });
 
     vi.spyOn(service as any, 'dependencyAnalyzer', 'get').mockReturnValue({
-      analyze: vi.fn().mockResolvedValue({
+      analyzeFile: vi.fn().mockResolvedValue({
         dependencies: [],
         impact: { affectedFiles: [] }
       })
@@ -168,6 +211,10 @@ describe('ModuleCoordinatorService', () => {
       index: vi.fn().mockResolvedValue(true),
       getStatus: vi.fn().mockReturnValue('ready')
     });
+
+    // Mock 檔案讀取方法
+    vi.spyOn(service as any, 'readFile').mockResolvedValue('const example = "test code";');
+    vi.spyOn(service as any, 'readFileContent').mockResolvedValue('const example = "test code";');
   });
 
   describe('constructor', () => {
@@ -273,13 +320,14 @@ describe('ModuleCoordinatorService', () => {
     it('should handle move failures gracefully', async () => {
       // Mock move service 回傳失敗
       vi.spyOn(service as any, 'moveService', 'get').mockReturnValue({
-        move: vi.fn().mockResolvedValue({
+        moveFile: vi.fn().mockResolvedValue({
           success: false,
-          from: 'nonexistent.ts',
-          to: 'target.ts',
-          filesUpdated: 0,
-          importUpdates: [],
-          error: new Error('File not found')
+          source: 'nonexistent.ts',
+          target: 'target.ts',
+          moved: false,
+          pathUpdates: [],
+          error: 'File not found',
+          message: 'Move failed: File not found'
         })
       });
 
@@ -322,7 +370,7 @@ describe('ModuleCoordinatorService', () => {
 
       // Mock 分析器拋出錯誤
       vi.spyOn(service as any, 'complexityAnalyzer', 'get').mockReturnValue({
-        analyze: vi.fn().mockRejectedValue(new Error('Analysis failed'))
+        analyzeCode: vi.fn().mockRejectedValue(new Error('Analysis failed'))
       });
 
       // 觸發一個錯誤
