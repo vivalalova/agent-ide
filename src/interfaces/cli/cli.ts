@@ -40,14 +40,22 @@ export class AgentIdeCLI {
     await this.program.parseAsync(argv);
   }
 
-  private async initializeParsers(): Promise<void> {
+  private initializeParsers(): void {
     try {
       const registry = ParserRegistry.getInstance();
+
+      // 檢查 registry 是否可用
+      if (!registry) {
+        console.debug('Parser registry not available');
+        return;
+      }
 
       // 在測試環境中，檢查是否已經有測試 Parser 註冊
       if (process.env.NODE_ENV === 'test') {
         // 如果測試 Parser 已經註冊，就不需要註冊生產 Parser
-        if (registry.getParserByName('typescript') || registry.getParserByName('javascript')) {
+        const tsParser = registry.getParserByName('typescript');
+        const jsParser = registry.getParserByName('javascript');
+        if (tsParser || jsParser) {
           return;
         }
       }
