@@ -1,5 +1,28 @@
 # Indexing 模組開發規範
 
+## 實作狀態 ✅
+
+### 實際檔案結構
+```
+indexing/
+├── index.ts                    ✅ 模組入口
+├── index-engine.ts             ✅ 索引引擎核心
+├── file-index.ts               ✅ 檔案索引
+├── symbol-index.ts             ✅ 符號索引
+├── file-watcher.ts             ✅ 檔案監控
+├── types.ts                    ✅ 型別定義
+└── 其他進階功能              ⏳ 待實作
+```
+
+### 實作功能狀態
+- ✅ 檔案索引建立
+- ✅ 符號索引建立
+- ✅ 檔案監控功能
+- ✅ 索引引擎核心
+- ⏳ 增量更新機制
+- ⏳ 快取策略優化
+- ⏳ 效能監控
+
 ## 模組職責
 負責建立和維護程式碼索引，提供高效的符號查詢和依賴追蹤，是其他模組的基礎設施。
 
@@ -126,10 +149,10 @@ performance.measure('indexing', 'index-start', 'index-end');
 interface ChangeDetection {
   // 使用檔案 hash 快速檢測
   detectChanges(files: string[]): ChangedFiles;
-  
+
   // 細粒度變更分析
   analyzeImpact(change: FileChange): ImpactScope;
-  
+
   // 最小化更新範圍
   optimizeUpdate(scope: ImpactScope): UpdatePlan;
 }
@@ -147,10 +170,10 @@ interface ChangeDetection {
 class IndexWorkerPool {
   private workers: Worker[];
   private taskQueue: IndexTask[];
-  
+
   // 動態調整 worker 數量
   adjustWorkers(cpuUsage: number): void;
-  
+
   // 任務分配策略
   distributeTask(task: IndexTask): Worker;
 }
@@ -199,10 +222,10 @@ interface JSONFormat {
 class FaultTolerantIndexer {
   // 重試機制
   async indexWithRetry(file: string, maxRetries = 3): Promise<Index>;
-  
+
   // 降級處理
   async fallbackIndex(file: string): Promise<PartialIndex>;
-  
+
   // 錯誤隔離
   isolateError(error: Error, context: IndexContext): void;
 }
@@ -214,13 +237,13 @@ class FaultTolerantIndexer {
 ```typescript
 class MemoryManager {
   private maxMemory = 500 * 1024 * 1024; // 500MB
-  
+
   // 監控記憶體使用
   monitorUsage(): MemoryStats;
-  
+
   // 觸發清理
   triggerGC(): void;
-  
+
   // 降級到磁碟
   spillToDisk(data: any): void;
 }
@@ -248,27 +271,3 @@ class MemoryManager {
 - [ ] 錯誤處理完整性
 - [ ] 效能基準達標
 - [ ] 測試覆蓋充分
-
-## 疑難排解
-
-### 常見問題
-1. **索引速度慢**
-   - 檢查並行度設定
-   - 確認快取運作正常
-   - 分析瓶頸位置
-
-2. **記憶體使用過高**
-   - 調整快取大小
-   - 啟用磁碟交換
-   - 優化資料結構
-
-3. **索引不準確**
-   - 驗證 Parser 輸出
-   - 檢查增量更新邏輯
-   - 確認檔案變更檢測
-
-## 未來優化方向
-1. 支援分散式索引
-2. 機器學習輔助索引
-3. 自適應快取策略
-4. 即時協作索引同步

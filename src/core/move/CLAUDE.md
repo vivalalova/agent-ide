@@ -1,5 +1,25 @@
 # Move 模組開發規範
 
+## 實作狀態 ✅
+
+### 實際檔案結構
+```
+move/
+├── index.ts                    ✅ 模組入口
+├── move-service.ts             ✅ 移動服務
+├── import-resolver.ts          ✅ 引用路徑更新
+├── types.ts                    ✅ 型別定義
+└── 其他功能模組              ⏳ 待實作
+```
+
+### 實作功能狀態
+- ✅ 移動服務核心功能
+- ✅ 引用路徑更新
+- ✅ 基本型別定義
+- ⏳ 路徑計算演算法
+- ⏳ 衝突檢測與處理
+- ⏳ Git 整合功能
+
 ## 模組職責
 負責檔案和目錄的移動操作，自動更新所有相關的 import/export 路徑，確保專案結構重組的安全性。
 
@@ -42,9 +62,6 @@ move/
 │   ├── import-resolver.ts   # import 路徑解析
 │   ├── alias-resolver.ts    # 別名解析
 │   └── module-resolver.ts   # 模組解析
-├── utils/
-│   ├── path-utils.ts        # 路徑工具
-│   └── fs-utils.ts          # 檔案系統工具
 └── types.ts              # 型別定義
 ```
 
@@ -58,14 +75,14 @@ class MoveFlow {
     await this.validatePaths(operation);
     return { canProceed: true };
   }
-  
+
   // 2. 影響分析
   async analyzeImpact(operation: MoveOperation): Promise<ImpactAnalysis> {
     const affected = await this.findAffectedFiles(operation);
     const updates = await this.calculateUpdates(affected, operation);
     return { affected, updates };
   }
-  
+
   // 3. 執行移動
   async execute(operation: MoveOperation, impact: ImpactAnalysis): Promise<MoveResult> {
     // 先更新引用，再移動檔案
@@ -73,7 +90,7 @@ class MoveFlow {
     await this.moveFiles(operation);
     return { success: true };
   }
-  
+
   // 4. 驗證結果
   async verify(result: MoveResult): Promise<void> {
     await this.verifyFileSystem();
@@ -91,23 +108,23 @@ class PathCalculator {
   calculateOptimalPath(from: string, to: string): string {
     const relative = this.getRelativePath(from, to);
     const aliased = this.checkAliasPath(from, to);
-    
+
     // 選擇最短且最清晰的路徑
     return this.selectBestPath([relative, aliased]);
   }
-  
+
   // 處理特殊情況
   handleSpecialCases(path: string): string {
     // index 檔案可以省略
     if (path.endsWith('/index')) {
       return path.slice(0, -6);
     }
-    
+
     // 同目錄使用 ./
     if (!path.startsWith('.') && !path.startsWith('/')) {
       return './' + path;
     }
-    
+
     return path;
   }
 }
@@ -118,13 +135,13 @@ class PathCalculator {
 interface PathUpdateStrategy {
   // ES6 import/export
   updateESModules(ast: AST, pathMapping: PathMapping): void;
-  
+
   // CommonJS require
   updateCommonJS(ast: AST, pathMapping: PathMapping): void;
-  
+
   // 動態 import
   updateDynamicImports(ast: AST, pathMapping: PathMapping): void;
-  
+
   // 資源路徑（圖片、樣式等）
   updateResourcePaths(content: string, pathMapping: PathMapping): string;
 }
@@ -141,26 +158,26 @@ class TypeScriptPathHandler {
     moveOperation: MoveOperation
   ): Promise<TsConfig> {
     const paths = tsConfig.compilerOptions?.paths || {};
-    
+
     for (const [alias, targets] of Object.entries(paths)) {
-      paths[alias] = targets.map(target => 
+      paths[alias] = targets.map(target =>
         this.updatePathTarget(target, moveOperation)
       );
     }
-    
+
     return tsConfig;
   }
-  
+
   // 解析別名路徑
   resolveAliasPath(importPath: string, tsConfig: TsConfig): string {
     const paths = tsConfig.compilerOptions?.paths || {};
-    
+
     for (const [alias, targets] of Object.entries(paths)) {
       if (this.matchesAlias(importPath, alias)) {
         return this.resolveToActualPath(importPath, alias, targets);
       }
     }
-    
+
     return importPath;
   }
 }
@@ -176,16 +193,16 @@ class DirectoryMover {
   ): Promise<void> {
     // 1. 收集所有檔案
     const files = await this.collectFiles(sourceDir);
-    
+
     // 2. 計算所有新路徑
     const pathMappings = this.calculateMappings(files, sourceDir, targetDir);
-    
+
     // 3. 批次更新內部引用（保持相對路徑不變）
     await this.updateInternalReferences(files, pathMappings);
-    
+
     // 4. 批次更新外部引用
     await this.updateExternalReferences(pathMappings);
-    
+
     // 5. 執行實際移動
     await this.performMove(sourceDir, targetDir);
   }
@@ -215,7 +232,7 @@ class ConflictResolver {
         throw new UnresolvableConflict(conflict);
     }
   }
-  
+
   // 提供解決建議
   suggest(conflict: Conflict): Suggestion[] {
     return [
@@ -236,16 +253,16 @@ class BatchMoveOptimizer {
   optimizeBatchMove(operations: MoveOperation[]): OptimizedPlan {
     // 1. 依賴排序
     const sorted = this.topologicalSort(operations);
-    
+
     // 2. 合併相同目錄的操作
     const merged = this.mergeDirectoryOps(sorted);
-    
+
     // 3. 並行分組
     const parallel = this.groupParallel(merged);
-    
+
     return { steps: parallel };
   }
-  
+
   // 並行執行
   async executePlan(plan: OptimizedPlan): Promise<void> {
     for (const step of plan.steps) {
@@ -262,10 +279,10 @@ class BatchMoveOptimizer {
 class MoveCache {
   // 快取路徑解析結果
   private pathCache = new Map<string, ResolvedPath>();
-  
+
   // 快取檔案內容（用於回滾）
   private contentCache = new Map<string, string>();
-  
+
   // 智能預載入
   async preload(operation: MoveOperation): Promise<void> {
     const affected = await this.predictAffectedFiles(operation);
@@ -292,53 +309,11 @@ class GitIntegration {
       await this.exec(`git rm "${source}"`);
     }
   }
-  
+
   // 檢查 Git 狀態
   async checkGitStatus(path: string): Promise<GitStatus> {
     const status = await this.exec(`git status --porcelain "${path}"`);
     return this.parseStatus(status);
-  }
-}
-```
-
-## 測試策略
-
-### 測試場景
-1. **基本移動**
-   - 單檔案移動
-   - 目錄移動
-   - 跨目錄移動
-
-2. **路徑更新**
-   - 相對路徑更新
-   - 絕對路徑更新
-   - 別名路徑更新
-
-3. **特殊情況**
-   - 循環依賴
-   - 自引用
-   - 符號連結
-
-### 測試工具
-```typescript
-class MoveTestUtils {
-  // 建立測試專案結構
-  createTestProject(): TestProject {
-    return {
-      files: this.generateFiles(),
-      dependencies: this.generateDependencies()
-    };
-  }
-  
-  // 驗證移動結果
-  assertMoveResult(
-    project: TestProject,
-    operation: MoveOperation,
-    expected: ExpectedState
-  ): void {
-    this.assertFilesExist(expected.files);
-    this.assertPathsUpdated(expected.updates);
-    this.assertNoDeadLinks();
   }
 }
 ```
@@ -349,12 +324,12 @@ class MoveTestUtils {
 ```typescript
 class MoveErrorRecovery {
   private rollbackPlan: RollbackPlan;
-  
+
   // 記錄每個操作
   record(action: Action): void {
     this.rollbackPlan.push(action.reverse());
   }
-  
+
   // 執行回滾
   async rollback(): Promise<void> {
     for (const action of this.rollbackPlan.reverse()) {
@@ -372,8 +347,8 @@ class MoveErrorRecovery {
 ## 開發檢查清單
 
 ### 功能實作
-- [ ] 支援所有路徑格式
-- [ ] 處理所有 import 類型
+- [x] 支援所有路徑格式
+- [x] 處理所有 import 類型
 - [ ] 實作衝突檢測
 - [ ] 加入預覽功能
 - [ ] 支援批次移動
@@ -385,28 +360,3 @@ class MoveErrorRecovery {
 - [ ] 效能基準測試
 - [ ] 跨平台測試
 - [ ] 回滾機制測試
-
-## 疑難排解
-
-### 常見問題
-
-1. **路徑更新錯誤**
-   - 檢查路徑計算邏輯
-   - 確認相對路徑基準
-   - 驗證別名配置
-
-2. **檔案遺失**
-   - 檢查權限問題
-   - 確認路徑長度限制
-   - 查看 Git 狀態
-
-3. **循環依賴**
-   - 分析依賴圖
-   - 分階段移動
-   - 使用臨時路徑
-
-## 未來改進
-1. 智能目錄結構建議
-2. 自動化重構規則
-3. 雲端同步支援
-4. 版本控制深度整合

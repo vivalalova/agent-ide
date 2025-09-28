@@ -1,5 +1,27 @@
 # Dependency 模組開發規範
 
+## 實作狀態 ✅
+
+### 實際檔案結構
+```
+dependency/
+├── index.ts                    ✅ 模組入口
+├── dependency-analyzer.ts      ✅ 依賴分析器
+├── dependency-graph.ts         ✅ 依賴關係圖
+├── cycle-detector.ts           ✅ 循環依賴檢測
+├── types.ts                    ✅ 型別定義
+└── 其他進階功能              ⏳ 待實作
+```
+
+### 實作功能狀態
+- ✅ 依賴分析核心功能
+- ✅ 依賴關係圖建立
+- ✅ 循環依賴檢測
+- ✅ 基本型別定義
+- ⏳ 影響範圍分析
+- ⏳ 架構穩定性分析
+- ⏳ 模組化建議
+
 ## 模組職責
 建構和分析程式碼依賴關係圖，提供循環依賴檢測、影響範圍分析和架構優化建議。
 
@@ -33,21 +55,14 @@ dependency/
 ├── graph/
 │   ├── dependency-graph.ts      # 依賴圖資料結構
 │   ├── graph-builder.ts         # 圖構建器
-│   ├── graph-algorithms.ts      # 圖演算法
-│   └── graph-visualizer.ts      # 圖視覺化
+│   └── graph-algorithms.ts      # 圖演算法
 ├── analyzers/
 │   ├── cycle-detector.ts        # 循環檢測
 │   ├── impact-analyzer.ts       # 影響分析
-│   ├── coupling-analyzer.ts     # 耦合度分析
 │   └── stability-analyzer.ts    # 穩定性分析
 ├── extractors/
 │   ├── import-extractor.ts      # Import 提取
-│   ├── reference-extractor.ts   # 引用提取
-│   └── type-extractor.ts        # 型別依賴提取
-├── optimizers/
-│   ├── cycle-breaker.ts         # 循環破解
-│   ├── layer-optimizer.ts      # 分層優化
-│   └── module-suggester.ts      # 模組化建議
+│   └── reference-extractor.ts   # 引用提取
 └── types.ts                 # 型別定義
 ```
 
@@ -56,23 +71,23 @@ dependency/
 class DependencyGraph {
   // 使用鄰接表表示
   private adjacencyList: Map<NodeId, Set<NodeId>>;
-  
+
   // 節點元資料
   private nodes: Map<NodeId, NodeMetadata>;
-  
+
   // 邊元資料
   private edges: Map<EdgeId, EdgeMetadata>;
-  
+
   // 快速查詢索引
   private reverseIndex: Map<NodeId, Set<NodeId>>; // 反向依賴
   private typeIndex: Map<DependencyType, Set<EdgeId>>; // 按類型索引
-  
+
   // 圖操作
   addNode(node: Node): void;
   addEdge(from: NodeId, to: NodeId, metadata: EdgeMetadata): void;
   removeNode(nodeId: NodeId): void;
   removeEdge(from: NodeId, to: NodeId): void;
-  
+
   // 圖查詢
   getOutgoingEdges(nodeId: NodeId): Edge[];
   getIncomingEdges(nodeId: NodeId): Edge[];
@@ -92,7 +107,7 @@ class TarjanCycleDetector {
   private lowlinks = new Map<NodeId, number>();
   private onStack = new Set<NodeId>();
   private sccs: NodeId[][] = [];
-  
+
   detectCycles(graph: DependencyGraph): Cycle[] {
     // 找出所有強連通分量
     for (const node of graph.getNodes()) {
@@ -100,20 +115,20 @@ class TarjanCycleDetector {
         this.strongConnect(node);
       }
     }
-    
+
     // 過濾出包含循環的分量
     return this.sccs
       .filter(scc => scc.length > 1 || this.hasSelfLoop(scc[0]))
       .map(scc => this.createCycle(scc));
   }
-  
+
   private strongConnect(node: Node): void {
     this.indices.set(node.id, this.index);
     this.lowlinks.set(node.id, this.index);
     this.index++;
     this.stack.push(node.id);
     this.onStack.add(node.id);
-    
+
     // 遍歷後繼節點
     for (const successor of node.successors) {
       if (!this.indices.has(successor)) {
@@ -129,7 +144,7 @@ class TarjanCycleDetector {
         );
       }
     }
-    
+
     // 找到強連通分量的根
     if (this.lowlinks.get(node.id) === this.indices.get(node.id)) {
       const scc: NodeId[] = [];
@@ -151,7 +166,7 @@ class CycleBreaker {
   // 分析循環並提供破解建議
   suggestBreaking(cycle: Cycle): BreakingSuggestion[] {
     const suggestions: BreakingSuggestion[] = [];
-    
+
     // 1. 找出最弱的依賴
     const weakestEdge = this.findWeakestEdge(cycle);
     suggestions.push({
@@ -159,7 +174,7 @@ class CycleBreaker {
       edge: weakestEdge,
       impact: 'low'
     });
-    
+
     // 2. 依賴反轉
     const invertibleEdge = this.findInvertibleEdge(cycle);
     if (invertibleEdge) {
@@ -169,7 +184,7 @@ class CycleBreaker {
         impact: 'medium'
       });
     }
-    
+
     // 3. 引入介面
     const interfacePoint = this.findInterfacePoint(cycle);
     suggestions.push({
@@ -177,7 +192,7 @@ class CycleBreaker {
       point: interfacePoint,
       impact: 'low'
     });
-    
+
     return this.rankSuggestions(suggestions);
   }
 }
@@ -197,35 +212,35 @@ class ImpactAnalyzer {
     const directImpact = new Set<NodeId>();
     const indirectImpact = new Set<NodeId>();
     const visited = new Set<NodeId>();
-    
+
     // BFS 遍歷依賴者
     const queue: Array<{ node: NodeId; level: number }> = [
       { node: changedNode, level: 0 }
     ];
-    
+
     while (queue.length > 0) {
       const { node, level } = queue.shift()!;
-      
+
       if (visited.has(node)) continue;
       visited.add(node);
-      
+
       // 獲取依賴此節點的所有節點
       const dependents = graph.getIncomingEdges(node);
-      
+
       for (const dependent of dependents) {
         if (level === 0) {
           directImpact.add(dependent.from);
         } else {
           indirectImpact.add(dependent.from);
         }
-        
+
         // 根據變更類型決定是否繼續傳播
         if (this.shouldPropagate(changeType, dependent)) {
           queue.push({ node: dependent.from, level: level + 1 });
         }
       }
     }
-    
+
     return {
       directImpact: Array.from(directImpact),
       indirectImpact: Array.from(indirectImpact),
@@ -246,11 +261,11 @@ class LayerAnalyzer {
     layers: LayerDefinition[]
   ): Violation[] {
     const violations: Violation[] = [];
-    
+
     for (const edge of graph.getAllEdges()) {
       const fromLayer = this.getLayer(edge.from, layers);
       const toLayer = this.getLayer(edge.to, layers);
-      
+
       if (!this.isAllowedDependency(fromLayer, toLayer, layers)) {
         violations.push({
           type: 'layer-violation',
@@ -262,15 +277,15 @@ class LayerAnalyzer {
         });
       }
     }
-    
+
     return violations;
   }
-  
+
   // 建議層級結構
   suggestLayers(graph: DependencyGraph): LayerSuggestion {
     // 使用拓撲排序找出自然層級
     const layers = this.topologicalLayers(graph);
-    
+
     return {
       layers,
       score: this.calculateLayerScore(layers, graph),
@@ -289,19 +304,19 @@ class ModularityAnalyzer {
     const totalPossible = module.nodes.length * (module.nodes.length - 1);
     return totalPossible > 0 ? internalEdges / totalPossible : 1;
   }
-  
+
   // 計算模組耦合度
   calculateCoupling(module: Module, graph: DependencyGraph): number {
     const externalEdges = this.countExternalEdges(module, graph);
     const totalEdges = this.countTotalEdges(module, graph);
     return totalEdges > 0 ? externalEdges / totalEdges : 0;
   }
-  
+
   // 建議模組邊界
   suggestModuleBoundaries(graph: DependencyGraph): ModuleSuggestion[] {
     // 使用社群檢測演算法
     const communities = this.detectCommunities(graph);
-    
+
     return communities.map(community => ({
       nodes: community.nodes,
       cohesion: this.calculateCohesion(community, graph),
@@ -321,26 +336,26 @@ class StabilityCalculator {
   calculateStability(nodeId: NodeId, graph: DependencyGraph): number {
     const fanIn = graph.getIncomingEdges(nodeId).length;
     const fanOut = graph.getOutgoingEdges(nodeId).length;
-    
+
     // I = FanOut / (FanIn + FanOut)
     // 0 = 最穩定, 1 = 最不穩定
     return (fanIn + fanOut) > 0 ? fanOut / (fanIn + fanOut) : 0;
   }
-  
+
   // 計算抽象性指標
   calculateAbstractness(nodeId: NodeId, metadata: NodeMetadata): number {
     const totalMembers = metadata.classes + metadata.interfaces + metadata.functions;
     const abstractMembers = metadata.interfaces + metadata.abstractClasses;
-    
+
     // A = Abstract / Total
     return totalMembers > 0 ? abstractMembers / totalMembers : 0;
   }
-  
+
   // 計算與主序列的距離
   calculateDistance(nodeId: NodeId, graph: DependencyGraph): number {
     const stability = this.calculateStability(nodeId, graph);
     const abstractness = this.calculateAbstractness(nodeId, metadata);
-    
+
     // D = |A + I - 1|
     // 0 = 在主序列上, 1 = 最遠
     return Math.abs(abstractness + stability - 1);
@@ -359,7 +374,7 @@ class IncrementalGraphUpdater {
     changes: FileChange[]
   ): UpdateResult {
     const affected = new Set<NodeId>();
-    
+
     for (const change of changes) {
       switch (change.type) {
         case 'added':
@@ -372,13 +387,13 @@ class IncrementalGraphUpdater {
           this.handleDeletion(graph, change);
           break;
       }
-      
+
       affected.add(change.file);
     }
-    
+
     // 只重新分析受影響的部分
     this.reanalyzeAffected(graph, affected);
-    
+
     return { affected: Array.from(affected) };
   }
 }
@@ -390,7 +405,7 @@ class DependencyCache {
   private pathCache = new LRUCache<string, Path[]>(1000);
   private cycleCache = new Map<GraphHash, Cycle[]>();
   private metricsCache = new Map<NodeId, Metrics>();
-  
+
   // 智能快取失效
   invalidate(change: GraphChange): void {
     // 只失效受影響的路徑
@@ -399,12 +414,12 @@ class DependencyCache {
         this.pathCache.delete(key);
       }
     }
-    
+
     // 循環可能改變，清空循環快取
     if (change.type === 'edge') {
       this.cycleCache.clear();
     }
-    
+
     // 只更新受影響節點的度量
     this.invalidateMetrics(change.affectedNodes);
   }
@@ -419,23 +434,23 @@ class GraphVisualizer {
   // 生成 DOT 格式
   toDot(graph: DependencyGraph, options?: VisualizationOptions): string {
     const dot = ['digraph Dependencies {'];
-    
+
     // 節點樣式
     for (const node of graph.getNodes()) {
       const style = this.getNodeStyle(node, options);
       dot.push(`  "${node.id}" [${style}];`);
     }
-    
+
     // 邊樣式
     for (const edge of graph.getAllEdges()) {
       const style = this.getEdgeStyle(edge, options);
       dot.push(`  "${edge.from}" -> "${edge.to}" [${style}];`);
     }
-    
+
     dot.push('}');
     return dot.join('\n');
   }
-  
+
   // 生成 D3.js 資料
   toD3(graph: DependencyGraph): D3GraphData {
     return {
@@ -457,8 +472,8 @@ class GraphVisualizer {
 ## 開發檢查清單
 
 ### 功能完整性
-- [ ] 所有依賴類型支援
-- [ ] 循環檢測準確
+- [x] 所有依賴類型支援
+- [x] 循環檢測準確
 - [ ] 影響分析完整
 - [ ] 度量計算正確
 - [ ] 優化建議實用
@@ -468,28 +483,3 @@ class GraphVisualizer {
 - [ ] 增量更新效率
 - [ ] 記憶體使用合理
 - [ ] 查詢響應快速
-
-## 疑難排解
-
-### 常見問題
-
-1. **循環依賴過多**
-   - 檢查模組邊界
-   - 考慮引入介面
-   - 重新組織程式碼結構
-
-2. **圖構建緩慢**
-   - 啟用增量更新
-   - 優化依賴提取
-   - 使用並行處理
-
-3. **記憶體溢出**
-   - 限制圖的深度
-   - 使用外部儲存
-   - 實施圖壓縮
-
-## 未來發展
-1. 機器學習輔助架構優化
-2. 即時依賴追蹤
-3. 分散式圖處理
-4. 3D 依賴視覺化
