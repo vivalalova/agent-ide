@@ -41,7 +41,7 @@ export class TextSearchEngine {
    * 執行文字搜尋
    */
   async search(query: TextQuery): Promise<SearchResult> {
-    const startTime = Date.now();
+    const startTime = performance.now();
     const options = { ...this.defaultOptions, ...query.options };
 
     try {
@@ -67,7 +67,7 @@ export class TextSearchEngine {
 
       for (const filePath of files) {
         // 檢查是否超時
-        if (Date.now() - startTime > options.timeout) {
+        if (performance.now() - startTime > options.timeout) {
           break;
         }
 
@@ -89,7 +89,7 @@ export class TextSearchEngine {
       // 3. 排序結果
       const sortedMatches = this.sortMatches(matches, searchQuery);
 
-      const searchTime = Date.now() - startTime;
+      const searchTime = Math.round(performance.now() - startTime);
       const truncated = totalCount > options.maxResults;
 
       return {
