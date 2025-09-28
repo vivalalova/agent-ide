@@ -66,16 +66,17 @@ describe('SessionManager', () => {
       // Act
       const session = await sessionManager.createSession();
 
-      // Assert
-      await new Promise(resolve => setTimeout(resolve, 10)); // 等待事件處理
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'session-created',
-          payload: expect.objectContaining({
-            sessionId: session.id
+      // Assert - 等待事件處理完成
+      await vi.waitFor(() => {
+        expect(eventSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'session-created',
+            payload: expect.objectContaining({
+              sessionId: session.id
+            })
           })
-        })
-      );
+        );
+      }, { timeout: 1000 });
     });
   });
 
