@@ -16,7 +16,8 @@ Agent IDE 是一個為 AI 代理設計的程式碼智能工具集，提供高效
 - **基礎設施層**: cache、parser、storage、utils ✅
 - **Parser 插件**: TypeScript ✅、JavaScript/Swift ⏳
 - **介面層**: CLI、MCP ✅
-- **測試**: 60個檔案、1410個測試通過、執行時間 4.6秒
+- **應用服務層**: Application Services ✅
+- **測試**: 69個檔案、1591個測試通過、執行時間 101秒
 
 ## 開發環境
 
@@ -37,7 +38,7 @@ src/
 ├── infrastructure/ # 基礎設施層
 ├── plugins/        # Parser 插件
 ├── interfaces/     # CLI/MCP 介面
-├── application/    # 應用服務層（待實作）
+├── application/    # 應用服務層 ✅
 └── shared/         # 共享模組
 ```
 
@@ -140,9 +141,11 @@ src/
 
 ---
 
-# Application Services ⏳
+# Application Services ✅
 
 **功能**: 模組協調、工作流程引擎、會話管理、快取協調、錯誤處理
+- **已實作**: EventBus 事件系統、StateManager 狀態管理、ErrorHandler 錯誤處理、SessionManager 會話管理、CacheCoordinator 快取協調、ModuleCoordinator 模組協調、WorkflowEngine 工作流程引擎
+- **測試覆蓋**: 184個測試全部通過（100%）
 - 原則: 業務邏輯協調、效能優化、可靠性保證、擴展性設計
 
 ---
