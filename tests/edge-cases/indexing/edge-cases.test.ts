@@ -239,21 +239,28 @@ const testConstant = 'value';
     });
 
     it.each([
-      ['查詢索引前', false, '索引尚未建立'],
-      ['查詢索引後', true, null],
-    ])('應該驗證索引狀態：%s', withMemoryOptimization(async (unusedDescription, indexed, expectedError) => {
+      ['查詢索引前', false, true],
+      ['查詢索引後', true, false],
+    ])('應該驗證索引狀態：%s', withMemoryOptimization(async (unusedDescription, indexed, expectEmpty) => {
       const engine = new IndexEngine(validConfig);
 
       if (indexed) {
         await engine.indexProject();
       }
 
-      if (expectedError) {
-        await expect(engine.getStats()).rejects.toThrow(expectedError);
-        await expect(engine.findSymbol('test')).rejects.toThrow(expectedError);
+      const stats = await engine.getStats();
+      const symbols = await engine.findSymbol('test');
+
+      if (expectEmpty) {
+        // 未索引時應該返回空結果
+        expect(stats.totalFiles).toBe(0);
+        expect(stats.indexedFiles).toBe(0);
+        expect(stats.totalSymbols).toBe(0);
+        expect(symbols).toEqual([]);
       } else {
-        await expect(engine.getStats()).resolves.not.toThrow();
-        await expect(engine.findSymbol('test')).resolves.not.toThrow();
+        // 已索引時應該有結果
+        expect(stats.totalFiles).toBeGreaterThan(0);
+        expect(symbols).toBeDefined();
       }
     }, { testName: 'query-index-state-test' }));
 
@@ -303,8 +310,8 @@ const testConstant = 'value';
       engine.dispose();
 
       // 確認無法查詢已釋放的索引
-      await expect(engine.getStats()).rejects.toThrow('索引尚未建立');
-      await expect(engine.findSymbol('test')).rejects.toThrow('索引尚未建立');
+      await expect(engine.getStats()).rejects.toThrow('索引引擎已被釋放');
+      await expect(engine.findSymbol('test')).rejects.toThrow('索引引擎已被釋放');
     }, { testName: 'resource-dispose' }));
 
     it('應該處理多次 dispose', withMemoryOptimization(async () => {
@@ -316,7 +323,7 @@ const testConstant = 'value';
       engine.dispose();
       engine.dispose();
 
-      await expect(engine.getStats()).rejects.toThrow('索引尚未建立');
+      await expect(engine.getStats()).rejects.toThrow('索引引擎已被釋放');
     }, { testName: 'resource-multiple-dispose' }));
   });
 

@@ -205,9 +205,10 @@ describe('IndexEngine', () => {
   });
 
   describe('初始化和配置', () => {
-    it('應該能建立索引引擎', () => {
+    it('應該能建立索引引擎', async () => {
       expect(indexEngine).toBeDefined();
-      expect(indexEngine.getStats().totalFiles).toBe(0);
+      const stats = await indexEngine.getStats();
+      expect(stats.totalFiles).toBe(0);
     });
 
     it('應該能取得配置', () => {
@@ -243,7 +244,7 @@ describe('IndexEngine', () => {
 
       expect(indexEngine.isIndexed('/test/workspace/example.ts')).toBe(true);
       
-      const stats = indexEngine.getStats();
+      const stats = await indexEngine.getStats();
       expect(stats.totalFiles).toBe(1);
       expect(stats.indexedFiles).toBe(1);
     });
@@ -349,7 +350,7 @@ describe('IndexEngine', () => {
     it('應該能索引整個目錄', async () => {
       await indexEngine.indexDirectory('/test/workspace/src');
 
-      const stats = indexEngine.getStats();
+      const stats = await indexEngine.getStats();
       expect(stats.totalFiles).toBeGreaterThan(0);
       expect(stats.indexedFiles).toBeGreaterThan(0);
 
@@ -364,8 +365,8 @@ describe('IndexEngine', () => {
     it('應該能索引整個專案', async () => {
       await indexEngine.indexProject('/test/workspace');
 
-      const stats = indexEngine.getStats();
-      
+      const stats = await indexEngine.getStats();
+
       // 應該索引 src 目錄下的檔案，但排除測試檔案和 node_modules
       expect(stats.totalFiles).toBeGreaterThan(0);
       
@@ -497,7 +498,7 @@ describe('IndexEngine', () => {
 
       await indexEngine.indexProject('/test/workspace');
 
-      const stats = indexEngine.getStats();
+      const stats = await indexEngine.getStats();
 
       expect(stats.totalFiles).toBe(2);
       expect(stats.indexedFiles).toBe(2);
@@ -515,7 +516,7 @@ describe('IndexEngine', () => {
 
       await indexEngine.indexFile('/test/workspace/example.ts');
       
-      const stats = indexEngine.getStats();
+      const stats = await indexEngine.getStats();
       expect(stats.lastUpdated.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
     });
   });
@@ -527,11 +528,13 @@ describe('IndexEngine', () => {
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
-      expect(indexEngine.getStats().totalFiles).toBe(1);
+      let stats = await indexEngine.getStats();
+      expect(stats.totalFiles).toBe(1);
 
       await indexEngine.clear();
-      expect(indexEngine.getStats().totalFiles).toBe(0);
-      expect(indexEngine.getStats().totalSymbols).toBe(0);
+      stats = await indexEngine.getStats();
+      expect(stats.totalFiles).toBe(0);
+      expect(stats.totalSymbols).toBe(0);
     });
 
     it('清空後應該能重新索引', async () => {
@@ -541,11 +544,13 @@ describe('IndexEngine', () => {
 
       await indexEngine.indexFile('/test/workspace/example.ts');
       await indexEngine.clear();
-      
-      expect(indexEngine.getStats().totalFiles).toBe(0);
+
+      let stats = await indexEngine.getStats();
+      expect(stats.totalFiles).toBe(0);
 
       await indexEngine.indexFile('/test/workspace/example.ts');
-      expect(indexEngine.getStats().totalFiles).toBe(1);
+      stats = await indexEngine.getStats();
+      expect(stats.totalFiles).toBe(1);
     });
   });
 
@@ -595,7 +600,7 @@ describe('IndexEngine', () => {
     it('應該根據副檔名過濾檔案', async () => {
       await indexEngine.indexProject('/test/workspace');
       
-      const stats = indexEngine.getStats();
+      const stats = await indexEngine.getStats();
       
       // 應該只索引 .ts 和 .js 檔案，但排除測試和依賴目錄
       expect(indexEngine.isIndexed('/test/workspace/src/main.ts')).toBe(true);

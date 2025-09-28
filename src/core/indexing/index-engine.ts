@@ -177,6 +177,9 @@ export class IndexEngine {
         // 可以添加進度回調處理
       }
     });
+
+    // 標記索引已建立
+    this._indexed = true;
   }
 
   /**
@@ -198,6 +201,9 @@ export class IndexEngine {
       
       // 新增到檔案索引
       await this.fileIndex.addFile(fileInfo);
+
+      // 標記索引已建立（即使只索引了一個檔案）
+      this._indexed = true;
 
       try {
         // 解析檔案並提取符號
@@ -269,7 +275,16 @@ export class IndexEngine {
    * 根據名稱查找符號
    */
   async findSymbol(name: string, options?: SearchOptions): Promise<SymbolSearchResult[]> {
-    this.checkDisposed();
+    // 檢查是否已被釋放
+    if (this._disposed) {
+      throw new Error('索引引擎已被釋放');
+    }
+
+    // 如果尚未索引，返回空結果
+    if (!this._indexed) {
+      return [];
+    }
+
     if (typeof name !== 'string') {
       throw new Error('查詢必須是字串');
     }
@@ -308,7 +323,23 @@ export class IndexEngine {
    * 取得索引統計資訊
    */
   async getStats(): Promise<IndexStats> {
-    this.checkDisposed();
+    // 檢查是否已被釋放
+    if (this._disposed) {
+      throw new Error('索引引擎已被釋放');
+    }
+
+    // 如果尚未索引，返回初始狀態
+    if (!this._indexed) {
+      return {
+        totalFiles: 0,
+        indexedFiles: 0,
+        totalSymbols: 0,
+        totalDependencies: 0,
+        lastUpdated: new Date(),
+        indexSize: 0
+      };
+    }
+
     const fileStats = this.fileIndex.getStats();
     const symbolStats = this.symbolIndex.getStats();
 
