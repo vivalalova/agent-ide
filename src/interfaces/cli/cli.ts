@@ -13,6 +13,8 @@ import { SearchService } from '../../core/search/service.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
+import { JavaScriptParser } from '../../plugins/javascript/parser.js';
+import { SwiftParser } from '../../plugins/swift/parser.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -60,6 +62,30 @@ export class AgentIdeCLI {
         // 如果 TypeScript Parser 載入失敗，記錄錯誤
         console.debug('TypeScript parser loading failed:', tsError);
         console.debug('TypeScript Parser initialization warning:', tsError);
+      }
+
+      // 嘗試註冊內建的 JavaScript Parser
+      try {
+        const jsParser = new JavaScriptParser();
+        if (!registry.getParserByName('javascript')) {
+          registry.register(jsParser);
+        }
+      } catch (jsError) {
+        // 如果 JavaScript Parser 載入失敗，記錄錯誤
+        console.debug('JavaScript parser loading failed:', jsError);
+        console.debug('JavaScript Parser initialization warning:', jsError);
+      }
+
+      // 嘗試註冊內建的 Swift Parser
+      try {
+        const swiftParser = new SwiftParser();
+        if (!registry.getParserByName('swift')) {
+          registry.register(swiftParser);
+        }
+      } catch (swiftError) {
+        // 如果 Swift Parser 載入失敗，記錄錯誤
+        console.debug('Swift parser loading failed:', swiftError);
+        console.debug('Swift Parser initialization warning:', swiftError);
       }
     } catch (error) {
       // 靜默處理初始化錯誤，避免影響 CLI 啟動
