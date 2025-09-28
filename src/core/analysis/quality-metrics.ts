@@ -62,10 +62,10 @@ export class MaintainabilityIndex {
    * 將可維護性指數轉換為等級
    */
   getGrade(maintainabilityIndex: number): 'A' | 'B' | 'C' | 'D' | 'F' {
-    if (maintainabilityIndex >= 85) return 'A';
-    if (maintainabilityIndex >= 70) return 'B';
-    if (maintainabilityIndex >= 50) return 'C';
-    if (maintainabilityIndex >= 25) return 'D';
+    if (maintainabilityIndex >= 85) {return 'A';}
+    if (maintainabilityIndex >= 70) {return 'B';}
+    if (maintainabilityIndex >= 50) {return 'C';}
+    if (maintainabilityIndex >= 25) {return 'D';}
     return 'F';
   }
 
@@ -74,12 +74,12 @@ export class MaintainabilityIndex {
    */
   getDescription(grade: string): string {
     switch (grade) {
-      case 'A': return '優秀 - 易於維護';
-      case 'B': return '良好 - 相對易於維護';
-      case 'C': return '一般 - 中等維護難度';
-      case 'D': return '差 - 維護困難';
-      case 'F': return '非常差 - 極難維護';
-      default: return '未知等級';
+    case 'A': return '優秀 - 易於維護';
+    case 'B': return '良好 - 相對易於維護';
+    case 'C': return '一般 - 中等維護難度';
+    case 'D': return '差 - 維護困難';
+    case 'F': return '非常差 - 極難維護';
+    default: return '未知等級';
     }
   }
 }
@@ -430,7 +430,7 @@ export class QualityMetricsAnalyzer {
    */
   private calculateAverageParameterCount(code: string): number {
     const functionMatches = code.match(/\([^)]*\)/g);
-    if (!functionMatches || functionMatches.length === 0) return 0;
+    if (!functionMatches || functionMatches.length === 0) {return 0;}
 
     const totalParams = functionMatches.reduce((sum, match) => {
       const params = match.slice(1, -1).split(',').filter(p => p.trim().length > 0);

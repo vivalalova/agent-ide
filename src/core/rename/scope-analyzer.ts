@@ -132,7 +132,7 @@ export class ScopeAnalyzer {
         (parentScope.symbols as Symbol[]).push(symbol);
         this.addToSymbolTable(symbol);
       }
-      
+
       // 建立函式作用域
       currentScope = this.createScope(node, parentScope);
       this.currentScopes.push(currentScope);
@@ -196,7 +196,7 @@ export class ScopeAnalyzer {
       'ClassDeclaration': 'class',
       'BlockStatement': 'block'
     };
-    
+
     return typeMap[nodeType] || 'block';
   }
 
@@ -218,7 +218,7 @@ export class ScopeAnalyzer {
    */
   private createSymbolFromNode(node: ASTNode): Symbol | null {
     const name = node.properties.name as string;
-    if (!name) return null;
+    if (!name) {return null;}
 
     const symbolType = this.getSymbolType(node.type);
     const location = createLocation('/test/file.ts', node.range); // 暫時使用測試檔案路徑
@@ -253,15 +253,15 @@ export class ScopeAnalyzer {
    * 找到遮蔽指定符號的其他符號
    */
   private findShadowingSymbols(
-    symbol: Symbol, 
-    allScopes: ScopeAnalysisResult[], 
+    symbol: Symbol,
+    allScopes: ScopeAnalysisResult[],
     symbolScope: ScopeAnalysisResult
   ): ShadowInfo[] {
     const shadows: ShadowInfo[] = [];
 
     for (const scope of allScopes) {
       // 跳過符號所在的作用域
-      if (scope === symbolScope) continue;
+      if (scope === symbolScope) {continue;}
 
       // 檢查是否為子作用域（會遮蔽父作用域的符號）
       if (this.isChildScope(scope, symbolScope)) {

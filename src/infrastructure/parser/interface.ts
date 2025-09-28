@@ -12,21 +12,21 @@ import type { CodeEdit, Definition, Usage, ValidationResult } from './types';
  */
 export interface ParserPlugin {
   // ===== 基本資訊 =====
-  
+
   /** 插件名稱 */
   readonly name: string;
-  
+
   /** 插件版本 */
   readonly version: string;
-  
+
   /** 支援的副檔名列表 */
   readonly supportedExtensions: readonly string[];
-  
+
   /** 支援的語言列表 */
   readonly supportedLanguages: readonly string[];
 
   // ===== 核心功能 =====
-  
+
   /**
    * 解析程式碼並生成 AST
    * @param code 原始程式碼
@@ -35,14 +35,14 @@ export interface ParserPlugin {
    * @throws ParseError 當解析失敗時
    */
   parse(code: string, filePath: string): Promise<AST>;
-  
+
   /**
    * 從 AST 中提取所有符號
    * @param ast AST 物件
    * @returns 符號列表
    */
   extractSymbols(ast: AST): Promise<Symbol[]>;
-  
+
   /**
    * 查找符號的所有引用
    * @param ast AST 物件
@@ -50,7 +50,7 @@ export interface ParserPlugin {
    * @returns 引用列表
    */
   findReferences(ast: AST, symbol: Symbol): Promise<Reference[]>;
-  
+
   /**
    * 從 AST 中提取所有依賴關係
    * @param ast AST 物件
@@ -59,7 +59,7 @@ export interface ParserPlugin {
   extractDependencies(ast: AST): Promise<Dependency[]>;
 
   // ===== 重構支援 =====
-  
+
   /**
    * 重新命名符號
    * @param ast AST 物件
@@ -68,7 +68,7 @@ export interface ParserPlugin {
    * @returns 程式碼編輯操作列表
    */
   rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]>;
-  
+
   /**
    * 提取函式重構
    * @param ast AST 物件
@@ -78,7 +78,7 @@ export interface ParserPlugin {
   extractFunction(ast: AST, selection: Range): Promise<CodeEdit[]>;
 
   // ===== 查詢支援 =====
-  
+
   /**
    * 查找符號定義
    * @param ast AST 物件
@@ -86,7 +86,7 @@ export interface ParserPlugin {
    * @returns 定義資訊，如果找不到則返回 null
    */
   findDefinition(ast: AST, position: Position): Promise<Definition | null>;
-  
+
   /**
    * 查找符號的所有使用位置
    * @param ast AST 物件
@@ -96,13 +96,13 @@ export interface ParserPlugin {
   findUsages(ast: AST, symbol: Symbol): Promise<Usage[]>;
 
   // ===== 驗證和生命週期 =====
-  
+
   /**
    * 驗證插件狀態
    * @returns 驗證結果
    */
   validate(): Promise<ValidationResult>;
-  
+
   /**
    * 清理資源
    * 應該釋放插件使用的所有資源
@@ -120,7 +120,7 @@ export function isParserPlugin(value: unknown): value is ParserPlugin {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   // 檢查基本屬性
   if (
     typeof obj.name !== 'string' ||
@@ -184,12 +184,12 @@ export function findPluginForFile(
   filePath: string
 ): ParserPlugin | null {
   const extension = getFileExtension(filePath);
-  
+
   for (const plugin of plugins) {
     if (supportsExtension(plugin, extension)) {
       return plugin;
     }
   }
-  
+
   return null;
 }

@@ -86,12 +86,12 @@ export interface Dependency {
  * 建立 Scope 的工廠函式
  */
 export function createScope(
-  type: ScopeType, 
-  name?: string, 
+  type: ScopeType,
+  name?: string,
   parent?: Scope
 ): Scope {
   const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'function', 'block'];
-  
+
   if (!validTypes.includes(type)) {
     throw new Error('無效的 scope 類型');
   }
@@ -184,7 +184,7 @@ export function isScope(value: unknown): value is Scope {
 
   const obj = value as Record<string, unknown>;
   const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'function', 'block'];
-  
+
   return (
     typeof obj.type === 'string' &&
     validTypes.includes(obj.type as ScopeType) &&
@@ -202,7 +202,7 @@ export function isSymbol(value: unknown): value is Symbol {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.name === 'string' &&
     obj.name.trim().length > 0 &&
@@ -222,7 +222,7 @@ export function isReference(value: unknown): value is Reference {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     isSymbol(obj.symbol) &&
     obj.location && typeof obj.location === 'object' &&
@@ -239,7 +239,7 @@ export function isDependency(value: unknown): value is Dependency {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.path === 'string' &&
     obj.path.trim().length > 0 &&
@@ -255,12 +255,12 @@ export function isDependency(value: unknown): value is Dependency {
 export function getScopeDepth(scope: Scope): number {
   let depth = 0;
   let currentScope: Scope | undefined = scope;
-  
+
   while (currentScope?.parent) {
     depth++;
     currentScope = currentScope.parent;
   }
-  
+
   return depth;
 }
 
@@ -271,11 +271,11 @@ export function isSameScope(symbol1: Symbol, symbol2: Symbol): boolean {
   if (!symbol1.scope && !symbol2.scope) {
     return true; // 都沒有 scope，視為相同
   }
-  
+
   if (!symbol1.scope || !symbol2.scope) {
     return false; // 一個有 scope，一個沒有，不相同
   }
-  
+
   return symbol1.scope === symbol2.scope;
 }
 
@@ -285,7 +285,7 @@ export function isSameScope(symbol1: Symbol, symbol2: Symbol): boolean {
 export function getScopePath(scope: Scope): string[] {
   const path: string[] = [];
   let currentScope: Scope | undefined = scope;
-  
+
   while (currentScope) {
     if (currentScope.name) {
       path.unshift(currentScope.name);
@@ -294,6 +294,6 @@ export function getScopePath(scope: Scope): string[] {
     }
     currentScope = currentScope.parent;
   }
-  
+
   return path;
 }

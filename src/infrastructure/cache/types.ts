@@ -223,13 +223,13 @@ export type CacheEntry<K, V> = [K, V];
 /**
  * 快取可序列化的值型別
  */
-export type SerializableValue = 
-  | string 
-  | number 
-  | boolean 
-  | null 
-  | undefined 
-  | SerializableObject 
+export type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SerializableObject
   | SerializableArray;
 
 export interface SerializableObject {

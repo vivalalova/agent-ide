@@ -4,7 +4,7 @@
  * @returns 首字母大寫的字串
  */
 export function capitalize(str: string): string {
-  if (!str) return '';
+  if (!str) {return '';}
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
@@ -14,8 +14,8 @@ export function capitalize(str: string): string {
  * @returns 駝峰命名格式的字串
  */
 export function camelCase(str: string): string {
-  if (!str) return '';
-  
+  if (!str) {return '';}
+
   return str
     .replace(/[^\w\s]/g, ' ') // 將特殊字元替換為空格
     .replace(/_/g, ' ') // 將底線替換為空格
@@ -34,8 +34,8 @@ export function camelCase(str: string): string {
  * @returns 蛇形命名格式的字串
  */
 export function snakeCase(str: string): string {
-  if (!str) return '';
-  
+  if (!str) {return '';}
+
   return str
     .replace(/([a-z])([A-Z])/g, '$1_$2') // 在小寫字母後的大寫字母前加底線
     .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2') // 處理連續大寫字母
@@ -51,8 +51,8 @@ export function snakeCase(str: string): string {
  * @returns 短橫線命名格式的字串
  */
 export function kebabCase(str: string): string {
-  if (!str) return '';
-  
+  if (!str) {return '';}
+
   return str
     .replace(/([a-z])([A-Z])/g, '$1-$2') // 在小寫字母後的大寫字母前加短橫線
     .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2') // 處理連續大寫字母
@@ -71,10 +71,10 @@ export function kebabCase(str: string): string {
  * @returns 截斷後的字串
  */
 export function truncate(str: string, length: number, ellipsis: string = '...'): string {
-  if (!str) return '';
-  if (length <= 0) return ellipsis;
-  if (str.length <= length) return str;
-  
+  if (!str) {return '';}
+  if (length <= 0) {return ellipsis;}
+  if (str.length <= length) {return str;}
+
   return str.slice(0, length) + ellipsis;
 }
 
@@ -89,13 +89,13 @@ export function padStart(str: string, targetLength: number, padString: string = 
   if (!str && targetLength > 0) {
     return padString.repeat(targetLength);
   }
-  
+
   const currentLength = str.length;
-  if (currentLength >= targetLength) return str;
-  
+  if (currentLength >= targetLength) {return str;}
+
   const padLength = targetLength - currentLength;
   const pad = padString.repeat(Math.ceil(padLength / padString.length)).slice(0, padLength);
-  
+
   return pad + str;
 }
 
@@ -110,13 +110,13 @@ export function padEnd(str: string, targetLength: number, padString: string = ' 
   if (!str && targetLength > 0) {
     return padString.repeat(targetLength);
   }
-  
+
   const currentLength = str.length;
-  if (currentLength >= targetLength) return str;
-  
+  if (currentLength >= targetLength) {return str;}
+
   const padLength = targetLength - currentLength;
   const pad = padString.repeat(Math.ceil(padLength / padString.length)).slice(0, padLength);
-  
+
   return str + pad;
 }
 
@@ -126,10 +126,10 @@ export function padEnd(str: string, targetLength: number, padString: string = ' 
  * @returns 移除縮排後的字串
  */
 export function stripIndent(str: string): string {
-  if (!str) return '';
-  
+  if (!str) {return '';}
+
   const lines = str.split('\n');
-  
+
   // 移除開頭和結尾的空行
   while (lines.length > 0 && lines[0].trim() === '') {
     lines.shift();
@@ -137,16 +137,16 @@ export function stripIndent(str: string): string {
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
     lines.pop();
   }
-  
-  if (lines.length === 0) return '';
-  
+
+  if (lines.length === 0) {return '';}
+
   // 找到最小縮排
   const indents = lines
     .filter(line => line.trim() !== '')
     .map(line => line.match(/^[ \t]*/)?.[0].length ?? 0);
-  
+
   const minIndent = Math.min(...indents);
-  
+
   // 移除共同縮排
   return lines
     .map(line => line.slice(minIndent))
@@ -159,7 +159,7 @@ export function stripIndent(str: string): string {
  * @returns 跳脫後的字串
  */
 export function escapeRegExp(str: string): string {
-  if (!str) return '';
+  if (!str) {return '';}
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -170,16 +170,16 @@ export function escapeRegExp(str: string): string {
  * @returns 替換後的字串
  */
 export function template(template: string, variables: Record<string, any>): string {
-  if (!template) return '';
-  
+  if (!template) {return '';}
+
   return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
     const trimmedKey = key.trim();
-    
+
     // 支援巢狀物件存取，如 user.name
     const value = trimmedKey.split('.').reduce((obj: any, prop: string) => {
       return obj?.[prop];
     }, variables);
-    
+
     return value !== undefined ? String(value) : match;
   });
 }
@@ -190,8 +190,8 @@ export function template(template: string, variables: Record<string, any>): stri
  * @returns URL 友好的字串
  */
 export function slugify(str: string): string {
-  if (!str) return '';
-  
+  if (!str) {return '';}
+
   return str
     .trim()
     .toLowerCase()

@@ -50,15 +50,15 @@ export class BaseError extends Error {
    */
   toString(): string {
     let result = `${this.name} [${this.code}]: ${this.message}`;
-    
+
     if (this.details) {
       result += `\n詳細資料: ${JSON.stringify(this.details, null, 2)}`;
     }
-    
+
     if (this.cause) {
       result += `\n原因: ${this.cause.message}`;
     }
-    
+
     return result;
   }
 }

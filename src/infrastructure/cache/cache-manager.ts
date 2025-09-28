@@ -1,6 +1,6 @@
 import { MemoryCache } from './memory-cache';
-import { 
-  type CacheOptions, 
+import {
+  type CacheOptions,
   type CacheManagerOptions,
   type CacheEvent,
   type CacheEventListener
@@ -75,11 +75,11 @@ export class CacheManager {
    * 建立新的快取實例
    */
   createCache<K, V>(
-    name: string, 
+    name: string,
     options?: CacheOptions
   ): MemoryCache<K, V> {
     this.checkDisposed();
-    
+
     if (this.caches.has(name)) {
       throw new Error(`Cache with name "${name}" already exists`);
     }
@@ -122,9 +122,9 @@ export class CacheManager {
    */
   deleteCache(name: string): boolean {
     this.checkDisposed();
-    
+
     const cache = this.caches.get(name);
-    if (!cache) return false;
+    if (!cache) {return false;}
 
     cache.dispose();
     this.caches.delete(name);
@@ -136,7 +136,7 @@ export class CacheManager {
    */
   deleteCaches(names: string[]): BatchOperationResult {
     this.checkDisposed();
-    
+
     const successful: string[] = [];
     const failed: string[] = [];
 
@@ -164,9 +164,9 @@ export class CacheManager {
    */
   clearCache(name: string): boolean {
     this.checkDisposed();
-    
+
     const cache = this.caches.get(name);
-    if (!cache) return false;
+    if (!cache) {return false;}
 
     cache.clear();
     return true;
@@ -177,7 +177,7 @@ export class CacheManager {
    */
   clearCaches(names: string[]): void {
     this.checkDisposed();
-    
+
     for (const name of names) {
       this.clearCache(name);
     }
@@ -188,7 +188,7 @@ export class CacheManager {
    */
   clearAll(): void {
     this.checkDisposed();
-    
+
     for (const cache of this.caches.values()) {
       cache.clear();
     }
@@ -199,7 +199,7 @@ export class CacheManager {
    */
   async warmupCache(name: string): Promise<void> {
     this.checkDisposed();
-    
+
     if (!this.options.warmupConfig.enabled) {
       throw new Error('Cache warmup is disabled');
     }
@@ -216,7 +216,7 @@ export class CacheManager {
     try {
       if (config.dataSource) {
         const data = await config.dataSource();
-        
+
         for (const [key, value] of data.entries()) {
           try {
             cache.set(key, value);
@@ -243,7 +243,7 @@ export class CacheManager {
    */
   getGlobalStats(): GlobalStats {
     this.checkDisposed();
-    
+
     if (!this.options.enableGlobalStats) {
       return {
         totalCaches: 0,
@@ -312,13 +312,13 @@ export class CacheManager {
    * 銷毀管理器和所有快取
    */
   dispose(): void {
-    if (this.disposed) return;
+    if (this.disposed) {return;}
 
     // 銷毀所有快取實例
     for (const cache of this.caches.values()) {
       cache.dispose();
     }
-    
+
     this.caches.clear();
     this.globalEventListeners.clear();
     this.disposed = true;

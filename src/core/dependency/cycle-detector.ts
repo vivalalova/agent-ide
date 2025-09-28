@@ -4,10 +4,10 @@
  */
 
 import type { DependencyGraph } from './dependency-graph';
-import type { 
-  CircularDependency, 
+import type {
+  CircularDependency,
   StronglyConnectedComponent,
-  CycleDetectionOptions 
+  CycleDetectionOptions
 } from './types';
 import { calculateCycleSeverity } from './types';
 
@@ -31,11 +31,11 @@ export class CycleDetector {
    * @returns 循環依賴列表
    */
   detectCycles(
-    graph: DependencyGraph, 
+    graph: DependencyGraph,
     options?: CycleDetectionOptions
   ): CircularDependency[] {
     const opts = this.getDefaultOptions(options);
-    
+
     if (opts.maxCycleLength <= 0) {
       throw new Error('最大循環長度必須大於 0');
     }
@@ -59,7 +59,7 @@ export class CycleDetector {
       } else if (scc.size > 1 && scc.size <= opts.maxCycleLength) {
         // 找出 SCC 中的實際循環路徑
         const cyclePaths = this.findCyclePathsInSCC(graph, [...scc.nodes]);
-        
+
         for (const cyclePath of cyclePaths) {
           if (cyclePath.length <= opts.maxCycleLength) {
             cycles.push({
@@ -67,7 +67,7 @@ export class CycleDetector {
               length: cyclePath.length,
               severity: calculateCycleSeverity(cyclePath.length)
             });
-            
+
             // 如果不需要報告所有循環，找到第一個就停止
             if (!opts.reportAllCycles) {
               break;
@@ -106,7 +106,7 @@ export class CycleDetector {
       const dependencies = graph.getDependencies(node);
       for (const dep of dependencies) {
         const depState = nodeStates.get(dep);
-        
+
         if (!depState) {
           // 依賴尚未被訪問，遞歸處理
           strongConnect(dep);
@@ -125,7 +125,7 @@ export class CycleDetector {
       if (nodeState.lowLink === nodeState.index) {
         const sccNodes: string[] = [];
         let currentNode: string;
-        
+
         do {
           currentNode = stack.pop()!;
           const currentState = nodeStates.get(currentNode)!;
@@ -188,14 +188,14 @@ export class CycleDetector {
    * @returns 循環路徑或 null
    */
   private findShortestCyclePath(
-    graph: DependencyGraph, 
-    startNode: string, 
+    graph: DependencyGraph,
+    startNode: string,
     sccNodes: string[]
   ): string[] | null {
     const sccSet = new Set(sccNodes);
-    const queue: Array<{ node: string; path: string[] }> = [{ 
-      node: startNode, 
-      path: [startNode] 
+    const queue: Array<{ node: string; path: string[] }> = [{
+      node: startNode,
+      path: [startNode]
     }];
     const visited = new Set<string>();
 
@@ -293,12 +293,12 @@ export class CycleDetector {
     maxCycleLength: number;
     cyclesBySeverity: Record<string, number>;
   } {
-    const cycles = this.detectCycles(graph, { 
+    const cycles = this.detectCycles(graph, {
       reportAllCycles: true,
       maxCycleLength: 100,
       ignoreSelfLoops: false
     });
-    
+
     if (cycles.length === 0) {
       return {
         totalCycles: 0,
@@ -310,7 +310,7 @@ export class CycleDetector {
 
     const totalLength = cycles.reduce((sum, cycle) => sum + cycle.length, 0);
     const maxLength = Math.max(...cycles.map(cycle => cycle.length));
-    
+
     const severityCount = cycles.reduce((acc, cycle) => {
       acc[cycle.severity]++;
       return acc;

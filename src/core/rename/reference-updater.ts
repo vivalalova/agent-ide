@@ -3,12 +3,12 @@
  * 負責更新程式碼中的符號引用
  */
 
-import { 
-  UpdateResult, 
-  UpdatedFile, 
-  TextChange, 
+import {
+  UpdateResult,
+  UpdatedFile,
+  TextChange,
   SymbolReference,
-  RenameOperation 
+  RenameOperation
 } from './types';
 import { Position, Range, Location } from '../../shared/types/core';
 import { Symbol } from '../../shared/types/symbol';
@@ -23,8 +23,8 @@ export class ReferenceUpdater {
    * 更新所有引用
    */
   async updateReferences(
-    symbol: Symbol, 
-    newName: string, 
+    symbol: Symbol,
+    newName: string,
     filePaths: string[]
   ): Promise<UpdateResult> {
     const updatedFiles: UpdatedFile[] = [];
@@ -33,11 +33,11 @@ export class ReferenceUpdater {
     try {
       for (const filePath of filePaths) {
         const result = await this.updateFileReferences(
-          filePath, 
-          symbol, 
+          filePath,
+          symbol,
           newName
         );
-        
+
         if (result) {
           updatedFiles.push(result);
         }
@@ -100,15 +100,15 @@ export class ReferenceUpdater {
    * 尋找檔案中的符號引用
    */
   async findSymbolReferences(
-    filePath: string, 
+    filePath: string,
     symbolName: string
   ): Promise<SymbolReference[]> {
     const content = await this.getFileContent(filePath);
-    if (!content) return [];
+    if (!content) {return [];}
 
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
-    
+
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
@@ -117,7 +117,7 @@ export class ReferenceUpdater {
       while ((match = regex.exec(line)) !== null) {
         const startColumn = match.index + 1;
         const endColumn = startColumn + symbolName.length;
-        
+
         const range: Range = {
           start: { line: lineIndex + 1, column: startColumn, offset: undefined },
           end: { line: lineIndex + 1, column: endColumn, offset: undefined }
@@ -141,8 +141,8 @@ export class ReferenceUpdater {
    * 處理跨檔案引用
    */
   async updateCrossFileReferences(
-    symbol: Symbol, 
-    newName: string, 
+    symbol: Symbol,
+    newName: string,
     projectFiles: string[]
   ): Promise<UpdateResult> {
     const updatedFiles: UpdatedFile[] = [];
@@ -151,7 +151,7 @@ export class ReferenceUpdater {
     try {
       // 找出所有可能包含引用的檔案
       const referencingFiles = await this.findReferencingFiles(
-        symbol.name, 
+        symbol.name,
         projectFiles
       );
 
@@ -161,7 +161,7 @@ export class ReferenceUpdater {
       for (const filePath of filesToProcess) {
         // 簡化處理：直接更新所有符號引用
         const updateResult = await this.updateFileReferences(filePath, symbol, newName);
-        
+
         if (updateResult) {
           updatedFiles.push(updateResult);
         }
@@ -186,15 +186,15 @@ export class ReferenceUpdater {
    * 更新檔案中的引用
    */
   private async updateFileReferences(
-    filePath: string, 
-    symbol: Symbol, 
+    filePath: string,
+    symbol: Symbol,
     newName: string
   ): Promise<UpdatedFile | null> {
     const originalContent = await this.getFileContent(filePath);
-    if (!originalContent) return null;
+    if (!originalContent) {return null;}
 
     const references = await this.findSymbolReferences(filePath, symbol.name);
-    
+
     // 如果沒有找到引用，至少處理符號定義位置
     if (references.length === 0) {
       // 為了讓測試通過，至少建立一個基於符號位置的變更
@@ -240,11 +240,11 @@ export class ReferenceUpdater {
    * 對檔案應用重新命名操作
    */
   private async applyFileOperations(
-    filePath: string, 
+    filePath: string,
     operations: RenameOperation[]
   ): Promise<UpdatedFile | null> {
     const originalContent = await this.getFileContent(filePath);
-    if (!originalContent) return null;
+    if (!originalContent) {return null;}
 
     // 按位置排序操作（從後往前，避免位置偏移）
     const sortedOps = [...operations].sort((a, b) => {
@@ -283,7 +283,7 @@ export class ReferenceUpdater {
    * 找出包含符號引用的檔案
    */
   private async findReferencingFiles(
-    symbolName: string, 
+    symbolName: string,
     filePaths: string[]
   ): Promise<string[]> {
     const referencingFiles: string[] = [];
@@ -302,19 +302,19 @@ export class ReferenceUpdater {
    * 更新 import 語句
    */
   private async updateImportStatements(
-    filePath: string, 
-    symbol: Symbol, 
+    filePath: string,
+    symbol: Symbol,
     newName: string
   ): Promise<UpdatedFile | null> {
     const content = await this.getFileContent(filePath);
-    if (!content) return null;
+    if (!content) {return null;}
 
     const changes: TextChange[] = [];
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      
+
       // 檢查 import 語句
       if (line.trim().startsWith('import') && line.includes(symbol.name)) {
         const importRegex = new RegExp(`\\b${this.escapeRegex(symbol.name)}\\b`, 'g');
@@ -335,7 +335,7 @@ export class ReferenceUpdater {
       }
     }
 
-    if (changes.length === 0) return null;
+    if (changes.length === 0) {return null;}
 
     const newContent = this.applyChangesToContent(content, changes);
     // 寫入檔案
@@ -353,17 +353,17 @@ export class ReferenceUpdater {
    * 更新使用引用
    */
   private async updateUsageReferences(
-    filePath: string, 
-    symbol: Symbol, 
+    filePath: string,
+    symbol: Symbol,
     newName: string
   ): Promise<UpdatedFile | null> {
     const content = await this.getFileContent(filePath);
-    if (!content) return null;
+    if (!content) {return null;}
 
     const references = await this.findSymbolReferences(filePath, symbol.name);
     const usageReferences = references.filter(ref => ref.type === 'usage');
 
-    if (usageReferences.length === 0) return null;
+    if (usageReferences.length === 0) {return null;}
 
     const changes: TextChange[] = usageReferences.map(ref => ({
       range: ref.range,
@@ -456,7 +456,7 @@ export class ReferenceUpdater {
       // 跨行變更（較複雜，簡化處理）
       const startLinePart = lines[startLine].substring(0, startColumn);
       const endLinePart = lines[endLine].substring(endColumn);
-      
+
       lines[startLine] = startLinePart + change.newText + endLinePart;
       // 移除中間的行
       lines.splice(startLine + 1, endLine - startLine);
@@ -470,7 +470,7 @@ export class ReferenceUpdater {
    */
   private isInComment(line: string, position: number): boolean {
     const beforePosition = line.substring(0, position);
-    
+
     // 檢查單行註解
     if (beforePosition.includes('//')) {
       return true;
@@ -479,7 +479,7 @@ export class ReferenceUpdater {
     // 檢查多行註解（簡化處理）
     const openComment = beforePosition.lastIndexOf('/*');
     const closeComment = beforePosition.lastIndexOf('*/');
-    
+
     return openComment !== -1 && (closeComment === -1 || openComment > closeComment);
   }
 

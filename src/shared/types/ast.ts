@@ -58,7 +58,7 @@ export function createASTNode(
 
   // 先建立節點但不設定 parent
   const childrenCopy = children.map(child => ({ ...child }));
-  
+
   const node: ASTNode = {
     type,
     range,
@@ -85,7 +85,7 @@ export function createASTMetadata(
   if (!language.trim()) {
     throw new Error('語言名稱不能為空');
   }
-  
+
   if (!version.trim()) {
     throw new Error('版本號不能為空');
   }
@@ -131,7 +131,7 @@ export function isASTNode(value: unknown): value is ASTNode {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.type === 'string' &&
     obj.type.trim().length > 0 &&
@@ -150,7 +150,7 @@ export function isASTMetadata(value: unknown): value is ASTMetadata {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.language === 'string' &&
     obj.language.trim().length > 0 &&
@@ -171,7 +171,7 @@ export function isAST(value: unknown): value is AST {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.sourceFile === 'string' &&
     obj.sourceFile.trim().length > 0 &&
@@ -202,12 +202,12 @@ export function findNodesByType(ast: AST, type: string): ASTNode[] {
 export function getNodePath(node: ASTNode): string[] {
   const path: string[] = [];
   let currentNode: ASTNode | undefined = node;
-  
+
   while (currentNode) {
     path.unshift(currentNode.type);
     currentNode = currentNode.parent;
   }
-  
+
   return path;
 }
 
@@ -217,12 +217,12 @@ export function getNodePath(node: ASTNode): string[] {
 export function getNodeDepth(node: ASTNode): number {
   let depth = 0;
   let currentNode: ASTNode | undefined = node.parent;
-  
+
   while (currentNode) {
     depth++;
     currentNode = currentNode.parent;
   }
-  
+
   return depth;
 }
 
@@ -231,14 +231,14 @@ export function getNodeDepth(node: ASTNode): number {
  */
 export function isNodeAncestorOf(ancestor: ASTNode, descendant: ASTNode): boolean {
   let currentNode: ASTNode | undefined = descendant.parent;
-  
+
   while (currentNode) {
     if (currentNode === ancestor) {
       return true;
     }
     currentNode = currentNode.parent;
   }
-  
+
   return false;
 }
 
@@ -301,7 +301,7 @@ function findNodesByTypeRecursive(node: ASTNode, type: string, result: ASTNode[]
 function setParentRelationships(node: ASTNode, parent?: ASTNode): void {
   // 設定當前節點的 parent
   (node as any).parent = parent;
-  
+
   // 遞歸設定所有子節點的 parent
   for (const child of node.children) {
     setParentRelationships(child, node);

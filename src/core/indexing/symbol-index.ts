@@ -4,7 +4,7 @@
  */
 
 import type { Symbol, Scope, SymbolType } from '../../shared/types';
-import type { 
+import type {
   FileInfo,
   SymbolIndexEntry,
   SymbolSearchResult,
@@ -28,16 +28,16 @@ export interface SymbolStats {
 export class SymbolIndex {
   // 主索引：符號名稱 -> 符號項目列表
   private readonly symbolsByName = new Map<string, SymbolIndexEntry[]>();
-  
+
   // 類型索引：符號類型 -> 符號項目列表
   private readonly symbolsByType = new Map<SymbolType, SymbolIndexEntry[]>();
-  
+
   // 檔案索引：檔案路徑 -> 符號項目列表
   private readonly symbolsByFile = new Map<string, SymbolIndexEntry[]>();
-  
+
   // 作用域索引：作用域 -> 符號項目列表
   private readonly symbolsByScope = new Map<string, SymbolIndexEntry[]>();
-  
+
   private lastUpdated = new Date();
 
   /**
@@ -76,11 +76,11 @@ export class SymbolIndex {
     // 從名稱索引中移除
     const nameEntries = this.symbolsByName.get(symbolName);
     if (nameEntries) {
-      const filtered = nameEntries.filter(entry => 
+      const filtered = nameEntries.filter(entry =>
         entry.fileInfo.filePath !== filePath ||
         entry.symbol.name !== symbolName
       );
-      
+
       if (filtered.length === 0) {
         this.symbolsByName.delete(symbolName);
       } else {
@@ -157,7 +157,7 @@ export class SymbolIndex {
 
     for (const [name, entries] of this.symbolsByName) {
       const targetName = caseSensitive ? name : name.toLowerCase();
-      
+
       let matches = false;
       let score = 0;
 
@@ -237,11 +237,11 @@ export class SymbolIndex {
     for (const entries of this.symbolsByName.values()) {
       for (const entry of entries) {
         totalSymbols++;
-        
+
         // 統計類型
         const typeCount = symbolsByType.get(entry.symbol.type) || 0;
         symbolsByType.set(entry.symbol.type, typeCount + 1);
-        
+
         // 統計檔案
         const fileCount = symbolsByFile.get(entry.fileInfo.filePath) || 0;
         symbolsByFile.set(entry.fileInfo.filePath, fileCount + 1);
@@ -303,11 +303,11 @@ export class SymbolIndex {
   private removeFromOtherIndexes(symbolName: string, filePath: string): void {
     // 從類型索引中移除
     for (const [type, entries] of this.symbolsByType) {
-      const filtered = entries.filter(entry => 
+      const filtered = entries.filter(entry =>
         entry.fileInfo.filePath !== filePath ||
         entry.symbol.name !== symbolName
       );
-      
+
       if (filtered.length === 0) {
         this.symbolsByType.delete(type);
       } else {
@@ -319,7 +319,7 @@ export class SymbolIndex {
     const fileEntries = this.symbolsByFile.get(filePath);
     if (fileEntries) {
       const filtered = fileEntries.filter(entry => entry.symbol.name !== symbolName);
-      
+
       if (filtered.length === 0) {
         this.symbolsByFile.delete(filePath);
       } else {
@@ -329,11 +329,11 @@ export class SymbolIndex {
 
     // 從作用域索引中移除
     for (const [scopeKey, entries] of this.symbolsByScope) {
-      const filtered = entries.filter(entry => 
+      const filtered = entries.filter(entry =>
         entry.fileInfo.filePath !== filePath ||
         entry.symbol.name !== symbolName
       );
-      
+
       if (filtered.length === 0) {
         this.symbolsByScope.delete(scopeKey);
       } else {

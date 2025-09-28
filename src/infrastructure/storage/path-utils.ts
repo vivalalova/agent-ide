@@ -95,14 +95,14 @@ export class PathUtils {
   static isSubPath(parent: string, child: string): boolean {
     const normalizedParent = this.normalize(parent);
     const normalizedChild = this.normalize(child);
-    
+
     // 確保父路徑以分隔符結尾，避免前綴匹配問題
-    const parentWithSep = normalizedParent.endsWith(path.sep) 
-      ? normalizedParent 
+    const parentWithSep = normalizedParent.endsWith(path.sep)
+      ? normalizedParent
       : normalizedParent + path.sep;
-    
+
     // 子路徑必須以父路徑開頭，但不能完全相同
-    return normalizedChild.startsWith(parentWithSep) && 
+    return normalizedChild.startsWith(parentWithSep) &&
            normalizedChild !== normalizedParent;
   }
 
@@ -120,13 +120,13 @@ export class PathUtils {
 
     // 正規化所有路徑
     const normalizedPaths = paths.map(p => this.normalize(p));
-    
+
     // 分割第一個路徑作為基準
     const firstPath = normalizedPaths[0];
     const segments = firstPath.split(path.sep);
-    
-    let commonSegments: string[] = [];
-    
+
+    const commonSegments: string[] = [];
+
     // 逐個比較每個路徑段
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
@@ -134,19 +134,19 @@ export class PathUtils {
         const pathSegments = p.split(path.sep);
         return pathSegments[i] === segment;
       });
-      
+
       if (isCommon) {
         commonSegments.push(segment);
       } else {
         break;
       }
     }
-    
+
     // 如果沒有共同前綴，返回根路徑
     if (commonSegments.length === 0) {
       return path.sep;
     }
-    
+
     return commonSegments.join(path.sep) || path.sep;
   }
 
@@ -155,15 +155,15 @@ export class PathUtils {
    */
   static ensureExtension(filePath: string, extension: string): string {
     const currentExt = this.extname(filePath);
-    
+
     // 如果已有副檔名，不變更
     if (currentExt) {
       return filePath;
     }
-    
+
     // 確保副檔名有點
     const normalizedExt = extension.startsWith('.') ? extension : `.${extension}`;
-    
+
     return filePath + normalizedExt;
   }
 
@@ -172,10 +172,10 @@ export class PathUtils {
    */
   static changeExtension(filePath: string, newExtension: string): string {
     const parsed = this.parse(filePath);
-    
+
     // 確保副檔名有點
     const normalizedExt = newExtension.startsWith('.') ? newExtension : `.${newExtension}`;
-    
+
     return this.format({
       ...parsed,
       ext: normalizedExt,
@@ -188,7 +188,7 @@ export class PathUtils {
    */
   static removeExtension(filePath: string): string {
     const parsed = this.parse(filePath);
-    
+
     return this.format({
       ...parsed,
       ext: '',
@@ -219,10 +219,10 @@ export class PathUtils {
     }
 
     // 檢查無效字元
-    const invalidChars = process.platform === 'win32' 
+    const invalidChars = process.platform === 'win32'
       ? /[<>:"|?*]/
       : /[<>|]/;
-    
+
     if (invalidChars.test(filePath)) {
       return false;
     }
@@ -260,12 +260,12 @@ export class PathUtils {
   static equals(path1: string, path2: string): boolean {
     const normalized1 = this.normalize(path1);
     const normalized2 = this.normalize(path2);
-    
+
     // 在 Windows 上忽略大小寫
     if (process.platform === 'win32') {
       return normalized1.toLowerCase() === normalized2.toLowerCase();
     }
-    
+
     return normalized1 === normalized2;
   }
 
@@ -296,7 +296,7 @@ export class PathUtils {
    * 獲取唯一檔案路徑（如果檔案已存在，添加數字後綴）
    */
   static async getUniqueFilePath(
-    filePath: string, 
+    filePath: string,
     existsChecker: (path: string) => Promise<boolean>
   ): Promise<string> {
     if (!(await existsChecker(filePath))) {

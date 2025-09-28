@@ -1,10 +1,10 @@
 import chokidar, { FSWatcher } from 'chokidar';
 import { EventEmitter } from 'events';
-import { 
-  WatchOptions, 
-  FileChangeEvent, 
+import {
+  WatchOptions,
+  FileChangeEvent,
   FileWatcherEventListener,
-  FileStats 
+  FileStats
 } from './types';
 
 /**
@@ -40,7 +40,7 @@ export class FileWatcher extends EventEmitter {
     }
 
     const mergedOptions = { ...this.defaultOptions, ...options };
-    
+
     try {
       const watcher = chokidar.watch(watchPath, {
         persistent: mergedOptions.persistent,
@@ -174,7 +174,7 @@ export class FileWatcher extends EventEmitter {
    * 關閉所有監控
    */
   async close(): Promise<void> {
-    const closePromises = Array.from(this.watchers.values()).map(watcher => 
+    const closePromises = Array.from(this.watchers.values()).map(watcher =>
       watcher.close()
     );
 
@@ -188,12 +188,12 @@ export class FileWatcher extends EventEmitter {
    */
   getWatched(): Record<string, string[]> {
     const result: Record<string, string[]> = {};
-    
+
     for (const [path, watcher] of Array.from(this.watchers.entries())) {
       const watched = watcher.getWatched();
       Object.assign(result, watched);
     }
-    
+
     return result;
   }
 
@@ -280,7 +280,7 @@ export class FileWatcher extends EventEmitter {
     watcherCount: number;
     watchedPaths: number;
     totalWatchedFiles: number;
-  } {
+    } {
     const watched = this.getWatched();
     const totalFiles = Object.values(watched).reduce((sum, files) => sum + files.length, 0);
 

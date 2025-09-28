@@ -9,44 +9,44 @@ export function deepClone<T>(obj: T, visited = new WeakMap()): T {
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
-  
+
   // 處理循環引用
   if (visited.has(obj as any)) {
     return visited.get(obj as any);
   }
-  
+
   // 處理日期
   if (obj instanceof Date) {
     return new Date(obj.getTime()) as T;
   }
-  
+
   // 處理正則表達式
   if (obj instanceof RegExp) {
     return new RegExp(obj.source, obj.flags) as T;
   }
-  
+
   // 處理陣列
   if (Array.isArray(obj)) {
     const clonedArray: any[] = [];
     visited.set(obj as any, clonedArray);
-    
+
     for (let i = 0; i < obj.length; i++) {
       clonedArray[i] = deepClone(obj[i], visited);
     }
-    
+
     return clonedArray as T;
   }
-  
+
   // 處理物件
   const clonedObj = {} as T;
   visited.set(obj as any, clonedObj);
-  
+
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       (clonedObj as any)[key] = deepClone(obj[key], visited);
     }
   }
-  
+
   return clonedObj;
 }
 
@@ -57,14 +57,14 @@ export function deepClone<T>(obj: T, visited = new WeakMap()): T {
  * @returns 合併後的物件
  */
 export function deepMerge<T extends Record<string, any>>(target: T, ...sources: Partial<T>[]): T {
-  if (!sources.length) return target;
-  
+  if (!sources.length) {return target;}
+
   const result = deepClone(target);
-  
+
   for (const source of sources) {
     mergeObjects(result, source);
   }
-  
+
   return result;
 }
 
@@ -76,7 +76,7 @@ function mergeObjects(target: any, source: any): void {
     if (Object.prototype.hasOwnProperty.call(source, key)) {
       const sourceValue = source[key];
       const targetValue = target[key];
-      
+
       if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
         mergeObjects(targetValue, sourceValue);
       } else {
@@ -90,10 +90,10 @@ function mergeObjects(target: any, source: any): void {
  * 檢查是否為純物件
  */
 function isPlainObject(obj: any): boolean {
-  return obj !== null && 
-         typeof obj === 'object' && 
-         !Array.isArray(obj) && 
-         !(obj instanceof Date) && 
+  return obj !== null &&
+         typeof obj === 'object' &&
+         !Array.isArray(obj) &&
+         !(obj instanceof Date) &&
          !(obj instanceof RegExp);
 }
 
@@ -104,17 +104,17 @@ function isPlainObject(obj: any): boolean {
  * @returns 包含指定屬性的新物件
  */
 export function pick<T extends Record<string, any>, K extends keyof T>(
-  obj: T, 
+  obj: T,
   keys: K[]
 ): Pick<T, K> {
   const result = {} as Pick<T, K>;
-  
+
   for (const key of keys) {
     if (key in obj) {
       result[key] = obj[key];
     }
   }
-  
+
   return result;
 }
 
@@ -125,18 +125,18 @@ export function pick<T extends Record<string, any>, K extends keyof T>(
  * @returns 排除指定屬性後的新物件
  */
 export function omit<T extends Record<string, any>, K extends keyof T>(
-  obj: T, 
+  obj: T,
   keys: K[]
 ): Omit<T, K> {
   const result = { ...obj };
   const keySet = new Set(keys);
-  
+
   for (const key in result) {
     if (keySet.has(key as unknown as K)) {
       delete result[key];
     }
   }
-  
+
   return result;
 }
 
@@ -146,20 +146,20 @@ export function omit<T extends Record<string, any>, K extends keyof T>(
  * @returns 是否為空
  */
 export function isEmpty(value: any): boolean {
-  if (value == null) return true;
-  
+  if (value == null) {return true;}
+
   if (typeof value === 'string' || Array.isArray(value)) {
     return value.length === 0;
   }
-  
+
   if (value instanceof Map || value instanceof Set) {
     return value.size === 0;
   }
-  
+
   if (typeof value === 'object') {
     return Object.keys(value).length === 0;
   }
-  
+
   return false;
 }
 
@@ -170,48 +170,48 @@ export function isEmpty(value: any): boolean {
  * @returns 是否相等
  */
 export function isEqual(a: any, b: any): boolean {
-  if (a === b) return true;
-  
-  if (a == null || b == null) return a === b;
-  
-  if (typeof a !== typeof b) return false;
-  
+  if (a === b) {return true;}
+
+  if (a == null || b == null) {return a === b;}
+
+  if (typeof a !== typeof b) {return false;}
+
   // 處理日期
   if (a instanceof Date && b instanceof Date) {
     return a.getTime() === b.getTime();
   }
-  
+
   // 處理正則表達式
   if (a instanceof RegExp && b instanceof RegExp) {
     return a.source === b.source && a.flags === b.flags;
   }
-  
+
   // 處理陣列
   if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    
+    if (a.length !== b.length) {return false;}
+
     for (let i = 0; i < a.length; i++) {
-      if (!isEqual(a[i], b[i])) return false;
+      if (!isEqual(a[i], b[i])) {return false;}
     }
-    
+
     return true;
   }
-  
+
   // 處理物件
   if (typeof a === 'object' && typeof b === 'object') {
     const keysA = Object.keys(a);
     const keysB = Object.keys(b);
-    
-    if (keysA.length !== keysB.length) return false;
-    
+
+    if (keysA.length !== keysB.length) {return false;}
+
     for (const key of keysA) {
-      if (!keysB.includes(key)) return false;
-      if (!isEqual(a[key], b[key])) return false;
+      if (!keysB.includes(key)) {return false;}
+      if (!isEqual(a[key], b[key])) {return false;}
     }
-    
+
     return true;
   }
-  
+
   return false;
 }
 
@@ -222,23 +222,23 @@ export function isEqual(a: any, b: any): boolean {
  * @param value 要設定的值
  */
 export function set(obj: any, path: string, value: any): void {
-  if (!path) return;
-  
+  if (!path) {return;}
+
   const keys = parsePath(path);
   let current = obj;
-  
+
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
     const nextKey = keys[i + 1];
-    
+
     if (!(key in current) || current[key] == null) {
       // 如果下一個鍵是數字，建立陣列，否則建立物件
       current[key] = /^\d+$/.test(nextKey) ? [] : {};
     }
-    
+
     current = current[key];
   }
-  
+
   if (keys.length > 0) {
     current[keys[keys.length - 1]] = value;
   }
@@ -252,18 +252,18 @@ export function set(obj: any, path: string, value: any): void {
  * @returns 屬性值或預設值
  */
 export function get(obj: any, path: string, defaultValue?: any): any {
-  if (!path) return obj;
-  
+  if (!path) {return obj;}
+
   const keys = parsePath(path);
   let current = obj;
-  
+
   for (const key of keys) {
     if (current == null || !(key in current)) {
       return defaultValue;
     }
     current = current[key];
   }
-  
+
   return current;
 }
 
@@ -274,18 +274,18 @@ export function get(obj: any, path: string, defaultValue?: any): any {
  * @returns 是否存在該屬性
  */
 export function has(obj: any, path: string): boolean {
-  if (!path) return false;
-  
+  if (!path) {return false;}
+
   const keys = parsePath(path);
   let current = obj;
-  
+
   for (const key of keys) {
     if (current == null || !(key in current)) {
       return false;
     }
     current = current[key];
   }
-  
+
   return true;
 }
 
@@ -312,12 +312,12 @@ export function mapValues<T extends Record<string, any>, R>(
   mapper: (value: T[keyof T], key: keyof T) => R
 ): Record<keyof T, R> {
   const result = {} as Record<keyof T, R>;
-  
+
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       result[key] = mapper(obj[key], key);
     }
   }
-  
+
   return result;
 }

@@ -7,9 +7,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DependencyGraph } from './dependency-graph.js';
 import { CycleDetector } from './cycle-detector.js';
-import type { 
-  FileDependencies, 
-  ProjectDependencies, 
+import type {
+  FileDependencies,
+  ProjectDependencies,
   DependencyStats,
   ImpactAnalysisResult,
   DependencyAnalysisOptions,
@@ -40,7 +40,7 @@ export class DependencyAnalyzer {
     this.graph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
     this.cache = new Map();
-    
+
     // 使用預設選項並合併使用者選項
     const defaultOptions = this.createDefaultAnalysisOptions();
     this.options = { ...defaultOptions, ...options };
@@ -75,9 +75,9 @@ export class DependencyAnalyzer {
     try {
       const content = await fs.readFile(normalizedPath, 'utf-8');
       const stat = await fs.stat(normalizedPath);
-      
+
       const dependencies = await this.extractDependencies(content, normalizedPath);
-      
+
       const result: FileDependencies = {
         filePath: normalizedPath,
         dependencies,
@@ -110,13 +110,13 @@ export class DependencyAnalyzer {
   async analyzeProject(projectPath: string): Promise<ProjectDependencies> {
     const normalizedProjectPath = path.resolve(projectPath);
     const files = await this.findSourceFiles(normalizedProjectPath);
-    
+
     const fileDependencies: FileDependencies[] = [];
-    
+
     // 並行分析檔案（根據 concurrency 設定）
     const concurrency = this.options.concurrency || 4;
     const chunks = this.chunkArray(files, concurrency);
-    
+
     for (const chunk of chunks) {
       const promises = chunk.map(file => this.analyzeFile(file));
       const results = await Promise.all(promises);
@@ -159,16 +159,16 @@ export class DependencyAnalyzer {
    * @returns 傳遞依賴列表
    */
   getTransitiveDependencies(
-    filePath: string, 
+    filePath: string,
     options?: DependencyQueryOptions
   ): string[] {
     const normalizedPath = path.resolve(filePath);
     const opts = this.getDefaultQueryOptions(options);
-    
+
     if (opts.maxDepth === 1) {
       return this.getDependencies(normalizedPath);
     }
-    
+
     return this.graph.getTransitiveDependencies(normalizedPath);
   }
 
@@ -192,7 +192,7 @@ export class DependencyAnalyzer {
     const directlyAffected = this.getDependents(normalizedPath);
     const transitivelyAffected = this.graph.getTransitiveDependents(normalizedPath);
     const affectedTests = this.getAffectedTests(normalizedPath);
-    
+
     // 計算影響分數
     const impactScore = this.calculateImpactScore(
       directlyAffected.length,
@@ -237,7 +237,7 @@ export class DependencyAnalyzer {
     const allNodes = this.graph.getAllNodes();
     const totalFiles = allNodes.length;
     const totalDependencies = this.graph.getEdgeCount();
-    
+
     let maxDependencies = 0;
     for (const node of allNodes) {
       const deps = this.getDependencies(node);
@@ -273,17 +273,17 @@ export class DependencyAnalyzer {
       let importRegex: RegExp;
 
       switch (fileExt) {
-        case '.ts':
-        case '.tsx':
-        case '.js':
-        case '.jsx':
-          importRegex = /import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
-          break;
-        case '.swift':
-          importRegex = /import\s+(\w+)/g;
-          break;
-        default:
-          return dependencies; // 不支援的檔案類型
+      case '.ts':
+      case '.tsx':
+      case '.js':
+      case '.jsx':
+        importRegex = /import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
+        break;
+      case '.swift':
+        importRegex = /import\s+(\w+)/g;
+        break;
+      default:
+        return dependencies; // 不支援的檔案類型
       }
 
       let match;
@@ -315,11 +315,11 @@ export class DependencyAnalyzer {
    * @returns 解析結果
    */
   private async resolvePath(
-    importPath: string, 
+    importPath: string,
     fromFile: string
   ): Promise<PathResolutionResult | null> {
     const isRelative = importPath.startsWith('.') || importPath.startsWith('/');
-    
+
     if (!isRelative && !this.options.includeNodeModules) {
       return null; // 忽略 node_modules
     }
@@ -329,7 +329,7 @@ export class DependencyAnalyzer {
     if (isRelative) {
       const dir = path.dirname(fromFile);
       resolvedPath = path.resolve(dir, importPath);
-      
+
       // 嘗試常見的副檔名
       const extensions = ['.ts', '.tsx', '.js', '.jsx', '.swift'];
       let finalPath = resolvedPath;
@@ -394,7 +394,7 @@ export class DependencyAnalyzer {
    */
   private async findSourceFiles(projectPath: string): Promise<string[]> {
     const files: string[] = [];
-    
+
     const traverse = async (dir: string, depth = 0) => {
       if (depth > this.options.maxDepth) {
         return;
@@ -460,7 +460,7 @@ export class DependencyAnalyzer {
       .replace(/\*\*/g, '.*')
       .replace(/\*/g, '[^/]*')
       .replace(/\?/g, '.');
-    
+
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(filePath);
   }
@@ -485,8 +485,8 @@ export class DependencyAnalyzer {
    */
   private isTestFile(filePath: string): boolean {
     const fileName = path.basename(filePath);
-    return fileName.includes('.test.') || 
-           fileName.includes('.spec.') || 
+    return fileName.includes('.test.') ||
+           fileName.includes('.spec.') ||
            filePath.includes('__tests__') ||
            filePath.includes('/test/') ||
            filePath.includes('/tests/');

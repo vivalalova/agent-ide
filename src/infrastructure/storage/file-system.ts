@@ -71,10 +71,10 @@ export class FileSystem {
    */
   private async atomicWrite(filePath: string, content: string | Buffer, options: AtomicWriteOptions): Promise<void> {
     const tempPath = filePath + (options.tempSuffix || this.tempSuffix);
-    
+
     try {
       await fs.writeFile(tempPath, content, { encoding: options.encoding });
-      
+
       if (options.fsync) {
         const fd = await fs.open(tempPath, 'r+');
         try {
@@ -83,7 +83,7 @@ export class FileSystem {
           await fd.close();
         }
       }
-      
+
       await fs.rename(tempPath, filePath);
     } catch (error) {
       // 清理暫存檔案
@@ -159,7 +159,7 @@ export class FileSystem {
       for (const entry of entries) {
         const entryPath = path.join(dirPath, entry.name);
         const stats = await this.safeGetStats(entryPath);
-        
+
         result.push({
           name: entry.name,
           path: entryPath,
@@ -289,7 +289,7 @@ export class FileSystem {
       // 確保目標目錄存在
       const destDir = path.dirname(destPath);
       await this.createDirectory(destDir, true);
-      
+
       await fs.copyFile(srcPath, destPath);
     } catch (error: any) {
       if (error.code === 'ENOENT' && error.path === srcPath) {
@@ -310,7 +310,7 @@ export class FileSystem {
       // 確保目標目錄存在
       const destDir = path.dirname(destPath);
       await this.createDirectory(destDir, true);
-      
+
       await fs.rename(srcPath, destPath);
     } catch (error: any) {
       if (error.code === 'EXDEV') {

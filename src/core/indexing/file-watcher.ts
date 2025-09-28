@@ -67,11 +67,11 @@ export class FileWatcher extends EventEmitter {
     }
 
     const config = this.indexEngine.getConfig();
-    
+
     try {
       // 使用原生 fs.watch，在實際環境中可能需要使用 chokidar 等更強大的監控庫
       const { watch } = await import('fs');
-      
+
       this.watcher = watch(
         config.workspacePath,
         { recursive: true },
@@ -81,7 +81,7 @@ export class FileWatcher extends EventEmitter {
           }
 
           const filePath = `${config.workspacePath}/${filename}`;
-          
+
           // 判斷變更類型
           let changeType: FileChangeType = 'change';
           if (eventType === 'rename') {
@@ -103,7 +103,7 @@ export class FileWatcher extends EventEmitter {
 
       this.isWatching = true;
       this.emit('started');
-      
+
     } catch (error) {
       this.emit('error', new Error(`啟動檔案監控失敗: ${error}`));
       throw error;
@@ -185,17 +185,17 @@ export class FileWatcher extends EventEmitter {
    * 批次處理檔案變更
    */
   async handleBatchChanges(
-    changes: BatchChangeItem[], 
+    changes: BatchChangeItem[],
     options?: BatchProcessOptions
   ): Promise<void> {
     const maxConcurrency = options?.maxConcurrency ?? 4;
     const chunks = this.createChunks(changes, maxConcurrency);
-    
+
     for (const chunk of chunks) {
-      const promises = chunk.map(change => 
+      const promises = chunk.map(change =>
         this.handleFileChange(change.filePath, change.type)
       );
-      
+
       await Promise.allSettled(promises);
     }
   }
@@ -242,58 +242,58 @@ export class FileWatcher extends EventEmitter {
    */
   private async processFileChange(filePath: string, changeType: FileChangeType): Promise<void> {
     switch (changeType) {
-      case 'add':
-      case 'change':
-        try {
-          // 檢查檔案是否存在
-          await fs.access(filePath);
+    case 'add':
+    case 'change':
+      try {
+        // 檢查檔案是否存在
+        await fs.access(filePath);
 
-          if (this.indexEngine.isIndexed(filePath)) {
-            await this.indexEngine.updateFile(filePath);
-          } else {
-            await this.indexEngine.indexFile(filePath);
-          }
-        } catch (error) {
-          // 如果是 change 事件但檔案不存在，拋出錯誤
-          if (changeType === 'change') {
-            throw new Error(`檔案不存在: ${filePath}`);
-          }
-          // 對於 add 事件，檔案可能在處理過程中被刪除
-          if (this.indexEngine.isIndexed(filePath)) {
-            await this.indexEngine.removeFile(filePath);
-          }
+        if (this.indexEngine.isIndexed(filePath)) {
+          await this.indexEngine.updateFile(filePath);
+        } else {
+          await this.indexEngine.indexFile(filePath);
         }
-        break;
-
-      case 'unlink':
+      } catch (error) {
+        // 如果是 change 事件但檔案不存在，拋出錯誤
+        if (changeType === 'change') {
+          throw new Error(`檔案不存在: ${filePath}`);
+        }
+        // 對於 add 事件，檔案可能在處理過程中被刪除
         if (this.indexEngine.isIndexed(filePath)) {
           await this.indexEngine.removeFile(filePath);
         }
-        break;
+      }
+      break;
 
-      case 'addDir':
-        // 新增目錄時，索引其中的檔案
-        try {
-          await this.indexEngine.indexDirectory(filePath);
-        } catch (error) {
-          // 目錄可能不存在或無法存取
-        }
-        break;
+    case 'unlink':
+      if (this.indexEngine.isIndexed(filePath)) {
+        await this.indexEngine.removeFile(filePath);
+      }
+      break;
 
-      case 'unlinkDir':
-        // 刪除目錄時，移除其中所有檔案的索引
-        const allFiles = this.indexEngine.getAllIndexedFiles();
-        const filesToRemove = allFiles.filter(f => 
-          f.filePath.startsWith(filePath + '/')
-        );
-        
-        for (const file of filesToRemove) {
-          await this.indexEngine.removeFile(file.filePath);
-        }
-        break;
+    case 'addDir':
+      // 新增目錄時，索引其中的檔案
+      try {
+        await this.indexEngine.indexDirectory(filePath);
+      } catch (error) {
+        // 目錄可能不存在或無法存取
+      }
+      break;
 
-      default:
-        throw new Error(`不支援的檔案變更類型: ${changeType}`);
+    case 'unlinkDir':
+      // 刪除目錄時，移除其中所有檔案的索引
+      const allFiles = this.indexEngine.getAllIndexedFiles();
+      const filesToRemove = allFiles.filter(f =>
+        f.filePath.startsWith(filePath + '/')
+      );
+
+      for (const file of filesToRemove) {
+        await this.indexEngine.removeFile(file.filePath);
+      }
+      break;
+
+    default:
+      throw new Error(`不支援的檔案變更類型: ${changeType}`);
     }
   }
 
@@ -326,7 +326,7 @@ export class FileWatcher extends EventEmitter {
       .replace(/\*\*/g, '.*')
       .replace(/\*/g, '[^/]*')
       .replace(/\?/g, '.');
-    
+
     const regex = new RegExp(regexPattern);
     return regex.test(filePath);
   }
@@ -336,11 +336,11 @@ export class FileWatcher extends EventEmitter {
    */
   private createChunks<T>(array: T[], chunkSize: number): T[][] {
     const chunks: T[][] = [];
-    
+
     for (let i = 0; i < array.length; i += chunkSize) {
       chunks.push(array.slice(i, i + chunkSize));
     }
-    
+
     return chunks;
   }
 
@@ -351,7 +351,7 @@ export class FileWatcher extends EventEmitter {
     isWatching: boolean;
     isPaused: boolean;
     pendingChangesCount: number;
-  } {
+    } {
     return {
       isWatching: this.isWatching,
       isPaused: this.isPaused,
@@ -367,7 +367,7 @@ export class FileWatcher extends EventEmitter {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    
+
     await this.processPendingChanges();
   }
 }

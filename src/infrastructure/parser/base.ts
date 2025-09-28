@@ -6,12 +6,12 @@
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types';
 import { isPosition } from '../../shared/types';
 import type { ParserPlugin } from './interface';
-import type { 
-  CodeEdit, 
-  Definition, 
-  Usage, 
-  ValidationResult, 
-  ParserOptions, 
+import type {
+  CodeEdit,
+  Definition,
+  Usage,
+  ValidationResult,
+  ParserOptions,
   ParserCapabilities
 } from './types';
 import { createValidationSuccess as createSuccessResult } from './types';
@@ -27,18 +27,18 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
  */
 export abstract class BaseParserPlugin implements ParserPlugin {
   // ===== 抽象屬性（子類必須實作）=====
-  
+
   abstract readonly name: string;
   abstract readonly version: string;
   abstract readonly supportedExtensions: readonly string[];
   abstract readonly supportedLanguages: readonly string[];
 
   // ===== 抽象方法（子類必須實作）=====
-  
+
   abstract parse(code: string, filePath: string): Promise<AST>;
 
   // ===== 私有屬性 =====
-  
+
   private _initialized = false;
   private _disposed = false;
   private _options: ParserOptions = {};
@@ -81,7 +81,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    * 提取函式（預設實作返回空陣列）
    */
   async extractFunction(_ast: AST, _selection: Range): Promise<CodeEdit[]> {
-    this.log('debug', `Extracting function from selection`);
+    this.log('debug', 'Extracting function from selection');
     return [];
   }
 
@@ -106,7 +106,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    */
   async validate(): Promise<ValidationResult> {
     this.log('debug', 'Validating plugin state');
-    
+
     if (this._disposed) {
       return {
         valid: false,
@@ -115,9 +115,9 @@ export abstract class BaseParserPlugin implements ParserPlugin {
           message: '插件已被清理',
           location: {
             filePath: '',
-            range: { 
-              start: { line: 1, column: 1, offset: undefined }, 
-              end: { line: 1, column: 1, offset: undefined } 
+            range: {
+              start: { line: 1, column: 1, offset: undefined },
+              end: { line: 1, column: 1, offset: undefined }
             }
           }
         }],
@@ -150,11 +150,11 @@ export abstract class BaseParserPlugin implements ParserPlugin {
     }
 
     this.log('info', `Initializing plugin: ${this.name}`);
-    
+
     if (options) {
       this._options = { ...this._options, ...options };
     }
-    
+
     this._initialized = true;
     this._disposed = false;
   }
@@ -216,7 +216,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   handleError(error: Error, context?: string): void {
     const message = context ? `${context}: ${error.message}` : error.message;
     this.log('error', message);
-    
+
     // 可以在這裡添加錯誤報告邏輯
     console.error(`[${this.name}] ${message}`, error.stack);
   }
@@ -227,20 +227,20 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   log(level: LogLevel, message: string): void {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [${this.name}] [${level.toUpperCase()}] ${message}`;
-    
+
     switch (level) {
-      case 'debug':
-        console.debug(logMessage);
-        break;
-      case 'info':
-        console.info(logMessage);
-        break;
-      case 'warn':
-        console.warn(logMessage);
-        break;
-      case 'error':
-        console.error(logMessage);
-        break;
+    case 'debug':
+      console.debug(logMessage);
+      break;
+    case 'info':
+      console.info(logMessage);
+      break;
+    case 'warn':
+      console.warn(logMessage);
+      break;
+    case 'error':
+      console.error(logMessage);
+      break;
     }
   }
 
@@ -281,7 +281,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
     return (
       this.validatePosition(range.start) &&
       this.validatePosition(range.end) &&
-      (range.start.line < range.end.line || 
+      (range.start.line < range.end.line ||
        (range.start.line === range.end.line && range.start.column <= range.end.column))
     );
   }

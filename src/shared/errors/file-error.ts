@@ -29,11 +29,11 @@ export class FileError extends BaseError {
   toString(): string {
     let result = super.toString();
     result += `\n檔案: ${this.filePath}`;
-    
+
     if (this.operation) {
       result += `\n操作: ${this.operation}`;
     }
-    
+
     return result;
   }
 }

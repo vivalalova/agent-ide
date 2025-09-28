@@ -4,10 +4,10 @@
  */
 
 import type { Symbol, Dependency } from '../../shared/types';
-import type { 
-  FileInfo, 
-  FileIndexEntry, 
-  IndexConfig, 
+import type {
+  FileInfo,
+  FileIndexEntry,
+  IndexConfig,
   IndexStats,
   IndexUpdateEvent
 } from './types.js';
@@ -57,10 +57,10 @@ export class FileIndex {
   async removeFile(filePath: string): Promise<void> {
     const existed = this.fileEntries.has(filePath);
     this.fileEntries.delete(filePath);
-    
+
     if (existed) {
       this.lastUpdated = new Date();
-      
+
       this.emitUpdateEvent({
         operation: UpdateOperation.Delete,
         filePath,
@@ -161,13 +161,13 @@ export class FileIndex {
    */
   findFilesByExtension(extension: string): readonly FileInfo[] {
     const result: FileInfo[] = [];
-    
+
     for (const entry of this.fileEntries.values()) {
       if (entry.fileInfo.extension === extension) {
         result.push(entry.fileInfo);
       }
     }
-    
+
     return result;
   }
 
@@ -176,13 +176,13 @@ export class FileIndex {
    */
   findFilesByLanguage(language: string): readonly FileInfo[] {
     const result: FileInfo[] = [];
-    
+
     for (const entry of this.fileEntries.values()) {
       if (entry.fileInfo.language === language) {
         result.push(entry.fileInfo);
       }
     }
-    
+
     return result;
   }
 
@@ -265,17 +265,17 @@ export class FileIndex {
   private estimateEntrySize(entry: FileIndexEntry): number {
     // 簡化的大小估算
     let size = 0;
-    
+
     // FileInfo 大小
     size += entry.fileInfo.filePath.length * 2; // UTF-16
     size += 64; // 其他屬性大約 64 bytes
-    
+
     // Symbols 大小
     size += entry.symbols.length * 128; // 每個符號約 128 bytes
-    
+
     // Dependencies 大小
     size += entry.dependencies.length * 64; // 每個依賴約 64 bytes
-    
+
     return size;
   }
 

@@ -167,10 +167,10 @@ export abstract class BaseWorkflow<TContext = unknown, TResult = unknown> {
           const workflowError = error instanceof WorkflowError
             ? error
             : new WorkflowError(
-                `步驟 ${stepId} 執行時發生錯誤: ${(error as Error).message}`,
-                { workflowId, stepId },
+              `步驟 ${stepId} 執行時發生錯誤: ${(error as Error).message}`,
+              { workflowId, stepId },
                 error as Error
-              );
+            );
 
           return {
             workflowId,
@@ -197,10 +197,10 @@ export abstract class BaseWorkflow<TContext = unknown, TResult = unknown> {
       const workflowError = error instanceof WorkflowError
         ? error
         : new WorkflowError(
-            `工作流程執行失敗: ${(error as Error).message}`,
-            { workflowId },
+          `工作流程執行失敗: ${(error as Error).message}`,
+          { workflowId },
             error as Error
-          );
+        );
 
       return {
         workflowId,

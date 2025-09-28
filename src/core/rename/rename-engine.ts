@@ -27,8 +27,8 @@ import { ReferenceUpdater } from './reference-updater';
 export class RenameEngine {
   private readonly renameHistory = new Map<string, RenameResult>();
   private readonly reservedKeywords = new Set([
-    'function', 'var', 'let', 'const', 'if', 'else', 'for', 'while', 
-    'do', 'switch', 'case', 'break', 'continue', 'return', 'try', 
+    'function', 'var', 'let', 'const', 'if', 'else', 'for', 'while',
+    'do', 'switch', 'case', 'break', 'continue', 'return', 'try',
     'catch', 'finally', 'throw', 'class', 'interface', 'enum',
     'import', 'export', 'default', 'from', 'as', 'type'
   ]);
@@ -240,11 +240,11 @@ export class RenameEngine {
     const results: RenameResult[] = [];
     const errors: string[] = [];
     let totalOps = 0;
-    
+
     try {
       // 使用 ReferenceUpdater 批次處理操作
       const updateResult = await this.referenceUpdater.applyRenameOperations(operations);
-      
+
       if (!updateResult.success) {
         return {
           success: false,
@@ -256,7 +256,7 @@ export class RenameEngine {
 
       // 為每個更新的檔案建立 RenameResult
       const fileOperationsMap = new Map<string, RenameOperation[]>();
-      
+
       // 按檔案分組操作
       for (const operation of operations) {
         const fileOps = fileOperationsMap.get(operation.filePath) || [];
@@ -273,7 +273,7 @@ export class RenameEngine {
           affectedFiles: [filePath],
           renameId
         };
-        
+
         results.push(result);
         this.renameHistory.set(renameId, result);
         totalOps += fileOps.length;
@@ -304,10 +304,10 @@ export class RenameEngine {
     }
 
     const originalResult = this.renameHistory.get(renameId)!;
-    
+
     try {
       // 建立反向操作來撤銷變更
-      const undoOperations: RenameOperation[] = originalResult.operations.map(op => 
+      const undoOperations: RenameOperation[] = originalResult.operations.map(op =>
         createRenameOperation(
           op.filePath,
           op.newText, // 交換新舊文字
@@ -318,7 +318,7 @@ export class RenameEngine {
 
       // 執行撤銷操作
       const undoResult = await this.referenceUpdater.applyRenameOperations(undoOperations);
-      
+
       if (!undoResult.success) {
         throw new Error(`撤銷操作失敗: ${undoResult.errors?.join(', ') || '未知錯誤'}`);
       }
@@ -372,7 +372,7 @@ export class RenameEngine {
       // 先驗證重新命名的有效性
       const options = { symbol, newName, filePaths: projectFiles };
       const validation = await this.validateRename(options);
-      
+
       if (!validation.isValid) {
         return {
           success: false,

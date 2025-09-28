@@ -1,6 +1,6 @@
 /**
  * Agent IDE 工具函式庫統一匯出
- * 
+ *
  * 本模組提供了一整套通用工具函式，涵蓋字串處理、陣列操作、
  * 路徑處理、物件操作和異步處理等常用功能。
  */
@@ -77,14 +77,14 @@ export {
 
 /**
  * 工具函式分類命名空間
- * 
+ *
  * 如果你偏好使用命名空間的方式來組織工具函式，
  * 可以使用以下匯入方式：
- * 
+ *
  * @example
  * ```typescript
  * import { StringUtils, ArrayUtils } from '@/shared/utils';
- * 
+ *
  * const result = StringUtils.camelCase('hello-world');
  * const chunks = ArrayUtils.chunk([1, 2, 3, 4], 2);
  * ```

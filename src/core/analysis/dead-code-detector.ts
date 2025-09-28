@@ -121,7 +121,7 @@ export class UnreachableCodeDetector {
    * 遍歷 AST 檢測不可達代碼
    */
   private traverse(node: ASTNode, isUnreachable: boolean, unreachable: UnusedCode[]) {
-    if (!node) return;
+    if (!node) {return;}
 
     // 如果已經在不可達狀態，標記所有後續節點
     if (isUnreachable && this.isExecutableStatement(node)) {

@@ -4,14 +4,14 @@
  * @returns 是否為絕對路徑
  */
 export function isAbsolute(path: string): boolean {
-  if (!path) return false;
-  
+  if (!path) {return false;}
+
   // Unix 絕對路徑以 / 開頭
-  if (path.startsWith('/')) return true;
-  
+  if (path.startsWith('/')) {return true;}
+
   // Windows 絕對路徑以磁碟機代號開頭，如 C:\
-  if (/^[A-Za-z]:[\/\\]/.test(path)) return true;
-  
+  if (/^[A-Za-z]:[\/\\]/.test(path)) {return true;}
+
   return false;
 }
 
@@ -21,18 +21,18 @@ export function isAbsolute(path: string): boolean {
  * @returns 正規化後的路徑
  */
 export function normalize(path: string): string {
-  if (!path) return '';
-  
+  if (!path) {return '';}
+
   // 將所有反斜線替換為正斜線
   let normalizedPath = path.replace(/\\/g, '/');
-  
+
   // 處理多個連續的斜線
   normalizedPath = normalizedPath.replace(/\/+/g, '/');
-  
+
   // 分割路徑並處理 . 和 ..
   const parts = normalizedPath.split('/');
   const stack: string[] = [];
-  
+
   for (const part of parts) {
     if (part === '' && stack.length === 0) {
       // 保留根目錄的空字串
@@ -54,14 +54,14 @@ export function normalize(path: string): string {
       stack.push(part);
     }
   }
-  
+
   const result = stack.join('/');
-  
+
   // 處理相對路徑的特殊情況
   if (!isAbsolute(path) && !result) {
     return '.';
   }
-  
+
   return result || '/';
 }
 
@@ -74,29 +74,29 @@ export function normalize(path: string): string {
 export function relative(from: string, to: string): string {
   const normalizedFrom = normalize(from);
   const normalizedTo = normalize(to);
-  
+
   if (normalizedFrom === normalizedTo) {
     return '.';
   }
-  
+
   const fromParts = normalizedFrom.split('/').filter(part => part !== '');
   const toParts = normalizedTo.split('/').filter(part => part !== '');
-  
+
   // 找到共同的前綴
   let commonLength = 0;
-  while (commonLength < fromParts.length && 
-         commonLength < toParts.length && 
+  while (commonLength < fromParts.length &&
+         commonLength < toParts.length &&
          fromParts[commonLength] === toParts[commonLength]) {
     commonLength++;
   }
-  
+
   // 計算需要回到上層的次數
   const upCount = fromParts.length - commonLength;
-  
+
   // 建立相對路徑
   const upParts = new Array(upCount).fill('..');
   const downParts = toParts.slice(commonLength);
-  
+
   const result = [...upParts, ...downParts].join('/');
   return result || '.';
 }
@@ -108,16 +108,16 @@ export function relative(from: string, to: string): string {
  * @returns 變更副檔名後的路徑
  */
 export function changeExtension(filePath: string, newExt: string): string {
-  if (!filePath) return '';
-  
+  if (!filePath) {return '';}
+
   const lastDotIndex = filePath.lastIndexOf('.');
   const lastSlashIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  
+
   // 如果點號在最後一個斜線之前，表示沒有副檔名
   if (lastDotIndex <= lastSlashIndex) {
     return filePath + newExt;
   }
-  
+
   return filePath.slice(0, lastDotIndex) + newExt;
 }
 
@@ -128,16 +128,16 @@ export function changeExtension(filePath: string, newExt: string): string {
  * @returns 確保有副檔名的路徑
  */
 export function ensureExtension(filePath: string, ext: string): string {
-  if (!filePath) return '';
-  
+  if (!filePath) {return '';}
+
   const lastDotIndex = filePath.lastIndexOf('.');
   const lastSlashIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  
+
   // 如果沒有副檔名，添加指定的副檔名
   if (lastDotIndex <= lastSlashIndex) {
     return filePath + ext;
   }
-  
+
   // 如果已經有副檔名，保持不變
   return filePath;
 }
@@ -148,12 +148,12 @@ export function ensureExtension(filePath: string, ext: string): string {
  * @returns 不含副檔名的檔名
  */
 export function getFileNameWithoutExt(filePath: string): string {
-  if (!filePath) return '';
-  
+  if (!filePath) {return '';}
+
   // 取得檔名部分
   const lastSlashIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
   const fileName = filePath.slice(lastSlashIndex + 1);
-  
+
   // 處理隱藏檔案（以點號開頭）
   if (fileName.startsWith('.')) {
     const dotIndex = fileName.indexOf('.', 1);
@@ -162,13 +162,13 @@ export function getFileNameWithoutExt(filePath: string): string {
     }
     return fileName.slice(0, dotIndex);
   }
-  
+
   // 處理一般檔案
   const lastDotIndex = fileName.lastIndexOf('.');
   if (lastDotIndex === -1) {
     return fileName;
   }
-  
+
   return fileName.slice(0, lastDotIndex);
 }
 
@@ -179,18 +179,18 @@ export function getFileNameWithoutExt(filePath: string): string {
  * @returns 是否為子路徑
  */
 export function isSubPath(parent: string, child: string): boolean {
-  if (!parent || !child) return false;
-  
+  if (!parent || !child) {return false;}
+
   const normalizedParent = normalize(parent);
   const normalizedChild = normalize(child);
-  
+
   if (normalizedParent === normalizedChild) {
     return true;
   }
-  
+
   // 確保父路徑以斜線結尾，避免 /src 匹配 /source
   const parentWithSlash = normalizedParent.endsWith('/') ? normalizedParent : normalizedParent + '/';
-  
+
   return normalizedChild.startsWith(parentWithSlash);
 }
 
@@ -200,7 +200,7 @@ export function isSubPath(parent: string, child: string): boolean {
  * @returns Unix 風格的路徑
  */
 export function toUnixPath(path: string): string {
-  if (!path) return '';
+  if (!path) {return '';}
   return path.replace(/\\/g, '/');
 }
 
@@ -210,6 +210,6 @@ export function toUnixPath(path: string): string {
  * @returns Windows 風格的路徑
  */
 export function toWindowsPath(path: string): string {
-  if (!path) return '';
+  if (!path) {return '';}
   return path.replace(/\//g, '\\');
 }

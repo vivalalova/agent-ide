@@ -173,7 +173,7 @@ export class TypeScriptParser implements ParserPlugin {
     for (const refSymbol of referencesResult) {
       for (const ref of refSymbol.references) {
         const sourceFile = this.getSourceFileFromFileName(ref.fileName);
-        if (!sourceFile) continue;
+        if (!sourceFile) {continue;}
 
         const range: Range = {
           start: tsPositionToPosition(sourceFile, ref.textSpan.start),
@@ -374,7 +374,7 @@ export class TypeScriptParser implements ParserPlugin {
    */
   async findUsages(ast: AST, symbol: Symbol): Promise<Usage[]> {
     const references = await this.findReferences(ast, symbol);
-    
+
     // 過濾出使用位置（排除定義）
     return references
       .filter(ref => ref.type === ReferenceType.Usage)
@@ -395,13 +395,13 @@ export class TypeScriptParser implements ParserPlugin {
           location: { filePath: '', range: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } } }
         }]);
       }
-      
+
       // 檢查編譯器選項
       const diagnostics = ts.getConfigFileParsingDiagnostics({
         options: this.compilerOptions,
         errors: []
       } as any);
-      
+
       if (diagnostics.length > 0) {
         return createValidationFailure([{
           code: 'TS_CONFIG_ERROR',
@@ -409,7 +409,7 @@ export class TypeScriptParser implements ParserPlugin {
           location: { filePath: '', range: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } } }
         }]);
       }
-      
+
       return createValidationSuccess();
     } catch (error) {
       return createValidationFailure([{
@@ -434,7 +434,7 @@ export class TypeScriptParser implements ParserPlugin {
     if (!code.trim()) {
       throw new Error('程式碼內容不能為空');
     }
-    
+
     if (!filePath.trim()) {
       throw new Error('檔案路徑不能為空');
     }
@@ -444,7 +444,7 @@ export class TypeScriptParser implements ParserPlugin {
     if (!newName.trim()) {
       throw new Error('新名稱不能為空');
     }
-    
+
     if (!isValidIdentifier(newName)) {
       throw new Error('新名稱必須是有效的 TypeScript 識別符');
     }
@@ -453,13 +453,13 @@ export class TypeScriptParser implements ParserPlugin {
   private getScriptKind(filePath: string): ts.ScriptKind {
     const ext = filePath.substring(filePath.lastIndexOf('.'));
     switch (ext) {
-      case '.tsx':
-        return ts.ScriptKind.TSX;
-      case '.d.ts':
-        return ts.ScriptKind.TS;
-      case '.ts':
-      default:
-        return ts.ScriptKind.TS;
+    case '.tsx':
+      return ts.ScriptKind.TSX;
+    case '.d.ts':
+      return ts.ScriptKind.TS;
+    case '.ts':
+    default:
+      return ts.ScriptKind.TS;
     }
   }
 
@@ -489,7 +489,7 @@ export class TypeScriptParser implements ParserPlugin {
       }
       return undefined;
     }
-    
+
     return findNode(sourceFile);
   }
 
@@ -729,41 +729,41 @@ export class TypeScriptParser implements ParserPlugin {
   }
 
   private getDefinitionKind(node: ts.Node): any {
-    if (ts.isClassDeclaration(node)) return 'class';
-    if (ts.isInterfaceDeclaration(node)) return 'interface';
-    if (ts.isFunctionDeclaration(node)) return 'function';
-    if (ts.isMethodDeclaration(node)) return 'method';
-    if (ts.isVariableDeclaration(node)) return 'variable';
-    if (ts.isPropertyDeclaration(node)) return 'variable';
-    if (ts.isTypeAliasDeclaration(node)) return 'type';
-    if (ts.isEnumDeclaration(node)) return 'enum';
-    if (ts.isModuleDeclaration(node)) return 'module';
+    if (ts.isClassDeclaration(node)) {return 'class';}
+    if (ts.isInterfaceDeclaration(node)) {return 'interface';}
+    if (ts.isFunctionDeclaration(node)) {return 'function';}
+    if (ts.isMethodDeclaration(node)) {return 'method';}
+    if (ts.isVariableDeclaration(node)) {return 'variable';}
+    if (ts.isPropertyDeclaration(node)) {return 'variable';}
+    if (ts.isTypeAliasDeclaration(node)) {return 'type';}
+    if (ts.isEnumDeclaration(node)) {return 'enum';}
+    if (ts.isModuleDeclaration(node)) {return 'module';}
     return 'variable';
   }
 
   private symbolTypeToDefinitionKind(symbolType: any): DefinitionKind {
     // 將 SymbolType 映射到 DefinitionKind
     switch (symbolType) {
-      case SymbolType.Class:
-        return 'class';
-      case SymbolType.Interface:
-        return 'interface';
-      case SymbolType.Function:
-        return 'function';
-      case SymbolType.Variable:
-        return 'variable';
-      case SymbolType.Constant:
-        return 'constant';
-      case SymbolType.Type:
-        return 'type';
-      case SymbolType.Enum:
-        return 'enum';
-      case SymbolType.Module:
-        return 'module';
-      case SymbolType.Namespace:
-        return 'namespace';
-      default:
-        return 'variable'; // 預設為變數
+    case SymbolType.Class:
+      return 'class';
+    case SymbolType.Interface:
+      return 'interface';
+    case SymbolType.Function:
+      return 'function';
+    case SymbolType.Variable:
+      return 'variable';
+    case SymbolType.Constant:
+      return 'constant';
+    case SymbolType.Type:
+      return 'type';
+    case SymbolType.Enum:
+      return 'enum';
+    case SymbolType.Module:
+      return 'module';
+    case SymbolType.Namespace:
+      return 'namespace';
+    default:
+      return 'variable'; // 預設為變數
     }
   }
 

@@ -175,7 +175,7 @@ export class MoveService {
       const normalizedFile = path.normalize(file);
       const normalizedMovedPath = path.normalize(movedPath);
 
-      if (normalizedFile === normalizedMovedPath) continue;
+      if (normalizedFile === normalizedMovedPath) {continue;}
 
       const hasReference = await this.fileReferencesPath(file, movedPath);
       if (hasReference) {
@@ -300,20 +300,20 @@ export class MoveService {
     const normalized2 = path.normalize(path2);
 
     // 檢查完全匹配
-    if (normalized1 === normalized2) return true;
+    if (normalized1 === normalized2) {return true;}
 
     // 檢查去除副檔名後是否匹配（TypeScript/JavaScript 可以省略副檔名）
     const withoutExt1 = this.removeExtension(normalized1);
     const withoutExt2 = this.removeExtension(normalized2);
 
-    if (withoutExt1 === withoutExt2) return true;
+    if (withoutExt1 === withoutExt2) {return true;}
 
     // 檢查是否為相同的絕對路徑（處理相對路徑差異）
     try {
       const abs1 = path.isAbsolute(normalized1) ? normalized1 : path.resolve(normalized1);
       const abs2 = path.isAbsolute(normalized2) ? normalized2 : path.resolve(normalized2);
 
-      if (abs1 === abs2) return true;
+      if (abs1 === abs2) {return true;}
 
       const withoutExtAbs1 = this.removeExtension(abs1);
       const withoutExtAbs2 = this.removeExtension(abs2);
@@ -402,7 +402,7 @@ export class MoveService {
    */
   private async applyPathUpdates(updates: PathUpdate[]): Promise<void> {
     const fileUpdates = new Map<string, PathUpdate[]>();
-    
+
     // 按檔案分組
     for (const update of updates) {
       if (!fileUpdates.has(update.filePath)) {
@@ -423,14 +423,14 @@ export class MoveService {
   private async applyFileUpdates(filePath: string, updates: PathUpdate[]): Promise<void> {
     try {
       let content = await fs.readFile(filePath, 'utf-8');
-      
+
       // 按行號從高到低排序，避免行號偏移問題
       const sortedUpdates = updates.sort((a, b) => b.line - a.line);
-      
+
       for (const update of sortedUpdates) {
         content = content.replace(update.oldImport, update.newImport);
       }
-      
+
       await fs.writeFile(filePath, content, 'utf-8');
     } catch (error) {
       throw new Error(`更新檔案 ${filePath} 失敗: ${error instanceof Error ? error.message : 'Unknown error'}`);

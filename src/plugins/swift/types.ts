@@ -252,36 +252,36 @@ export function createSwiftParseError(
  */
 export function mapSwiftSymbolTypeToSymbolType(swiftType: SwiftSymbolType): SymbolType {
   switch (swiftType) {
-    case SwiftSymbolType.Class:
-      return SymbolType.Class;
-    case SwiftSymbolType.Struct:
-      return SymbolType.Class; // Swift struct 對應到 Class
-    case SwiftSymbolType.Enum:
-      return SymbolType.Enum;
-    case SwiftSymbolType.Protocol:
-      return SymbolType.Interface;
-    case SwiftSymbolType.Function:
-    case SwiftSymbolType.Method:
-    case SwiftSymbolType.Initializer:
-    case SwiftSymbolType.Deinitializer:
-      return SymbolType.Function;
-    case SwiftSymbolType.Property:
-    case SwiftSymbolType.Variable:
-      return SymbolType.Variable;
-    case SwiftSymbolType.Constant:
-      return SymbolType.Constant;
-    case SwiftSymbolType.TypeAlias:
-      return SymbolType.Type;
-    case SwiftSymbolType.Extension:
-      return SymbolType.Class;
-    case SwiftSymbolType.EnumCase:
-      return SymbolType.Constant;
-    case SwiftSymbolType.Parameter:
-      return SymbolType.Variable;
-    case SwiftSymbolType.Generic:
-      return SymbolType.Type;
-    default:
-      return SymbolType.Variable;
+  case SwiftSymbolType.Class:
+    return SymbolType.Class;
+  case SwiftSymbolType.Struct:
+    return SymbolType.Class; // Swift struct 對應到 Class
+  case SwiftSymbolType.Enum:
+    return SymbolType.Enum;
+  case SwiftSymbolType.Protocol:
+    return SymbolType.Interface;
+  case SwiftSymbolType.Function:
+  case SwiftSymbolType.Method:
+  case SwiftSymbolType.Initializer:
+  case SwiftSymbolType.Deinitializer:
+    return SymbolType.Function;
+  case SwiftSymbolType.Property:
+  case SwiftSymbolType.Variable:
+    return SymbolType.Variable;
+  case SwiftSymbolType.Constant:
+    return SymbolType.Constant;
+  case SwiftSymbolType.TypeAlias:
+    return SymbolType.Type;
+  case SwiftSymbolType.Extension:
+    return SymbolType.Class;
+  case SwiftSymbolType.EnumCase:
+    return SymbolType.Constant;
+  case SwiftSymbolType.Parameter:
+    return SymbolType.Variable;
+  case SwiftSymbolType.Generic:
+    return SymbolType.Type;
+  default:
+    return SymbolType.Variable;
   }
 }
 

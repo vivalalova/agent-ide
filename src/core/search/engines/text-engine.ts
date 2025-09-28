@@ -51,7 +51,7 @@ export class TextSearchEngine {
       // 2. 執行搜尋
       const matches: Match[] = [];
       let totalCount = 0;
-      let regexError: Error | null = null;
+      const regexError: Error | null = null;
 
       // 確保 query.query 是字符串
       const searchQuery = typeof query.query === 'string' ? query.query : String(query.query || '');
@@ -364,22 +364,22 @@ export class TextSearchEngine {
     let pattern: string;
 
     switch (scope.type) {
-      case 'file':
-        return scope.path ? [scope.path] : [];
+    case 'file':
+      return scope.path ? [scope.path] : [];
 
-      case 'directory':
-        searchPath = scope.path || process.cwd();
-        pattern = scope.recursive !== false ? '**/*' : '*';  // 預設遞迴搜尋
-        break;
+    case 'directory':
+      searchPath = scope.path || process.cwd();
+      pattern = scope.recursive !== false ? '**/*' : '*';  // 預設遞迴搜尋
+      break;
 
-      case 'project':
-      case 'workspace':
-        searchPath = scope.path || process.cwd();
-        pattern = '**/*';
-        break;
+    case 'project':
+    case 'workspace':
+      searchPath = scope.path || process.cwd();
+      pattern = '**/*';
+      break;
 
-      default:
-        throw new Error(`不支援的搜尋範圍類型: ${scope.type}`);
+    default:
+      throw new Error(`不支援的搜尋範圍類型: ${scope.type}`);
     }
 
     // 使用 glob 找出檔案

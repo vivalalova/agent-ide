@@ -202,8 +202,8 @@ export function createDefaultAnalyzerConfig(): DependencyAnalyzerConfig {
  * 計算循環依賴嚴重程度
  */
 export function calculateCycleSeverity(cycleLength: number): 'low' | 'medium' | 'high' {
-  if (cycleLength <= 3) return 'low';
-  if (cycleLength <= 6) return 'medium';
+  if (cycleLength <= 3) {return 'low';}
+  if (cycleLength <= 6) {return 'medium';}
   return 'high';
 }
 
@@ -216,7 +216,7 @@ export function isFileDependencies(value: unknown): value is FileDependencies {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.filePath === 'string' &&
     obj.filePath.trim().length > 0 &&
@@ -234,7 +234,7 @@ export function isProjectDependencies(value: unknown): value is ProjectDependenc
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.projectPath === 'string' &&
     obj.projectPath.trim().length > 0 &&
@@ -254,7 +254,7 @@ export function isCircularDependency(value: unknown): value is CircularDependenc
 
   const obj = value as Record<string, unknown>;
   const validSeverities = ['low', 'medium', 'high'];
-  
+
   return (
     Array.isArray(obj.cycle) &&
     obj.cycle.length >= 2 &&

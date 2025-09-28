@@ -213,7 +213,7 @@ export class CacheCoordinatorService implements ICacheCoordinator {
    * 銷毀服務
    */
   dispose(): void {
-    if (this.disposed) return;
+    if (this.disposed) {return;}
 
     this.moduleStrategies.clear();
     this.disposed = true;
@@ -228,23 +228,23 @@ export class CacheCoordinatorService implements ICacheCoordinator {
     const options: any = {};
 
     switch (strategy.type) {
-      case 'lru':
-        options.strategy = 'lru';
-        if (strategy.maxSize) options.maxSize = strategy.maxSize;
-        break;
-      case 'lfu':
-        options.strategy = 'lfu';
-        if (strategy.maxSize) options.maxSize = strategy.maxSize;
-        break;
-      case 'ttl':
-        options.strategy = 'ttl';
-        if (strategy.maxAge) options.maxAge = strategy.maxAge;
-        break;
-      case 'custom':
-        if (strategy.customStrategy) {
-          options.customStrategy = strategy.customStrategy;
-        }
-        break;
+    case 'lru':
+      options.strategy = 'lru';
+      if (strategy.maxSize) {options.maxSize = strategy.maxSize;}
+      break;
+    case 'lfu':
+      options.strategy = 'lfu';
+      if (strategy.maxSize) {options.maxSize = strategy.maxSize;}
+      break;
+    case 'ttl':
+      options.strategy = 'ttl';
+      if (strategy.maxAge) {options.maxAge = strategy.maxAge;}
+      break;
+    case 'custom':
+      if (strategy.customStrategy) {
+        options.customStrategy = strategy.customStrategy;
+      }
+      break;
     }
 
     return options;

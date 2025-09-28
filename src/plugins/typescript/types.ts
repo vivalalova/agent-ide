@@ -2,13 +2,13 @@
  * TypeScript Parser 特定型別定義
  */
 
-import type { 
-  AST, 
+import type {
+  AST,
   ASTNode,
-  Position, 
-  Range, 
-  Symbol, 
-  Reference, 
+  Position,
+  Range,
+  Symbol,
+  Reference,
   Dependency
 } from '../../shared/types';
 import { SymbolType, DependencyType, ReferenceType } from '../../shared/types';
@@ -152,7 +152,7 @@ export const MODIFIER_MAP: Partial<Record<ts.SyntaxKind, string>> = {
  * 位置轉換工具函式
  */
 export function tsPositionToPosition(
-  sourceFile: ts.SourceFile, 
+  sourceFile: ts.SourceFile,
   pos: number
 ): Position {
   const lineAndChar = sourceFile.getLineAndCharacterOfPosition(pos);
@@ -172,7 +172,7 @@ export function tsNodeToRange(
 ): Range {
   const start = tsPositionToPosition(sourceFile, node.getStart(sourceFile));
   const end = tsPositionToPosition(sourceFile, node.getEnd());
-  
+
   return { start, end };
 }
 
@@ -191,7 +191,7 @@ export function positionToTsPosition(
  */
 export function getNodeModifiers(node: ts.Node): string[] {
   const modifiers: string[] = [];
-  
+
   if (ts.canHaveModifiers(node) && ts.getModifiers(node)) {
     for (const modifier of ts.getModifiers(node)!) {
       const modifierName = MODIFIER_MAP[modifier.kind];
@@ -200,7 +200,7 @@ export function getNodeModifiers(node: ts.Node): string[] {
       }
     }
   }
-  
+
   // 特殊處理某些節點
   if (ts.isVariableDeclaration(node)) {
     const parent = node.parent;
@@ -214,7 +214,7 @@ export function getNodeModifiers(node: ts.Node): string[] {
       }
     }
   }
-  
+
   return modifiers;
 }
 
@@ -225,7 +225,7 @@ export function getNodeName(node: ts.Node): string | undefined {
   if (ts.isIdentifier(node)) {
     return node.text;
   }
-  
+
   if ('name' in node && node.name) {
     const nameNode = node.name as ts.Node;
     if (ts.isIdentifier(nameNode)) {
@@ -235,7 +235,7 @@ export function getNodeName(node: ts.Node): string | undefined {
       return nameNode.text;
     }
   }
-  
+
   return undefined;
 }
 
@@ -271,7 +271,7 @@ export function isDependencyNode(node: ts.Node): boolean {
     ts.isExportDeclaration(node) ||
     ts.isImportEqualsDeclaration(node) ||
     ts.isExportAssignment(node) ||
-    (ts.isCallExpression(node) && 
+    (ts.isCallExpression(node) &&
      ((ts.isIdentifier(node.expression) && node.expression.text === 'require') ||
       node.expression.kind === ts.SyntaxKind.ImportKeyword))
   );
@@ -287,7 +287,7 @@ export function getDependencyPath(node: ts.Node): string | undefined {
       return moduleSpecifier.text;
     }
   }
-  
+
   if (ts.isImportEqualsDeclaration(node)) {
     if (ts.isExternalModuleReference(node.moduleReference)) {
       const expression = node.moduleReference.expression;
@@ -296,10 +296,10 @@ export function getDependencyPath(node: ts.Node): string | undefined {
       }
     }
   }
-  
+
   if (ts.isCallExpression(node)) {
     const expression = node.expression;
-    if (ts.isIdentifier(expression) && 
+    if (ts.isIdentifier(expression) &&
         (expression.text === 'require' || expression.text === 'import')) {
       const firstArg = node.arguments[0];
       if (firstArg && ts.isStringLiteral(firstArg)) {
@@ -307,7 +307,7 @@ export function getDependencyPath(node: ts.Node): string | undefined {
       }
     }
   }
-  
+
   return undefined;
 }
 
@@ -323,15 +323,15 @@ export function isRelativePath(path: string): boolean {
  */
 export function getImportedSymbols(node: ts.ImportDeclaration): string[] {
   const symbols: string[] = [];
-  
+
   if (node.importClause) {
     const importClause = node.importClause;
-    
+
     // 預設導入
     if (importClause.name) {
       symbols.push('default');
     }
-    
+
     // 命名導入
     if (importClause.namedBindings) {
       if (ts.isNamespaceImport(importClause.namedBindings)) {
@@ -345,7 +345,7 @@ export function getImportedSymbols(node: ts.ImportDeclaration): string[] {
       }
     }
   }
-  
+
   return symbols;
 }
 
@@ -363,18 +363,18 @@ export function createTypeScriptASTNode(
     syntaxKind: ts.SyntaxKind[tsNode.kind],
     flags: tsNode.flags
   };
-  
+
   // 添加特定屬性
   const name = getNodeName(tsNode);
   if (name) {
     properties.name = name;
   }
-  
+
   const modifiers = getNodeModifiers(tsNode);
   if (modifiers.length > 0) {
     properties.modifiers = modifiers;
   }
-  
+
   // 遞歸處理子節點
   const children: TypeScriptASTNode[] = [];
 
@@ -395,7 +395,7 @@ export function createTypeScriptASTNode(
       children.push(createTypeScriptASTNode(declaration, sourceFile));
     }
   }
-  
+
   const node: TypeScriptASTNode = {
     type,
     range,
@@ -404,12 +404,12 @@ export function createTypeScriptASTNode(
     tsNode,
     sourceFile
   };
-  
+
   // 設定父子關係
   children.forEach(child => {
     (child as any).parent = node;
   });
-  
+
   return node;
 }
 
@@ -420,7 +420,7 @@ export function isValidIdentifier(name: string): boolean {
   if (!name || name.length === 0) {
     return false;
   }
-  
+
   // TypeScript 識別符規則
   const identifierPattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
   return identifierPattern.test(name);

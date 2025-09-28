@@ -19,6 +19,7 @@
     "test:failed": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --reporter=dot",
     "test:bail": "node --expose-gc --max-old-space-size=4096 node_modules/.bin/vitest run --bail=1",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint 'src/**/*.ts' --fix",
     "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\""
   },
   "keywords": [
@@ -38,8 +39,11 @@
     "@types/babel__generator": "^7.27.0",
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "^24.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
     "@vitest/coverage-v8": "^2.1.9",
     "chokidar": "^4.0.3",
+    "eslint": "^9.36.0",
     "memfs": "^4.38.2",
     "tsx": "^4.20.5",
     "typescript": "^5.0.0",

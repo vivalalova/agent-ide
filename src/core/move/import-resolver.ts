@@ -147,12 +147,12 @@ export class ImportResolver {
         // 確保路徑拼接正確
         const remainingPath = aliasPath.slice(alias.length);
         let resolved = path.join(realPath, remainingPath).replace(/\\/g, '/');
-        
+
         // 確保相對路徑以 ./ 開始
         if (!resolved.startsWith('.') && !path.isAbsolute(resolved)) {
           resolved = './' + resolved;
         }
-        
+
         return resolved;
       }
     }
@@ -317,8 +317,8 @@ export class ImportResolver {
    */
   private isCommentLine(line: string): boolean {
     const trimmed = line.trim();
-    return trimmed.startsWith('//') || 
-           trimmed.startsWith('/*') || 
+    return trimmed.startsWith('//') ||
+           trimmed.startsWith('/*') ||
            trimmed.startsWith('*');
   }
 }

@@ -60,13 +60,13 @@ export class MemoryCache<K, V> {
    */
   get(key: K): V | undefined {
     const startTime = Date.now();
-    
+
     if (this.options.enableStats) {
       this.stats.totalRequests++;
     }
 
     const item = this.cache.get(key);
-    
+
     if (!item) {
       if (this.options.enableStats) {
         this.stats.misses++;
@@ -103,7 +103,7 @@ export class MemoryCache<K, V> {
 
     this.emitEvent(CacheEventType.HIT, key, item.value);
     this.emitEvent(CacheEventType.GET, key, item.value);
-    
+
     return item.value;
   }
 
@@ -114,7 +114,7 @@ export class MemoryCache<K, V> {
     const now = Date.now();
     const ttl = customTTL ?? this.options.defaultTTL;
     const expiresAt = ttl > 0 ? now + ttl : undefined;
-    
+
     // 如果已存在，先刪除（這樣可以更新 LRU 順序）
     if (this.cache.has(key)) {
       this.delete(key);
@@ -155,13 +155,13 @@ export class MemoryCache<K, V> {
    */
   has(key: K): boolean {
     const item = this.cache.get(key);
-    if (!item) return false;
-    
+    if (!item) {return false;}
+
     if (this.isExpired(item)) {
       this.delete(key);
       return false;
     }
-    
+
     return true;
   }
 
@@ -170,7 +170,7 @@ export class MemoryCache<K, V> {
    */
   delete(key: K): boolean {
     const item = this.cache.get(key);
-    if (!item) return false;
+    if (!item) {return false;}
 
     // 從快取中刪除
     this.cache.delete(key);
@@ -215,14 +215,14 @@ export class MemoryCache<K, V> {
    */
   mget(keys: K[]): Map<K, V> {
     const result = new Map<K, V>();
-    
+
     for (const key of keys) {
       const value = this.get(key);
       if (value !== undefined) {
         result.set(key, value);
       }
     }
-    
+
     return result;
   }
 
@@ -273,7 +273,7 @@ export class MemoryCache<K, V> {
    * 檢查項目是否過期
    */
   private isExpired(item: CacheItem<V>): boolean {
-    if (!item.expiresAt) return false;
+    if (!item.expiresAt) {return false;}
     return Date.now() > item.expiresAt;
   }
 
@@ -316,10 +316,10 @@ export class MemoryCache<K, V> {
    * 淘汰項目
    */
   private evict(): void {
-    if (this.cache.size === 0) return;
+    if (this.cache.size === 0) {return;}
 
     const keyToEvict = this.strategy.selectEvictionKey(this.cache);
-    
+
     if (keyToEvict !== undefined) {
       const item = this.cache.get(keyToEvict);
       this.delete(keyToEvict);
@@ -346,7 +346,7 @@ export class MemoryCache<K, V> {
   private updateAverageAccessTime(accessTime: number): void {
     const currentAvg = this.stats.averageAccessTime;
     const totalRequests = this.stats.totalRequests;
-    
+
     if (totalRequests === 1) {
       this.stats.averageAccessTime = accessTime;
     } else {
@@ -358,7 +358,7 @@ export class MemoryCache<K, V> {
    * 發出事件
    */
   private emitEvent(type: CacheEventType, key: K, value?: V): void {
-    if (this.listeners.size === 0) return;
+    if (this.listeners.size === 0) {return;}
 
     const event: CacheEvent<K, V> = {
       type,

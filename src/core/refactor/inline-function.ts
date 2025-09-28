@@ -555,17 +555,17 @@ export class FunctionInliner {
     const endOffset = this.positionToOffset(code, edit.range.end);
 
     switch (edit.type) {
-      case 'replace':
-        return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
+    case 'replace':
+      return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
 
-      case 'insert':
-        return code.substring(0, startOffset) + edit.newText + code.substring(startOffset);
+    case 'insert':
+      return code.substring(0, startOffset) + edit.newText + code.substring(startOffset);
 
-      case 'delete':
-        return code.substring(0, startOffset) + code.substring(endOffset);
+    case 'delete':
+      return code.substring(0, startOffset) + code.substring(endOffset);
 
-      default:
-        return code;
+    default:
+      return code;
     }
   }
 

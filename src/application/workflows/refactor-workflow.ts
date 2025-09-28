@@ -405,18 +405,18 @@ export class RefactorWorkflow extends BaseWorkflow<RefactorWorkflowContext, Refa
     const recommendations: string[] = [];
 
     switch (options.type) {
-      case 'extract-function':
-        recommendations.push('確保提取的函式具有單一職責');
-        recommendations.push('檢查函式參數數量是否合理');
-        break;
-      case 'inline-function':
-        recommendations.push('確認內聯後不會增加複雜度');
-        recommendations.push('檢查是否會造成程式碼重複');
-        break;
-      case 'rename':
-        recommendations.push('確保新名稱符合命名慣例');
-        recommendations.push('檢查是否會與現有符號衝突');
-        break;
+    case 'extract-function':
+      recommendations.push('確保提取的函式具有單一職責');
+      recommendations.push('檢查函式參數數量是否合理');
+      break;
+    case 'inline-function':
+      recommendations.push('確認內聯後不會增加複雜度');
+      recommendations.push('檢查是否會造成程式碼重複');
+      break;
+    case 'rename':
+      recommendations.push('確保新名稱符合命名慣例');
+      recommendations.push('檢查是否會與現有符號衝突');
+      break;
     }
 
     return recommendations;
@@ -435,21 +435,21 @@ export class RefactorWorkflow extends BaseWorkflow<RefactorWorkflowContext, Refa
     }
 
     switch (options.type) {
-      case 'extract-function':
-        if (!options.selection || !options.newName) {
-          return { isValid: false, reason: '提取函式需要選擇範圍和新函式名稱' };
-        }
-        break;
-      case 'inline-function':
-        if (!options.selection) {
-          return { isValid: false, reason: '內聯函式需要選擇範圍' };
-        }
-        break;
-      case 'rename':
-        if (!options.selection || !options.newName) {
-          return { isValid: false, reason: '重新命名需要選擇範圍和新名稱' };
-        }
-        break;
+    case 'extract-function':
+      if (!options.selection || !options.newName) {
+        return { isValid: false, reason: '提取函式需要選擇範圍和新函式名稱' };
+      }
+      break;
+    case 'inline-function':
+      if (!options.selection) {
+        return { isValid: false, reason: '內聯函式需要選擇範圍' };
+      }
+      break;
+    case 'rename':
+      if (!options.selection || !options.newName) {
+        return { isValid: false, reason: '重新命名需要選擇範圍和新名稱' };
+      }
+      break;
     }
 
     return { isValid: true };

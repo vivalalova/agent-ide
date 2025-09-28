@@ -67,12 +67,12 @@ export class WorkflowFactory {
    */
   public createWorkflow(type: WorkflowType): RefactorWorkflow | AnalysisWorkflow {
     switch (type) {
-      case WorkflowType.REFACTOR:
-        return this.createRefactorWorkflow();
-      case WorkflowType.ANALYSIS:
-        return this.createAnalysisWorkflow();
-      default:
-        throw new Error(`不支援的工作流程類型: ${type}`);
+    case WorkflowType.REFACTOR:
+      return this.createRefactorWorkflow();
+    case WorkflowType.ANALYSIS:
+      return this.createAnalysisWorkflow();
+    default:
+      throw new Error(`不支援的工作流程類型: ${type}`);
     }
   }
 
@@ -241,36 +241,36 @@ export class WorkflowUtils {
     const errors: string[] = [];
 
     switch (type) {
-      case WorkflowType.REFACTOR:
-        if (!input || typeof input !== 'object') {
-          errors.push('輸入必須是物件');
-          break;
-        }
-        const refactorInput = input as any;
-        if (!refactorInput.filePath || typeof refactorInput.filePath !== 'string') {
-          errors.push('filePath 必須是字串');
-        }
-        if (!refactorInput.options || typeof refactorInput.options !== 'object') {
-          errors.push('options 必須是物件');
-        }
+    case WorkflowType.REFACTOR:
+      if (!input || typeof input !== 'object') {
+        errors.push('輸入必須是物件');
         break;
+      }
+      const refactorInput = input as any;
+      if (!refactorInput.filePath || typeof refactorInput.filePath !== 'string') {
+        errors.push('filePath 必須是字串');
+      }
+      if (!refactorInput.options || typeof refactorInput.options !== 'object') {
+        errors.push('options 必須是物件');
+      }
+      break;
 
-      case WorkflowType.ANALYSIS:
-        if (!input || typeof input !== 'object') {
-          errors.push('輸入必須是物件');
-          break;
-        }
-        const analysisInput = input as any;
-        if (!analysisInput.target || typeof analysisInput.target !== 'string') {
-          errors.push('target 必須是字串');
-        }
-        if (!Array.isArray(analysisInput.analysisTypes)) {
-          errors.push('analysisTypes 必須是陣列');
-        }
+    case WorkflowType.ANALYSIS:
+      if (!input || typeof input !== 'object') {
+        errors.push('輸入必須是物件');
         break;
+      }
+      const analysisInput = input as any;
+      if (!analysisInput.target || typeof analysisInput.target !== 'string') {
+        errors.push('target 必須是字串');
+      }
+      if (!Array.isArray(analysisInput.analysisTypes)) {
+        errors.push('analysisTypes 必須是陣列');
+      }
+      break;
 
-      default:
-        errors.push(`不支援的工作流程類型: ${type}`);
+    default:
+      errors.push(`不支援的工作流程類型: ${type}`);
     }
 
     return {
@@ -290,15 +290,15 @@ export class WorkflowUtils {
     const resultObj = result as any;
 
     switch (type) {
-      case WorkflowType.REFACTOR:
-        return `重構結果:\n成功: ${resultObj.success}\n變更數量: ${resultObj.refactorResult?.changes?.length || 0}`;
+    case WorkflowType.REFACTOR:
+      return `重構結果:\n成功: ${resultObj.success}\n變更數量: ${resultObj.refactorResult?.changes?.length || 0}`;
 
-      case WorkflowType.ANALYSIS:
-        const report = resultObj.report;
-        return `分析結果:\n目標: ${report?.summary?.target}\n檔案數量: ${report?.summary?.totalFiles}\n分析類型: ${report?.summary?.analysisTypes?.join(', ')}`;
+    case WorkflowType.ANALYSIS:
+      const report = resultObj.report;
+      return `分析結果:\n目標: ${report?.summary?.target}\n檔案數量: ${report?.summary?.totalFiles}\n分析類型: ${report?.summary?.analysisTypes?.join(', ')}`;
 
-      default:
-        return JSON.stringify(result, null, 2);
+    default:
+      return JSON.stringify(result, null, 2);
     }
   }
 }

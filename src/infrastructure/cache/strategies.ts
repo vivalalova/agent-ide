@@ -8,27 +8,27 @@ export interface CacheStrategy<K, V> {
    * 策略名稱
    */
   readonly name: EvictionStrategy;
-  
+
   /**
    * 當項目被存取時呼叫
    */
   onAccess(key: K, item: CacheItem<V>): void;
-  
+
   /**
    * 當項目被設定時呼叫
    */
   onSet(key: K, item: CacheItem<V>): void;
-  
+
   /**
    * 當項目被刪除時呼叫
    */
   onDelete(key: K): void;
-  
+
   /**
    * 選擇要淘汰的項目
    */
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined;
-  
+
   /**
    * 清理策略內部狀態
    */
@@ -40,7 +40,7 @@ export interface CacheStrategy<K, V> {
  */
 export class LRUStrategy<K, V> implements CacheStrategy<K, V> {
   readonly name = EvictionStrategy.LRU;
-  
+
   private head?: LRUNode<K>;
   private tail?: LRUNode<K>;
   private nodes = new Map<K, LRUNode<K>>();
@@ -72,7 +72,7 @@ export class LRUStrategy<K, V> implements CacheStrategy<K, V> {
 
   private addToHead(key: K): void {
     const node: LRUNode<K> = { key };
-    
+
     if (!this.head) {
       this.head = node;
       this.tail = node;
@@ -81,36 +81,36 @@ export class LRUStrategy<K, V> implements CacheStrategy<K, V> {
       this.head.prev = node;
       this.head = node;
     }
-    
+
     this.nodes.set(key, node);
   }
 
   private moveToHead(key: K): void {
     const node = this.nodes.get(key);
-    if (!node || node === this.head) return;
+    if (!node || node === this.head) {return;}
 
     // 從當前位置移除
-    if (node.prev) node.prev.next = node.next;
-    if (node.next) node.next.prev = node.prev;
-    if (node === this.tail) this.tail = node.prev;
+    if (node.prev) {node.prev.next = node.next;}
+    if (node.next) {node.next.prev = node.prev;}
+    if (node === this.tail) {this.tail = node.prev;}
 
     // 移動到頭部
     node.prev = undefined;
     node.next = this.head;
-    if (this.head) this.head.prev = node;
+    if (this.head) {this.head.prev = node;}
     this.head = node;
   }
 
   private removeNode(key: K): void {
     const node = this.nodes.get(key);
-    if (!node) return;
+    if (!node) {return;}
 
-    if (node.prev) node.prev.next = node.next;
-    if (node.next) node.next.prev = node.prev;
-    
-    if (node === this.head) this.head = node.next;
-    if (node === this.tail) this.tail = node.prev;
-    
+    if (node.prev) {node.prev.next = node.next;}
+    if (node.next) {node.next.prev = node.prev;}
+
+    if (node === this.head) {this.head = node.next;}
+    if (node === this.tail) {this.tail = node.prev;}
+
     this.nodes.delete(key);
   }
 }
@@ -120,7 +120,7 @@ export class LRUStrategy<K, V> implements CacheStrategy<K, V> {
  */
 export class LFUStrategy<K, V> implements CacheStrategy<K, V> {
   readonly name = EvictionStrategy.LFU;
-  
+
   private frequencies = new Map<K, number>();
 
   onAccess(key: K, item: CacheItem<V>): void {
@@ -221,7 +221,7 @@ export class TTLStrategy<K, V> implements CacheStrategy<K, V> {
           // 已過期，優先淘汰
           return key;
         }
-        
+
         if (item.expiresAt < earliestExpiry) {
           earliestExpiry = item.expiresAt;
           keyToEvict = key;
@@ -257,8 +257,8 @@ export class RandomStrategy<K, V> implements CacheStrategy<K, V> {
 
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined {
     const keys = Array.from(items.keys());
-    if (keys.length === 0) return undefined;
-    
+    if (keys.length === 0) {return undefined;}
+
     const randomIndex = Math.floor(Math.random() * keys.length);
     return keys[randomIndex];
   }
@@ -274,18 +274,18 @@ export class RandomStrategy<K, V> implements CacheStrategy<K, V> {
 export class StrategyFactory {
   static createStrategy<K, V>(strategy: EvictionStrategy): CacheStrategy<K, V> {
     switch (strategy) {
-      case EvictionStrategy.LRU:
-        return new LRUStrategy<K, V>();
-      case EvictionStrategy.LFU:
-        return new LFUStrategy<K, V>();
-      case EvictionStrategy.FIFO:
-        return new FIFOStrategy<K, V>();
-      case EvictionStrategy.TTL:
-        return new TTLStrategy<K, V>();
-      case EvictionStrategy.RANDOM:
-        return new RandomStrategy<K, V>();
-      default:
-        throw new Error(`Unsupported eviction strategy: ${strategy}`);
+    case EvictionStrategy.LRU:
+      return new LRUStrategy<K, V>();
+    case EvictionStrategy.LFU:
+      return new LFUStrategy<K, V>();
+    case EvictionStrategy.FIFO:
+      return new FIFOStrategy<K, V>();
+    case EvictionStrategy.TTL:
+      return new TTLStrategy<K, V>();
+    case EvictionStrategy.RANDOM:
+      return new RandomStrategy<K, V>();
+    default:
+      throw new Error(`Unsupported eviction strategy: ${strategy}`);
     }
   }
 }

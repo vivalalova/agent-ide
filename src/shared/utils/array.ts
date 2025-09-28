@@ -5,8 +5,8 @@
  * @returns 分割後的陣列
  */
 export function chunk<T>(array: T[], size: number): T[][] {
-  if (!array.length || size <= 0) return [];
-  
+  if (!array.length || size <= 0) {return [];}
+
   const result: T[][] = [];
   for (let i = 0; i < array.length; i += size) {
     result.push(array.slice(i, i + size));
@@ -21,7 +21,7 @@ export function chunk<T>(array: T[], size: number): T[][] {
  */
 export function flatten<T = any>(array: any[]): T[] {
   const result: T[] = [];
-  
+
   for (const item of array) {
     if (Array.isArray(item)) {
       result.push(...flatten<T>(item));
@@ -29,7 +29,7 @@ export function flatten<T = any>(array: any[]): T[] {
       result.push(item);
     }
   }
-  
+
   return result;
 }
 
@@ -40,15 +40,15 @@ export function flatten<T = any>(array: any[]): T[] {
  * @returns 去重後的陣列
  */
 export function unique<T, K = T>(array: T[], keyFn?: (item: T) => K): T[] {
-  if (!array.length) return [];
-  
+  if (!array.length) {return [];}
+
   if (!keyFn) {
     return Array.from(new Set(array));
   }
-  
+
   const seen = new Set<K>();
   const result: T[] = [];
-  
+
   for (const item of array) {
     const key = keyFn(item);
     if (!seen.has(key)) {
@@ -56,7 +56,7 @@ export function unique<T, K = T>(array: T[], keyFn?: (item: T) => K): T[] {
       result.push(item);
     }
   }
-  
+
   return result;
 }
 
@@ -67,9 +67,9 @@ export function unique<T, K = T>(array: T[], keyFn?: (item: T) => K): T[] {
  * @returns array1 中不在 array2 中的元素
  */
 export function difference<T>(array1: T[], array2: T[]): T[] {
-  if (!array1.length) return [];
-  if (!array2.length) return [...array1];
-  
+  if (!array1.length) {return [];}
+  if (!array2.length) {return [...array1];}
+
   const set2 = new Set(array2);
   return array1.filter(item => !set2.has(item));
 }
@@ -81,8 +81,8 @@ export function difference<T>(array1: T[], array2: T[]): T[] {
  * @returns 兩個陣列共同的元素
  */
 export function intersection<T>(array1: T[], array2: T[]): T[] {
-  if (!array1.length || !array2.length) return [];
-  
+  if (!array1.length || !array2.length) {return [];}
+
   const set2 = new Set(array2);
   return array1.filter(item => set2.has(item));
 }
@@ -96,7 +96,7 @@ export function intersection<T>(array1: T[], array2: T[]): T[] {
 export function partition<T>(array: T[], predicate: (item: T) => boolean): [T[], T[]] {
   const truthy: T[] = [];
   const falsy: T[] = [];
-  
+
   for (const item of array) {
     if (predicate(item)) {
       truthy.push(item);
@@ -104,7 +104,7 @@ export function partition<T>(array: T[], predicate: (item: T) => boolean): [T[],
       falsy.push(item);
     }
   }
-  
+
   return [truthy, falsy];
 }
 
@@ -115,11 +115,11 @@ export function partition<T>(array: T[], predicate: (item: T) => boolean): [T[],
  * @returns 分組後的物件
  */
 export function groupBy<T, K extends string | number | symbol>(
-  array: T[], 
+  array: T[],
   keyFn: (item: T) => K
 ): Record<K, T[]> {
   const result = {} as Record<K, T[]>;
-  
+
   for (const item of array) {
     const key = keyFn(item);
     if (!result[key]) {
@@ -127,7 +127,7 @@ export function groupBy<T, K extends string | number | symbol>(
     }
     result[key].push(item);
   }
-  
+
   return result;
 }
 
@@ -141,9 +141,9 @@ export function sortBy<T, K>(array: T[], keyFn: (item: T) => K): T[] {
   return [...array].sort((a, b) => {
     const keyA = keyFn(a);
     const keyB = keyFn(b);
-    
-    if (keyA < keyB) return -1;
-    if (keyA > keyB) return 1;
+
+    if (keyA < keyB) {return -1;}
+    if (keyA > keyB) {return 1;}
     return 0;
   });
 }
@@ -155,12 +155,12 @@ export function sortBy<T, K>(array: T[], keyFn: (item: T) => K): T[] {
  */
 export function shuffle<T>(array: T[]): T[] {
   const result = [...array];
-  
+
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
-  
+
   return result;
 }
 

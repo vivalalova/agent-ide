@@ -451,7 +451,7 @@ export class FunctionExtractor {
     const selectedLines: string[] = [];
 
     for (let i = selection.start.line - 1; i < selection.end.line; i++) {
-      if (i < 0 || i >= lines.length) continue;
+      if (i < 0 || i >= lines.length) {continue;}
 
       let line = lines[i];
 
@@ -613,22 +613,22 @@ export class FunctionExtractor {
     const lines = code.split('\n');
 
     switch (edit.type) {
-      case 'replace':
-        // 簡化實作
-        return code.substring(0, this.rangeToOffset(code, edit.range.start)) +
+    case 'replace':
+      // 簡化實作
+      return code.substring(0, this.rangeToOffset(code, edit.range.start)) +
                edit.newText +
                code.substring(this.rangeToOffset(code, edit.range.end));
 
-      case 'insert':
-        const offset = this.rangeToOffset(code, edit.range.start);
-        return code.substring(0, offset) + edit.newText + code.substring(offset);
+    case 'insert':
+      const offset = this.rangeToOffset(code, edit.range.start);
+      return code.substring(0, offset) + edit.newText + code.substring(offset);
 
-      case 'delete':
-        return code.substring(0, this.rangeToOffset(code, edit.range.start)) +
+    case 'delete':
+      return code.substring(0, this.rangeToOffset(code, edit.range.start)) +
                code.substring(this.rangeToOffset(code, edit.range.end));
 
-      default:
-        return code;
+    default:
+      return code;
     }
   }
 

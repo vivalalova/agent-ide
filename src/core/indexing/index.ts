@@ -76,6 +76,6 @@ export function createWatchedIndexEngine(
   const watcher = new FileWatcher(engine, {
     debounceTime: options?.debounceTime
   });
-  
+
   return { engine, watcher };
 }

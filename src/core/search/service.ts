@@ -113,26 +113,26 @@ export class SearchService {
     for (const query of queries) {
       try {
         let result: SearchResult;
-        
+
         switch (query.type) {
-          case 'text':
-            result = await this.searchText(query as TextQuery);
-            break;
-          case 'symbol':
-            result = await this.searchSymbols(query as SymbolQuery);
-            break;
-          case 'pattern':
-            result = await this.searchByPattern(query as PatternQuery);
-            break;
-          default:
-            throw new Error(`不支援的搜尋類型: ${query.type}`);
+        case 'text':
+          result = await this.searchText(query as TextQuery);
+          break;
+        case 'symbol':
+          result = await this.searchSymbols(query as SymbolQuery);
+          break;
+        case 'pattern':
+          result = await this.searchByPattern(query as PatternQuery);
+          break;
+        default:
+          throw new Error(`不支援的搜尋類型: ${query.type}`);
         }
-        
+
         results.push(result);
       } catch (error) {
         // 只在 debug 模式下輸出錯誤
         if (process.env.NODE_ENV !== 'test') {
-          console.error(`批次搜尋失敗:`, error);
+          console.error('批次搜尋失敗:', error);
         }
         allSucceeded = false;
 
@@ -278,8 +278,8 @@ export class SearchService {
   private updateStats(searchTime: number): void {
     const currentAvg = this.searchStats.averageSearchTime || 0;
     const totalSearches = this.searchStats.totalSearches || 1;
-    
-    this.searchStats.averageSearchTime = 
+
+    this.searchStats.averageSearchTime =
       (currentAvg * (totalSearches - 1) + searchTime) / totalSearches;
   }
 
@@ -317,7 +317,7 @@ export class SearchService {
     for (let j = 1; j <= str2.length; j++) {
       for (let i = 1; i <= str1.length; i++) {
         const substitutionCost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        
+
         matrix[j][i] = Math.min(
           matrix[j][i - 1] + 1, // deletion
           matrix[j - 1][i] + 1, // insertion

@@ -263,7 +263,7 @@ export class SwiftParser implements ParserPlugin {
   private createSymbolFromNode(node: SwiftASTNode, sourceFile: string): SwiftSymbol | null {
     // 優先從 properties 中取得名稱，然後嘗試從程式碼中提取
     const name = node.properties.name || this.extractNameFromNode(node, node.properties.code);
-    if (!name) return null;
+    if (!name) {return null;}
 
     const symbolType = this.nodeTypeToSymbolType(node.swiftType);
     const location = createLocation(sourceFile, node.range);
@@ -279,50 +279,50 @@ export class SwiftParser implements ParserPlugin {
     if (!code && !node.properties.code) {
       // 如果沒有程式碼內容，暫時返回預設名稱
       switch (node.swiftType) {
-        case SwiftNodeType.ClassDeclaration:
-          return 'Person';
-        case SwiftNodeType.StructDeclaration:
-          return 'Point';
-        case SwiftNodeType.FunctionDeclaration:
-          return 'greet';
-        case SwiftNodeType.VariableDeclaration:
-          return 'name';
-        default:
-          return null;
+      case SwiftNodeType.ClassDeclaration:
+        return 'Person';
+      case SwiftNodeType.StructDeclaration:
+        return 'Point';
+      case SwiftNodeType.FunctionDeclaration:
+        return 'greet';
+      case SwiftNodeType.VariableDeclaration:
+        return 'name';
+      default:
+        return null;
       }
     }
 
     // 實際的名稱提取邏輯應該基於 tree-sitter 節點
     // 這裡提供基本的正則表達式解析
     const sourceCode = code || node.properties.code;
-    if (!sourceCode) return null;
+    if (!sourceCode) {return null;}
 
     const lines = sourceCode.split('\n');
     const startLine = Math.max(0, node.range.start.line - 1);
 
-    if (startLine >= lines.length) return null;
+    if (startLine >= lines.length) {return null;}
 
     const lineContent = lines[startLine];
 
     switch (node.swiftType) {
-      case SwiftNodeType.ClassDeclaration: {
-        const match = lineContent.match(/class\s+(\w+)/);
-        return match ? match[1] : null;
-      }
-      case SwiftNodeType.StructDeclaration: {
-        const match = lineContent.match(/struct\s+(\w+)/);
-        return match ? match[1] : null;
-      }
-      case SwiftNodeType.FunctionDeclaration: {
-        const match = lineContent.match(/func\s+(\w+)/);
-        return match ? match[1] : null;
-      }
-      case SwiftNodeType.VariableDeclaration: {
-        const match = lineContent.match(/(?:var|let)\s+(\w+)/);
-        return match ? match[1] : null;
-      }
-      default:
-        return null;
+    case SwiftNodeType.ClassDeclaration: {
+      const match = lineContent.match(/class\s+(\w+)/);
+      return match ? match[1] : null;
+    }
+    case SwiftNodeType.StructDeclaration: {
+      const match = lineContent.match(/struct\s+(\w+)/);
+      return match ? match[1] : null;
+    }
+    case SwiftNodeType.FunctionDeclaration: {
+      const match = lineContent.match(/func\s+(\w+)/);
+      return match ? match[1] : null;
+    }
+    case SwiftNodeType.VariableDeclaration: {
+      const match = lineContent.match(/(?:var|let)\s+(\w+)/);
+      return match ? match[1] : null;
+    }
+    default:
+      return null;
     }
   }
 
@@ -331,26 +331,26 @@ export class SwiftParser implements ParserPlugin {
    */
   private nodeTypeToSymbolType(nodeType: SwiftNodeType): SwiftSymbolType {
     switch (nodeType) {
-      case SwiftNodeType.ClassDeclaration:
-        return SwiftSymbolType.Class;
-      case SwiftNodeType.StructDeclaration:
-        return SwiftSymbolType.Struct;
-      case SwiftNodeType.EnumDeclaration:
-        return SwiftSymbolType.Enum;
-      case SwiftNodeType.ProtocolDeclaration:
-        return SwiftSymbolType.Protocol;
-      case SwiftNodeType.FunctionDeclaration:
-        return SwiftSymbolType.Function;
-      case SwiftNodeType.VariableDeclaration:
-        return SwiftSymbolType.Variable;
-      case SwiftNodeType.ConstantDeclaration:
-        return SwiftSymbolType.Constant;
-      case SwiftNodeType.TypeAliasDeclaration:
-        return SwiftSymbolType.TypeAlias;
-      case SwiftNodeType.ExtensionDeclaration:
-        return SwiftSymbolType.Extension;
-      default:
-        return SwiftSymbolType.Variable;
+    case SwiftNodeType.ClassDeclaration:
+      return SwiftSymbolType.Class;
+    case SwiftNodeType.StructDeclaration:
+      return SwiftSymbolType.Struct;
+    case SwiftNodeType.EnumDeclaration:
+      return SwiftSymbolType.Enum;
+    case SwiftNodeType.ProtocolDeclaration:
+      return SwiftSymbolType.Protocol;
+    case SwiftNodeType.FunctionDeclaration:
+      return SwiftSymbolType.Function;
+    case SwiftNodeType.VariableDeclaration:
+      return SwiftSymbolType.Variable;
+    case SwiftNodeType.ConstantDeclaration:
+      return SwiftSymbolType.Constant;
+    case SwiftNodeType.TypeAliasDeclaration:
+      return SwiftSymbolType.TypeAlias;
+    case SwiftNodeType.ExtensionDeclaration:
+      return SwiftSymbolType.Extension;
+    default:
+      return SwiftSymbolType.Variable;
     }
   }
 
@@ -470,12 +470,12 @@ export class SwiftParser implements ParserPlugin {
 
     // 如果沒有，嘗試從程式碼中解析
     const code = node.properties.code;
-    if (!code) return null;
+    if (!code) {return null;}
 
     const lines = code.split('\n');
     const startLine = Math.max(0, node.range.start.line - 1);
 
-    if (startLine >= lines.length) return null;
+    if (startLine >= lines.length) {return null;}
 
     const lineContent = lines[startLine];
     const match = lineContent.match(/import\s+(\w+)/);
@@ -741,36 +741,36 @@ export class SwiftParser implements ParserPlugin {
 
   private swiftSymbolTypeToDefinitionKind(symbolType: SwiftSymbolType): DefinitionKind {
     switch (symbolType) {
-      case SwiftSymbolType.Class:
-        return 'class';
-      case SwiftSymbolType.Struct:
-        return 'class'; // Swift struct 映射到 class
-      case SwiftSymbolType.Enum:
-        return 'enum';
-      case SwiftSymbolType.Protocol:
-        return 'interface';
-      case SwiftSymbolType.Function:
-      case SwiftSymbolType.Method:
-      case SwiftSymbolType.Initializer:
-      case SwiftSymbolType.Deinitializer:
-        return 'function';
-      case SwiftSymbolType.Property:
-      case SwiftSymbolType.Variable:
-        return 'variable';
-      case SwiftSymbolType.Constant:
-        return 'constant';
-      case SwiftSymbolType.TypeAlias:
-        return 'type';
-      case SwiftSymbolType.Extension:
-        return 'class';
-      case SwiftSymbolType.EnumCase:
-        return 'constant';
-      case SwiftSymbolType.Parameter:
-        return 'variable';
-      case SwiftSymbolType.Generic:
-        return 'type';
-      default:
-        return 'variable';
+    case SwiftSymbolType.Class:
+      return 'class';
+    case SwiftSymbolType.Struct:
+      return 'class'; // Swift struct 映射到 class
+    case SwiftSymbolType.Enum:
+      return 'enum';
+    case SwiftSymbolType.Protocol:
+      return 'interface';
+    case SwiftSymbolType.Function:
+    case SwiftSymbolType.Method:
+    case SwiftSymbolType.Initializer:
+    case SwiftSymbolType.Deinitializer:
+      return 'function';
+    case SwiftSymbolType.Property:
+    case SwiftSymbolType.Variable:
+      return 'variable';
+    case SwiftSymbolType.Constant:
+      return 'constant';
+    case SwiftSymbolType.TypeAlias:
+      return 'type';
+    case SwiftSymbolType.Extension:
+      return 'class';
+    case SwiftSymbolType.EnumCase:
+      return 'constant';
+    case SwiftSymbolType.Parameter:
+      return 'variable';
+    case SwiftSymbolType.Generic:
+      return 'type';
+    default:
+      return 'variable';
     }
   }
 }

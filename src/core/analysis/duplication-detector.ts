@@ -60,7 +60,7 @@ export class Type1CloneDetector {
 
     // 按 hash 分組
     for (const fragment of fragments) {
-      if (fragment.tokens.length < config.minTokens) continue;
+      if (fragment.tokens.length < config.minTokens) {continue;}
 
       const hash = this.computeHash(fragment, config);
       if (!hashGroups.has(hash)) {
@@ -110,8 +110,8 @@ export class Type1CloneDetector {
   }
 
   private calculateSeverity(instanceCount: number, lines: number): 'low' | 'medium' | 'high' {
-    if (instanceCount >= 5 || lines >= 50) return 'high';
-    if (instanceCount >= 3 || lines >= 20) return 'medium';
+    if (instanceCount >= 5 || lines >= 50) {return 'high';}
+    if (instanceCount >= 3 || lines >= 20) {return 'medium';}
     return 'low';
   }
 }
@@ -128,7 +128,7 @@ export class Type2CloneDetector {
     const normalizedGroups = new Map<string, CodeFragment[]>();
 
     for (const fragment of fragments) {
-      if (fragment.tokens.length < config.minTokens) continue;
+      if (fragment.tokens.length < config.minTokens) {continue;}
 
       const normalized = this.normalizeAST(fragment.ast);
       const hash = this.computeNormalizedHash(normalized);
@@ -199,8 +199,8 @@ export class Type2CloneDetector {
   }
 
   private calculateSeverity(instanceCount: number, lines: number): 'low' | 'medium' | 'high' {
-    if (instanceCount >= 4 || lines >= 40) return 'high';
-    if (instanceCount >= 3 || lines >= 15) return 'medium';
+    if (instanceCount >= 4 || lines >= 40) {return 'high';}
+    if (instanceCount >= 3 || lines >= 15) {return 'medium';}
     return 'low';
   }
 }
@@ -232,9 +232,9 @@ export class Type3CloneDetector {
 
         // 除錯輸出
         console.log(`Debug - similarity between fragments ${i} and ${j}:`, similarity);
-        console.log(`Debug - tokens1:`, fragments[i].tokens);
-        console.log(`Debug - tokens2:`, fragments[j].tokens);
-        console.log(`Debug - effectiveThreshold:`, effectiveThreshold);
+        console.log('Debug - tokens1:', fragments[i].tokens);
+        console.log('Debug - tokens2:', fragments[j].tokens);
+        console.log('Debug - effectiveThreshold:', effectiveThreshold);
 
         if (similarity >= effectiveThreshold && similarity < 0.95) { // Type-3 不是完全相同
           clones.push({
@@ -273,14 +273,14 @@ export class Type3CloneDetector {
     const n = tokens2.length;
 
     // 處理空陣列情況
-    if (m === 0) return n;
-    if (n === 0) return m;
+    if (m === 0) {return n;}
+    if (n === 0) {return m;}
 
     const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
 
     // 初始化邊界條件
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 0; i <= m; i++) {dp[i][0] = i;}
+    for (let j = 0; j <= n; j++) {dp[0][j] = j;}
 
     // 動態規劃計算編輯距離
     for (let i = 1; i <= m; i++) {
@@ -307,8 +307,8 @@ export class Type3CloneDetector {
     const tokens1 = fragment1.tokens;
     const tokens2 = fragment2.tokens;
 
-    if (tokens1.length === 0 && tokens2.length === 0) return 1.0;
-    if (tokens1.length === 0 || tokens2.length === 0) return 0.0;
+    if (tokens1.length === 0 && tokens2.length === 0) {return 1.0;}
+    if (tokens1.length === 0 || tokens2.length === 0) {return 0.0;}
 
     // 1. 編輯距離相似度
     const editDistance = this.calculateEditDistance(tokens1, tokens2);
@@ -331,8 +331,8 @@ export class Type3CloneDetector {
   }
 
   private calculateSeverity(similarity: number, lines: number): 'low' | 'medium' | 'high' {
-    if (similarity >= 0.8 && lines >= 30) return 'high';
-    if (similarity >= 0.7 && lines >= 15) return 'medium';
+    if (similarity >= 0.8 && lines >= 30) {return 'high';}
+    if (similarity >= 0.7 && lines >= 15) {return 'medium';}
     return 'low';
   }
 }

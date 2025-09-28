@@ -117,112 +117,112 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
       let success = true;
 
       switch (options.type) {
-        case 'extract-function':
-          if (options.selection && options.newName) {
-            try {
-              const code = await this.readFileContent(filePath);
-              const extractResult = await this.functionExtractor.extract(
-                code,
-                options.selection,
-                {
-                  functionName: options.newName,
-                  generateComments: true,
-                  preserveFormatting: true,
-                  validateExtraction: true
-                }
-              );
-              if (extractResult.success && extractResult.edits) {
-                // 轉換 edits 為 CodeChange 格式
-                changes.push(...extractResult.edits.map(edit => ({
-                  filePath,
-                  oldContent: code,
-                  newContent: edit.newText,
-                  range: {
-                    start: {
-                      line: edit.range.start.line,
-                      column: edit.range.start.column,
-                      offset: 0
-                    },
-                    end: {
-                      line: edit.range.end.line,
-                      column: edit.range.end.column,
-                      offset: 0
-                    }
+      case 'extract-function':
+        if (options.selection && options.newName) {
+          try {
+            const code = await this.readFileContent(filePath);
+            const extractResult = await this.functionExtractor.extract(
+              code,
+              options.selection,
+              {
+                functionName: options.newName,
+                generateComments: true,
+                preserveFormatting: true,
+                validateExtraction: true
+              }
+            );
+            if (extractResult.success && extractResult.edits) {
+              // 轉換 edits 為 CodeChange 格式
+              changes.push(...extractResult.edits.map(edit => ({
+                filePath,
+                oldContent: code,
+                newContent: edit.newText,
+                range: {
+                  start: {
+                    line: edit.range.start.line,
+                    column: edit.range.start.column,
+                    offset: 0
+                  },
+                  end: {
+                    line: edit.range.end.line,
+                    column: edit.range.end.column,
+                    offset: 0
                   }
-                })));
-              } else {
-                success = false;
-              }
-            } catch (extractError) {
-              success = false;
-            }
-          } else {
-            success = false;
-          }
-          break;
-
-        case 'inline-function':
-          if (options.selection) {
-            try {
-              const code = await this.readFileContent(filePath);
-              // InlineAnalyzer 主要用於分析，我們需要實際的內聯邏輯
-              // 這裡簡化處理，需要先找到函式定義和調用
-              const functionDef = { name: 'temp', body: '', parameters: [], range: options.selection } as any;
-              const functionCalls: any[] = [];
-              const canInline = this.inlineAnalyzer.analyze(functionDef, functionCalls);
-              if (canInline.canInline) {
-                changes.push({
-                  filePath,
-                  oldContent: code,
-                  newContent: code // 簡化實作
-                });
-              } else {
-                success = false;
-              }
-            } catch (inlineError) {
-              success = false;
-            }
-          } else {
-            success = false;
-          }
-          break;
-
-        case 'rename':
-          if (options.selection && options.newName) {
-            try {
-              const renameResult = await this.renameEngine.rename({
-                symbol: {} as any,
-                newName: options.newName,
-                filePaths: [filePath],
-                position: {
-                  line: options.selection.start.line,
-                  column: options.selection.start.column,
-                  offset: 0
                 }
-              });
-              if (renameResult.success && renameResult.operations) {
-                changes.push(...renameResult.operations.map(op => ({
-                  filePath: op.filePath,
-                  oldContent: op.oldText,
-                  newContent: op.newText,
-                  range: op.range
-                })));
-              } else {
-                success = false;
-              }
-            } catch (renameError) {
+              })));
+            } else {
               success = false;
             }
-          } else {
+          } catch (extractError) {
             success = false;
           }
-          break;
+        } else {
+          success = false;
+        }
+        break;
 
-        default:
-          throw new ModuleCoordinatorError(
-            `不支援的重構類型: ${options.type}`,
-            { refactorType: options.type }
-          );
+      case 'inline-function':
+        if (options.selection) {
+          try {
+            const code = await this.readFileContent(filePath);
+            // InlineAnalyzer 主要用於分析，我們需要實際的內聯邏輯
+            // 這裡簡化處理，需要先找到函式定義和調用
+            const functionDef = { name: 'temp', body: '', parameters: [], range: options.selection } as any;
+            const functionCalls: any[] = [];
+            const canInline = this.inlineAnalyzer.analyze(functionDef, functionCalls);
+            if (canInline.canInline) {
+              changes.push({
+                filePath,
+                oldContent: code,
+                newContent: code // 簡化實作
+              });
+            } else {
+              success = false;
+            }
+          } catch (inlineError) {
+            success = false;
+          }
+        } else {
+          success = false;
+        }
+        break;
+
+      case 'rename':
+        if (options.selection && options.newName) {
+          try {
+            const renameResult = await this.renameEngine.rename({
+              symbol: {} as any,
+              newName: options.newName,
+              filePaths: [filePath],
+              position: {
+                line: options.selection.start.line,
+                column: options.selection.start.column,
+                offset: 0
+              }
+            });
+            if (renameResult.success && renameResult.operations) {
+              changes.push(...renameResult.operations.map(op => ({
+                filePath: op.filePath,
+                oldContent: op.oldText,
+                newContent: op.newText,
+                range: op.range
+              })));
+            } else {
+              success = false;
+            }
+          } catch (renameError) {
+            success = false;
+          }
+        } else {
+          success = false;
+        }
+        break;
+
+      default:
+        throw new ModuleCoordinatorError(
+          `不支援的重構類型: ${options.type}`,
+          { refactorType: options.type }
+        );
       }
 
       // 3. 發送模組協調事件

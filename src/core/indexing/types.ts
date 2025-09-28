@@ -97,7 +97,7 @@ export interface FileSearchResult {
  */
 export enum UpdateOperation {
   Add = 'add',
-  Update = 'update', 
+  Update = 'update',
   Delete = 'delete'
 }
 
@@ -140,22 +140,22 @@ export interface IndexStorage {
    * 載入索引資料
    */
   load(): Promise<IndexData | null>;
-  
+
   /**
    * 儲存索引資料
    */
   save(data: IndexData): Promise<void>;
-  
+
   /**
    * 清除所有索引資料
    */
   clear(): Promise<void>;
-  
+
   /**
    * 檢查是否存在索引檔案
    */
   exists(): Promise<boolean>;
-  
+
   /**
    * 取得儲存統計資訊
    */
@@ -191,27 +191,27 @@ export interface IndexQuery {
    * 根據名稱查找符號
    */
   findSymbol(name: string, options?: SearchOptions): Promise<SymbolSearchResult[]>;
-  
+
   /**
    * 根據類型查找符號
    */
   findSymbolsByType(type: string, options?: SearchOptions): Promise<SymbolSearchResult[]>;
-  
+
   /**
    * 模糊搜尋符號
    */
   searchSymbols(pattern: string, options?: SearchOptions): Promise<SymbolSearchResult[]>;
-  
+
   /**
    * 搜尋檔案
    */
   searchFiles(pattern: string, options?: SearchOptions): Promise<FileSearchResult[]>;
-  
+
   /**
    * 取得檔案的所有符號
    */
   getFileSymbols(filePath: string): Promise<Symbol[]>;
-  
+
   /**
    * 取得符號的依賴關係
    */
@@ -232,7 +232,7 @@ export function createFileInfo(
   if (!filePath.trim()) {
     throw new Error('檔案路徑不能為空');
   }
-  
+
   if (size < 0) {
     throw new Error('檔案大小不能為負數');
   }
@@ -290,7 +290,7 @@ export function isFileInfo(value: unknown): value is FileInfo {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.filePath === 'string' &&
     obj.filePath.trim().length > 0 &&
@@ -312,7 +312,7 @@ export function isIndexConfig(value: unknown): value is IndexConfig {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.workspacePath === 'string' &&
     obj.workspacePath.trim().length > 0 &&
@@ -346,14 +346,14 @@ export function shouldIndexFile(filePath: string, config: IndexConfig): boolean 
   if (!config.includeExtensions.includes(extension)) {
     return false;
   }
-  
+
   // 檢查排除模式
   for (const pattern of config.excludePatterns) {
     if (matchesPattern(filePath, pattern)) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -366,7 +366,7 @@ function matchesPattern(path: string, pattern: string): boolean {
     .replace(/\*\*/g, '.*')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '.');
-  
+
   const regex = new RegExp(`^${regexPattern}$`);
   return regex.test(path);
 }

@@ -30,11 +30,11 @@ export class ParserError extends BaseError {
   toString(): string {
     let result = super.toString();
     result += `\n位置: ${this.location.filePath}:${this.location.range.start.line}:${this.location.range.start.column}`;
-    
+
     if (this.syntaxElement) {
       result += `\n語法元素: ${this.syntaxElement}`;
     }
-    
+
     return result;
   }
 }

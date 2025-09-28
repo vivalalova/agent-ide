@@ -33,24 +33,24 @@ export class CyclomaticComplexityAnalyzer {
 
     const traverse = (node: ASTNode) => {
       switch (node.type) {
-        case 'IfStatement':
-        case 'ConditionalExpression':
-        case 'ForStatement':
-        case 'WhileStatement':
-        case 'DoWhileStatement':
-        case 'CatchClause':
+      case 'IfStatement':
+      case 'ConditionalExpression':
+      case 'ForStatement':
+      case 'WhileStatement':
+      case 'DoWhileStatement':
+      case 'CatchClause':
+        complexity++;
+        break;
+      case 'SwitchCase':
+        if (!node.default) {
           complexity++;
-          break;
-        case 'SwitchCase':
-          if (!node.default) {
-            complexity++;
-          }
-          break;
-        case 'LogicalExpression':
-          if (node.operator === '||' || node.operator === '&&') {
-            complexity++;
-          }
-          break;
+        }
+        break;
+      case 'LogicalExpression':
+        if (node.operator === '||' || node.operator === '&&') {
+          complexity++;
+        }
+        break;
       }
 
       // 遍歷子節點
@@ -99,47 +99,47 @@ export class CognitiveComplexityAnalyzer {
 
     const traverse = (node: ASTNode) => {
       switch (node.type) {
-        case 'IfStatement':
-        case 'ForStatement':
-        case 'WhileStatement':
-        case 'DoWhileStatement':
-          complexity += 1 + this.nestingLevel;
-          this.nestingLevel++;
-          if (node.children) {
-            node.children.forEach(traverse);
-          }
-          this.nestingLevel--;
-          return; // 避免重複遍歷子節點
-        case 'CallExpression':
-          if (this.isRecursive(node)) {
-            complexity += 1;
-          }
-          break;
-        case 'FunctionExpression':
-        case 'ArrowFunctionExpression':
-          this.nestingLevel++;
-          if (node.children) {
-            node.children.forEach(traverse);
-          }
-          this.nestingLevel--;
-          return;
-        case 'CatchClause':
-          complexity += 1 + this.nestingLevel;
-          break;
-        case 'SwitchStatement':
-          complexity += 1 + this.nestingLevel;
-          this.nestingLevel++;
-          if (node.children) {
-            node.children.forEach(traverse);
-          }
-          this.nestingLevel--;
-          return;
-        case 'ConditionalExpression':
-        case 'LogicalExpression':
-          if (node.operator === '&&' || node.operator === '||') {
-            complexity += 1;
-          }
-          break;
+      case 'IfStatement':
+      case 'ForStatement':
+      case 'WhileStatement':
+      case 'DoWhileStatement':
+        complexity += 1 + this.nestingLevel;
+        this.nestingLevel++;
+        if (node.children) {
+          node.children.forEach(traverse);
+        }
+        this.nestingLevel--;
+        return; // 避免重複遍歷子節點
+      case 'CallExpression':
+        if (this.isRecursive(node)) {
+          complexity += 1;
+        }
+        break;
+      case 'FunctionExpression':
+      case 'ArrowFunctionExpression':
+        this.nestingLevel++;
+        if (node.children) {
+          node.children.forEach(traverse);
+        }
+        this.nestingLevel--;
+        return;
+      case 'CatchClause':
+        complexity += 1 + this.nestingLevel;
+        break;
+      case 'SwitchStatement':
+        complexity += 1 + this.nestingLevel;
+        this.nestingLevel++;
+        if (node.children) {
+          node.children.forEach(traverse);
+        }
+        this.nestingLevel--;
+        return;
+      case 'ConditionalExpression':
+      case 'LogicalExpression':
+        if (node.operator === '&&' || node.operator === '||') {
+          complexity += 1;
+        }
+        break;
       }
 
       // 遍歷子節點

@@ -219,7 +219,7 @@ export class AgentIdeCLI {
   // Command handlers
   private async handleIndexCommand(options: any): Promise<void> {
     console.log('🔍 開始建立程式碼索引...');
-    
+
     try {
       const config = createIndexConfig(options.path, {
         includeExtensions: options.extensions.split(','),
@@ -227,7 +227,7 @@ export class AgentIdeCLI {
       });
 
       this.indexEngine = new IndexEngine(config);
-      
+
       if (options.update) {
         // TODO: 實作增量更新
         console.log('📝 執行增量索引更新...');
@@ -238,7 +238,7 @@ export class AgentIdeCLI {
       const stats = await this.indexEngine.getStats();
       console.log('✅ 索引完成!');
       console.log(`📊 統計: ${stats.totalFiles} 檔案, ${stats.totalSymbols} 符號`);
-      
+
     } catch (error) {
       console.error('❌ 索引失敗:', error instanceof Error ? error.message : error);
       process.exit(1);
@@ -252,7 +252,7 @@ export class AgentIdeCLI {
     }
 
     console.log(`🔄 重新命名 ${options.from} → ${options.to}`);
-    
+
     try {
       // 初始化索引引擎（如果還沒有）
       if (!this.indexEngine) {
@@ -279,7 +279,7 @@ export class AgentIdeCLI {
       }
 
       if (searchResults.length > 1) {
-        console.log(`⚠️  找到多個符號，使用第一個:`);
+        console.log('⚠️  找到多個符號，使用第一個:');
         searchResults.forEach((result, index) => {
           console.log(`   ${index + 1}. ${result.symbol.name} 在 ${result.symbol.location.filePath}:${result.symbol.location.range.start.line}`);
         });
@@ -311,12 +311,12 @@ export class AgentIdeCLI {
             filePaths
           });
 
-          console.log(`📝 預計變更:`);
+          console.log('📝 預計變更:');
           console.log(`   檔案數: ${preview.affectedFiles.length}`);
           console.log(`   操作數: ${preview.operations.length}`);
 
           if (preview.conflicts.length > 0) {
-            console.log(`⚠️  發現衝突:`);
+            console.log('⚠️  發現衝突:');
             preview.conflicts.forEach(conflict => {
               console.log(`   - ${conflict.message}`);
             });
@@ -336,11 +336,11 @@ export class AgentIdeCLI {
 
       // 3. 執行重新命名（處理跨檔案引用）
       console.log('✏️  執行重新命名...');
-      
+
       // 使用 ReferenceUpdater 來處理跨檔案引用
       const referenceUpdater = new ReferenceUpdater();
       const allProjectFiles = await this.getAllProjectFiles(options.path);
-      
+
       const updateResult = await referenceUpdater.updateCrossFileReferences(
         targetSymbol,
         options.to,
@@ -350,7 +350,7 @@ export class AgentIdeCLI {
       if (updateResult.success) {
         console.log('✅ 重新命名成功!');
         console.log(`📊 統計: ${updateResult.updatedFiles.length} 檔案, ${updateResult.updatedFiles.reduce((sum, f) => sum + f.changes.length, 0)} 變更`);
-        
+
         updateResult.updatedFiles.forEach(file => {
           file.changes.forEach(change => {
             console.log(`   ✓ ${file.filePath}: "${change.oldText}" → "${change.newText}"`);
@@ -410,13 +410,13 @@ export class AgentIdeCLI {
         } else {
           console.log('✅ 移動成功!');
         }
-        
+
         console.log(`📊 統計: ${result.pathUpdates.length} 個 import 需要更新`);
-        
+
         if (result.pathUpdates.length > 0) {
           console.log('📝 影響的檔案:');
           const fileGroups = new Map<string, any[]>();
-          
+
           result.pathUpdates.forEach(update => {
             if (!fileGroups.has(update.filePath)) {
               fileGroups.set(update.filePath, []);
@@ -506,7 +506,7 @@ export class AgentIdeCLI {
   private buildSearchOptions(options: any) {
     const includeFiles = options.include ? options.include.split(',') : undefined;
     const excludeFiles = options.exclude ? options.exclude.split(',') : undefined;
-    
+
     return {
       scope: {
         type: 'directory' as const,
@@ -532,43 +532,43 @@ export class AgentIdeCLI {
    */
   private formatSearchResults(result: any, options: any): void {
     switch (options.format) {
-      case 'json':
-        console.log(JSON.stringify(result, null, 2));
-        break;
-      
-      case 'minimal':
-        // AI Agent 友善的最小輸出
-        result.matches.forEach((match: any) => {
-          console.log(`${match.file}:${match.line}:${match.column}:${match.content.trim()}`);
-        });
-        break;
-      
-      case 'list':
-      default:
-        result.matches.forEach((match: any, index: number) => {
-          console.log(`\n${index + 1}. ${this.formatFilePath(match.file)}:${match.line}:${match.column}`);
-          console.log(`   ${this.highlightMatch(match.content, options.query)}`);
-          
-          // 顯示上下文
-          if (options.context > 0 && match.context) {
-            if (match.context.before.length > 0) {
-              match.context.before.forEach((line: string, i: number) => {
-                const lineNum = match.line - match.context.before.length + i;
-                console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
-              });
-            }
-            
-            console.log(`>> ${match.line.toString().padStart(3, ' ')}: ${this.highlightMatch(match.content, options.query)}`);
-            
-            if (match.context.after.length > 0) {
-              match.context.after.forEach((line: string, i: number) => {
-                const lineNum = match.line + i + 1;
-                console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
-              });
-            }
+    case 'json':
+      console.log(JSON.stringify(result, null, 2));
+      break;
+
+    case 'minimal':
+      // AI Agent 友善的最小輸出
+      result.matches.forEach((match: any) => {
+        console.log(`${match.file}:${match.line}:${match.column}:${match.content.trim()}`);
+      });
+      break;
+
+    case 'list':
+    default:
+      result.matches.forEach((match: any, index: number) => {
+        console.log(`\n${index + 1}. ${this.formatFilePath(match.file)}:${match.line}:${match.column}`);
+        console.log(`   ${this.highlightMatch(match.content, options.query)}`);
+
+        // 顯示上下文
+        if (options.context > 0 && match.context) {
+          if (match.context.before.length > 0) {
+            match.context.before.forEach((line: string, i: number) => {
+              const lineNum = match.line - match.context.before.length + i;
+              console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
+            });
           }
-        });
-        break;
+
+          console.log(`>> ${match.line.toString().padStart(3, ' ')}: ${this.highlightMatch(match.content, options.query)}`);
+
+          if (match.context.after.length > 0) {
+            match.context.after.forEach((line: string, i: number) => {
+              const lineNum = match.line + i + 1;
+              console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
+            });
+          }
+        }
+      });
+      break;
     }
   }
 
@@ -585,8 +585,8 @@ export class AgentIdeCLI {
    * 高亮匹配內容
    */
   private highlightMatch(text: string, query: string): string {
-    if (!text || !query) return text;
-    
+    if (!text || !query) {return text;}
+
     // 簡單的高亮實作
     try {
       const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
@@ -598,14 +598,14 @@ export class AgentIdeCLI {
 
   private async handleAnalyzeCommand(options: any): Promise<void> {
     console.log('📊 分析程式碼品質...');
-    
+
     // TODO: 實作分析功能
     console.log('🚧 程式碼分析功能開發中...');
   }
 
   private async handleDepsCommand(options: any): Promise<void> {
     console.log('🕸️ 分析依賴關係...');
-    
+
     try {
       // TODO: 初始化 DependencyAnalyzer
       console.log('🚧 依賴分析功能開發中...');
@@ -647,7 +647,7 @@ export class AgentIdeCLI {
 
     // 確保 registry 存在且有 getParserByName 方法
     if (!registry || typeof registry.getParserByName !== 'function') {
-      console.error(`❌ 插件系統尚未初始化`);
+      console.error('❌ 插件系統尚未初始化');
       process.exit(1);
     }
 
@@ -686,10 +686,10 @@ export class AgentIdeCLI {
     async function walkDir(dir: string): Promise<void> {
       try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
-        
+
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
-          
+
           if (entry.isDirectory()) {
             // 跳過排除的目錄
             if (excludePatterns.some(pattern => entry.name.includes(pattern))) {

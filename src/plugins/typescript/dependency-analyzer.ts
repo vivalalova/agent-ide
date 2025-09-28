@@ -4,15 +4,15 @@
  */
 
 import * as ts from 'typescript';
-import type { 
+import type {
   Dependency
 } from '../../shared/types';
-import { 
+import {
   DependencyType,
-  createDependency 
+  createDependency
 } from '../../shared/types';
-import { 
-  TypeScriptAST, 
+import {
+  TypeScriptAST,
   TypeScriptASTNode,
   getDependencyPath,
   getImportedSymbols,
@@ -33,13 +33,13 @@ export class TypeScriptDependencyAnalyzer {
   async extractDependencies(ast: TypeScriptAST): Promise<Dependency[]> {
     this.dependencies = [];
     this.sourceFile = ast.tsSourceFile;
-    
+
     // 首先提取三斜線指令
     this.extractTripleSlashDirectives();
-    
+
     // 遍歷 AST 尋找依賴
     this.visitNode(ast.root);
-    
+
     return [...this.dependencies];
   }
 
@@ -48,7 +48,7 @@ export class TypeScriptDependencyAnalyzer {
    */
   private visitNode(node: TypeScriptASTNode): void {
     const tsNode = node.tsNode;
-    
+
     // 檢查是否為依賴節點
     if (isDependencyNode(tsNode)) {
       const dependency = this.extractDependencyFromNode(tsNode);
@@ -56,7 +56,7 @@ export class TypeScriptDependencyAnalyzer {
         this.dependencies.push(dependency);
       }
     }
-    
+
     // 遞歸處理子節點
     for (const child of node.children) {
       this.visitNode(child as TypeScriptASTNode);
@@ -70,19 +70,19 @@ export class TypeScriptDependencyAnalyzer {
     if (ts.isImportDeclaration(node)) {
       return this.extractFromImportDeclaration(node);
     }
-    
+
     if (ts.isExportDeclaration(node)) {
       return this.extractFromExportDeclaration(node);
     }
-    
+
     if (ts.isImportEqualsDeclaration(node)) {
       return this.extractFromImportEquals(node);
     }
-    
+
     if (ts.isCallExpression(node)) {
       return this.extractFromCallExpression(node);
     }
-    
+
     return null;
   }
 
@@ -96,7 +96,7 @@ export class TypeScriptDependencyAnalyzer {
     }
 
     const importedSymbols = getImportedSymbols(node);
-    
+
     return createDependency(
       path,
       DependencyType.Import,
@@ -115,7 +115,7 @@ export class TypeScriptDependencyAnalyzer {
     }
 
     const importedSymbols = this.getExportedSymbols(node);
-    
+
     return createDependency(
       path,
       DependencyType.Import, // 重新匯出也算是 import
@@ -133,7 +133,7 @@ export class TypeScriptDependencyAnalyzer {
       if (ts.isStringLiteral(expression)) {
         const path = expression.text;
         const symbolName = node.name.text;
-        
+
         return createDependency(
           path,
           DependencyType.Require,
@@ -142,7 +142,7 @@ export class TypeScriptDependencyAnalyzer {
         );
       }
     }
-    
+
     return null;
   }
 
@@ -151,22 +151,22 @@ export class TypeScriptDependencyAnalyzer {
    */
   private extractFromCallExpression(node: ts.CallExpression): Dependency | null {
     const expression = node.expression;
-    
+
     if (ts.isIdentifier(expression)) {
       if (expression.text === 'require') {
         return this.extractFromRequireCall(node);
       }
-      
+
       if (expression.text === 'import') {
         return this.extractFromDynamicImport(node);
       }
     }
-    
+
     // 檢查是否為 import() 動態導入
     if (expression.kind === ts.SyntaxKind.ImportKeyword) {
       return this.extractFromDynamicImport(node);
     }
-    
+
     return null;
   }
 
@@ -177,17 +177,17 @@ export class TypeScriptDependencyAnalyzer {
     if (node.arguments.length === 0) {
       return null;
     }
-    
+
     const firstArg = node.arguments[0];
     if (!ts.isStringLiteral(firstArg)) {
       return null;
     }
-    
+
     const path = firstArg.text;
-    
+
     // 檢查是否為解構賦值
     const importedSymbols = this.getRequireImportedSymbols(node);
-    
+
     return createDependency(
       path,
       DependencyType.Require,
@@ -203,14 +203,14 @@ export class TypeScriptDependencyAnalyzer {
     if (node.arguments.length === 0) {
       return null;
     }
-    
+
     const firstArg = node.arguments[0];
     if (!ts.isStringLiteral(firstArg)) {
       return null;
     }
-    
+
     const path = firstArg.text;
-    
+
     return createDependency(
       path,
       DependencyType.Import,
@@ -224,7 +224,7 @@ export class TypeScriptDependencyAnalyzer {
    */
   private getExportedSymbols(node: ts.ExportDeclaration): string[] {
     const symbols: string[] = [];
-    
+
     if (node.exportClause) {
       if (ts.isNamespaceExport(node.exportClause)) {
         // export * as name
@@ -239,7 +239,7 @@ export class TypeScriptDependencyAnalyzer {
       // export *
       symbols.push('*');
     }
-    
+
     return symbols;
   }
 
@@ -248,10 +248,10 @@ export class TypeScriptDependencyAnalyzer {
    */
   private getRequireImportedSymbols(node: ts.CallExpression): string[] {
     const symbols: string[] = [];
-    
+
     // 查找父節點以確定如何使用 require 的結果
-    let parent = node.parent;
-    
+    const parent = node.parent;
+
     if (ts.isVariableDeclaration(parent)) {
       // const module = require('...')
       if (ts.isIdentifier(parent.name)) {
@@ -265,7 +265,7 @@ export class TypeScriptDependencyAnalyzer {
         }
       }
     }
-    
+
     return symbols;
   }
 
@@ -274,19 +274,19 @@ export class TypeScriptDependencyAnalyzer {
    */
   private extractTripleSlashDirectives(): void {
     const fullText = this.sourceFile.getFullText();
-    
+
     // 提取三斜線指令
     const tripleSlashRegex = /\/\/\/\s*<(reference|amd-module)\s+([^>]+)>/g;
     let match;
-    
+
     while ((match = tripleSlashRegex.exec(fullText)) !== null) {
       const directive = match[1];
       const attributes = match[2];
-      
+
       if (directive === 'reference') {
         const pathMatch = /path\s*=\s*["']([^"']+)["']/.exec(attributes);
         const typesMatch = /types\s*=\s*["']([^"']+)["']/.exec(attributes);
-        
+
         if (pathMatch) {
           const path = pathMatch[1];
           const dependency = createDependency(
@@ -316,7 +316,7 @@ export class TypeScriptDependencyAnalyzer {
   private normalizePath(path: string): string {
     // 移除查詢參數和 fragment
     const cleanPath = path.split('?')[0].split('#')[0];
-    
+
     // 標準化路徑分隔符
     return cleanPath.replace(/\\/g, '/');
   }
@@ -334,21 +334,21 @@ export class TypeScriptDependencyAnalyzer {
         }
       }
     }
-    
+
     // 其他啟發式方法判斷
     const path = getDependencyPath(node);
     if (path) {
       // 常見的開發依賴
       const devDependencies = [
-        '@types/', 'jest', 'vitest', 'eslint', 'prettier', 
+        '@types/', 'jest', 'vitest', 'eslint', 'prettier',
         'webpack', 'rollup', 'vite', 'typescript'
       ];
-      
+
       if (devDependencies.some(dep => path.includes(dep))) {
         return 'dev';
       }
     }
-    
+
     return 'runtime';
   }
 
@@ -359,10 +359,10 @@ export class TypeScriptDependencyAnalyzer {
     const cycles: string[][] = [];
     const visited = new Set<string>();
     const recursionStack = new Set<string>();
-    
+
     // 建立依賴圖
     const dependencyMap = new Map<string, string[]>();
-    
+
     for (const dep of dependencies) {
       const currentFile = this.sourceFile.fileName;
       if (!dependencyMap.has(currentFile)) {
@@ -370,7 +370,7 @@ export class TypeScriptDependencyAnalyzer {
       }
       dependencyMap.get(currentFile)!.push(dep.path);
     }
-    
+
     // DFS 檢測循環
     const detectCycle = (node: string, path: string[]): void => {
       if (recursionStack.has(node)) {
@@ -381,25 +381,25 @@ export class TypeScriptDependencyAnalyzer {
         }
         return;
       }
-      
+
       if (visited.has(node)) {
         return;
       }
-      
+
       visited.add(node);
       recursionStack.add(node);
-      
+
       const deps = dependencyMap.get(node) || [];
       for (const dep of deps) {
         detectCycle(dep, [...path, dep]);
       }
-      
+
       recursionStack.delete(node);
     };
-    
+
     // 從當前檔案開始檢測
     detectCycle(this.sourceFile.fileName, [this.sourceFile.fileName]);
-    
+
     return cycles;
   }
 }

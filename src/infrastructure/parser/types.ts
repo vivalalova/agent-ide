@@ -12,13 +12,13 @@ import { Range, Location } from '../../shared/types';
 export interface CodeEdit {
   /** 檔案路徑 */
   readonly filePath: string;
-  
+
   /** 編輯範圍 */
   readonly range: Range;
-  
+
   /** 新的文字內容 */
   readonly newText: string;
-  
+
   /** 編輯類型（可選） */
   readonly editType?: 'rename' | 'extract' | 'inline' | 'format';
 }
@@ -27,14 +27,14 @@ export interface CodeEdit {
  * 定義類型
  * 表示符號定義的種類
  */
-export type DefinitionKind = 
-  | 'class' 
-  | 'interface' 
-  | 'function' 
-  | 'method' 
-  | 'variable' 
-  | 'constant' 
-  | 'type' 
+export type DefinitionKind =
+  | 'class'
+  | 'interface'
+  | 'function'
+  | 'method'
+  | 'variable'
+  | 'constant'
+  | 'type'
   | 'enum'
   | 'module'
   | 'namespace';
@@ -46,10 +46,10 @@ export type DefinitionKind =
 export interface Definition {
   /** 定義的位置 */
   readonly location: Location;
-  
+
   /** 定義的種類 */
   readonly kind: DefinitionKind;
-  
+
   /** 容器名稱（可選），如類名、模組名等 */
   readonly containerName?: string;
 }
@@ -67,7 +67,7 @@ export type UsageKind = 'read' | 'write' | 'call' | 'reference';
 export interface Usage {
   /** 使用的位置 */
   readonly location: Location;
-  
+
   /** 使用的種類 */
   readonly kind: UsageKind;
 }
@@ -79,13 +79,13 @@ export interface Usage {
 export interface ValidationError {
   /** 錯誤代碼 */
   readonly code: string;
-  
+
   /** 錯誤訊息 */
   readonly message: string;
-  
+
   /** 錯誤位置 */
   readonly location: Location;
-  
+
   /** 嚴重程度（可選） */
   readonly severity?: 'error' | 'warning' | 'info';
 }
@@ -102,10 +102,10 @@ export type ValidationWarning = ValidationError;
 export interface ValidationResult {
   /** 是否驗證通過 */
   readonly valid: boolean;
-  
+
   /** 驗證錯誤列表 */
   readonly errors: readonly ValidationError[];
-  
+
   /** 驗證警告列表 */
   readonly warnings: readonly ValidationWarning[];
 }
@@ -117,13 +117,13 @@ export interface ValidationResult {
 export interface ParserOptions {
   /** 是否使用嚴格模式 */
   readonly strictMode?: boolean;
-  
+
   /** 是否允許實驗性功能 */
   readonly allowExperimentalFeatures?: boolean;
-  
+
   /** 目標版本 */
   readonly targetVersion?: string;
-  
+
   /** 自定義選項 */
   readonly customOptions?: Record<string, any>;
 }
@@ -135,16 +135,16 @@ export interface ParserOptions {
 export interface ParserCapabilities {
   /** 是否支援重新命名 */
   readonly supportsRename: boolean;
-  
+
   /** 是否支援提取函式 */
   readonly supportsExtractFunction: boolean;
-  
+
   /** 是否支援跳轉到定義 */
   readonly supportsGoToDefinition: boolean;
-  
+
   /** 是否支援查找使用 */
   readonly supportsFindUsages: boolean;
-  
+
   /** 是否支援程式碼動作 */
   readonly supportsCodeActions: boolean;
 }
@@ -156,16 +156,16 @@ export interface ParserCapabilities {
 export interface ParserError {
   /** 錯誤名稱 */
   readonly name: string;
-  
+
   /** 錯誤訊息 */
   readonly message: string;
-  
+
   /** 錯誤代碼 */
   readonly code: string;
-  
+
   /** 錯誤位置 */
   readonly location: Location;
-  
+
   /** 語法元素（可選） */
   readonly syntaxElement?: string;
 }
@@ -275,7 +275,7 @@ export function isCodeEdit(value: unknown): value is CodeEdit {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.filePath === 'string' &&
     obj.filePath.trim().length > 0 &&
@@ -295,10 +295,10 @@ export function isDefinition(value: unknown): value is Definition {
 
   const obj = value as Record<string, unknown>;
   const validKinds: DefinitionKind[] = [
-    'class', 'interface', 'function', 'method', 'variable', 
+    'class', 'interface', 'function', 'method', 'variable',
     'constant', 'type', 'enum', 'module', 'namespace'
   ];
-  
+
   return (
     obj.location && typeof obj.location === 'object' &&
     typeof obj.kind === 'string' &&
@@ -317,7 +317,7 @@ export function isUsage(value: unknown): value is Usage {
 
   const obj = value as Record<string, unknown>;
   const validKinds: UsageKind[] = ['read', 'write', 'call', 'reference'];
-  
+
   return (
     obj.location && typeof obj.location === 'object' &&
     typeof obj.kind === 'string' &&
@@ -334,7 +334,7 @@ export function isValidationResult(value: unknown): value is ValidationResult {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.valid === 'boolean' &&
     Array.isArray(obj.errors) &&
@@ -351,7 +351,7 @@ export function isParserCapabilities(value: unknown): value is ParserCapabilitie
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.supportsRename === 'boolean' &&
     typeof obj.supportsExtractFunction === 'boolean' &&

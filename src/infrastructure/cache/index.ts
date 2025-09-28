@@ -1,6 +1,6 @@
 /**
  * 快取系統統一匯出
- * 
+ *
  * 這個模組提供了完整的快取管理功能，包括：
  * - MemoryCache: 高效能記憶體快取實作
  * - CacheManager: 快取實例管理器
@@ -15,14 +15,14 @@ export { MemoryCache } from './memory-cache';
 export { CacheManager, type GlobalStats, type BatchOperationResult } from './cache-manager';
 
 // 策略相關
-export { 
-  LRUStrategy, 
-  LFUStrategy, 
-  FIFOStrategy, 
-  TTLStrategy, 
-  RandomStrategy, 
+export {
+  LRUStrategy,
+  LFUStrategy,
+  FIFOStrategy,
+  TTLStrategy,
+  RandomStrategy,
   StrategyFactory,
-  type CacheStrategy 
+  type CacheStrategy
 } from './strategies';
 
 // 型別定義
@@ -34,21 +34,21 @@ export {
   type CacheEvent,
   type CacheEventListener,
   type CacheManagerOptions,
-  
+
   // 配置型別
   type WarmupConfig,
   type PersistenceConfig,
-  
+
   // 操作結果型別
   type BatchResult,
   type CacheQueryOptions,
   type CacheEntry,
-  
+
   // 序列化型別
   type SerializableValue,
   type SerializableObject,
   type SerializableArray,
-  
+
   // 列舉
   EvictionStrategy,
   CacheEventType
@@ -204,9 +204,9 @@ export class CacheUtils {
    * 產生快取鍵的雜湊值
    */
   static hashKey(key: any): string {
-    if (typeof key === 'string') return key;
-    if (typeof key === 'number') return key.toString();
-    
+    if (typeof key === 'string') {return key;}
+    if (typeof key === 'number') {return key.toString();}
+
     try {
       return JSON.stringify(key);
     } catch {
@@ -245,7 +245,7 @@ export class CacheUtils {
  */
 export class CacheMonitor {
   private readonly caches = new Map<string, any>();
-  
+
   constructor(_manager?: any) {
     // manager 參數保留以備未來使用
   }
@@ -279,7 +279,7 @@ export class CacheMonitor {
       totalMemoryUsage: number;
       healthScore: number;
     };
-  } {
+    } {
     const cacheReports = Array.from(this.caches.entries()).map(([name, cache]) => {
       const stats = cache.getStats();
       const healthScore = this.calculateHealthScore(stats);
@@ -307,13 +307,13 @@ export class CacheMonitor {
 
     // 命中率影響 (40%)
     const hitRateScore = stats.hitRate * 40;
-    
+
     // 記憶體使用率影響 (30%)
     const memoryScore = Math.max(0, 30 - (stats.memoryUsage / (50 * 1024 * 1024)) * 30);
-    
+
     // 存取時間影響 (20%)
     const accessTimeScore = Math.max(0, 20 - Math.min(stats.averageAccessTime / 10, 20));
-    
+
     // 淘汰率影響 (10%)
     const evictionRate = stats.totalRequests > 0 ? stats.evictions / stats.totalRequests : 0;
     const evictionScore = Math.max(0, 10 - evictionRate * 100);

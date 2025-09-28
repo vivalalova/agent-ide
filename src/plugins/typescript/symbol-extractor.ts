@@ -4,18 +4,18 @@
  */
 
 import * as ts from 'typescript';
-import type { 
-  Symbol, 
+import type {
+  Symbol,
   Scope,
   ScopeType
 } from '../../shared/types';
-import { 
+import {
   SymbolType,
-  createSymbol, 
-  createScope 
+  createSymbol,
+  createScope
 } from '../../shared/types';
-import { 
-  TypeScriptAST, 
+import {
+  TypeScriptAST,
   TypeScriptASTNode,
   TypeScriptSymbol,
   SYMBOL_TYPE_MAP,
@@ -40,14 +40,14 @@ export class TypeScriptSymbolExtractor {
     this.symbols = [];
     this.scopeStack = [];
     this.sourceFile = ast.tsSourceFile;
-    
+
     // 建立全域作用域
     const globalScope = createScope('global');
     this.scopeStack.push(globalScope);
-    
+
     // 遍歷 AST 提取符號
     this.visitNode(ast.root);
-    
+
     return [...this.symbols];
   }
 
@@ -85,7 +85,7 @@ export class TypeScriptSymbolExtractor {
    */
   private handleScopeChange(node: ts.Node): boolean {
     let needsRestore = false;
-    
+
     if (ts.isSourceFile(node)) {
       // 已經有全域作用域，不需要額外處理
       return false;
@@ -109,7 +109,7 @@ export class TypeScriptSymbolExtractor {
       this.scopeStack.push(scope);
       needsRestore = true;
     }
-    
+
     return needsRestore;
   }
 
@@ -291,23 +291,23 @@ export class TypeScriptSymbolExtractor {
    */
   private typeNodeToString(typeNode: ts.TypeNode): string {
     switch (typeNode.kind) {
-      case ts.SyntaxKind.StringKeyword:
-        return 'string';
-      case ts.SyntaxKind.NumberKeyword:
-        return 'number';
-      case ts.SyntaxKind.BooleanKeyword:
-        return 'boolean';
-      case ts.SyntaxKind.VoidKeyword:
-        return 'void';
-      case ts.SyntaxKind.AnyKeyword:
-        return 'any';
-      case ts.SyntaxKind.UnknownKeyword:
-        return 'unknown';
-      case ts.SyntaxKind.NeverKeyword:
-        return 'never';
-      default:
-        // 對於複雜型別，使用 TypeScript 的 getText()
-        return typeNode.getText(this.sourceFile);
+    case ts.SyntaxKind.StringKeyword:
+      return 'string';
+    case ts.SyntaxKind.NumberKeyword:
+      return 'number';
+    case ts.SyntaxKind.BooleanKeyword:
+      return 'boolean';
+    case ts.SyntaxKind.VoidKeyword:
+      return 'void';
+    case ts.SyntaxKind.AnyKeyword:
+      return 'any';
+    case ts.SyntaxKind.UnknownKeyword:
+      return 'unknown';
+    case ts.SyntaxKind.NeverKeyword:
+      return 'never';
+    default:
+      // 對於複雜型別，使用 TypeScript 的 getText()
+      return typeNode.getText(this.sourceFile);
     }
   }
 
@@ -321,7 +321,7 @@ export class TypeScriptSymbolExtractor {
     if (ts.isNumericLiteral(initializer)) {
       return 'number';
     }
-    if (initializer.kind === ts.SyntaxKind.TrueKeyword || 
+    if (initializer.kind === ts.SyntaxKind.TrueKeyword ||
         initializer.kind === ts.SyntaxKind.FalseKeyword) {
       return 'boolean';
     }
@@ -334,7 +334,7 @@ export class TypeScriptSymbolExtractor {
     if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
       return 'function';
     }
-    
+
     return 'unknown';
   }
 
@@ -343,9 +343,9 @@ export class TypeScriptSymbolExtractor {
    */
   private functionNodeToSignature(node: ts.FunctionDeclaration | ts.MethodDeclaration): string {
     const name = getNodeName(node) || 'anonymous';
-    const typeParameters = node.typeParameters ? 
+    const typeParameters = node.typeParameters ?
       `<${node.typeParameters.map(tp => tp.name.text).join(', ')}>` : '';
-    
+
     const parameters = node.parameters.map(param => {
       const paramName = param.name.getText(this.sourceFile);
       const paramType = param.type ? `: ${param.type.getText(this.sourceFile)}` : '';
@@ -364,8 +364,8 @@ export class TypeScriptSymbolExtractor {
   private isInsideFunctionOrMethod(node: ts.Node): boolean {
     let parent = node.parent;
     while (parent) {
-      if (ts.isFunctionDeclaration(parent) || 
-          ts.isMethodDeclaration(parent) || 
+      if (ts.isFunctionDeclaration(parent) ||
+          ts.isMethodDeclaration(parent) ||
           ts.isConstructorDeclaration(parent) ||
           ts.isArrowFunction(parent) ||
           ts.isFunctionExpression(parent)) {

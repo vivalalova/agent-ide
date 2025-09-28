@@ -332,15 +332,15 @@ export class EventBus {
 
     const typeStats = this.stats.byEventType.get(eventType)!;
     switch (operation) {
-      case 'emitted':
-        typeStats.emitted++;
-        break;
-      case 'handled':
-        typeStats.handled++;
-        break;
-      case 'error':
-        typeStats.errors++;
-        break;
+    case 'emitted':
+      typeStats.emitted++;
+      break;
+    case 'handled':
+      typeStats.handled++;
+      break;
+    case 'error':
+      typeStats.errors++;
+      break;
     }
   }
 

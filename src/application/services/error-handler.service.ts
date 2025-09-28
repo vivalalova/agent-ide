@@ -143,38 +143,38 @@ export class ErrorHandlerService implements IErrorHandler {
 
     try {
       switch (recovery.type) {
-        case 'retry':
-          if (recovery.action && recovery.retryOptions) {
-            const result = await this.retry(recovery.action, recovery.retryOptions);
-            this.errorStats.recoveredErrors++;
-            return {
-              success: true,
-              recoveryType: 'retry',
-              result
-            };
-          }
-          break;
-
-        case 'fallback':
+      case 'retry':
+        if (recovery.action && recovery.retryOptions) {
+          const result = await this.retry(recovery.action, recovery.retryOptions);
           this.errorStats.recoveredErrors++;
           return {
             success: true,
-            recoveryType: 'fallback',
-            result: recovery.fallbackValue
+            recoveryType: 'retry',
+            result
           };
+        }
+        break;
 
-        case 'ignore':
-          this.errorStats.recoveredErrors++;
-          return {
-            success: true,
-            recoveryType: 'ignore'
-          };
+      case 'fallback':
+        this.errorStats.recoveredErrors++;
+        return {
+          success: true,
+          recoveryType: 'fallback',
+          result: recovery.fallbackValue
+        };
 
-        case 'manual':
-          return {
-            success: false,
-            recoveryType: 'manual'
-          };
+      case 'ignore':
+        this.errorStats.recoveredErrors++;
+        return {
+          success: true,
+          recoveryType: 'ignore'
+        };
+
+      case 'manual':
+        return {
+          success: false,
+          recoveryType: 'manual'
+        };
       }
 
       return {
@@ -289,26 +289,26 @@ export class ErrorHandlerService implements IErrorHandler {
   private generateUserFriendlyMessage(error: Error): string {
     if (error instanceof BaseError) {
       switch (error.code) {
-        case 'VALIDATION_ERROR':
-          return '資料驗證失敗，請檢查輸入內容是否正確。';
-        case 'NETWORK_ERROR':
-          return '網路連線發生問題，請檢查網路狀態後重試。';
-        case 'FILE_NOT_FOUND':
-          return '找不到指定的檔案，請確認檔案路徑是否正確。';
-        case 'PERMISSION_ERROR':
-          return '權限不足，無法執行此操作。';
-        case 'TIMEOUT_ERROR':
-          return '操作逾時，請稍後重試。';
-        case 'DEPENDENCY_ERROR':
-          return '相依性錯誤，請檢查相關模組狀態。';
-        case 'PARSE_ERROR':
-          return '解析錯誤，檔案格式可能不正確。';
-        case 'INDEX_ERROR':
-          return '索引操作失敗，請重新建立索引。';
-        case 'CACHE_ERROR':
-          return '快取操作失敗，系統將嘗試重新載入資料。';
-        default:
-          return `系統發生錯誤：${error.message}`;
+      case 'VALIDATION_ERROR':
+        return '資料驗證失敗，請檢查輸入內容是否正確。';
+      case 'NETWORK_ERROR':
+        return '網路連線發生問題，請檢查網路狀態後重試。';
+      case 'FILE_NOT_FOUND':
+        return '找不到指定的檔案，請確認檔案路徑是否正確。';
+      case 'PERMISSION_ERROR':
+        return '權限不足，無法執行此操作。';
+      case 'TIMEOUT_ERROR':
+        return '操作逾時，請稍後重試。';
+      case 'DEPENDENCY_ERROR':
+        return '相依性錯誤，請檢查相關模組狀態。';
+      case 'PARSE_ERROR':
+        return '解析錯誤，檔案格式可能不正確。';
+      case 'INDEX_ERROR':
+        return '索引操作失敗，請重新建立索引。';
+      case 'CACHE_ERROR':
+        return '快取操作失敗，系統將嘗試重新載入資料。';
+      default:
+        return `系統發生錯誤：${error.message}`;
       }
     }
 

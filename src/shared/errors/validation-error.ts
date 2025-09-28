@@ -29,11 +29,11 @@ export class ValidationError extends BaseError {
   toString(): string {
     let result = super.toString();
     result += `\n欄位: ${this.field}`;
-    
+
     if (this.value !== undefined) {
       result += `\n值: ${JSON.stringify(this.value)}`;
     }
-    
+
     return result;
   }
 }

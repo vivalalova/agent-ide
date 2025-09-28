@@ -3,10 +3,10 @@
  * 提供有向圖資料結構來表示檔案間的依賴關係
  */
 
-import type { 
-  DependencyNode, 
-  DependencyEdge, 
-  TopologicalSortResult 
+import type {
+  DependencyNode,
+  DependencyEdge,
+  TopologicalSortResult
 } from './types';
 
 /**
@@ -179,7 +179,7 @@ export class DependencyGraph {
 
     const dfs = (currentPath: string) => {
       const dependencies = this.getDependencies(currentPath);
-      
+
       for (const dep of dependencies) {
         if (!visited.has(dep)) {
           visited.add(dep);
@@ -204,7 +204,7 @@ export class DependencyGraph {
 
     const dfs = (currentPath: string) => {
       const dependents = this.getDependents(currentPath);
-      
+
       for (const dependent of dependents) {
         if (!visited.has(dependent)) {
           visited.add(dependent);
@@ -266,7 +266,7 @@ export class DependencyGraph {
       for (const dep of dependencies) {
         const newInDegree = inDegree.get(dep)! - 1;
         inDegree.set(dep, newInDegree);
-        
+
         if (newInDegree === 0) {
           queue.push(dep);
         }
@@ -278,7 +278,7 @@ export class DependencyGraph {
     let cycleFiles: string[] | undefined;
 
     if (hasCycle) {
-      cycleFiles = Array.from(this.nodes).filter(node => 
+      cycleFiles = Array.from(this.nodes).filter(node =>
         !result.includes(node)
       );
     }
@@ -330,21 +330,21 @@ export class DependencyGraph {
 
     const visited = new Set<string>();
     const queue: string[] = [];
-    
+
     // 從第一個節點開始 BFS
     const startNode = this.nodes.values().next().value;
-    if (!startNode) return true; // 空圖被認為是連通的
-    
+    if (!startNode) {return true;} // 空圖被認為是連通的
+
     queue.push(startNode);
     visited.add(startNode);
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      
+
       // 檢查所有相鄰節點（雙向）
       const dependencies = this.getDependencies(current);
       const dependents = this.getDependents(current);
-      
+
       const neighbors = [...dependencies, ...dependents];
 
       for (const neighbor of neighbors) {
@@ -368,7 +368,7 @@ export class DependencyGraph {
     for (const node of this.nodes) {
       const inDegree = this.getDependents(node).length;
       const outDegree = this.getDependencies(node).length;
-      
+
       if (inDegree === 0 && outDegree === 0) {
         // 完全孤立的節點
         orphaned.push(node);
@@ -404,7 +404,7 @@ export class DependencyGraph {
    * @returns 重建的圖實例
    */
   static deserialize(data: SerializedGraph): DependencyGraph {
-    if (!data.nodes || !Array.isArray(data.nodes) || 
+    if (!data.nodes || !Array.isArray(data.nodes) ||
         !data.edges || !Array.isArray(data.edges)) {
       throw new Error('無效的序列化資料格式');
     }

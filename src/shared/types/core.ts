@@ -8,7 +8,7 @@
  */
 export interface Position {
   readonly line: number;    // 行號（從 1 開始）
-  readonly column: number;  // 列號（從 1 開始）  
+  readonly column: number;  // 列號（從 1 開始）
   readonly offset: number | undefined; // 字元偏移（從 0 開始，可選）
 }
 
@@ -86,7 +86,7 @@ export function isPosition(value: unknown): value is Position {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.line === 'number' &&
     obj.line >= 1 &&
@@ -105,7 +105,7 @@ export function isRange(value: unknown): value is Range {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     isPosition(obj.start) &&
     isPosition(obj.end) &&
@@ -122,7 +122,7 @@ export function isLocation(value: unknown): value is Location {
   }
 
   const obj = value as Record<string, unknown>;
-  
+
   return (
     typeof obj.filePath === 'string' &&
     obj.filePath.trim().length > 0 &&

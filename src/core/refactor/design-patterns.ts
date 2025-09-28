@@ -120,7 +120,7 @@ export class DesignPatternAnalyzer {
 
       // 檢查是否有靜態實例屬性
       const hasStaticInstance = cls.properties.some(p => p.isStatic && p.name.includes('instance'));
-      if (hasStaticInstance) confidence += 0.4;
+      if (hasStaticInstance) {confidence += 0.4;}
 
       // 檢查是否有 getInstance 方法
       const hasGetInstance = cls.methods.some(m => m.name === 'getInstance' && m.isStatic);
@@ -131,7 +131,7 @@ export class DesignPatternAnalyzer {
 
       // 檢查建構子是否私有
       const hasPrivateConstructor = cls.constructor?.isPrivate;
-      if (hasPrivateConstructor) confidence += 0.3;
+      if (hasPrivateConstructor) {confidence += 0.3;}
 
       // 檢查是否全域使用
       const globalUsageCount = (code.match(new RegExp(cls.name, 'g')) || []).length;
@@ -446,18 +446,18 @@ export class DesignPatternRefactorer {
 
     try {
       switch (pattern) {
-        case 'singleton':
-          return await this.applySingletonPattern(code, className, config);
-        case 'factory':
-          return await this.applyFactoryPattern(code, className, config);
-        case 'observer':
-          return await this.applyObserverPattern(code, className, config);
-        case 'strategy':
-          return await this.applyStrategyPattern(code, className, config);
-        case 'decorator':
-          return await this.applyDecoratorPattern(code, className, config);
-        default:
-          throw new Error(`不支援的設計模式: ${pattern}`);
+      case 'singleton':
+        return await this.applySingletonPattern(code, className, config);
+      case 'factory':
+        return await this.applyFactoryPattern(code, className, config);
+      case 'observer':
+        return await this.applyObserverPattern(code, className, config);
+      case 'strategy':
+        return await this.applyStrategyPattern(code, className, config);
+      case 'decorator':
+        return await this.applyDecoratorPattern(code, className, config);
+      default:
+        throw new Error(`不支援的設計模式: ${pattern}`);
       }
     } catch (error) {
       return {
@@ -495,8 +495,8 @@ export class DesignPatternRefactorer {
     let classEndIndex = classStartIndex + classStartMatch[0].length;
 
     while (braceCount > 0 && classEndIndex < code.length) {
-      if (code[classEndIndex] === '{') braceCount++;
-      if (code[classEndIndex] === '}') braceCount--;
+      if (code[classEndIndex] === '{') {braceCount++;}
+      if (code[classEndIndex] === '}') {braceCount--;}
       classEndIndex++;
     }
 
@@ -638,10 +638,10 @@ export class DesignPatternRefactorer {
     const typescript = config.useTypeScript;
 
     const observerInterface = typescript ?
-      `interface Observer {\n  update(data: any): void;\n}` :
-      `// Observer interface\n// Implement update(data) method`;
+      'interface Observer {\n  update(data: any): void;\n}' :
+      '// Observer interface\n// Implement update(data) method';
 
-    const observableClass = `${config.addDocumentation ? `/**\n * Observable - 觀察者模式主題\n * 管理觀察者列表並通知變更\n */\n` : ''}class Observable {
+    const observableClass = `${config.addDocumentation ? '/**\n * Observable - 觀察者模式主題\n * 管理觀察者列表並通知變更\n */\n' : ''}class Observable {
   private observers${typescript ? ': Observer[]' : ''} = [];
 
   addObserver(observer${typescript ? ': Observer' : ''})${typescript ? ': void' : ''} {
@@ -702,8 +702,8 @@ export class DesignPatternRefactorer {
     const typescript = config.useTypeScript;
 
     const strategyInterface = typescript ?
-      `interface Strategy {\n  execute(data: any): any;\n}` :
-      `// Strategy interface\n// Implement execute(data) method`;
+      'interface Strategy {\n  execute(data: any): any;\n}' :
+      '// Strategy interface\n// Implement execute(data) method';
 
     const contextClass = `${config.addDocumentation ? `/**\n * ${className}Context - 策略模式上下文\n * 使用策略物件執行演算法\n */\n` : ''}class ${className}Context {
   private strategy${typescript ? ': Strategy' : ''};
@@ -754,18 +754,18 @@ export class DesignPatternRefactorer {
   private extractConstructorBody(classBody: string): string {
     // 找到 constructor 並提取其內容
     const constructorStart = classBody.indexOf('constructor');
-    if (constructorStart === -1) return '// 建構子邏輯';
+    if (constructorStart === -1) {return '// 建構子邏輯';}
 
     // 找到 constructor 的開始大括號
-    let braceStart = classBody.indexOf('{', constructorStart);
-    if (braceStart === -1) return '// 建構子邏輯';
+    const braceStart = classBody.indexOf('{', constructorStart);
+    if (braceStart === -1) {return '// 建構子邏輯';}
 
     // 找到對應的結束大括號
     let braceCount = 1;
     let braceEnd = braceStart + 1;
     while (braceCount > 0 && braceEnd < classBody.length) {
-      if (classBody[braceEnd] === '{') braceCount++;
-      if (classBody[braceEnd] === '}') braceCount--;
+      if (classBody[braceEnd] === '{') {braceCount++;}
+      if (classBody[braceEnd] === '}') {braceCount--;}
       braceEnd++;
     }
 
@@ -782,14 +782,14 @@ export class DesignPatternRefactorer {
     }
 
     // 找到 constructor 的結束位置
-    let braceStart = classBody.indexOf('{', constructorStart);
-    if (braceStart === -1) return classBody.trim();
+    const braceStart = classBody.indexOf('{', constructorStart);
+    if (braceStart === -1) {return classBody.trim();}
 
     let braceCount = 1;
     let braceEnd = braceStart + 1;
     while (braceCount > 0 && braceEnd < classBody.length) {
-      if (classBody[braceEnd] === '{') braceCount++;
-      if (classBody[braceEnd] === '}') braceCount--;
+      if (classBody[braceEnd] === '{') {braceCount++;}
+      if (classBody[braceEnd] === '}') {braceCount--;}
       braceEnd++;
     }
 
@@ -798,8 +798,8 @@ export class DesignPatternRefactorer {
     const afterConstructor = classBody.substring(braceEnd).trim();
 
     let result = '';
-    if (beforeConstructor) result += beforeConstructor + '\n\n  ';
-    if (afterConstructor) result += afterConstructor;
+    if (beforeConstructor) {result += beforeConstructor + '\n\n  ';}
+    if (afterConstructor) {result += afterConstructor;}
 
     return result.trim();
   }
@@ -822,10 +822,10 @@ export class DesignPatternRefactorer {
   }
 
   private generateObserverDocumentation(): string {
-    return `# Observer 模式\n\n## 使用方式\n\`\`\`javascript\nconst observable = new Observable();\nobservable.addObserver(myObserver);\nobservable.notifyObservers(data);\n\`\`\`\n\n## 特點\n- 鬆耦合設計\n- 動態訂閱\n- 一對多通知`;
+    return '# Observer 模式\n\n## 使用方式\n```javascript\nconst observable = new Observable();\nobservable.addObserver(myObserver);\nobservable.notifyObservers(data);\n```\n\n## 特點\n- 鬆耦合設計\n- 動態訂閱\n- 一對多通知';
   }
 
   private generateStrategyDocumentation(): string {
-    return `# Strategy 模式\n\n## 使用方式\n\`\`\`javascript\nconst context = new Context(new ConcreteStrategy());\nconst result = context.executeStrategy(data);\n\`\`\`\n\n## 特點\n- 演算法封裝\n- 運行時切換\n- 開放封閉原則`;
+    return '# Strategy 模式\n\n## 使用方式\n```javascript\nconst context = new Context(new ConcreteStrategy());\nconst result = context.executeStrategy(data);\n```\n\n## 特點\n- 演算法封裝\n- 運行時切換\n- 開放封閉原則';
   }
 }

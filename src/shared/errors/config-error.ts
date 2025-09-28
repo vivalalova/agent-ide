@@ -29,11 +29,11 @@ export class ConfigError extends BaseError {
   toString(): string {
     let result = super.toString();
     result += `\n配置路徑: ${this.configPath}`;
-    
+
     if (this.expectedType) {
       result += `\n預期類型: ${this.expectedType}`;
     }
-    
+
     return result;
   }
 }

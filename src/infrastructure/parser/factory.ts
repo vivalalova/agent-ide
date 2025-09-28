@@ -20,10 +20,10 @@ export type LazyLoaderFunction = () => Promise<ParserPlugin>;
 interface CacheItem {
   /** Parser 實例 */
   parser: ParserPlugin;
-  
+
   /** 最後訪問時間 */
   lastAccessed: Date;
-  
+
   /** 配置選項 */
   options: ParserOptions | undefined;
 }
@@ -35,30 +35,30 @@ interface CacheItem {
 export class ParserFactory {
   /** Parser 實例快取 */
   private readonly cache = new Map<string, CacheItem>();
-  
+
   /** 延遲載入器映射 */
   private readonly lazyLoaders = new Map<string, LazyLoaderFunction>();
-  
+
   /** 全域預設配置 */
   private globalDefaultOptions: ParserOptions = {};
-  
+
   /** Parser 特定預設配置 */
   private readonly parserDefaultOptions = new Map<string, ParserOptions>();
-  
+
   /** 最大快取大小 */
   private maxCacheSize = 50;
-  
+
   /** 是否已被清理 */
   private disposed = false;
-  
+
   constructor(private readonly registry: ParserRegistry) {
     if (!registry) {
       throw new ParserFactoryError('ParserRegistry 不能為空');
     }
   }
-  
+
   // ===== Parser 建立 =====
-  
+
   /**
    * 根據檔案路徑建立 Parser
    * @param filePath 檔案路徑
@@ -67,11 +67,11 @@ export class ParserFactory {
    */
   createParser(filePath: string, options?: ParserOptions): ParserPlugin | null {
     this.checkNotDisposed();
-    
+
     const extension = getFileExtension(filePath);
     return this.createParserByExtension(extension, options);
   }
-  
+
   /**
    * 根據副檔名建立 Parser
    * @param extension 副檔名
@@ -80,15 +80,15 @@ export class ParserFactory {
    */
   createParserByExtension(extension: string, options?: ParserOptions): ParserPlugin | null {
     this.checkNotDisposed();
-    
+
     const parser = this.registry.getParser(extension);
     if (!parser) {
       return null;
     }
-    
+
     return this.getCachedParser(parser.name, parser, options);
   }
-  
+
   /**
    * 根據語言建立 Parser
    * @param language 語言名稱
@@ -97,15 +97,15 @@ export class ParserFactory {
    */
   createParserByLanguage(language: string, options?: ParserOptions): ParserPlugin | null {
     this.checkNotDisposed();
-    
+
     const parser = this.registry.getParserByLanguage(language);
     if (!parser) {
       return null;
     }
-    
+
     return this.getCachedParser(parser.name, parser, options);
   }
-  
+
   /**
    * 根據 Parser 名稱建立 Parser
    * @param name Parser 名稱
@@ -114,17 +114,17 @@ export class ParserFactory {
    */
   createParserByName(name: string, options?: ParserOptions): ParserPlugin | null {
     this.checkNotDisposed();
-    
+
     const parser = this.registry.getParserByName(name);
     if (!parser) {
       return null;
     }
-    
+
     return this.getCachedParser(name, parser, options);
   }
-  
+
   // ===== 延遲載入 =====
-  
+
   /**
    * 註冊延遲載入器
    * @param parserName Parser 名稱
@@ -134,7 +134,7 @@ export class ParserFactory {
     this.checkNotDisposed();
     this.lazyLoaders.set(parserName, loader);
   }
-  
+
   /**
    * 延遲建立 Parser
    * @param filePath 檔案路徑
@@ -143,15 +143,15 @@ export class ParserFactory {
    */
   async createParserLazy(filePath: string, options?: ParserOptions): Promise<ParserPlugin | null> {
     this.checkNotDisposed();
-    
+
     const extension = getFileExtension(filePath);
-    
+
     // 先嘗試從註冊中心獲取
-    let parser = this.registry.getParser(extension);
+    const parser = this.registry.getParser(extension);
     if (parser) {
       return this.getCachedParser(parser.name, parser, options);
     }
-    
+
     // 嘗試延遲載入
     for (const [parserName, loader] of this.lazyLoaders.entries()) {
       try {
@@ -165,12 +165,12 @@ export class ParserFactory {
         console.warn(`延遲載入 Parser ${parserName} 失敗:`, error);
       }
     }
-    
+
     return null;
   }
-  
+
   // ===== 快取管理 =====
-  
+
   /**
    * 獲取快取的 Parser 實例
    * @param name Parser 名稱
@@ -181,30 +181,30 @@ export class ParserFactory {
   private getCachedParser(name: string, parser: ParserPlugin, options?: ParserOptions): ParserPlugin {
     const mergedOptions = this.getMergedOptions(name, options);
     const cacheKey = this.buildCacheKey(name, mergedOptions);
-    
+
     // 檢查快取
     const cached = this.cache.get(cacheKey);
     if (cached) {
       cached.lastAccessed = new Date();
       return cached.parser;
     }
-    
+
     // 檢查快取大小限制
     if (this.cache.size >= this.maxCacheSize) {
       this.evictOldestCacheItem();
     }
-    
+
     // 建立新的快取項目
     const cacheItem: CacheItem = {
       parser,
       lastAccessed: new Date(),
       options: mergedOptions || undefined
     };
-    
+
     this.cache.set(cacheKey, cacheItem);
     return parser;
   }
-  
+
   /**
    * 建立快取鍵
    * @param name Parser 名稱
@@ -215,43 +215,43 @@ export class ParserFactory {
     if (!options) {
       return name;
     }
-    
+
     // 將配置選項序列化為字串
     const optionsStr = JSON.stringify(options, Object.keys(options).sort());
     return `${name}:${optionsStr}`;
   }
-  
+
   /**
    * 移除最久未使用的快取項目 (LRU)
    */
   private evictOldestCacheItem(): void {
     let oldestKey: string | null = null;
     let oldestTime: Date | null = null;
-    
+
     for (const [key, item] of this.cache.entries()) {
       if (!oldestTime || item.lastAccessed < oldestTime) {
         oldestTime = item.lastAccessed;
         oldestKey = key;
       }
     }
-    
+
     if (oldestKey) {
       this.cache.delete(oldestKey);
     }
   }
-  
+
   /**
    * 清除快取
    * @param parserName 可選，指定清除特定 Parser 的快取
    */
   clearCache(parserName?: string): void {
     this.checkNotDisposed();
-    
+
     if (!parserName) {
       this.cache.clear();
       return;
     }
-    
+
     // 清除指定 Parser 的所有快取項目
     const keysToDelete: string[] = [];
     for (const key of this.cache.keys()) {
@@ -259,10 +259,10 @@ export class ParserFactory {
         keysToDelete.push(key);
       }
     }
-    
+
     keysToDelete.forEach(key => this.cache.delete(key));
   }
-  
+
   /**
    * 設定最大快取大小
    * @param size 快取大小
@@ -271,38 +271,38 @@ export class ParserFactory {
     if (size <= 0) {
       throw new ParserFactoryError('快取大小必須大於 0');
     }
-    
+
     this.maxCacheSize = size;
-    
+
     // 如果當前快取超出大小限制，移除舊項目
     while (this.cache.size > this.maxCacheSize) {
       this.evictOldestCacheItem();
     }
   }
-  
+
   /**
    * 獲取快取大小
    */
   getCacheSize(): number {
     return this.cache.size;
   }
-  
+
   /**
    * 獲取已快取的 Parser 名稱
    */
   getCachedParsers(): string[] {
     const parserNames = new Set<string>();
-    
+
     for (const key of this.cache.keys()) {
       const parserName = key.split(':')[0];
       parserNames.add(parserName);
     }
-    
+
     return Array.from(parserNames).sort();
   }
-  
+
   // ===== 配置管理 =====
-  
+
   /**
    * 設定全域預設配置
    * @param options 配置選項
@@ -311,7 +311,7 @@ export class ParserFactory {
     this.checkNotDisposed();
     this.globalDefaultOptions = { ...options };
   }
-  
+
   /**
    * 設定特定 Parser 的預設配置
    * @param parserName Parser 名稱
@@ -321,7 +321,7 @@ export class ParserFactory {
     this.checkNotDisposed();
     this.parserDefaultOptions.set(parserName, { ...options });
   }
-  
+
   /**
    * 獲取合併後的配置選項
    * @param parserName Parser 名稱
@@ -330,16 +330,16 @@ export class ParserFactory {
    */
   private getMergedOptions(parserName: string, options?: ParserOptions): ParserOptions {
     const parserDefaults = this.parserDefaultOptions.get(parserName) || {};
-    
+
     return {
       ...this.globalDefaultOptions,
       ...parserDefaults,
       ...options
     };
   }
-  
+
   // ===== 生命週期管理 =====
-  
+
   /**
    * 清理工廠
    * 清理所有快取並釋放資源
@@ -348,10 +348,10 @@ export class ParserFactory {
     if (this.disposed) {
       return;
     }
-    
+
     // 清理快取中的所有 Parser
     const disposePromises: Promise<void>[] = [];
-    
+
     for (const cacheItem of this.cache.values()) {
       disposePromises.push(
         cacheItem.parser.dispose().catch(error => {
@@ -359,19 +359,19 @@ export class ParserFactory {
         })
       );
     }
-    
+
     await Promise.all(disposePromises);
-    
+
     // 清空所有映射表
     this.cache.clear();
     this.lazyLoaders.clear();
     this.parserDefaultOptions.clear();
-    
+
     this.disposed = true;
   }
-  
+
   // ===== 內部工具方法 =====
-  
+
   /**
    * 檢查工廠是否已被清理
    */
@@ -380,7 +380,7 @@ export class ParserFactory {
       throw new ParserFactoryError('Factory已被清理');
     }
   }
-  
+
   /**
    * 獲取清理狀態
    */

@@ -28,31 +28,31 @@ export async function retry<T>(
   options: RetryOptions
 ): Promise<T> {
   const { maxAttempts, delay = 1000, exponentialBackoff = false, shouldRetry } = options;
-  
+
   let lastError: any;
-  
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error;
-      
+
       // 檢查是否應該重試
       if (shouldRetry && !shouldRetry(error)) {
         throw error;
       }
-      
+
       // 如果是最後一次嘗試，拋出錯誤
       if (attempt === maxAttempts) {
         throw error;
       }
-      
+
       // 計算延遲時間
       const currentDelay = exponentialBackoff ? delay * Math.pow(2, attempt - 1) : delay;
       await sleep(currentDelay);
     }
   }
-  
+
   throw lastError;
 }
 
@@ -73,7 +73,7 @@ export function timeout<T>(
       reject(new Error(errorMessage || `Operation timed out after ${ms}ms`));
     }, ms);
   });
-  
+
   return Promise.race([promise, timeoutPromise]);
 }
 
@@ -91,14 +91,14 @@ export function debounce<T extends (...args: any[]) => any>(
 ): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
   let hasExecuted = false;
-  
+
   return (...args: Parameters<T>) => {
     const executeNow = immediate && !timeoutId;
-    
+
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
-    
+
     timeoutId = setTimeout(() => {
       timeoutId = null;
       hasExecuted = false;
@@ -106,7 +106,7 @@ export function debounce<T extends (...args: any[]) => any>(
         fn(...args);
       }
     }, delay);
-    
+
     if (executeNow && !hasExecuted) {
       hasExecuted = true;
       fn(...args);
@@ -125,10 +125,10 @@ export function throttle<T extends (...args: any[]) => any>(
   delay: number
 ): (...args: Parameters<T>) => void {
   let lastExecutionTime = 0;
-  
+
   return (...args: Parameters<T>) => {
     const currentTime = Date.now();
-    
+
     if (currentTime - lastExecutionTime >= delay) {
       lastExecutionTime = currentTime;
       fn(...args);
@@ -142,8 +142,8 @@ export function throttle<T extends (...args: any[]) => any>(
  * @returns 所有任務的結果
  */
 export async function parallel<T>(tasks: (() => Promise<T>)[]): Promise<T[]> {
-  if (!tasks.length) return [];
-  
+  if (!tasks.length) {return [];}
+
   const promises = tasks.map(task => task());
   return Promise.all(promises);
 }
@@ -155,12 +155,12 @@ export async function parallel<T>(tasks: (() => Promise<T>)[]): Promise<T[]> {
  */
 export async function sequential<T>(tasks: (() => Promise<T>)[]): Promise<T[]> {
   const results: T[] = [];
-  
+
   for (const task of tasks) {
     const result = await task();
     results.push(result);
   }
-  
+
   return results;
 }
 
@@ -170,8 +170,8 @@ export async function sequential<T>(tasks: (() => Promise<T>)[]): Promise<T[]> {
  * @returns 最先完成的任務結果
  */
 export async function race<T>(tasks: (() => Promise<T>)[]): Promise<T | undefined> {
-  if (!tasks.length) return undefined;
-  
+  if (!tasks.length) {return undefined;}
+
   const promises = tasks.map(task => task());
   return Promise.race(promises);
 }
@@ -193,26 +193,26 @@ export async function queue<T>(
   tasks: (() => Promise<T>)[],
   concurrency = 1
 ): Promise<T[]> {
-  if (!tasks.length) return [];
-  
+  if (!tasks.length) {return [];}
+
   const results: T[] = new Array(tasks.length);
   let currentIndex = 0;
-  
+
   const executeTask = async (taskIndex: number): Promise<void> => {
     const task = tasks[taskIndex];
     results[taskIndex] = await task();
   };
-  
+
   const worker = async (): Promise<void> => {
     while (currentIndex < tasks.length) {
       const taskIndex = currentIndex++;
       await executeTask(taskIndex);
     }
   };
-  
+
   const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, worker);
   await Promise.all(workers);
-  
+
   return results;
 }
 
@@ -236,22 +236,22 @@ export async function batch<T, R>(
   processor: (batch: T[]) => Promise<R[]>,
   options: BatchOptions
 ): Promise<R[]> {
-  if (!items.length) return [];
-  
+  if (!items.length) {return [];}
+
   const { batchSize, concurrency = 1 } = options;
   const batches: T[][] = [];
-  
+
   // 將項目分成批次
   for (let i = 0; i < items.length; i += batchSize) {
     batches.push(items.slice(i, i + batchSize));
   }
-  
+
   // 建立批次處理任務
   const batchTasks = batches.map(batch => () => processor(batch));
-  
+
   // 執行批次處理
   const batchResults = await queue(batchTasks, concurrency);
-  
+
   // 扁平化結果
   return batchResults.flat();
 }

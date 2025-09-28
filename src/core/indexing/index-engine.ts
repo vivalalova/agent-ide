@@ -10,7 +10,7 @@ import { createHash } from 'crypto';
 import type { Stats } from 'fs';
 
 import type { Symbol, SymbolType } from '../../shared/types';
-import type { 
+import type {
   IndexConfig,
   IndexStats,
   FileInfo,
@@ -19,9 +19,9 @@ import type {
   IndexProgress,
   BatchIndexOptions
 } from './types.js';
-import { 
-  createFileInfo, 
-  createSearchOptions, 
+import {
+  createFileInfo,
+  createSearchOptions,
   shouldIndexFile,
   calculateProgress
 } from './types.js';
@@ -151,7 +151,7 @@ export class IndexEngine {
     }
 
     // 使用 glob 模式查找檔案
-    const includePatterns = this.config.includeExtensions.map(ext => 
+    const includePatterns = this.config.includeExtensions.map(ext =>
       `${dirPath}/**/*${ext}`
     );
 
@@ -165,7 +165,7 @@ export class IndexEngine {
 
     // 過濾重複檔案並檢查是否應該索引
     const uniqueFiles = [...new Set(allFiles)];
-    const filesToIndex = uniqueFiles.filter(file => 
+    const filesToIndex = uniqueFiles.filter(file =>
       shouldIndexFile(file, this.config)
     );
 
@@ -198,7 +198,7 @@ export class IndexEngine {
       const content = await fs.readFile(filePath, 'utf-8');
 
       const fileInfo = await this.createFileInfoFromStat(filePath, stat);
-      
+
       // 新增到檔案索引
       await this.fileIndex.addFile(fileInfo);
 
@@ -245,15 +245,15 @@ export class IndexEngine {
     try {
       // 檢查檔案是否存在
       await fs.access(filePath);
-      
+
       // 如果檔案已在索引中，先移除
       if (this.isIndexed(filePath)) {
         await this.removeFile(filePath);
       }
-      
+
       // 重新索引檔案
       await this.indexFile(filePath);
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知錯誤';
       throw new Error(`更新檔案索引失敗 ${filePath}: ${errorMessage}`);
@@ -266,7 +266,7 @@ export class IndexEngine {
   async removeFile(filePath: string): Promise<void> {
     // 從符號索引中移除
     await this.symbolIndex.removeFileSymbols(filePath);
-    
+
     // 從檔案索引中移除
     await this.fileIndex.removeFile(filePath);
   }
@@ -376,12 +376,12 @@ export class IndexEngine {
     const { concurrency, batchSize, progressCallback } = options;
     const totalFiles = files.length;
     let processedFiles = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
 
     // 將檔案分批處理
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
-      
+
       // 並行處理當前批次
       const promises = batch.map(async (file) => {
         try {
@@ -391,7 +391,7 @@ export class IndexEngine {
           errors.push(`${file}: ${errorMessage}`);
         } finally {
           processedFiles++;
-          
+
           // 回報進度
           progressCallback({
             totalFiles,
@@ -426,7 +426,7 @@ export class IndexEngine {
   private async createFileInfoFromStat(filePath: string, stat: Stats): Promise<FileInfo> {
     const extension = path.extname(filePath);
     const language = this.getLanguageFromExtension(extension);
-    
+
     // 計算檔案 checksum
     const content = await fs.readFile(filePath, 'utf-8');
     const checksum = createHash('sha256').update(content).digest('hex');

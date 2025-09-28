@@ -673,26 +673,26 @@ export class JavaScriptParser implements ParserPlugin {
 
   private symbolTypeToDefinitionKind(symbolType: SymbolType): DefinitionKind {
     switch (symbolType) {
-      case SymbolType.Class:
-        return 'class';
-      case SymbolType.Function:
-        return 'function';
-      case SymbolType.Variable:
-        return 'variable';
-      case SymbolType.Constant:
-        return 'constant';
-      case SymbolType.Type:
-        return 'type';
-      case SymbolType.Interface:
-        return 'interface';
-      case SymbolType.Enum:
-        return 'enum';
-      case SymbolType.Module:
-        return 'module';
-      case SymbolType.Namespace:
-        return 'namespace';
-      default:
-        return 'variable';
+    case SymbolType.Class:
+      return 'class';
+    case SymbolType.Function:
+      return 'function';
+    case SymbolType.Variable:
+      return 'variable';
+    case SymbolType.Constant:
+      return 'constant';
+    case SymbolType.Type:
+      return 'type';
+    case SymbolType.Interface:
+      return 'interface';
+    case SymbolType.Enum:
+      return 'enum';
+    case SymbolType.Module:
+      return 'module';
+    case SymbolType.Namespace:
+      return 'namespace';
+    default:
+      return 'variable';
     }
   }
 
