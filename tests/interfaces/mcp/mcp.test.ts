@@ -9,29 +9,31 @@ import { AgentIdeMCP, MCPResult, MCPTool } from '../../../src/interfaces/mcp/mcp
 import { ParserRegistry } from '../../../src/infrastructure/parser/registry';
 
 // Mock dependencies
+const mockIndexEngine = {
+  indexProject: vi.fn().mockResolvedValue(undefined),
+  getStats: vi.fn(() => Promise.resolve({
+    totalFiles: 10,
+    totalSymbols: 50,
+    lastUpdated: new Date()
+  })),
+  findSymbol: vi.fn(() => Promise.resolve([
+    {
+      symbol: {
+        name: 'testFunction',
+        type: 'function',
+        location: {
+          filePath: '/test/file.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 10 } }
+        }
+      },
+      fileInfo: { filePath: '/test/file.ts' },
+      score: 1.0
+    }
+  ]))
+};
+
 vi.mock('../../../src/core/indexing/index-engine', () => ({
-  IndexEngine: vi.fn().mockImplementation(() => ({
-    indexProject: vi.fn().mockResolvedValue(undefined),
-    getStats: vi.fn().mockResolvedValue({
-      totalFiles: 10,
-      totalSymbols: 50,
-      lastUpdated: new Date()
-    }),
-    findSymbol: vi.fn().mockResolvedValue([
-      {
-        symbol: {
-          name: 'testFunction',
-          type: 'function',
-          location: {
-            filePath: '/test/file.ts',
-            range: { start: { line: 1, column: 1 }, end: { line: 1, column: 10 } }
-          }
-        },
-        fileInfo: { filePath: '/test/file.ts' },
-        score: 1.0
-      }
-    ])
-  }))
+  IndexEngine: vi.fn(() => mockIndexEngine)
 }));
 
 vi.mock('../../../src/core/indexing/types', () => ({
@@ -42,31 +44,35 @@ vi.mock('../../../src/core/indexing/types', () => ({
   })
 }));
 
+// 正確的 ParserRegistry mock 實作
+const mockParserRegistry = {
+  listParsers: vi.fn(() => [
+    {
+      name: 'typescript',
+      version: '1.0.0',
+      supportedExtensions: ['.ts', '.tsx'],
+      supportedLanguages: ['typescript'],
+      registeredAt: new Date()
+    },
+    {
+      name: 'javascript',
+      version: '1.0.0',
+      supportedExtensions: ['.js', '.jsx'],
+      supportedLanguages: ['javascript'],
+      registeredAt: new Date()
+    }
+  ]),
+  getParserByName: vi.fn((name: string) => {
+    if (name === 'typescript') return { name, version: '1.0.0' };
+    if (name === 'javascript') return { name, version: '1.0.0' };
+    return null;
+  })
+};
+
 vi.mock('../../../src/infrastructure/parser/registry', () => ({
   ParserRegistry: {
-    getInstance: vi.fn().mockReturnValue({
-      listParsers: vi.fn().mockReturnValue([
-        {
-          name: 'typescript',
-          version: '1.0.0',
-          supportedExtensions: ['.ts', '.tsx'],
-          supportedLanguages: ['typescript'],
-          registeredAt: new Date()
-        },
-        {
-          name: 'javascript',
-          version: '1.0.0',
-          supportedExtensions: ['.js', '.jsx'],
-          supportedLanguages: ['javascript'],
-          registeredAt: new Date()
-        }
-      ]),
-      getParserByName: vi.fn((name: string) => {
-        if (name === 'typescript') return { name, version: '1.0.0' };
-        if (name === 'javascript') return { name, version: '1.0.0' };
-        return null;
-      })
-    })
+    getInstance: vi.fn(() => mockParserRegistry),
+    resetInstance: vi.fn()
   }
 }));
 
@@ -74,20 +80,14 @@ describe('MCP 介面測試', () => {
   let mcp: AgentIdeMCP;
 
   beforeEach(() => {
+    // 重置所有 mocks
+    vi.clearAllMocks();
     mcp = new AgentIdeMCP();
-    // 清理 ParserRegistry 單例
-    (ParserRegistry as any)._instance = null;
   });
 
   afterEach(() => {
-    // 清理 ParserRegistry
-    try {
-      const registry = ParserRegistry.getInstance();
-      registry.dispose?.();
-    } catch (error) {
-      // 忽略清理錯誤
-    }
-    (ParserRegistry as any)._instance = null;
+    // 清理
+    vi.clearAllMocks();
   });
 
   describe('工具定義和註冊', () => {

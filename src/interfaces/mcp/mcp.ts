@@ -294,26 +294,33 @@ export class AgentIdeMCP {
           return { success: false, error: '需要指定專案路徑' };
         }
 
-        const config = createIndexConfig(projectPath, {
-          includeExtensions: extensions || ['.ts', '.js', '.tsx', '.jsx'],
-          excludePatterns: excludePatterns || ['node_modules/**', '*.test.*']
-        });
+        try {
+          const config = createIndexConfig(projectPath, {
+            includeExtensions: extensions || ['.ts', '.js', '.tsx', '.jsx'],
+            excludePatterns: excludePatterns || ['node_modules/**', '*.test.*']
+          });
 
-        this.indexEngine = new IndexEngine(config);
-        await this.indexEngine.indexProject(projectPath);
-        const stats = await this.indexEngine.getStats();
+          this.indexEngine = new IndexEngine(config);
+          await this.indexEngine.indexProject(projectPath);
+          const stats = await this.indexEngine.getStats();
 
-        return {
-          success: true,
-          data: {
-            action: action === 'create' ? '建立' : '更新',
-            stats: {
-              totalFiles: stats.totalFiles,
-              totalSymbols: stats.totalSymbols,
-              indexedAt: new Date().toISOString()
+          return {
+            success: true,
+            data: {
+              action: action === 'create' ? '建立' : '更新',
+              stats: {
+                totalFiles: stats.totalFiles,
+                totalSymbols: stats.totalSymbols,
+                indexedAt: new Date().toISOString()
+              }
             }
-          }
-        };
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: `建立索引失敗: ${error instanceof Error ? error.message : String(error)}`
+          };
+        }
 
       case 'search':
         if (!query) {
@@ -428,53 +435,60 @@ export class AgentIdeMCP {
   private async handleParserPlugins(params: any): Promise<MCPResult> {
     const { action, plugin, filter } = params;
 
-    const registry = ParserRegistry.getInstance();
+    try {
+      const registry = ParserRegistry.getInstance();
 
-    switch (action) {
-      case 'list':
-        const parsers = registry.listParsers();
-        return {
-          success: true,
-          data: {
-            plugins: parsers.map(p => ({
-              name: p.name,
-              version: p.version,
-              supportedExtensions: p.supportedExtensions,
-              supportedLanguages: p.supportedLanguages,
-              registeredAt: p.registeredAt.toISOString()
-            })),
-            total: parsers.length
+      switch (action) {
+        case 'list':
+          const parsers = registry.listParsers();
+          return {
+            success: true,
+            data: {
+              plugins: parsers.map(p => ({
+                name: p.name,
+                version: p.version,
+                supportedExtensions: p.supportedExtensions,
+                supportedLanguages: p.supportedLanguages,
+                registeredAt: p.registeredAt.toISOString()
+              })),
+              total: parsers.length
+            }
+          };
+
+        case 'info':
+          if (!plugin) {
+            return { success: false, error: '需要指定插件名稱' };
           }
-        };
 
-      case 'info':
-        if (!plugin) {
-          return { success: false, error: '需要指定插件名稱' };
-        }
-
-        const pluginInstance = registry.getParserByName(plugin);
-        if (!pluginInstance) {
-          return { success: false, error: `找不到插件: ${plugin}` };
-        }
-
-        const pluginInfo = registry.listParsers().find(p => p.name === plugin);
-        return {
-          success: true,
-          data: pluginInfo
-        };
-
-      case 'enable':
-      case 'disable':
-        return {
-          success: true,
-          data: {
-            message: `插件 ${action} 功能開發中`,
-            plugin
+          const pluginInstance = registry.getParserByName(plugin);
+          if (!pluginInstance) {
+            return { success: false, error: `找不到插件: ${plugin}` };
           }
-        };
 
-      default:
-        return { success: false, error: `未知的插件操作: ${action}` };
+          const pluginInfo = registry.listParsers().find(p => p.name === plugin);
+          return {
+            success: true,
+            data: pluginInfo
+          };
+
+        case 'enable':
+        case 'disable':
+          return {
+            success: true,
+            data: {
+              message: `插件 ${action} 功能開發中`,
+              plugin
+            }
+          };
+
+        default:
+          return { success: false, error: `未知的插件操作: ${action}` };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `插件操作失敗: ${error instanceof Error ? error.message : String(error)}`
+      };
     }
   }
 }
