@@ -1,6 +1,19 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@core': '/Users/lova/git/vibe/agent-ide/src/core',
+      '@infrastructure': '/Users/lova/git/vibe/agent-ide/src/infrastructure',
+      '@plugins': '/Users/lova/git/vibe/agent-ide/src/plugins',
+      '@interfaces': '/Users/lova/git/vibe/agent-ide/src/interfaces',
+      '@application': '/Users/lova/git/vibe/agent-ide/src/application',
+      '@shared': '/Users/lova/git/vibe/agent-ide/src/shared',
+      '@shared/types': '/Users/lova/git/vibe/agent-ide/src/shared/types/index',
+      '@shared/errors': '/Users/lova/git/vibe/agent-ide/src/shared/errors/index',
+      '@shared/utils': '/Users/lova/git/vibe/agent-ide/src/shared/utils/index'
+    }
+  },
   test: {
     globals: true,
     environment: 'node',

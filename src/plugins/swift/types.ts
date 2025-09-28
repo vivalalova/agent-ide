@@ -3,8 +3,8 @@
  * 定義 Swift Parser 專用的資料結構和工具函式
  */
 
-import type { AST, Symbol, ASTNode, ASTMetadata, Position, Range, Location, Scope } from '../../shared/types/index.js';
-import { SymbolType, createSymbol, createScope, createPosition, createRange as createCoreRange } from '../../shared/types/index.js';
+import type { AST, Symbol, ASTNode, ASTMetadata, Position, Range, Location, Scope } from '@shared/types/index.js';
+import { SymbolType, createSymbol, createScope, createPosition, createRange as createCoreRange } from '@shared/types/index.js';
 
 /**
  * Swift AST 節點型別

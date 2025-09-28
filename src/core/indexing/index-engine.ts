@@ -9,7 +9,7 @@ import { glob } from 'glob';
 import { createHash } from 'crypto';
 import type { Stats } from 'fs';
 
-import type { Symbol, SymbolType } from '../../shared/types';
+import type { Symbol, SymbolType } from '@shared/types';
 import type {
   IndexConfig,
   IndexStats,
@@ -28,7 +28,7 @@ import {
 
 import { FileIndex } from './file-index';
 import { SymbolIndex } from './symbol-index';
-import { ParserRegistry } from '../../infrastructure/parser';
+import { ParserRegistry } from '@infrastructure/parser';
 
 /**
  * 索引引擎類別

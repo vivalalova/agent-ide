@@ -7,7 +7,7 @@ import type { ParserPlugin } from './interface';
 import { getFileExtension } from './interface';
 import type { ParserRegistry } from './registry';
 import type { ParserOptions } from './types';
-import { ParserFactoryError } from '../../shared/errors';
+import { ParserFactoryError } from '@shared/errors';
 
 /**
  * 延遲載入器函式類型

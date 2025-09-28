@@ -9,7 +9,7 @@ import {
   DuplicateParserError,
   ParserNotFoundError,
   ParserInitializationError
-} from '../../shared/errors';
+} from '@shared/errors';
 
 /**
  * Parser 資訊

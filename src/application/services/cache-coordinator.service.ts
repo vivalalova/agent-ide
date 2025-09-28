@@ -3,10 +3,10 @@
  * 統一管理各模組的快取策略，提供全域和模組級別的快取失效、預熱和監控功能
  */
 
-import { CacheManager } from '../../infrastructure/cache/cache-manager.js';
+import { CacheManager } from '@infrastructure/cache/cache-manager.js';
 import { EventBus } from '../events/event-bus.js';
 import { EventPriority, BaseEvent } from '../events/event-types.js';
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import type {
   ICacheCoordinator,
   CacheStrategy,

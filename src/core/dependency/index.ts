@@ -38,8 +38,8 @@ export {
 } from './types';
 
 // 重新匯出共享型別
-export type { Dependency } from '../../shared/types';
-export { DependencyType } from '../../shared/types';
+export type { Dependency } from '@shared/types';
+export { DependencyType } from '@shared/types';
 
 /**
  * 建立依賴分析器的便利函式

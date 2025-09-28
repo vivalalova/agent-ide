@@ -2,7 +2,7 @@
  * 依賴關係分析相關型別定義
  */
 
-import { Dependency } from '../../shared/types';
+import { Dependency } from '@shared/types';
 
 /**
  * 檔案依賴資訊

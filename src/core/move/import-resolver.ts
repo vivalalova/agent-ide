@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from './types';
-import { Position, createPosition, createRange } from '../../shared/types/core';
+import { Position, createPosition, createRange } from '@shared/types/core';
 
 export class ImportResolver {
   private readonly config: ImportResolverConfig;

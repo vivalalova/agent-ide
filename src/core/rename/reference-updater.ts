@@ -10,8 +10,8 @@ import {
   SymbolReference,
   RenameOperation
 } from './types';
-import { Position, Range, Location } from '../../shared/types/core';
-import { Symbol } from '../../shared/types/symbol';
+import { Position, Range, Location } from '@shared/types/core';
+import { Symbol } from '@shared/types/symbol';
 
 /**
  * 引用更新器類別

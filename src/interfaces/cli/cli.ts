@@ -4,17 +4,17 @@
  */
 
 import { Command } from 'commander';
-import { IndexEngine } from '../../core/indexing/index-engine.js';
-import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
-import { RenameEngine } from '../../core/rename/rename-engine.js';
-import { ReferenceUpdater } from '../../core/rename/reference-updater.js';
-import { ImportResolver, MoveService } from '../../core/move/index.js';
-import { SearchService } from '../../core/search/service.js';
-import { createIndexConfig } from '../../core/indexing/types.js';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import { TypeScriptParser } from '../../plugins/typescript/parser.js';
-import { JavaScriptParser } from '../../plugins/javascript/parser.js';
-import { SwiftParser } from '../../plugins/swift/parser.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { ReferenceUpdater } from '@core/rename/reference-updater.js';
+import { ImportResolver, MoveService } from '@core/move/index.js';
+import { SearchService } from '@core/search/service.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { TypeScriptParser } from '@plugins/typescript/parser.js';
+import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { SwiftParser } from '@plugins/swift/parser.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

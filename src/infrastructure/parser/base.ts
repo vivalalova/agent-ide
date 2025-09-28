@@ -3,8 +3,8 @@
  * 提供 Parser 插件的基礎實作和通用功能
  */
 
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types';
-import { isPosition } from '../../shared/types';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types';
+import { isPosition } from '@shared/types';
 import type { ParserPlugin } from './interface';
 import type {
   CodeEdit,

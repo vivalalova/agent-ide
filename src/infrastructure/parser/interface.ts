@@ -3,7 +3,7 @@
  * 定義所有 Parser 插件必須實作的契約
  */
 
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types';
 import type { CodeEdit, Definition, Usage, ValidationResult } from './types';
 
 /**

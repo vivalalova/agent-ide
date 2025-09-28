@@ -3,7 +3,7 @@
  * 提供工作流程基礎架構和共用功能
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import type {
   Workflow,
   WorkflowStep,

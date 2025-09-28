@@ -3,7 +3,7 @@
  * 管理程式碼符號的索引和查詢功能
  */
 
-import type { Symbol, Scope, SymbolType } from '../../shared/types';
+import type { Symbol, Scope, SymbolType } from '@shared/types';
 import type {
   FileInfo,
   SymbolIndexEntry,

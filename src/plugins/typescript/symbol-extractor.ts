@@ -8,12 +8,12 @@ import type {
   Symbol,
   Scope,
   ScopeType
-} from '../../shared/types';
+} from '@shared/types';
 import {
   SymbolType,
   createSymbol,
   createScope
-} from '../../shared/types';
+} from '@shared/types';
 import {
   TypeScriptAST,
   TypeScriptASTNode,

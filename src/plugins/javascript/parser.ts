@@ -19,7 +19,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '../../infrastructure/parser';
+} from '@infrastructure/parser';
 import type {
   AST,
   Symbol,
@@ -27,7 +27,7 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types';
+} from '@shared/types';
 import {
   createAST,
   createASTMetadata,
@@ -37,7 +37,7 @@ import {
   createSymbol,
   createReference,
   createDependency
-} from '../../shared/types';
+} from '@shared/types';
 import {
   JavaScriptAST,
   JavaScriptASTNode,

@@ -3,7 +3,7 @@
  * 提供統一的錯誤處理、重試機制和錯誤恢復功能
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import { EventBus } from '../events/event-bus.js';
 import { EventPriority } from '../events/event-types.js';
 import type {

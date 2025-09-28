@@ -3,7 +3,7 @@
  * 提供工作流程執行、暫停、恢復、回滾等功能
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import { EventBus } from '../events/event-bus.js';
 import { EventPriority } from '../events/event-types.js';
 import { ErrorHandlerService } from './error-handler.service.js';

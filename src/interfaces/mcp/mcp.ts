@@ -3,12 +3,12 @@
  * 提供給 Claude Code 等 AI 工具使用的 MCP 工具
  */
 
-import { IndexEngine } from '../../core/indexing/index-engine';
-import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer';
-import { RenameEngine } from '../../core/rename/rename-engine';
-import { ImportResolver } from '../../core/move/index.js';
-import { createIndexConfig } from '../../core/indexing/types';
-import { ParserRegistry } from '../../infrastructure/parser/registry';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { ImportResolver } from '@core/move/index.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 // MCP 工具介面定義
 export interface MCPTool {

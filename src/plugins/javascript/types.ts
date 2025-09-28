@@ -10,9 +10,9 @@ import type {
   Symbol,
   Reference,
   Dependency
-} from '../../shared/types';
-import { SymbolType, DependencyType, ReferenceType } from '../../shared/types';
-import type { CodeEdit } from '../../infrastructure/parser/types';
+} from '@shared/types';
+import { SymbolType, DependencyType, ReferenceType } from '@shared/types';
+import type { CodeEdit } from '@infrastructure/parser/types';
 import * as babel from '@babel/types';
 import type { ParseResult } from '@babel/parser';
 

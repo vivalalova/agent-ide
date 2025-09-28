@@ -16,8 +16,8 @@ import {
   createRenameOperation,
   createConflictInfo
 } from './types';
-import { createRange, createPosition } from '../../shared/types/core';
-import { Symbol } from '../../shared/types/symbol';
+import { createRange, createPosition } from '@shared/types/core';
+import { Symbol } from '@shared/types/symbol';
 import { ScopeAnalyzer } from './scope-analyzer';
 import { ReferenceUpdater } from './reference-updater';
 

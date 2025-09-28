@@ -3,7 +3,7 @@
  * 包含 Parser 插件系統所需的所有型別介面
  */
 
-import { Range, Location } from '../../shared/types';
+import { Range, Location } from '@shared/types';
 
 /**
  * 程式碼編輯操作
