@@ -110,7 +110,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
   /**
    * 恢復工作流程
    */
-  async resume(workflowId: string): Promise<void> {
+  async resume<T>(workflowId: string): Promise<WorkflowResult<T>> {
     const workflowState = this.activeWorkflows.get(workflowId);
     if (!workflowState) {
       throw new WorkflowError(`Workflow not found: ${workflowId}`);
@@ -128,7 +128,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
     if (!workflow) {
       throw new WorkflowError(`Workflow definition not found: ${workflowState.workflowId}`);
     }
-    await this.continueExecution(workflow, workflowState);
+    return await this.continueExecution<T>(workflow as Workflow<T>, workflowState);
   }
 
   /**

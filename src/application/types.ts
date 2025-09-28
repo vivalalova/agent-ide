@@ -244,7 +244,7 @@ export interface IModuleCoordinatorService {
 export interface IWorkflowEngine {
   execute<T>(workflow: Workflow<T>): Promise<WorkflowResult<T>>;
   pause(workflowId: string): Promise<void>;
-  resume(workflowId: string): Promise<void>;
+  resume<T>(workflowId: string): Promise<WorkflowResult<T>>;
   rollback(workflowId: string, stepId?: string): Promise<void>;
   getStatus(workflowId: string): Promise<WorkflowStatus>;
 }
