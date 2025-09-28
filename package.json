@@ -31,6 +31,12 @@
   "author": "Agent IDE Team",
   "license": "MIT",
   "devDependencies": {
+    "@babel/generator": "^7.28.3",
+    "@babel/parser": "^7.28.4",
+    "@babel/traverse": "^7.28.4",
+    "@babel/types": "^7.28.4",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__traverse": "^7.28.0",
     "@types/node": "^24.3.1",
     "@vitest/coverage-v8": "^2.1.9",
     "chokidar": "^4.0.3",
