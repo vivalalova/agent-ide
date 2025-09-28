@@ -32,6 +32,7 @@ import {
   DependencyType,
   createDependency,
   createPosition,
+  createLocation,
   createRange as createCoreRange
 } from '../../shared/types/index.js';
 import {
@@ -135,9 +136,9 @@ export class SwiftParser implements ParserPlugin {
         const classMatch = line.match(/class\s+(\w+)/);
         if (classMatch) {
           const name = classMatch[1];
-          const nameStartColumn = line.indexOf(name);
-          const start = createPosition(i + 1, nameStartColumn, globalOffset + nameStartColumn);
-          const end = createPosition(i + 1, nameStartColumn + name.length, globalOffset + nameStartColumn + name.length);
+          const nameStartColumn = Math.max(0, line.indexOf(name));
+          const start = createPosition(i + 1, nameStartColumn + 1, globalOffset + nameStartColumn);
+          const end = createPosition(i + 1, nameStartColumn + name.length + 1, globalOffset + nameStartColumn + name.length);
           const range = createCoreRange(start, end);
 
           const classNode = createSwiftASTNode(SwiftNodeType.ClassDeclaration, range);
@@ -150,9 +151,9 @@ export class SwiftParser implements ParserPlugin {
         const structMatch = line.match(/struct\s+(\w+)/);
         if (structMatch) {
           const name = structMatch[1];
-          const nameStartColumn = line.indexOf(name);
-          const start = createPosition(i + 1, nameStartColumn, globalOffset + nameStartColumn);
-          const end = createPosition(i + 1, nameStartColumn + name.length, globalOffset + nameStartColumn + name.length);
+          const nameStartColumn = Math.max(0, line.indexOf(name));
+          const start = createPosition(i + 1, nameStartColumn + 1, globalOffset + nameStartColumn);
+          const end = createPosition(i + 1, nameStartColumn + name.length + 1, globalOffset + nameStartColumn + name.length);
           const range = createCoreRange(start, end);
 
           const structNode = createSwiftASTNode(SwiftNodeType.StructDeclaration, range);
@@ -165,9 +166,9 @@ export class SwiftParser implements ParserPlugin {
         const funcMatch = line.match(/func\s+(\w+)/);
         if (funcMatch) {
           const name = funcMatch[1];
-          const nameStartColumn = line.indexOf(name);
-          const start = createPosition(i + 1, nameStartColumn, globalOffset + nameStartColumn);
-          const end = createPosition(i + 1, nameStartColumn + name.length, globalOffset + nameStartColumn + name.length);
+          const nameStartColumn = Math.max(0, line.indexOf(name));
+          const start = createPosition(i + 1, nameStartColumn + 1, globalOffset + nameStartColumn);
+          const end = createPosition(i + 1, nameStartColumn + name.length + 1, globalOffset + nameStartColumn + name.length);
           const range = createCoreRange(start, end);
 
           const funcNode = createSwiftASTNode(SwiftNodeType.FunctionDeclaration, range);
@@ -180,9 +181,9 @@ export class SwiftParser implements ParserPlugin {
         const varMatch = line.match(/(?:var|let)\s+(\w+)/);
         if (varMatch) {
           const name = varMatch[1];
-          const nameStartColumn = line.indexOf(name);
-          const start = createPosition(i + 1, nameStartColumn, globalOffset + nameStartColumn);
-          const end = createPosition(i + 1, nameStartColumn + name.length, globalOffset + nameStartColumn + name.length);
+          const nameStartColumn = Math.max(0, line.indexOf(name));
+          const start = createPosition(i + 1, nameStartColumn + 1, globalOffset + nameStartColumn);
+          const end = createPosition(i + 1, nameStartColumn + name.length + 1, globalOffset + nameStartColumn + name.length);
           const range = createCoreRange(start, end);
 
           const varNode = createSwiftASTNode(SwiftNodeType.VariableDeclaration, range);
@@ -195,9 +196,9 @@ export class SwiftParser implements ParserPlugin {
         const importMatch = line.match(/import\s+(\w+)/);
         if (importMatch) {
           const name = importMatch[1];
-          const nameStartColumn = line.indexOf(name);
-          const start = createPosition(i + 1, nameStartColumn, globalOffset + nameStartColumn);
-          const end = createPosition(i + 1, nameStartColumn + name.length, globalOffset + nameStartColumn + name.length);
+          const nameStartColumn = Math.max(0, line.indexOf(name));
+          const start = createPosition(i + 1, nameStartColumn + 1, globalOffset + nameStartColumn);
+          const end = createPosition(i + 1, nameStartColumn + name.length + 1, globalOffset + nameStartColumn + name.length);
           const range = createCoreRange(start, end);
 
           const importNode = createSwiftASTNode(SwiftNodeType.Import, range);
@@ -211,9 +212,12 @@ export class SwiftParser implements ParserPlugin {
     }
 
     const rootStart = createPosition(1, 1, 0);
-    const rootEnd = createPosition(lines.length, lines[lines.length - 1]?.length || 0, code.length);
+    const rootEnd = createPosition(lines.length, Math.max(1, lines[lines.length - 1]?.length || 1), code.length);
     const rootRange = createCoreRange(rootStart, rootEnd);
     const rootNode = createSwiftASTNode(SwiftNodeType.Unknown, rootRange, children);
+
+    // 設定根節點的源代碼
+    rootNode.properties.code = codeForExtraction;
 
     // 設定父子關係
     for (const child of children) {
@@ -262,7 +266,7 @@ export class SwiftParser implements ParserPlugin {
     if (!name) return null;
 
     const symbolType = this.nodeTypeToSymbolType(node.swiftType);
-    const location = { filePath: sourceFile, range: node.range };
+    const location = createLocation(sourceFile, node.range);
 
     return createSwiftSymbol(name, symbolType, location, node);
   }
@@ -364,10 +368,57 @@ export class SwiftParser implements ParserPlugin {
       type: ReferenceType.Definition
     });
 
-    // 基本的文字匹配查找引用（暫時實作）
+    // 基本的文字匹配查找引用
     const symbolName = symbol.name;
-    // 這裡應該實作真正的語意引用查找
-    // 暫時返回基本的定義引用
+
+    // 檢查所有子節點的代碼
+    let sourceCode = swiftAST.root.properties.code;
+    if (!sourceCode) {
+      // 如果根節點沒有代碼，嘗試從子節點獲取
+      for (const child of swiftAST.root.children) {
+        if ((child as SwiftASTNode).properties.code) {
+          sourceCode = (child as SwiftASTNode).properties.code;
+          break;
+        }
+      }
+    }
+
+    if (sourceCode) {
+      const lines = sourceCode.split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        let index = 0;
+
+        // 在每一行中查找符號名稱的所有出現
+        while ((index = line.indexOf(symbolName, index)) !== -1) {
+          // 檢查是否是完整的標識符（不是其他標識符的一部分）
+          const beforeChar = index > 0 ? line[index - 1] : ' ';
+          const afterChar = index + symbolName.length < line.length ? line[index + symbolName.length] : ' ';
+
+          if (!/\w/.test(beforeChar) && !/\w/.test(afterChar)) {
+            const start = createPosition(i + 1, index + 1, 0); // 行和列都是1-based
+            const end = createPosition(i + 1, index + symbolName.length + 1, 0);
+            const range = createCoreRange(start, end);
+
+            // 檢查是否與定義位置相同（避免重複）
+            const isDuplicate =
+              range.start.line === symbol.location.range.start.line &&
+              range.start.column === symbol.location.range.start.column;
+
+            if (!isDuplicate) {
+              references.push({
+                symbol,
+                location: { filePath: swiftAST.sourceFile, range },
+                type: ReferenceType.Usage
+              });
+            }
+          }
+
+          index += symbolName.length;
+        }
+      }
+    }
 
     return references;
   }
@@ -470,15 +521,40 @@ export class SwiftParser implements ParserPlugin {
    * 查找定義
    */
   async findDefinition(ast: AST, position: Position): Promise<Definition | null> {
-    const symbol = await this.findSymbolAtPosition(ast, position);
-    if (!symbol) {
+    // 先檢查位置是否包含有效的標識符
+    const identifierAtPosition = this.extractIdentifierAtPosition(ast, position);
+
+    // 如果位置沒有標識符，直接返回 null
+    if (!identifierAtPosition) {
       return null;
     }
 
-    const swiftSymbol = symbol as SwiftSymbol;
-    const kind = this.swiftSymbolTypeToDefinitionKind(swiftSymbol.swiftType);
+    // 搜索匹配的定義符號
+    const symbols = await this.extractSymbols(ast);
 
-    return createDefinition(symbol.location, kind);
+    // 優先選擇宣告型別的符號
+    for (const sym of symbols) {
+      if (sym.name === identifierAtPosition) {
+        const swiftSym = sym as SwiftSymbol;
+        if (swiftSym.swiftType === SwiftSymbolType.Class ||
+            swiftSym.swiftType === SwiftSymbolType.Struct ||
+            swiftSym.swiftType === SwiftSymbolType.Function) {
+          const kind = this.swiftSymbolTypeToDefinitionKind(swiftSym.swiftType);
+          return createDefinition(sym.location, kind);
+        }
+      }
+    }
+
+    // 如果沒有找到宣告型別，搜索任何匹配的符號
+    for (const sym of symbols) {
+      if (sym.name === identifierAtPosition) {
+        const swiftSym = sym as SwiftSymbol;
+        const kind = this.swiftSymbolTypeToDefinitionKind(swiftSym.swiftType);
+        return createDefinition(sym.location, kind);
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -531,10 +607,6 @@ export class SwiftParser implements ParserPlugin {
       throw new Error('程式碼內容不能為 null 或 undefined');
     }
 
-    if (!code.trim()) {
-      throw new Error('程式碼內容不能為空');
-    }
-
     if (!filePath || !filePath.trim()) {
       throw new Error('檔案路徑不能為空');
     }
@@ -553,42 +625,54 @@ export class SwiftParser implements ParserPlugin {
   private async findSymbolAtPosition(ast: AST, position: Position): Promise<Symbol | null> {
     const symbols = await this.extractSymbols(ast);
 
-    // 查找包含該位置的符號
+    // 查找包含該位置的符號，按照範圍大小排序（優先選擇更精確的符號）
+    const matchingSymbols: Symbol[] = [];
     for (const symbol of symbols) {
       if (this.isPositionInRange(position, symbol.location.range)) {
-        return symbol;
+        matchingSymbols.push(symbol);
       }
     }
 
-    // 如果找不到精確匹配，嘗試找最近的符號
-    let nearestSymbol: Symbol | null = null;
-    let nearestDistance = Infinity;
+    if (matchingSymbols.length > 0) {
+      // 按照範圍大小排序，小範圍優先（更精確）
+      matchingSymbols.sort((a, b) => {
+        const aSize = (a.location.range.end.line - a.location.range.start.line) * 100 +
+                     (a.location.range.end.column - a.location.range.start.column);
+        const bSize = (b.location.range.end.line - b.location.range.start.line) * 100 +
+                     (b.location.range.end.column - b.location.range.start.column);
+        return aSize - bSize;
+      });
+      return matchingSymbols[0];
+    }
 
-    for (const symbol of symbols) {
-      const range = symbol.location.range;
-      // 計算位置到符號範圍的距離
-      const lineDistance = Math.min(
-        Math.abs(position.line - range.start.line),
-        Math.abs(position.line - range.end.line)
-      );
-      const colDistance = Math.min(
-        Math.abs(position.column - range.start.column),
-        Math.abs(position.column - range.end.column)
-      );
-      const distance = lineDistance * 100 + colDistance; // 優先考慮行距離
+    // 如果沒有精確匹配，搜索相同行上離目標位置最近的符號
+    const sameLine = symbols.filter(s =>
+      s.location.range.start.line === position.line ||
+      s.location.range.end.line === position.line
+    );
 
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestSymbol = symbol;
+    if (sameLine.length > 0) {
+      let nearest = sameLine[0];
+      let minDistance = Math.abs(nearest.location.range.start.column - position.column);
+
+      for (const symbol of sameLine) {
+        const distance = Math.min(
+          Math.abs(symbol.location.range.start.column - position.column),
+          Math.abs(symbol.location.range.end.column - position.column)
+        );
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = symbol;
+        }
+      }
+
+      // 如果距離合理（在同一行內），返回該符號
+      if (minDistance <= 20) {
+        return nearest;
       }
     }
 
-    // 如果距離太遠，返回 null
-    if (nearestDistance > 200) {
-      return null;
-    }
-
-    return nearestSymbol;
+    return null;
   }
 
   private isPositionInRange(position: Position, range: Range): boolean {
@@ -605,6 +689,54 @@ export class SwiftParser implements ParserPlugin {
     }
 
     return true;
+  }
+
+  /**
+   * 從位置提取標識符名稱
+   */
+  private extractIdentifierAtPosition(ast: AST, position: Position): string | null {
+    const swiftAST = ast as SwiftAST;
+
+    // 從 AST 的源文件中提取標識符
+    if (swiftAST.root.properties.code) {
+      const lines = swiftAST.root.properties.code.split('\n');
+      const targetLine = lines[position.line - 1]; // position.line 是 1-based
+
+      if (targetLine) {
+        // 在目標列周圍查找標識符
+        const beforeCursor = targetLine.substring(0, position.column - 1); // position.column 也是 1-based
+        const afterCursor = targetLine.substring(position.column - 1);
+
+        // 如果當前位置是空格，嘗試跳過前導空格找到下一個標識符
+        let adjustedAfterCursor = afterCursor;
+        let spaceOffset = 0;
+        while (spaceOffset < afterCursor.length && /\s/.test(afterCursor[spaceOffset])) {
+          spaceOffset++;
+        }
+        if (spaceOffset > 0) {
+          adjustedAfterCursor = afterCursor.substring(spaceOffset);
+        }
+
+        // 向前查找標識符的開始
+        let start = beforeCursor.length - 1;
+        while (start >= 0 && /\w/.test(beforeCursor[start])) {
+          start--;
+        }
+        start++; // 調整到標識符的第一個字符
+
+        // 向後查找標識符的結束
+        let end = 0;
+        while (end < adjustedAfterCursor.length && /\w/.test(adjustedAfterCursor[end])) {
+          end++;
+        }
+
+        // 提取標識符
+        const identifier = beforeCursor.substring(start) + adjustedAfterCursor.substring(0, end);
+        return identifier.match(/^\w+$/) ? identifier : null;
+      }
+    }
+
+    return null;
   }
 
   private swiftSymbolTypeToDefinitionKind(symbolType: SwiftSymbolType): DefinitionKind {
