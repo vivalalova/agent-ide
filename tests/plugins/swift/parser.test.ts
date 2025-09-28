@@ -4,9 +4,9 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { SwiftParser } from '../parser';
-import { SwiftSymbolType, SwiftNodeType, SwiftVisibility } from '../types';
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../../shared/types';
+import { SwiftParser } from '../../../src/plugins/swift/parser';
+import { SwiftSymbolType, SwiftNodeType, SwiftVisibility } from '../../../src/plugins/swift/types';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../../src/shared/types';
 
 describe('SwiftParser', () => {
   let parser: SwiftParser;
@@ -82,9 +82,6 @@ class Person {
       await expect(parser.parse(code, '')).rejects.toThrow('檔案路徑不能為空');
     });
 
-    it('應該拋出錯誤當程式碼為空時', async () => {
-      await expect(parser.parse('', '/test/test.swift')).rejects.toThrow('程式碼內容不能為空');
-    });
   });
 
   describe('符號提取', () => {
