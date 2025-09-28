@@ -384,10 +384,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         testFunc();
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 2, column: 8 }; // 呼叫位置
       const definition = await parser.findDefinition(ast, position);
-      
+
       expect(definition).toBeDefined();
       expect(definition!.kind).toBe('function');
       expect(definition!.location.range.start.line).toBe(1);
