@@ -14,10 +14,10 @@ Agent IDE 是一個為 AI 代理設計的程式碼智能工具集，提供高效
 
 - **核心業務層** (7/7 模組): analysis、dependency、indexing、move、refactor、rename、search ✅
 - **基礎設施層**: cache、parser、storage、utils ✅
-- **Parser 插件**: TypeScript ✅、JavaScript/Swift ⏳
+- **Parser 插件**: TypeScript ✅、JavaScript ✅、Swift ✅
 - **介面層**: CLI、MCP ✅
 - **應用服務層**: Application Services ✅
-- **測試**: 69個檔案、1591個測試通過、執行時間 101秒
+- **測試**: 71個檔案、1629個測試通過、執行時間 101秒
 
 ## 開發環境
 
@@ -117,11 +117,11 @@ src/
 - 特性: Program 重用、SourceFile 快取、Watch 模式、增量編譯
 - 檔案: `parser.ts`、`symbol-extractor.ts`、`dependency-analyzer.ts`
 
-## JavaScript Parser ⏳
+## JavaScript Parser ✅
 **技術**: Babel (@babel/parser、traverse、types、generator)
 - 特性: ES2023+支援、JSX/Flow、Decorators、Top-level await
 
-## Swift Parser ⏳
+## Swift Parser ✅
 **技術**: tree-sitter-swift
 - 特性: Swift 5.x、SwiftUI DSL、Async/Await、Actors、Macros
 
