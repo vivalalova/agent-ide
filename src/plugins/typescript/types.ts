@@ -31,6 +31,7 @@ export interface TypeScriptAST extends AST {
   readonly root: TypeScriptASTNode;
   readonly tsSourceFile: ts.SourceFile;
   readonly program?: ts.Program;
+  readonly diagnostics?: ts.Diagnostic[];
 }
 
 /**
@@ -121,7 +122,13 @@ export const SYMBOL_TYPE_MAP: Partial<Record<ts.SyntaxKind, SymbolType>> = {
   [ts.SyntaxKind.PropertyDeclaration]: SymbolType.Variable,
   [ts.SyntaxKind.TypeAliasDeclaration]: SymbolType.Type,
   [ts.SyntaxKind.EnumDeclaration]: SymbolType.Enum,
-  [ts.SyntaxKind.ModuleDeclaration]: SymbolType.Module
+  [ts.SyntaxKind.ModuleDeclaration]: SymbolType.Module,
+  [ts.SyntaxKind.TypeParameter]: SymbolType.Type,
+  [ts.SyntaxKind.Parameter]: SymbolType.Variable,
+  [ts.SyntaxKind.PropertySignature]: SymbolType.Variable,
+  [ts.SyntaxKind.MethodSignature]: SymbolType.Function,
+  [ts.SyntaxKind.GetAccessor]: SymbolType.Function,
+  [ts.SyntaxKind.SetAccessor]: SymbolType.Function
 };
 
 /**
@@ -248,7 +255,10 @@ export function isSymbolDeclaration(node: ts.Node): boolean {
     ts.isTypeAliasDeclaration(node) ||
     ts.isEnumDeclaration(node) ||
     ts.isModuleDeclaration(node) ||
-    ts.isParameter(node)
+    ts.isParameter(node) ||
+    ts.isTypeParameterDeclaration(node) ||
+    ts.isGetAccessor(node) ||
+    ts.isSetAccessor(node)
   );
 }
 
