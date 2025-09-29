@@ -197,6 +197,56 @@ export class ProjectManager {
   }
 
   /**
+   * 複製專案到指定目錄 (E2E 測試使用的別名方法)
+   */
+  async copyProject(sourcePath: string, destinationPath: string): Promise<string> {
+    try {
+      // 檢查來源是否存在
+      await access(sourcePath);
+
+      // 確保目標目錄的父目錄存在
+      await mkdir(dirname(destinationPath), { recursive: true });
+
+      // 複製整個專案
+      await cp(sourcePath, destinationPath, { recursive: true });
+
+      reportMemoryUsage(`ProjectManager ${this.testName}: 複製專案 ${basename(sourcePath)}`);
+
+      return destinationPath;
+    } catch (error) {
+      throw new Error(`複製專案失敗 (${sourcePath} -> ${destinationPath}): ${error}`);
+    }
+  }
+
+  /**
+   * 建立檔案 (兼容性方法)
+   */
+  async createFile(filePath: string, content: string): Promise<void> {
+    const fileDir = dirname(filePath);
+    await mkdir(fileDir, { recursive: true });
+    await writeFile(filePath, content, 'utf-8');
+  }
+
+  /**
+   * 讀取檔案 (兼容性方法 - 直接路徑版本)
+   */
+  async readFileDirectly(filePath: string): Promise<string> {
+    return await readFile(filePath, 'utf-8');
+  }
+
+  /**
+   * 清理目錄 (兼容性方法)
+   */
+  async cleanDirectory(dirPath: string): Promise<void> {
+    try {
+      await rm(dirPath, { recursive: true, force: true });
+      await mkdir(dirPath, { recursive: true });
+    } catch (error) {
+      console.warn(`清理目錄失敗: ${dirPath} - ${error}`);
+    }
+  }
+
+  /**
    * 清理單一專案
    */
   async cleanupProject(projectIdOrPath: string): Promise<void> {

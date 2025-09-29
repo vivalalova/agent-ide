@@ -350,4 +350,21 @@ export class CLIRunner {
   getTestName(): string {
     return this.testName;
   }
+
+  /**
+   * 執行命令（兼容性方法，E2E 測試使用的別名）
+   */
+  async runCommand(command: string | string[], options: CLIRunOptions = {}): Promise<CLIResult> {
+    let args: string[];
+
+    if (typeof command === 'string') {
+      // 解析命令字串為參數陣列
+      args = command.split(' ').filter(arg => arg.trim() !== '');
+    } else {
+      // 直接使用陣列
+      args = command;
+    }
+
+    return this.runCLI(args, options);
+  }
 }
