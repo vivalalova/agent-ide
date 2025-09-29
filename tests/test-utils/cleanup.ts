@@ -5,14 +5,14 @@
 
 export class TestCleanup {
   private static resources: (() => Promise<void> | void)[] = [];
-  
+
   /**
    * 註冊需要清理的資源
    */
   static register(cleanup: () => Promise<void> | void): void {
     this.resources.push(cleanup);
   }
-  
+
   /**
    * 清理所有註冊的資源
    */
@@ -24,16 +24,16 @@ export class TestCleanup {
         console.warn('清理資源時發生錯誤:', error);
       }
     });
-    
+
     await Promise.all(cleanupPromises);
     this.resources.length = 0;
-    
+
     // 強制垃圾回收（如果可用）
     if (global.gc) {
       global.gc();
     }
   }
-  
+
   /**
    * 清理 Node.js 模組快取
    */
@@ -44,7 +44,7 @@ export class TestCleanup {
       }
     });
   }
-  
+
   /**
    * 清理全域變數
    */
@@ -57,21 +57,21 @@ export class TestCleanup {
       }
     });
   }
-  
+
   /**
    * 記憶體使用量報告
    */
   static getMemoryUsage(): NodeJS.MemoryUsage {
     return process.memoryUsage();
   }
-  
+
   /**
    * 記錄記憶體使用量
    */
   static logMemoryUsage(label?: string): void {
     const usage = this.getMemoryUsage();
     const prefix = label ? `[${label}] ` : '';
-    
+
     console.log(`${prefix}記憶體使用量:`);
     console.log(`  RSS: ${(usage.rss / 1024 / 1024).toFixed(2)} MB`);
     console.log(`  Heap Used: ${(usage.heapUsed / 1024 / 1024).toFixed(2)} MB`);
@@ -86,27 +86,27 @@ export class TestCleanup {
 export class TestMemoryMonitor {
   private startUsage: NodeJS.MemoryUsage;
   private testName: string;
-  
+
   constructor(testName: string) {
     this.testName = testName;
     this.startUsage = process.memoryUsage();
   }
-  
+
   /**
    * 檢查記憶體洩漏
    */
   checkMemoryLeak(thresholdMB = 50): boolean {
     const currentUsage = process.memoryUsage();
     const heapDiff = (currentUsage.heapUsed - this.startUsage.heapUsed) / 1024 / 1024;
-    
+
     if (heapDiff > thresholdMB) {
       console.warn(`[${this.testName}] 可能的記憶體洩漏: ${heapDiff.toFixed(2)} MB`);
       return true;
     }
-    
+
     return false;
   }
-  
+
   /**
    * 獲取記憶體增長
    */
@@ -117,7 +117,7 @@ export class TestMemoryMonitor {
     external: number;
   } {
     const currentUsage = process.memoryUsage();
-    
+
     return {
       rss: (currentUsage.rss - this.startUsage.rss) / 1024 / 1024,
       heapUsed: (currentUsage.heapUsed - this.startUsage.heapUsed) / 1024 / 1024,

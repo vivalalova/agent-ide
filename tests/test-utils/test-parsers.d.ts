@@ -25,10 +25,10 @@ declare abstract class BaseTestParser implements ParserPlugin {
  * 測試用 TypeScript Parser
  */
 export declare class TestTypeScriptParser extends BaseTestParser {
-    readonly name = "typescript";
-    readonly version = "1.0.0-test";
-    readonly supportedExtensions: readonly [".ts", ".tsx"];
-    readonly supportedLanguages: readonly ["typescript"];
+    readonly name = 'typescript';
+    readonly version = '1.0.0-test';
+    readonly supportedExtensions: readonly ['.ts', '.tsx'];
+    readonly supportedLanguages: readonly ['typescript'];
     parse(code: string, filePath: string): Promise<AST>;
     extractSymbols(ast: AST): Promise<Symbol[]>;
 }
@@ -36,10 +36,10 @@ export declare class TestTypeScriptParser extends BaseTestParser {
  * 測試用 JavaScript Parser
  */
 export declare class TestJavaScriptParser extends BaseTestParser {
-    readonly name = "javascript";
-    readonly version = "1.0.0-test";
-    readonly supportedExtensions: readonly [".js", ".jsx"];
-    readonly supportedLanguages: readonly ["javascript"];
+    readonly name = 'javascript';
+    readonly version = '1.0.0-test';
+    readonly supportedExtensions: readonly ['.js', '.jsx'];
+    readonly supportedLanguages: readonly ['javascript'];
     parse(code: string, filePath: string): Promise<AST>;
     extractSymbols(ast: AST): Promise<Symbol[]>;
 }
