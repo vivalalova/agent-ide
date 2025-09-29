@@ -4,10 +4,10 @@
  */
 
 // 匯出所有型別
-export * from './types';
+export * from './types/index.js';
 
 // 匯出錯誤處理
-export * from './errors';
+export * from './errors/index.js';
 
 // 常用的重新匯出
 export {
@@ -20,7 +20,7 @@ export {
   isLocation,
   isPositionBefore,
   isPositionInRange
-} from './types/core';
+} from './types/core.js';
 
 export {
   // Symbol 創建函式
@@ -35,7 +35,7 @@ export {
   getScopeDepth,
   isSameScope,
   getScopePath
-} from './types/symbol';
+} from './types/symbol.js';
 
 export {
   // AST 創建函式
@@ -50,7 +50,7 @@ export {
   getNodePath,
   getNodeDepth,
   isNodeAncestorOf
-} from './types/ast';
+} from './types/ast.js';
 
 export {
   // 錯誤處理
@@ -77,4 +77,4 @@ export {
   createError,
   formatError,
   ErrorCodes
-} from './errors';
+} from './errors/index.js';

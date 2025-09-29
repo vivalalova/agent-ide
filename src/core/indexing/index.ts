@@ -4,10 +4,10 @@
  */
 
 // 核心類別
-export { IndexEngine } from './index-engine';
-export { FileIndex } from './file-index';
-export { SymbolIndex } from './symbol-index';
-export { FileWatcher } from './file-watcher';
+export { IndexEngine } from './index-engine.js';
+export { FileIndex } from './file-index.js';
+export { SymbolIndex } from './symbol-index.js';
+export { FileWatcher } from './file-watcher.js';
 
 // 型別定義
 export type {
@@ -26,10 +26,10 @@ export type {
   IndexData,
   StorageStats,
   IndexQuery
-} from './types';
+} from './types.js';
 
 // 列舉
-export { UpdateOperation } from './types';
+export { UpdateOperation } from './types.js';
 
 // 工廠函式
 export {
@@ -38,13 +38,13 @@ export {
   createSearchOptions,
   shouldIndexFile,
   calculateProgress
-} from './types';
+} from './types.js';
 
 // 型別守衛
 export {
   isFileInfo,
   isIndexConfig
-} from './types';
+} from './types.js';
 
 // 檔案監控相關
 export type {
@@ -52,7 +52,7 @@ export type {
   FileChangeEvent,
   BatchChangeItem,
   BatchProcessOptions
-} from './file-watcher';
+} from './file-watcher.js';
 
 /**
  * 建立預設的索引引擎實例

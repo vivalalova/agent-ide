@@ -2,10 +2,10 @@
  * 錯誤處理系統統一匯出
  */
 
-import { Location } from '../types/core';
+import { Location } from '../types/core.js';
 
 // 匯出所有錯誤類別
-export { BaseError, isBaseError } from './base-error';
+export { BaseError, isBaseError } from './base-error.js';
 export {
   ParserError,
   DuplicateParserError,
@@ -19,17 +19,17 @@ export {
   isIncompatibleVersionError,
   isParserInitializationError,
   isParserFactoryError
-} from './parser-error';
-export { FileError, isFileError } from './file-error';
-export { ValidationError, isValidationError } from './validation-error';
-export { ConfigError, isConfigError } from './config-error';
+} from './parser-error.js';
+export { FileError, isFileError } from './file-error.js';
+export { ValidationError, isValidationError } from './validation-error.js';
+export { ConfigError, isConfigError } from './config-error.js';
 
 // 重新匯出類別以方便使用
-import { BaseError } from './base-error';
-import { ParserError } from './parser-error';
-import { FileError } from './file-error';
-import { ValidationError } from './validation-error';
-import { ConfigError } from './config-error';
+import { BaseError } from './base-error.js';
+import { ParserError } from './parser-error.js';
+import { FileError } from './file-error.js';
+import { ValidationError } from './validation-error.js';
+import { ConfigError } from './config-error.js';
 
 /**
  * 錯誤工廠函式選項

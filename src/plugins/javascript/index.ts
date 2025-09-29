@@ -10,7 +10,7 @@ export type {
   JavaScriptSymbol,
   JavaScriptParseOptions,
   BabelPlugin
-} from './types';
+} from './types.js';
 
 // 工具函式
 export {
@@ -31,11 +31,11 @@ export {
   isReservedWord,
   BABEL_NODE_TYPE_MAP,
   BABEL_SYMBOL_TYPE_MAP
-} from './types';
+} from './types.js';
 
 // 主要 Parser 類別
-import { JavaScriptParser } from './parser';
-import type { JavaScriptParseOptions } from './types';
+import { JavaScriptParser } from './parser.js';
+import type { JavaScriptParseOptions } from './types.js';
 export { JavaScriptParser };
 
 // 建立 Parser 實例的工廠函式

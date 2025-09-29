@@ -3,7 +3,7 @@
  * 包含 ASTNode、ASTMetadata、AST 等型別
  */
 
-import { Range, Position, isPositionInRange } from './core';
+import { Range, Position, isPositionInRange } from './core.js';
 
 /**
  * AST 節點

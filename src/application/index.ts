@@ -94,7 +94,7 @@ import { SessionManager } from './services/session-manager.service.js';
 import { CacheCoordinatorService } from './services/cache-coordinator.service.js';
 import { ModuleCoordinatorService } from './services/module-coordinator.service.js';
 import { WorkflowEngineService } from './services/workflow-engine.service.js';
-import { CacheManager } from '@infrastructure/cache/cache-manager.js';
+import { CacheManager } from '../infrastructure/cache/cache-manager.js';
 
 /**
  * 應用服務容器，提供所有服務的統一存取介面

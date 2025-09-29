@@ -3,13 +3,13 @@
  * 使用 Tarjan 算法檢測強連通分量和循環依賴
  */
 
-import type { DependencyGraph } from './dependency-graph';
+import type { DependencyGraph } from './dependency-graph.js';
 import type {
   CircularDependency,
   StronglyConnectedComponent,
   CycleDetectionOptions
-} from './types';
-import { calculateCycleSeverity } from './types';
+} from './types.js';
+import { calculateCycleSeverity } from './types.js';
 
 /**
  * Tarjan 算法的節點狀態

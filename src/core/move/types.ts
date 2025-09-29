@@ -2,7 +2,7 @@
  * Move 模組的核心型別定義
  */
 
-import { Position, Range, Location } from '@shared/types/core';
+import { Position, Range, Location } from '../../shared/types/core.js';
 
 /**
  * 移動操作的型別

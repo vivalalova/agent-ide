@@ -3,9 +3,9 @@
  * 提供 Parser 插件的基礎實作和通用功能
  */
 
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types';
-import { isPosition } from '@shared/types';
-import type { ParserPlugin } from './interface';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
+import { isPosition } from '../../shared/types/index.js';
+import type { ParserPlugin } from './interface.js';
 import type {
   CodeEdit,
   Definition,
@@ -13,8 +13,8 @@ import type {
   ValidationResult,
   ParserOptions,
   ParserCapabilities
-} from './types';
-import { createValidationSuccess as createSuccessResult } from './types';
+} from './types.js';
+import { createValidationSuccess as createSuccessResult } from './types.js';
 
 /**
  * 日誌等級

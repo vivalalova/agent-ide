@@ -2,9 +2,9 @@
  * TypeScript Parser 插件統一匯出
  */
 
-export { TypeScriptParser } from './parser';
-export { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor';
-export { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer';
+export { TypeScriptParser } from './parser.js';
+export { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
+export { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
 
 export type {
   TypeScriptAST,
@@ -12,7 +12,7 @@ export type {
   TypeScriptSymbol,
   TypeScriptParseOptions,
   TypeScriptCompilerOptions
-} from './types';
+} from './types.js';
 
 export {
   DEFAULT_COMPILER_OPTIONS,
@@ -33,4 +33,4 @@ export {
   isValidIdentifier,
   TypeScriptParseError,
   createParseError
-} from './types';
+} from './types.js';

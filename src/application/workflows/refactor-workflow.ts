@@ -4,7 +4,7 @@
  */
 
 import { BaseWorkflow, WorkflowError, type StepContext } from './base-workflow.js';
-import { BaseError } from '@shared/errors/base-error.js';
+import { BaseError } from '../../shared/errors/base-error.js';
 import type {
   IModuleCoordinatorService,
   RefactorOptions,

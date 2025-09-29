@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { PathInfo } from './types';
+import { PathInfo } from './types.js';
 
 /**
  * 路徑工具類別

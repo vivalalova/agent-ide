@@ -7,7 +7,7 @@ import type {
   DependencyNode,
   DependencyEdge,
   TopologicalSortResult
-} from './types';
+} from './types.js';
 
 /**
  * 圖的序列化格式

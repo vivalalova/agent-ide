@@ -20,19 +20,7 @@
     "noImplicitThis": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false,
-    "baseUrl": "src",
-    "paths": {
-      "@core/*": ["core/*"],
-      "@infrastructure/*": ["infrastructure/*"],
-      "@plugins/*": ["plugins/*"],
-      "@interfaces/*": ["interfaces/*"],
-      "@application/*": ["application/*"],
-      "@shared/*": ["shared/*"],
-      "@shared/types": ["shared/types/index"],
-      "@shared/errors": ["shared/errors/index"],
-      "@shared/utils": ["shared/utils/index"]
-    }
+    "exactOptionalPropertyTypes": false
   },
   "include": [
     "src/**/*"

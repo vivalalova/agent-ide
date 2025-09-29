@@ -3,15 +3,15 @@
  */
 
 // 匯出所有接口和型別
-export { ParserPlugin, isParserPlugin, supportsExtension, supportsLanguage, getFileExtension, findPluginForFile } from './interface';
-export type { CodeEdit, Definition, Usage, ValidationResult, ParserOptions, ParserCapabilities, DefinitionKind, UsageKind, ValidationError as ParserValidationError, ValidationWarning } from './types';
-export { createCodeEdit, createDefinition, createUsage, createValidationResult, createValidationSuccess, createValidationFailure, isCodeEdit, isDefinition, isUsage, isValidationResult, isParserCapabilities } from './types';
+export { ParserPlugin, isParserPlugin, supportsExtension, supportsLanguage, getFileExtension, findPluginForFile } from './interface.js';
+export type { CodeEdit, Definition, Usage, ValidationResult, ParserOptions, ParserCapabilities, DefinitionKind, UsageKind, ValidationError as ParserValidationError, ValidationWarning } from './types.js';
+export { createCodeEdit, createDefinition, createUsage, createValidationResult, createValidationSuccess, createValidationFailure, isCodeEdit, isDefinition, isUsage, isValidationResult, isParserCapabilities } from './types.js';
 
 // 匯出基礎實作
-export { BaseParserPlugin } from './base';
+export { BaseParserPlugin } from './base.js';
 
 // 匯出註冊中心和工廠
-export { ParserRegistry } from './registry';
-export type { ParserInfo, ParserRegistrationOptions } from './registry';
-export { ParserFactory } from './factory';
-export type { LazyLoaderFunction } from './factory';
+export { ParserRegistry } from './registry.js';
+export type { ParserInfo, ParserRegistrationOptions } from './registry.js';
+export { ParserFactory } from './factory.js';
+export type { LazyLoaderFunction } from './factory.js';

@@ -15,11 +15,11 @@ import {
   RenameSummary,
   createRenameOperation,
   createConflictInfo
-} from './types';
-import { createRange, createPosition } from '@shared/types/core';
-import { Symbol } from '@shared/types/symbol';
-import { ScopeAnalyzer } from './scope-analyzer';
-import { ReferenceUpdater } from './reference-updater';
+} from './types.js';
+import { createRange, createPosition } from '../../shared/types/core.js';
+import { Symbol } from '../../shared/types/symbol.js';
+import { ScopeAnalyzer } from './scope-analyzer.js';
+import { ReferenceUpdater } from './reference-updater.js';
 
 /**
  * 重新命名引擎類別

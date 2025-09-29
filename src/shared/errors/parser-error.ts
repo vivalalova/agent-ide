@@ -2,8 +2,8 @@
  * Parser 相關錯誤
  */
 
-import { BaseError } from './base-error';
-import { Location } from '../types/core';
+import { BaseError } from './base-error.js';
+import { Location } from '../types/core.js';
 
 /**
  * Parser 錯誤類別

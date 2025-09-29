@@ -3,7 +3,7 @@
  * 管理檔案的索引資訊，包含符號、依賴關係等
  */
 
-import type { Symbol, Dependency } from '@shared/types';
+import type { Symbol, Dependency } from '../../shared/types/index.js';
 import type {
   FileInfo,
   FileIndexEntry,

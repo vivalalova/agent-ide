@@ -3,7 +3,7 @@
  * 包含 SymbolType、Symbol、Reference、Dependency 等型別
  */
 
-import { Location } from './core';
+import { Location } from './core.js';
 
 /**
  * Symbol 類型列舉

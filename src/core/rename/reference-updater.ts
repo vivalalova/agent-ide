@@ -9,9 +9,9 @@ import {
   TextChange,
   SymbolReference,
   RenameOperation
-} from './types';
-import { Position, Range, Location } from '@shared/types/core';
-import { Symbol } from '@shared/types/symbol';
+} from './types.js';
+import { Position, Range, Location } from '../../shared/types/core.js';
+import { Symbol } from '../../shared/types/symbol.js';
 
 /**
  * 引用更新器類別

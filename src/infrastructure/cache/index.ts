@@ -11,8 +11,8 @@
  */
 
 // 核心類別
-export { MemoryCache } from './memory-cache';
-export { CacheManager, type GlobalStats, type BatchOperationResult } from './cache-manager';
+export { MemoryCache } from './memory-cache.js';
+export { CacheManager, type GlobalStats, type BatchOperationResult } from './cache-manager.js';
 
 // 策略相關
 export {
@@ -23,7 +23,7 @@ export {
   RandomStrategy,
   StrategyFactory,
   type CacheStrategy
-} from './strategies';
+} from './strategies.js';
 
 // 型別定義
 export {
@@ -52,7 +52,7 @@ export {
   // 列舉
   EvictionStrategy,
   CacheEventType
-} from './types';
+} from './types.js';
 
 // 常用的預設配置
 export const DEFAULT_CACHE_OPTIONS = {

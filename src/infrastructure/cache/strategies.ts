@@ -1,4 +1,4 @@
-import { EvictionStrategy, type CacheItem } from './types';
+import { EvictionStrategy, type CacheItem } from './types.js';
 
 /**
  * 快取策略介面

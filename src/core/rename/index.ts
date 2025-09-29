@@ -3,9 +3,9 @@
  * 統一匯出重新命名相關的類別和型別
  */
 
-export { RenameEngine } from './rename-engine';
-export { ScopeAnalyzer } from './scope-analyzer';
-export { ReferenceUpdater } from './reference-updater';
+export { RenameEngine } from './rename-engine.js';
+export { ScopeAnalyzer } from './scope-analyzer.js';
+export { ReferenceUpdater } from './reference-updater.js';
 
 export {
   // 型別介面
@@ -33,4 +33,4 @@ export {
 
   // 型別守衛
   isRenameOptions
-} from './types';
+} from './types.js';

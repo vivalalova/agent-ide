@@ -8,12 +8,12 @@ import type {
   Symbol,
   Scope,
   ScopeType
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   SymbolType,
   createSymbol,
   createScope
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptASTNode,
@@ -23,7 +23,7 @@ import {
   getNodeModifiers,
   tsNodeToRange,
   isSymbolDeclaration
-} from './types';
+} from './types.js';
 
 /**
  * TypeScript 符號提取器類別

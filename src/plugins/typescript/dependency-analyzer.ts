@@ -6,11 +6,11 @@
 import * as ts from 'typescript';
 import type {
   Dependency
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   DependencyType,
   createDependency
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptASTNode,
@@ -18,7 +18,7 @@ import {
   getImportedSymbols,
   isRelativePath,
   isDependencyNode
-} from './types';
+} from './types.js';
 
 /**
  * TypeScript 依賴分析器類別

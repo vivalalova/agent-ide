@@ -19,7 +19,7 @@ import type {
 } from '../types.js';
 import type { StateManager } from '../state/state-manager.js';
 import type { EventBus } from '../events/event-bus.js';
-import { BaseError } from '@shared/errors/base-error.js';
+import { BaseError } from '../../shared/errors/base-error.js';
 import { SessionState as SessionStateClass } from '../state/session-state.js';
 
 /**

@@ -1,10 +1,10 @@
-import { MemoryCache } from './memory-cache';
+import { MemoryCache } from './memory-cache.js';
 import {
   type CacheOptions,
   type CacheManagerOptions,
   type CacheEvent,
   type CacheEventListener
-} from './types';
+} from './types.js';
 
 /**
  * 全域統計資訊

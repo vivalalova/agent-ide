@@ -2,8 +2,8 @@
  * Application Services 層型別定義
  */
 
-import type { Position, Range } from '@shared/types/core.js';
-import type { BaseError } from '@shared/errors/base-error.js';
+import type { Position, Range } from '../shared/types/core.js';
+import type { BaseError } from '../shared/errors/base-error.js';
 
 // ============= 模組協調服務型別 =============
 

@@ -19,7 +19,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '@infrastructure/parser';
+} from '../../infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -27,7 +27,7 @@ import type {
   Dependency,
   Position,
   Range
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
@@ -37,7 +37,7 @@ import {
   createSymbol,
   createReference,
   createDependency
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   JavaScriptAST,
   JavaScriptASTNode,
@@ -58,7 +58,7 @@ import {
   getPluginsForFile,
   getScopeType,
   BABEL_SYMBOL_TYPE_MAP
-} from './types';
+} from './types.js';
 
 /**
  * JavaScript Parser 實作

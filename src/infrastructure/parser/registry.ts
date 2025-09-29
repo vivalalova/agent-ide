@@ -3,13 +3,13 @@
  * 負責管理所有 Parser 插件的註冊、查詢和生命週期
  */
 
-import type { ParserPlugin } from './interface';
-import { isParserPlugin } from './interface';
+import type { ParserPlugin } from './interface.js';
+import { isParserPlugin } from './interface.js';
 import {
   DuplicateParserError,
   ParserNotFoundError,
   ParserInitializationError
-} from '@shared/errors';
+} from '../../shared/errors/index.js';
 
 /**
  * Parser 資訊

@@ -3,9 +3,9 @@
  */
 
 // 核心類別
-export { FileSystem } from './file-system';
-export { FileWatcher } from './file-watcher';
-export { PathUtils } from './path-utils';
+export { FileSystem } from './file-system.js';
+export { FileWatcher } from './file-watcher.js';
+export { PathUtils } from './path-utils.js';
 
 // 型別定義
 export type {
@@ -18,7 +18,7 @@ export type {
   PathInfo,
   FileSystemLock,
   AtomicWriteOptions,
-} from './types';
+} from './types.js';
 
 // 錯誤類別
 export {
@@ -28,7 +28,7 @@ export {
   PermissionError,
   DirectoryNotEmptyError,
   FileSystemErrorType,
-} from './types';
+} from './types.js';
 
 // 便利函式
 export const createFileSystem = () => new FileSystem();

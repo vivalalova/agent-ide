@@ -3,13 +3,13 @@
  * 管理程式碼符號的索引和查詢功能
  */
 
-import type { Symbol, Scope, SymbolType } from '@shared/types';
+import type { Symbol, Scope, SymbolType } from '../../shared/types/index.js';
 import type {
   FileInfo,
   SymbolIndexEntry,
   SymbolSearchResult,
   SearchOptions
-} from './types';
+} from './types.js';
 
 /**
  * 符號統計資訊

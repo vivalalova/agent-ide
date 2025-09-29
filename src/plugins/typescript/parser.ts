@@ -16,7 +16,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '@infrastructure/parser';
+} from '../../infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -24,13 +24,13 @@ import type {
   Dependency,
   Position,
   Range
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
   ReferenceType,
   SymbolType
-} from '@shared/types';
+} from '../../shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptASTNode,
@@ -44,10 +44,10 @@ import {
   tsNodeToRange,
   getNodeName,
   isValidIdentifier
-} from './types';
-import { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor';
-import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer';
-import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor';
+} from './types.js';
+import { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
+import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
+import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '../../shared/utils/memory-monitor.js';
 
 /**
  * TypeScript Parser 實作

@@ -3,11 +3,11 @@
  * 負責分析程式碼的作用域結構和符號可見性
  */
 
-import { AST, ASTNode } from '@shared/types/ast';
-import { Position, Range } from '@shared/types/core';
-import { Symbol, SymbolType, createSymbol } from '@shared/types/symbol';
-import { ScopeAnalysisResult, ShadowedVariable, ShadowInfo } from './types';
-import { createLocation, isPositionInRange } from '@shared/types/core';
+import { AST, ASTNode } from '../../shared/types/ast.js';
+import { Position, Range } from '../../shared/types/core.js';
+import { Symbol, SymbolType, createSymbol } from '../../shared/types/symbol.js';
+import { ScopeAnalysisResult, ShadowedVariable, ShadowInfo } from './types.js';
+import { createLocation, isPositionInRange } from '../../shared/types/core.js';
 
 /**
  * 作用域分析器類別

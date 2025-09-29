@@ -2,5 +2,5 @@
  * 事件系統匯出模組
  */
 
-export { EventBus, EventBusError } from './event-bus';
-export * from './event-types';
+export { EventBus, EventBusError } from './event-bus.js';
+export * from './event-types.js';

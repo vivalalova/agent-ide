@@ -3,9 +3,9 @@
  */
 
 // 核心類別
-export { DependencyAnalyzer } from './dependency-analyzer';
-export { DependencyGraph } from './dependency-graph';
-export { CycleDetector } from './cycle-detector';
+export { DependencyAnalyzer } from './dependency-analyzer.js';
+export { DependencyGraph } from './dependency-graph.js';
+export { CycleDetector } from './cycle-detector.js';
 
 // 型別定義
 export type {
@@ -23,7 +23,7 @@ export type {
   CycleDetectionOptions,
   PathResolutionResult,
   DependencyAnalyzerConfig
-} from './types';
+} from './types.js';
 
 // 工廠函式和工具函式
 export {
@@ -35,11 +35,11 @@ export {
   isFileDependencies,
   isProjectDependencies,
   isCircularDependency
-} from './types';
+} from './types.js';
 
 // 重新匯出共享型別
-export type { Dependency } from '@shared/types';
-export { DependencyType } from '@shared/types';
+export type { Dependency } from '../../shared/types/index.js';
+export { DependencyType } from '../../shared/types/index.js';
 
 /**
  * 建立依賴分析器的便利函式

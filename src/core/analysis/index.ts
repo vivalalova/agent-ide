@@ -10,7 +10,7 @@ export {
   CognitiveComplexityAnalyzer,
   type ComplexityResult,
   type ASTNode as ComplexityASTNode
-} from './complexity-analyzer';
+} from './complexity-analyzer.js';
 
 // 死代碼檢測
 export {
@@ -20,7 +20,7 @@ export {
   type UnusedCode,
   type Symbol,
   type Reference
-} from './dead-code-detector';
+} from './dead-code-detector.js';
 
 // 重複程式碼檢測
 export {
@@ -31,7 +31,7 @@ export {
   type Clone,
   type CodeFragment,
   type DetectionConfig
-} from './duplication-detector';
+} from './duplication-detector.js';
 
 // 品質指標分析
 export {
@@ -40,4 +40,4 @@ export {
   CodeSmellDetector,
   type QualityAssessment,
   type CodeSmell
-} from './quality-metrics';
+} from './quality-metrics.js';

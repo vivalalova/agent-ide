@@ -17,7 +17,7 @@ import type {
   PathResolutionResult,
   ExtendedDependencyAnalysisOptions
 } from './types.js';
-import { Dependency, DependencyType } from '@shared/types/index.js';
+import { Dependency, DependencyType } from '../../shared/types/index.js';
 
 /**
  * 快取項目

@@ -15,7 +15,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '@infrastructure/parser/index.js';
+} from '../../infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -23,7 +23,7 @@ import type {
   Dependency,
   Position,
   Range
-} from '@shared/types/index.js';
+} from '../../shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
@@ -34,7 +34,7 @@ import {
   createPosition,
   createLocation,
   createRange as createCoreRange
-} from '@shared/types/index.js';
+} from '../../shared/types/index.js';
 import {
   SwiftAST,
   SwiftASTNode,

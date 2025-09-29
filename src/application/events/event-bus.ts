@@ -4,7 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { BaseError } from '@shared/errors/base-error';
+import { BaseError } from '../../shared/errors/base-error.js';
 import {
   BaseEvent,
   EventHandler,
@@ -14,7 +14,7 @@ import {
   EmitOptions,
   EventPriority,
   EventStats
-} from './event-types';
+} from './event-types.js';
 
 /**
  * EventBus 相關錯誤

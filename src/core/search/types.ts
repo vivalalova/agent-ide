@@ -3,8 +3,8 @@
  * 定義搜尋相關的所有介面和型別
  */
 
-import type { Position, Range } from '@shared/types/index.js';
-import type { Symbol, SymbolType } from '@shared/types/index.js';
+import type { Position, Range } from '../../shared/types/index.js';
+import type { Symbol, SymbolType } from '../../shared/types/index.js';
 
 // ===== 基礎搜尋類型 =====
 

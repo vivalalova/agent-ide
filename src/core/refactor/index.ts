@@ -12,7 +12,7 @@ export {
   type VariableInfo,
   type Range,
   type CodeEdit
-} from './extract-function';
+} from './extract-function.js';
 
 // 函式內聯重構
 export {
@@ -22,7 +22,7 @@ export {
   type InlineConfig,
   type FunctionDefinition,
   type FunctionCall
-} from './inline-function';
+} from './inline-function.js';
 
 // 設計模式重構
 export {
@@ -35,4 +35,4 @@ export {
   type ClassInfo,
   type MethodInfo,
   type PropertyInfo
-} from './design-patterns';
+} from './design-patterns.js';

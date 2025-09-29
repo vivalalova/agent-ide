@@ -6,7 +6,7 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import type { FSWatcher } from 'fs';
-import type { IndexEngine } from './index-engine';
+import type { IndexEngine } from './index-engine.js';
 
 /**
  * 檔案變更類型

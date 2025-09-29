@@ -18,7 +18,7 @@ export {
   escapeRegExp,
   template,
   slugify
-} from './string';
+} from './string.js';
 
 // 陣列工具函式
 export {
@@ -32,7 +32,7 @@ export {
   sortBy,
   shuffle,
   compact
-} from './array';
+} from './array.js';
 
 // 路徑工具函式
 export {
@@ -45,7 +45,7 @@ export {
   isSubPath,
   toUnixPath,
   toWindowsPath
-} from './path';
+} from './path.js';
 
 // 物件工具函式
 export {
@@ -59,7 +59,7 @@ export {
   get,
   has,
   mapValues
-} from './object';
+} from './object.js';
 
 // 異步工具函式
 export {
@@ -73,7 +73,7 @@ export {
   race,
   queue,
   batch
-} from './async';
+} from './async.js';
 
 /**
  * 工具函式分類命名空間
@@ -83,18 +83,18 @@ export {
  *
  * @example
  * ```typescript
- * import { StringUtils, ArrayUtils } from '@/shared/utils';
+ * import { StringUtils, ArrayUtils } from './index.js';
  *
  * const result = StringUtils.camelCase('hello-world');
  * const chunks = ArrayUtils.chunk([1, 2, 3, 4], 2);
  * ```
  */
 
-import * as StringUtils from './string';
-import * as ArrayUtils from './array';
-import * as PathUtils from './path';
-import * as ObjectUtils from './object';
-import * as AsyncUtils from './async';
+import * as StringUtils from './string.js';
+import * as ArrayUtils from './array.js';
+import * as PathUtils from './path.js';
+import * as ObjectUtils from './object.js';
+import * as AsyncUtils from './async.js';
 
 export {
   StringUtils,
