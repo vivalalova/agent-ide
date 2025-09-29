@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import parser from '@typescript-eslint/parser';
+import importPlugin from 'eslint-plugin-import';
 
 export default [
   eslint.configs.recommended,
@@ -35,6 +36,15 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      'import': importPlugin,
+    },
+    settings: {
+      'import/resolver': {
+        'typescript': {
+          alwaysTryTypes: true,
+          project: ['./tsconfig.json', './tests/tsconfig.json'],
+        },
+      },
     },
     rules: {
       // TypeScript 特定規則 - 調整為警告以便漸進式修復
