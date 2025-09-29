@@ -155,23 +155,57 @@ export function withMemoryOptimization<T>(
 
     try {
       const result = await testFn(...args);
-      
+
       if (cleanup) {
+        // 積極清理所有資源
         await TestCleanup.cleanupAll();
+
+        // 清理 ParserRegistry
+        try {
+          const { ParserRegistry } = require('../../src/infrastructure/parser/registry');
+          ParserRegistry.resetInstance();
+        } catch (error) {
+          // 忽略錯誤
+        }
+
+        // 清理 SessionManager 實例
+        try {
+          if (typeof global !== 'undefined' && (global as any).__test_session_managers) {
+            for (const manager of (global as any).__test_session_managers) {
+              if (manager && typeof manager.destroy === 'function') {
+                manager.destroy();
+              }
+            }
+            (global as any).__test_session_managers.length = 0;
+          }
+        } catch (error) {
+          // 忽略錯誤
+        }
       }
-      
+
       if (gc && global.gc) {
-        global.gc();
+        // 多次垃圾回收以確保清理
+        for (let i = 0; i < 3; i++) {
+          global.gc();
+        }
       }
-      
+
       if (memoryMonitor) {
         memoryMonitor.checkMemoryLeak();
       }
-      
+
       return result;
     } catch (error) {
       if (cleanup) {
         await TestCleanup.cleanupAll();
+
+        // 錯誤情況下也要清理
+        try {
+          const { ParserRegistry } = require('../../src/infrastructure/parser/registry');
+          ParserRegistry.resetInstance();
+        } catch (cleanupError) {
+          // 忽略清理錯誤
+        }
       }
       throw error;
     }
