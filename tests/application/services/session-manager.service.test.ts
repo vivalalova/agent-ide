@@ -136,16 +136,17 @@ describe('SessionManager', () => {
       // Act
       await sessionManager.updateSession(session.id, { status: 'inactive' });
 
-      // Assert
-      await new Promise(resolve => setTimeout(resolve, 10)); // 等待事件處理
-      expect(eventSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'session-updated',
-          payload: expect.objectContaining({
-            sessionId: session.id
+      // Assert - 使用 vi.waitFor 替代 setTimeout，增加超時時間
+      await vi.waitFor(() => {
+        expect(eventSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'session-updated',
+            payload: expect.objectContaining({
+              sessionId: session.id
+            })
           })
-        })
-      );
+        );
+      }, { timeout: 5000 });
     });
   });
 

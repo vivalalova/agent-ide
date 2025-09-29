@@ -3,7 +3,7 @@
  * TDD 紅燈階段 - 編寫失敗的測試案例
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TypeScriptParser } from '../../../src/plugins/typescript/parser';
 import type { Position } from '../../../src/shared/types';
 
@@ -12,6 +12,18 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
 
   beforeEach(() => {
     parser = new TypeScriptParser();
+  });
+
+  afterEach(async () => {
+    await parser.dispose();
+
+    // 積極的記憶體清理（TypeScript 測試通常消耗大量記憶體）
+    if (global.gc) {
+      // 多次垃圾回收以確保清理完成
+      for (let i = 0; i < 3; i++) {
+        global.gc();
+      }
+    }
   });
 
   describe('變數重新命名', () => {

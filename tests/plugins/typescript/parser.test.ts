@@ -3,7 +3,7 @@
  * TDD 紅燈階段 - 編寫失敗的測試案例
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TypeScriptParser } from '../../../src/plugins/typescript/parser';
 import type { AST } from '../../../src/shared/types';
 
@@ -12,6 +12,10 @@ describe('TypeScriptParser', () => {
 
   beforeEach(() => {
     parser = new TypeScriptParser();
+  });
+
+  afterEach(async () => {
+    await parser.dispose();
   });
 
   describe('基本資訊', () => {

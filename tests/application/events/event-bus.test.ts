@@ -98,7 +98,7 @@ describe('EventBus', () => {
       };
 
       eventBus.subscribe('async.test', asyncHandler);
-      await eventBus.emit(testEvent);
+      await eventBus.emit(testEvent, { waitForHandlers: true });
       processOrder.push(2);
 
       expect(processOrder).toEqual([1, 2]);
@@ -125,7 +125,7 @@ describe('EventBus', () => {
       eventBus.subscribe('parallel.test', createAsyncHandler(50));
       eventBus.subscribe('parallel.test', createAsyncHandler(50));
 
-      await eventBus.emit(testEvent);
+      await eventBus.emit(testEvent, { waitForHandlers: true });
       const endTime = Date.now();
 
       expect(completedCount).toBe(2);
