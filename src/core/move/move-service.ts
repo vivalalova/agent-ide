@@ -71,7 +71,10 @@ export class MoveService {
         } catch (updateError) {
           // 如果更新 import 失敗，記錄錯誤但仍然回傳 success
           // 因為檔案已經移動成功
-          console.error('更新 import 路徑失敗:', updateError);
+          // 測試環境中靜默處理
+          if (process.env.NODE_ENV !== 'test') {
+            console.error('更新 import 路徑失敗:', updateError);
+          }
           const errorMessage = updateError instanceof Error ? updateError.message : 'Unknown error';
 
           // 如果錯誤訊息包含 "更新檔案" 或其他寫入相關錯誤，表示更新失敗

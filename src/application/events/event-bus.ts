@@ -133,8 +133,8 @@ export class EventBus {
       return;
     }
 
-    // 立即處理普通優先級事件，預設等待處理器完成
-    await this.processEvent(event, { waitForHandlers: true, ...options });
+    // 立即處理普通優先級事件，預設不等待處理器完成以避免超時
+    await this.processEvent(event, { waitForHandlers: false, ...options });
   }
 
   /**
