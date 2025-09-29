@@ -69,7 +69,7 @@ export default defineConfig({
     logHeapUsage: true,
 
     // 報告設定
-    reporters: process.env.CI ? ['dot', 'junit'] : ['default', 'html'],
+    reporters: process.env.CI ? ['dot', 'junit'] : ['default'],
     outputFile: {
       junit: './test-results/e2e-junit.xml',
       html: './test-results/e2e-report.html'
