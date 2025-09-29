@@ -58,6 +58,16 @@ export class SessionManager implements ISessionManager {
       () => this.cleanup().catch(console.error),
       30 * 60 * 1000
     );
+
+    // 在測試環境中註冊到全域清理器
+    if (process.env.NODE_ENV === 'test') {
+      if (typeof global !== 'undefined') {
+        if (!(global as any).__test_session_managers) {
+          (global as any).__test_session_managers = [];
+        }
+        (global as any).__test_session_managers.push(this);
+      }
+    }
   }
 
   /**
@@ -226,6 +236,17 @@ export class SessionManager implements ISessionManager {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
+
+    // 在測試環境中從全域清理器移除
+    if (process.env.NODE_ENV === 'test') {
+      if (typeof global !== 'undefined' && (global as any).__test_session_managers) {
+        const managers = (global as any).__test_session_managers;
+        const index = managers.indexOf(this);
+        if (index !== -1) {
+          managers.splice(index, 1);
+        }
+      }
+    }
   }
 
   /**
@@ -364,7 +385,10 @@ export class SessionManager implements ISessionManager {
       });
     } catch (error) {
       // 事件發送失敗不應該影響主要功能
-      console.warn(`Failed to emit session event: ${eventType}`, error);
+      // 測試環境中靜默處理
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn(`Failed to emit session event: ${eventType}`, error);
+      }
     }
   }
 }
