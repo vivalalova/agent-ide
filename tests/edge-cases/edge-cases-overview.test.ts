@@ -210,11 +210,11 @@ describe('Agent IDE 邊界條件測試總覽', () => {
     Object.entries(exceptionHandlingStrategies).forEach(([layer, config]) => {
       console.log(`\\n${layer}:`);
       console.log(`  策略: ${config.策略}`);
-      console.log(`  方法:`);
+      console.log('  方法:');
       config.方法.forEach((method, index) => {
         console.log(`    ${index + 1}. ${method}`);
       });
-      console.log(`  回應:`);
+      console.log('  回應:');
       config.回應.forEach((response, index) => {
         console.log(`    ${index + 1}. ${response}`);
       });

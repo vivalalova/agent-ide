@@ -24,9 +24,9 @@ describe('物件工具函式', () => {
         },
         hobbies: ['reading', 'swimming']
       };
-      
+
       const cloned = deepClone(original);
-      
+
       expect(cloned).toEqual(original);
       expect(cloned).not.toBe(original);
       expect(cloned.address).not.toBe(original.address);
@@ -36,7 +36,7 @@ describe('物件工具函式', () => {
     it('應該處理陣列', () => {
       const original = [1, { a: 2 }, [3, 4]];
       const cloned = deepClone(original);
-      
+
       expect(cloned).toEqual(original);
       expect(cloned).not.toBe(original);
       expect(cloned[1]).not.toBe(original[1]);
@@ -54,7 +54,7 @@ describe('物件工具函式', () => {
     it('應該處理日期和正則表達式', () => {
       const date = new Date('2023-01-01');
       const regex = /test/gi;
-      
+
       expect(deepClone(date)).toEqual(date);
       expect(deepClone(date)).not.toBe(date);
       expect(deepClone(regex)).toEqual(regex);
@@ -64,7 +64,7 @@ describe('物件工具函式', () => {
     it('應該處理循環引用', () => {
       const obj: any = { name: 'test' };
       obj.self = obj;
-      
+
       const cloned = deepClone(obj);
       expect(cloned.name).toBe('test');
       expect(cloned.self).toBe(cloned);
@@ -81,7 +81,7 @@ describe('物件工具函式', () => {
           d: 3
         }
       };
-      
+
       const source = {
         b: {
           d: 4,
@@ -89,9 +89,9 @@ describe('物件工具函式', () => {
         },
         f: 6
       };
-      
+
       const result = deepMerge(target, source);
-      
+
       expect(result).toEqual({
         a: 1,
         b: {
@@ -106,7 +106,7 @@ describe('物件工具函式', () => {
     it('應該處理陣列合併', () => {
       const target = { arr: [1, 2] };
       const source = { arr: [3, 4] };
-      
+
       const result = deepMerge(target, source);
       expect(result.arr).toEqual([3, 4]);
     });
@@ -117,7 +117,7 @@ describe('物件工具函式', () => {
         { b: { d: 3 } },
         { b: { e: 4 }, f: 5 }
       );
-      
+
       expect(result).toEqual({
         a: 1,
         b: { c: 2, d: 3, e: 4 },
@@ -208,7 +208,7 @@ describe('物件工具函式', () => {
       expect(isEqual(true, true)).toBe(true);
       expect(isEqual(null, null)).toBe(true);
       expect(isEqual(undefined, undefined)).toBe(true);
-      
+
       expect(isEqual(1, 2)).toBe(false);
       expect(isEqual('hello', 'world')).toBe(false);
       expect(isEqual(true, false)).toBe(false);
@@ -218,7 +218,7 @@ describe('物件工具函式', () => {
       const obj1 = { a: 1, b: { c: 2 } };
       const obj2 = { a: 1, b: { c: 2 } };
       const obj3 = { a: 1, b: { c: 3 } };
-      
+
       expect(isEqual(obj1, obj2)).toBe(true);
       expect(isEqual(obj1, obj3)).toBe(false);
     });
@@ -233,7 +233,7 @@ describe('物件工具函式', () => {
       const date1 = new Date('2023-01-01');
       const date2 = new Date('2023-01-01');
       const date3 = new Date('2023-01-02');
-      
+
       expect(isEqual(date1, date2)).toBe(true);
       expect(isEqual(date1, date3)).toBe(false);
     });
@@ -244,7 +244,7 @@ describe('物件工具函式', () => {
       const obj = {};
       set(obj, 'user.name', 'Alice');
       expect(obj).toEqual({ user: { name: 'Alice' } });
-      
+
       set(obj, 'user.age', 30);
       expect(obj).toEqual({ user: { name: 'Alice', age: 30 } });
     });
@@ -253,7 +253,7 @@ describe('物件工具函式', () => {
       const obj = {};
       set(obj, 'users[0].name', 'Alice');
       expect(obj).toEqual({ users: [{ name: 'Alice' }] });
-      
+
       set(obj, 'users[1].name', 'Bob');
       expect(obj).toEqual({ users: [{ name: 'Alice' }, { name: 'Bob' }] });
     });
@@ -285,7 +285,7 @@ describe('物件工具函式', () => {
           { name: 'Charlie' }
         ]
       };
-      
+
       expect(get(obj, 'user.name')).toBe('Alice');
       expect(get(obj, 'user.address.city')).toBe('New York');
       expect(get(obj, 'users[0].name')).toBe('Bob');
@@ -294,7 +294,7 @@ describe('物件工具函式', () => {
 
     it('應該返回預設值', () => {
       const obj = { user: { name: 'Alice' } };
-      
+
       expect(get(obj, 'user.age', 25)).toBe(25);
       expect(get(obj, 'admin.name', 'Admin')).toBe('Admin');
       expect(get(obj, 'nonexistent')).toBe(undefined);
@@ -319,11 +319,11 @@ describe('物件工具函式', () => {
           { name: 'Bob' }
         ]
       };
-      
+
       expect(has(obj, 'user.name')).toBe(true);
       expect(has(obj, 'user.address.city')).toBe(true);
       expect(has(obj, 'users[0].name')).toBe(true);
-      
+
       expect(has(obj, 'user.age')).toBe(false);
       expect(has(obj, 'admin.name')).toBe(false);
       expect(has(obj, 'users[1].name')).toBe(false);
@@ -339,17 +339,17 @@ describe('物件工具函式', () => {
     it('應該映射物件的值', () => {
       const obj = { a: 1, b: 2, c: 3 };
       const result = mapValues(obj, (value, key) => value * 2);
-      
+
       expect(result).toEqual({ a: 2, b: 4, c: 6 });
     });
 
     it('應該傳遞鍵值給回調函式', () => {
       const obj = { first: 'Alice', last: 'Smith' };
       const result = mapValues(obj, (value, key) => `${key}: ${value}`);
-      
-      expect(result).toEqual({ 
-        first: 'first: Alice', 
-        last: 'last: Smith' 
+
+      expect(result).toEqual({
+        first: 'first: Alice',
+        last: 'last: Smith'
       });
     });
 
@@ -361,7 +361,7 @@ describe('物件工具函式', () => {
     it('應該保持物件鍵不變', () => {
       const obj = { a: 1, b: 2 };
       const result = mapValues(obj, value => String(value));
-      
+
       expect(Object.keys(result)).toEqual(['a', 'b']);
       expect(result).toEqual({ a: '1', b: '2' });
     });

@@ -85,7 +85,7 @@ describe('BaseParserPlugin', () => {
     it('extractSymbols 應該有預設實作', async () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.test');
       const symbols = await plugin.extractSymbols(ast);
-      
+
       expect(Array.isArray(symbols)).toBe(true);
       // 預設實作通常返回空陣列
     });
@@ -101,7 +101,7 @@ describe('BaseParserPlugin', () => {
         },
         modifiers: []
       };
-      
+
       const references = await plugin.findReferences(ast, mockSymbol);
       expect(Array.isArray(references)).toBe(true);
     });
@@ -109,7 +109,7 @@ describe('BaseParserPlugin', () => {
     it('extractDependencies 應該有預設實作', async () => {
       const ast = await plugin.parse('import x from "y";', '/test/file.test');
       const dependencies = await plugin.extractDependencies(ast);
-      
+
       expect(Array.isArray(dependencies)).toBe(true);
     });
 
@@ -117,7 +117,7 @@ describe('BaseParserPlugin', () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.test');
       const position: Position = { line: 1, column: 7 };
       const newName = 'newVariable';
-      
+
       const edits = await plugin.rename(ast, position, newName);
       expect(Array.isArray(edits)).toBe(true);
     });
@@ -128,7 +128,7 @@ describe('BaseParserPlugin', () => {
         start: { line: 1, column: 1 },
         end: { line: 1, column: 13 }
       };
-      
+
       const edits = await plugin.extractFunction(ast, selection);
       expect(Array.isArray(edits)).toBe(true);
     });
@@ -136,7 +136,7 @@ describe('BaseParserPlugin', () => {
     it('findDefinition 應該有預設實作', async () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.test');
       const position: Position = { line: 1, column: 7 };
-      
+
       const definition = await plugin.findDefinition(ast, position);
       // 預設實作可能返回 null
       expect(definition === null || (definition && typeof definition === 'object')).toBe(true);
@@ -153,14 +153,14 @@ describe('BaseParserPlugin', () => {
         },
         modifiers: []
       };
-      
+
       const usages = await plugin.findUsages(ast, mockSymbol);
       expect(Array.isArray(usages)).toBe(true);
     });
 
     it('validate 應該有預設實作', async () => {
       const result = await plugin.validate();
-      
+
       expect(result).toBeDefined();
       expect(typeof result.valid).toBe('boolean');
       expect(Array.isArray(result.errors)).toBe(true);
@@ -190,7 +190,7 @@ describe('BaseParserPlugin', () => {
     it('handleError 應該正確處理錯誤', () => {
       const error = new Error('Test error');
       const context = 'test context';
-      
+
       expect(() => plugin.handleError(error, context)).not.toThrow();
     });
 
@@ -226,7 +226,7 @@ describe('BaseParserPlugin', () => {
     it('dispose 後應該將狀態重置', async () => {
       await plugin.initialize();
       expect(plugin.isInitialized()).toBe(true);
-      
+
       await plugin.dispose();
       expect(plugin.isInitialized()).toBe(false);
     });
@@ -254,9 +254,9 @@ describe('BaseParserPlugin', () => {
         strictMode: true,
         allowExperimentalFeatures: false
       };
-      
+
       expect(() => plugin.updateOptions(newOptions)).not.toThrow();
-      
+
       const currentOptions = plugin.getDefaultOptions();
       expect(currentOptions.strictMode).toBe(true);
     });
@@ -264,7 +264,7 @@ describe('BaseParserPlugin', () => {
     it('getCapabilities 應該返回穩定的能力聲明', () => {
       const capabilities1 = plugin.getCapabilities();
       const capabilities2 = plugin.getCapabilities();
-      
+
       expect(capabilities1).toEqual(capabilities2);
     });
   });
@@ -278,7 +278,7 @@ describe('BaseParserPlugin', () => {
 
     it('應該提供檔案路徑驗證', () => {
       expect(typeof plugin.validateFilePath).toBe('function');
-      
+
       expect(plugin.validateFilePath('/valid/path.test')).toBe(true);
       expect(plugin.validateFilePath('')).toBe(false);
       expect(plugin.validateFilePath('invalid-extension.txt')).toBe(false);
@@ -286,17 +286,17 @@ describe('BaseParserPlugin', () => {
 
     it('應該提供程式碼內容驗證', () => {
       expect(typeof plugin.validateCode).toBe('function');
-      
+
       expect(plugin.validateCode('valid code')).toBe(true);
       expect(plugin.validateCode('')).toBe(true); // 空程式碼也是合法的
     });
 
     it('應該提供位置驗證', () => {
       expect(typeof plugin.validatePosition).toBe('function');
-      
+
       const validPosition: Position = { line: 1, column: 1 };
       const invalidPosition: Position = { line: 0, column: 1 };
-      
+
       expect(plugin.validatePosition(validPosition)).toBe(true);
       expect(plugin.validatePosition(invalidPosition)).toBe(false);
     });
@@ -311,11 +311,11 @@ describe('BaseParserPlugin', () => {
 
     it('最小實作的預設方法應該可用', async () => {
       const plugin = new MinimalParserPlugin();
-      
+
       // 這些方法應該有預設實作，不會拋出錯誤
       await expect(plugin.validate()).resolves.not.toThrow();
       await expect(plugin.dispose()).resolves.not.toThrow();
-      
+
       expect(plugin.getDefaultOptions()).toBeDefined();
       expect(plugin.getCapabilities()).toBeDefined();
     });

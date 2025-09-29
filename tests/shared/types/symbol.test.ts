@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { 
+import {
   SymbolType,
   Scope,
   Symbol,
@@ -47,7 +47,7 @@ describe('Symbol 型別系統', () => {
     it('應該能建立具名 scope', () => {
       const parentScope = createScope('global');
       const scope = createScope('function', 'myFunction', parentScope);
-      
+
       expect(scope.type).toBe('function');
       expect(scope.name).toBe('myFunction');
       expect(scope.parent).toEqual(parentScope);
@@ -60,7 +60,7 @@ describe('Symbol 型別系統', () => {
     it('isScope 型別守衛應該正確驗證', () => {
       const validScope = { type: 'global' };
       const invalidScope = { type: 'invalid' };
-      
+
       expect(isScope(validScope)).toBe(true);
       expect(isScope(invalidScope)).toBe(false);
       expect(isScope(null)).toBe(false);
@@ -75,7 +75,7 @@ describe('Symbol 型別系統', () => {
 
     it('應該能建立基本的 Symbol', () => {
       const symbol = createSymbol('myFunction', SymbolType.Function, mockLocation);
-      
+
       expect(symbol.name).toBe('myFunction');
       expect(symbol.type).toBe(SymbolType.Function);
       expect(symbol.location).toEqual(mockLocation);
@@ -92,7 +92,7 @@ describe('Symbol 型別系統', () => {
         scope,
         ['public', 'static']
       );
-      
+
       expect(symbol.name).toBe('method');
       expect(symbol.type).toBe(SymbolType.Function);
       expect(symbol.scope).toEqual(scope);
@@ -106,10 +106,10 @@ describe('Symbol 型別系統', () => {
 
     it('應該拒絕重複的 modifiers', () => {
       expect(() => createSymbol(
-        'test', 
-        SymbolType.Function, 
-        mockLocation, 
-        undefined, 
+        'test',
+        SymbolType.Function,
+        mockLocation,
+        undefined,
         ['public', 'public']
       )).toThrow('Modifiers 不能重複');
     });
@@ -121,7 +121,7 @@ describe('Symbol 型別系統', () => {
         location: mockLocation,
         modifiers: []
       };
-      
+
       const invalidSymbol = {
         name: '',
         type: SymbolType.Function,
@@ -148,7 +148,7 @@ describe('Symbol 型別系統', () => {
       SymbolType.Function,
       createLocation('/test.ts', createRange(createPosition(1, 1), createPosition(1, 10)))
     );
-    
+
     const mockLocation = createLocation(
       '/test.ts',
       createRange(createPosition(5, 1), createPosition(5, 10))
@@ -156,7 +156,7 @@ describe('Symbol 型別系統', () => {
 
     it('應該能建立 Reference', () => {
       const reference = createReference(mockSymbol, mockLocation, ReferenceType.Usage);
-      
+
       expect(reference.symbol).toEqual(mockSymbol);
       expect(reference.location).toEqual(mockLocation);
       expect(reference.type).toBe(ReferenceType.Usage);
@@ -191,7 +191,7 @@ describe('Symbol 型別系統', () => {
         true,
         ['helper', 'formatter']
       );
-      
+
       expect(dependency.path).toBe('./utils');
       expect(dependency.type).toBe(DependencyType.Import);
       expect(dependency.isRelative).toBe(true);
@@ -204,7 +204,7 @@ describe('Symbol 型別系統', () => {
         DependencyType.Import,
         false
       );
-      
+
       expect(dependency.path).toBe('lodash');
       expect(dependency.isRelative).toBe(false);
       expect(dependency.importedSymbols).toEqual([]);
@@ -250,7 +250,7 @@ describe('Symbol 型別系統', () => {
     });
 
     it('應該能檢查兩個 Symbol 是否在同一 Scope', () => {
-      const symbol1 = createSymbol('test1', SymbolType.Variable, 
+      const symbol1 = createSymbol('test1', SymbolType.Variable,
         createLocation('/test.ts', createRange(createPosition(1, 1), createPosition(1, 5))),
         scope2
       );

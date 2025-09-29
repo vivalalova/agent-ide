@@ -79,7 +79,7 @@ class MockTypeScriptParser implements ParserPlugin {
   async parse(code: string, filePath: string): Promise<AST> {
     // 檢查語法錯誤，模擬解析失敗
     if (code.includes('export function broken(') && !code.includes(') {')) {
-      throw new Error(`語法錯誤：函數定義不完整`);
+      throw new Error('語法錯誤：函數定義不完整');
     }
 
     const root = {
@@ -243,7 +243,7 @@ describe('IndexEngine', () => {
       await indexEngine.indexFile('/test/workspace/example.ts');
 
       expect(indexEngine.isIndexed('/test/workspace/example.ts')).toBe(true);
-      
+
       const stats = await indexEngine.getStats();
       expect(stats.totalFiles).toBe(1);
       expect(stats.indexedFiles).toBe(1);
@@ -274,23 +274,23 @@ describe('IndexEngine', () => {
       });
 
       await expect(indexEngine.indexFile('/test/workspace/broken.ts')).rejects.toThrow();
-      
+
       // 檔案應該被標記但不算完全索引
       expect(indexEngine.isIndexed('/test/workspace/broken.ts')).toBe(false);
     });
 
     it('應該能更新已索引的檔案', async () => {
       vol.fromJSON({
-        '/test/workspace/example.ts': `export function oldFunction(): void {}`
+        '/test/workspace/example.ts': 'export function oldFunction(): void {}'
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
-      
+
       let symbols = await indexEngine.findSymbol('oldFunction');
       expect(symbols).toHaveLength(1);
 
       // 更新檔案內容
-      vol.writeFileSync('/test/workspace/example.ts', `export function newFunction(): void {}`);
+      vol.writeFileSync('/test/workspace/example.ts', 'export function newFunction(): void {}');
 
       await indexEngine.updateFile('/test/workspace/example.ts');
 
@@ -303,7 +303,7 @@ describe('IndexEngine', () => {
 
     it('應該能移除檔案', async () => {
       vol.fromJSON({
-        '/test/workspace/example.ts': `export function testFunction(): void {}`
+        '/test/workspace/example.ts': 'export function testFunction(): void {}'
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
@@ -369,7 +369,7 @@ describe('IndexEngine', () => {
 
       // 應該索引 src 目錄下的檔案，但排除測試檔案和 node_modules
       expect(stats.totalFiles).toBeGreaterThan(0);
-      
+
       // 檢查排除檔案是否正確處理
       expect(indexEngine.isIndexed('/test/workspace/test/utils.test.ts')).toBe(false);
       expect(indexEngine.isIndexed('/test/workspace/node_modules/package/index.js')).toBe(false);
@@ -380,7 +380,7 @@ describe('IndexEngine', () => {
 
       const tsFiles = indexEngine.findFilesByExtension('.ts');
       expect(tsFiles.length).toBeGreaterThan(0);
-      
+
       for (const file of tsFiles) {
         expect(file.extension).toBe('.ts');
       }
@@ -431,7 +431,7 @@ describe('IndexEngine', () => {
 
     it('應該能根據名稱查找符號', async () => {
       const results = await indexEngine.findSymbol('add');
-      
+
       expect(results).toHaveLength(1);
       expect(results[0].symbol.name).toBe('add');
       expect(results[0].symbol.type).toBe(SymbolType.Function);
@@ -455,9 +455,9 @@ describe('IndexEngine', () => {
     it('應該支援模糊搜尋', async () => {
       const options = createSearchOptions({ fuzzy: true });
       const results = await indexEngine.searchSymbols('calc', options);
-      
+
       expect(results.length).toBeGreaterThan(0);
-      
+
       // 應該找到 Calculator 類別
       const calculatorResult = results.find(r => r.symbol.name === 'Calculator');
       expect(calculatorResult).toBeDefined();
@@ -477,7 +477,7 @@ describe('IndexEngine', () => {
     it('應該能限制搜尋結果數量', async () => {
       const options = createSearchOptions({ maxResults: 2 });
       const results = await indexEngine.searchSymbols('', options);
-      
+
       expect(results.length).toBeLessThanOrEqual(2);
     });
   });
@@ -509,13 +509,13 @@ describe('IndexEngine', () => {
 
     it('應該追蹤最後更新時間', async () => {
       const beforeTime = new Date();
-      
+
       vol.fromJSON({
-        '/test/workspace/example.ts': `export function test(): void {}`
+        '/test/workspace/example.ts': 'export function test(): void {}'
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
-      
+
       const stats = await indexEngine.getStats();
       expect(stats.lastUpdated.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
     });
@@ -524,7 +524,7 @@ describe('IndexEngine', () => {
   describe('清理功能', () => {
     it('應該能清空所有索引', async () => {
       vol.fromJSON({
-        '/test/workspace/example.ts': `export function test(): void {}`
+        '/test/workspace/example.ts': 'export function test(): void {}'
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
@@ -539,7 +539,7 @@ describe('IndexEngine', () => {
 
     it('清空後應該能重新索引', async () => {
       vol.fromJSON({
-        '/test/workspace/example.ts': `export function test(): void {}`
+        '/test/workspace/example.ts': 'export function test(): void {}'
       });
 
       await indexEngine.indexFile('/test/workspace/example.ts');
@@ -599,9 +599,9 @@ describe('IndexEngine', () => {
 
     it('應該根據副檔名過濾檔案', async () => {
       await indexEngine.indexProject('/test/workspace');
-      
+
       const stats = await indexEngine.getStats();
-      
+
       // 應該只索引 .ts 和 .js 檔案，但排除測試和依賴目錄
       expect(indexEngine.isIndexed('/test/workspace/src/main.ts')).toBe(true);
       expect(indexEngine.isIndexed('/test/workspace/src/utils.js')).toBe(true);
@@ -610,7 +610,7 @@ describe('IndexEngine', () => {
 
     it('應該根據排除模式過濾檔案', async () => {
       await indexEngine.indexProject('/test/workspace');
-      
+
       // 測試檔案和 node_modules 應該被排除
       expect(indexEngine.isIndexed('/test/workspace/test/main.test.ts')).toBe(false);
       expect(indexEngine.isIndexed('/test/workspace/node_modules/lib/index.js')).toBe(false);

@@ -206,7 +206,7 @@ export class MCPClient {
 
     if (!result.success) {
       throw new Error(
-        `MCP 工具調用失敗:\n` +
+        'MCP 工具調用失敗:\n' +
         `工具: ${toolName}\n` +
         `參數: ${JSON.stringify(parameters, null, 2)}\n` +
         `錯誤: ${result.error}\n` +
@@ -230,7 +230,7 @@ export class MCPClient {
 
     if (result.success) {
       throw new Error(
-        `MCP 工具調用預期失敗但成功了:\n` +
+        'MCP 工具調用預期失敗但成功了:\n' +
         `工具: ${toolName}\n` +
         `參數: ${JSON.stringify(parameters, null, 2)}\n` +
         `結果: ${JSON.stringify(result.data, null, 2)}`
@@ -239,7 +239,7 @@ export class MCPClient {
 
     if (expectedError && !result.error?.includes(expectedError)) {
       throw new Error(
-        `MCP 工具錯誤訊息不符預期:\n` +
+        'MCP 工具錯誤訊息不符預期:\n' +
         `工具: ${toolName}\n` +
         `預期錯誤: ${expectedError}\n` +
         `實際錯誤: ${result.error}`

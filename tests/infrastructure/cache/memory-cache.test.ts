@@ -64,7 +64,7 @@ describe('MemoryCache', () => {
         evictionStrategy: EvictionStrategy.LRU,
         enableStats: true
       };
-      
+
       const configuredCache = new MemoryCache<string, string>(options);
       expect(configuredCache).toBeInstanceOf(MemoryCache);
     });
@@ -144,18 +144,18 @@ describe('MemoryCache', () => {
   describe('統計功能', () => {
     it('應該在啟用統計時追蹤基本統計資訊', () => {
       const statsCache = new MemoryCache<string, string>({ enableStats: true });
-      
+
       // 測試設定操作
       statsCache.set('key1', 'value1');
       const stats1 = statsCache.getStats();
       expect(stats1.size).toBe(1);
-      
+
       // 測試命中
       statsCache.get('key1');
       const stats2 = statsCache.getStats();
       expect(stats2.hits).toBeGreaterThan(stats1.hits);
       expect(stats2.totalRequests).toBeGreaterThan(stats1.totalRequests);
-      
+
       // 測試未命中
       statsCache.get('nonexistent');
       const stats3 = statsCache.getStats();
@@ -165,16 +165,16 @@ describe('MemoryCache', () => {
 
     it('應該計算正確的命中率', () => {
       const statsCache = new MemoryCache<string, string>({ enableStats: true });
-      
+
       statsCache.set('key1', 'value1');
-      
+
       // 2 次命中
       statsCache.get('key1');
       statsCache.get('key1');
-      
+
       // 1 次未命中
       statsCache.get('nonexistent');
-      
+
       const stats = statsCache.getStats();
       expect(stats.hitRate).toBeCloseTo(2/3, 2);
     });
@@ -184,7 +184,7 @@ describe('MemoryCache', () => {
     it('應該處理 null 和 undefined 值', () => {
       cache.set('null', null);
       cache.set('undefined', undefined);
-      
+
       expect(cache.get('null')).toBeNull();
       expect(cache.get('undefined')).toBeUndefined();
       expect(cache.has('null')).toBe(true);
@@ -194,7 +194,7 @@ describe('MemoryCache', () => {
     it('應該處理複雜物件', () => {
       const obj = { a: 1, b: { c: 2 }, d: [1, 2, 3] };
       cache.set('object', obj);
-      
+
       const retrieved = cache.get('object');
       expect(retrieved).toEqual(obj);
     });
@@ -202,15 +202,15 @@ describe('MemoryCache', () => {
 
   describe('記憶體管理', () => {
     it('應該在達到最大大小時淘汰項目', () => {
-      const limitedCache = new MemoryCache<string, string>({ 
-        maxSize: 2, 
-        evictionStrategy: EvictionStrategy.LRU 
+      const limitedCache = new MemoryCache<string, string>({
+        maxSize: 2,
+        evictionStrategy: EvictionStrategy.LRU
       });
-      
+
       limitedCache.set('key1', 'value1');
       limitedCache.set('key2', 'value2');
       limitedCache.set('key3', 'value3'); // 應該淘汰 key1
-      
+
       expect(limitedCache.has('key1')).toBe(false);
       expect(limitedCache.has('key2')).toBe(true);
       expect(limitedCache.has('key3')).toBe(true);
@@ -222,8 +222,8 @@ describe('MemoryCache', () => {
     let lruCache: MemoryCache<string, string>;
 
     beforeEach(() => {
-      lruCache = new MemoryCache<string, string>({ 
-        maxSize: 3, 
+      lruCache = new MemoryCache<string, string>({
+        maxSize: 3,
         evictionStrategy: EvictionStrategy.LRU,
         enableStats: true
       });
@@ -234,14 +234,14 @@ describe('MemoryCache', () => {
       lruCache.set('a', 'value-a');
       lruCache.set('b', 'value-b');
       lruCache.set('c', 'value-c');
-      
+
       // 存取 a 和 b，讓 c 成為最少使用的
       lruCache.get('a');
       lruCache.get('b');
-      
+
       // 添加新項目應該淘汰 c
       lruCache.set('d', 'value-d');
-      
+
       expect(lruCache.has('a')).toBe(true);
       expect(lruCache.has('b')).toBe(true);
       expect(lruCache.has('c')).toBe(false); // 被淘汰
@@ -252,14 +252,14 @@ describe('MemoryCache', () => {
       lruCache.set('x', 'value-x');
       lruCache.set('y', 'value-y');
       lruCache.set('z', 'value-z');
-      
+
       // x 是最舊的，應該被淘汰
       lruCache.set('w', 'value-w');
       expect(lruCache.has('x')).toBe(false);
-      
+
       // 存取 y，讓它變成最新的
       lruCache.get('y');
-      
+
       // z 現在是最舊的，應該被淘汰
       lruCache.set('v', 'value-v');
       expect(lruCache.has('y')).toBe(true);
@@ -272,13 +272,13 @@ describe('MemoryCache', () => {
       lruCache.set('p', 'value-p');
       lruCache.set('q', 'value-q');
       lruCache.set('r', 'value-r');
-      
+
       // 更新 p 的值，應該讓 p 變成最新的
       lruCache.set('p', 'new-value-p');
-      
+
       // q 現在是最舊的，應該被淘汰
       lruCache.set('s', 'value-s');
-      
+
       expect(lruCache.has('p')).toBe(true);
       expect(lruCache.get('p')).toBe('new-value-p');
       expect(lruCache.has('q')).toBe(false); // 被淘汰

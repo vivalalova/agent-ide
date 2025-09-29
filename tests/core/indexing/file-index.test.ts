@@ -132,7 +132,7 @@ describe('FileIndex', () => {
 
       await fileIndex.addFile(fileInfo);
       await fileIndex.setFileSymbols('/test/workspace/test.ts', [symbol1]);
-      
+
       let symbols = fileIndex.getFileSymbols('/test/workspace/test.ts');
       expect(symbols).toHaveLength(1);
 
@@ -252,7 +252,7 @@ describe('FileIndex', () => {
 
       const allFiles = fileIndex.getAllFiles();
       expect(allFiles).toHaveLength(2);
-      
+
       const filePaths = allFiles.map(f => f.filePath);
       expect(filePaths).toContain('/test/workspace/test1.ts');
       expect(filePaths).toContain('/test/workspace/test2.ts');

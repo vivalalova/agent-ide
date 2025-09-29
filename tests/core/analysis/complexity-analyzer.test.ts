@@ -30,7 +30,7 @@ class CyclomaticComplexityAnalyzer {
           complexity++;
           break;
         case 'SwitchCase':
-          if (!node.default) complexity++;
+          if (!node.default) {complexity++;}
           break;
         case 'LogicalExpression':
           if (node.operator === '&&' || node.operator === '||') {
@@ -49,9 +49,9 @@ class CyclomaticComplexityAnalyzer {
   }
 
   evaluate(complexity: number): 'simple' | 'moderate' | 'complex' | 'very-complex' {
-    if (complexity <= 5) return 'simple';
-    if (complexity <= 10) return 'moderate';
-    if (complexity <= 20) return 'complex';
+    if (complexity <= 5) {return 'simple';}
+    if (complexity <= 10) {return 'moderate';}
+    if (complexity <= 20) {return 'complex';}
     return 'very-complex';
   }
 }
@@ -550,7 +550,7 @@ describe('複雜度分析器', () => {
 
     it('應該處理極深的巢狀結構而不堆疊溢出', withMemoryOptimization(() => {
       // 建立深度 500 的巢狀結構
-      let ast: MockASTNode = {
+      const ast: MockASTNode = {
         type: 'FunctionDeclaration',
         children: []
       };

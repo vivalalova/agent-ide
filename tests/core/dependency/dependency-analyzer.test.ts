@@ -5,9 +5,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DependencyAnalyzer } from '../../../src/core/dependency/dependency-analyzer';
-import type { 
-  FileDependencies, 
-  ProjectDependencies, 
+import type {
+  FileDependencies,
+  ProjectDependencies,
   DependencyStats,
   ImpactAnalysisResult,
   DependencyAnalysisOptions
@@ -27,7 +27,7 @@ vi.mock('fs', () => ({
 
 describe('DependencyAnalyzer', () => {
   let analyzer: DependencyAnalyzer;
-  
+
   // 測試用的檔案內容
   const mockFiles = {
     '/src/file1.ts': `
@@ -61,11 +61,11 @@ describe('DependencyAnalyzer', () => {
 
   beforeEach(async () => {
     analyzer = new DependencyAnalyzer();
-    
+
     // Mock 檔案系統操作
     const fsPromises = await import('fs/promises');
     const fs = await import('fs');
-    
+
     vi.mocked(fsPromises.readFile).mockImplementation((filePath: string) => {
       const content = mockFiles[filePath as keyof typeof mockFiles];
       if (content) {
@@ -73,18 +73,18 @@ describe('DependencyAnalyzer', () => {
       }
       return Promise.reject(new Error('File not found'));
     });
-    
+
     vi.mocked(fsPromises.stat).mockImplementation((filePath: string) => {
       if (mockFiles[filePath as keyof typeof mockFiles]) {
-        return Promise.resolve({ 
+        return Promise.resolve({
           mtime: new Date(),
           isDirectory: () => false,
-          isFile: () => true 
+          isFile: () => true
         } as any);
       }
       return Promise.reject(new Error('File not found'));
     });
-    
+
     vi.mocked(fsPromises.access).mockImplementation((filePath: string) => {
       // 檢查原檔案或副檔名變體
       const variants = [
@@ -94,20 +94,20 @@ describe('DependencyAnalyzer', () => {
         filePath + '.tsx',
         filePath + '.jsx'
       ];
-      
+
       for (const variant of variants) {
         if (mockFiles[variant as keyof typeof mockFiles]) {
           return Promise.resolve();
         }
       }
-      
+
       return Promise.reject(new Error('File not found'));
     });
-    
+
     vi.mocked(fs.existsSync).mockImplementation((filePath: string) => {
       return Boolean(mockFiles[filePath as keyof typeof mockFiles]);
     });
-    
+
     // Mock readdir 來模擬目錄結構
     vi.mocked(fsPromises.readdir).mockImplementation(async (dirPath: string) => {
       if (dirPath === '/src') {
@@ -132,11 +132,11 @@ describe('DependencyAnalyzer', () => {
   describe('單檔案分析', () => {
     it('應該分析單個檔案的依賴關係', async () => {
       const result = await analyzer.analyzeFile('/src/file1.ts');
-      
+
       expect(result).toBeDefined();
       expect(result.filePath).toBe('/src/file1.ts');
       expect(result.dependencies).toHaveLength(2);
-      
+
       const dependencyPaths = result.dependencies.map(d => d.path);
       expect(dependencyPaths).toContain('/src/file2.ts');
       expect(dependencyPaths).toContain('/src/utils.ts');
@@ -144,7 +144,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該處理沒有依賴的檔案', async () => {
       const result = await analyzer.analyzeFile('/src/isolated.ts');
-      
+
       expect(result.dependencies).toHaveLength(0);
     });
 
@@ -168,7 +168,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該分析整個專案的依賴關係', async () => {
       const result = await analyzer.analyzeProject('/src');
-      
+
       expect(result).toBeDefined();
       expect(result.projectPath).toBe('/src');
       expect(result.fileDependencies).toHaveLength(5);
@@ -177,10 +177,10 @@ describe('DependencyAnalyzer', () => {
 
     it('應該正確識別所有檔案依賴', async () => {
       const result = await analyzer.analyzeProject('/src');
-      
+
       const file1Deps = result.fileDependencies.find(f => f.filePath.endsWith('file1.ts'));
       expect(file1Deps?.dependencies).toHaveLength(2);
-      
+
       const isolatedDeps = result.fileDependencies.find(f => f.filePath.endsWith('isolated.ts'));
       expect(isolatedDeps?.dependencies).toHaveLength(0);
     });
@@ -194,7 +194,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該取得檔案的直接依賴', () => {
       const dependencies = analyzer.getDependencies('/src/file1.ts');
-      
+
       expect(dependencies).toHaveLength(2);
       expect(dependencies).toContain('/src/file2.ts');
       expect(dependencies).toContain('/src/utils.ts');
@@ -202,14 +202,14 @@ describe('DependencyAnalyzer', () => {
 
     it('應該取得檔案的直接依賴者', () => {
       const dependents = analyzer.getDependents('/src/file2.ts');
-      
+
       expect(dependents).toHaveLength(1);
       expect(dependents).toContain('/src/file1.ts');
     });
 
     it('應該取得檔案的傳遞依賴', () => {
       const transitiveDeps = analyzer.getTransitiveDependencies('/src/file1.ts');
-      
+
       expect(transitiveDeps.length).toBeGreaterThanOrEqual(2);
       expect(transitiveDeps).toContain('/src/file2.ts');
       expect(transitiveDeps).toContain('/src/file3.ts'); // 透過 file2
@@ -217,7 +217,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該處理循環依賴在傳遞依賴查詢中', () => {
       const transitiveDeps = analyzer.getTransitiveDependencies('/src/file3.ts');
-      
+
       // 即使有循環，也應該能正確處理
       expect(transitiveDeps).toContain('/src/file1.ts');
       expect(Number.isFinite(transitiveDeps.length)).toBe(true); // 不應該無限循環
@@ -231,8 +231,8 @@ describe('DependencyAnalyzer', () => {
 
     it('應該分析檔案變更的影響範圍', () => {
       const impact = analyzer.getImpactedFiles('/src/file2.ts');
-      
-      
+
+
       expect(impact).toHaveLength(3); // file1, file3 依賴 file2，循環依賴導致 file2 也在影響範圍內
       expect(impact).toContain('/src/file1.ts');
       expect(impact).toContain('/src/file3.ts');
@@ -241,13 +241,13 @@ describe('DependencyAnalyzer', () => {
 
     it('應該分析孤立檔案的影響範圍', () => {
       const impact = analyzer.getImpactedFiles('/src/isolated.ts');
-      
+
       expect(impact).toHaveLength(0); // 沒有其他檔案依賴 isolated.ts
     });
 
     it('應該提供詳細的影響分析結果', () => {
       const result = analyzer.getImpactAnalysis('/src/file2.ts');
-      
+
       expect(result.targetFile).toBe('/src/file2.ts');
       expect(result.directlyAffected).toContain('/src/file1.ts');
       expect(result.impactScore).toBeGreaterThan(0);
@@ -298,7 +298,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該提供正確的依賴統計', () => {
       const stats = analyzer.getStats();
-      
+
       expect(stats.totalFiles).toBe(5);
       expect(stats.totalDependencies).toBeGreaterThan(0);
       expect(stats.averageDependenciesPerFile).toBeGreaterThanOrEqual(0);
@@ -310,7 +310,7 @@ describe('DependencyAnalyzer', () => {
     it('應該正確計算平均依賴數', () => {
       const stats = analyzer.getStats();
       const expectedAverage = stats.totalDependencies / stats.totalFiles;
-      
+
       expect(stats.averageDependenciesPerFile).toBeCloseTo(expectedAverage, 2);
     });
   });
@@ -324,10 +324,10 @@ describe('DependencyAnalyzer', () => {
         excludePatterns: ['*.test.ts'],
         includePatterns: ['*.ts', '*.js']
       };
-      
+
       const analyzer2 = new DependencyAnalyzer(options);
       const result = await analyzer2.analyzeProject('/src');
-      
+
       expect(result).toBeDefined();
       // 測試檔案應該被排除
       const testFiles = result.fileDependencies.filter(f => f.filePath.includes('.test.ts'));
@@ -342,12 +342,12 @@ describe('DependencyAnalyzer', () => {
         excludePatterns: [],
         includePatterns: ['*.ts']
       };
-      
+
       const analyzer2 = new DependencyAnalyzer(options);
       await analyzer2.analyzeProject('/src');
-      
+
       const transitiveDeps = analyzer2.getTransitiveDependencies('/src/file1.ts');
-      
+
       // 由於深度限制，傳遞依賴應該有限
       expect(transitiveDeps.length).toBeLessThanOrEqual(3);
     });
@@ -357,22 +357,22 @@ describe('DependencyAnalyzer', () => {
     it('應該快取分析結果', async () => {
       const fsPromises = await import('fs/promises');
       const spy = vi.mocked(fsPromises.readFile);
-      
+
       // 第一次分析
       await analyzer.analyzeFile('/src/file1.ts');
       const firstCallCount = spy.mock.calls.length;
-      
+
       // 第二次分析（應該使用快取）
       await analyzer.analyzeFile('/src/file1.ts');
       const secondCallCount = spy.mock.calls.length;
-      
+
       expect(secondCallCount).toBe(firstCallCount); // 沒有額外的檔案讀取
     });
 
     it('應該在檔案變更時更新快取', async () => {
       // 第一次分析
       const result1 = await analyzer.analyzeFile('/src/file1.ts');
-      
+
       // 模擬檔案變更
       const fsPromises = await import('fs/promises');
       vi.mocked(fsPromises.stat).mockResolvedValue({
@@ -380,10 +380,10 @@ describe('DependencyAnalyzer', () => {
         isDirectory: () => false,
         isFile: () => true
       } as any);
-      
+
       // 第二次分析
       const result2 = await analyzer.analyzeFile('/src/file1.ts');
-      
+
       expect(result2.lastModified.getTime()).toBeGreaterThan(result1.lastModified.getTime());
     });
   });
@@ -402,9 +402,9 @@ describe('DependencyAnalyzer', () => {
         isDirectory: () => false,
         isFile: () => true
       } as any);
-      
+
       const result = await analyzer.analyzeFile('/src/invalid.ts');
-      
+
       // 應該回傳空依賴而不是拋出錯誤
       expect(result.dependencies).toHaveLength(0);
     });
@@ -419,22 +419,22 @@ describe('DependencyAnalyzer', () => {
   describe('並行處理', () => {
     it('應該支援並行檔案分析', async () => {
       const startTime = Date.now();
-      
+
       const promises = [
         analyzer.analyzeFile('/src/file1.ts'),
         analyzer.analyzeFile('/src/file2.ts'),
         analyzer.analyzeFile('/src/file3.ts')
       ];
-      
+
       const results = await Promise.all(promises);
       const endTime = Date.now();
-      
+
       expect(results).toHaveLength(3);
       results.forEach(result => {
         expect(result).toBeDefined();
         expect(result.filePath).toBeTruthy();
       });
-      
+
       // 並行處理應該比序列處理快
       expect(endTime - startTime).toBeLessThan(1000);
     });

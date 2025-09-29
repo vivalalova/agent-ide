@@ -46,9 +46,9 @@ class MaintainabilityIndex {
   }
 
   evaluate(index: number): 'high' | 'moderate' | 'low' | 'very-low' {
-    if (index >= 80) return 'high';
-    if (index >= 60) return 'moderate';
-    if (index >= 40) return 'low';
+    if (index >= 80) {return 'high';}
+    if (index >= 60) {return 'moderate';}
+    if (index >= 40) {return 'low';}
     return 'very-low';
   }
 }
@@ -105,8 +105,8 @@ class CodeSmellDetector {
   }
 
   private calculateSeverity(value: number, lowThreshold: number, highThreshold: number): 'low' | 'medium' | 'high' {
-    if (value <= lowThreshold) return 'low';
-    if (value <= highThreshold) return 'medium';
+    if (value <= lowThreshold) {return 'low';}
+    if (value <= highThreshold) {return 'medium';}
     return 'high';
   }
 }

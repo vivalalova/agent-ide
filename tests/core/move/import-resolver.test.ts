@@ -37,7 +37,7 @@ import * as utils from '../utils';
       const result = resolver.parseImportStatements(code, '/src/test.ts');
 
       expect(result).toHaveLength(3);
-      
+
       const [reactImport, componentImport, utilsImport] = result;
 
       expect(reactImport.type).toBe('import');
@@ -147,7 +147,7 @@ import { valid } from './valid';
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { Component } from './component';"
+        rawStatement: 'import { Component } from \'./component\';'
       };
 
       const result = resolver.updateImportPath(
@@ -167,7 +167,7 @@ import { valid } from './valid';
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 25)),
         isRelative: false,
-        rawStatement: "import React from 'react';"
+        rawStatement: 'import React from \'react\';'
       };
 
       const result = resolver.updateImportPath(
@@ -187,7 +187,7 @@ import { valid } from './valid';
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 35)),
         isRelative: false,
-        rawStatement: "import { Button } from '@components/Button';"
+        rawStatement: 'import { Button } from \'@components/Button\';'
       };
 
       // 當別名路徑發生變化時，應該更新
@@ -256,31 +256,31 @@ import { valid } from './valid';
 
   describe('findImportedSymbols', () => {
     it('應該提取具名 import 的符號', () => {
-      const statement = "import { Component, useState } from 'react';";
+      const statement = 'import { Component, useState } from \'react\';';
       const result = resolver.findImportedSymbols(statement);
       expect(result).toEqual(['Component', 'useState']);
     });
 
     it('應該提取預設 import 的符號', () => {
-      const statement = "import React from 'react';";
+      const statement = 'import React from \'react\';';
       const result = resolver.findImportedSymbols(statement);
       expect(result).toEqual(['React']);
     });
 
     it('應該提取混合 import 的符號', () => {
-      const statement = "import React, { Component, useState } from 'react';";
+      const statement = 'import React, { Component, useState } from \'react\';';
       const result = resolver.findImportedSymbols(statement);
       expect(result).toEqual(['React', 'Component', 'useState']);
     });
 
     it('應該處理 namespace import', () => {
-      const statement = "import * as React from 'react';";
+      const statement = 'import * as React from \'react\';';
       const result = resolver.findImportedSymbols(statement);
       expect(result).toEqual(['React']);
     });
 
     it('應該處理別名 import', () => {
-      const statement = "import { Component as Comp, useState as state } from 'react';";
+      const statement = 'import { Component as Comp, useState as state } from \'react\';';
       const result = resolver.findImportedSymbols(statement);
       expect(result).toEqual(['Comp', 'state']);
     });

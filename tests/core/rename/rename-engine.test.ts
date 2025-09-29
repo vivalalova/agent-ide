@@ -10,7 +10,7 @@ import { createLocation, createRange, createPosition } from '../../../src/shared
 
 describe('RenameEngine', () => {
   let renameEngine: RenameEngine;
-  
+
   beforeEach(() => {
     // Mock fs module for testing
     vi.doMock('fs/promises', () => ({
@@ -34,7 +34,7 @@ describe('RenameEngine', () => {
       }),
       writeFile: vi.fn().mockResolvedValue(undefined)
     }));
-    
+
     renameEngine = new RenameEngine();
   });
 
@@ -48,7 +48,7 @@ describe('RenameEngine', () => {
           createPosition(1, 14)
         )
       );
-      
+
       const symbol = createSymbol('oldName', SymbolType.Variable, location);
       const options = createRenameOptions(symbol, 'newName', ['/test/file.ts']);
 
@@ -71,7 +71,7 @@ describe('RenameEngine', () => {
         createRange(createPosition(1, 1), createPosition(1, 8))
       );
       const symbol = createSymbol('oldName', SymbolType.Variable, location);
-      
+
       // Act & Assert - 期望拋出例外
       await expect(async () => {
         const options = createRenameOptions(symbol, '', ['/test/file.ts']);
@@ -86,7 +86,7 @@ describe('RenameEngine', () => {
         createRange(createPosition(1, 1), createPosition(1, 8))
       );
       const symbol = createSymbol('oldName', SymbolType.Variable, location);
-      
+
       // Act & Assert - 期望拋出例外
       await expect(async () => {
         const options = createRenameOptions(symbol, 'newName', []);
@@ -226,7 +226,7 @@ describe('RenameEngine', () => {
       );
       const symbol = createSymbol('oldName', SymbolType.Variable, location);
       const options = createRenameOptions(symbol, 'newName', ['/test/file.ts']);
-      
+
       const renameResult = await renameEngine.rename(options);
       expect(renameResult.success).toBe(true);
 
@@ -248,7 +248,7 @@ describe('RenameEngine', () => {
         createRange(createPosition(1, 1), createPosition(1, 8))
       );
       const symbol = createSymbol('myVar', SymbolType.Variable, location);
-      
+
       // Act & Assert - 測試無效識別符
       const options1 = createRenameOptions(symbol, '123invalid', ['/test/file.ts']);
       const validation1 = await renameEngine.validateRename(options1);

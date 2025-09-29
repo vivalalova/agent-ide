@@ -223,7 +223,7 @@ export class CLIRunner {
 
     if (!result.success) {
       throw new Error(
-        `CLI 命令執行失敗:\n` +
+        'CLI 命令執行失敗:\n' +
         `命令: agent-ide ${args.join(' ')}\n` +
         `退出碼: ${result.exitCode}\n` +
         `標準輸出: ${result.stdout}\n` +
@@ -247,7 +247,7 @@ export class CLIRunner {
 
     if (result.success) {
       throw new Error(
-        `CLI 命令預期失敗但成功了:\n` +
+        'CLI 命令預期失敗但成功了:\n' +
         `命令: agent-ide ${args.join(' ')}\n` +
         `標準輸出: ${result.stdout}`
       );
@@ -255,7 +255,7 @@ export class CLIRunner {
 
     if (expectedExitCode !== undefined && result.exitCode !== expectedExitCode) {
       throw new Error(
-        `CLI 命令退出碼不符預期:\n` +
+        'CLI 命令退出碼不符預期:\n' +
         `命令: agent-ide ${args.join(' ')}\n` +
         `預期退出碼: ${expectedExitCode}\n` +
         `實際退出碼: ${result.exitCode}\n` +
@@ -278,7 +278,7 @@ export class CLIRunner {
       return JSON.parse(result.stdout);
     } catch (error) {
       throw new Error(
-        `JSON 輸出格式無效:\n` +
+        'JSON 輸出格式無效:\n' +
         `輸出: ${result.stdout}\n` +
         `錯誤: ${error}`
       );
@@ -301,7 +301,7 @@ export class CLIRunner {
         throw new Error(
           `第 ${index + 1} 行的 minimal 格式無效:\n` +
           `行內容: ${line}\n` +
-          `預期格式: 檔案:行:列:內容`
+          '預期格式: 檔案:行:列:內容'
         );
       }
     });
@@ -316,7 +316,7 @@ export class CLIRunner {
     const fullOutput = result.stdout + result.stderr;
     if (!fullOutput.includes(expectedText)) {
       throw new Error(
-        `輸出不包含預期文字:\n` +
+        '輸出不包含預期文字:\n' +
         `預期: ${expectedText}\n` +
         `實際輸出: ${fullOutput}`
       );
@@ -330,7 +330,7 @@ export class CLIRunner {
     const fullOutput = result.stdout + result.stderr;
     if (!pattern.test(fullOutput)) {
       throw new Error(
-        `輸出不匹配預期模式:\n` +
+        '輸出不匹配預期模式:\n' +
         `模式: ${pattern}\n` +
         `實際輸出: ${fullOutput}`
       );

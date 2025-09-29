@@ -28,7 +28,7 @@ describe('FileWatcher Fixed Tests', () => {
     // 重設 mock
     vi.clearAllMocks();
     mockEventHandlers = {};
-    
+
     // 設定 mock 行為
     mockWatcher.on.mockImplementation((event: string, handler: Function) => {
       if (!mockEventHandlers[event]) {
@@ -53,14 +53,14 @@ describe('FileWatcher Fixed Tests', () => {
     it('應該能夠開始監控', async () => {
       // Arrange
       const watchPath = '/test';
-      
+
       // Mock ready event
       mockWatcher.on.mockImplementation((event: string, handler: Function) => {
         if (!mockEventHandlers[event]) {
           mockEventHandlers[event] = [];
         }
         mockEventHandlers[event].push(handler);
-        
+
         if (event === 'ready') {
           // 立即觸發 ready 事件
           setTimeout(() => handler(), 0);
@@ -70,7 +70,7 @@ describe('FileWatcher Fixed Tests', () => {
 
       // Act & Assert
       await expect(watcher.watch(watchPath)).resolves.not.toThrow();
-      
+
       // 驗證 chokidar.watch 被調用
       const chokidar = await import('chokidar');
       expect(chokidar.default.watch).toHaveBeenCalledWith(watchPath, expect.any(Object));
@@ -108,7 +108,7 @@ describe('FileWatcher Fixed Tests', () => {
         }
         return mockWatcher;
       });
-      
+
       await watcher.watch(watchPath);
 
       // Act
@@ -128,7 +128,7 @@ describe('FileWatcher Fixed Tests', () => {
       });
 
       const watchPath = '/test';
-      
+
       // Mock event handlers
       let allHandler: Function;
       mockWatcher.on.mockImplementation((event: string, handler: Function) => {

@@ -17,7 +17,7 @@ const mockFs = vi.mocked(fs);
 
 describe('SearchService', () => {
   let searchService: SearchService;
-  
+
   beforeEach(() => {
     searchService = new SearchService();
     vi.clearAllMocks();
@@ -65,12 +65,12 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       // Replace the internal text engine
       (searchService as any).textEngine = mockTextEngine;
 
       const result = await searchService.searchText(query);
-      
+
       expect(result).toEqual(mockResult);
       expect(mockTextEngine.search).toHaveBeenCalledWith(query);
     });
@@ -95,11 +95,11 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       const result = await searchService.searchText(query);
-      
+
       expect(result.matches).toHaveLength(0);
       expect(result.totalCount).toBe(0);
     });
@@ -117,7 +117,7 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockRejectedValue(new Error('搜尋引擎錯誤'))
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await expect(searchService.searchText(query)).rejects.toThrow('文字搜尋失敗: 搜尋引擎錯誤');
@@ -145,11 +145,11 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.searchText(query);
-      
+
       const stats = searchService.getSearchStats();
       expect(stats.totalSearches).toBe(1);
       expect(stats.recentSearches).toHaveLength(1);
@@ -176,13 +176,13 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       // 執行兩次相同搜尋
       await searchService.searchText(query);
       await searchService.searchText(query);
-      
+
       const history = (searchService as any).searchHistory;
       expect(history.filter((q: string) => q === 'duplicate query')).toHaveLength(1);
     });
@@ -207,15 +207,15 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.searchText(query);
-      
+
       expect(searchService.getSearchStats().totalSearches).toBe(1);
-      
+
       searchService.clearSearchHistory();
-      
+
       expect(searchService.getSearchStats().recentSearches).toHaveLength(0);
     });
   });
@@ -245,11 +245,11 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       const result = await searchService.batchSearch(queries);
-      
+
       expect(result.results).toHaveLength(2);
       expect(result.allSucceeded).toBe(true);
       expect(mockTextEngine.search).toHaveBeenCalledTimes(2);
@@ -279,11 +279,11 @@ describe('SearchService', () => {
           })
           .mockRejectedValueOnce(new Error('搜尋失敗'))
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       const result = await searchService.batchSearch(queries);
-      
+
       expect(result.results).toHaveLength(2);
       expect(result.allSucceeded).toBe(false);
       expect(result.results[1].totalCount).toBe(0); // 錯誤結果
@@ -299,7 +299,7 @@ describe('SearchService', () => {
       ];
 
       const result = await searchService.batchSearch(queries);
-      
+
       expect(result.allSucceeded).toBe(false);
     });
   });
@@ -326,20 +326,20 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockResolvedValue(mockResult)
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.searchText(query);
-      
+
       const suggestions = await searchService.getSuggestions('func');
-      
+
       expect(suggestions.some(s => s.text === 'function test')).toBe(true);
       expect(suggestions.some(s => s.type === 'history')).toBe(true);
     });
 
     it('應該能生成完成建議', async () => {
       const suggestions = await searchService.getSuggestions('func');
-      
+
       expect(suggestions.some(s => s.text === 'function')).toBe(true);
       expect(suggestions.some(s => s.type === 'completion')).toBe(true);
     });
@@ -357,7 +357,7 @@ describe('SearchService', () => {
       };
 
       const suggestions = await searchService.getSuggestions('My', context);
-      
+
       expect(suggestions.some(s => s.text === 'MyComponent')).toBe(true);
       expect(suggestions.some(s => s.type === 'context')).toBe(true);
     });
@@ -372,7 +372,7 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       for (let i = 0; i < 20; i++) {
@@ -382,9 +382,9 @@ describe('SearchService', () => {
           options: { scope: { type: 'project' }, maxResults: 10 }
         });
       }
-      
+
       const suggestions = await searchService.getSuggestions('test');
-      
+
       expect(suggestions.length).toBeLessThanOrEqual(10);
     });
   });
@@ -408,15 +408,15 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       // 執行多次搜尋
       await searchService.searchText(query);
       await searchService.searchText(query);
-      
+
       const stats = searchService.getSearchStats();
-      
+
       expect(stats.totalSearches).toBe(2);
       expect(stats.averageSearchTime).toBeGreaterThan(0);
       expect(stats.recentSearches).toHaveLength(1); // 去重後只有一個
@@ -431,7 +431,7 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       // 執行不同頻率的搜尋
@@ -450,9 +450,9 @@ describe('SearchService', () => {
         query: 'rare query',
         options: { scope: { type: 'project' }, maxResults: 10 }
       });
-      
+
       const stats = searchService.getSearchStats();
-      
+
       expect(stats.topQueries[0].query).toBe('popular query');
       expect(stats.topQueries[0].count).toBe(2);
     });
@@ -468,11 +468,11 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.quickTextSearch('test query');
-      
+
       expect(mockTextEngine.search).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'text',
@@ -494,11 +494,11 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.searchInDirectory('test', '/src/components');
-      
+
       expect(mockTextEngine.search).toHaveBeenCalledWith(
         expect.objectContaining({
           options: expect.objectContaining({
@@ -521,11 +521,11 @@ describe('SearchService', () => {
           truncated: false
         })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.regexSearch('function\\s+\\w+');
-      
+
       expect(mockTextEngine.search).toHaveBeenCalledWith(
         expect.objectContaining({
           query: 'function\\s+\\w+',
@@ -578,7 +578,7 @@ describe('SearchService', () => {
       const mockTextEngine = {
         search: vi.fn().mockRejectedValue('字串錯誤')
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await expect(searchService.searchText(query)).rejects.toThrow('文字搜尋失敗: 字串錯誤');
@@ -597,7 +597,7 @@ describe('SearchService', () => {
       };
 
       const mockTextEngine = {
-        search: vi.fn().mockImplementation(() => 
+        search: vi.fn().mockImplementation(() =>
           new Promise(resolve => setTimeout(() => resolve({
             matches: [],
             totalCount: 0,
@@ -606,13 +606,13 @@ describe('SearchService', () => {
           }), 10))
         )
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       const startTime = Date.now();
       await searchService.searchText(query);
       const elapsed = Date.now() - startTime;
-      
+
       expect(elapsed).toBeLessThan(1000); // 應該在 1 秒內完成
     });
 
@@ -641,14 +641,14 @@ describe('SearchService', () => {
             truncated: false
           })
       };
-      
+
       (searchService as any).textEngine = mockTextEngine;
 
       await searchService.searchText(query);
       await searchService.searchText({ ...query, query: 'test2' });
-      
+
       const stats = searchService.getSearchStats();
-      
+
       // 平均時間應該介於兩次搜尋時間之間
       expect(stats.averageSearchTime).toBeGreaterThan(0);
     });

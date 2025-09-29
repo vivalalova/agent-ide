@@ -174,7 +174,7 @@ describe('基本索引功能整合測試', () => {
       await fileIndex.addFile(fileInfo);
 
       expect(fileIndex.getTotalFiles()).toBe(1);
-      
+
       await fileIndex.clear();
       expect(fileIndex.getTotalFiles()).toBe(0);
     });
@@ -182,7 +182,7 @@ describe('基本索引功能整合測試', () => {
     it('應該能清空符號索引', async () => {
       const fileInfo = createFileInfo('/test/file.ts', new Date(), 1024, '.ts', 'typescript', 'abc');
       const symbol = createSymbol('test', SymbolType.Function, createLocation('/test/file.ts', createRange(createPosition(1, 1), createPosition(1, 10))));
-      
+
       await symbolIndex.addSymbol(symbol, fileInfo);
       expect(symbolIndex.getTotalSymbols()).toBe(1);
 

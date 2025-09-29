@@ -84,7 +84,7 @@ describe('ParserPlugin Interface', () => {
 
     it('支援的副檔名應該是唯讀陣列', () => {
       const plugin = new MockParserPlugin();
-      
+
       // TypeScript 編譯時會檢查這個，但我們也可以進行執行時檢查
       expect(Array.isArray(plugin.supportedExtensions)).toBe(true);
       expect(plugin.supportedExtensions.length).toBeGreaterThan(0);
@@ -92,7 +92,7 @@ describe('ParserPlugin Interface', () => {
 
     it('支援的語言應該是唯讀陣列', () => {
       const plugin = new MockParserPlugin();
-      
+
       expect(Array.isArray(plugin.supportedLanguages)).toBe(true);
       expect(plugin.supportedLanguages.length).toBeGreaterThan(0);
     });
@@ -108,9 +108,9 @@ describe('ParserPlugin Interface', () => {
     it('parse 方法應該返回 AST', async () => {
       const code = 'const x = 1;';
       const filePath = '/test/file.mock';
-      
+
       const ast = await plugin.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.sourceFile).toBe(filePath);
       expect(ast.root).toBeDefined();
@@ -120,9 +120,9 @@ describe('ParserPlugin Interface', () => {
 
     it('extractSymbols 方法應該返回符號陣列', async () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.mock');
-      
+
       const symbols = await plugin.extractSymbols(ast);
-      
+
       expect(Array.isArray(symbols)).toBe(true);
     });
 
@@ -137,17 +137,17 @@ describe('ParserPlugin Interface', () => {
         },
         modifiers: []
       };
-      
+
       const references = await plugin.findReferences(ast, mockSymbol);
-      
+
       expect(Array.isArray(references)).toBe(true);
     });
 
     it('extractDependencies 方法應該返回依賴陣列', async () => {
       const ast = await plugin.parse('import x from "y";', '/test/file.mock');
-      
+
       const dependencies = await plugin.extractDependencies(ast);
-      
+
       expect(Array.isArray(dependencies)).toBe(true);
     });
   });
@@ -163,9 +163,9 @@ describe('ParserPlugin Interface', () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.mock');
       const position: Position = { line: 1, column: 7 };
       const newName = 'newVariable';
-      
+
       const edits = await plugin.rename(ast, position, newName);
-      
+
       expect(Array.isArray(edits)).toBe(true);
     });
 
@@ -175,9 +175,9 @@ describe('ParserPlugin Interface', () => {
         start: { line: 1, column: 1 },
         end: { line: 1, column: 13 }
       };
-      
+
       const edits = await plugin.extractFunction(ast, selection);
-      
+
       expect(Array.isArray(edits)).toBe(true);
     });
   });
@@ -192,9 +192,9 @@ describe('ParserPlugin Interface', () => {
     it('findDefinition 方法應該返回定義或 null', async () => {
       const ast = await plugin.parse('const x = 1;', '/test/file.mock');
       const position: Position = { line: 1, column: 7 };
-      
+
       const definition = await plugin.findDefinition(ast, position);
-      
+
       // 可能返回 Definition 物件或 null
       expect(definition === null || (definition && typeof definition === 'object')).toBe(true);
     });
@@ -210,9 +210,9 @@ describe('ParserPlugin Interface', () => {
         },
         modifiers: []
       };
-      
+
       const usages = await plugin.findUsages(ast, mockSymbol);
-      
+
       expect(Array.isArray(usages)).toBe(true);
     });
   });
@@ -226,7 +226,7 @@ describe('ParserPlugin Interface', () => {
 
     it('validate 方法應該返回驗證結果', async () => {
       const result = await plugin.validate();
-      
+
       expect(result).toBeDefined();
       expect(typeof result.valid).toBe('boolean');
       expect(Array.isArray(result.errors)).toBe(true);
@@ -265,7 +265,7 @@ describe('ParserPlugin Interface', () => {
   describe('介面契約遵循', () => {
     it('所有非同步方法都應該返回 Promise', () => {
       const plugin = new MockParserPlugin();
-      
+
       // 檢查所有方法都返回 Promise
       expect(plugin.parse('', '')).toBeInstanceOf(Promise);
       expect(plugin.extractSymbols({} as AST)).toBeInstanceOf(Promise);
@@ -281,12 +281,12 @@ describe('ParserPlugin Interface', () => {
 
     it('只讀屬性不應該被修改', () => {
       const plugin = new MockParserPlugin();
-      
+
       // TypeScript 在編譯時會檢查這些，但我們可以驗證運行時行為
       expect(() => {
         (plugin as any).name = 'changed';
       }).not.toThrow(); // 在 JavaScript 中這不會拋出錯誤，但 TypeScript 會阻止這種行為
-      
+
       // 對於 readonly 陣列，JavaScript 運行時不會阻止修改
       // 這主要依賴 TypeScript 編譯時檢查
       expect(Array.isArray(plugin.supportedExtensions)).toBe(true);

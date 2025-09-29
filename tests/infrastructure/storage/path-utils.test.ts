@@ -322,7 +322,7 @@ describe('PathUtils', () => {
       expect(PathUtils.isValidPath('')).toBe(false);
       expect(PathUtils.isValidPath('test/path/<invalid>.txt')).toBe(false);
       expect(PathUtils.isValidPath('test/path/|invalid|.txt')).toBe(false);
-      
+
       // Windows 特有的無效字元
       if (process.platform === 'win32') {
         expect(PathUtils.isValidPath('test:invalid.txt')).toBe(false);

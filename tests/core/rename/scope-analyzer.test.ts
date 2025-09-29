@@ -165,7 +165,7 @@ describe('ScopeAnalyzer', () => {
       // Assert
       const outerScope = scopes.find(s => s.name === 'outerFunc');
       const innerScope = scopes.find(s => s.name === 'innerFunc');
-      
+
       expect(outerScope).toBeDefined();
       expect(innerScope).toBeDefined();
       expect(innerScope?.parent).toBe(outerScope);

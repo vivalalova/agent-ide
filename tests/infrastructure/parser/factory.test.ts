@@ -72,14 +72,14 @@ describe('ParserFactory', () => {
     ParserRegistry.resetInstance();
     registry = ParserRegistry.getInstance();
     factory = new ParserFactory(registry);
-    
+
     tsPlugin = new MockParserPlugin(
       'typescript',
       '1.0.0',
       ['.ts', '.tsx'],
       ['typescript']
     );
-    
+
     jsPlugin = new MockParserPlugin(
       'javascript',
       '1.0.0',
@@ -139,12 +139,12 @@ describe('ParserFactory', () => {
     it('應該能清除快取', () => {
       // const parser1 = factory.createParser('/path/to/file.ts');
       // factory.clearCache();
-      
+
       // // 建立新的 mock instance 來驗證快取被清除
       // const newTsPlugin = new MockParserPlugin('typescript', '1.0.0', ['.ts'], ['typescript']);
       // registry.unregister('typescript');
       // registry.register(newTsPlugin);
-      
+
       // const parser2 = factory.createParser('/path/to/file.ts');
       // expect(parser2).toBe(newTsPlugin);
       // expect(parser1).not.toBe(parser2);
@@ -154,12 +154,12 @@ describe('ParserFactory', () => {
       // registry.register(jsPlugin);
       // const tsParser = factory.createParser('/path/to/file.ts');
       // const jsParser = factory.createParser('/path/to/file.js');
-      
+
       // factory.clearCache('typescript');
-      
+
       // const newTsParser = factory.createParser('/path/to/file.ts');
       // const sameJsParser = factory.createParser('/path/to/file.js');
-      
+
       // expect(newTsParser).toBe(tsParser); // 因為是同一個 plugin instance
       // expect(sameJsParser).toBe(jsParser); // JS parser 快取未被清除
     });
@@ -176,7 +176,7 @@ describe('ParserFactory', () => {
       //   targetVersion: '5.0',
       //   customOptions: { experimentalDecorators: true }
       // };
-      
+
       // const parser = factory.createParser('/path/to/file.ts', options);
       // expect(parser).toBe(tsPlugin);
     });
@@ -185,7 +185,7 @@ describe('ParserFactory', () => {
       // const globalOptions: ParserOptions = {
       //   strictMode: true
       // };
-      
+
       // factory.setDefaultOptions(globalOptions);
       // const parser = factory.createParser('/path/to/file.ts');
       // expect(parser).toBe(tsPlugin);
@@ -196,7 +196,7 @@ describe('ParserFactory', () => {
       //   strictMode: true,
       //   customOptions: { experimentalDecorators: true }
       // };
-      
+
       // factory.setParserOptions('typescript', tsOptions);
       // const parser = factory.createParser('/path/to/file.ts');
       // expect(parser).toBe(tsPlugin);
@@ -207,7 +207,7 @@ describe('ParserFactory', () => {
     it('應該支援延遲載入 Parser', async () => {
       // const lazyLoader = vi.fn().mockResolvedValue(tsPlugin);
       // factory.registerLazyParser('typescript', lazyLoader);
-      
+
       // const parser = await factory.createParserLazy('/path/to/file.ts');
       // expect(lazyLoader).toHaveBeenCalled();
       // expect(parser).toBe(tsPlugin);
@@ -216,10 +216,10 @@ describe('ParserFactory', () => {
     it('延遲載入的 Parser 應該被快取', async () => {
       // const lazyLoader = vi.fn().mockResolvedValue(tsPlugin);
       // factory.registerLazyParser('typescript', lazyLoader);
-      
+
       // const parser1 = await factory.createParserLazy('/path/to/file1.ts');
       // const parser2 = await factory.createParserLazy('/path/to/file2.ts');
-      
+
       // expect(lazyLoader).toHaveBeenCalledTimes(1);
       // expect(parser1).toBe(parser2);
     });
@@ -234,7 +234,7 @@ describe('ParserFactory', () => {
     it('Parser 建立失敗時應該拋出錯誤', () => {
       // const faultyPlugin = new MockParserPlugin('faulty', '1.0.0', ['.faulty'], ['faulty']);
       // vi.spyOn(faultyPlugin, 'validate').mockRejectedValue(new Error('Validation failed'));
-      
+
       // registry.register(faultyPlugin);
       // expect(() => factory.createParserByExtension('.faulty')).toThrow();
     });
@@ -244,15 +244,15 @@ describe('ParserFactory', () => {
     it('應該能清理所有資源', async () => {
       // registry.register(tsPlugin);
       // registry.register(jsPlugin);
-      
+
       // factory.createParser('/path/to/file.ts');
       // factory.createParser('/path/to/file.js');
-      
+
       // const tsDisposeSpy = vi.spyOn(tsPlugin, 'dispose');
       // const jsDisposeSpy = vi.spyOn(jsPlugin, 'dispose');
-      
+
       // await factory.dispose();
-      
+
       // // 快取中的 parser 實例應該被清理
       // expect(tsDisposeSpy).toHaveBeenCalled();
       // expect(jsDisposeSpy).toHaveBeenCalled();
@@ -261,7 +261,7 @@ describe('ParserFactory', () => {
     it('清理後應該無法建立新的 Parser', async () => {
       // registry.register(tsPlugin);
       // await factory.dispose();
-      
+
       // expect(() => factory.createParser('/path/to/file.ts')).toThrow('Factory已被清理');
     });
   });
@@ -269,33 +269,33 @@ describe('ParserFactory', () => {
   describe('效能優化', () => {
     it('應該限制快取大小', () => {
       // factory.setMaxCacheSize(2);
-      
+
       // registry.register(tsPlugin);
       // registry.register(jsPlugin);
       // const swiftPlugin = new MockParserPlugin('swift', '1.0.0', ['.swift'], ['swift']);
       // registry.register(swiftPlugin);
-      
+
       // factory.createParser('/path/to/file.ts');
       // factory.createParser('/path/to/file.js');
       // factory.createParser('/path/to/file.swift');
-      
+
       // // 快取應該只保留最近使用的 2 個
       // expect(factory.getCacheSize()).toBe(2);
     });
 
     it('應該支援最近最少使用 (LRU) 快取策略', () => {
       // factory.setMaxCacheSize(2);
-      
+
       // registry.register(tsPlugin);
       // registry.register(jsPlugin);
       // const swiftPlugin = new MockParserPlugin('swift', '1.0.0', ['.swift'], ['swift']);
       // registry.register(swiftPlugin);
-      
+
       // factory.createParser('/path/to/file.ts');
       // factory.createParser('/path/to/file.js');
       // factory.createParser('/path/to/file.ts'); // 重新訪問 ts
       // factory.createParser('/path/to/file.swift'); // 應該移除 js
-      
+
       // const cachedParsers = factory.getCachedParsers();
       // expect(cachedParsers).toContain('typescript');
       // expect(cachedParsers).toContain('swift');

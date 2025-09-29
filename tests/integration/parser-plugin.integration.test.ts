@@ -108,7 +108,7 @@ class MockTypeScriptParser implements ParserPlugin {
     return [
       {
         range: selection,
-        newText: `function extracted() {\n  // 提取的函式\n}`
+        newText: 'function extracted() {\n  // 提取的函式\n}'
       }
     ];
   }
@@ -367,7 +367,7 @@ describe('Parser Plugin Integration', () => {
       const parsePromises = files.map(async (file) => {
         const ext = '.' + file.path.split('.').pop()!;
         const parser = registry.getParser(ext);
-        if (!parser) throw new Error(`No parser for ${file.path}`);
+        if (!parser) {throw new Error(`No parser for ${file.path}`);}
 
         const ast = await parser.parse(file.code, file.path);
         const symbols = await parser.extractSymbols(ast);

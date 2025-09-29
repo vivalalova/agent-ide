@@ -11,14 +11,14 @@ import { join } from 'path';
 describe('TextSearchEngine', () => {
   let engine: TextSearchEngine;
   let testDir: string;
-  
+
   beforeEach(async () => {
     engine = new TextSearchEngine();
     testDir = join(process.cwd(), 'test-temp');
-    
+
     // 建立測試目錄和檔案
     await mkdir(testDir, { recursive: true });
-    
+
     await writeFile(join(testDir, 'test1.ts'), `
 export function getUserById(id: number): User {
   return database.findUser(id);
@@ -42,7 +42,7 @@ function processUser(user) {
 }
 `.trim());
   });
-  
+
   afterEach(async () => {
     await rm(testDir, { recursive: true, force: true });
   });

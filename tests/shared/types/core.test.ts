@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { 
-  Position, 
-  Range, 
-  Location, 
-  isPosition, 
-  isRange, 
+import {
+  Position,
+  Range,
+  Location,
+  isPosition,
+  isRange,
   isLocation,
   createPosition,
   createRange,
@@ -156,7 +156,7 @@ describe('核心型別系統', () => {
         createPosition(1, 5),
         createPosition(2, 10)
       );
-      
+
       const positionInside = createPosition(1, 7);
       const positionBefore = createPosition(1, 3);
       const positionAfter = createPosition(2, 15);

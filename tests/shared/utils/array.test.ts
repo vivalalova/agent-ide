@@ -201,10 +201,10 @@ describe('陣列工具函式', () => {
     it('應該洗牌陣列', () => {
       const original = [1, 2, 3, 4, 5];
       const shuffled = shuffle([...original]);
-      
+
       // 檢查長度相同
       expect(shuffled).toHaveLength(original.length);
-      
+
       // 檢查包含相同元素
       expect(shuffled.sort()).toEqual(original.sort());
     });

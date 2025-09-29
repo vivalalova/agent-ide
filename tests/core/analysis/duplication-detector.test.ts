@@ -165,7 +165,7 @@ class DuplicationDetector {
   }
 
   private calculateSimilarity(fragments: CodeFragment[]): number {
-    if (fragments.length < 2) return 1.0;
+    if (fragments.length < 2) {return 1.0;}
 
     const base = fragments[0];
     let totalSimilarity = 0;
@@ -179,8 +179,8 @@ class DuplicationDetector {
   }
 
   private tokenSimilarity(tokens1: string[], tokens2: string[]): number {
-    if (tokens1.length === 0 && tokens2.length === 0) return 1.0;
-    if (tokens1.length === 0 || tokens2.length === 0) return 0.0;
+    if (tokens1.length === 0 && tokens2.length === 0) {return 1.0;}
+    if (tokens1.length === 0 || tokens2.length === 0) {return 0.0;}
 
     // 計算位置匹配度（相同位置的相同 token）
     const minLen = Math.min(tokens1.length, tokens2.length);
@@ -249,7 +249,7 @@ class DuplicationDetector {
     const firstExactHash = this.exactHash(fragments[0].ast);
     const allExact = fragments.every(f => this.exactHash(f.ast) === firstExactHash);
 
-    if (allExact) return 'type-1';
+    if (allExact) {return 'type-1';}
 
     // 檢查是否結構相同（Type-2）
     const firstNormalizedHash = this.structuralHash(this.normalize(fragments[0].ast));
@@ -257,7 +257,7 @@ class DuplicationDetector {
       this.structuralHash(this.normalize(f.ast)) === firstNormalizedHash
     );
 
-    if (allStructural) return 'type-2';
+    if (allStructural) {return 'type-2';}
 
     // 否則為近似相同（Type-3）
     return 'type-3';
@@ -268,12 +268,12 @@ class DuplicationDetector {
     const checked = new Set<string>();
 
     for (let i = 0; i < fragments.length; i++) {
-      if (checked.has(fragments[i].id)) continue;
+      if (checked.has(fragments[i].id)) {continue;}
 
       const similar: CodeFragment[] = [fragments[i]];
 
       for (let j = i + 1; j < fragments.length; j++) {
-        if (checked.has(fragments[j].id)) continue;
+        if (checked.has(fragments[j].id)) {continue;}
 
         const similarity = this.tokenSimilarity(
           fragments[i].tokens,

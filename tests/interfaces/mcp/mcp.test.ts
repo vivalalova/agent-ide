@@ -63,8 +63,8 @@ const mockParserRegistry = {
     }
   ]),
   getParserByName: vi.fn((name: string) => {
-    if (name === 'typescript') return { name, version: '1.0.0' };
-    if (name === 'javascript') return { name, version: '1.0.0' };
+    if (name === 'typescript') {return { name, version: '1.0.0' };}
+    if (name === 'javascript') {return { name, version: '1.0.0' };}
     return null;
   })
 };

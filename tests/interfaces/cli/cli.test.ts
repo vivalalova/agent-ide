@@ -50,16 +50,16 @@ describe('AgentIdeCLI', () => {
       // 這個測試會檢查命令是否正確註冊
       // 直接檢查 CLI 實例存在且初始化成功即可
       expect(cli).toBeDefined();
-      
+
       // 驗證可以建立 CLI 而不拋出錯誤
       expect(() => new AgentIdeCLI()).not.toThrow();
     });
 
     it('應該支援 plugins 命令', async () => {
       const argv = ['node', 'agent-ide', 'plugins', 'list'];
-      
+
       await cli.run(argv);
-      
+
       expect(mockConsoleLog).toHaveBeenCalledWith('🔌 插件列表:');
     });
   });
@@ -67,16 +67,16 @@ describe('AgentIdeCLI', () => {
   describe('錯誤處理', () => {
     it('應該在缺少必要參數時顯示錯誤', async () => {
       const mockConsoleError = vi.spyOn(console, 'error').mockImplementation();
-      
+
       const argv = ['node', 'agent-ide', 'rename'];
-      
+
       // process.exit 會拋出錯誤，我們需要捕獲它
       try {
         await cli.run(argv);
       } catch (error) {
         // 預期會因為 process.exit 而拋出錯誤
       }
-      
+
       expect(mockConsoleError).toHaveBeenCalledWith('❌ 必須指定 --from 和 --to 參數');
     });
   });
@@ -85,7 +85,7 @@ describe('AgentIdeCLI', () => {
     it('應該顯示主要幫助資訊', async () => {
       // 檢查 CLI 程式有正確的名稱和描述設定
       expect(cli).toBeDefined();
-      
+
       // 簡單驗證 CLI 結構正確，不實際執行 help 命令
       // 因為 commander.js 的 help 會直接輸出並退出程序
       expect(() => new AgentIdeCLI()).not.toThrow();

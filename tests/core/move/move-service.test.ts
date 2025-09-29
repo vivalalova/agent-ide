@@ -25,7 +25,7 @@ const mockImportResolver = {
 
 describe('MoveService', () => {
   let moveService: MoveService;
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -47,7 +47,7 @@ describe('MoveService', () => {
         pathAliases: { '@': './src' },
         supportedExtensions: ['.ts', '.js']
       };
-      
+
       const service = new MoveService(config);
       expect(service).toBeInstanceOf(MoveService);
     });
@@ -157,7 +157,7 @@ describe('MoveService', () => {
         .mockResolvedValueOnce() // source exists
         .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })) // target dir doesn't exist
         .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
-      
+
       mockFs.mkdir.mockResolvedValue();
       mockFs.rename.mockResolvedValue();
 
@@ -223,9 +223,9 @@ describe('MoveService', () => {
       // Mock file content reading - 正確回傳符合預期的檔案內容
       mockFs.readFile.mockImplementation((filePath: any) => {
         if (typeof filePath === 'string' && filePath.includes('file1')) {
-          return Promise.resolve("import { Component } from './components/old';\n");
+          return Promise.resolve('import { Component } from \'./components/old\';\n');
         }
-        return Promise.resolve("// no imports\n");
+        return Promise.resolve('// no imports\n');
       });
       mockFs.writeFile.mockResolvedValue();
 
@@ -233,11 +233,11 @@ describe('MoveService', () => {
       mockImportResolver.parseImportStatements.mockReturnValue([
         {
           path: './components/old',
-          rawStatement: "import { Component } from './components/old';",
+          rawStatement: 'import { Component } from \'./components/old\';',
           position: { line: 1, column: 1 }
         }
       ]);
-      
+
       mockImportResolver.isNodeModuleImport.mockReturnValue(false);
       mockImportResolver.resolvePathAlias.mockImplementation((path: string) => path);
       mockImportResolver.calculateRelativePath.mockReturnValue('../utils/new');
@@ -309,7 +309,7 @@ describe('MoveService', () => {
             import { D } from '../old';
           `);
         }
-        return Promise.resolve("// no imports\n");
+        return Promise.resolve('// no imports\n');
       });
       mockFs.writeFile.mockResolvedValue();
 
@@ -318,17 +318,17 @@ describe('MoveService', () => {
           return [
             {
               path: './old',
-              rawStatement: "import { A } from './old';",
+              rawStatement: 'import { A } from \'./old\';',
               position: { line: 1, column: 1 }
             },
             {
               path: '../old',
-              rawStatement: "import { B } from '../old';",
+              rawStatement: 'import { B } from \'../old\';',
               position: { line: 2, column: 1 }
             },
             {
               path: 'react',
-              rawStatement: "import React from 'react';",
+              rawStatement: 'import React from \'react\';',
               position: { line: 3, column: 1 }
             }
           ];
@@ -337,12 +337,12 @@ describe('MoveService', () => {
           return [
             {
               path: './old',
-              rawStatement: "import { C } from './old';",
+              rawStatement: 'import { C } from \'./old\';',
               position: { line: 1, column: 1 }
             },
             {
               path: '../old',
-              rawStatement: "import { D } from '../old';",
+              rawStatement: 'import { D } from \'../old\';',
               position: { line: 2, column: 1 }
             }
           ];
@@ -383,7 +383,7 @@ describe('MoveService', () => {
 
       // Mock file reading error
       mockFs.readFile.mockRejectedValue(new Error('Permission denied'));
-      
+
       const result = await moveService.moveFile(operation);
 
       expect(result.success).toBe(true); // 服務應該繼續執行，即使某些檔案無法讀取
@@ -409,7 +409,7 @@ describe('MoveService', () => {
         { name: 'other.ts', isDirectory: () => false, isFile: () => true }
       ] as any);
 
-      mockFs.readFile.mockResolvedValue("import { Test } from './other';\n");
+      mockFs.readFile.mockResolvedValue('import { Test } from \'./other\';\n');
       mockFs.writeFile.mockResolvedValue();
 
       mockImportResolver.parseImportStatements.mockReturnValue([]);
@@ -468,16 +468,16 @@ describe('MoveService', () => {
 
       mockFs.readFile.mockImplementation((filePath: any) => {
         if (typeof filePath === 'string' && filePath.includes('App.ts')) {
-          return Promise.resolve("import { Button } from './components/Button';\n");
+          return Promise.resolve('import { Button } from \'./components/Button\';\n');
         }
-        return Promise.resolve("// no imports\n");
+        return Promise.resolve('// no imports\n');
       });
       mockFs.writeFile.mockResolvedValue();
 
       mockImportResolver.parseImportStatements.mockReturnValue([
         {
           path: './components/Button',
-          rawStatement: "import { Button } from './components/Button';",
+          rawStatement: 'import { Button } from \'./components/Button\';',
           position: { line: 1, column: 1 }
         }
       ]);
@@ -540,16 +540,16 @@ describe('MoveService', () => {
       // Import without extension
       mockFs.readFile.mockImplementation((filePath: any) => {
         if (typeof filePath === 'string' && filePath.includes('App.ts')) {
-          return Promise.resolve("import { Button } from './Button';\n");
+          return Promise.resolve('import { Button } from \'./Button\';\n');
         }
-        return Promise.resolve("// no imports\n");
+        return Promise.resolve('// no imports\n');
       });
       mockFs.writeFile.mockResolvedValue();
 
       mockImportResolver.parseImportStatements.mockReturnValue([
         {
           path: './Button',
-          rawStatement: "import { Button } from './Button';",
+          rawStatement: 'import { Button } from \'./Button\';',
           position: { line: 1, column: 1 }
         }
       ]);
@@ -569,7 +569,7 @@ describe('MoveService', () => {
         pathAliases: { '@': './src' },
         supportedExtensions: ['.ts', '.js']
       };
-      
+
       const service = new MoveService(config, mockImportResolver as any);
 
       const operation: MoveOperation = {
@@ -589,13 +589,13 @@ describe('MoveService', () => {
         { name: 'App.ts', isDirectory: () => false, isFile: () => true }
       ] as any);
 
-      mockFs.readFile.mockResolvedValue("import { Button } from '@/components/Button';\n");
+      mockFs.readFile.mockResolvedValue('import { Button } from \'@/components/Button\';\n');
       mockFs.writeFile.mockResolvedValue();
 
       mockImportResolver.parseImportStatements.mockReturnValue([
         {
           path: '@/components/Button',
-          rawStatement: "import { Button } from '@/components/Button';",
+          rawStatement: 'import { Button } from \'@/components/Button\';',
           position: { line: 1, column: 1 }
         }
       ]);
@@ -678,9 +678,9 @@ describe('MoveService', () => {
 
       mockFs.readFile.mockImplementation((filePath: any) => {
         if (typeof filePath === 'string' && filePath.includes('test.ts')) {
-          return Promise.resolve("import { Test } from './old';\n");
+          return Promise.resolve('import { Test } from \'./old\';\n');
         }
-        return Promise.resolve("// no imports\n");
+        return Promise.resolve('// no imports\n');
       });
 
       // Mock write failure
@@ -691,7 +691,7 @@ describe('MoveService', () => {
           return [
             {
               path: './old',
-              rawStatement: "import { Test } from './old';",
+              rawStatement: 'import { Test } from \'./old\';',
               position: { line: 1, column: 1 }
             }
           ];
@@ -725,7 +725,7 @@ describe('MoveService', () => {
         .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
       mockFs.rename.mockResolvedValue();
       mockFs.mkdir.mockResolvedValue();
-      
+
       // Mock readdir failure for some directories
       mockFs.readdir.mockImplementation((dir: any) => {
         if (dir.includes('restricted')) {
@@ -762,9 +762,9 @@ describe('MoveService', () => {
         isDirectory: () => false,
         isFile: () => true
       }));
-      
+
       mockFs.readdir.mockResolvedValue(files as any);
-      mockFs.readFile.mockResolvedValue("// No imports\n");
+      mockFs.readFile.mockResolvedValue('// No imports\n');
 
       const result = await moveService.moveFile(operation);
 
@@ -806,7 +806,7 @@ describe('MoveService', () => {
         }
       });
 
-      mockFs.readFile.mockResolvedValue("// No imports\n");
+      mockFs.readFile.mockResolvedValue('// No imports\n');
 
       const result = await moveService.moveFile(operation);
 
@@ -827,7 +827,7 @@ describe('MoveService', () => {
         .mockResolvedValueOnce() // source exists
         .mockResolvedValueOnce() // target dir exists
         .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // target file doesn't exist
-      mockFs.rename.mockImplementation(() => 
+      mockFs.rename.mockImplementation(() =>
         new Promise(resolve => setTimeout(resolve, 10))
       );
       mockFs.mkdir.mockResolvedValue();

@@ -135,14 +135,14 @@ class ExtractFunctionRefactoring {
       return !propertyPattern.test(selection.code);
     });
 
-    if (DEBUG) console.log(`=== Analyzing selection for variables ===`);
-    if (DEBUG) console.log(`Selection code: "${selection.code}"`);
-    if (DEBUG) console.log(`Variable matches: ${JSON.stringify(variableMatches)}`);
-    if (DEBUG) console.log(`Unique vars: ${JSON.stringify(uniqueVars)}`);
+    if (DEBUG) {console.log('=== Analyzing selection for variables ===');}
+    if (DEBUG) {console.log(`Selection code: "${selection.code}"`);}
+    if (DEBUG) {console.log(`Variable matches: ${JSON.stringify(variableMatches)}`);}
+    if (DEBUG) {console.log(`Unique vars: ${JSON.stringify(uniqueVars)}`);}
 
     uniqueVars.forEach(varName => {
       if (!this.isKeyword(varName)) {
-        if (DEBUG) console.log(`\n--- Analyzing variable: "${varName}" ---`);
+        if (DEBUG) {console.log(`\n--- Analyzing variable: "${varName}" ---`);}
 
         // 檢查是否是修改後立即返回的變數（應視為內部變數）
         // 更精確的檢查：只有直接返回變數的情況才視為內部變數
@@ -162,12 +162,12 @@ class ExtractFunctionRefactoring {
         const isBeingAssigned = assignmentPattern.test(selection.code);
         const isFunctionCall = selection.code.includes(`${varName}(`) && !isBeingAssigned;
 
-        if (DEBUG) console.log(`  assignmentPattern.test(): ${assignmentPattern.test(selection.code)}`);
-        if (DEBUG) console.log(`  directReturnPattern.test(): ${directReturnPattern.test(selection.code)}`);
-        if (DEBUG) console.log(`  isModifiedAndReturned: ${isModifiedAndReturned}`);
-        if (DEBUG) console.log(`  isLocalVariable: ${isLocalVariable}`);
-        if (DEBUG) console.log(`  isBeingAssigned: ${isBeingAssigned}`);
-        if (DEBUG) console.log(`  isFunctionCall: ${isFunctionCall}`);
+        if (DEBUG) {console.log(`  assignmentPattern.test(): ${assignmentPattern.test(selection.code)}`);}
+        if (DEBUG) {console.log(`  directReturnPattern.test(): ${directReturnPattern.test(selection.code)}`);}
+        if (DEBUG) {console.log(`  isModifiedAndReturned: ${isModifiedAndReturned}`);}
+        if (DEBUG) {console.log(`  isLocalVariable: ${isLocalVariable}`);}
+        if (DEBUG) {console.log(`  isBeingAssigned: ${isBeingAssigned}`);}
+        if (DEBUG) {console.log(`  isFunctionCall: ${isFunctionCall}`);}
 
         // 檢查修改模式：直接賦值、屬性賦值、或方法調用（如push, set）
         const directAssignment = assignmentPattern.test(selection.code);
@@ -190,7 +190,7 @@ class ExtractFunctionRefactoring {
           used: true
         };
 
-        if (DEBUG) console.log(`  Final variable analysis: external=${variable.external}, modified=${variable.modified}`);
+        if (DEBUG) {console.log(`  Final variable analysis: external=${variable.external}, modified=${variable.modified}`);}
 
         // 只有外部變數才需要作為參數傳遞
         if (variable.external || isExternalAssignment) {
@@ -199,17 +199,17 @@ class ExtractFunctionRefactoring {
             variable.external = true;
             variable.modified = true;
             modifiedVariables.add(variable);
-            if (DEBUG) console.log(`  Added to modifiedVariables: ${varName} (external assignment)`);
+            if (DEBUG) {console.log(`  Added to modifiedVariables: ${varName} (external assignment)`);}
           } else {
             usedVariables.add(variable);
-            if (DEBUG) console.log(`  Added to usedVariables: ${varName}`);
+            if (DEBUG) {console.log(`  Added to usedVariables: ${varName}`);}
           }
         }
       }
     });
 
-    if (DEBUG) console.log(`Final analysis: usedVariables=${usedVariables.size}, modifiedVariables=${modifiedVariables.size}`);
-    if (DEBUG) console.log(`Modified variables:`, Array.from(modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) {console.log(`Final analysis: usedVariables=${usedVariables.size}, modifiedVariables=${modifiedVariables.size}`);}
+    if (DEBUG) {console.log('Modified variables:', Array.from(modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));}
 
     return {
       usedVariables,
@@ -227,10 +227,10 @@ class ExtractFunctionRefactoring {
     const modifiedExternalVars = Array.from(analysis.modifiedVariables)
       .filter(v => v.external);
 
-    if (DEBUG) console.log('Validation Debug:');
-    if (DEBUG) console.log('  modifiedExternalVars:', modifiedExternalVars.map(v => v.name));
-    if (DEBUG) console.log('  hasReturn:', analysis.hasReturn);
-    if (DEBUG) console.log('  modifiedExternalVars.length:', modifiedExternalVars.length);
+    if (DEBUG) {console.log('Validation Debug:');}
+    if (DEBUG) {console.log('  modifiedExternalVars:', modifiedExternalVars.map(v => v.name));}
+    if (DEBUG) {console.log('  hasReturn:', analysis.hasReturn);}
+    if (DEBUG) {console.log('  modifiedExternalVars.length:', modifiedExternalVars.length);}
 
     // 檢查複雜控制流
     const hasComplexControlFlow = code?.includes('break') ||
@@ -280,11 +280,11 @@ class ExtractFunctionRefactoring {
       return assignmentPattern.test(code);
     }).length > 1;
 
-    if (DEBUG) console.log('  hasComplexControlFlow:', hasComplexControlFlow);
-    if (DEBUG) console.log('  hasMultipleReturns:', hasMultipleReturns);
-    if (DEBUG) console.log('  hasConditionalModification:', hasConditionalModification);
-    if (DEBUG) console.log('  hasMultipleExternalModificationsWithReturn:', hasMultipleExternalModificationsWithReturn);
-    if (DEBUG) console.log('  isValidMultipleModification:', isValidMultipleModification);
+    if (DEBUG) {console.log('  hasComplexControlFlow:', hasComplexControlFlow);}
+    if (DEBUG) {console.log('  hasMultipleReturns:', hasMultipleReturns);}
+    if (DEBUG) {console.log('  hasConditionalModification:', hasConditionalModification);}
+    if (DEBUG) {console.log('  hasMultipleExternalModificationsWithReturn:', hasMultipleExternalModificationsWithReturn);}
+    if (DEBUG) {console.log('  isValidMultipleModification:', isValidMultipleModification);}
 
     // 拒絕條件
     if (hasComplexControlFlow) {
@@ -305,7 +305,7 @@ class ExtractFunctionRefactoring {
     }
 
 
-    if (DEBUG) console.log('  validation result:', errors.length === 0);
+    if (DEBUG) {console.log('  validation result:', errors.length === 0);}
 
     return {
       valid: errors.length === 0,
@@ -325,9 +325,9 @@ class ExtractFunctionRefactoring {
     const parameters: Parameter[] = [];
     const modifiedExternalVars = Array.from(analysis.modifiedVariables).filter(v => v.external);
 
-    if (DEBUG) console.log('=== Signature Determination Debug ===');
-    if (DEBUG) console.log('usedVariables:', Array.from(analysis.usedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
-    if (DEBUG) console.log('modifiedVariables:', Array.from(analysis.modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) {console.log('=== Signature Determination Debug ===');}
+    if (DEBUG) {console.log('usedVariables:', Array.from(analysis.usedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));}
+    if (DEBUG) {console.log('modifiedVariables:', Array.from(analysis.modifiedVariables).map(v => ({ name: v.name, external: v.external, modified: v.modified })));}
 
     // 使用但未修改的外部變數 -> 參數
     const parameterVariables = Array.from(analysis.usedVariables)
@@ -336,8 +336,8 @@ class ExtractFunctionRefactoring {
     // 修改的外部變數也需要作為參數傳入
     const modifiedVariablesAsParameters = modifiedExternalVars;
 
-    if (DEBUG) console.log('parameterVariables:', parameterVariables.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
-    if (DEBUG) console.log('modifiedVariablesAsParameters:', modifiedVariablesAsParameters.map(v => ({ name: v.name, external: v.external, modified: v.modified })));
+    if (DEBUG) {console.log('parameterVariables:', parameterVariables.map(v => ({ name: v.name, external: v.external, modified: v.modified })));}
+    if (DEBUG) {console.log('modifiedVariablesAsParameters:', modifiedVariablesAsParameters.map(v => ({ name: v.name, external: v.external, modified: v.modified })));}
 
     // 將未修改的外部變數作為參數
     parameterVariables.forEach(variable => {
@@ -431,7 +431,7 @@ ${asyncKeyword}function ${signature.name}(${paramList})${returnAnnotation} {
     if (code.match(/return \d+/)) {
       return 'number';
     }
-    if (code.includes('return "') || code.includes("return '")) {
+    if (code.includes('return "') || code.includes('return \'')) {
       return 'string';
     }
     return 'any';
@@ -1037,9 +1037,9 @@ return result;`
       const functionCode = functionEdit!.content;
 
       // 驗證縮排保持
-      expect(functionCode).toMatch(/  const nested/);
-      expect(functionCode).toMatch(/    property:/);
-      expect(functionCode).toMatch(/  return nested/);
+      expect(functionCode).toMatch(/ {2}const nested/);
+      expect(functionCode).toMatch(/ {4}property:/);
+      expect(functionCode).toMatch(/ {2}return nested/);
     }, { testName: 'formatting-preservation' }));
   });
 

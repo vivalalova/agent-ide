@@ -36,13 +36,13 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         }
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       // 找到 oldName 變數宣告的位置
       const position: Position = { line: 2, column: 16 }; // const oldName 的位置
       const edits = await parser.rename(ast, position, 'newName');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + 兩次使用
-      
+
       // 檢查所有編輯都是在同一個檔案
       edits.forEach(edit => {
         expect(edit.filePath).toBe('test.ts');
@@ -60,14 +60,14 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         const result = greet('World');
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 23 }; // 參數 name 的位置
       const edits = await parser.rename(ast, position, 'userName');
-      
+
       expect(edits).toHaveLength(2); // 參數宣告 + 函式內使用
-      
+
       // 檢查不會影響函式呼叫
-      const callEdit = edits.find(edit => 
+      const callEdit = edits.find(edit =>
         edit.range.start.line === 4 && edit.range.start.column > 20
       );
       expect(callEdit).toBeUndefined(); // 不應該重新命名函式呼叫中的字串
@@ -85,10 +85,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         const ref = oldFunction;
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 17 }; // function oldFunction 的位置
       const edits = await parser.rename(ast, position, 'newFunction');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + 呼叫 + 引用
       edits.forEach(edit => {
         expect(edit.newText).toBe('newFunction');
@@ -107,10 +107,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         instance.oldMethod();
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 2, column: 10 }; // oldMethod 方法的位置
       const edits = await parser.rename(ast, position, 'newMethod');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + this.呼叫 + instance.呼叫
       edits.forEach(edit => {
         expect(edit.newText).toBe('newMethod');
@@ -129,10 +129,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         const ref: OldClass = instance;
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 14 }; // class OldClass 的位置
       const edits = await parser.rename(ast, position, 'NewClass');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + new 呼叫 + 型別註解
       edits.forEach(edit => {
         expect(edit.newText).toBe('NewClass');
@@ -154,10 +154,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         }
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 2, column: 18 }; // oldProperty 屬性的位置
       const edits = await parser.rename(ast, position, 'newProperty');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + constructor 使用 + getter 使用
       edits.forEach(edit => {
         expect(edit.newText).toBe('newProperty');
@@ -179,10 +179,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         const obj: OldInterface = { name: 'test' };
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 19 }; // interface OldInterface 的位置
       const edits = await parser.rename(ast, position, 'NewInterface');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + implements + 型別註解
       edits.forEach(edit => {
         expect(edit.newText).toBe('NewInterface');
@@ -204,10 +204,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         console.log(obj.oldProperty);
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 2, column: 10 }; // oldProperty 屬性的位置
       const edits = await parser.rename(ast, position, 'newProperty');
-      
+
       expect(edits).toHaveLength(3); // 介面宣告 + 物件字面值 + 屬性存取
       edits.forEach(edit => {
         expect(edit.newText).toBe('newProperty');
@@ -227,10 +227,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         const value: OldType = 'test';
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 13 }; // type OldType 的位置
       const edits = await parser.rename(ast, position, 'NewType');
-      
+
       expect(edits).toHaveLength(4); // 宣告 + 參數型別 + 返回型別 + 變數型別
       edits.forEach(edit => {
         expect(edit.newText).toBe('NewType');
@@ -250,17 +250,17 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         }
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 1, column: 33 }; // 函式泛型 T 的位置
       const edits = await parser.rename(ast, position, 'U');
-      
+
       expect(edits).toHaveLength(3); // 宣告 + 參數型別 + 返回型別
       edits.forEach(edit => {
         expect(edit.newText).toBe('U');
       });
-      
+
       // 不應該影響介面中的 T
-      const interfaceEdits = edits.filter(edit => 
+      const interfaceEdits = edits.filter(edit =>
         edit.range.start.line >= 5
       );
       expect(interfaceEdits).toHaveLength(0);
@@ -281,14 +281,14 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         }
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 2, column: 16 }; // func1 中的 name
       const edits = await parser.rename(ast, position, 'newName');
-      
+
       expect(edits).toHaveLength(2); // 只有 func1 中的宣告和使用
-      
+
       // 檢查沒有影響 func2 中的 name
-      const func2Edits = edits.filter(edit => 
+      const func2Edits = edits.filter(edit =>
         edit.range.start.line >= 7
       );
       expect(func2Edits).toHaveLength(0);
@@ -306,14 +306,14 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
         console.log(name);
       `;
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 4, column: 16 }; // 區域變數 name
       const edits = await parser.rename(ast, position, 'localName');
-      
+
       expect(edits).toHaveLength(2); // 區域變數的宣告和使用
-      
+
       // 檢查沒有影響全域變數
-      const globalEdit = edits.find(edit => 
+      const globalEdit = edits.find(edit =>
         edit.range.start.line === 1
       );
       expect(globalEdit).toBeUndefined();
@@ -322,44 +322,44 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
 
   describe('錯誤處理', () => {
     it('應該拋出錯誤當位置無效', async () => {
-      const code = `const valid = true;`;
+      const code = 'const valid = true;';
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const invalidPosition: Position = { line: 100, column: 100 };
-      
+
       await expect(
         parser.rename(ast, invalidPosition, 'newName')
       ).rejects.toThrow();
     });
 
     it('應該拋出錯誤當新名稱為空', async () => {
-      const code = `const oldName = true;`;
+      const code = 'const oldName = true;';
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 0, column: 6 };
-      
+
       await expect(
         parser.rename(ast, position, '')
       ).rejects.toThrow();
     });
 
     it('應該拋出錯誤當新名稱無效', async () => {
-      const code = `const oldName = true;`;
+      const code = 'const oldName = true;';
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 0, column: 6 };
-      
+
       await expect(
         parser.rename(ast, position, '123invalid')
       ).rejects.toThrow();
     });
 
     it('應該拋出錯誤當位置不在符號上', async () => {
-      const code = `const name = 'value';`;
+      const code = 'const name = \'value\';';
       const ast = await parser.parse(code, 'test.ts');
-      
+
       const position: Position = { line: 0, column: 10 }; // 在 = 符號上
-      
+
       await expect(
         parser.rename(ast, position, 'newName')
       ).rejects.toThrow();
@@ -382,10 +382,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
       `;
       const ast = await parser.parse(code, 'test.ts');
       const symbols = await parser.extractSymbols(ast);
-      
+
       const funcSymbol = symbols.find(s => s.name === 'testFunc');
       expect(funcSymbol).toBeDefined();
-      
+
       const references = await parser.findReferences(ast, funcSymbol!);
       expect(references).toHaveLength(4); // 宣告 + 3個使用
     });
@@ -413,10 +413,10 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
       `;
       const ast = await parser.parse(code, 'test.ts');
       const symbols = await parser.extractSymbols(ast);
-      
+
       const valueSymbol = symbols.find(s => s.name === 'value');
       expect(valueSymbol).toBeDefined();
-      
+
       const usages = await parser.findUsages(ast, valueSymbol!);
       expect(usages).toHaveLength(2); // 兩次使用（不包含宣告）
     });

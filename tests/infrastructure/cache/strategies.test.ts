@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { 
-  LRUStrategy, 
-  LFUStrategy, 
-  FIFOStrategy, 
-  TTLStrategy, 
-  RandomStrategy, 
-  StrategyFactory 
+import {
+  LRUStrategy,
+  LFUStrategy,
+  FIFOStrategy,
+  TTLStrategy,
+  RandomStrategy,
+  StrategyFactory
 } from '../../../src/infrastructure/cache/strategies';
 import { EvictionStrategy, type CacheItem } from '../../../src/infrastructure/cache/types';
 
@@ -17,25 +17,25 @@ describe('快取策略測試', () => {
     beforeEach(() => {
       strategy = new LRUStrategy();
       items = new Map();
-      
+
       // 建立測試項目
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: 1000, 
-        lastAccessedAt: 1000, 
-        accessCount: 0 
+      items.set('a', {
+        value: 'value-a',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        accessCount: 0
       });
-      items.set('b', { 
-        value: 'value-b', 
-        createdAt: 2000, 
-        lastAccessedAt: 2000, 
-        accessCount: 0 
+      items.set('b', {
+        value: 'value-b',
+        createdAt: 2000,
+        lastAccessedAt: 2000,
+        accessCount: 0
       });
-      items.set('c', { 
-        value: 'value-c', 
-        createdAt: 3000, 
-        lastAccessedAt: 3000, 
-        accessCount: 0 
+      items.set('c', {
+        value: 'value-c',
+        createdAt: 3000,
+        lastAccessedAt: 3000,
+        accessCount: 0
       });
     });
 
@@ -82,9 +82,9 @@ describe('快取策略測試', () => {
     it('應該能清理內部狀態', () => {
       strategy.onSet('a', items.get('a')!);
       strategy.onSet('b', items.get('b')!);
-      
+
       strategy.clear();
-      
+
       // 清理後應該沒有項目可以淘汰
       expect(strategy.selectEvictionKey(new Map())).toBeUndefined();
     });
@@ -104,23 +104,23 @@ describe('快取策略測試', () => {
     });
 
     it('應該選擇存取次數最少的項目', () => {
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: 1000, 
-        lastAccessedAt: 1000, 
-        accessCount: 1 
+      items.set('a', {
+        value: 'value-a',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        accessCount: 1
       });
-      items.set('b', { 
-        value: 'value-b', 
-        createdAt: 2000, 
-        lastAccessedAt: 2000, 
-        accessCount: 3 
+      items.set('b', {
+        value: 'value-b',
+        createdAt: 2000,
+        lastAccessedAt: 2000,
+        accessCount: 3
       });
-      items.set('c', { 
-        value: 'value-c', 
-        createdAt: 3000, 
-        lastAccessedAt: 3000, 
-        accessCount: 2 
+      items.set('c', {
+        value: 'value-c',
+        createdAt: 3000,
+        lastAccessedAt: 3000,
+        accessCount: 2
       });
 
       expect(strategy.selectEvictionKey(items)).toBe('a');
@@ -145,23 +145,23 @@ describe('快取策略測試', () => {
     });
 
     it('應該選擇最早建立的項目', () => {
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: 3000, 
-        lastAccessedAt: 3000, 
-        accessCount: 0 
+      items.set('a', {
+        value: 'value-a',
+        createdAt: 3000,
+        lastAccessedAt: 3000,
+        accessCount: 0
       });
-      items.set('b', { 
-        value: 'value-b', 
+      items.set('b', {
+        value: 'value-b',
         createdAt: 1000, // 最早
-        lastAccessedAt: 2000, 
-        accessCount: 0 
+        lastAccessedAt: 2000,
+        accessCount: 0
       });
-      items.set('c', { 
-        value: 'value-c', 
-        createdAt: 2000, 
-        lastAccessedAt: 4000, 
-        accessCount: 0 
+      items.set('c', {
+        value: 'value-c',
+        createdAt: 2000,
+        lastAccessedAt: 4000,
+        accessCount: 0
       });
 
       expect(strategy.selectEvictionKey(items)).toBe('b');
@@ -183,18 +183,18 @@ describe('快取策略測試', () => {
 
     it('應該優先選擇已過期的項目', () => {
       const now = Date.now();
-      
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: now - 2000, 
-        lastAccessedAt: now - 2000, 
+
+      items.set('a', {
+        value: 'value-a',
+        createdAt: now - 2000,
+        lastAccessedAt: now - 2000,
         accessCount: 0,
         expiresAt: now - 1000 // 已過期
       });
-      items.set('b', { 
-        value: 'value-b', 
-        createdAt: now - 1000, 
-        lastAccessedAt: now - 1000, 
+      items.set('b', {
+        value: 'value-b',
+        createdAt: now - 1000,
+        lastAccessedAt: now - 1000,
         accessCount: 0,
         expiresAt: now + 5000 // 未過期
       });
@@ -204,25 +204,25 @@ describe('快取策略測試', () => {
 
     it('應該在沒有過期項目時選擇最早過期的項目', () => {
       const now = Date.now();
-      
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: now - 2000, 
-        lastAccessedAt: now - 2000, 
+
+      items.set('a', {
+        value: 'value-a',
+        createdAt: now - 2000,
+        lastAccessedAt: now - 2000,
         accessCount: 0,
         expiresAt: now + 3000
       });
-      items.set('b', { 
-        value: 'value-b', 
-        createdAt: now - 1000, 
-        lastAccessedAt: now - 1000, 
+      items.set('b', {
+        value: 'value-b',
+        createdAt: now - 1000,
+        lastAccessedAt: now - 1000,
         accessCount: 0,
         expiresAt: now + 1000 // 最早過期
       });
-      items.set('c', { 
-        value: 'value-c', 
-        createdAt: now - 500, 
-        lastAccessedAt: now - 500, 
+      items.set('c', {
+        value: 'value-c',
+        createdAt: now - 500,
+        lastAccessedAt: now - 500,
         accessCount: 0,
         expiresAt: now + 5000
       });
@@ -231,10 +231,10 @@ describe('快取策略測試', () => {
     });
 
     it('應該處理沒有過期時間的項目', () => {
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: 1000, 
-        lastAccessedAt: 1000, 
+      items.set('a', {
+        value: 'value-a',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
         accessCount: 0
         // 沒有 expiresAt
       });
@@ -257,23 +257,23 @@ describe('快取策略測試', () => {
     });
 
     it('應該隨機選擇項目', () => {
-      items.set('a', { 
-        value: 'value-a', 
-        createdAt: 1000, 
-        lastAccessedAt: 1000, 
-        accessCount: 0 
+      items.set('a', {
+        value: 'value-a',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+        accessCount: 0
       });
-      items.set('b', { 
-        value: 'value-b', 
-        createdAt: 2000, 
-        lastAccessedAt: 2000, 
-        accessCount: 0 
+      items.set('b', {
+        value: 'value-b',
+        createdAt: 2000,
+        lastAccessedAt: 2000,
+        accessCount: 0
       });
-      items.set('c', { 
-        value: 'value-c', 
-        createdAt: 3000, 
-        lastAccessedAt: 3000, 
-        accessCount: 0 
+      items.set('c', {
+        value: 'value-c',
+        createdAt: 3000,
+        lastAccessedAt: 3000,
+        accessCount: 0
       });
 
       const selectedKey = strategy.selectEvictionKey(items);

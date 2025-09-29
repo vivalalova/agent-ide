@@ -70,21 +70,21 @@ describe('ParserRegistry', () => {
   beforeEach(() => {
     ParserRegistry.resetInstance();
     registry = ParserRegistry.getInstance();
-    
+
     tsPlugin = new MockParserPlugin(
       'typescript',
       '1.0.0',
       ['.ts', '.tsx'],
       ['typescript']
     );
-    
+
     jsPlugin = new MockParserPlugin(
       'javascript',
       '1.0.0',
       ['.js', '.jsx'],
       ['javascript']
     );
-    
+
     swiftPlugin = new MockParserPlugin(
       'swift',
       '1.0.0',
@@ -175,7 +175,7 @@ describe('ParserRegistry', () => {
       const highPriorityJs = new MockParserPlugin('javascript-pro', '2.0.0', ['.js'], ['javascript']);
       registry.register(jsPlugin);
       registry.register(highPriorityJs, { priority: 10 });
-      
+
       const parser = registry.getParser('.js');
       expect(parser).toBe(highPriorityJs);
     });
@@ -207,7 +207,7 @@ describe('ParserRegistry', () => {
     it('應該能清理註冊中心', async () => {
       registry.register(tsPlugin);
       const disposeSpy = vi.spyOn(tsPlugin, 'dispose');
-      
+
       await registry.dispose();
       expect(disposeSpy).toHaveBeenCalled();
     });
@@ -222,7 +222,7 @@ describe('ParserRegistry', () => {
     it('Parser 驗證失敗應該拋出錯誤', async () => {
       // const invalidPlugin = new MockParserPlugin('invalid', '1.0.0', ['.invalid'], ['invalid']);
       // vi.spyOn(invalidPlugin, 'validate').mockResolvedValue({ valid: false, errors: [], warnings: [] });
-      
+
       // await expect(async () => {
       //   registry.register(invalidPlugin);
       //   await registry.initialize();

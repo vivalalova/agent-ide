@@ -43,9 +43,9 @@ describe('TypeScriptParser', () => {
     it('應該能解析簡單的變數宣告', async () => {
       const code = 'const message: string = "Hello, World!";';
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.sourceFile).toBe(filePath);
       expect(ast.root).toBeDefined();
@@ -67,9 +67,9 @@ describe('TypeScriptParser', () => {
         }
       `;
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -83,9 +83,9 @@ describe('TypeScriptParser', () => {
         }
       `;
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -97,9 +97,9 @@ describe('TypeScriptParser', () => {
         }
       `;
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -112,9 +112,9 @@ describe('TypeScriptParser', () => {
         export default class DefaultClass {}
       `;
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -131,9 +131,9 @@ describe('TypeScriptParser', () => {
         }
       `;
       const filePath = 'test.ts';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -147,9 +147,9 @@ describe('TypeScriptParser', () => {
         }
       `;
       const filePath = 'test.tsx';
-      
+
       const ast = await parser.parse(code, filePath);
-      
+
       expect(ast).toBeDefined();
       expect(ast.root.children.length).toBeGreaterThan(0);
     });
@@ -159,7 +159,7 @@ describe('TypeScriptParser', () => {
     it('應該能處理語法錯誤的程式碼', async () => {
       const code = 'const invalid syntax here';
       const filePath = 'test.ts';
-      
+
       // TypeScript 編譯器能夠從語法錯誤中恢復，所以不會拋出錯誤
       const ast = await parser.parse(code, filePath);
       expect(ast).toBeDefined();
@@ -168,13 +168,13 @@ describe('TypeScriptParser', () => {
 
     it('應該拋出錯誤當檔案路徑為空', async () => {
       const code = 'const valid = true;';
-      
+
       await expect(parser.parse(code, '')).rejects.toThrow();
     });
 
     it('應該拋出錯誤當程式碼為空', async () => {
       const filePath = 'test.ts';
-      
+
       await expect(parser.parse('', filePath)).rejects.toThrow();
     });
   });

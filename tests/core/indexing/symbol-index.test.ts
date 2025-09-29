@@ -135,7 +135,7 @@ describe('SymbolIndex', () => {
 
     it('應該能根據確切名稱查找符號', async () => {
       const results = await symbolIndex.findSymbol('testFunction');
-      
+
       expect(results).toHaveLength(1);
       expect(results[0].symbol.name).toBe('testFunction');
       expect(results[0].symbol.type).toBe(SymbolType.Function);
@@ -143,7 +143,7 @@ describe('SymbolIndex', () => {
 
     it('應該能根據符號類型查找', async () => {
       const results = await symbolIndex.findSymbolsByType(SymbolType.Function);
-      
+
       expect(results).toHaveLength(1);
       expect(results[0].symbol.name).toBe('testFunction');
     });
@@ -151,7 +151,7 @@ describe('SymbolIndex', () => {
     it('應該能模糊搜尋符號', async () => {
       const options = createSearchOptions({ fuzzy: true });
       const results = await symbolIndex.searchSymbols('test', options);
-      
+
       expect(results.length).toBeGreaterThan(0);
       const names = results.map(r => r.symbol.name);
       expect(names).toContain('testFunction');
@@ -159,7 +159,7 @@ describe('SymbolIndex', () => {
 
     it('應該能根據檔案查找符號', async () => {
       const results = await symbolIndex.getFileSymbols('/test/file1.ts');
-      
+
       expect(results).toHaveLength(2);
       const names = results.map(s => s.name);
       expect(names).toContain('testFunction');
@@ -180,7 +180,7 @@ describe('SymbolIndex', () => {
     it('應該能限制搜尋結果數量', async () => {
       const options = createSearchOptions({ maxResults: 1 });
       const results = await symbolIndex.searchSymbols('', options);
-      
+
       expect(results.length).toBeLessThanOrEqual(1);
     });
   });
@@ -332,12 +332,12 @@ describe('SymbolIndex', () => {
       );
 
       await symbolIndex.addSymbol(originalSymbol, fileInfo);
-      
+
       let results = await symbolIndex.findSymbol('testFunction');
       expect(results[0].symbol.location.range.start.line).toBe(1);
 
       await symbolIndex.updateSymbol(updatedSymbol, fileInfo);
-      
+
       results = await symbolIndex.findSymbol('testFunction');
       expect(results[0].symbol.location.range.start.line).toBe(2);
       expect(results[0].symbol.modifiers).toContain('async');

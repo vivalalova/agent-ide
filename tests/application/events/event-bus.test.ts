@@ -91,7 +91,7 @@ describe('EventBus', () => {
         priority: EventPriority.NORMAL
       };
 
-      let processOrder: number[] = [];
+      const processOrder: number[] = [];
       const asyncHandler: EventHandler = async (event) => {
         await new Promise(resolve => setTimeout(resolve, 10));
         processOrder.push(1);
