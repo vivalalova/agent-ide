@@ -47,11 +47,12 @@ import {
 } from './types';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer';
+import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor';
 
 /**
  * TypeScript Parser 實作
  */
-export class TypeScriptParser implements ParserPlugin {
+export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly name = 'typescript';
   public readonly version = '1.0.0';
   public readonly supportedExtensions = ['.ts', '.tsx', '.d.ts'] as const;
@@ -68,6 +69,9 @@ export class TypeScriptParser implements ParserPlugin {
     this.symbolExtractor = createSymbolExtractor();
     this.dependencyAnalyzer = createDependencyAnalyzer();
     this.compilerOptions = { ...DEFAULT_COMPILER_OPTIONS, ...compilerOptions };
+
+    // 註冊到記憶體監控器
+    MemoryMonitor.getInstance().register(this);
   }
 
   /**
@@ -76,6 +80,7 @@ export class TypeScriptParser implements ParserPlugin {
   async parse(code: string, filePath: string): Promise<AST> {
     this.validateInput(code, filePath);
 
+    let program: ts.Program | null = null;
     try {
       // 使用 TypeScript Compiler API 解析程式碼
       const sourceFile = ts.createSourceFile(
@@ -87,7 +92,7 @@ export class TypeScriptParser implements ParserPlugin {
       );
 
       // 檢查語法錯誤 - 使用 TypeScript Program 來檢查語法錯誤
-      const program = ts.createProgram([filePath], this.compilerOptions, {
+      program = ts.createProgram([filePath], this.compilerOptions, {
         getSourceFile: (fileName) => fileName === filePath ? sourceFile : undefined,
         writeFile: () => {},
         getCurrentDirectory: () => process.cwd(),
@@ -121,12 +126,28 @@ export class TypeScriptParser implements ParserPlugin {
         diagnostics: [...syntacticDiagnostics]
       };
 
+      // 立即清理 Program 以避免記憶體洩漏
+      program = null;
+
       return ast;
     } catch (error) {
+      // 確保在錯誤情況下也清理 Program
+      program = null;
+
       if (error instanceof TypeScriptParseError) {
         throw error;
       }
       throw createParseError(`解析失敗: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // 最終清理，確保 Program 被釋放
+      if (program) {
+        program = null;
+      }
+
+      // 觸發垃圾回收（如果可用）
+      if (typeof global !== 'undefined' && 'gc' in global && typeof global.gc === 'function') {
+        global.gc();
+      }
     }
   }
 
@@ -424,8 +445,43 @@ export class TypeScriptParser implements ParserPlugin {
    * 清理資源
    */
   async dispose(): Promise<void> {
-    // TypeScript Parser 沒有需要清理的資源
-    // 但提供介面供將來擴展使用
+    // 從記憶體監控器取消註冊
+    MemoryMonitor.getInstance().unregister(this);
+
+    // 清理 Language Service 和相關資源
+    if (this.languageService) {
+      this.languageService.dispose();
+      this.languageService = null;
+    }
+
+    // 清理 Language Service Host
+    this.languageServiceHost = null;
+
+    // 清理檔案快取
+    this.files.clear();
+
+    // 清理編譯器選項參考（完全清空而非設為空物件）
+    this.compilerOptions = null as any;
+
+    // 清理符號提取器和依賴分析器（如果有 dispose 方法）
+    if (this.symbolExtractor && 'dispose' in this.symbolExtractor && typeof (this.symbolExtractor as any).dispose === 'function') {
+      await (this.symbolExtractor as any).dispose();
+    }
+    if (this.dependencyAnalyzer && 'dispose' in this.dependencyAnalyzer && typeof (this.dependencyAnalyzer as any).dispose === 'function') {
+      await (this.dependencyAnalyzer as any).dispose();
+    }
+
+    // 清理其他參考
+    this.symbolExtractor = null as any;
+    this.dependencyAnalyzer = null as any;
+
+    // 多次觸發垃圾收集以確保記憶體完全釋放
+    if (typeof global !== 'undefined' && 'gc' in global && typeof global.gc === 'function') {
+      // 進行多次垃圾回收以確保釋放所有 TypeScript 相關資源
+      for (let i = 0; i < 3; i++) {
+        global.gc();
+      }
+    }
   }
 
   // 私有輔助方法
