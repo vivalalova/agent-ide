@@ -48,7 +48,7 @@ describe('CLI + MCP 整合工作流程測試', () => {
       const cliResult = await cliRunner.runCommand(['index', '--extensions', '.ts'], {cwd: testProjectPath,});
 
       expect(cliResult.exitCode).toBe(0);
-      expect(cliResult.stdout).toContain('索引建立完成');
+      expect(cliResult.stdout).toContain('✅ 索引完成!');
 
       // 使用 MCP 搜尋 CLI 建立的索引
       const mcpResult = await mcpClient.callTool('code_search', {

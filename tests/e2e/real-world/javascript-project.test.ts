@@ -49,7 +49,7 @@ describe('JavaScript 專案 E2E 測試', () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('索引建立完成');
+      expect(result.stdout).toContain('✅ 索引完成!');
 
       // 驗證 ES Module 的 import/export
       const searchResult = await cliRunner.runCommand(['search', '--query', 'import.*from', '--format', 'json'], {
@@ -372,8 +372,7 @@ describe('MCP JavaScript 專案測試', () => {
     mcpClient = new MCPClient();
     projectManager = new ProjectManager();
 
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/javascript');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     await mcpClient.connect();
   });
@@ -448,8 +447,7 @@ describe('JavaScript 專案效能測試', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'agent-ide-perf-js-'));
     cliRunner = new CLIRunner();
 
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/javascript');
-    testProjectPath = await new ProjectManager().copyProject(fixturesPath, tempDir);
+    testProjectPath = await new ProjectManager().copyProject(FIXTURES_PATH, tempDir);
   });
 
   afterEach(async () => {

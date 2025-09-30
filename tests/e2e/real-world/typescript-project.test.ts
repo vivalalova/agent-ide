@@ -53,7 +53,7 @@ describe('TypeScript 專案 E2E 測試', () => {
       const result = await cliRunner.runCommand(['index', '--extensions', '.ts', '--exclude', 'node_modules/**'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('索引建立完成');
+      expect(result.stdout).toContain('✅ 索引完成!');
 
       // 驗證索引內容
       const indexResult = await cliRunner.runCommand(['search', '--query', 'UserService', '--format', 'json'], {cwd: testProjectPath,});
@@ -283,8 +283,7 @@ describe('MCP TypeScript 專案測試', () => {
     mcpClient = new MCPClient();
     projectManager = new ProjectManager();
 
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/typescript');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     await mcpClient.connect();
   });
@@ -355,8 +354,7 @@ describe('TypeScript 專案效能測試', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'agent-ide-perf-ts-'));
     cliRunner = new CLIRunner();
 
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/typescript');
-    testProjectPath = await new ProjectManager().copyProject(fixturesPath, tempDir);
+    testProjectPath = await new ProjectManager().copyProject(FIXTURES_PATH, tempDir);
   });
 
   afterEach(async () => {
