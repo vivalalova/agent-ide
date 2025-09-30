@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { CLIRunner } from '../helpers/cli-runner';
 import { MCPClient } from '../helpers/mcp-client';
 import { ProjectManager } from '../helpers/project-manager';
 import { withMemoryOptimization } from '../../test-utils/memory-optimization';
+
+// 使用 import.meta.url 獲取當前檔案路徑，避免 process.cwd() 變化的問題
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const FIXTURES_PATH = join(__dirname, '../fixtures/swift');
 
 /**
  * Swift 專案 E2E 測試
@@ -26,8 +32,7 @@ describe('Swift 專案 E2E 測試', () => {
     projectManager = new ProjectManager();
 
     // 複製 Swift 測試專案
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/swift');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     await mcpClient.connect();
   });
@@ -39,19 +44,13 @@ describe('Swift 專案 E2E 測試', () => {
 
   describe('Swift Package Manager 專案索引', () => {
     it('應該能正確索引 Swift 專案結構', withMemoryOptimization(async () => {
-      const result = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.swift', '--exclude', '.build/**']
-      });
+      const result = await cliRunner.runCommand(['index', '--extensions', '.swift', '--exclude', '.build/**'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('索引建立完成');
 
       // 驗證 Swift 檔案索引
-      const searchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'import Foundation', '--format', 'json']
-      });
+      const searchResult = await cliRunner.runCommand(['search', '--query', 'import Foundation', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(searchResult.exitCode).toBe(0);
       const searchData = JSON.parse(searchResult.stdout);
@@ -69,20 +68,14 @@ describe('Swift 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 搜尋協議定義
-      const protocolResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'protocol.*:', '--format', 'json']
-      });
+      const protocolResult = await cliRunner.runCommand(['search', '--query', 'protocol.*:', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(protocolResult.exitCode).toBe(0);
       const protocolData = JSON.parse(protocolResult.stdout);
       expect(protocolData.results).toHaveLength.greaterThan(0);
 
       // 搜尋類別定義
-      const classResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'class.*:', '--format', 'json']
-      });
+      const classResult = await cliRunner.runCommand(['search', '--query', 'class.*:', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(classResult.exitCode).toBe(0);
       const classData = JSON.parse(classResult.stdout);
@@ -98,10 +91,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能處理 Swift async/await 語法', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'async.*throws', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['search', '--query', 'async.*throws', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const searchData = JSON.parse(result.stdout);
@@ -117,10 +107,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能識別 Swift Actor 定義', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'actor.*{', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['search', '--query', 'actor.*{', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const searchData = JSON.parse(result.stdout);
@@ -138,10 +125,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能分析 Swift 模組依賴', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['deps', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const depsData = JSON.parse(result.stdout);
@@ -166,10 +150,7 @@ describe('Swift 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 分析 Package.swift 依賴
-      const result = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--file', 'Package.swift', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['deps', '--file', 'Package.swift', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const depsData = JSON.parse(result.stdout);
@@ -185,14 +166,9 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能重新命名 Swift struct', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'UserProfile',
+      const result = await cliRunner.runCommand(['rename', '--symbol', 'UserProfile',
           '--new-name', 'UserProfileModel',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('預覽變更');
@@ -203,14 +179,9 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能重新命名 Swift enum', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'UserStatus',
+      const result = await cliRunner.runCommand(['rename', '--symbol', 'UserStatus',
           '--new-name', 'AccountStatus',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('enum UserStatus');
@@ -223,14 +194,9 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能重新命名 Swift actor 方法', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'createUser',
+      const result = await cliRunner.runCommand(['rename', '--symbol', 'createUser',
           '--new-name', 'addUser',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('createUser');
@@ -245,16 +211,11 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能提取 Swift async 函式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
+      const result = await cliRunner.runCommand(['refactor', 'extract-function',
           '--file', 'Sources/SwiftTestProject/Services/UserService.swift',
           '--start-line', '50',
           '--end-line', '70',
-          '--function-name', 'validateUserInput'
-        ]
-      });
+          '--function-name', 'validateUserInput'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('重構完成');
@@ -267,16 +228,11 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能處理 Swift actor 方法的重構', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
+      const result = await cliRunner.runCommand(['refactor', 'extract-function',
           '--file', 'Sources/SwiftTestProject/Services/UserService.swift',
           '--start-line', '100',
           '--end-line', '120',
-          '--function-name', 'processUserAnalytics'
-        ]
-      });
+          '--function-name', 'processUserAnalytics'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('processUserAnalytics');
@@ -288,16 +244,11 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能重構 Swift TaskGroup 模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
+      const result = await cliRunner.runCommand(['refactor', 'extract-function',
           '--file', 'Sources/SwiftTestProject/Models/User.swift',
           '--start-line', '80',
           '--end-line', '100',
-          '--function-name', 'calculateConcurrentScores'
-        ]
-      });
+          '--function-name', 'calculateConcurrentScores'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('calculateConcurrentScores');
@@ -309,10 +260,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能分析 Swift 程式碼複雜度', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['complexity', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'complexity', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const analysisData = JSON.parse(result.stdout);
@@ -332,10 +280,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能檢測 Swift 併發模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['patterns', '--pattern', 'concurrency', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'patterns', '--pattern', 'concurrency', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const patternsData = JSON.parse(result.stdout);
@@ -352,10 +297,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能檢測 Swift 記憶體安全模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['memory-safety', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'memory-safety', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const safetyData = JSON.parse(result.stdout);
@@ -371,10 +313,7 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能分析 Swift API 設計模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['api-design', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'api-design', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const apiData = JSON.parse(result.stdout);
@@ -392,23 +331,15 @@ describe('Swift 專案 E2E 測試', () => {
     it('應該能移動 Swift 檔案並更新 import', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['move'], {
-        cwd: testProjectPath,
-        args: [
-          '--from', 'Sources/SwiftTestProject/Models/User.swift',
+      const result = await cliRunner.runCommand(['move', '--from', 'Sources/SwiftTestProject/Models/User.swift',
           '--to', 'Sources/SwiftTestProject/Core/Models/User.swift',
-          '--update-imports'
-        ]
-      });
+          '--update-imports'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('檔案移動完成');
 
       // 驗證 import 路徑更新（如果有模組內 import）
-      const searchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'import.*SwiftTestProject', '--format', 'json']
-      });
+      const searchResult = await cliRunner.runCommand(['search', '--query', 'import.*SwiftTestProject', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(searchResult.exitCode).toBe(0);
     }, { testName: 'swift-move-file' }));
@@ -422,10 +353,7 @@ describe('Swift 專案 E2E 測試', () => {
         'import Foundation\nstruct Broken {\n    let invalid syntax here\n}'
       );
 
-      const result = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.swift']
-      });
+      const result = await cliRunner.runCommand(['index', '--extensions', '.swift'], {cwd: testProjectPath,});
 
       // 應該能處理錯誤檔案但不中斷整個索引
       expect(result.exitCode).toBe(0);
@@ -589,10 +517,7 @@ describe('Swift 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['search'], {
-      cwd: testProjectPath,
-      args: ['--query', 'actor UserService']
-    });
+    const result = await cliRunner.runCommand(['search', '--query', 'actor UserService'], {cwd: testProjectPath,});
 
     const duration = Date.now() - startTime;
 
@@ -605,10 +530,7 @@ describe('Swift 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['deps'], {
-      cwd: testProjectPath,
-      args: ['--format', 'json']
-    });
+    const result = await cliRunner.runCommand(['deps', '--format', 'json'], {cwd: testProjectPath,});
 
     const duration = Date.now() - startTime;
 
@@ -621,10 +543,7 @@ describe('Swift 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['analyze'], {
-      cwd: testProjectPath,
-      args: ['concurrency', '--format', 'json']
-    });
+    const result = await cliRunner.runCommand(['analyze', 'concurrency', '--format', 'json'], {cwd: testProjectPath,});
 
     const duration = Date.now() - startTime;
 

@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { CLIRunner } from '../helpers/cli-runner';
 import { MCPClient } from '../helpers/mcp-client';
 import { ProjectManager } from '../helpers/project-manager';
 import { withMemoryOptimization } from '../../test-utils/memory-optimization';
+
+// 使用 import.meta.url 獲取當前檔案路徑，避免 process.cwd() 變化的問題
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const FIXTURES_PATH = join(__dirname, '../fixtures/typescript');
 
 /**
  * TypeScript 專案 E2E 測試
@@ -28,8 +34,7 @@ describe('TypeScript 專案 E2E 測試', () => {
     projectManager = new ProjectManager();
 
     // 複製 TypeScript 測試專案到臨時目錄
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/typescript');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     // 連接 MCP 客戶端
     await mcpClient.connect();
@@ -45,19 +50,13 @@ describe('TypeScript 專案 E2E 測試', () => {
 
   describe('專案索引建立', () => {
     it('應該能成功建立 TypeScript 專案索引', withMemoryOptimization(async () => {
-      const result = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.ts', '--exclude', 'node_modules/**']
-      });
+      const result = await cliRunner.runCommand(['index', '--extensions', '.ts', '--exclude', 'node_modules/**'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('索引建立完成');
 
       // 驗證索引內容
-      const indexResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'UserService', '--format', 'json']
-      });
+      const indexResult = await cliRunner.runCommand(['search', '--query', 'UserService', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(indexResult.exitCode).toBe(0);
       const searchData = JSON.parse(indexResult.stdout);
@@ -67,16 +66,10 @@ describe('TypeScript 專案 E2E 測試', () => {
 
     it('應該能處理複雜的 TypeScript 型別定義', withMemoryOptimization(async () => {
       // 先建立索引
-      await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.ts']
-      });
+      await cliRunner.runCommand(['index', '--extensions', '.ts'], {cwd: testProjectPath,});
 
       // 搜尋複雜型別
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'ResponseResult', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['search', '--query', 'ResponseResult', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const searchData = JSON.parse(result.stdout);
@@ -89,16 +82,10 @@ describe('TypeScript 專案 E2E 測試', () => {
     }, { testName: 'typescript-types' }));
 
     it('應該能識別 TypeScript 路徑別名', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.ts']
-      });
+      await cliRunner.runCommand(['index', '--extensions', '.ts'], {cwd: testProjectPath,});
 
       // 搜尋使用路徑別名的 import
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', '@core/', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['search', '--query', '@core/', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const searchData = JSON.parse(result.stdout);
@@ -120,10 +107,7 @@ describe('TypeScript 專案 E2E 測試', () => {
       });
 
       // 分析依賴關係
-      const result = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['deps', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const depsData = JSON.parse(result.stdout);
@@ -144,10 +128,7 @@ describe('TypeScript 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 分析特定檔案的依賴
-      const result = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--file', 'src/index.ts', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['deps', '--file', 'src/index.ts', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const depsData = JSON.parse(result.stdout);
@@ -164,14 +145,9 @@ describe('TypeScript 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 重新命名 User 介面為 UserModel
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'User',
+      const result = await cliRunner.runCommand(['rename', '--symbol', 'User',
           '--new-name', 'UserModel',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('預覽變更');
@@ -184,14 +160,9 @@ describe('TypeScript 專案 E2E 測試', () => {
     it('應該能處理泛型型別的重新命名', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'ResponseResult',
+      const result = await cliRunner.runCommand(['rename', '--symbol', 'ResponseResult',
           '--new-name', 'ApiResponse',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('ResponseResult<T = any>');
@@ -204,16 +175,11 @@ describe('TypeScript 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 提取 createServer 函式中的中介軟體設定
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
+      const result = await cliRunner.runCommand(['refactor', 'extract-function',
           '--file', 'src/core/server.ts',
           '--start-line', '25',
           '--end-line', '35',
-          '--function-name', 'configureMiddleware'
-        ]
-      });
+          '--function-name', 'configureMiddleware'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('重構完成');
@@ -222,16 +188,11 @@ describe('TypeScript 專案 E2E 測試', () => {
     it('應該能處理 async/await 函式的重構', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
+      const result = await cliRunner.runCommand(['refactor', 'extract-function',
           '--file', 'src/core/user-service.ts',
           '--start-line', '50',
           '--end-line', '70',
-          '--function-name', 'validateUserInput'
-        ]
-      });
+          '--function-name', 'validateUserInput'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('async function validateUserInput');
@@ -242,10 +203,7 @@ describe('TypeScript 專案 E2E 測試', () => {
     it('應該能分析 TypeScript 程式碼複雜度', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['complexity', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'complexity', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const analysisData = JSON.parse(result.stdout);
@@ -264,10 +222,7 @@ describe('TypeScript 專案 E2E 測試', () => {
     it('應該能檢測死代碼', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['dead-code', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'dead-code', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const deadCodeData = JSON.parse(result.stdout);
@@ -280,10 +235,7 @@ describe('TypeScript 專案 E2E 測試', () => {
     it('應該能分析 TypeScript 特定的模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['patterns', '--pattern', 'typescript', '--format', 'json']
-      });
+      const result = await cliRunner.runCommand(['analyze', 'patterns', '--pattern', 'typescript', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       const patternsData = JSON.parse(result.stdout);
@@ -300,23 +252,15 @@ describe('TypeScript 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 移動 user-service.ts 到 services 目錄
-      const result = await cliRunner.runCommand(['move'], {
-        cwd: testProjectPath,
-        args: [
-          '--from', 'src/core/user-service.ts',
+      const result = await cliRunner.runCommand(['move', '--from', 'src/core/user-service.ts',
           '--to', 'src/services/user-service.ts',
-          '--update-imports'
-        ]
-      });
+          '--update-imports'], {cwd: testProjectPath,});
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('檔案移動完成');
 
       // 驗證 import 路徑已更新
-      const searchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'from.*services/user-service', '--format', 'json']
-      });
+      const searchResult = await cliRunner.runCommand(['search', '--query', 'from.*services/user-service', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(searchResult.exitCode).toBe(0);
       const searchData = JSON.parse(searchResult.stdout);
@@ -439,10 +383,7 @@ describe('TypeScript 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['search'], {
-      cwd: testProjectPath,
-      args: ['--query', 'UserService']
-    });
+    const result = await cliRunner.runCommand(['search', '--query', 'UserService'], {cwd: testProjectPath,});
 
     const duration = Date.now() - startTime;
 

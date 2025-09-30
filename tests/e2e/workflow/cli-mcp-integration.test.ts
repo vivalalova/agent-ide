@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { CLIRunner } from '../helpers/cli-runner';
 import { MCPClient } from '../helpers/mcp-client';
 import { ProjectManager } from '../helpers/project-manager';
 import { withMemoryOptimization } from '../../test-utils/memory-optimization';
+
+// 使用 import.meta.url 獲取當前檔案路徑，避免 process.cwd() 變化的問題
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const FIXTURES_PATH = join(__dirname, '../fixtures/typescript');
 
 /**
  * CLI + MCP 整合工作流程測試
@@ -26,8 +32,7 @@ describe('CLI + MCP 整合工作流程測試', () => {
     projectManager = new ProjectManager();
 
     // 使用 TypeScript 專案進行整合測試
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/typescript');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     await mcpClient.connect();
   });
@@ -40,10 +45,7 @@ describe('CLI + MCP 整合工作流程測試', () => {
   describe('索引建立和同步', () => {
     it('CLI 建立的索引應該可以被 MCP 訪問', withMemoryOptimization(async () => {
       // 使用 CLI 建立索引
-      const cliResult = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.ts']
-      });
+      const cliResult = await cliRunner.runCommand(['index', '--extensions', '.ts'], {cwd: testProjectPath,});
 
       expect(cliResult.exitCode).toBe(0);
       expect(cliResult.stdout).toContain('索引建立完成');
@@ -78,10 +80,7 @@ describe('CLI + MCP 整合工作流程測試', () => {
       expect(mcpResult.data.filesIndexed).toBeGreaterThan(0);
 
       // 使用 CLI 搜尋 MCP 建立的索引
-      const cliResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'DatabaseConnection', '--format', 'json']
-      });
+      const cliResult = await cliRunner.runCommand(['search', '--query', 'DatabaseConnection', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(cliResult.exitCode).toBe(0);
       const searchData = JSON.parse(cliResult.stdout);
@@ -113,10 +112,7 @@ export class UtilityHelper {
 `);
 
       // 使用 CLI 更新索引
-      const cliUpdateResult = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--incremental']
-      });
+      const cliUpdateResult = await cliRunner.runCommand(['index', '--incremental'], {cwd: testProjectPath,});
 
       expect(cliUpdateResult.exitCode).toBe(0);
 
@@ -144,10 +140,7 @@ export class UtilityHelper {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 步驟 1: 使用 CLI 進行文字搜尋
-      const textSearchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'async function', '--format', 'json']
-      });
+      const textSearchResult = await cliRunner.runCommand(['search', '--query', 'async function', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(textSearchResult.exitCode).toBe(0);
       const textData = JSON.parse(textSearchResult.stdout);
@@ -164,10 +157,7 @@ export class UtilityHelper {
       expect(semanticResult.data.results).toHaveLength.greaterThan(0);
 
       // 步驟 3: 使用 CLI 進行結構化搜尋
-      const structuredResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'class.*Service', '--type', 'structural', '--format', 'json']
-      });
+      const structuredResult = await cliRunner.runCommand(['search', '--query', 'class.*Service', '--type', 'structural', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(structuredResult.exitCode).toBe(0);
       const structuredData = JSON.parse(structuredResult.stdout);
@@ -186,10 +176,7 @@ export class UtilityHelper {
       const searchQuery = 'interface User';
 
       // CLI 搜尋
-      const cliResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', searchQuery, '--format', 'json']
-      });
+      const cliResult = await cliRunner.runCommand(['search', '--query', searchQuery, '--format', 'json'], {cwd: testProjectPath,});
 
       // MCP 搜尋
       const mcpResult = await mcpClient.callTool('code_search', {
@@ -221,14 +208,9 @@ export class UtilityHelper {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 步驟 1: 使用 CLI 預覽重新命名
-      const previewResult = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'User',
+      const previewResult = await cliRunner.runCommand(['rename', '--symbol', 'User',
           '--new-name', 'UserModel',
-          '--preview'
-        ]
-      });
+          '--preview'], {cwd: testProjectPath,});
 
       expect(previewResult.exitCode).toBe(0);
       expect(previewResult.stdout).toContain('預覽變更');
@@ -244,14 +226,9 @@ export class UtilityHelper {
       expect(impactResult.data.usageCount).toBeGreaterThan(0);
 
       // 步驟 3: 使用 CLI 執行重新命名
-      const renameResult = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'User',
+      const renameResult = await cliRunner.runCommand(['rename', '--symbol', 'User',
           '--new-name', 'UserModel',
-          '--confirm'
-        ]
-      });
+          '--confirm'], {cwd: testProjectPath,});
 
       expect(renameResult.exitCode).toBe(0);
       expect(renameResult.stdout).toContain('重新命名完成');
@@ -284,10 +261,7 @@ export class UtilityHelper {
       expect(refactorResult.data.changes).toHaveLength.greaterThan(0);
 
       // 步驟 2: 使用 CLI 執行語法檢查
-      const syntaxResult = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['syntax', '--format', 'json']
-      });
+      const syntaxResult = await cliRunner.runCommand(['analyze', 'syntax', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(syntaxResult.exitCode).toBe(0);
       const syntaxData = JSON.parse(syntaxResult.stdout);
@@ -310,10 +284,7 @@ export class UtilityHelper {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 步驟 1: 使用 CLI 分析依賴關係
-      const depsResult = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--format', 'json']
-      });
+      const depsResult = await cliRunner.runCommand(['deps', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(depsResult.exitCode).toBe(0);
       const depsData = JSON.parse(depsResult.stdout);
@@ -330,10 +301,7 @@ export class UtilityHelper {
       expect(impactResult.data.affectedFiles).toHaveLength.greaterThan(0);
 
       // 步驟 3: 使用 CLI 生成重構建議
-      const suggestionsResult = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['suggestions', '--focus', 'dependencies', '--format', 'json']
-      });
+      const suggestionsResult = await cliRunner.runCommand(['analyze', 'suggestions', '--focus', 'dependencies', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(suggestionsResult.exitCode).toBe(0);
       const suggestionsData = JSON.parse(suggestionsResult.stdout);
@@ -345,10 +313,7 @@ export class UtilityHelper {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 步驟 1: 使用 CLI 檢測循環依賴
-      const cycleResult = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--check-cycles', '--format', 'json']
-      });
+      const cycleResult = await cliRunner.runCommand(['deps', '--check-cycles', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(cycleResult.exitCode).toBe(0);
       const cycleData = JSON.parse(cycleResult.stdout);
@@ -365,14 +330,9 @@ export class UtilityHelper {
         expect(analysisResult.success).toBe(true);
 
         // 步驟 3: 使用 CLI 應用修復建議
-        const fixResult = await cliRunner.runCommand(['refactor'], {
-          cwd: testProjectPath,
-          args: [
-            'fix-cycles',
+        const fixResult = await cliRunner.runCommand(['refactor', 'fix-cycles',
             '--strategy', 'dependency-injection',
-            '--preview'
-          ]
-        });
+            '--preview'], {cwd: testProjectPath,});
 
         expect(fixResult.exitCode).toBe(0);
       }
@@ -385,10 +345,7 @@ export class UtilityHelper {
   describe('效能監控整合', () => {
     it('CLI 效能測試 → MCP 結果分析', withMemoryOptimization(async () => {
       // 步驟 1: 使用 CLI 執行效能測試
-      const perfResult = await cliRunner.runCommand(['perf'], {
-        cwd: testProjectPath,
-        args: ['--operation', 'indexing', '--iterations', '3', '--format', 'json']
-      });
+      const perfResult = await cliRunner.runCommand(['perf', '--operation', 'indexing', '--iterations', '3', '--format', 'json'], {cwd: testProjectPath,});
 
       expect(perfResult.exitCode).toBe(0);
       const perfData = JSON.parse(perfResult.stdout);
@@ -413,10 +370,7 @@ export class UtilityHelper {
       const initialMemory = process.memoryUsage();
 
       // 使用 CLI 執行大型操作
-      await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*']
-      });
+      await cliRunner.runCommand(['index'], {cwd: testProjectPath,});
 
       const cliMemory = process.memoryUsage();
 
@@ -461,10 +415,7 @@ export class UtilityHelper {
       expect(diagnosisResult.data.errors).toHaveLength.greaterThan(0);
 
       // 步驟 3: 使用 CLI 修復問題
-      const fixResult = await cliRunner.runCommand(['fix'], {
-        cwd: testProjectPath,
-        args: ['--type', 'syntax', '--file', brokenFilePath]
-      });
+      const fixResult = await cliRunner.runCommand(['fix', '--type', 'syntax', '--file', brokenFilePath], {cwd: testProjectPath,});
 
       expect(fixResult.exitCode).toBe(0);
 
@@ -485,10 +436,7 @@ export class UtilityHelper {
       await mcpClient.disconnect();
 
       // CLI 應該仍然可以工作
-      const cliResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'UserService']
-      });
+      const cliResult = await cliRunner.runCommand(['search', '--query', 'UserService'], {cwd: testProjectPath,});
 
       expect(cliResult.exitCode).toBe(0);
 
@@ -512,10 +460,7 @@ export class UtilityHelper {
 
       // 並行執行 CLI 和 MCP 操作
       const [cliResult, mcpResult] = await Promise.all([
-        cliRunner.runCommand(['analyze'], {
-          cwd: testProjectPath,
-          args: ['complexity', '--format', 'json']
-        }),
+        cliRunner.runCommand(['analyze', 'complexity', '--format', 'json'], {cwd: testProjectPath,}),
         mcpClient.callTool('code_search', {
           path: testProjectPath,
           query: 'function',
@@ -538,11 +483,11 @@ export class UtilityHelper {
 
       // 並行執行多個操作
       const operations = [
-        cliRunner.runCommand(['search'], { cwd: testProjectPath, args: ['--query', 'class'] }),
-        cliRunner.runCommand(['deps'], { cwd: testProjectPath, args: ['--format', 'json'] }),
+        cliRunner.runCommand(['search', 'class'], { cwd: testProjectPath }),
+        cliRunner.runCommand(['deps', '--format', 'json'], { cwd: testProjectPath }),
         mcpClient.callTool('code_search', { path: testProjectPath, query: 'interface' }),
         mcpClient.callTool('code_analyze', { path: testProjectPath, type: 'complexity' }),
-        cliRunner.runCommand(['analyze'], { cwd: testProjectPath, args: ['patterns'] })
+        cliRunner.runCommand(['analyze', 'patterns'], { cwd: testProjectPath })
       ];
 
       const results = await Promise.allSettled(operations);

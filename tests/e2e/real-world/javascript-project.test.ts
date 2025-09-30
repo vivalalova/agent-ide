@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { CLIRunner } from '../helpers/cli-runner';
 import { MCPClient } from '../helpers/mcp-client';
 import { ProjectManager } from '../helpers/project-manager';
 import { withMemoryOptimization } from '../../test-utils/memory-optimization';
+
+// 使用 import.meta.url 獲取當前檔案路徑，避免 process.cwd() 變化的問題
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const FIXTURES_PATH = join(__dirname, '../fixtures/javascript');
 
 /**
  * JavaScript 專案 E2E 測試
@@ -26,8 +32,7 @@ describe('JavaScript 專案 E2E 測試', () => {
     projectManager = new ProjectManager();
 
     // 複製 JavaScript 測試專案
-    const fixturesPath = join(process.cwd(), 'tests/e2e/fixtures/javascript');
-    testProjectPath = await projectManager.copyProject(fixturesPath, tempDir);
+    testProjectPath = await projectManager.copyProject(FIXTURES_PATH, tempDir);
 
     await mcpClient.connect();
   });
@@ -39,18 +44,16 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('ES Module 索引建立', () => {
     it('應該能正確索引 ES Module 專案', withMemoryOptimization(async () => {
-      const result = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.js', '--exclude', 'node_modules/**']
+      const result = await cliRunner.runCommand(['index', '--extensions', '.js', '--exclude', 'node_modules/**'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('索引建立完成');
 
       // 驗證 ES Module 的 import/export
-      const searchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'import.*from', '--format', 'json']
+      const searchResult = await cliRunner.runCommand(['search', '--query', 'import.*from', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(searchResult.exitCode).toBe(0);
@@ -67,9 +70,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能處理動態 import', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'await import', '--format', 'json']
+      const result = await cliRunner.runCommand(['search', '--query', 'await import', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -84,9 +86,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能識別 JavaScript class 定義', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'class UserController', '--format', 'json']
+      const result = await cliRunner.runCommand(['search', '--query', 'class UserController', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -103,9 +104,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能分析 ES Module 依賴關係', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['deps'], {
-        cwd: testProjectPath,
-        args: ['--format', 'json']
+      const result = await cliRunner.runCommand(['deps', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -130,15 +130,13 @@ describe('JavaScript 專案 E2E 測試', () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
       // 搜尋可能的 CommonJS 用法
-      const cjsResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'require\\(', '--format', 'json']
+      const cjsResult = await cliRunner.runCommand(['search', '--query', 'require\\(', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       // 搜尋 ES Module 用法
-      const esmResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'import.*from', '--format', 'json']
+      const esmResult = await cliRunner.runCommand(['search', '--query', 'import.*from', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(cjsResult.exitCode).toBe(0);
@@ -156,13 +154,13 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能重新命名 JavaScript class', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'UserController',
-          '--new-name', 'UserService',
-          '--preview'
-        ]
+      const result = await cliRunner.runCommand([
+        'rename',
+        '--symbol', 'UserController',
+        '--new-name', 'UserService',
+        '--preview'
+      ], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -174,13 +172,13 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能重新命名函式並更新所有引用', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['rename'], {
-        cwd: testProjectPath,
-        args: [
-          '--symbol', 'createUser',
-          '--new-name', 'addUser',
-          '--preview'
-        ]
+      const result = await cliRunner.runCommand([
+        'rename',
+        '--symbol', 'createUser',
+        '--new-name', 'addUser',
+        '--preview'
+      ], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -198,15 +196,15 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能提取 JavaScript async 函式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
-          '--file', 'src/controllers/user-controller.js',
-          '--start-line', '40',
-          '--end-line', '60',
-          '--function-name', 'validateUserData'
-        ]
+      const result = await cliRunner.runCommand([
+        'refactor',
+        'extract-function',
+        '--file', 'src/controllers/user-controller.js',
+        '--start-line', '40',
+        '--end-line', '60',
+        '--function-name', 'validateUserData'
+      ], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -219,15 +217,15 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能處理 JavaScript 的複雜物件解構', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['refactor'], {
-        cwd: testProjectPath,
-        args: [
-          'extract-function',
-          '--file', 'src/controllers/user-controller.js',
-          '--start-line', '100',
-          '--end-line', '120',
-          '--function-name', 'processUserProfile'
-        ]
+      const result = await cliRunner.runCommand([
+        'refactor',
+        'extract-function',
+        '--file', 'src/controllers/user-controller.js',
+        '--start-line', '100',
+        '--end-line', '120',
+        '--function-name', 'processUserProfile'
+      ], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -239,9 +237,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能分析 JavaScript 程式碼複雜度', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['complexity', '--format', 'json']
+      const result = await cliRunner.runCommand(['analyze', 'complexity', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -262,9 +259,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能檢測 JavaScript 最佳實踐', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['best-practices', '--format', 'json']
+      const result = await cliRunner.runCommand(['analyze', 'best-practices', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -285,9 +281,8 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能檢測 async/await 模式', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze'], {
-        cwd: testProjectPath,
-        args: ['patterns', '--pattern', 'async-await', '--format', 'json']
+      const result = await cliRunner.runCommand(['analyze', 'patterns', '--pattern', 'async-await', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
@@ -305,22 +300,21 @@ describe('JavaScript 專案 E2E 測試', () => {
     it('應該能移動 JavaScript 檔案並更新 ES Module import', withMemoryOptimization(async () => {
       await cliRunner.runCommand(['index'], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['move'], {
-        cwd: testProjectPath,
-        args: [
-          '--from', 'src/controllers/user-controller.js',
-          '--to', 'src/services/user-service.js',
-          '--update-imports'
-        ]
+      const result = await cliRunner.runCommand([
+        'move',
+        '--from', 'src/controllers/user-controller.js',
+        '--to', 'src/services/user-service.js',
+        '--update-imports'
+      ], {
+        cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('檔案移動完成');
 
       // 驗證 import 路徑更新
-      const searchResult = await cliRunner.runCommand(['search'], {
-        cwd: testProjectPath,
-        args: ['--query', 'from.*services/user-service', '--format', 'json']
+      const searchResult = await cliRunner.runCommand(['search', '--query', 'from.*services/user-service', '--format', 'json'], {
+        cwd: testProjectPath
       });
 
       expect(searchResult.exitCode).toBe(0);
@@ -337,9 +331,8 @@ describe('JavaScript 專案 E2E 測試', () => {
         'const broken = { invalid syntax here'
       );
 
-      const result = await cliRunner.runCommand(['index'], {
-        cwd: testProjectPath,
-        args: ['--include', '**/*.js']
+      const result = await cliRunner.runCommand(['index', '--extensions', '.js'], {
+        cwd: testProjectPath
       });
 
       // 應該能處理錯誤檔案，但不會中斷整個索引過程
@@ -482,9 +475,8 @@ describe('JavaScript 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['search'], {
-      cwd: testProjectPath,
-      args: ['--query', 'async function']
+    const result = await cliRunner.runCommand(['search', '--query', 'async function'], {
+      cwd: testProjectPath
     });
 
     const duration = Date.now() - startTime;
@@ -498,15 +490,15 @@ describe('JavaScript 專案效能測試', () => {
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['refactor'], {
-      cwd: testProjectPath,
-      args: [
-        'extract-function',
-        '--file', 'src/controllers/user-controller.js',
-        '--start-line', '20',
-        '--end-line', '40',
-        '--function-name', 'testExtraction'
-      ]
+    const result = await cliRunner.runCommand([
+      'refactor',
+      'extract-function',
+      '--file', 'src/controllers/user-controller.js',
+      '--start-line', '20',
+      '--end-line', '40',
+      '--function-name', 'testExtraction'
+    ], {
+      cwd: testProjectPath
     });
 
     const duration = Date.now() - startTime;
