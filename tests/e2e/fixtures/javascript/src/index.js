@@ -1,4 +1,3 @@
-import express from 'express';
 import { createServer } from './server.js';
 import { DatabaseManager } from './database/manager.js';
 import { UserController } from './controllers/user-controller.js';

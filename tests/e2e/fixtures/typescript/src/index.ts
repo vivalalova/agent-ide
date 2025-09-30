@@ -1,4 +1,3 @@
-import express from 'express';
 import { createServer } from './core/server';
 import { DatabaseConnection } from '@core/database';
 import { UserService } from '@core/user-service';

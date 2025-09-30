@@ -44,7 +44,7 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('ES Module 索引建立', () => {
     it('應該能正確索引 ES Module 專案', withMemoryOptimization(async () => {
-      const result = await cliRunner.runCommand(['index', '--extensions', '.js', '--exclude', 'node_modules/**'], {
+      const result = await cliRunner.runCommand(['index', '--path', testProjectPath, '--extensions', '.js', '--exclude', 'node_modules/**'], {
         cwd: testProjectPath
       });
 
@@ -52,13 +52,13 @@ describe('JavaScript 專案 E2E 測試', () => {
       expect(result.stdout).toContain('✅ 索引完成!');
 
       // 驗證 ES Module 的 import/export
-      const searchResult = await cliRunner.runCommand(['search', '--query', 'import.*from', '--format', 'json'], {
+      const searchResult = await cliRunner.runCommand(['search', 'import.*from', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
       expect(searchResult.exitCode).toBe(0);
       const searchData = JSON.parse(searchResult.stdout);
-      expect(searchData.results).toHaveLength.greaterThan(0);
+      expect(searchData.results.length).toBeGreaterThan(0);
 
       // 驗證找到 ES Module import
       const importResult = searchData.results.find(r =>
@@ -68,9 +68,9 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-es-modules' }));
 
     it('應該能處理動態 import', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search', '--query', 'await import', '--format', 'json'], {
+      const result = await cliRunner.runCommand(['search', 'await import', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
@@ -84,15 +84,15 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-dynamic-import' }));
 
     it('應該能識別 JavaScript class 定義', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['search', '--query', 'class UserController', '--format', 'json'], {
+      const result = await cliRunner.runCommand(['search', 'class UserController', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
       expect(result.exitCode).toBe(0);
       const searchData = JSON.parse(result.stdout);
-      expect(searchData.results).toHaveLength.greaterThan(0);
+      expect(searchData.results.length).toBeGreaterThan(0);
 
       const classResult = searchData.results[0];
       expect(classResult.content).toContain('class UserController');
@@ -102,9 +102,9 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('JavaScript 依賴關係分析', () => {
     it('應該能分析 ES Module 依賴關係', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['deps', '--format', 'json'], {
+      const result = await cliRunner.runCommand(['deps', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
@@ -113,7 +113,7 @@ describe('JavaScript 專案 E2E 測試', () => {
 
       expect(depsData).toHaveProperty('nodes');
       expect(depsData).toHaveProperty('edges');
-      expect(depsData.nodes).toHaveLength.greaterThan(0);
+      expect(depsData.nodes.length).toBeGreaterThan(0);
 
       // 驗證 JavaScript 檔案的依賴關係
       const indexNode = depsData.nodes.find(n => n.id.includes('index.js'));
@@ -127,15 +127,15 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-dependencies' }));
 
     it('應該能檢測 CommonJS 和 ES Module 混合使用', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       // 搜尋可能的 CommonJS 用法
-      const cjsResult = await cliRunner.runCommand(['search', '--query', 'require\\(', '--format', 'json'], {
+      const cjsResult = await cliRunner.runCommand(['search', 'require\\(', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
       // 搜尋 ES Module 用法
-      const esmResult = await cliRunner.runCommand(['search', '--query', 'import.*from', '--format', 'json'], {
+      const esmResult = await cliRunner.runCommand(['search', 'import.*from', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
@@ -152,7 +152,7 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('JavaScript 程式碼重新命名', () => {
     it('應該能重新命名 JavaScript class', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand([
         'rename',
@@ -170,7 +170,7 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-rename-class' }));
 
     it('應該能重新命名函式並更新所有引用', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand([
         'rename',
@@ -194,7 +194,7 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('JavaScript 程式碼重構', () => {
     it('應該能提取 JavaScript async 函式', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand([
         'refactor',
@@ -215,7 +215,7 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-extract-async' }));
 
     it('應該能處理 JavaScript 的複雜物件解構', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand([
         'refactor',
@@ -235,9 +235,9 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('JavaScript 程式碼分析', () => {
     it('應該能分析 JavaScript 程式碼複雜度', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze', 'complexity', '--format', 'json'], {
+      const result = await cliRunner.runCommand(['analyze', 'complexity', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
@@ -257,9 +257,9 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-complexity' }));
 
     it('應該能檢測 JavaScript 最佳實踐', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
-      const result = await cliRunner.runCommand(['analyze', 'best-practices', '--format', 'json'], {
+      const result = await cliRunner.runCommand(['analyze', 'best-practices', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
@@ -279,7 +279,7 @@ describe('JavaScript 專案 E2E 測試', () => {
     }, { testName: 'javascript-best-practices' }));
 
     it('應該能檢測 async/await 模式', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand(['analyze', 'patterns', '--pattern', 'async-await', '--format', 'json'], {
         cwd: testProjectPath
@@ -298,7 +298,7 @@ describe('JavaScript 專案 E2E 測試', () => {
 
   describe('JavaScript 檔案移動', () => {
     it('應該能移動 JavaScript 檔案並更新 ES Module import', withMemoryOptimization(async () => {
-      await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+      await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
       const result = await cliRunner.runCommand([
         'move',
@@ -313,13 +313,13 @@ describe('JavaScript 專案 E2E 測試', () => {
       expect(result.stdout).toContain('檔案移動完成');
 
       // 驗證 import 路徑更新
-      const searchResult = await cliRunner.runCommand(['search', '--query', 'from.*services/user-service', '--format', 'json'], {
+      const searchResult = await cliRunner.runCommand(['search', 'from.*services/user-service', '--path', testProjectPath, '--format', 'json'], {
         cwd: testProjectPath
       });
 
       expect(searchResult.exitCode).toBe(0);
       const searchData = JSON.parse(searchResult.stdout);
-      expect(searchData.results).toHaveLength.greaterThan(0);
+      expect(searchData.results.length).toBeGreaterThan(0);
     }, { testName: 'javascript-move-file' }));
   });
 
@@ -407,7 +407,7 @@ describe('MCP JavaScript 專案測試', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.results).toHaveLength.greaterThan(0);
+    expect(result.data.results.length).toBeGreaterThan(0);
 
     const exportResult = result.data.results.find(r =>
       r.content.includes('export class')
@@ -426,7 +426,7 @@ describe('MCP JavaScript 專案測試', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data.changes).toHaveLength.greaterThan(0);
+    expect(result.data.changes.length).toBeGreaterThan(0);
 
     const loggerChange = result.data.changes.find(c =>
       c.content.includes('class Logger') || c.content.includes('class ApplicationLogger')
@@ -469,11 +469,11 @@ describe('JavaScript 專案效能測試', () => {
   }, { testName: 'javascript-indexing-performance' }));
 
   it('JavaScript 搜尋效能測試', withMemoryOptimization(async () => {
-    await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+    await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
     const startTime = Date.now();
 
-    const result = await cliRunner.runCommand(['search', '--query', 'async function'], {
+    const result = await cliRunner.runCommand(['search', 'async function'], {
       cwd: testProjectPath
     });
 
@@ -484,7 +484,7 @@ describe('JavaScript 專案效能測試', () => {
   }, { testName: 'javascript-search-performance' }));
 
   it('JavaScript 重構效能測試', withMemoryOptimization(async () => {
-    await cliRunner.runCommand(['index'], { cwd: testProjectPath });
+    await cliRunner.runCommand(['index', '--path', testProjectPath], { cwd: testProjectPath });
 
     const startTime = Date.now();
 

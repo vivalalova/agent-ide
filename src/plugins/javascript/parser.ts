@@ -5,8 +5,12 @@
 
 import { parse as babelParse } from '@babel/parser';
 import * as babel from '@babel/types';
-import traverse from '@babel/traverse';
-import generate from '@babel/generator';
+import babelTraverse, { NodePath } from '@babel/traverse';
+import babelGenerate from '@babel/generator';
+
+// Handle both ESM and CJS module formats
+const traverse = (babelTraverse as any).default || babelTraverse;
+const generate = (babelGenerate as any).default || babelGenerate;
 import {
   ParserPlugin,
   CodeEdit,
@@ -128,43 +132,43 @@ export class JavaScriptParser implements ParserPlugin {
     // 使用 Babel traverse 遍歷 AST
     traverse(typedAst.babelAST, {
       // 處理各種宣告節點
-      FunctionDeclaration: (path) => {
+      FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
         this.extractFunctionSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ClassDeclaration: (path) => {
+      ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
         this.extractClassSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      VariableDeclarator: (path) => {
+      VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
         this.extractVariableSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ImportDefaultSpecifier: (path) => {
+      ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
         this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ImportSpecifier: (path) => {
+      ImportSpecifier: (path: NodePath<babel.ImportSpecifier>) => {
         this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ImportNamespaceSpecifier: (path) => {
+      ImportNamespaceSpecifier: (path: NodePath<babel.ImportNamespaceSpecifier>) => {
         this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ClassMethod: (path) => {
+      ClassMethod: (path: NodePath<babel.ClassMethod>) => {
         this.extractMethodSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ClassProperty: (path) => {
+      ClassProperty: (path: NodePath<babel.ClassProperty>) => {
         this.extractPropertySymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ObjectMethod: (path) => {
+      ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
         this.extractObjectMethodSymbol(path.node, symbols, typedAst.sourceFile);
       },
 
-      ObjectProperty: (path) => {
+      ObjectProperty: (path: NodePath<babel.ObjectProperty>) => {
         this.extractObjectPropertySymbol(path.node, symbols, typedAst.sourceFile);
       }
     });
@@ -182,7 +186,7 @@ export class JavaScriptParser implements ParserPlugin {
 
     // 使用 Babel traverse 查找引用
     traverse(typedAst.babelAST, {
-      Identifier: (path) => {
+      Identifier: (path: NodePath<babel.Identifier>) => {
         if (path.node.name === typedSymbol.name) {
           // 檢查是否為真正的引用
           if (this.isReferenceToSymbol(path, typedSymbol)) {
@@ -198,7 +202,7 @@ export class JavaScriptParser implements ParserPlugin {
         }
       },
 
-      JSXIdentifier: (path) => {
+      JSXIdentifier: (path: NodePath<babel.JSXIdentifier>) => {
         // 處理 JSX 中的識別符
         if (path.node.name === typedSymbol.name) {
           const location = {
@@ -222,19 +226,19 @@ export class JavaScriptParser implements ParserPlugin {
     const dependencies: Dependency[] = [];
 
     traverse(typedAst.babelAST, {
-      ImportDeclaration: (path) => {
+      ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
         this.extractImportDependency(path.node, dependencies, typedAst.sourceFile);
       },
 
-      ExportNamedDeclaration: (path) => {
+      ExportNamedDeclaration: (path: NodePath<babel.ExportNamedDeclaration>) => {
         this.extractExportDependency(path.node, dependencies, typedAst.sourceFile);
       },
 
-      ExportAllDeclaration: (path) => {
+      ExportAllDeclaration: (path: NodePath<babel.ExportAllDeclaration>) => {
         this.extractExportDependency(path.node, dependencies, typedAst.sourceFile);
       },
 
-      CallExpression: (path) => {
+      CallExpression: (path: NodePath<babel.CallExpression>) => {
         // 處理 require() 和動態 import()
         this.extractCallExpressionDependency(path.node, dependencies, typedAst.sourceFile);
       }
