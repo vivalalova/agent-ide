@@ -158,7 +158,8 @@ export class IndexEngine {
     const allFiles: string[] = [];
     for (const pattern of includePatterns) {
       const files = await glob(pattern, {
-        ignore: this.config.excludePatterns.map(p => `${dirPath}/${p}`)
+        ignore: this.config.excludePatterns.map(p => `${dirPath}/${p}`),
+        absolute: true
       });
       allFiles.push(...files);
     }

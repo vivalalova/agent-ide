@@ -394,7 +394,8 @@ export class TextSearchEngine {
         '**/*.min.js',
         '**/*.min.css'
       ],
-      nodir: true
+      nodir: true,
+      absolute: true
     });
 
     // 過濾檔案類型
@@ -405,7 +406,7 @@ export class TextSearchEngine {
         '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.txt',
         '.css', '.scss', '.sass', '.less', '.html', '.xml',
         '.vue', '.svelte', '.py', '.java', '.c', '.cpp', '.h',
-        '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt'
+        '.cs', '.go', '.rs', '.php', '.rb', '.kt'
       ];
 
       return textExtensions.includes(ext);
