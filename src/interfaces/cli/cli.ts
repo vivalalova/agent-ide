@@ -605,20 +605,36 @@ export class AgentIdeCLI {
   }
 
   private async handleAnalyzeCommand(options: any): Promise<void> {
-    console.log('📊 分析程式碼品質...');
+    if (options.format !== 'json') {
+      console.log('📊 分析程式碼品質...');
+    }
 
     // TODO: 實作分析功能
-    console.log('🚧 程式碼分析功能開發中...');
+    if (options.format === 'json') {
+      console.log(JSON.stringify({ status: 'under_development', message: '程式碼分析功能開發中' }));
+    } else {
+      console.log('🚧 程式碼分析功能開發中...');
+    }
   }
 
   private async handleDepsCommand(options: any): Promise<void> {
-    console.log('🕸️ 分析依賴關係...');
+    if (options.format !== 'json') {
+      console.log('🕸️ 分析依賴關係...');
+    }
 
     try {
       // TODO: 初始化 DependencyAnalyzer
-      console.log('🚧 依賴分析功能開發中...');
+      if (options.format === 'json') {
+        console.log(JSON.stringify({ status: 'under_development', message: '依賴分析功能開發中' }));
+      } else {
+        console.log('🚧 依賴分析功能開發中...');
+      }
     } catch (error) {
-      console.error('❌ 依賴分析失敗:', error instanceof Error ? error.message : error);
+      if (options.format === 'json') {
+        console.log(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      } else {
+        console.error('❌ 依賴分析失敗:', error instanceof Error ? error.message : error);
+      }
       process.exit(1);
     }
   }
