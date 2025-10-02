@@ -7,6 +7,8 @@ import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range,
 import { SymbolType, ReferenceType, DependencyType } from '../../src/shared/types';
 import type { CodeEdit, Definition, Usage, ValidationResult, DefinitionKind } from '../../src/infrastructure/parser/types';
 import { ParserRegistry } from '../../src/infrastructure/parser/registry';
+import { TypeScriptParser } from '../../src/plugins/typescript/parser';
+import { JavaScriptParser } from '../../src/plugins/javascript/parser';
 
 /**
  * 基礎測試 Parser
@@ -383,14 +385,15 @@ export function registerTestParsers(): void {
   const newRegistry = ParserRegistry.getInstance();
 
   try {
+    // 使用真實的 TypeScript 和 JavaScript Parser 以獲得更準確的測試結果
     // 註冊 TypeScript Parser
     if (!newRegistry.getParserByName('typescript')) {
-      newRegistry.register(new TestTypeScriptParser());
+      newRegistry.register(new TypeScriptParser());
     }
 
     // 註冊 JavaScript Parser
     if (!newRegistry.getParserByName('javascript')) {
-      newRegistry.register(new TestJavaScriptParser());
+      newRegistry.register(new JavaScriptParser());
     }
   } catch (error) {
     // 如果已經註冊過就忽略錯誤

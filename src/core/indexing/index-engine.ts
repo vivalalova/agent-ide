@@ -152,13 +152,14 @@ export class IndexEngine {
 
     // 使用 glob 模式查找檔案
     const includePatterns = this.config.includeExtensions.map(ext =>
-      `${dirPath}/**/*${ext}`
+      `**/*${ext}`
     );
 
     const allFiles: string[] = [];
     for (const pattern of includePatterns) {
       const files = await glob(pattern, {
-        ignore: this.config.excludePatterns.map(p => `${dirPath}/${p}`),
+        cwd: dirPath,
+        ignore: [...this.config.excludePatterns],
         absolute: true
       });
       allFiles.push(...files);

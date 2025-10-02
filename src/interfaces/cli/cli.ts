@@ -186,13 +186,13 @@ export class AgentIdeCLI {
 
   private setupAnalyzeCommand(): void {
     this.program
-      .command('analyze')
+      .command('analyze [type]')
       .description('分析程式碼品質')
       .option('-p, --path <path>', '分析路徑', '.')
-      .option('-t, --type <type>', '分析類型 (complexity|dependencies|quality)')
+      .option('--pattern <pattern>', '分析模式')
       .option('--format <format>', '輸出格式 (json|table|summary)', 'summary')
-      .action(async (options) => {
-        await this.handleAnalyzeCommand(options);
+      .action(async (type, options) => {
+        await this.handleAnalyzeCommand(type, options);
       });
   }
 
@@ -275,15 +275,15 @@ export class AgentIdeCLI {
     console.log(`🔄 重新命名 ${from} → ${to}`);
 
     try {
-      // 初始化索引引擎（如果還沒有）
-      if (!this.indexEngine) {
-        const config = createIndexConfig(options.path || process.cwd(), {
-          includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
-          excludePatterns: ['node_modules/**', '*.test.*']
-        });
-        this.indexEngine = new IndexEngine(config);
-        await this.indexEngine.indexProject(options.path || process.cwd());
-      }
+      const workspacePath = options.path || process.cwd();
+
+      // 初始化索引引擎（每次都重新索引以確保資料是最新的）
+      const config = createIndexConfig(workspacePath, {
+        includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
+        excludePatterns: ['node_modules/**', '*.test.*']
+      });
+      this.indexEngine = new IndexEngine(config);
+      await this.indexEngine.indexProject(workspacePath);
 
       // 初始化重新命名引擎
       if (!this.renameEngine) {
@@ -434,13 +434,19 @@ export class AgentIdeCLI {
         });
 
         if (result.success) {
-          console.log('✅ 重構完成');
-
           // 套用編輯
           let modifiedCode = code;
           result.edits.forEach(edit => {
             modifiedCode = this.applyCodeEdit(modifiedCode, edit);
           });
+
+          // 提取函式簽名（從修改後的程式碼中）
+          const functionSignatureMatch = modifiedCode.match(new RegExp(`(async\\s+)?function\\s+${result.functionName}\\s*\\([^)]*\\)`));
+          const functionSignature = functionSignatureMatch ? functionSignatureMatch[0] : `function ${result.functionName}`;
+
+          console.log('✅ 重構完成');
+          console.log(`📝 提取的函式: ${functionSignature}`);
+          console.log(functionSignature);
 
           if (!options.preview) {
             // 寫入檔案
@@ -448,7 +454,6 @@ export class AgentIdeCLI {
             console.log(`✓ 已更新 ${filePath}`);
           } else {
             console.log('\n🔍 預覽模式 - 未寫入檔案');
-            console.log(`📝 提取函式: ${result.functionName}`);
             console.log(`📊 參數: ${result.parameters.map(p => p.name).join(', ')}`);
           }
         } else {
@@ -644,7 +649,12 @@ export class AgentIdeCLI {
     switch (options.format) {
     case 'json':
       // 測試期望的格式是 { results: [...] } 而不是 { matches: [...] }
-      console.log(JSON.stringify({ results: result.matches }, null, 2));
+      // 將絕對路徑轉換為相對路徑
+      const resultsWithRelativePaths = result.matches.map((match: any) => ({
+        ...match,
+        file: this.formatFilePath(match.file)
+      }));
+      console.log(JSON.stringify({ results: resultsWithRelativePaths }, null, 2));
       break;
 
     case 'minimal':
@@ -707,14 +717,15 @@ export class AgentIdeCLI {
     }
   }
 
-  private async handleAnalyzeCommand(options: any): Promise<void> {
+  private async handleAnalyzeCommand(type: string | undefined, options: any): Promise<void> {
+    const analyzeType = type || 'complexity';
+
     if (options.format !== 'json') {
       console.log('📊 分析程式碼品質...');
     }
 
     try {
       const analyzePath = options.path || process.cwd();
-      const analyzeType = options.type || 'complexity';
 
       // 根據分析類型執行對應分析
       if (analyzeType === 'complexity') {
@@ -771,6 +782,8 @@ export class AgentIdeCLI {
               path: r.file,
               deadCode: r.deadCode
             })),
+            deadFunctions: allDeadCode.filter(d => d.type === 'function'),
+            deadVariables: allDeadCode.filter(d => d.type === 'variable'),
             summary: {
               totalDeadFunctions: deadFunctions.length,
               totalDeadVariables: deadVariables.length,
@@ -782,6 +795,89 @@ export class AgentIdeCLI {
           console.log(`📊 發現:`);
           console.log(`   未使用函式: ${deadFunctions.length} 個`);
           console.log(`   未使用變數: ${deadVariables.length} 個`);
+        }
+      } else if (analyzeType === 'best-practices') {
+        // 檢查最佳實踐
+        const files = await this.getAllProjectFiles(analyzePath);
+        const issues: any[] = [];
+        const recommendations: any[] = [];
+
+        // 檢查 ES Module 使用情況
+        const hasEsmImports = files.some(async (file) => {
+          const content = await fs.readFile(file, 'utf-8');
+          return content.includes('import ') && content.includes('from ');
+        });
+
+        if (hasEsmImports) {
+          recommendations.push({
+            type: 'es-modules',
+            status: 'good',
+            message: '專案使用 ES Module'
+          });
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify({
+            issues,
+            recommendations
+          }, null, 2));
+        } else {
+          console.log(`✅ 最佳實踐檢查完成!`);
+          console.log(`📊 建議數: ${recommendations.length}`);
+        }
+      } else if (analyzeType === 'patterns') {
+        // 檢測程式碼模式
+        const files = await this.getAllProjectFiles(analyzePath);
+        const patterns: string[] = [];
+        let asyncFunctionCount = 0;
+
+        for (const file of files) {
+          const content = await fs.readFile(file, 'utf-8');
+
+          // 檢測 async 函式
+          if (content.includes('async ')) {
+            asyncFunctionCount++;
+            if (!patterns.includes('async-functions')) {
+              patterns.push('async-functions');
+            }
+          }
+
+          // 檢測 Promise 使用
+          if (content.includes('Promise') || content.includes('.then(')) {
+            if (!patterns.includes('promise-usage')) {
+              patterns.push('promise-usage');
+            }
+          }
+
+          // TypeScript 特定模式
+          if (file.endsWith('.ts') || file.endsWith('.tsx')) {
+            // 檢測 interface 使用
+            if (content.includes('interface ') && !patterns.includes('interface-usage')) {
+              patterns.push('interface-usage');
+            }
+
+            // 檢測泛型類型
+            if (content.match(/<[A-Z]\w*(\s*extends\s+\w+)?>/g) && !patterns.includes('generic-types')) {
+              patterns.push('generic-types');
+            }
+
+            // 檢測 enum 使用
+            if (content.includes('enum ') && !patterns.includes('enum-usage')) {
+              patterns.push('enum-usage');
+            }
+          }
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify({
+            patterns,
+            statistics: {
+              asyncFunctions: asyncFunctionCount
+            }
+          }, null, 2));
+        } else {
+          console.log(`✅ 模式檢測完成!`);
+          console.log(`📊 發現模式: ${patterns.join(', ')}`);
         }
       } else {
         throw new Error(`不支援的分析類型: ${analyzeType}`);
@@ -824,21 +920,49 @@ export class AgentIdeCLI {
 
       // 輸出結果
       if (options.format === 'json') {
-        console.log(JSON.stringify({
-          stats: {
-            totalFiles: stats.totalFiles,
-            totalDependencies: stats.totalDependencies,
-            averageDependenciesPerFile: stats.averageDependenciesPerFile,
-            maxDependenciesInFile: stats.maxDependenciesInFile,
-            circularDependencies: cycles.length,
-            orphanedFiles: stats.orphanedFiles
-          },
-          cycles: cycles.map(c => ({
-            cycle: c.cycle,
-            length: c.length,
-            severity: c.severity
-          }))
-        }, null, 2));
+        // 建立 nodes 和 edges 格式（為了符合測試期望）
+        const nodes = graph.getAllNodes().map((nodeId: string) => ({
+          id: nodeId,
+          dependencies: graph.getDependencies(nodeId)
+        }));
+
+        const edges: Array<{source: string; target: string}> = [];
+        for (const nodeId of graph.getAllNodes()) {
+          for (const depId of graph.getDependencies(nodeId)) {
+            edges.push({ source: nodeId, target: depId });
+          }
+        }
+
+        // 根據 --file 選項決定輸出格式
+        if (options.file) {
+          // 單檔案依賴查詢模式
+          const targetFile = path.resolve(options.file);
+          const dependencies: Record<string, string[]> = {};
+          dependencies[options.file] = graph.getDependencies(targetFile);
+
+          console.log(JSON.stringify({
+            dependencies
+          }, null, 2));
+        } else {
+          // 專案依賴圖模式
+          console.log(JSON.stringify({
+            nodes,
+            edges,
+            cycles: cycles.map(c => ({
+              cycle: c.cycle,
+              length: c.length,
+              severity: c.severity
+            })),
+            stats: {
+              totalFiles: stats.totalFiles,
+              totalDependencies: stats.totalDependencies,
+              averageDependenciesPerFile: stats.averageDependenciesPerFile,
+              maxDependenciesInFile: stats.maxDependenciesInFile,
+              circularDependencies: cycles.length,
+              orphanedFiles: stats.orphanedFiles
+            }
+          }, null, 2));
+        }
       } else {
         console.log(`✅ 依賴分析完成!`);
         console.log(`📊 統計:`);
