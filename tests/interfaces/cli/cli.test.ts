@@ -77,7 +77,7 @@ describe('AgentIdeCLI', () => {
         // 預期會因為 process.exit 而拋出錯誤
       }
 
-      expect(mockConsoleError).toHaveBeenCalledWith('❌ 必須指定 --from 和 --to 參數');
+      expect(mockConsoleError).toHaveBeenCalledWith('❌ 必須指定符號名稱和新名稱');
     });
   });
 
