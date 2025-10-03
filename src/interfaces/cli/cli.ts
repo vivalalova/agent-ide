@@ -759,7 +759,7 @@ export class AgentIdeCLI {
             }
           }, null, 2));
         } else {
-          console.log(`✅ 複雜度分析完成!`);
+          console.log('✅ 複雜度分析完成!');
           console.log(`📊 統計: ${results.length} 個檔案`);
           console.log(`   平均複雜度: ${averageComplexity.toFixed(2)}`);
           console.log(`   最高複雜度: ${maxComplexity}`);
@@ -791,8 +791,8 @@ export class AgentIdeCLI {
             }
           }, null, 2));
         } else {
-          console.log(`✅ 死代碼檢測完成!`);
-          console.log(`📊 發現:`);
+          console.log('✅ 死代碼檢測完成!');
+          console.log('📊 發現:');
           console.log(`   未使用函式: ${deadFunctions.length} 個`);
           console.log(`   未使用變數: ${deadVariables.length} 個`);
         }
@@ -822,7 +822,7 @@ export class AgentIdeCLI {
             recommendations
           }, null, 2));
         } else {
-          console.log(`✅ 最佳實踐檢查完成!`);
+          console.log('✅ 最佳實踐檢查完成!');
           console.log(`📊 建議數: ${recommendations.length}`);
         }
       } else if (analyzeType === 'patterns') {
@@ -876,7 +876,7 @@ export class AgentIdeCLI {
             }
           }, null, 2));
         } else {
-          console.log(`✅ 模式檢測完成!`);
+          console.log('✅ 模式檢測完成!');
           console.log(`📊 發現模式: ${patterns.join(', ')}`);
         }
       } else {
@@ -964,8 +964,8 @@ export class AgentIdeCLI {
           }, null, 2));
         }
       } else {
-        console.log(`✅ 依賴分析完成!`);
-        console.log(`📊 統計:`);
+        console.log('✅ 依賴分析完成!');
+        console.log('📊 統計:');
         console.log(`   總檔案數: ${stats.totalFiles}`);
         console.log(`   總依賴數: ${stats.totalDependencies}`);
         console.log(`   平均依賴數: ${stats.averageDependenciesPerFile.toFixed(2)}`);
@@ -977,7 +977,7 @@ export class AgentIdeCLI {
             console.log(`   ${index + 1}. ${cycle.cycle.join(' → ')} (長度: ${cycle.length}, 嚴重性: ${cycle.severity})`);
           });
         } else {
-          console.log(`✓ 無循環依賴`);
+          console.log('✓ 無循環依賴');
         }
 
         if (stats.orphanedFiles > 0) {

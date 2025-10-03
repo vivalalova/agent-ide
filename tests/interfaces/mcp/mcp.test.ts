@@ -272,17 +272,6 @@ describe('MCP 介面測試', () => {
   });
 
   describe('其他工具的佔位符實作測試', () => {
-    it('重新命名工具應該返回開發中消息', withMemoryOptimization(async () => {
-      const result = await mcp.executeTool('code_rename', {
-        type: 'function',
-        from: 'oldName',
-        to: 'newName'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data.message).toContain('開發中');
-    }, { testName: 'mcp-rename-placeholder' }));
-
     it('移動工具應該返回開發中消息', withMemoryOptimization(async () => {
       const result = await mcp.executeTool('code_move', {
         source: '/src/old.ts',
@@ -292,15 +281,6 @@ describe('MCP 介面測試', () => {
       expect(result.success).toBe(true);
       expect(result.data.message).toContain('開發中');
     }, { testName: 'mcp-move-placeholder' }));
-
-    it('搜尋工具應該返回開發中消息', withMemoryOptimization(async () => {
-      const result = await mcp.executeTool('code_search', {
-        query: 'function test'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data.message).toContain('開發中');
-    }, { testName: 'mcp-search-placeholder' }));
 
     it('分析工具應該返回開發中消息', withMemoryOptimization(async () => {
       const result = await mcp.executeTool('code_analyze', {

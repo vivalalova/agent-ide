@@ -362,6 +362,15 @@ export function shouldIndexFile(filePath: string, config: IndexConfig): boolean 
  */
 function matchesPattern(path: string, pattern: string): boolean {
   // 簡化的 glob 模式匹配實現
+  // 處理特殊情況：**/dirName/** 應該匹配任何層級的 dirName 目錄（但不匹配根目錄）
+  if (pattern.startsWith('**/') && pattern.endsWith('/**')) {
+    const dirName = pattern.slice(3, -3); // 移除 **/ 和 /**
+    const pathParts = path.split('/').filter(p => p.length > 0);
+    // 檢查 dirName 是否出現在路徑中，但排除第一個部分（根目錄）
+    return pathParts.slice(1).includes(dirName);
+  }
+
+  // 一般的 glob 模式處理
   const regexPattern = pattern
     .replace(/\*\*/g, '.*')
     .replace(/\*/g, '[^/]*')
