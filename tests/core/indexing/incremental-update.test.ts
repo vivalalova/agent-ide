@@ -3,7 +3,7 @@
  * 測試索引的增量更新和檔案變更追蹤功能
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IndexEngine } from '../../../src/core/indexing/index-engine';
 import { FileWatcher } from '../../../src/core/indexing/file-watcher';
 import { createIndexConfig } from '../../../src/core/indexing/types';

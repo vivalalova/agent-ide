@@ -32,7 +32,6 @@ export async function executeCLI(
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
-    let timeoutId: NodeJS.Timeout | undefined;
 
     const proc = spawn('node', [cliPath, ...args], {
       cwd,
@@ -41,7 +40,7 @@ export async function executeCLI(
     });
 
     // 設定超時
-    timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       proc.kill('SIGTERM');
       reject(new Error(`CLI 執行超時 (${timeout}ms)`));
     }, timeout);
