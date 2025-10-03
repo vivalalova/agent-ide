@@ -27,32 +27,67 @@ vi.mock('fs', () => vol);
 
 // Mock glob to work with memfs
 vi.mock('glob', () => ({
-  glob: vi.fn(async (pattern: string) => {
+  glob: vi.fn(async (pattern: string, options?: any) => {
     const fs = vol as any;
     const files: string[] = [];
+    const cwd = options?.cwd || '/';
+    const absolute = options?.absolute ?? false;
+    const ignorePatterns = options?.ignore || [];
+
+    // Helper function to check if a path matches ignore patterns
+    const shouldIgnorePath = (path: string): boolean => {
+      return ignorePatterns.some((ignorePattern: string) => {
+        // Handle patterns like '**/test/**', '**/dist/**'
+        if (ignorePattern.startsWith('**/') && ignorePattern.endsWith('/**')) {
+          const dirName = ignorePattern.replace(/\*\*\//g, '').replace(/\/\*\*/g, '');
+          // Check if the directory appears as a path component (not just substring)
+          const pathParts = path.split('/');
+          return pathParts.includes(dirName);
+        }
+        // Handle patterns like 'node_modules/**', '*.test.ts', '*.test.*'
+        else if (ignorePattern.includes('**')) {
+          const baseName = ignorePattern.split('/**')[0].replace('**/', '');
+          const pathParts = path.split('/');
+          return pathParts.includes(baseName);
+        } else if (ignorePattern.startsWith('*.')) {
+          // Handle wildcard patterns like '*.test.ts' or '*.test.*'
+          const ext = ignorePattern.replace('*.', '.');
+          if (ext.includes('*')) {
+            // Handle patterns like '*.test.*'
+            const parts = ext.split('*');
+            return parts.every(part => path.includes(part));
+          }
+          return path.endsWith(ext);
+        }
+        return path.includes(ignorePattern);
+      });
+    };
 
     // Simple glob pattern matching for memfs
     const walkDir = (dir: string) => {
       try {
         const items = fs.readdirSync(dir);
         for (const item of items) {
-          const fullPath = `${dir}/${item}`;
+          const fullPath = `${dir}/${item}`.replace(/\/+/g, '/');
+
+          // 檢查是否符合 ignore patterns
+          if (shouldIgnorePath(fullPath)) {
+            continue;
+          }
+
           const stat = fs.statSync(fullPath);
           if (stat.isDirectory()) {
-            // 排除 node_modules 和 test 目錄
-            if (!item.includes('node_modules') && !item.includes('test')) {
-              walkDir(fullPath);
-            }
+            walkDir(fullPath);
           } else if (stat.isFile()) {
             // Check file extension
             if (pattern.includes('*.ts') && fullPath.endsWith('.ts')) {
-              files.push(fullPath);
+              files.push(absolute ? fullPath : fullPath.replace(cwd + '/', ''));
             } else if (pattern.includes('*.tsx') && fullPath.endsWith('.tsx')) {
-              files.push(fullPath);
+              files.push(absolute ? fullPath : fullPath.replace(cwd + '/', ''));
             } else if (pattern.includes('*.js') && fullPath.endsWith('.js')) {
-              files.push(fullPath);
+              files.push(absolute ? fullPath : fullPath.replace(cwd + '/', ''));
             } else if (pattern.includes('*.jsx') && fullPath.endsWith('.jsx')) {
-              files.push(fullPath);
+              files.push(absolute ? fullPath : fullPath.replace(cwd + '/', ''));
             }
           }
         }
@@ -61,9 +96,7 @@ vi.mock('glob', () => ({
       }
     };
 
-    // Extract base directory from pattern
-    const baseDir = pattern.split('/**')[0];
-    walkDir(baseDir);
+    walkDir(cwd);
 
     return files;
   })
@@ -619,7 +652,7 @@ describe('IndexEngine', () => {
     it('應該能自訂過濾規則', async () => {
       const customConfig = createIndexConfig('/test/workspace', {
         includeExtensions: ['.ts'],
-        excludePatterns: ['**/test/**', '**/dist/**']
+        excludePatterns: ['**/testDir/**', '**/dist/**']
       });
 
       const customEngine = new IndexEngine(customConfig);
