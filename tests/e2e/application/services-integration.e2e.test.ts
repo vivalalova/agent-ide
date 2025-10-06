@@ -3,7 +3,7 @@
  * 測試 EventBus、WorkflowEngine、SessionManager 等的整合場景
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 import { EventBus } from '../../../src/application/events/event-bus.js';
 import { EventPriority } from '../../../src/application/events/event-types.js';
 import { WorkflowEngineService } from '../../../src/application/services/workflow-engine.service.js';
@@ -12,6 +12,13 @@ import { ModuleCoordinatorService } from '../../../src/application/services/modu
 import { StateManager } from '../../../src/application/state/state-manager.js';
 import { ErrorHandlerService } from '../../../src/application/services/error-handler.service.js';
 import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+
+// 確保 e2e 測試不受其他測試的 mock 影響
+beforeAll(() => {
+  vi.unmock('fs/promises');
+  vi.unmock('fs');
+  vi.unmock('glob');
+});
 
 describe('Application Services 整合 E2E 測試', () => {
   let project: TestProject;

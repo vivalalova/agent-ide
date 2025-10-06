@@ -3,9 +3,16 @@
  * 測試 MCP 工具的實際執行功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 import { AgentIdeMCP } from '../../../src/interfaces/mcp/mcp';
 import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+
+// 確保 e2e 測試不受其他測試的 mock 影響
+beforeAll(() => {
+  vi.unmock('fs/promises');
+  vi.unmock('fs');
+  vi.unmock('glob');
+});
 
 describe('MCP 工具執行 E2E 測試', () => {
   let mcp: AgentIdeMCP;
