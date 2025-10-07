@@ -6,7 +6,8 @@
   "main": "dist/shared/index.js",
   "types": "dist/shared/index.d.ts",
   "bin": {
-    "agent-ide": "./bin/agent-ide.js"
+    "agent-ide": "./bin/agent-ide.js",
+    "agent-ide-mcp": "./bin/mcp-server.js"
   },
   "scripts": {
     "build": "tsc",
@@ -61,6 +62,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "README.md"
   ],
   "dependencies": {

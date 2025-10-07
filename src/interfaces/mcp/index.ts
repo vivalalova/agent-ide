@@ -4,3 +4,4 @@
 
 export { AgentIdeMCP } from './mcp.js';
 export type { MCPTool, MCPResult } from './mcp.js';
+export { MCPServer } from './mcp-server.js';

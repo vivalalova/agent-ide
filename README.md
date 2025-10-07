@@ -450,31 +450,77 @@ src/user.ts:10: export class User
 
 Agent IDE 提供完整的 MCP (Model Context Protocol) 介面，可以讓 Claude Code 等 AI 工具直接透過 MCP 協議使用所有功能。
 
-### 1️⃣ MCP 整合方式
+### 1️⃣ 在 Claude Code 中使用
 
-#### 在 Claude Code 中使用
+#### 方法一：透過 MCP Server（推薦）
 
-1. **透過程式碼整合**：
-   ```typescript
-   import { AgentIdeMCP } from 'agent-ide';
-
-   const mcp = new AgentIdeMCP();
-
-   // 獲取所有可用工具
-   const tools = mcp.getTools();
-
-   // 執行工具
-   const result = await mcp.executeTool('code_index', {
-     action: 'create',
-     path: '/path/to/project'
-   });
-   ```
-
-2. **作為 MCP Server 使用**（開發中）：
+1. **安裝 Agent IDE**：
    ```bash
-   # 未來將支援獨立 MCP Server 模式
-   agent-ide mcp-server --port 3000
+   # 全域安裝
+   npm install -g agent-ide
+
+   # 或從原始碼安裝
+   cd agent-ide
+   pnpm install && pnpm build
+   npm link
    ```
+
+2. **設定 Claude Code MCP**：
+
+   在 Claude Code 設定中加入 Agent IDE：
+
+   ```bash
+   # 使用 Claude CLI（如果支援）
+   claude mcp add agent-ide
+
+   # 或手動編輯設定檔
+   ```
+
+   **macOS/Linux**: 編輯 `~/.config/claude/mcp_settings.json`
+
+   **Windows**: 編輯 `%APPDATA%\Claude\mcp_settings.json`
+
+   加入以下設定：
+
+   ```json
+   {
+     "mcpServers": {
+       "agent-ide": {
+         "command": "agent-ide-mcp",
+         "args": [],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. **重新啟動 Claude Code**，Agent IDE 的工具就會出現在可用工具列表中
+
+4. **驗證安裝**：
+
+   在 Claude Code 中詢問：
+   ```
+   請列出所有可用的 agent-ide 工具
+   ```
+
+#### 方法二：透過程式碼整合
+
+適合在自己的專案中整合 Agent IDE：
+
+```typescript
+import { AgentIdeMCP } from 'agent-ide';
+
+const mcp = new AgentIdeMCP();
+
+// 獲取所有可用工具
+const tools = mcp.getTools();
+
+// 執行工具
+const result = await mcp.executeTool('code_index', {
+  action: 'create',
+  path: '/path/to/project'
+});
+```
 
 ### 2️⃣ 可用的 MCP 工具
 
