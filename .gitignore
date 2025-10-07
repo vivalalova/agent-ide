@@ -139,4 +139,15 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-.guide.md
+
+# Temporary files
+*.guide.md
+test-*.js
+test-*.ts
+test-*/
+fix-*.cjs
+fix-*.sh
+debug-*.js
+*SUMMARY.md
+read.md
+review.md
