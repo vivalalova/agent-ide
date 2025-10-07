@@ -8,29 +8,48 @@
 
 一行指令安裝：
 ```bash
-claude mcp add agent-ide npx https://github.com/vivalalova/agent-ide.git agent-ide-mcp
+# 從 npm 安裝（推薦）
+claude mcp add agent-ide -- npx -y agent-ide-mcp
+
+# 或從 GitHub 安裝最新版
+claude mcp add agent-ide -- npx -y github:vivalalova/agent-ide
 ```
 
-重新啟動 Claude Code，輸入「請列出所有可用的 agent-ide 工具」驗證安裝。
+安裝完成後：
+1. 重新啟動 Claude Code
+2. 輸入「請列出所有可用的 agent-ide 工具」驗證安裝
+3. 開始使用！
 
 <details>
 <summary>手動設定 MCP（Claude Desktop / 其他）</summary>
 
 編輯設定檔：
 - **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) 或 `%APPDATA%/Claude/claude_desktop_config.json` (Windows)
-- **Claude Code**: `~/.config/claude/mcp_settings.json` (macOS/Linux) 或 `%APPDATA%\Claude\mcp_settings.json` (Windows)
+- **Claude Code**: 使用 `claude mcp add` 命令（自動設定）
 
-加入：
+加入以下設定：
 ```json
 {
   "mcpServers": {
     "agent-ide": {
       "command": "npx",
-      "args": ["https://github.com/vivalalova/agent-ide.git", "agent-ide-mcp"],
+      "args": ["-y", "agent-ide-mcp"],
       "env": {}
     }
   }
 }
+```
+
+**其他管理命令**：
+```bash
+# 列出所有 MCP servers
+claude mcp list
+
+# 移除 MCP server
+claude mcp remove agent-ide
+
+# 檢查連接狀態
+claude mcp list
 ```
 </details>
 
