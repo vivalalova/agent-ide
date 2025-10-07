@@ -903,9 +903,20 @@ export class AgentIdeMCP {
         }
 
         const pluginInfo = registry.listParsers().find(p => p.name === plugin);
+        if (!pluginInfo) {
+          return { success: false, error: `找不到插件資訊: ${plugin}` };
+        }
+
+        // 避免循環引用，只返回必要的資訊
         return {
           success: true,
-          data: pluginInfo
+          data: {
+            name: pluginInfo.name,
+            version: pluginInfo.version,
+            supportedExtensions: pluginInfo.supportedExtensions,
+            supportedLanguages: pluginInfo.supportedLanguages,
+            registeredAt: pluginInfo.registeredAt.toISOString()
+          }
         };
 
       case 'enable':
