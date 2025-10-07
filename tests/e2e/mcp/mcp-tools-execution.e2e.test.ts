@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 import { AgentIdeMCP } from '../../../src/interfaces/mcp/mcp';
 import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+import { ParserRegistry } from '../../../src/infrastructure/parser/registry';
 
 // 確保 e2e 測試不受其他測試的 mock 影響
 beforeAll(() => {
@@ -19,6 +20,7 @@ describe('MCP 工具執行 E2E 測試', () => {
   let project: TestProject;
 
   beforeEach(async () => {
+    ParserRegistry.resetInstance();
     mcp = new AgentIdeMCP();
 
     // 建立測試專案

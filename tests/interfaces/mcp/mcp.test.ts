@@ -46,6 +46,7 @@ vi.mock('../../../src/core/indexing/types', () => ({
 
 // 正確的 ParserRegistry mock 實作
 const mockParserRegistry = {
+  register: vi.fn(),
   listParsers: vi.fn(() => [
     {
       name: 'typescript',
@@ -269,36 +270,6 @@ describe('MCP 介面測試', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('找不到插件');
     }, { testName: 'mcp-plugin-not-found' }));
-  });
-
-  describe('其他工具的佔位符實作測試', () => {
-    it('移動工具應該返回開發中消息', withMemoryOptimization(async () => {
-      const result = await mcp.executeTool('code_move', {
-        source: '/src/old.ts',
-        target: '/src/new.ts'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data.message).toContain('開發中');
-    }, { testName: 'mcp-move-placeholder' }));
-
-    it('分析工具應該返回開發中消息', withMemoryOptimization(async () => {
-      const result = await mcp.executeTool('code_analyze', {
-        path: '/test/project'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data.message).toContain('開發中');
-    }, { testName: 'mcp-analyze-placeholder' }));
-
-    it('依賴工具應該返回開發中消息', withMemoryOptimization(async () => {
-      const result = await mcp.executeTool('code_deps', {
-        path: '/test/project'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.data.message).toContain('開發中');
-    }, { testName: 'mcp-deps-placeholder' }));
   });
 
   describe('錯誤處理測試', () => {

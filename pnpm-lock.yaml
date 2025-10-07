@@ -8,16 +8,6 @@ importers:
 
   .:
     dependencies:
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
-      glob:
-        specifier: ^11.0.3
-        version: 11.0.3
-      web-tree-sitter:
-        specifier: ^0.25.10
-        version: 0.25.10
-    devDependencies:
       '@babel/generator':
         specifier: ^7.28.3
         version: 7.28.3
@@ -30,6 +20,19 @@ importers:
       '@babel/types':
         specifier: ^7.28.4
         version: 7.28.4
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      glob:
+        specifier: ^11.0.3
+        version: 11.0.3
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.2
+      web-tree-sitter:
+        specifier: ^0.25.10
+        version: 0.25.10
+    devDependencies:
       '@types/babel__generator':
         specifier: ^7.27.0
         version: 7.27.0
@@ -66,9 +69,6 @@ importers:
       tsx:
         specifier: ^4.20.5
         version: 4.20.6
-      typescript:
-        specifier: ^5.0.0
-        version: 5.9.2
       vitest:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@24.3.1)
