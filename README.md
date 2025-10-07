@@ -25,58 +25,43 @@ Agent IDE 是一個為 AI 代理（如 Claude Code CLI）設計的程式碼智�
 
 Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Protocol) 提供所有功能。
 
-### 快速設定
+### 快速設定（一步到位）
 
-1. **安裝 Agent IDE**（必須先安裝）：
-   ```bash
-   # 從 GitHub 安裝（推薦）
-   npm install -g https://github.com/vivalalova/agent-ide.git
+編輯 MCP 設定檔：
 
-   # 或從 npm 安裝（發布後）
-   npm install -g agent-ide
+**Claude Desktop** (桌面應用)：
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
-   # 或從本地原始碼安裝
-   git clone https://github.com/vivalalova/agent-ide.git
-   cd agent-ide
-   pnpm install
-   pnpm build
-   npm link
-   ```
+**Claude Code** (CLI/Extension)：
+- macOS/Linux: `~/.config/claude/mcp_settings.json`
+- Windows: `%APPDATA%\Claude\mcp_settings.json`
 
-   > ⚠️ **重要**：必須先安裝 agent-ide，MCP 設定檔才能找到 `agent-ide-mcp` 命令
+加入以下設定：
+```json
+{
+  "mcpServers": {
+    "agent-ide": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "https://github.com/vivalalova/agent-ide.git",
+        "agent-ide-mcp"
+      ],
+      "env": {}
+    }
+  }
+}
+```
 
-2. **設定 MCP**：
+重新啟動 Claude，Agent IDE 就可以使用了！
 
-   **Claude Desktop** (桌面應用)：
-   - 開啟 Claude Desktop > Settings > Developer > Edit Config
-   - 或編輯設定檔：
-     - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-     - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+### 驗證安裝
 
-   **Claude Code** (CLI/Extension)：
-   - 編輯設定檔：
-     - macOS/Linux: `~/.config/claude/mcp_settings.json`
-     - Windows: `%APPDATA%\Claude\mcp_settings.json`
-
-   加入以下設定：
-   ```json
-   {
-     "mcpServers": {
-       "agent-ide": {
-         "command": "agent-ide-mcp",
-         "args": [],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-3. **重新啟動 Claude Desktop 或 Claude Code**
-
-4. **驗證安裝**：
-   ```
-   請列出所有可用的 agent-ide 工具
-   ```
+在 Claude 中輸入：
+```
+請列出所有可用的 agent-ide 工具
+```
 
 ### 可用工具
 

@@ -2,94 +2,30 @@
 
 本指南將協助你在 Claude Code 中設定 Agent IDE MCP Server。
 
-## 🚀 快速開始
+## 🚀 快速開始（一步到位，無需安裝）
 
-### 步驟 1: 安裝 Agent IDE
+### 步驟 1: 編輯 MCP 設定檔
 
-選擇以下任一方式安裝：
+**Claude Desktop** (桌面應用)：
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
-#### 方式 A: 從 GitHub 直接安裝（推薦）
+**Claude Code** (CLI/Extension)：
+- macOS/Linux: `~/.config/claude/mcp_settings.json`
+- Windows: `%APPDATA%\Claude\mcp_settings.json`
 
-```bash
-npm install -g https://github.com/vivalalova/agent-ide.git
-```
+### 步驟 2: 加入以下設定
 
-#### 方式 B: 從 npm 安裝（發布後）
-
-```bash
-npm install -g agent-ide
-```
-
-#### 方式 C: 從原始碼安裝
-
-```bash
-# 1. Clone 專案
-git clone https://github.com/vivalalova/agent-ide.git
-cd agent-ide
-
-# 2. 安裝依賴並建置
-pnpm install
-pnpm build
-
-# 3. 全域連結
-npm link
-
-# 4. 驗證安裝
-agent-ide-mcp --version
-```
-
-### 步驟 2: 設定 Claude
-
-選擇你使用的 Claude 版本：
-
-#### 選項 A: Claude Desktop (桌面應用)
-
-**macOS**:
-1. 開啟 Claude Desktop
-2. 進入 Settings > Developer > Edit Config
-3. 或手動編輯：`~/Library/Application Support/Claude/claude_desktop_config.json`
-
-**Windows**:
-1. 開啟 Claude Desktop
-2. 進入 Settings > Developer > Edit Config
-3. 或手動編輯：`%APPDATA%/Claude/claude_desktop_config.json`
-
-加入以下設定：
 ```json
 {
   "mcpServers": {
     "agent-ide": {
-      "command": "agent-ide-mcp",
-      "args": [],
-      "env": {}
-    }
-  }
-}
-```
-
-#### 選項 B: Claude Code (CLI/Extension)
-
-**macOS / Linux**:
-1. 建立設定目錄（如果不存在）：
-   ```bash
-   mkdir -p ~/.config/claude
-   ```
-
-2. 編輯 `~/.config/claude/mcp_settings.json`：
-   ```bash
-   nano ~/.config/claude/mcp_settings.json
-   ```
-
-**Windows**:
-1. 編輯 `%APPDATA%\Claude\mcp_settings.json`
-
-加入以下設定：
-```json
-{
-  "mcpServers": {
-    "agent-ide": {
-      "command": "agent-ide-mcp",
-      "args": [],
+      "command": "npx",
+      "args": [
+        "-y",
+        "https://github.com/vivalalova/agent-ide.git",
+        "agent-ide-mcp"
+      ],
       "env": {}
     }
   }
@@ -98,11 +34,11 @@ agent-ide-mcp --version
 
 ### 步驟 3: 重新啟動 Claude
 
-關閉並重新開啟 Claude Desktop 或 Claude Code，Agent IDE 的工具就會自動載入。
+關閉並重新開啟 Claude，Agent IDE 的工具就會自動載入。
 
 ### 步驟 4: 驗證安裝
 
-詢問 Claude：
+在 Claude 中輸入：
 
 ```
 請列出所有可用的 agent-ide 工具
@@ -116,6 +52,8 @@ agent-ide-mcp --version
 - `code_analyze` - 程式碼分析
 - `code_deps` - 依賴分析
 - `parser_plugins` - Parser 插件管理
+
+---
 
 ## 📝 使用範例
 
@@ -145,7 +83,44 @@ agent-ide-mcp --version
 請將 src/user.ts 中第 10 行第 14 列的符號重新命名為 CustomerService（先預覽）
 ```
 
+---
+
 ## 🔧 進階設定
+
+### 方式 B: 手動安裝（適合開發或離線使用）
+
+如果你想要手動安裝而不使用 npx：
+
+1. **安裝 Agent IDE**：
+   ```bash
+   # 從 GitHub 安裝
+   npm install -g https://github.com/vivalalova/agent-ide.git
+
+   # 或從 npm 安裝（發布後）
+   npm install -g agent-ide
+
+   # 或從本地原始碼
+   git clone https://github.com/vivalalova/agent-ide.git
+   cd agent-ide
+   pnpm install
+   pnpm build
+   npm link
+   ```
+
+2. **修改 MCP 設定**（使用直接命令而非 npx）：
+   ```json
+   {
+     "mcpServers": {
+       "agent-ide": {
+         "command": "agent-ide-mcp",
+         "args": [],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. 重新啟動 Claude
 
 ### 自訂工作目錄
 
@@ -155,8 +130,12 @@ agent-ide-mcp --version
 {
   "mcpServers": {
     "agent-ide": {
-      "command": "agent-ide-mcp",
-      "args": [],
+      "command": "npx",
+      "args": [
+        "-y",
+        "https://github.com/vivalalova/agent-ide.git",
+        "agent-ide-mcp"
+      ],
       "env": {
         "AGENT_IDE_WORKSPACE": "/path/to/default/workspace"
       }
@@ -181,28 +160,29 @@ agent-ide-mcp --version
 }
 ```
 
+---
+
 ## 🐛 疑難排解
 
-### 問題 1: 找不到 agent-ide-mcp 命令
+### 問題 1: npx 首次執行較慢
 
-**解決方法**：
-```bash
-# 檢查是否已全域安裝
-which agent-ide-mcp
+**原因**: npx 需要從 GitHub 下載並建置專案
 
-# 如果沒有，重新執行
-npm link
-
-# 或使用完整路徑
-"command": "/usr/local/bin/agent-ide-mcp"
-```
+**解決方法**:
+- 第一次執行會需要幾分鐘，請耐心等待
+- 之後 npx 會快取已安裝的版本，啟動速度會變快
+- 如果想要更快的啟動速度，可以使用「方式 B: 手動安裝」
 
 ### 問題 2: 工具無法使用
 
 **解決方法**：
 1. 檢查 MCP Server 是否正常運作：
    ```bash
-   echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | agent-ide-mcp
+   npx -y https://github.com/vivalalova/agent-ide.git agent-ide-mcp
+   ```
+   然後輸入測試訊息：
+   ```json
+   {"jsonrpc":"2.0","id":1,"method":"tools/list"}
    ```
 
 2. 查看 Claude Code 日誌
@@ -213,15 +193,28 @@ npm link
 
 **解決方法**：
 ```bash
-# 確保執行檔有執行權限
-chmod +x $(which agent-ide-mcp)
+# 確保有執行權限
+chmod +x ~/.npm/_npx/*/node_modules/.bin/agent-ide-mcp
 ```
+
+### 問題 4: 想要更新到最新版本
+
+**解決方法**：
+```bash
+# 清除 npx 快取
+npx clear-npx-cache
+
+# 或手動刪除快取
+rm -rf ~/.npm/_npx
+```
+
+---
 
 ## 📚 更多資源
 
 - [Agent IDE README](./README.md)
 - [MCP 協議文件](https://modelcontextprotocol.io/)
-- [問題回報](https://github.com/your-org/agent-ide/issues)
+- [問題回報](https://github.com/vivalalova/agent-ide/issues)
 
 ## 🎯 下一步
 
