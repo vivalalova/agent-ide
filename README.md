@@ -8,7 +8,7 @@
 
 一行指令安裝：
 ```bash
-claude mcp add agent-ide npx -y https://github.com/vivalalova/agent-ide.git agent-ide-mcp
+claude mcp add agent-ide npx https://github.com/vivalalova/agent-ide.git agent-ide-mcp
 ```
 
 重新啟動 Claude Code，輸入「請列出所有可用的 agent-ide 工具」驗證安裝。
@@ -26,7 +26,7 @@ claude mcp add agent-ide npx -y https://github.com/vivalalova/agent-ide.git agen
   "mcpServers": {
     "agent-ide": {
       "command": "npx",
-      "args": ["-y", "https://github.com/vivalalova/agent-ide.git", "agent-ide-mcp"],
+      "args": ["https://github.com/vivalalova/agent-ide.git", "agent-ide-mcp"],
       "env": {}
     }
   }

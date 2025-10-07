@@ -22,7 +22,6 @@
     "agent-ide": {
       "command": "npx",
       "args": [
-        "-y",
         "https://github.com/vivalalova/agent-ide.git",
         "agent-ide-mcp"
       ],
@@ -132,7 +131,6 @@
     "agent-ide": {
       "command": "npx",
       "args": [
-        "-y",
         "https://github.com/vivalalova/agent-ide.git",
         "agent-ide-mcp"
       ],
@@ -178,7 +176,7 @@
 **解決方法**：
 1. 檢查 MCP Server 是否正常運作：
    ```bash
-   npx -y https://github.com/vivalalova/agent-ide.git agent-ide-mcp
+   npx https://github.com/vivalalova/agent-ide.git agent-ide-mcp
    ```
    然後輸入測試訊息：
    ```json
