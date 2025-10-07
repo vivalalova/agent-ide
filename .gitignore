@@ -80,7 +80,7 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist - 需要推送到 GitHub 供 npx 使用
 .output
 
 # Gatsby files
