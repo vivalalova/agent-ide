@@ -3,7 +3,17 @@
  * 提供 stdio-based MCP Server，讓 Claude Code 等 AI 工具可以透過 MCP 協議連接
  */
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { AgentIdeMCP, MCPTool } from './mcp.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, '../../../package.json'), 'utf-8')
+);
+const VERSION = packageJson.version;
 
 interface MCPRequest {
   jsonrpc: '2.0';
@@ -56,7 +66,7 @@ export class MCPServer {
     // 啟動訊息
     this.sendNotification('server/started', {
       name: 'agent-ide',
-      version: '0.1.0'
+      version: VERSION
     });
   }
 
@@ -94,7 +104,7 @@ export class MCPServer {
             },
             serverInfo: {
               name: 'agent-ide',
-              version: '0.1.0'
+              version: VERSION
             }
           });
           break;
