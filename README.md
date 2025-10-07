@@ -450,6 +450,8 @@ src/user.ts:10: export class User
 
 Agent IDE 提供完整的 MCP (Model Context Protocol) 介面，可以讓 Claude Code 等 AI 工具直接透過 MCP 協議使用所有功能。
 
+> 📖 **完整設定指南**：查看 [MCP_SETUP.md](./MCP_SETUP.md) 瞭解詳細的安裝與設定步驟
+
 ### 1️⃣ 在 Claude Code 中使用
 
 #### 方法一：透過 MCP Server（推薦）
