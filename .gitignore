@@ -151,3 +151,6 @@ debug-*.js
 *SUMMARY.md
 read.md
 review.md
+
+# Claude Code local settings
+.claude/settings.local.json
