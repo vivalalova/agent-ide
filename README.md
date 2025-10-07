@@ -17,6 +17,82 @@ Agent IDE 是一個為 AI 代理（如 Claude Code CLI）設計的程式碼智�
 - JavaScript
 - Swift（計畫中）
 
+### AI 工具整合
+- **Claude Code**：透過 MCP Server 直接使用
+- **其他 AI 工具**：支援 CLI 和程式化 API
+
+## 🔌 Claude Code 整合
+
+Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Protocol) 提供所有功能。
+
+### 快速設定
+
+1. **安裝 Agent IDE**：
+   ```bash
+   npm install -g agent-ide
+   # 或從原始碼: cd agent-ide && pnpm install && pnpm build && npm link
+   ```
+
+2. **設定 Claude Code MCP**：
+
+   編輯設定檔（根據你的作業系統）：
+   - **macOS/Linux**: `~/.config/claude/mcp_settings.json`
+   - **Windows**: `%APPDATA%\Claude\mcp_settings.json`
+
+   加入以下設定：
+   ```json
+   {
+     "mcpServers": {
+       "agent-ide": {
+         "command": "agent-ide-mcp",
+         "args": [],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. **重新啟動 Claude Code**
+
+4. **驗證安裝**，在 Claude Code 中詢問：
+   ```
+   請列出所有可用的 agent-ide 工具
+   ```
+
+### 可用工具
+
+在 Claude Code 中，你可以使用以下 7 個工具：
+
+| 工具 | 功能 |
+|------|------|
+| `code_index` | 建立和查詢程式碼索引 |
+| `code_search` | 搜尋符號、文字或模式 |
+| `code_rename` | 安全重新命名符號 |
+| `code_move` | 移動檔案並更新 import |
+| `code_analyze` | 分析程式碼品質與複雜度 |
+| `code_deps` | 分析依賴關係與循環依賴 |
+| `parser_plugins` | 管理 Parser 插件 |
+
+### 使用範例
+
+```
+# 索引專案
+請使用 agent-ide 索引 /path/to/my/project
+
+# 搜尋符號
+在專案中搜尋 UserService 類別
+
+# 分析依賴
+分析專案的依賴關係並檢查循環依賴
+
+# 重新命名
+將 src/user.ts 第 10 行第 14 列的符號重新命名為 CustomerService（預覽模式）
+```
+
+📖 **完整設定指南**：查看 [MCP_SETUP.md](./MCP_SETUP.md) 瞭解詳細步驟和疑難排解
+
+---
+
 ## 📦 安裝
 
 ### 方法一：從 npm 安裝（發布後）
@@ -446,68 +522,9 @@ src/user.ts:10: export class User
 
 ---
 
-## 🔌 MCP 介面使用指南
+## 🔌 程式化 API 使用
 
-Agent IDE 提供完整的 MCP (Model Context Protocol) 介面，可以讓 Claude Code 等 AI 工具直接透過 MCP 協議使用所有功能。
-
-> 📖 **完整設定指南**：查看 [MCP_SETUP.md](./MCP_SETUP.md) 瞭解詳細的安裝與設定步驟
-
-### 1️⃣ 在 Claude Code 中使用
-
-#### 方法一：透過 MCP Server（推薦）
-
-1. **安裝 Agent IDE**：
-   ```bash
-   # 全域安裝
-   npm install -g agent-ide
-
-   # 或從原始碼安裝
-   cd agent-ide
-   pnpm install && pnpm build
-   npm link
-   ```
-
-2. **設定 Claude Code MCP**：
-
-   在 Claude Code 設定中加入 Agent IDE：
-
-   ```bash
-   # 使用 Claude CLI（如果支援）
-   claude mcp add agent-ide
-
-   # 或手動編輯設定檔
-   ```
-
-   **macOS/Linux**: 編輯 `~/.config/claude/mcp_settings.json`
-
-   **Windows**: 編輯 `%APPDATA%\Claude\mcp_settings.json`
-
-   加入以下設定：
-
-   ```json
-   {
-     "mcpServers": {
-       "agent-ide": {
-         "command": "agent-ide-mcp",
-         "args": [],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-3. **重新啟動 Claude Code**，Agent IDE 的工具就會出現在可用工具列表中
-
-4. **驗證安裝**：
-
-   在 Claude Code 中詢問：
-   ```
-   請列出所有可用的 agent-ide 工具
-   ```
-
-#### 方法二：透過程式碼整合
-
-適合在自己的專案中整合 Agent IDE：
+Agent IDE 也可以在你的程式碼中使用：
 
 ```typescript
 import { AgentIdeMCP } from 'agent-ide';
@@ -522,194 +539,32 @@ const result = await mcp.executeTool('code_index', {
   action: 'create',
   path: '/path/to/project'
 });
+
+if (result.success) {
+  console.log('索引成功:', result.data);
+}
 ```
 
-### 2️⃣ 可用的 MCP 工具
+### API 文件
 
-#### `code_index` - 程式碼索引
-建立和查詢程式碼索引，提供符號搜尋和檔案索引功能
+完整的 MCP 工具參數和使用方式，請參考 [MCP_SETUP.md](./MCP_SETUP.md)
 
-**參數**：
-- `action`: 操作類型 (`create` | `update` | `search` | `stats`)
-- `path`: 專案路徑（用於 create/update）
-- `query`: 搜尋查詢（用於 search）
-- `extensions`: 包含的檔案副檔名（可選）
-- `excludePatterns`: 排除模式（可選）
+---
 
-**範例**：
-```typescript
-// 建立索引
-await mcp.executeTool('code_index', {
-  action: 'create',
-  path: '/path/to/project',
-  extensions: ['.ts', '.tsx'],
-  excludePatterns: ['node_modules/**', '*.test.*']
-});
+## 📚 MCP 工具快速參考
 
-// 搜尋符號
-await mcp.executeTool('code_index', {
-  action: 'search',
-  query: 'UserService'
-});
-```
+| 工具 | 功能 | 主要參數 |
+|------|------|----------|
+| `code_index` | 程式碼索引 | `action`, `path`, `query` |
+| `code_search` | 程式碼搜尋 | `query`, `mode`, `limit` |
+| `code_rename` | 重新命名 | `file`, `line`, `column`, `newName` |
+| `code_move` | 檔案移動 | `source`, `destination` |
+| `code_analyze` | 程式碼分析 | `path`, `type` |
+| `code_deps` | 依賴分析 | `path` |
+| `parser_plugins` | Parser 管理 | `action`, `plugin` |
 
-#### `code_search` - 程式碼搜尋
-搜尋程式碼中的符號、文字或模式
+### 工作流程範例
 
-**參數**：
-- `query`: 搜尋查詢（必填）
-- `path`: 搜尋路徑（預設: `.`）
-- `mode`: 搜尋模式 (`symbol` | `text` | `regex`，預設: `symbol`）
-- `limit`: 結果數量限制（預設: 50）
-
-**範例**：
-```typescript
-// 符號搜尋
-await mcp.executeTool('code_search', {
-  query: 'UserService',
-  path: '/path/to/project',
-  mode: 'symbol',
-  limit: 10
-});
-
-// 文字搜尋
-await mcp.executeTool('code_search', {
-  query: 'getUser',
-  mode: 'text'
-});
-```
-
-#### `code_rename` - 重新命名
-執行安全的程式碼重新命名，自動更新所有引用
-
-**參數**：
-- `file`: 檔案路徑（必填）
-- `line`: 行號（必填）
-- `column`: 列號（必填）
-- `newName`: 新名稱（必填）
-- `preview`: 是否只預覽變更（預設: true）
-
-**範例**：
-```typescript
-// 預覽重新命名
-await mcp.executeTool('code_rename', {
-  file: '/path/to/user.ts',
-  line: 10,
-  column: 14,
-  newName: 'CustomerService',
-  preview: true
-});
-
-// 執行重新命名
-await mcp.executeTool('code_rename', {
-  file: '/path/to/user.ts',
-  line: 10,
-  column: 14,
-  newName: 'CustomerService',
-  preview: false
-});
-```
-
-#### `code_move` - 檔案移動
-移動檔案或目錄，自動更新 import 路徑
-
-**參數**：
-- `source`: 來源路徑（必填）
-- `destination`: 目標路徑（必填）
-- `updateImports`: 是否自動更新 import（預設: true）
-- `preview`: 是否只預覽變更（預設: false）
-
-**範例**：
-```typescript
-await mcp.executeTool('code_move', {
-  source: 'src/user.ts',
-  destination: 'src/services/user.ts',
-  updateImports: true,
-  preview: true
-});
-```
-
-#### `code_analyze` - 程式碼分析
-分析程式碼品質、複雜度和相關指標
-
-**參數**：
-- `path`: 分析路徑（必填）
-- `type`: 分析類型（可選）
-
-**範例**：
-```typescript
-await mcp.executeTool('code_analyze', {
-  path: '/path/to/file.ts'
-});
-```
-
-#### `code_deps` - 依賴分析
-分析程式碼依賴關係，檢測循環依賴和影響範圍
-
-**參數**：
-- `path`: 分析路徑（必填）
-
-**範例**：
-```typescript
-// 分析專案依賴
-await mcp.executeTool('code_deps', {
-  path: '/path/to/project'
-});
-
-// 分析單一檔案
-await mcp.executeTool('code_deps', {
-  path: '/path/to/file.ts'
-});
-```
-
-#### `code_refactor` - 程式碼重構
-執行程式碼重構操作（開發中）
-
-**參數**：
-- `operation`: 重構操作類型（必填）
-- `file`: 檔案路徑（必填）
-- `startLine`: 開始行號（必填）
-- `endLine`: 結束行號（必填）
-- `functionName`: 函式名稱（用於 extract-function）
-- `preview`: 是否只預覽變更（預設: true）
-
-**範例**：
-```typescript
-await mcp.executeTool('code_refactor', {
-  operation: 'extract-function',
-  file: '/path/to/file.ts',
-  startLine: 10,
-  endLine: 20,
-  functionName: 'extractedFunction',
-  preview: true
-});
-```
-
-#### `parser_plugins` - Parser 插件管理
-管理 Parser 插件，查看和操作插件狀態
-
-**參數**：
-- `action`: 操作類型（`list` | `info` | `enable` | `disable`）
-- `plugin`: 插件名稱（用於 info/enable/disable）
-- `filter`: 過濾條件（用於 list，預設: `all`）
-
-**範例**：
-```typescript
-// 列出所有插件
-await mcp.executeTool('parser_plugins', {
-  action: 'list'
-});
-
-// 查看插件資訊
-await mcp.executeTool('parser_plugins', {
-  action: 'info',
-  plugin: 'typescript'
-});
-```
-
-### 3️⃣ MCP 工具使用流程
-
-**典型工作流程**：
 ```typescript
 const mcp = new AgentIdeMCP();
 
@@ -751,48 +606,7 @@ if (renameResult.success) {
 }
 ```
 
-### 4️⃣ 錯誤處理
-
-所有 MCP 工具都回傳統一的結果格式：
-
-```typescript
-interface MCPResult {
-  success: boolean;
-  data?: any;      // 成功時的資料
-  error?: string;  // 失敗時的錯誤訊息
-}
-```
-
-**範例**：
-```typescript
-const result = await mcp.executeTool('code_search', {
-  query: 'UserService'
-});
-
-if (result.success) {
-  console.log('搜尋結果:', result.data);
-} else {
-  console.error('錯誤:', result.error);
-}
-```
-
-### 5️⃣ 與 CLI 的差異
-
-| 特性 | CLI | MCP |
-|------|-----|-----|
-| 使用方式 | 命令列工具 | 程式化 API |
-| 輸出格式 | 文字/JSON | 結構化物件 |
-| 錯誤處理 | Exit Code | 回傳物件 |
-| 整合方式 | Shell 執行 | 直接呼叫 |
-| 適用場景 | 手動操作、腳本 | AI 工具整合 |
-
-### 6️⃣ 最佳實踐
-
-1. **先建立索引**：大多數功能需要先建立索引
-2. **使用 preview 模式**：重構/重新命名前先預覽變更
-3. **檢查回傳結果**：始終檢查 `success` 欄位
-4. **限制搜尋結果**：使用 `limit` 參數控制結果數量
-5. **快取 MCP 實例**：重複使用同一個實例以利用內部快取
+📖 詳細的工具參數和範例，請參考 [CLAUDE_CODE_INTEGRATION.md](./CLAUDE_CODE_INTEGRATION.md)
 
 ## 📊 效能基準
 
