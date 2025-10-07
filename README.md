@@ -19,12 +19,58 @@ Agent IDE 是一個為 AI 代理（如 Claude Code CLI）設計的程式碼智�
 
 ## 📦 安裝
 
+### 方法一：從 npm 安裝（發布後）
+
 ```bash
 # 使用 npm
 npm install -g agent-ide
 
 # 使用 pnpm
 pnpm add -g agent-ide
+```
+
+### 方法二：從原始碼安裝（開發版）
+
+```bash
+# 1. Clone 專案
+git clone https://github.com/your-org/agent-ide.git
+cd agent-ide
+
+# 2. 安裝依賴
+pnpm install
+
+# 3. 建置專案
+pnpm build
+
+# 4. 連結到全域（開發模式）
+npm link
+
+# 5. 驗證安裝
+agent-ide --version
+agent-ide --help
+```
+
+### 方法三：直接使用（不安裝）
+
+```bash
+# 在專案目錄中執行
+cd agent-ide
+pnpm install
+pnpm build
+
+# 使用 npx 執行
+npx agent-ide index
+npx agent-ide search "pattern"
+```
+
+### 解除安裝
+
+```bash
+# 解除全域連結
+npm unlink -g agent-ide
+
+# 或使用 npm
+npm uninstall -g agent-ide
 ```
 
 ## 🛠️ 使用方法
@@ -271,6 +317,132 @@ npm run typecheck
 # 建置專案
 npm run build
 ```
+
+## 🤖 AI 代理使用指南
+
+### 給 Claude Code、Cursor、Copilot 等 AI 工具的完整使用指南
+
+#### 1️⃣ 安裝（給 AI 的步驟）
+
+如果用戶想讓你使用 Agent IDE，請依序執行：
+
+```bash
+# 檢查是否已安裝
+which agent-ide
+
+# 如果未安裝，從專案目錄安裝
+cd /path/to/agent-ide
+pnpm install
+pnpm build
+npm link
+
+# 驗證安裝
+agent-ide --version
+```
+
+#### 2️⃣ 基本工作流程
+
+```bash
+# Step 1: 在用戶專案中建立索引（只需執行一次）
+cd /path/to/user/project
+agent-ide index
+
+# Step 2: 搜尋程式碼
+agent-ide search "目標關鍵字" --format json
+
+# Step 3: 分析影響範圍
+agent-ide deps --impact src/target-file.ts
+
+# Step 4: 預覽變更
+agent-ide rename --from oldName --to newName --dry-run
+
+# Step 5: 執行變更
+agent-ide rename --from oldName --to newName
+```
+
+#### 3️⃣ Token 優化技巧
+
+**始終使用 JSON 格式輸出**：
+```bash
+agent-ide search "pattern" --format json
+agent-ide deps --format json
+```
+
+**限制結果數量**：
+```bash
+agent-ide search "pattern" --max-results 5
+```
+
+**使用 dry-run 預覽**：
+```bash
+agent-ide rename --from old --to new --dry-run
+agent-ide move old.ts new.ts --dry-run
+```
+
+#### 4️⃣ 完整重構範例
+
+```bash
+# 場景：重新命名類別並移動檔案
+
+# 1. 搜尋現有使用
+agent-ide search "OldClassName" --format json --max-results 20
+
+# 2. 分析依賴
+agent-ide deps --impact src/models/old-class.ts
+
+# 3. 預覽重新命名
+agent-ide rename --from OldClassName --to NewClassName --dry-run
+
+# 4. 執行重新命名
+agent-ide rename --from OldClassName --to NewClassName
+
+# 5. 移動檔案
+agent-ide move src/models/old-class.ts src/models/new-class.ts
+
+# 6. 驗證
+agent-ide search "NewClassName" --format json
+agent-ide deps --check-cycles
+```
+
+#### 5️⃣ 常用命令速查
+
+| 目的 | 命令 |
+|------|------|
+| 建立索引 | `agent-ide index` |
+| 更新索引 | `agent-ide index --update` |
+| 搜尋程式碼 | `agent-ide search "pattern" --format json` |
+| 重新命名 | `agent-ide rename --from A --to B` |
+| 移動檔案 | `agent-ide move old.ts new.ts` |
+| 依賴分析 | `agent-ide deps --check-cycles` |
+| 影響分析 | `agent-ide deps --impact file.ts` |
+| 複雜度分析 | `agent-ide analyze --type complexity` |
+
+#### 6️⃣ 輸出格式範例
+
+**JSON 格式**（推薦）：
+```json
+{
+  "results": [
+    {
+      "file": "src/user.ts",
+      "line": 10,
+      "match": "export class User"
+    }
+  ]
+}
+```
+
+**Minimal 格式**（最省 token）：
+```
+src/user.ts:10: export class User
+```
+
+#### 7️⃣ 錯誤處理
+
+如果命令失敗，檢查：
+1. 索引是否已建立：`agent-ide index`
+2. 路徑是否正確：使用絕對路徑
+3. 語法是否正確：查看 `agent-ide --help`
 
 ## 📊 效能基準
 
