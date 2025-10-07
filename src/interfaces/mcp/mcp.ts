@@ -4,12 +4,16 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { IndexEngine } from '../../core/indexing/index-engine.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { RenameEngine } from '../../core/rename/rename-engine.js';
 import { ImportResolver } from '../../core/move/index.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
+import { TypeScriptParser } from '../../plugins/typescript/parser.js';
+import { JavaScriptParser } from '../../plugins/javascript/parser.js';
+import { glob } from 'glob';
 
 // MCP 工具介面定義
 export interface MCPTool {
@@ -34,6 +38,32 @@ export class AgentIdeMCP {
   private dependencyAnalyzer?: DependencyAnalyzer;
   private renameEngine?: RenameEngine;
   private importResolver?: ImportResolver;
+  private parsersInitialized = false;
+
+  constructor() {
+    this.initializeParsers();
+  }
+
+  /**
+   * 初始化 Parser
+   */
+  private initializeParsers(): void {
+    if (this.parsersInitialized) {
+      return;
+    }
+
+    const registry = ParserRegistry.getInstance();
+
+    // 註冊 TypeScript Parser
+    const tsParser = new TypeScriptParser();
+    registry.register(tsParser);
+
+    // 註冊 JavaScript Parser
+    const jsParser = new JavaScriptParser();
+    registry.register(jsParser);
+
+    this.parsersInitialized = true;
+  }
 
   /**
    * 獲取所有可用的 MCP 工具定義
@@ -492,13 +522,45 @@ export class AgentIdeMCP {
           }
         };
       } else {
-        // 文字搜尋 - 簡單實作
+        // 文字搜尋
+        const files = await glob('**/*.{ts,tsx,js,jsx}', {
+          cwd: workspacePath,
+          ignore: ['node_modules/**', 'dist/**', '*.test.*', '*.d.ts'],
+          absolute: true
+        });
+
+        const results: any[] = [];
+
+        for (const file of files.slice(0, 100)) {
+          try {
+            const content = await fs.readFile(file, 'utf-8');
+            const lines = content.split('\n');
+
+            lines.forEach((line, index) => {
+              if (line.includes(query)) {
+                results.push({
+                  file: this.formatRelativePath(file, workspacePath),
+                  line: index + 1,
+                  column: line.indexOf(query) + 1,
+                  content: line.trim()
+                });
+              }
+            });
+          } catch (error) {
+            // 忽略讀取錯誤
+          }
+
+          if (results.length >= limit) {
+            break;
+          }
+        }
+
         return {
           success: true,
           data: {
             query,
             type: searchType,
-            results: [] // TODO: 實作文字搜尋
+            results: results.slice(0, limit)
           }
         };
       }
