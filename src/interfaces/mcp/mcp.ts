@@ -9,6 +9,9 @@ import { IndexEngine } from '../../core/indexing/index-engine.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { RenameEngine } from '../../core/rename/rename-engine.js';
 import { ImportResolver } from '../../core/move/index.js';
+import { MoveService } from '../../core/move/move-service.js';
+import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
+import { QualityMetricsAnalyzer } from '../../core/analysis/quality-metrics.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
@@ -468,17 +471,52 @@ export class AgentIdeMCP {
   }
 
   private async handleCodeMove(params: any): Promise<MCPResult> {
-    const { source, target, updateImports, preview } = params;
+    const { source, target, updateImports = true, preview = false } = params;
 
-    // TODO: 實作檔案移動邏輯
-    return {
-      success: true,
-      data: {
-        message: `移動檔案 "${source}" → "${target}" 的功能開發中`,
-        updateImports: updateImports !== false,
-        preview: preview || false
+    if (!source || !target) {
+      return { success: false, error: '需要指定來源路徑和目標路徑' };
+    }
+
+    try {
+      const workspacePath = process.cwd();
+      const sourcePath = path.isAbsolute(source) ? source : path.resolve(workspacePath, source);
+      const targetPath = path.isAbsolute(target) ? target : path.resolve(workspacePath, target);
+
+      const moveService = new MoveService();
+      const result = await moveService.moveFile(
+        { source: sourcePath, target: targetPath, updateImports },
+        { preview, projectRoot: workspacePath }
+      );
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || result.message
+        };
       }
-    };
+
+      return {
+        success: true,
+        data: {
+          from: this.formatRelativePath(sourcePath, workspacePath),
+          to: this.formatRelativePath(targetPath, workspacePath),
+          filesUpdated: result.pathUpdates.length,
+          importUpdates: result.pathUpdates.map(update => ({
+            file: this.formatRelativePath(update.filePath, workspacePath),
+            line: update.line,
+            oldImport: update.oldImport,
+            newImport: update.newImport
+          })),
+          preview,
+          message: result.message
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `移動檔案失敗: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
   }
 
   private async handleCodeSearch(params: any): Promise<MCPResult> {
@@ -573,31 +611,250 @@ export class AgentIdeMCP {
   }
 
   private async handleCodeAnalyze(params: any): Promise<MCPResult> {
-    const { path, type, format } = params;
+    const analyzePath = params.path || '.';
+    const analyzeType = params.type || 'all';
+    const format = params.format || 'summary';
 
-    // TODO: 實作程式碼分析邏輯
-    return {
-      success: true,
-      data: {
-        message: `分析路徑 "${path || '.'}" 的功能開發中`,
-        type: type || 'all',
-        format: format || 'summary'
+    try {
+      const workspacePath = process.cwd();
+      const targetPath = path.isAbsolute(analyzePath)
+        ? analyzePath
+        : path.resolve(workspacePath, analyzePath);
+
+      const results: any = {
+        path: this.formatRelativePath(targetPath, workspacePath),
+        type: analyzeType,
+        format
+      };
+
+      // 檢查路徑是否存在
+      try {
+        await fs.access(targetPath);
+      } catch {
+        return { success: false, error: `路徑不存在: ${analyzePath}` };
       }
-    };
+
+      const stat = await fs.stat(targetPath);
+
+      if (stat.isFile()) {
+        // 分析單一檔案
+        const content = await fs.readFile(targetPath, 'utf-8');
+
+        if (analyzeType === 'complexity' || analyzeType === 'all') {
+          const complexityAnalyzer = new ComplexityAnalyzer();
+          const complexityResult = await complexityAnalyzer.analyzeCode(content);
+          results.complexity = complexityResult;
+        }
+
+        if (analyzeType === 'quality' || analyzeType === 'all') {
+          const qualityAnalyzer = new QualityMetricsAnalyzer();
+          const qualityResult = await qualityAnalyzer.assess(content);
+          results.quality = qualityResult;
+        }
+      } else if (stat.isDirectory()) {
+        // 分析目錄中的檔案
+        const files = await glob('**/*.{ts,tsx,js,jsx}', {
+          cwd: targetPath,
+          ignore: ['node_modules/**', 'dist/**', '*.test.*', '*.d.ts'],
+          absolute: true
+        });
+
+        const fileResults: any[] = [];
+
+        for (const file of files.slice(0, 10)) {
+          try {
+            const content = await fs.readFile(file, 'utf-8');
+            const fileResult: any = {
+              file: this.formatRelativePath(file, workspacePath)
+            };
+
+            if (analyzeType === 'complexity' || analyzeType === 'all') {
+              const complexityAnalyzer = new ComplexityAnalyzer();
+              fileResult.complexity = await complexityAnalyzer.analyzeCode(content);
+            }
+
+            if (analyzeType === 'quality' || analyzeType === 'all') {
+              const qualityAnalyzer = new QualityMetricsAnalyzer();
+              fileResult.quality = await qualityAnalyzer.assess(content);
+            }
+
+            fileResults.push(fileResult);
+          } catch (error) {
+            // 忽略讀取錯誤
+          }
+        }
+
+        results.files = fileResults;
+        results.totalFiles = fileResults.length;
+      }
+
+      if (format === 'summary') {
+        return {
+          success: true,
+          data: {
+            ...results,
+            summary: this.formatAnalysisSummary(results)
+          }
+        };
+      }
+
+      return {
+        success: true,
+        data: results
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `分析失敗: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  private formatAnalysisSummary(results: any): string {
+    const lines: string[] = [];
+
+    if (results.complexity) {
+      lines.push(`複雜度: ${results.complexity.evaluation} (循環: ${results.complexity.cyclomaticComplexity}, 認知: ${results.complexity.cognitiveComplexity})`);
+    }
+
+    if (results.quality) {
+      lines.push(`品質: ${results.quality.grade} (可維護性指數: ${results.quality.maintainabilityIndex})`);
+      if (results.quality.codeSmells?.length > 0) {
+        lines.push(`程式碼異味: ${results.quality.codeSmells.length} 個`);
+      }
+    }
+
+    if (results.files) {
+      const avgComplexity = results.files.reduce((sum: number, f: any) =>
+        sum + (f.complexity?.cyclomaticComplexity || 0), 0) / results.files.length;
+      lines.push(`平均循環複雜度: ${avgComplexity.toFixed(2)}`);
+    }
+
+    return lines.join('\n');
   }
 
   private async handleCodeDeps(params: any): Promise<MCPResult> {
-    const { path, type, file, format } = params;
+    const analyzePath = params.path || '.';
+    const analyzeType = params.type || 'all';
+    const targetFile = params.file;
+    const format = params.format || 'summary';
 
-    // TODO: 實作依賴分析邏輯
-    return {
-      success: true,
-      data: {
-        message: `依賴分析 "${path || '.'}" 的功能開發中`,
-        type: type || 'all',
-        format: format || 'summary'
+    try {
+      const workspacePath = process.cwd();
+      const projectPath = path.isAbsolute(analyzePath)
+        ? analyzePath
+        : path.resolve(workspacePath, analyzePath);
+
+      // 檢查路徑是否存在
+      try {
+        await fs.access(projectPath);
+      } catch {
+        return { success: false, error: `路徑不存在: ${analyzePath}` };
       }
-    };
+
+      const depAnalyzer = new DependencyAnalyzer({
+        includeNodeModules: false,
+        excludePatterns: ['node_modules', 'dist', '*.test.*', '*.d.ts'],
+        includePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx']
+      });
+
+      const results: any = {
+        path: this.formatRelativePath(projectPath, workspacePath),
+        type: analyzeType,
+        format
+      };
+
+      if (analyzeType === 'graph' || analyzeType === 'all') {
+        // 分析依賴圖
+        await depAnalyzer.analyzeProject(projectPath);
+        const stats = depAnalyzer.getStats();
+        results.graph = {
+          totalFiles: stats.totalFiles,
+          totalDependencies: stats.totalDependencies,
+          averageDependenciesPerFile: stats.averageDependenciesPerFile,
+          maxDependenciesInFile: stats.maxDependenciesInFile
+        };
+      }
+
+      if (analyzeType === 'cycles' || analyzeType === 'all') {
+        // 檢測循環依賴
+        await depAnalyzer.analyzeProject(projectPath);
+        const stats = depAnalyzer.getStats();
+        results.cycles = {
+          circularDependencies: stats.circularDependencies,
+          orphanedFiles: stats.orphanedFiles
+        };
+      }
+
+      if ((analyzeType === 'impact' || analyzeType === 'all') && targetFile) {
+        // 影響分析
+        const filePath = path.isAbsolute(targetFile)
+          ? targetFile
+          : path.resolve(projectPath, targetFile);
+
+        try {
+          await fs.access(filePath);
+          await depAnalyzer.analyzeProject(projectPath);
+          const impactAnalysis = depAnalyzer.getImpactAnalysis(filePath);
+
+          results.impact = {
+            targetFile: this.formatRelativePath(filePath, workspacePath),
+            directlyAffected: impactAnalysis.directlyAffected.length,
+            transitivelyAffected: impactAnalysis.transitivelyAffected.length,
+            affectedTests: impactAnalysis.affectedTests.length,
+            impactScore: impactAnalysis.impactScore,
+            directlyAffectedFiles: impactAnalysis.directlyAffected.map(f =>
+              this.formatRelativePath(f, workspacePath)
+            ).slice(0, 10)
+          };
+        } catch {
+          results.impact = { error: `檔案不存在: ${targetFile}` };
+        }
+      }
+
+      if (format === 'summary') {
+        return {
+          success: true,
+          data: {
+            ...results,
+            summary: this.formatDependencySummary(results)
+          }
+        };
+      }
+
+      return {
+        success: true,
+        data: results
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `依賴分析失敗: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  private formatDependencySummary(results: any): string {
+    const lines: string[] = [];
+
+    if (results.graph) {
+      lines.push(`總檔案數: ${results.graph.totalFiles}`);
+      lines.push(`總依賴數: ${results.graph.totalDependencies}`);
+      lines.push(`平均每檔案依賴數: ${results.graph.averageDependenciesPerFile}`);
+    }
+
+    if (results.cycles) {
+      lines.push(`循環依賴: ${results.cycles.circularDependencies} 個`);
+      lines.push(`孤立檔案: ${results.cycles.orphanedFiles} 個`);
+    }
+
+    if (results.impact && !results.impact.error) {
+      lines.push(`直接影響: ${results.impact.directlyAffected} 個檔案`);
+      lines.push(`間接影響: ${results.impact.transitivelyAffected} 個檔案`);
+      lines.push(`影響分數: ${results.impact.impactScore.toFixed(2)}`);
+    }
+
+    return lines.join('\n');
   }
 
   /**
