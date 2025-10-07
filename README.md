@@ -33,11 +33,18 @@ Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Prot
    # 或從原始碼: cd agent-ide && pnpm install && pnpm build && npm link
    ```
 
-2. **設定 Claude Code MCP**：
+2. **設定 MCP**：
 
-   編輯設定檔（根據你的作業系統）：
-   - **macOS/Linux**: `~/.config/claude/mcp_settings.json`
-   - **Windows**: `%APPDATA%\Claude\mcp_settings.json`
+   **Claude Desktop** (桌面應用)：
+   - 開啟 Claude Desktop > Settings > Developer > Edit Config
+   - 或編輯設定檔：
+     - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+     - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+
+   **Claude Code** (CLI/Extension)：
+   - 編輯設定檔：
+     - macOS/Linux: `~/.config/claude/mcp_settings.json`
+     - Windows: `%APPDATA%\Claude\mcp_settings.json`
 
    加入以下設定：
    ```json
@@ -52,9 +59,9 @@ Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Prot
    }
    ```
 
-3. **重新啟動 Claude Code**
+3. **重新啟動 Claude Desktop 或 Claude Code**
 
-4. **驗證安裝**，在 Claude Code 中詢問：
+4. **驗證安裝**：
    ```
    請列出所有可用的 agent-ide 工具
    ```

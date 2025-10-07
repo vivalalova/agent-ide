@@ -32,13 +32,40 @@ npm link
 agent-ide-mcp --version
 ```
 
-### 步驟 2: 設定 Claude Code
+### 步驟 2: 設定 Claude
 
-#### macOS / Linux
+選擇你使用的 Claude 版本：
 
-1. 找到 Claude Code 設定檔：
+#### 選項 A: Claude Desktop (桌面應用)
+
+**macOS**:
+1. 開啟 Claude Desktop
+2. 進入 Settings > Developer > Edit Config
+3. 或手動編輯：`~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows**:
+1. 開啟 Claude Desktop
+2. 進入 Settings > Developer > Edit Config
+3. 或手動編輯：`%APPDATA%/Claude/claude_desktop_config.json`
+
+加入以下設定：
+```json
+{
+  "mcpServers": {
+    "agent-ide": {
+      "command": "agent-ide-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+#### 選項 B: Claude Code (CLI/Extension)
+
+**macOS / Linux**:
+1. 建立設定目錄（如果不存在）：
    ```bash
-   # 如果檔案不存在，先建立目錄
    mkdir -p ~/.config/claude
    ```
 
@@ -47,35 +74,29 @@ agent-ide-mcp --version
    nano ~/.config/claude/mcp_settings.json
    ```
 
-3. 加入以下內容：
-   ```json
-   {
-     "mcpServers": {
-       "agent-ide": {
-         "command": "agent-ide-mcp",
-         "args": [],
-         "env": {}
-       }
-     }
-   }
-   ```
+**Windows**:
+1. 編輯 `%APPDATA%\Claude\mcp_settings.json`
 
-#### Windows
+加入以下設定：
+```json
+{
+  "mcpServers": {
+    "agent-ide": {
+      "command": "agent-ide-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
 
-1. 找到 Claude Code 設定檔：
-   ```
-   %APPDATA%\Claude\mcp_settings.json
-   ```
+### 步驟 3: 重新啟動 Claude
 
-2. 使用文字編輯器開啟，加入相同的設定內容
-
-### 步驟 3: 重新啟動 Claude Code
-
-關閉並重新開啟 Claude Code，Agent IDE 的工具就會自動載入。
+關閉並重新開啟 Claude Desktop 或 Claude Code，Agent IDE 的工具就會自動載入。
 
 ### 步驟 4: 驗證安裝
 
-在 Claude Code 中輸入：
+詢問 Claude：
 
 ```
 請列出所有可用的 agent-ide 工具
