@@ -29,8 +29,18 @@ Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Prot
 
 1. **安裝 Agent IDE**（必須先安裝）：
    ```bash
+   # 從 GitHub 安裝（推薦）
+   npm install -g https://github.com/vivalalova/agent-ide.git
+
+   # 或從 npm 安裝（發布後）
    npm install -g agent-ide
-   # 或從原始碼: cd agent-ide && pnpm install && pnpm build && npm link
+
+   # 或從本地原始碼安裝
+   git clone https://github.com/vivalalova/agent-ide.git
+   cd agent-ide
+   pnpm install
+   pnpm build
+   npm link
    ```
 
    > ⚠️ **重要**：必須先安裝 agent-ide，MCP 設定檔才能找到 `agent-ide-mcp` 命令

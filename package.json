@@ -10,6 +10,7 @@
     "agent-ide-mcp": "./bin/mcp-server.js"
   },
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc",
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run",
     "test:watch": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest --watch",

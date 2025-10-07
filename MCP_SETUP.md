@@ -8,17 +8,23 @@
 
 選擇以下任一方式安裝：
 
-#### 方式 A: 從 npm 安裝（發布後）
+#### 方式 A: 從 GitHub 直接安裝（推薦）
+
+```bash
+npm install -g https://github.com/vivalalova/agent-ide.git
+```
+
+#### 方式 B: 從 npm 安裝（發布後）
 
 ```bash
 npm install -g agent-ide
 ```
 
-#### 方式 B: 從原始碼安裝
+#### 方式 C: 從原始碼安裝
 
 ```bash
 # 1. Clone 專案
-git clone https://github.com/your-org/agent-ide.git
+git clone https://github.com/vivalalova/agent-ide.git
 cd agent-ide
 
 # 2. 安裝依賴並建置
