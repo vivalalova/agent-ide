@@ -1,1 +1,0 @@
-{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../src/core/rename/index.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,EAAE,YAAY,EAAE,MAAM,oBAAoB,CAAC;AAClD,OAAO,EAAE,aAAa,EAAE,MAAM,qBAAqB,CAAC;AACpD,OAAO,EAAE,gBAAgB,EAAE,MAAM,wBAAwB,CAAC;AAE1D,OAAO,EASL,YAAY;AAUZ,OAAO;AACP,mBAAmB,EACnB,qBAAqB,EACrB,kBAAkB;AAElB,OAAO;AACP,eAAe,EAChB,MAAM,YAAY,CAAC"}
