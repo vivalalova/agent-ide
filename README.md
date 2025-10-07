@@ -27,7 +27,16 @@ Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Prot
 
 ### 快速設定（一步到位）
 
-編輯 MCP 設定檔：
+#### 方式 A: 使用 `claude mcp add`（推薦）
+
+在終端機執行：
+```bash
+claude mcp add agent-ide npx -y https://github.com/vivalalova/agent-ide.git agent-ide-mcp
+```
+
+重新啟動 Claude Code，完成！
+
+#### 方式 B: 手動編輯設定檔
 
 **Claude Desktop** (桌面應用)：
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
