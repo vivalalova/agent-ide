@@ -8,11 +8,7 @@
 
 一行指令安裝：
 ```bash
-# 從 npm 安裝（推薦）
 claude mcp add agent-ide -- npx -y agent-ide-mcp
-
-# 或從 GitHub 安裝最新版
-claude mcp add agent-ide -- npx -y github:vivalalova/agent-ide
 ```
 
 安裝完成後：
