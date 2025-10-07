@@ -95,7 +95,7 @@ Agent IDE 可以直接在 Claude Code 中使用，透過 MCP (Model Context Prot
 
 ## 📦 安裝
 
-### 方法一：從 npm 安裝（發布後）
+### 方法一：從 npm 安裝（推薦）
 
 ```bash
 # 使用 npm
@@ -109,7 +109,7 @@ pnpm add -g agent-ide
 
 ```bash
 # 1. Clone 專案
-git clone https://github.com/your-org/agent-ide.git
+git clone https://github.com/vivalalova/agent-ide.git
 cd agent-ide
 
 # 2. 安裝依賴
@@ -629,7 +629,7 @@ if (renameResult.success) {
 
 ```bash
 # 複製專案
-git clone https://github.com/your-org/agent-ide.git
+git clone https://github.com/vivalalova/agent-ide.git
 cd agent-ide
 
 # 安裝依賴
@@ -660,9 +660,8 @@ A: 調整快取設定或限制索引深度
 
 ### 取得支援
 
-- 📄 查看 [文件](https://docs.agent-ide.dev)
-- 🐛 回報 [問題](https://github.com/your-org/agent-ide/issues)
-- 💬 加入 [討論](https://github.com/your-org/agent-ide/discussions)
+- 🐛 回報 [問題](https://github.com/vivalalova/agent-ide/issues)
+- 💬 加入 [討論](https://github.com/vivalalova/agent-ide/discussions)
 
 ## 📄 授權
 

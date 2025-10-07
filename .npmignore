@@ -1,0 +1,60 @@
+# 原始碼（只發布編譯後的 dist）
+src/
+tests/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# 設定檔
+tsconfig.json
+vitest.config.ts
+vitest.e2e.config.ts
+eslint.config.mjs
+.eslintrc*
+
+# 開發工具
+.git/
+.github/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 測試相關
+coverage/
+.nyc_output/
+test-results/
+
+# 文件（這些會保留）
+# README.md - 保留
+# LICENSE - 保留
+# MCP_SETUP.md - 保留
+# CLAUDE_CODE_INTEGRATION.md - 保留
+
+# 開發文件（排除）
+CLAUDE.md
+SUMMARY.md
+*.draft.md
+
+# 臨時檔案
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+
+# 建置相關
+*.tsbuildinfo
+.turbo/
+
+# 其他
+scripts/fix-*.cjs
+scripts/run-e2e-with-coverage.sh

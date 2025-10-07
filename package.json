@@ -37,6 +37,14 @@
   ],
   "author": "Agent IDE Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivalalova/agent-ide.git"
+  },
+  "homepage": "https://github.com/vivalalova/agent-ide",
+  "bugs": {
+    "url": "https://github.com/vivalalova/agent-ide/issues"
+  },
   "devDependencies": {
     "@babel/generator": "^7.28.3",
     "@babel/parser": "^7.28.4",

@@ -1,0 +1,69 @@
+{
+  "name": "agent-ide",
+  "version": "0.1.0",
+  "description": "程式碼智能工具集 for AI Agents - 提供程式碼索引、搜尋、重構、分析等功能",
+  "author": "Agent IDE Team",
+  "license": "MIT",
+  "homepage": "https://github.com/vivalalova/agent-ide",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivalalova/agent-ide.git"
+  },
+  "mcp": {
+    "server": {
+      "command": "agent-ide-mcp",
+      "args": [],
+      "env": {}
+    },
+    "capabilities": {
+      "tools": [
+        {
+          "name": "code_index",
+          "description": "建立和查詢程式碼索引，提供符號搜尋和檔案索引功能"
+        },
+        {
+          "name": "code_search",
+          "description": "搜尋程式碼中的符號、文字或模式"
+        },
+        {
+          "name": "code_rename",
+          "description": "執行安全的程式碼重新命名，自動更新所有引用"
+        },
+        {
+          "name": "code_move",
+          "description": "移動檔案或目錄，自動更新 import 路徑"
+        },
+        {
+          "name": "code_analyze",
+          "description": "分析程式碼品質、複雜度和相關指標"
+        },
+        {
+          "name": "code_deps",
+          "description": "分析程式碼依賴關係，檢測循環依賴和影響範圍"
+        },
+        {
+          "name": "parser_plugins",
+          "description": "管理 Parser 插件，查看和操作插件狀態"
+        }
+      ]
+    }
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "code-intelligence",
+    "refactoring",
+    "typescript",
+    "javascript",
+    "ast",
+    "parser",
+    "ai-tools",
+    "claude-code"
+  ],
+  "installation": {
+    "npm": "npm install -g agent-ide",
+    "requirements": {
+      "node": ">=20.0.0"
+    }
+  }
+}
