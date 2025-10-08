@@ -1,0 +1,17 @@
+title: Agent IDE
+description: 為 AI 代理設計的程式碼智能工具集
+theme: jekyll-theme-minimal
+show_downloads: true
+
+github:
+  is_project_page: true
+  repository_url: https://github.com/vivalalova/agent-ide
+
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: true
+
+markdown: kramdown
