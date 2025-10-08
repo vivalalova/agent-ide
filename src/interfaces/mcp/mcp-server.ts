@@ -78,7 +78,7 @@ export class MCPServer {
       const lines = data.trim().split('\n');
 
       for (const line of lines) {
-        if (!line.trim()) continue;
+        if (!line.trim()) {continue;}
 
         const request: MCPRequest = JSON.parse(line);
         await this.handleRequest(request);
