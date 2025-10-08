@@ -1,5 +1,7 @@
 # MCP 使用指南
 
+> 📝 本文件由 AI Agent 生成
+
 Model Context Protocol (MCP) 整合指南，適用於 Claude Code 和 Claude Desktop。
 
 ## 目錄
