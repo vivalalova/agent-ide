@@ -216,7 +216,8 @@ export class OrderService {
 
       expect(result).toBeDefined();
       // 應該有錯誤訊息
-      expect(result.error || result.content).toContain('不支援' || '未知');
+      const message = result.error || result.content;
+      expect(message).toMatch(/不支援|未知/);
     });
   });
 
