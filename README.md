@@ -85,6 +85,10 @@ pnpm install && pnpm build && npm link
 ````markdown
 # agent-ide CLI 工具使用規範
 
+> **注意**：此指南適用於透過 CLI 使用 agent-ide 的情境。
+> - 如果你已透過 MCP 整合，則可直接使用 `code_index`、`code_search` 等 MCP 工具，無需使用這些 CLI 命令。
+> - 如果未安裝 MCP 或需要獨立使用，請使用以下 CLI 命令。
+
 ## 核心功能
 
 agent-ide 提供程式碼索引、搜尋、重構、依賴分析等功能。所有命令支援 `--format json` 輸出。
