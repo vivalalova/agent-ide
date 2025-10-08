@@ -11,7 +11,6 @@
 
 ### 文件完整性
 - [ ] README.md 已更新
-- [ ] MCP_SETUP.md 已更新
 - [ ] CHANGELOG.md 已更新版本資訊
 - [ ] LICENSE 檔案存在
 

@@ -73,8 +73,6 @@ pnpm install && pnpm build && npm link
 | `code_deps` | 依賴關係分析 |
 | `parser_plugins` | Parser 插件管理 |
 
-📖 完整設定指南：[MCP_SETUP.md](./MCP_SETUP.md)
-
 ---
 
 <details>
@@ -245,7 +243,6 @@ pnpm typecheck    # 型別檢查
 <details>
 <summary>📖 文件</summary>
 
-- [MCP 設定指南](./MCP_SETUP.md) - 詳細安裝和疑難排解
 - [API 文件](./API.md) - 完整 API 參考
 - [貢獻指南](./CONTRIBUTING.md) - 開發指南
 - [發布檢查清單](./PUBLISH_CHECKLIST.md) - 發布流程

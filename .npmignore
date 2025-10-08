@@ -32,7 +32,6 @@ test-results/
 # 文件（這些會保留）
 # README.md - 保留
 # LICENSE - 保留
-# MCP_SETUP.md - 保留
 # CLAUDE_CODE_INTEGRATION.md - 保留
 
 # 開發文件（排除）

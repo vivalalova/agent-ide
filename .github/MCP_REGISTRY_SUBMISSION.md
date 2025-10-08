@@ -134,7 +134,6 @@ npm install -g agent-ide
 ## 📖 文件
 
 - [README](https://github.com/vivalalova/agent-ide/blob/main/README.md)
-- [MCP 設定指南](https://github.com/vivalalova/agent-ide/blob/main/MCP_SETUP.md)
 - [整合說明](https://github.com/vivalalova/agent-ide/blob/main/CLAUDE_CODE_INTEGRATION.md)
 
 ## 🔗 相關連結
