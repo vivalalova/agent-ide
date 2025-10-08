@@ -4,9 +4,9 @@
 
 ## 🚀 快速開始
 
-### Claude Code 整合（推薦）
+### MCP 整合（Claude Code / Claude Desktop）
 
-一行指令安裝：
+**Claude Code（推薦）：**
 ```bash
 claude mcp add agent-ide -- npx -y agent-ide-mcp
 ```
@@ -49,6 +49,18 @@ claude mcp list
 ```
 </details>
 
+### CLI 安裝（獨立使用）
+
+```bash
+# 從 npm（發布後）
+npm install -g agent-ide
+
+# 從原始碼
+git clone https://github.com/vivalalova/agent-ide.git
+cd agent-ide
+pnpm install && pnpm build && npm link
+```
+
 ### 可用工具
 
 | 工具 | 功能 |
@@ -65,42 +77,96 @@ claude mcp list
 
 ---
 
-## 💻 CLI 使用
+<details>
+<summary>📋 AI Agent 使用指南（CLAUDE.md 提示詞）</summary>
 
-### 安裝
+將以下內容加入你的 `CLAUDE.md` 或 `.claude/CLAUDE.md`：
 
+````markdown
+# agent-ide CLI 工具使用規範
+
+## 核心功能
+
+agent-ide 提供程式碼索引、搜尋、重構、依賴分析等功能。所有命令支援 `--format json` 輸出。
+
+## 使用場景與命令
+
+### 1. 程式碼搜尋（優先使用）
 ```bash
-# 從 npm（發布後）
-npm install -g agent-ide
+# 搜尋符號/文字（JSON 輸出方便解析）
+npx agent-ide search "UserService" --format json
 
-# 從原始碼
-git clone https://github.com/vivalalova/agent-ide.git
-cd agent-ide
-pnpm install && pnpm build && npm link
+# 正規表達式搜尋
+npx agent-ide search "function.*User" --type regex --format json
+
+# 限制結果數量
+npx agent-ide search "import" --limit 10 --format json
 ```
 
-### 基本用法
-
+### 2. 符號重新命名
 ```bash
-# 索引專案
-agent-ide index
+# 預覽變更
+npx agent-ide rename --from oldName --to newName --preview
 
-# 搜尋程式碼
-agent-ide search "UserService" --format json
-
-# 重新命名（預覽）
-agent-ide rename --from oldName --to newName --dry-run
-
-# 移動檔案
-agent-ide move src/old.ts src/new.ts
-
-# 依賴分析
-agent-ide deps --check-cycles
+# 執行重新命名
+npx agent-ide rename --from oldName --to newName
 ```
+
+### 3. 檔案移動（自動更新 import）
+```bash
+# 移動檔案並更新所有 import 路徑
+npx agent-ide move src/old.ts src/new.ts
+
+# 預覽影響範圍
+npx agent-ide move src/old.ts src/new.ts --preview
+```
+
+### 4. 程式碼品質分析
+```bash
+# 複雜度分析
+npx agent-ide analyze complexity --format json
+
+# 死代碼檢測
+npx agent-ide analyze dead-code --format json
+
+# 最佳實踐檢查
+npx agent-ide analyze best-practices --format json
+```
+
+### 5. 依賴關係分析
+```bash
+# 分析專案依賴圖（含循環依賴檢測）
+npx agent-ide deps --format json
+
+# 查詢特定檔案的依賴
+npx agent-ide deps --file src/service.ts --format json
+```
+
+### 6. 程式碼重構
+```bash
+# 提取函式
+npx agent-ide refactor extract-function \
+  --file src/app.ts \
+  --start-line 10 \
+  --end-line 20 \
+  --function-name handleUser
+```
+
+## 使用建議
+
+- **npx 執行**：無需全域安裝，直接使用 `npx agent-ide` 執行命令
+- **JSON 格式優先**：需要解析結果時使用 `--format json`
+- **預覽模式**：重構/移動前先用 `--preview` 確認影響範圍
+- **搜尋優先於索引**：search 命令會自動處理索引，無需手動執行 index
+- **限制結果數量**：大型專案使用 `--limit` 避免輸出過多
+````
+
+</details>
 
 ---
 
-## 🏗️ 架構
+<details>
+<summary>🏗️ 架構</summary>
 
 ```
 Agent IDE
@@ -118,9 +184,12 @@ Agent IDE
 
 **支援語言**：TypeScript、JavaScript、Swift（開發中）
 
+</details>
+
 ---
 
-## 🔌 程式化 API
+<details>
+<summary>🔌 程式化 API</summary>
 
 ```typescript
 import { AgentIdeMCP } from 'agent-ide';
@@ -140,9 +209,12 @@ const result = await mcp.executeTool('code_search', {
 });
 ```
 
+</details>
+
 ---
 
-## 🧪 開發
+<details>
+<summary>🧪 開發</summary>
 
 ```bash
 pnpm install      # 安裝依賴
@@ -151,27 +223,38 @@ pnpm test         # 測試
 pnpm typecheck    # 型別檢查
 ```
 
+</details>
+
 ---
 
-## 📖 文件
+<details>
+<summary>📖 文件</summary>
 
 - [MCP 設定指南](./MCP_SETUP.md) - 詳細安裝和疑難排解
 - [API 文件](./API.md) - 完整 API 參考
 - [貢獻指南](./CONTRIBUTING.md) - 開發指南
 - [發布檢查清單](./PUBLISH_CHECKLIST.md) - 發布流程
 
+</details>
+
 ---
 
-## 📄 授權
+<details>
+<summary>📄 授權</summary>
 
 MIT License - 查看 [LICENSE](LICENSE) 瞭解詳情
 
-## 🤝 貢獻
+</details>
+
+<details>
+<summary>🤝 貢獻</summary>
 
 歡迎貢獻！請查看 [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 - 🐛 [回報問題](https://github.com/vivalalova/agent-ide/issues)
 - 💬 [參與討論](https://github.com/vivalalova/agent-ide/discussions)
+
+</details>
 
 ---
 
