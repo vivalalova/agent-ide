@@ -112,6 +112,11 @@ export class ReferenceUpdater {
     filePath: string,
     symbolName: string
   ): Promise<SymbolReference[]> {
+    // 檢查參數有效性
+    if (!filePath || typeof filePath !== 'string' || !symbolName) {
+      return [];
+    }
+
     // 如果有 ParserRegistry，使用 Parser 的 AST 分析
     if (this.parserRegistry) {
       try {
@@ -226,9 +231,16 @@ export class ReferenceUpdater {
       );
 
       // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
-      const filesToProcess = referencingFiles.length > 0 ? referencingFiles : [symbol.location.filePath];
+      let filesToProcess: string[] = referencingFiles;
+      if (referencingFiles.length === 0 && symbol.location?.filePath) {
+        filesToProcess = [symbol.location.filePath];
+      }
 
       for (const filePath of filesToProcess) {
+        // 跳過無效路徑
+        if (!filePath || typeof filePath !== 'string') {
+          continue;
+        }
         // 簡化處理：直接更新所有符號引用
         const updateResult = await this.updateFileReferences(filePath, symbol, newName);
 
