@@ -53,13 +53,13 @@ describe('SessionState', () => {
       });
     });
 
-    it.skip('應該能更新最後存取時間', async () => {
+    it('應該能更新最後存取時間', () => {
       const originalTime = sessionState.lastAccessedAt;
 
-      // 等待一點時間確保時間差異（減少等待時間）
-      await new Promise(resolve => setTimeout(resolve, 5));
+      // 直接呼叫 updateLastAccess，確保時間更新
       const updatedState = sessionState.updateLastAccess();
 
+      // 允許時間相同或更新（因為可能在同一毫秒內執行）
       expect(updatedState.lastAccessedAt.getTime()).toBeGreaterThanOrEqual(originalTime.getTime());
       expect(updatedState).not.toBe(sessionState);
     });
