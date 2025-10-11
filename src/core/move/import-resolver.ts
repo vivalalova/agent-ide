@@ -47,6 +47,30 @@ export class ImportResolver {
         }
       }
 
+      // 解析 ES6 export from（包含單行和多行）
+      if (line.includes('export')) {
+        // 收集多行 export 語句
+        const exportStatement = this.collectMultilineExportStatement(lines, i);
+        if (exportStatement) {
+          const { statement: fullStatement, endLineIndex } = exportStatement;
+          // 在完整語句中查找 from '...'
+          const fromMatch = fullStatement.match(/from\s+['"`]([^'"`]+)['"`]/);
+          if (fromMatch) {
+            const importPath = fromMatch[1];
+            // 使用 from 所在的行號
+            const fromLineIndex = this.findFromLineIndex(lines, i, endLineIndex);
+            const fromLine = lines[fromLineIndex];
+            const statement = this.createImportStatement('export', importPath, fromLineIndex + 1, fromLine.indexOf('from'), fromLine);
+            if (statement) {
+              statements.push(statement);
+            }
+          }
+          // 跳過已處理的行
+          i = endLineIndex;
+          continue;
+        }
+      }
+
       // 解析 CommonJS require
       const requireMatches = line.matchAll(/require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
       for (const match of requireMatches) {
@@ -70,6 +94,48 @@ export class ImportResolver {
 
 
     return statements;
+  }
+
+  /**
+   * 收集多行的 export 語句
+   */
+  private collectMultilineExportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number } | null {
+    const startLine = lines[startIndex];
+    if (!startLine.includes('export')) {
+      return null;
+    }
+
+    // 如果 export 和 from 在同一行，直接返回
+    if (startLine.includes('from') && startLine.match(/from\s+['"`]/)) {
+      return { statement: startLine, endLineIndex: startIndex };
+    }
+
+    // 收集多行直到找到 from
+    let fullStatement = startLine;
+    for (let i = startIndex + 1; i < lines.length; i++) {
+      fullStatement += ' ' + lines[i].trim();
+      if (lines[i].includes('from') && lines[i].match(/from\s+['"`]/)) {
+        return { statement: fullStatement, endLineIndex: i };
+      }
+      // 最多往後看 10 行
+      if (i - startIndex > 10) {
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 找出 from 關鍵字所在的行索引
+   */
+  private findFromLineIndex(lines: string[], startIndex: number, endIndex: number): number {
+    for (let i = startIndex; i <= endIndex; i++) {
+      if (lines[i].includes('from') && lines[i].match(/from\s+['"`]/)) {
+        return i;
+      }
+    }
+    return endIndex;
   }
 
   /**
@@ -145,7 +211,8 @@ export class ImportResolver {
     for (const [alias, realPath] of Object.entries(pathAliases)) {
       if (aliasPath.startsWith(alias)) {
         // 確保路徑拼接正確
-        const remainingPath = aliasPath.slice(alias.length);
+        // 移除前導的 / 以避免 path.join 的問題
+        const remainingPath = aliasPath.slice(alias.length).replace(/^\//, '');
         let resolved = path.join(realPath, remainingPath).replace(/\\/g, '/');
 
         // 確保相對路徑以 ./ 開始
@@ -261,7 +328,7 @@ export class ImportResolver {
    * 建立 ImportStatement 物件
    */
   private createImportStatement(
-    type: 'import' | 'require' | 'dynamic_import',
+    type: 'import' | 'require' | 'dynamic_import' | 'export',
     importPath: string,
     lineNumber: number,
     columnIndex: number,
