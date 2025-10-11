@@ -168,7 +168,7 @@ export interface RollbackOperation {
  * Import 語句的解析結果
  */
 export interface ImportStatement {
-  readonly type: 'import' | 'require' | 'dynamic_import';
+  readonly type: 'import' | 'require' | 'dynamic_import' | 'export';
   readonly path: string;
   readonly pathType: PathType;
   readonly position: Position;
