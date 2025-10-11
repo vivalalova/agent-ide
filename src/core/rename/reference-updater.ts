@@ -1,6 +1,7 @@
 /**
  * 引用更新器實作
  * 負責更新程式碼中的符號引用
+ * 使用 Parser 的 AST 分析而非文字匹配
  */
 
 import {
@@ -12,12 +13,19 @@ import {
 } from './types.js';
 import { Position, Range, Location } from '../../shared/types/core.js';
 import { Symbol } from '../../shared/types/symbol.js';
+import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
 
 /**
  * 引用更新器類別
+ * 使用 Parser 的 findReferences 進行精確的 AST 分析
  */
 export class ReferenceUpdater {
   private readonly fileCache = new Map<string, string>();
+  private readonly parserRegistry?: ParserRegistry;
+
+  constructor(parserRegistry?: ParserRegistry) {
+    this.parserRegistry = parserRegistry;
+  }
 
   /**
    * 更新所有引用
@@ -98,8 +106,67 @@ export class ReferenceUpdater {
 
   /**
    * 尋找檔案中的符號引用
+   * 使用 Parser 的 AST 分析，精確過濾字串和註解
    */
   async findSymbolReferences(
+    filePath: string,
+    symbolName: string
+  ): Promise<SymbolReference[]> {
+    // 如果有 ParserRegistry，使用 Parser 的 AST 分析
+    if (this.parserRegistry) {
+      try {
+        // 根據副檔名獲取 parser
+        const extension = this.getFileExtension(filePath);
+        const parser = this.parserRegistry.getParser(extension);
+
+        if (parser) {
+          const content = await this.getFileContent(filePath);
+          if (!content) {return [];}
+
+          // 解析 AST
+          const ast = await parser.parse(content, filePath);
+
+          // 提取所有符號
+          const symbols = await parser.extractSymbols(ast);
+
+          // 找到匹配的符號
+          const targetSymbol = symbols.find((s: Symbol) => s.name === symbolName);
+          if (!targetSymbol) {
+            return []; // 符號不存在
+          }
+
+          // 使用 Parser 的 findReferences 查找所有引用
+          const references = await parser.findReferences(ast, targetSymbol);
+
+          // 轉換為 SymbolReference 格式
+          return references.map((ref: any) => ({
+            symbolName,
+            range: ref.location.range,
+            type: ref.type === 'definition' ? 'definition' as const : 'usage' as const
+          }));
+        }
+      } catch (error) {
+        // Parser 失敗時降級到文字匹配
+        console.warn(`Parser failed for ${filePath}, falling back to text matching:`, error);
+      }
+    }
+
+    // 降級：使用舊的文字匹配方法（保留以確保向後相容）
+    return this.findSymbolReferencesByText(filePath, symbolName);
+  }
+
+  /**
+   * 取得檔案副檔名
+   */
+  private getFileExtension(filePath: string): string {
+    const lastDot = filePath.lastIndexOf('.');
+    return lastDot >= 0 ? filePath.substring(lastDot) : '';
+  }
+
+  /**
+   * 使用文字匹配查找符號引用（降級方法）
+   */
+  private async findSymbolReferencesByText(
     filePath: string,
     symbolName: string
   ): Promise<SymbolReference[]> {
