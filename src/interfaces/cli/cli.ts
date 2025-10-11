@@ -365,8 +365,14 @@ export class AgentIdeCLI {
 
       // 取得 ParserRegistry 單例
       const parserRegistry = ParserRegistry.getInstance();
-      parserRegistry.register(new TypeScriptParser());
-      parserRegistry.register(new JavaScriptParser());
+
+      // 確保 parsers 已註冊（如果尚未註冊）
+      if (!parserRegistry.getParserByName('typescript')) {
+        parserRegistry.register(new TypeScriptParser());
+      }
+      if (!parserRegistry.getParserByName('javascript')) {
+        parserRegistry.register(new JavaScriptParser());
+      }
 
       // 使用 ReferenceUpdater 來處理跨檔案引用
       const referenceUpdater = new ReferenceUpdater(parserRegistry);
