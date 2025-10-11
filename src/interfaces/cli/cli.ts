@@ -313,24 +313,13 @@ export class AgentIdeCLI {
       if (options.preview) {
         console.log('🔍 預覽變更...');
         try {
-          // 確保有有效的檔案路徑
-          let filePaths: string[];
-          if (targetSymbol.location && targetSymbol.location.filePath) {
-            filePaths = [targetSymbol.location.filePath];
-          } else {
-            // 如果沒有 location，使用所有已索引的檔案
-            const allFiles = this.indexEngine.getAllIndexedFiles();
-            filePaths = allFiles.map(f => f.filePath);
-
-            if (filePaths.length === 0) {
-              filePaths = [options.path || process.cwd()];
-            }
-          }
+          // 取得所有專案檔案以進行跨檔案引用查找
+          const allProjectFiles = await this.getAllProjectFiles(options.path || workspacePath);
 
           const preview = await this.renameEngine.previewRename({
             symbol: targetSymbol,
             newName: to,
-            filePaths
+            filePaths: allProjectFiles
           });
 
           console.log('📝 預計變更:');
@@ -359,8 +348,13 @@ export class AgentIdeCLI {
       // 3. 執行重新命名（處理跨檔案引用）
       console.log('✏️  執行重新命名...');
 
+      // 取得 ParserRegistry 單例
+      const parserRegistry = ParserRegistry.getInstance();
+      parserRegistry.register(new TypeScriptParser());
+      parserRegistry.register(new JavaScriptParser());
+
       // 使用 ReferenceUpdater 來處理跨檔案引用
-      const referenceUpdater = new ReferenceUpdater();
+      const referenceUpdater = new ReferenceUpdater(parserRegistry);
       const allProjectFiles = await this.getAllProjectFiles(options.path);
 
       const updateResult = await referenceUpdater.updateCrossFileReferences(

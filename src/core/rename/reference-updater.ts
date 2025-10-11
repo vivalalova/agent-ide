@@ -159,6 +159,9 @@ export class ReferenceUpdater {
    * 取得檔案副檔名
    */
   private getFileExtension(filePath: string): string {
+    if (!filePath || typeof filePath !== 'string') {
+      return '';
+    }
     const lastDot = filePath.lastIndexOf('.');
     return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
@@ -349,13 +352,18 @@ export class ReferenceUpdater {
   /**
    * 找出包含符號引用的檔案
    */
-  private async findReferencingFiles(
+  async findReferencingFiles(
     symbolName: string,
     filePaths: string[]
   ): Promise<string[]> {
     const referencingFiles: string[] = [];
 
     for (const filePath of filePaths) {
+      // 過濾無效路徑
+      if (!filePath || typeof filePath !== 'string') {
+        continue;
+      }
+
       const content = await this.getFileContent(filePath);
       if (content && content.includes(symbolName)) {
         referencingFiles.push(filePath);

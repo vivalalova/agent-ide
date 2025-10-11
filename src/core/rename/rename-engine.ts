@@ -208,31 +208,116 @@ export class RenameEngine {
 
     const validation = await this.validateRename(options);
 
+    if (!validation.isValid) {
+      return {
+        operations: [],
+        affectedFiles: [],
+        conflicts: validation.conflicts,
+        summary: {
+          totalReferences: 0,
+          totalFiles: 0,
+          conflictCount: validation.conflicts.length,
+          estimatedTime: 0
+        }
+      };
+    }
+
     // 確保 symbol 有 location
     const hasLocation = options.symbol.location && options.symbol.location.filePath;
+    if (!hasLocation) {
+      return {
+        operations: [],
+        affectedFiles: [],
+        conflicts: validation.conflicts,
+        summary: {
+          totalReferences: 0,
+          totalFiles: 0,
+          conflictCount: validation.conflicts.length,
+          estimatedTime: 0
+        }
+      };
+    }
 
-    const operations = validation.isValid && hasLocation ? [
-      createRenameOperation(
-        options.symbol.location!.filePath,
+    try {
+      // 使用 ReferenceUpdater 查找所有包含引用的檔案
+      const referencingFiles = await this.referenceUpdater.findReferencingFiles(
+        options.symbol.name,
+        Array.from(options.filePaths)
+      );
+
+      // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
+      const filesToProcess = referencingFiles.length > 0
+        ? referencingFiles
+        : [options.symbol.location.filePath];
+
+      // 收集所有操作
+      const operations: RenameOperation[] = [];
+      const affectedFiles: string[] = [];
+
+      for (const filePath of filesToProcess) {
+        const references = await this.referenceUpdater.findSymbolReferences(
+          filePath,
+          options.symbol.name
+        );
+
+        if (references.length > 0) {
+          affectedFiles.push(filePath);
+          for (const ref of references) {
+            operations.push(createRenameOperation(
+              filePath,
+              options.symbol.name,
+              options.newName,
+              ref.range
+            ));
+          }
+        }
+      }
+
+      // 如果沒有找到任何引用，至少包含符號定義位置
+      if (operations.length === 0) {
+        operations.push(createRenameOperation(
+          options.symbol.location.filePath,
+          options.symbol.name,
+          options.newName,
+          options.symbol.location.range
+        ));
+        affectedFiles.push(options.symbol.location.filePath);
+      }
+
+      const summary: RenameSummary = {
+        totalReferences: operations.length,
+        totalFiles: affectedFiles.length,
+        conflictCount: validation.conflicts.length,
+        estimatedTime: operations.length * 10 // 預估每個操作 10ms
+      };
+
+      return {
+        operations,
+        affectedFiles,
+        conflicts: validation.conflicts,
+        summary
+      };
+    } catch (error) {
+      // 發生錯誤時回傳基本預覽
+      const operation = createRenameOperation(
+        options.symbol.location.filePath,
         options.symbol.name,
         options.newName,
-        options.symbol.location!.range
-      )
-    ] : [];
+        options.symbol.location.range
+      );
 
-    const summary: RenameSummary = {
-      totalReferences: operations.length,
-      totalFiles: operations.length > 0 ? 1 : 0,
-      conflictCount: validation.conflicts.length,
-      estimatedTime: operations.length * 10 // 預估每個操作 10ms
-    };
-
-    return {
-      operations,
-      affectedFiles: operations.length > 0 && hasLocation ? [options.symbol.location!.filePath] : [],
-      conflicts: validation.conflicts,
-      summary
-    };
+      return {
+        operations: [operation],
+        affectedFiles: [options.symbol.location.filePath],
+        conflicts: validation.conflicts,
+        summary: {
+          totalReferences: 1,
+          totalFiles: 1,
+          conflictCount: validation.conflicts.length,
+          estimatedTime: 10
+        }
+      };
+    }
   }
 
   /**
