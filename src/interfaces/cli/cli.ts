@@ -15,6 +15,7 @@ import { TypeScriptParser } from '../../plugins/typescript/parser.js';
 import { JavaScriptParser } from '../../plugins/javascript/parser.js';
 import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { DeadCodeDetector } from '../../core/analysis/dead-code-detector.js';
+import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -128,6 +129,7 @@ export class AgentIdeCLI {
       .option('-u, --update', '增量更新索引')
       .option('-e, --extensions <exts>', '包含的檔案副檔名', '.ts,.js,.tsx,.jsx')
       .option('-x, --exclude <patterns>', '排除模式', 'node_modules/**,*.test.*')
+      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (options) => {
         await this.handleIndexCommand(options);
       });
@@ -144,6 +146,7 @@ export class AgentIdeCLI {
       .option('-o, --to <name>', '新名稱（--new-name 的別名）')
       .option('-p, --path <path>', '檔案或目錄路徑', '.')
       .option('--preview', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (options) => {
         await this.handleRenameCommand(options);
       });
@@ -159,6 +162,7 @@ export class AgentIdeCLI {
       .option('-n, --function-name <name>', '函式名稱')
       .option('-p, --path <path>', '專案路徑', '.')
       .option('--preview', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (action, options) => {
         await this.handleRefactorCommand(action, options);
       });
@@ -172,6 +176,7 @@ export class AgentIdeCLI {
       .argument('<target>', '目標路徑')
       .option('--update-imports', '自動更新 import 路徑', true)
       .option('--preview', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (source, target, options) => {
         await this.handleMoveCommand(source, target, options);
       });
@@ -247,7 +252,13 @@ export class AgentIdeCLI {
 
   // Command handlers
   private async handleIndexCommand(options: any): Promise<void> {
-    console.log('🔍 開始建立程式碼索引...');
+    const formatter = this.createFormatter(options.format);
+    const startTime = Date.now();
+
+    if (options.format !== 'json' && options.format !== 'minimal') {
+      console.log(formatter.formatTitle('程式碼索引', 1));
+      console.log('\n🔍 開始建立程式碼索引...\n');
+    }
 
     try {
       const config = createIndexConfig(options.path, {
@@ -258,18 +269,43 @@ export class AgentIdeCLI {
       this.indexEngine = new IndexEngine(config);
 
       if (options.update) {
-        // TODO: 實作增量更新
-        console.log('📝 執行增量索引更新...');
+        if (options.format !== 'json' && options.format !== 'minimal') {
+          console.log('📝 執行增量索引更新...');
+        }
       } else {
         await this.indexEngine.indexProject(options.path);
       }
 
       const stats = await this.indexEngine.getStats();
-      console.log('✅ 索引完成!');
-      console.log(`📊 統計: ${stats.totalFiles} 檔案, ${stats.totalSymbols} 符號`);
+      const duration = Date.now() - startTime;
+
+      const statsData = {
+        檔案數: stats.totalFiles,
+        符號數: stats.totalSymbols,
+        '執行時間(ms)': duration
+      };
+
+      if (options.format === 'json') {
+        console.log(formatter.formatSuccess('索引完成', statsData));
+      } else if (options.format === 'minimal') {
+        console.log(`index:success files=${stats.totalFiles} symbols=${stats.totalSymbols} time=${duration}ms`);
+      } else {
+        console.log('\n' + formatter.formatSuccess('索引完成'));
+        console.log('\n' + formatter.formatTitle('統計資訊', 2));
+        console.log(formatter.formatStats(statsData));
+      }
 
     } catch (error) {
-      console.error('❌ 索引失敗:', error instanceof Error ? error.message : error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (options.format === 'json') {
+        console.error(formatter.formatError(errorMessage));
+      } else if (options.format === 'minimal') {
+        console.error(`index:error ${errorMessage}`);
+      } else {
+        console.error('\n' + formatter.formatError(`索引失敗: ${errorMessage}`));
+      }
+
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   }
@@ -1165,5 +1201,30 @@ export class AgentIdeCLI {
     }
 
     return pathAliases;
+  }
+
+  /**
+   * 建立輸出格式化器
+   */
+  private createFormatter(format?: string): OutputFormatter {
+    let outputFormat: OutputFormat;
+
+    switch (format?.toLowerCase()) {
+    case 'markdown':
+      outputFormat = OutputFormat.Markdown;
+      break;
+    case 'json':
+      outputFormat = OutputFormat.Json;
+      break;
+    case 'minimal':
+      outputFormat = OutputFormat.Minimal;
+      break;
+    case 'plain':
+    default:
+      outputFormat = OutputFormat.Plain;
+      break;
+    }
+
+    return new OutputFormatter(outputFormat);
   }
 }
