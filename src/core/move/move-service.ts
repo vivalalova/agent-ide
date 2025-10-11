@@ -40,12 +40,17 @@ export class MoveService {
       const pathUpdates: PathUpdate[] = [];
 
       if (updateImports) {
+        // 2.1 更新其他檔案對被移動檔案的引用
         const affectedFiles = await this.findAffectedFiles(source, projectRoot);
 
         for (const filePath of affectedFiles) {
           const updates = await this.calculatePathUpdates(filePath, source, target);
           pathUpdates.push(...updates);
         }
+
+        // 2.2 更新被移動檔案內部的 import（在移動前處理）
+        const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
+        pathUpdates.push(...movedFileInternalUpdates);
       }
 
       // 3. 預覽模式
@@ -286,9 +291,16 @@ export class MoveService {
 
     // 嘗試解析別名
     const resolved = this.importResolver.resolvePathAlias(importPath);
-    if (resolved !== importPath && resolved.startsWith('.')) {
-      const fromDir = path.dirname(fromFile);
-      return path.normalize(path.join(fromDir, resolved));
+    if (resolved !== importPath) {
+      // 如果解析成功（與原始路徑不同）
+      if (path.isAbsolute(resolved)) {
+        // 絕對路徑直接返回
+        return path.normalize(resolved);
+      } else if (resolved.startsWith('.')) {
+        // 相對路徑需要加上 fromDir
+        const fromDir = path.dirname(fromFile);
+        return path.normalize(path.join(fromDir, resolved));
+      }
     }
 
     return importPath;
@@ -357,8 +369,13 @@ export class MoveService {
         const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
 
         if (this.pathsMatch(resolvedPath, oldPath)) {
-          // 計算新的 import 路徑
-          const newImportPath = this.calculateNewImportPath(filePath, newPath);
+          // 計算新的 import 路徑，保留原始路徑類型（別名或相對路徑）
+          const newImportPath = this.calculateNewImportPathPreservingStyle(
+            importStatement.path,
+            filePath,
+            oldPath,
+            newPath
+          );
 
           updates.push({
             filePath,
@@ -376,6 +393,106 @@ export class MoveService {
     }
 
     return updates;
+  }
+
+  /**
+   * 計算被移動檔案內部的 import 更新
+   * 這些更新會在檔案移動後套用
+   */
+  private async calculateMovedFileInternalUpdates(source: string, target: string): Promise<PathUpdate[]> {
+    const updates: PathUpdate[] = [];
+
+    try {
+      const content = await fs.readFile(source, 'utf-8');
+      const imports = this.importResolver.parseImportStatements(content, source);
+
+      // 防禦性檢查：確保 imports 是陣列
+      if (!imports || !Array.isArray(imports)) {
+        return updates;
+      }
+
+      for (const importStatement of imports) {
+        // 跳過 node_modules
+        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+          continue;
+        }
+
+        // 只處理相對路徑的 import
+        if (importStatement.path.startsWith('.')) {
+          // 計算這個 import 當前指向的檔案
+          const sourceDir = path.dirname(source);
+          const currentResolved = path.resolve(sourceDir, importStatement.path);
+
+          // 計算從新位置應該如何 import 這個檔案
+          const newImportPath = this.calculateNewImportPath(target, currentResolved);
+
+          // 如果路徑改變了，加入更新列表
+          if (newImportPath !== importStatement.path) {
+            updates.push({
+              filePath: target, // 注意：這裡是 target，因為更新會在檔案移動後套用
+              line: importStatement.position.line,
+              oldImport: importStatement.rawStatement,
+              newImport: importStatement.rawStatement.replace(
+                new RegExp(`(['"\`])${this.escapeRegex(importStatement.path)}\\1`),
+                `$1${newImportPath}$1`
+              )
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`無法處理被移動檔案的內部 import ${source}:`, error);
+    }
+
+    return updates;
+  }
+
+  /**
+   * 計算新的 import 路徑，保留原始路徑樣式（別名或相對路徑）
+   */
+  private calculateNewImportPathPreservingStyle(
+    originalImportPath: string,
+    fromFile: string,
+    oldFilePath: string,
+    newFilePath: string
+  ): string {
+    // 如果原本是路徑別名，保留別名並更新路徑
+    if (!originalImportPath.startsWith('.') && !originalImportPath.startsWith('/')) {
+      // 檢查是否為路徑別名
+      for (const [alias, aliasPath] of Object.entries(this.importResolver['config'].pathAliases)) {
+        if (originalImportPath.startsWith(alias)) {
+          // 將舊路徑轉換為別名格式
+          const resolvedOldPath = path.normalize(oldFilePath);
+          const resolvedAliasPath = path.normalize(aliasPath);
+
+          // 計算舊檔案相對於別名基礎路徑的相對路徑
+          let relativeToAlias = path.relative(resolvedAliasPath, resolvedOldPath);
+          relativeToAlias = relativeToAlias.replace(/\\/g, '/');
+
+          // 移除副檔名
+          const ext = path.extname(relativeToAlias);
+          if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+            relativeToAlias = relativeToAlias.slice(0, -ext.length);
+          }
+
+          // 計算新檔案相對於別名基礎路徑的相對路徑
+          let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
+          newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
+
+          // 移除副檔名
+          const newExt = path.extname(newRelativeToAlias);
+          if (['.js', '.ts', '.jsx', '.tsx'].includes(newExt)) {
+            newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
+          }
+
+          // 替換路徑部分
+          return originalImportPath.replace(relativeToAlias, newRelativeToAlias);
+        }
+      }
+    }
+
+    // 否則使用相對路徑
+    return this.calculateNewImportPath(fromFile, newFilePath);
   }
 
   /**
@@ -425,16 +542,23 @@ export class MoveService {
    */
   private async applyFileUpdates(filePath: string, updates: PathUpdate[]): Promise<void> {
     try {
-      let content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, 'utf-8');
+      const lines = content.split('\n');
 
       // 按行號從高到低排序，避免行號偏移問題
       const sortedUpdates = updates.sort((a, b) => b.line - a.line);
 
       for (const update of sortedUpdates) {
-        content = content.replace(update.oldImport, update.newImport);
+        const lineIndex = update.line - 1;
+        if (lineIndex >= 0 && lineIndex < lines.length) {
+          const oldLine = lines[lineIndex];
+          const newLine = oldLine.replace(update.oldImport, update.newImport);
+          lines[lineIndex] = newLine;
+        }
       }
 
-      await fs.writeFile(filePath, content, 'utf-8');
+      const newContent = lines.join('\n');
+      await fs.writeFile(filePath, newContent, 'utf-8');
     } catch (error) {
       throw new Error(`更新檔案 ${filePath} 失敗: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
