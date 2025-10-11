@@ -279,6 +279,12 @@ export class ReferenceUpdater {
 
     // 如果沒有找到引用，至少處理符號定義位置
     if (references.length === 0) {
+      // 檢查 symbol 是否有 location 資訊
+      if (!symbol.location || !symbol.location.range) {
+        // 沒有位置資訊，無法處理
+        return null;
+      }
+
       // 為了讓測試通過，至少建立一個基於符號位置的變更
       const changes: TextChange[] = [{
         range: symbol.location.range,
