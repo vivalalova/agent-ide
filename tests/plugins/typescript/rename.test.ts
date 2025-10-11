@@ -366,6 +366,85 @@ describe('TypeScriptParser - Rename (暫時跳過)', () => {
     });
   });
 
+  describe('過濾字串和註解', () => {
+    it('不應該重新命名字串字面值中的符號', async () => {
+      const code = `
+        const userName = 'Alice';
+        const message = 'userName is a variable';
+        console.log(userName);
+      `;
+      const ast = await parser.parse(code, 'test.ts');
+
+      const position: Position = { line: 1, column: 14 }; // userName 變數的位置
+      const edits = await parser.rename(ast, position, 'newName');
+
+      // 應該只有 2 個編輯：變數宣告和 console.log 中的使用
+      expect(edits).toHaveLength(2);
+
+      // 確認字串中的 'userName' 沒有被重命名
+      edits.forEach(edit => {
+        expect(edit.range.start.line).not.toBe(2); // 不在字串那一行
+      });
+    });
+
+    it('不應該重新命名模板字串字面值中的符號', async () => {
+      const code = `
+        const count = 5;
+        const message = \`The count value is important\`;
+        return count;
+      `;
+      const ast = await parser.parse(code, 'test.ts');
+
+      const position: Position = { line: 1, column: 14 }; // count 變數的位置
+      const edits = await parser.rename(ast, position, 'total');
+
+      // 應該只有 2 個編輯：變數宣告和 return 語句
+      expect(edits).toHaveLength(2);
+
+      // 模板字串中的 'count' 不應被重命名
+      edits.forEach(edit => {
+        expect(edit.range.start.line).not.toBe(2);
+      });
+    });
+
+    it('應該重新命名模板字串插值中的符號', async () => {
+      const code = `
+        const userName = 'Alice';
+        const greeting = \`Hello, \${userName}!\`;
+        console.log(userName);
+      `;
+      const ast = await parser.parse(code, 'test.ts');
+
+      const position: Position = { line: 1, column: 14 }; // userName 變數的位置
+      const edits = await parser.rename(ast, position, 'newName');
+
+      // 應該有 3 個編輯：宣告、模板字串插值、console.log
+      expect(edits).toHaveLength(3);
+
+      // 應該包含模板字串插值中的引用（第 2 行）
+      const templateEdit = edits.find(edit => edit.range.start.line === 2);
+      expect(templateEdit).toBeDefined();
+    });
+
+    it('不應該重新命名註解中的符號', async () => {
+      const code = `
+        // This function uses oldName parameter
+        function test(oldName: string): string {
+          /* oldName is the parameter */
+          return oldName.toUpperCase();
+        }
+      `;
+      const ast = await parser.parse(code, 'test.ts');
+
+      const position: Position = { line: 2, column: 22 }; // 參數 oldName 的位置
+      const edits = await parser.rename(ast, position, 'newName');
+
+      // 應該只有 2 個編輯：參數宣告和 return 語句中的使用
+      // 註解中的 'oldName' 不應被重命名
+      expect(edits).toHaveLength(2);
+    });
+  });
+
   describe('Find References 和 Find Usages', () => {
     it('應該能查找符號的所有引用', async () => {
       const code = `
