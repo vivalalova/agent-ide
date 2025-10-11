@@ -221,6 +221,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
   /**
    * 基本的符號引用查找（回退方法）
+   * 使用 AST 遍歷，過濾字串和註解中的符號
    */
   private async findReferencesBasic(ast: AST, symbol: Symbol): Promise<Reference[]> {
     const typedAst = ast as TypeScriptAST;
@@ -237,6 +238,20 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     // 使用 TypeScript 原生的節點遍歷，收集所有標識符
     const collectIdentifiers = (node: ts.Node): void => {
+      // 🚨 過濾：跳過字串字面值
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        return; // 不處理子節點
+      }
+
+      // 🚨 過濾：跳過模板字串
+      if (ts.isTemplateExpression(node)) {
+        // 只處理模板表達式中的插值部分，跳過字串部分
+        node.templateSpans.forEach(span => {
+          collectIdentifiers(span.expression);
+        });
+        return;
+      }
+
       if (ts.isIdentifier(node) && node.text === symbolName) {
         // 檢查這個標識符是否真的引用了我們的符號
         if (this.isReferenceToSymbol(node, typedSymbol)) {

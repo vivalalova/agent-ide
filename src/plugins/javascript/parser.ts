@@ -636,7 +636,7 @@ export class JavaScriptParser implements ParserPlugin {
     path: any, // Babel traverse path
     symbol: JavaScriptSymbol
   ): boolean {
-    // 簡化實作：檢查名稱是否相同且在合理的作用域內
+    // 檢查名稱是否相同且在合理的作用域內，過濾字串和屬性名
     const node = path.node;
 
     if (!babel.isIdentifier(node)) {
@@ -647,8 +647,38 @@ export class JavaScriptParser implements ParserPlugin {
       return false;
     }
 
+    // 🚨 過濾：跳過物件屬性名（key 位置）
+    // 例如：{ oldName: value } 中的 oldName 不應被重命名
+    const parent = path.parent;
+    if (babel.isObjectProperty(parent) && parent.key === node && !parent.computed) {
+      return false; // 非計算屬性的 key 不是引用
+    }
+
+    // 🚨 過濾：跳過物件方法名
+    if (babel.isObjectMethod(parent) && parent.key === node && !parent.computed) {
+      return false;
+    }
+
+    // 🚨 過濾：跳過類別方法名
+    if (babel.isClassMethod(parent) && parent.key === node && !parent.computed) {
+      return false;
+    }
+
+    // 🚨 過濾：跳過類別屬性名
+    if (babel.isClassProperty(parent) && parent.key === node && !parent.computed) {
+      return false;
+    }
+
+    // 🚨 過濾：跳過 import/export 的字串部分
+    // 例如：import { foo as oldName } from 'module' 中的 foo
+    if (babel.isImportSpecifier(parent) && parent.imported === node) {
+      // imported 是外部名稱，不應重命名（除非是 default）
+      // 只有 local 是本地名稱才需要重命名
+      return false;
+    }
+
     // 基本的作用域檢查
-    // 這裡可以擴展更複雜的作用域分析
+    // Babel traverse 的 path 已經處理了作用域，字串和註解不會進入這裡
     return true;
   }
 
