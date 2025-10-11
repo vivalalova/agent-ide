@@ -146,10 +146,12 @@ describe('RenameEngine', () => {
       const preview = await renameEngine.previewRename(options);
 
       // Assert
-      expect(preview.operations).toHaveLength(1);
+      // Mock 檔案內容包含 2 個 oldName: 'const oldName = "test"; console.log(oldName);'
+      expect(preview.operations).toHaveLength(2);
       expect(preview.affectedFiles).toContain('/test/file.ts');
       expect(preview.conflicts).toHaveLength(0);
-      expect(preview.summary.totalReferences).toBeGreaterThan(0);
+      expect(preview.summary.totalReferences).toBe(2);
+      expect(preview.summary.totalFiles).toBe(1);
     });
   });
 
