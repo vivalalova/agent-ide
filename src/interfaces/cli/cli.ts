@@ -489,8 +489,11 @@ export class AgentIdeCLI {
 
       // 初始化移動服務
       if (!this.moveService) {
+        // 讀取 tsconfig.json 路徑別名
+        const pathAliases = await this.loadPathAliases(process.cwd());
+
         this.moveService = new MoveService({
-          pathAliases: {},
+          pathAliases,
           supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
           includeNodeModules: false
         });
@@ -1127,5 +1130,40 @@ export class AgentIdeCLI {
 
     await walkDir(projectPath);
     return files;
+  }
+
+  /**
+   * 讀取 tsconfig.json 的路徑別名設定
+   */
+  private async loadPathAliases(projectRoot: string): Promise<Record<string, string>> {
+    const pathAliases: Record<string, string> = {};
+
+    try {
+      const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
+      const tsconfigContent = await fs.readFile(tsconfigPath, 'utf-8');
+      const tsconfig = JSON.parse(tsconfigContent);
+
+      if (tsconfig.compilerOptions?.paths) {
+        const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
+        const basePath = path.resolve(projectRoot, baseUrl);
+
+        for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
+          if (Array.isArray(paths) && paths.length > 0) {
+            // 移除 /* 後綴
+            const cleanAlias = alias.replace(/\/\*$/, '');
+            const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
+            // 轉換為絕對路徑
+            pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
+          }
+        }
+      }
+    } catch (error) {
+      // tsconfig.json 不存在或解析失敗，使用空的路徑別名
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('⚠️  無法讀取 tsconfig.json 路徑別名設定');
+      }
+    }
+
+    return pathAliases;
   }
 }
