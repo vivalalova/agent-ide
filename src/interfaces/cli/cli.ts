@@ -17,7 +17,22 @@ import { JavaScriptParser } from '../../plugins/javascript/parser.js';
 import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { DeadCodeDetector } from '../../core/analysis/dead-code-detector.js';
 import * as fs from 'fs/promises';
+import { readFileSync } from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// 讀取 package.json 版本
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJsonPath = path.resolve(__dirname, '../../../package.json');
+let packageVersion = '0.1.0'; // fallback
+
+try {
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+  packageVersion = packageJson.version;
+} catch {
+  // 使用 fallback 版本
+}
 
 export class AgentIdeCLI {
   private program: Command;
@@ -94,7 +109,7 @@ export class AgentIdeCLI {
     this.program
       .name('agent-ide')
       .description('程式碼智能工具集 for AI Agents')
-      .version('0.1.0');
+      .version(packageVersion);
 
     this.setupIndexCommand();
     this.setupRenameCommand();
