@@ -389,11 +389,32 @@ export class DependencyAnalyzer {
 
   /**
    * 找出專案中的原始檔案
-   * @param projectPath 專案路徑
+   * @param projectPath 專案路徑（可以是檔案或目錄）
    * @returns 檔案路徑列表
    */
   private async findSourceFiles(projectPath: string): Promise<string[]> {
     const files: string[] = [];
+
+    // 檢查路徑是檔案還是目錄
+    try {
+      const stat = await fs.stat(projectPath);
+
+      // 如果是檔案，直接返回該檔案
+      if (stat.isFile()) {
+        if (this.isIncluded(projectPath)) {
+          return [projectPath];
+        }
+        return [];
+      }
+
+      // 如果不是目錄也不是檔案，返回空陣列
+      if (!stat.isDirectory()) {
+        return [];
+      }
+    } catch (error) {
+      // 路徑不存在或無法訪問
+      return [];
+    }
 
     const traverse = async (dir: string, depth = 0) => {
       if (depth > this.options.maxDepth) {
