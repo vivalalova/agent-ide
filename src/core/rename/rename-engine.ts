@@ -110,8 +110,8 @@ export class RenameEngine {
     }
 
     try {
-      // 使用 ReferenceUpdater 來處理實際的重新命名
-      const updateResult = await this.referenceUpdater.updateReferences(
+      // 使用 updateCrossFileReferences 來處理跨檔案重新命名（與 preview 共用相同邏輯）
+      const updateResult = await this.referenceUpdater.updateCrossFileReferences(
         options.symbol,
         options.newName,
         Array.from(options.filePaths)
@@ -239,49 +239,27 @@ export class RenameEngine {
     }
 
     try {
-      // 使用 ReferenceUpdater 查找所有包含引用的檔案
-      const referencingFiles = await this.referenceUpdater.findReferencingFiles(
-        options.symbol.name,
+      // 使用共用的收集邏輯（與實際執行相同）
+      const fileChanges = await this.referenceUpdater.collectRenameChanges(
+        options.symbol,
+        options.newName,
         Array.from(options.filePaths)
       );
 
-      // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
-      const filesToProcess = referencingFiles.length > 0
-        ? referencingFiles
-        : [options.symbol.location.filePath];
-
-      // 收集所有操作
+      // 轉換為 RenameOperation
       const operations: RenameOperation[] = [];
       const affectedFiles: string[] = [];
 
-      for (const filePath of filesToProcess) {
-        const references = await this.referenceUpdater.findSymbolReferences(
-          filePath,
-          options.symbol.name
-        );
-
-        if (references.length > 0) {
-          affectedFiles.push(filePath);
-          for (const ref of references) {
-            operations.push(createRenameOperation(
-              filePath,
-              options.symbol.name,
-              options.newName,
-              ref.range
-            ));
-          }
+      for (const { filePath, changes } of fileChanges) {
+        affectedFiles.push(filePath);
+        for (const change of changes) {
+          operations.push(createRenameOperation(
+            filePath,
+            change.oldText,
+            change.newText,
+            change.range
+          ));
         }
-      }
-
-      // 如果沒有找到任何引用，至少包含符號定義位置
-      if (operations.length === 0) {
-        operations.push(createRenameOperation(
-          options.symbol.location.filePath,
-          options.symbol.name,
-          options.newName,
-          options.symbol.location.range
-        ));
-        affectedFiles.push(options.symbol.location.filePath);
       }
 
       const summary: RenameSummary = {

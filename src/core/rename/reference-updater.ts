@@ -213,15 +213,15 @@ export class ReferenceUpdater {
   }
 
   /**
-   * 處理跨檔案引用
+   * 收集重新命名變更（不寫入檔案）
+   * 用於 preview 和實際執行共用邏輯
    */
-  async updateCrossFileReferences(
+  async collectRenameChanges(
     symbol: Symbol,
     newName: string,
     projectFiles: string[]
-  ): Promise<UpdateResult> {
-    const updatedFiles: UpdatedFile[] = [];
-    const errors: string[] = [];
+  ): Promise<{ filePath: string; changes: TextChange[] }[]> {
+    const fileChanges: { filePath: string; changes: TextChange[] }[] = [];
 
     try {
       // 找出所有可能包含引用的檔案
@@ -241,12 +241,77 @@ export class ReferenceUpdater {
         if (!filePath || typeof filePath !== 'string') {
           continue;
         }
-        // 簡化處理：直接更新所有符號引用
-        const updateResult = await this.updateFileReferences(filePath, symbol, newName);
 
-        if (updateResult) {
-          updatedFiles.push(updateResult);
+        // 查找所有引用
+        const references = await this.findSymbolReferences(filePath, symbol.name);
+
+        // 如果沒有找到引用，檢查是否為符號定義所在檔案
+        if (references.length === 0) {
+          if (symbol.location?.filePath === filePath && symbol.location?.range) {
+            // 至少包含符號定義位置
+            fileChanges.push({
+              filePath,
+              changes: [{
+                range: symbol.location.range,
+                oldText: symbol.name,
+                newText: newName
+              }]
+            });
+          }
+          continue;
         }
+
+        // 轉換為 TextChange
+        const changes: TextChange[] = references.map(ref => ({
+          range: ref.range,
+          oldText: symbol.name,
+          newText: newName
+        }));
+
+        fileChanges.push({ filePath, changes });
+      }
+
+      return fileChanges;
+    } catch (error) {
+      console.error('收集變更時發生錯誤:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 處理跨檔案引用
+   */
+  async updateCrossFileReferences(
+    symbol: Symbol,
+    newName: string,
+    projectFiles: string[]
+  ): Promise<UpdateResult> {
+    const updatedFiles: UpdatedFile[] = [];
+    const errors: string[] = [];
+
+    try {
+      // 使用共用的收集邏輯
+      const fileChanges = await this.collectRenameChanges(symbol, newName, projectFiles);
+
+      // 對每個檔案應用變更並寫入
+      for (const { filePath, changes } of fileChanges) {
+        const originalContent = await this.getFileContent(filePath);
+        if (!originalContent) {
+          errors.push(`無法讀取檔案: ${filePath}`);
+          continue;
+        }
+
+        const newContent = this.applyChangesToContent(originalContent, changes);
+
+        // 寫入檔案
+        await this.writeFileContent(filePath, newContent);
+
+        updatedFiles.push({
+          filePath,
+          originalContent,
+          newContent,
+          changes
+        });
       }
 
       return {
@@ -389,91 +454,6 @@ export class ReferenceUpdater {
     }
 
     return referencingFiles;
-  }
-
-  /**
-   * 更新 import 語句
-   */
-  private async updateImportStatements(
-    filePath: string,
-    symbol: Symbol,
-    newName: string
-  ): Promise<UpdatedFile | null> {
-    const content = await this.getFileContent(filePath);
-    if (!content) {return null;}
-
-    const changes: TextChange[] = [];
-    const lines = content.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 檢查 import 語句
-      if (line.trim().startsWith('import') && line.includes(symbol.name)) {
-        const importRegex = new RegExp(`\\b${this.escapeRegex(symbol.name)}\\b`, 'g');
-        let match;
-
-        while ((match = importRegex.exec(line)) !== null) {
-          const range: Range = {
-            start: { line: i + 1, column: match.index + 1, offset: undefined },
-            end: { line: i + 1, column: match.index + 1 + symbol.name.length, offset: undefined }
-          };
-
-          changes.push({
-            range,
-            oldText: symbol.name,
-            newText: newName
-          });
-        }
-      }
-    }
-
-    if (changes.length === 0) {return null;}
-
-    const newContent = this.applyChangesToContent(content, changes);
-    // 寫入檔案
-    await this.writeFileContent(filePath, newContent);
-
-    return {
-      filePath,
-      originalContent: content,
-      newContent,
-      changes
-    };
-  }
-
-  /**
-   * 更新使用引用
-   */
-  private async updateUsageReferences(
-    filePath: string,
-    symbol: Symbol,
-    newName: string
-  ): Promise<UpdatedFile | null> {
-    const content = await this.getFileContent(filePath);
-    if (!content) {return null;}
-
-    const references = await this.findSymbolReferences(filePath, symbol.name);
-    const usageReferences = references.filter(ref => ref.type === 'usage');
-
-    if (usageReferences.length === 0) {return null;}
-
-    const changes: TextChange[] = usageReferences.map(ref => ({
-      range: ref.range,
-      oldText: symbol.name,
-      newText: newName
-    }));
-
-    const newContent = this.applyChangesToContent(content, changes);
-    // 寫入檔案
-    await this.writeFileContent(filePath, newContent);
-
-    return {
-      filePath,
-      originalContent: content,
-      newContent,
-      changes
-    };
   }
 
   /**

@@ -7,7 +7,6 @@ import { Command } from 'commander';
 import { IndexEngine } from '../../core/indexing/index-engine.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { RenameEngine } from '../../core/rename/rename-engine.js';
-import { ReferenceUpdater } from '../../core/rename/reference-updater.js';
 import { ImportResolver, MoveService } from '../../core/move/index.js';
 import { SearchService } from '../../core/search/service.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
@@ -363,39 +362,26 @@ export class AgentIdeCLI {
       // 3. 執行重新命名（處理跨檔案引用）
       console.log('✏️  執行重新命名...');
 
-      // 取得 ParserRegistry 單例
-      const parserRegistry = ParserRegistry.getInstance();
+      // 取得所有專案檔案（使用與 preview 相同的邏輯）
+      const allProjectFiles = await this.getAllProjectFiles(options.path || workspacePath);
 
-      // 確保 parsers 已註冊（如果尚未註冊）
-      if (!parserRegistry.getParserByName('typescript')) {
-        parserRegistry.register(new TypeScriptParser());
-      }
-      if (!parserRegistry.getParserByName('javascript')) {
-        parserRegistry.register(new JavaScriptParser());
-      }
+      // 使用 renameEngine 執行重新命名（與 preview 使用相同的引擎）
+      const renameResult = await this.renameEngine.rename({
+        symbol: targetSymbol,
+        newName: to,
+        filePaths: allProjectFiles
+      });
 
-      // 使用 ReferenceUpdater 來處理跨檔案引用
-      const referenceUpdater = new ReferenceUpdater(parserRegistry);
-      const allProjectFiles = await this.getAllProjectFiles(options.path);
-
-      const updateResult = await referenceUpdater.updateCrossFileReferences(
-        targetSymbol,
-        to,
-        allProjectFiles
-      );
-
-      if (updateResult.success) {
+      if (renameResult.success) {
         console.log('✅ 重新命名成功!');
-        console.log(`📊 統計: ${updateResult.updatedFiles.length} 檔案, ${updateResult.updatedFiles.reduce((sum, f) => sum + f.changes.length, 0)} 變更`);
+        console.log(`📊 統計: ${renameResult.affectedFiles.length} 檔案, ${renameResult.operations.length} 變更`);
 
-        updateResult.updatedFiles.forEach(file => {
-          file.changes.forEach(change => {
-            console.log(`   ✓ ${file.filePath}: "${change.oldText}" → "${change.newText}"`);
-          });
+        renameResult.operations.forEach(operation => {
+          console.log(`   ✓ ${operation.filePath}: "${operation.oldText}" → "${operation.newText}"`);
         });
       } else {
         console.error('❌ 重新命名失敗:');
-        updateResult.errors?.forEach(error => {
+        renameResult.errors?.forEach(error => {
           console.error(`   - ${error}`);
         });
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
