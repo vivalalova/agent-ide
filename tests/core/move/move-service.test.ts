@@ -474,13 +474,18 @@ describe('MoveService', () => {
       });
       mockFs.writeFile.mockResolvedValue();
 
-      mockImportResolver.parseImportStatements.mockReturnValue([
-        {
-          path: './components/Button',
-          rawStatement: 'import { Button } from \'./components/Button\';',
-          position: { line: 1, column: 1 }
+      mockImportResolver.parseImportStatements.mockImplementation((content: string, filePath: string) => {
+        if (filePath.includes('App.ts')) {
+          return [
+            {
+              path: './components/Button',
+              rawStatement: 'import { Button } from \'./components/Button\';',
+              position: { line: 1, column: 1 }
+            }
+          ];
         }
-      ]);
+        return [];
+      });
 
       mockImportResolver.isNodeModuleImport.mockReturnValue(false);
       mockImportResolver.resolvePathAlias.mockImplementation((path: string) => path);
@@ -546,13 +551,18 @@ describe('MoveService', () => {
       });
       mockFs.writeFile.mockResolvedValue();
 
-      mockImportResolver.parseImportStatements.mockReturnValue([
-        {
-          path: './Button',
-          rawStatement: 'import { Button } from \'./Button\';',
-          position: { line: 1, column: 1 }
+      mockImportResolver.parseImportStatements.mockImplementation((content: string, filePath: string) => {
+        if (filePath.includes('App.ts')) {
+          return [
+            {
+              path: './Button',
+              rawStatement: 'import { Button } from \'./Button\';',
+              position: { line: 1, column: 1 }
+            }
+          ];
         }
-      ]);
+        return [];
+      });
 
       mockImportResolver.isNodeModuleImport.mockReturnValue(false);
       mockImportResolver.resolvePathAlias.mockImplementation((path: string) => path);
