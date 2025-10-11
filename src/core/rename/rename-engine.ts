@@ -20,9 +20,11 @@ import { createRange, createPosition } from '../../shared/types/core.js';
 import { Symbol } from '../../shared/types/symbol.js';
 import { ScopeAnalyzer } from './scope-analyzer.js';
 import { ReferenceUpdater } from './reference-updater.js';
+import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
 
 /**
  * 重新命名引擎類別
+ * 使用 Parser 的 AST 分析進行精確的符號重命名
  */
 export class RenameEngine {
   private readonly renameHistory = new Map<string, RenameResult>();
@@ -36,9 +38,9 @@ export class RenameEngine {
   private readonly scopeAnalyzer: ScopeAnalyzer;
   private readonly referenceUpdater: ReferenceUpdater;
 
-  constructor() {
+  constructor(parserRegistry?: ParserRegistry) {
     this.scopeAnalyzer = new ScopeAnalyzer();
-    this.referenceUpdater = new ReferenceUpdater();
+    this.referenceUpdater = new ReferenceUpdater(parserRegistry);
   }
 
   /**
