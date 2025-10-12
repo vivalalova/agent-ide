@@ -222,4 +222,162 @@ function broken( {
     expect(complexResult.stdout.length).toBeGreaterThan(0);
     expect(simpleResult.stdout.length).toBeGreaterThan(0);
   });
+
+  it('應該能分析包含箭頭函式的程式碼', async () => {
+    const arrowProject = await createTypeScriptProject({
+      'src/arrows.ts': `
+export const map = (arr: number[]) => arr.map(x => x * 2);
+export const filter = (arr: number[]) => arr.filter(x => x > 0);
+export const reduce = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+      `.trim()
+    });
+
+    const result = await analyzeCode(arrowProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await arrowProject.cleanup();
+  });
+
+  it('應該能分析包含 async/await 的程式碼', async () => {
+    const asyncProject = await createTypeScriptProject({
+      'src/async.ts': `
+export async function fetchData(url: string): Promise<string> {
+  const response = await fetch(url);
+  const data = await response.json();
+  return data;
+}
+
+export async function processMultiple(urls: string[]): Promise<string[]> {
+  return await Promise.all(urls.map(url => fetchData(url)));
+}
+      `.trim()
+    });
+
+    const result = await analyzeCode(asyncProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await asyncProject.cleanup();
+  });
+
+  it('應該能分析包含泛型的程式碼', async () => {
+    const genericProject = await createTypeScriptProject({
+      'src/generics.ts': `
+export function identity<T>(value: T): T {
+  return value;
+}
+
+export class Container<T> {
+  constructor(private value: T) {}
+  get(): T { return this.value; }
+  set(value: T): void { this.value = value; }
+}
+
+export interface Repository<T> {
+  find(id: string): Promise<T | null>;
+  save(entity: T): Promise<void>;
+}
+      `.trim()
+    });
+
+    const result = await analyzeCode(genericProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await genericProject.cleanup();
+  });
+
+  it('應該能分析包含裝飾器的程式碼', async () => {
+    const decoratorProject = await createTypeScriptProject({
+      'src/decorators.ts': `
+function log(target: any, key: string) {
+  console.log(\`Accessing \${key}\`);
+}
+
+export class Service {
+  @log
+  public method() {
+    return 'result';
+  }
+}
+      `.trim()
+    });
+
+    const result = await analyzeCode(decoratorProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await decoratorProject.cleanup();
+  });
+
+  it('應該能處理深層嵌套的物件和陣列', async () => {
+    const nestedProject = await createTypeScriptProject({
+      'src/nested.ts': `
+export const config = {
+  server: {
+    host: 'localhost',
+    port: 3000,
+    options: {
+      timeout: 5000,
+      retry: {
+        max: 3,
+        delay: 1000
+      }
+    }
+  },
+  database: {
+    connections: [
+      { name: 'primary', host: 'db1' },
+      { name: 'replica', host: 'db2' }
+    ]
+  }
+};
+      `.trim()
+    });
+
+    const result = await analyzeCode(nestedProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await nestedProject.cleanup();
+  });
+
+  it('應該能分析包含複雜型別定義的程式碼', async () => {
+    const typeProject = await createTypeScriptProject({
+      'src/types.ts': `
+export type Status = 'pending' | 'active' | 'completed';
+export type Result<T, E = Error> = { success: true; data: T } | { success: false; error: E };
+
+export interface User {
+  id: string;
+  name: string;
+  roles: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export type UserWithStatus = User & { status: Status };
+export type PartialUser = Partial<User>;
+export type ReadonlyUser = Readonly<User>;
+      `.trim()
+    });
+
+    const result = await analyzeCode(typeProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await typeProject.cleanup();
+  });
 });
