@@ -327,4 +327,120 @@ export function helper3() {
 
     await multiFileProject.cleanup();
   });
+
+  it('應該能提取包含 try-catch 的程式碼', async () => {
+    const tryCatchProject = await createTypeScriptProject({
+      'src/error-handling.ts': `
+export async function fetchData(url: string) {
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch:', error);
+    throw error;
+  }
+}
+      `.trim()
+    });
+
+    const filePath = tryCatchProject.getFilePath('src/error-handling.ts');
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file', filePath,
+      '--start-line', '2',
+      '--end-line', '4',
+      '--function-name', 'parseResponse'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    await tryCatchProject.cleanup();
+  });
+
+  it('應該能提取包含迴圈的程式碼', async () => {
+    const loopProject = await createTypeScriptProject({
+      'src/loops.ts': `
+export function processArray(items: number[]): number[] {
+  const results: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] > 0) {
+      results.push(items[i] * 2);
+    }
+  }
+  return results;
+}
+      `.trim()
+    });
+
+    const filePath = loopProject.getFilePath('src/loops.ts');
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file', filePath,
+      '--start-line', '2',
+      '--end-line', '6',
+      '--function-name', 'filterAndDouble'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    await loopProject.cleanup();
+  });
+
+  it('應該能提取包含泛型的程式碼', async () => {
+    const genericProject = await createTypeScriptProject({
+      'src/generics.ts': `
+export function transform<T, R>(items: T[], mapper: (item: T) => R): R[] {
+  const results: R[] = [];
+  for (const item of items) {
+    const mapped = mapper(item);
+    results.push(mapped);
+  }
+  return results;
+}
+      `.trim()
+    });
+
+    const filePath = genericProject.getFilePath('src/generics.ts');
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file', filePath,
+      '--start-line', '2',
+      '--end-line', '5',
+      '--function-name', 'mapItems'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    await genericProject.cleanup();
+  });
+
+  it('應該能提取包含解構賦值的程式碼', async () => {
+    const destructuringProject = await createTypeScriptProject({
+      'src/destructuring.ts': `
+export function processUser(user: any) {
+  const { name, age, email } = user;
+  const { street, city, zipCode } = user.address;
+  return { name, age, email, street, city, zipCode };
+}
+      `.trim()
+    });
+
+    const filePath = destructuringProject.getFilePath('src/destructuring.ts');
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file', filePath,
+      '--start-line', '1',
+      '--end-line', '2',
+      '--function-name', 'extractUserFields'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    await destructuringProject.cleanup();
+  });
 });
