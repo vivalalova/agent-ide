@@ -272,4 +272,88 @@ const dynamicImport = () => import('./dynamic');
 
     await projectWithVariousImports.cleanup();
   });
+
+  it('應該能檢測多層循環依賴', async () => {
+    const multiCycleProject = await createTypeScriptProject({
+      'src/cycle1.ts': `import { func2 } from './cycle2'; export function func1() { return func2(); }`,
+      'src/cycle2.ts': `import { func3 } from './cycle3'; export function func2() { return func3(); }`,
+      'src/cycle3.ts': `import { func1 } from './cycle1'; export function func3() { return func1(); }`
+    });
+
+    const result = await analyzeDependencies(multiCycleProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.toLowerCase()).toMatch(/cycle|circular|循環/);
+
+    await multiCycleProject.cleanup();
+  });
+
+  it('應該能處理深層目錄結構的依賴', async () => {
+    const deepProject = await createTypeScriptProject({
+      'src/level1/level2/level3/deep.ts': `export const deep = 'deep';`,
+      'src/level1/level2/mid.ts': `import { deep } from './level3/deep'; export const mid = deep;`,
+      'src/level1/shallow.ts': `import { mid } from './level2/mid'; export const shallow = mid;`,
+      'src/index.ts': `import { shallow } from './level1/shallow'; export const root = shallow;`
+    });
+
+    const result = await analyzeDependencies(deepProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await deepProject.cleanup();
+  });
+
+  it('應該能處理重複 import 同一模組', async () => {
+    const duplicateProject = await createTypeScriptProject({
+      'src/shared.ts': `export const value = 42;`,
+      'src/user1.ts': `import { value } from './shared'; import { value as val } from './shared';`,
+      'src/user2.ts': `import { value } from './shared'; export const result = value;`
+    });
+
+    const result = await analyzeDependencies(duplicateProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await duplicateProject.cleanup();
+  });
+
+  it('應該能處理 re-export 場景', async () => {
+    const reexportProject = await createTypeScriptProject({
+      'src/core/utils.ts': `export function util() { return 'util'; }`,
+      'src/core/index.ts': `export * from './utils'; export { util as coreUtil } from './utils';`,
+      'src/main.ts': `import { util, coreUtil } from './core'; console.log(util(), coreUtil());`
+    });
+
+    const result = await analyzeDependencies(reexportProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await reexportProject.cleanup();
+  });
+
+  it('應該能處理條件式 import', async () => {
+    const conditionalProject = await createTypeScriptProject({
+      'src/feature.ts': `export const feature = 'enabled';`,
+      'src/fallback.ts': `export const fallback = 'disabled';`,
+      'src/main.ts': `
+const USE_FEATURE = true;
+const module = USE_FEATURE ? await import('./feature') : await import('./fallback');
+      `.trim()
+    });
+
+    const result = await analyzeDependencies(conditionalProject.projectPath);
+    expect(result.exitCode).toBe(0);
+
+    const output = result.stdout;
+    expect(output.length).toBeGreaterThan(0);
+
+    await conditionalProject.cleanup();
+  });
 });
