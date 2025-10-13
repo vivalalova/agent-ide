@@ -69,17 +69,17 @@ describe('Fixture 複雜度驗證', () => {
 
     // UserModel 應該引用 User 型別
     const userModel = await fixture.readFile('src/models/user-model.ts');
-    expect(userModel).toContain("import { User");
-    expect(userModel).toContain("from '../types/user'");
+    expect(userModel).toContain('import { User');
+    expect(userModel).toContain('from \'../types/user\'');
 
     // UserService 應該引用 User 和 UserModel
     const userService = await fixture.readFile('src/services/user-service.ts');
-    expect(userService).toContain("from '../types/user'");
-    expect(userService).toContain("from '../models/user-model'");
+    expect(userService).toContain('from \'../types/user\'');
+    expect(userService).toContain('from \'../models/user-model\'');
 
     // UserController 應該引用 UserService
     const userController = await fixture.readFile('src/controllers/user-controller.ts');
-    expect(userController).toContain("from '../services/user-service'");
+    expect(userController).toContain('from \'../services/user-service\'');
 
     await fixture.cleanup();
   });
