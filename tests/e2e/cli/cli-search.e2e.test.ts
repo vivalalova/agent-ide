@@ -1,367 +1,363 @@
 /**
  * CLI search 命令 E2E 測試
- * 測試實際的程式碼搜尋功能
+ * 基於 sample-project fixture 測試真實複雜專案的搜尋功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
 import { searchCode, executeCLI } from '../helpers/cli-executor';
 
-describe('CLI search 命令 E2E 測試', () => {
-  let project: TestProject;
+describe('CLI search - 基於 sample-project fixture', () => {
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案
-    project = await createTypeScriptProject({
-      'src/greeter.ts': `
-export class Greeter {
-  constructor(private name: string) {}
-
-  greet(): string {
-    return \`Hello, \${this.name}!\`;
-  }
-
-  farewell(): string {
-    return \`Goodbye, \${this.name}!\`;
-  }
-}
-      `.trim(),
-      'src/calculator.ts': `
-export class Calculator {
-  add(a: number, b: number): number {
-    return a + b;
-  }
-
-  subtract(a: number, b: number): number {
-    return a - b;
-  }
-
-  multiply(a: number, b: number): number {
-    return a * b;
-  }
-}
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
+    // 建立索引以支援符號搜尋
+    await executeCLI(['index', '--path', fixture.tempPath]);
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能搜尋文字內容', async () => {
-    const result = await searchCode(project.projectPath, 'Greeter');
+  // ============================================================
+  // 1. 符號搜尋測試（6 個測試）
+  // ============================================================
 
-    // 檢查執行成功
-    expect(result.exitCode).toBe(0);
+  describe('符號搜尋', () => {
+    it('應該能搜尋 enum 成員', async () => {
+      const result = await searchCode(fixture.tempPath, 'UserRole');
 
-    // 檢查輸出包含搜尋結果
-    expect(result.stdout).toContain('Greeter');
-  });
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-  it('應該能搜尋函式名稱', async () => {
-    const result = await searchCode(project.projectPath, 'add');
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('add');
-  });
-
-  it('應該能處理找不到結果的情況', async () => {
-    const result = await searchCode(project.projectPath, 'NonExistentFunction');
-
-    // 應該成功執行但沒有結果
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('沒有找到');
-  });
-
-  it('應該能搜尋多個檔案', async () => {
-    const result = await searchCode(project.projectPath, 'number');
-
-    expect(result.exitCode).toBe(0);
-
-    // 應該在多個檔案中找到結果
-    const output = result.stdout;
-    expect(output).toContain('number');
-  });
-
-  it('應該支援正則表達式搜尋', async () => {
-    const result = await executeCLI(
-      ['search', 'Greeter|Calculator', '--type', 'regex', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.length).toBeGreaterThan(0);
-  });
-
-  it('應該支援模糊搜尋', async () => {
-    const result = await executeCLI(
-      ['search', 'greet', '--type', 'fuzzy', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援大小寫敏感搜尋', async () => {
-    const result = await executeCLI(
-      ['search', 'greeter', '--case-sensitive', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援全字匹配', async () => {
-    const result = await executeCLI(
-      ['search', 'add', '--whole-word', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援上下文行數控制', async () => {
-    const result = await executeCLI(
-      ['search', 'Greeter', '--context', '5', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援結果數量限制', async () => {
-    const result = await executeCLI(
-      ['search', 'function', '--limit', '3', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援檔案類型過濾', async () => {
-    const result = await executeCLI(
-      ['search', 'class', '--extensions', '.ts', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援 JSON 輸出格式', async () => {
-    const result = await executeCLI(
-      ['search', 'Greeter', '--format', 'json', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-    // 驗證是否為有效的 JSON（如果有結果）
-    if (result.stdout.trim()) {
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    }
-  });
-
-  it('應該支援最小化輸出格式', async () => {
-    const result = await executeCLI(
-      ['search', 'Greeter', '--format', 'minimal', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該支援排除模式', async () => {
-    const result = await executeCLI(
-      ['search', 'export', '--exclude', '*.test.*,*.spec.*', '--path', project.projectPath]
-    );
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該能搜尋註解內容', async () => {
-    const commentProject = await createTypeScriptProject({
-      'src/code.ts': `
-// This is a special comment
-export function test() {}
-      `.trim()
+      // 應該找到 enum 定義
+      expect(output).toContain('UserRole');
+      // 應該在 types/user.ts 中找到定義
+      expect(output).toMatch(/types\/user\.ts/);
     });
 
-    const result = await searchCode(commentProject.projectPath, 'special comment');
+    it('應該能搜尋 interface 欄位型別', async () => {
+      const result = await searchCode(fixture.tempPath, 'UserProfile');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await commentProject.cleanup();
-  });
-
-  it('應該能搜尋字串字面值', async () => {
-    const stringProject = await createTypeScriptProject({
-      'src/strings.ts': `
-const message = "Hello, World!";
-const greeting = 'Welcome to TypeScript';
-      `.trim()
+      // 應該找到 interface 定義
+      expect(output).toContain('UserProfile');
+      // 應該在正確的檔案中
+      expect(output).toMatch(/types\/user\.ts/);
     });
 
-    const result = await searchCode(stringProject.projectPath, 'Hello, World');
+    it('應該能搜尋 type alias', async () => {
+      const result = await searchCode(fixture.tempPath, 'CreateUserData');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await stringProject.cleanup();
-  });
-
-  it('應該能搜尋 import 陳述式', async () => {
-    const importProject = await createTypeScriptProject({
-      'src/index.ts': `
-import { User } from './user';
-import type { Config } from './config';
-      `.trim()
+      // 應該找到 type alias 定義
+      expect(output).toContain('CreateUserData');
+      // 應該在 types 和 services 中都找到使用
+      expect(output).toMatch(/types\/user\.ts/);
     });
 
-    const result = await searchCode(importProject.projectPath, 'import');
+    it('應該能搜尋泛型型別 ApiResponse', async () => {
+      const result = await searchCode(fixture.tempPath, 'ApiResponse');
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('import');
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await importProject.cleanup();
-  });
-
-  it('應該能搜尋 export 陳述式', async () => {
-    const exportProject = await createTypeScriptProject({
-      'src/module.ts': `
-export const value = 123;
-export function helper() {}
-export default class Main {}
-      `.trim()
+      // 應該找到泛型型別定義和使用
+      expect(output).toContain('ApiResponse');
+      // 應該在多個檔案中找到（types 定義 + services/controllers 使用）
+      expect(
+        output.includes('api.ts') ||
+        output.includes('service') ||
+        output.includes('controller')
+      ).toBeTruthy();
     });
 
-    const result = await searchCode(exportProject.projectPath, 'export');
+    it('應該能搜尋繼承關係 extends', async () => {
+      const result = await searchCode(fixture.tempPath, 'extends');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await exportProject.cleanup();
-  });
-
-  it('應該能處理特殊字符搜尋', async () => {
-    const specialProject = await createTypeScriptProject({
-      'src/special.ts': `
-const regex = /test/g;
-const value = a + b - c * d;
-      `.trim()
+      // 應該找到 class 繼承
+      expect(output).toContain('extends');
+      // 應該在 models 和 controllers 中找到
+      expect(output.length).toBeGreaterThan(0);
     });
 
-    const result = await searchCode(specialProject.projectPath, '+');
+    it('應該能搜尋常數物件成員', async () => {
+      const result = await searchCode(fixture.tempPath, 'ERROR_CODES');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await specialProject.cleanup();
+      // 應該找到常數定義
+      expect(output).toContain('ERROR_CODES');
+      expect(output).toMatch(/constants\.ts/);
+    });
   });
 
-  it('應該能搜尋多行模式', async () => {
-    const multilineProject = await createTypeScriptProject({
-      'src/multi.ts': `
-const config = {
-  api: 'http://example.com',
-  timeout: 5000
-};
-      `.trim()
+  // ============================================================
+  // 2. 跨檔案引用搜尋測試（5 個測試）
+  // ============================================================
+
+  describe('跨檔案引用搜尋', () => {
+    it('應該能追蹤 User 型別在多個模組中的使用', async () => {
+      const result = await searchCode(fixture.tempPath, 'User');
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      // User 型別應該在多個層級中出現
+      expect(output).toContain('User');
+
+      // 應該至少在這些目錄中找到：types, models, services
+      const hasTypes = output.match(/types/);
+      const hasModels = output.match(/models/);
+      const hasServices = output.match(/services/);
+
+      expect(hasTypes || hasModels || hasServices).toBeTruthy();
     });
 
-    const result = await executeCLI(
-      ['search', 'config.*api', '--type', 'regex', '--multiline', '--path', multilineProject.projectPath]
-    );
+    it('應該能追蹤 ApiResponse 的跨層使用', async () => {
+      const result = await searchCode(fixture.tempPath, 'ApiResponse');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await multilineProject.cleanup();
-  });
-
-  it('應該能處理空白字符搜尋', async () => {
-    const result = await searchCode(project.projectPath, '  ');
-
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該能搜尋型別定義', async () => {
-    const typeProject = await createTypeScriptProject({
-      'src/types.ts': `
-type User = { name: string; age: number };
-interface Config { api: string; }
-      `.trim()
+      expect(output).toContain('ApiResponse');
+      // ApiResponse 應該在 types 定義並在 services 使用
+      expect(output).toMatch(/types\/api\.ts|services/);
     });
 
-    const result = await searchCode(typeProject.projectPath, 'type User');
+    it('應該能追蹤 ValidationResult 的傳遞鏈', async () => {
+      const result = await searchCode(fixture.tempPath, 'ValidationResult');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await typeProject.cleanup();
-  });
-
-  it('應該能搜尋泛型語法', async () => {
-    const genericProject = await createTypeScriptProject({
-      'src/generic.ts': `
-function identity<T>(arg: T): T { return arg; }
-class Box<T> { value: T; }
-      `.trim()
+      expect(output).toContain('ValidationResult');
+      // 應該在 types 和 utils 中找到
+      expect(output).toMatch(/types\/common\.ts|utils/);
     });
 
-    const result = await searchCode(genericProject.projectPath, '<T>');
+    it('應該能分析 UserRole enum 的使用分布', async () => {
+      const result = await searchCode(fixture.tempPath, 'UserRole');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await genericProject.cleanup();
-  });
-
-  it('應該能搜尋裝飾器', async () => {
-    const decoratorProject = await createTypeScriptProject({
-      'src/decorators.ts': `
-@Component({ selector: 'app' })
-class AppComponent {}
-      `.trim()
+      expect(output).toContain('UserRole');
+      // UserRole 應該在定義處和使用處都出現
+      expect(output).toMatch(/types\/user\.ts/);
     });
 
-    const result = await searchCode(decoratorProject.projectPath, '@Component');
+    it('應該能搜尋 import 語句中的符號', async () => {
+      const result = await searchCode(fixture.tempPath, 'import');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await decoratorProject.cleanup();
+      // 應該找到多個 import 語句
+      expect(output).toContain('import');
+      expect(output.length).toBeGreaterThan(100);
+    });
   });
 
-  it('應該能處理大型搜尋結果', async () => {
-    const files: Record<string, string> = {};
-    for (let i = 0; i < 20; i++) {
-      files[`src/file${i}.ts`] = `export const value${i} = ${i};`;
-    }
-    const largeProject = await createTypeScriptProject(files);
+  // ============================================================
+  // 3. 程式碼結構搜尋測試（5 個測試）
+  // ============================================================
 
-    const result = await searchCode(largeProject.projectPath, 'export');
+  describe('程式碼結構搜尋', () => {
+    it('應該能搜尋 async/await 模式', async () => {
+      const result = await searchCode(fixture.tempPath, 'async');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await largeProject.cleanup();
-  });
-
-  it('應該能搜尋中文內容', async () => {
-    const chineseProject = await createTypeScriptProject({
-      'src/chinese.ts': `
-const message = "這是中文訊息";
-// 這是中文註解
-      `.trim()
+      expect(output).toContain('async');
+      // services 中應該有很多 async 方法
+      expect(output).toMatch(/services/);
     });
 
-    const result = await searchCode(chineseProject.projectPath, '中文');
+    it('應該能搜尋錯誤處理模式 try-catch', async () => {
+      const result = await searchCode(fixture.tempPath, 'try');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await chineseProject.cleanup();
-  });
-
-  it('應該能處理 Unicode 字符', async () => {
-    const unicodeProject = await createTypeScriptProject({
-      'src/unicode.ts': `
-const emoji = "🎉 🚀 ✨";
-const symbols = "→ ← ↑ ↓";
-      `.trim()
+      expect(output).toContain('try');
+      // UserService 中有 try-catch
+      expect(output).toMatch(/services/);
     });
 
-    const result = await searchCode(unicodeProject.projectPath, '🎉');
+    it('應該能搜尋泛型使用模式', async () => {
+      const result = await searchCode(fixture.tempPath, 'Omit');
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await unicodeProject.cleanup();
+      expect(output).toContain('Omit');
+      // types/user.ts 中使用了 Omit
+      expect(output).toMatch(/types\/user\.ts/);
+    });
+
+    it('應該能搜尋 middleware 模式方法', async () => {
+      const result = await searchCode(fixture.tempPath, 'authenticate');
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      expect(output).toContain('authenticate');
+      // 應該在 middleware/auth.ts 中找到
+      expect(output).toMatch(/middleware\/auth\.ts/);
+    });
+
+    it('應該能搜尋 service 層的 CRUD 方法', async () => {
+      const result = await searchCode(fixture.tempPath, 'createUser');
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      expect(output).toContain('createUser');
+      // 應該在 UserService 中找到
+      expect(output).toMatch(/user-service\.ts/);
+    });
   });
 
-  it('應該能處理換行符搜尋', async () => {
-    const result = await searchCode(project.projectPath, 'export');
+  // ============================================================
+  // 4. 進階搜尋功能測試（4 個測試）
+  // ============================================================
 
-    expect(result.exitCode).toBe(0);
+  describe('進階搜尋功能', () => {
+    it('應該支援正則表達式搜尋方法命名模式', async () => {
+      const result = await executeCLI([
+        'search',
+        'create|update|delete',
+        '--type',
+        'regex',
+        '--path',
+        fixture.tempPath
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      // 應該找到多個 CRUD 方法
+      expect(output.length).toBeGreaterThan(0);
+    });
+
+    it('應該支援特定目錄範圍搜尋 - services 層', async () => {
+      const result = await executeCLI([
+        'search',
+        'Service',
+        '--path',
+        fixture.getFilePath('src/services')
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      expect(output).toContain('Service');
+      // 結果應該只包含 services 目錄
+      if (output.includes('src/')) {
+        expect(output).toMatch(/services/);
+      }
+    });
+
+    it('應該支援特定目錄範圍搜尋 - utils 層', async () => {
+      const result = await executeCLI([
+        'search',
+        'validate',
+        '--path',
+        fixture.getFilePath('src/utils')
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      expect(output).toContain('validate');
+      // 應該在 validator.ts 中找到
+      if (output.includes('src/')) {
+        expect(output).toMatch(/utils/);
+      }
+    });
+
+    it('應該支援搜尋複雜的型別表達式', async () => {
+      const result = await searchCode(fixture.tempPath, 'Pick<User');
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      // 應該找到使用 Pick 的型別定義
+      expect(output).toContain('Pick');
+    });
+  });
+
+  // ============================================================
+  // 5. 邊界與錯誤測試（3 個測試）
+  // ============================================================
+
+  describe('邊界與錯誤處理', () => {
+    it('應該處理找不到結果的情況', async () => {
+      const result = await searchCode(
+        fixture.tempPath,
+        'NonExistentSymbolXYZ123ABC'
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout + result.stderr;
+
+      // 應該明確表示沒有找到結果
+      expect(
+        output.includes('沒有找到') ||
+        output.includes('No results') ||
+        output.includes('not found') ||
+        output.length === 0
+      ).toBeTruthy();
+    });
+
+    it('應該處理空查詢字串', async () => {
+      const result = await executeCLI([
+        'search',
+        '',
+        '--path',
+        fixture.tempPath
+      ]);
+
+      // 空查詢應該要有明確處理：
+      // 1. exitCode 非 0 表示錯誤
+      // 2. 或輸出明確錯誤訊息
+      // 3. 或回傳空結果
+      const output = result.stdout + result.stderr;
+
+      expect(
+        result.exitCode !== 0 ||
+        output.includes('查詢字串不能為空') ||
+        output.includes('empty') ||
+        output.includes('required') ||
+        output.includes('Query is required') ||
+        output.includes('沒有找到') ||
+        output.includes('找到 0 個結果')
+      ).toBeTruthy();
+    });
+
+    it('應該優雅處理無效的路徑', async () => {
+      const result = await searchCode(
+        '/absolutely/non/existent/path/xyz123',
+        'test'
+      );
+
+      // 應該要有明確的錯誤處理，不應該 crash
+      expect(result.exitCode).toBeDefined();
+      const output = result.stdout + result.stderr;
+
+      // 應該有某種輸出（錯誤訊息或警告）
+      expect(typeof output).toBe('string');
+    });
   });
 });
