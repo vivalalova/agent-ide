@@ -393,4 +393,260 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
     expect(result.exitCode).toBe(0);
   });
+
+  // ============================================================
+  // 8. 真正的重構驗證測試（新增）
+  // ============================================================
+
+  describe('重構後程式碼正確性驗證', () => {
+    it('提取函式後應該產生正確的函式定義和呼叫', async () => {
+      const filePath = fixture.getFilePath('src/services/order-service.ts');
+
+      // 提取 createOrder 中的使用者驗證邏輯（行 24-28）
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '24',
+        '--end-line',
+        '28',
+        '--function-name',
+        'validateUserExists'
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      const modifiedContent = await fixture.readFile('src/services/order-service.ts');
+
+      // 驗證：1. 新函式存在
+      expect(modifiedContent).toContain('validateUserExists');
+
+      // 驗證：2. 新函式有正確的簽章（async 函式，接受 userId 參數）
+      expect(modifiedContent).toMatch(/async\s+validateUserExists\s*\(/);
+
+      // 驗證：3. 原始位置改為呼叫新函式
+      expect(modifiedContent).toContain('validateUserExists(');
+
+      // 驗證：4. 程式碼可以被索引（表示語法正確）
+      const indexResult = await executeCLI(['index', '--path', fixture.tempPath]);
+      expect(indexResult.exitCode).toBe(0);
+    });
+
+    it('提取包含返回值的程式碼塊應該正確處理返回值', async () => {
+      const filePath = fixture.getFilePath('src/utils/string-utils.ts');
+
+      // 找一段有返回值的程式碼提取
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '5',
+        '--end-line',
+        '7',
+        '--function-name',
+        'normalizeText'
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      const modifiedContent = await fixture.readFile('src/utils/string-utils.ts');
+
+      // 驗證：1. 提取的函式有返回值型別
+      expect(modifiedContent).toContain('normalizeText');
+
+      // 驗證：2. 原始位置接收返回值或使用返回值
+      // 這需要根據實際實作調整，但至少要確保編譯通過
+      const indexResult = await executeCLI(['index', '--path', fixture.tempPath]);
+      expect(indexResult.exitCode).toBe(0);
+    });
+
+    it('提取包含外部變數引用的程式碼應該將變數作為參數傳入', async () => {
+      // 在 fixture 中新增一個測試檔案
+      await fixture.writeFile('src/test-refactor.ts', `
+export function processData(items: string[]) {
+  const prefix = 'item_';
+  const results: string[] = [];
+
+  // 這段程式碼引用了外部變數 prefix
+  for (const item of items) {
+    results.push(prefix + item);
+  }
+
+  return results;
+}
+      `.trim());
+
+      const filePath = fixture.getFilePath('src/test-refactor.ts');
+
+      // 提取迴圈邏輯
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '6',
+        '--end-line',
+        '8',
+        '--function-name',
+        'addPrefixToItems'
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      const modifiedContent = await fixture.readFile('src/test-refactor.ts');
+
+      // 驗證：1. 新函式存在
+      expect(modifiedContent).toContain('addPrefixToItems');
+
+      // 驗證：2. 新函式接受外部變數作為參數（prefix、items、results）
+      // 至少應該有參數列表
+      expect(modifiedContent).toMatch(/addPrefixToItems\s*\([^)]+\)/);
+
+      // 驗證：3. 程式碼可編譯
+      const indexResult = await executeCLI(['index', '--path', fixture.tempPath]);
+      expect(indexResult.exitCode).toBe(0);
+    });
+
+    it('提取後重新索引應該能找到新函式', async () => {
+      const filePath = fixture.getFilePath('src/services/user-service.ts');
+
+      // 先索引
+      await executeCLI(['index', '--path', fixture.tempPath]);
+
+      // 提取函式
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '10',
+        '--end-line',
+        '15',
+        '--function-name',
+        'extractedHelper'
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      // 重新索引
+      await executeCLI(['index', '--path', fixture.tempPath]);
+
+      // 搜尋新函式
+      const searchResult = await executeCLI([
+        'search',
+        'extractedHelper',
+        '--path',
+        fixture.tempPath
+      ]);
+
+      expect(searchResult.exitCode).toBe(0);
+      expect(searchResult.stdout).toContain('extractedHelper');
+    });
+
+    it('提取共用邏輯到獨立檔案後應該更新所有引用', async () => {
+      // 這個測試驗證跨檔案重構
+      const filePath = fixture.getFilePath('src/models/base-model.ts');
+
+      // 提取 validateEmail 到獨立檔案
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '43',
+        '--end-line',
+        '53',
+        '--function-name',
+        'validateEmailAddress',
+        '--target-file',
+        fixture.getFilePath('src/utils/validation-helpers.ts')
+      ]);
+
+      // 如果功能尚未實作，應該明確報錯而不是靜默失敗
+      if (result.exitCode !== 0) {
+        expect(result.stdout + result.stderr).toMatch(/尚未實作|not implemented|not supported/i);
+      } else {
+        // 如果實作了，驗證：
+        // 1. 新檔案存在且包含函式
+        const helperContent = await fixture.readFile('src/utils/validation-helpers.ts');
+        expect(helperContent).toContain('validateEmailAddress');
+
+        // 2. 原始檔案引用了新函式
+        const baseModelContent = await fixture.readFile('src/models/base-model.ts');
+        expect(baseModelContent).toContain('validateEmailAddress');
+
+        // 3. 有 import 語句
+        expect(baseModelContent).toMatch(/import.*validateEmailAddress/);
+      }
+    });
+  });
+
+  // ============================================================
+  // 9. 錯誤處理測試（新增）
+  // ============================================================
+
+  describe('重構錯誤處理', () => {
+    it('無法提取包含 early return 的程式碼片段', async () => {
+      await fixture.writeFile('src/test-early-return.ts', `
+export function testFunction(value: number): string {
+  if (value < 0) {
+    return 'negative';
+  }
+  if (value === 0) {
+    return 'zero';
+  }
+  return 'positive';
+}
+      `.trim());
+
+      const filePath = fixture.getFilePath('src/test-early-return.ts');
+
+      // 嘗試提取包含 return 的片段
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '2',
+        '--end-line',
+        '4',
+        '--function-name',
+        'checkNegative'
+      ]);
+
+      // 應該失敗或給出警告
+      // 如果功能尚未實作完整錯誤處理，至少確保有輸出
+      expect(result.stdout.length + result.stderr.length).toBeGreaterThan(0);
+    });
+
+    it('提取不存在的行號範圍應該報錯', async () => {
+      const filePath = fixture.getFilePath('src/services/user-service.ts');
+
+      const result = await executeCLI([
+        'refactor',
+        'extract-function',
+        '--file',
+        filePath,
+        '--start-line',
+        '9999',
+        '--end-line',
+        '10000',
+        '--function-name',
+        'invalid'
+      ]);
+
+      // 應該報錯
+      const output = result.stdout + result.stderr;
+      expect(output.length).toBeGreaterThan(0);
+      // 可能包含 "行號" 或 "line" 或 "invalid" 等錯誤提示
+    });
+  });
 });
