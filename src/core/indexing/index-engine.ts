@@ -187,8 +187,37 @@ export class IndexEngine {
       }
     });
 
+    // 清除已不存在的檔案索引
+    await this.cleanupStaleIndexEntries(filesToIndex);
+
     // 標記索引已建立
     this._indexed = true;
+  }
+
+  /**
+   * 清除已不存在的檔案索引
+   */
+  private async cleanupStaleIndexEntries(currentFiles: string[]): Promise<void> {
+    // 取得所有已索引的檔案
+    const allIndexedFiles = this.fileIndex.getAllFiles();
+    const currentFilesSet = new Set(currentFiles);
+
+    // 找出已索引但不在當前檔案列表中的檔案
+    const staleFiles = allIndexedFiles
+      .map(fileInfo => fileInfo.filePath)
+      .filter(filePath => !currentFilesSet.has(filePath));
+
+    // 從索引中移除這些過期的檔案
+    for (const stalePath of staleFiles) {
+      // 先從符號索引中移除該檔案的符號
+      const symbols = this.fileIndex.getFileSymbols(stalePath);
+      for (const symbol of symbols) {
+        await this.symbolIndex.removeSymbol(symbol.name, stalePath);
+      }
+
+      // 再從檔案索引中移除
+      await this.fileIndex.removeFile(stalePath);
+    }
   }
 
   /**
