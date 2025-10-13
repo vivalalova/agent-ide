@@ -8,7 +8,6 @@ import { loadFixture, FixtureProject } from './helpers/fixture-manager';
 import { IndexEngine } from '../../src/core/indexing/index-engine';
 import { createIndexConfig } from '../../src/core/indexing/types';
 import { SymbolType } from '../../src/shared/types';
-import * as path from 'path';
 
 describe('Indexing E2E 測試', () => {
   let fixture: FixtureProject;
@@ -421,6 +420,84 @@ describe('Indexing E2E 測試', () => {
       const stats = await indexEngine.getStats();
       expect(stats.totalFiles).toBe(0);
       expect(stats.totalSymbols).toBe(0);
+    });
+  });
+
+  describe('CLI 參數測試（從 cli-index 整合）', () => {
+    it('應該支援 --extensions 過濾副檔名', async () => {
+      // 測試只索引 .ts 檔案
+      const config = createIndexConfig(fixture.tempPath, {
+        includeExtensions: ['.ts']
+      });
+
+      indexEngine = new IndexEngine(config);
+      await indexEngine.indexProject();
+
+      const files = indexEngine.getAllIndexedFiles();
+
+      // 所有檔案都應該是 .ts
+      for (const file of files) {
+        expect(file.extension).toBe('.ts');
+      }
+
+      expect(files.length).toBeGreaterThan(0);
+    });
+
+    it('應該支援 --exclude 排除目錄', async () => {
+      // 建立 node_modules 測試目錄
+      await fixture.writeFile('node_modules/test/index.ts', 'export const test = 1;');
+
+      const config = createIndexConfig(fixture.tempPath, {
+        excludePatterns: ['node_modules/**', '.git/**']
+      });
+
+      indexEngine = new IndexEngine(config);
+      await indexEngine.indexProject();
+
+      const files = indexEngine.getAllIndexedFiles();
+
+      // 不應該包含 node_modules 下的檔案
+      const nodeModulesFiles = files.filter(f => f.filePath.includes('node_modules'));
+      expect(nodeModulesFiles.length).toBe(0);
+    });
+
+    it('應該能檢測增量索引更新', async () => {
+      const config = createIndexConfig(fixture.tempPath);
+      indexEngine = new IndexEngine(config);
+
+      // 第一次索引
+      await indexEngine.indexProject();
+      const statsBefore = await indexEngine.getStats();
+
+      // 新增新檔案
+      await fixture.writeFile('src/types/new-type.ts', 'export interface NewType { id: number; }');
+      const newFilePath = fixture.getFilePath('src/types/new-type.ts');
+
+      // 索引新檔案
+      await indexEngine.indexFile(newFilePath);
+
+      const statsAfter = await indexEngine.getStats();
+
+      // 檔案數應該增加
+      expect(statsAfter.indexedFiles).toBe(statsBefore.indexedFiles + 1);
+      expect(statsAfter.totalSymbols).toBeGreaterThan(statsBefore.totalSymbols);
+    });
+
+    it('應該在合理時間內索引 32+ 檔案專案', async () => {
+      const config = createIndexConfig(fixture.tempPath);
+      indexEngine = new IndexEngine(config);
+
+      const startTime = Date.now();
+      await indexEngine.indexProject();
+      const endTime = Date.now();
+
+      const duration = endTime - startTime;
+
+      // 應該在 30 秒內完成
+      expect(duration).toBeLessThan(30000);
+
+      const stats = await indexEngine.getStats();
+      expect(stats.indexedFiles).toBeGreaterThanOrEqual(30);
     });
   });
 });
