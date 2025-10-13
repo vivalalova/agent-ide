@@ -271,8 +271,9 @@ export class ComplexityAnalyzer {
     const results = await Promise.all(
       files.map(async (file) => {
         try {
-          // 實際實作中應該讀取檔案內容
-          const code = ''; // 簡化實作
+          // 讀取檔案內容
+          const fs = await import('fs/promises');
+          const code = await fs.readFile(file, 'utf-8');
           const complexity = await this.analyzeCode(code);
           return { file, complexity };
         } catch (error) {

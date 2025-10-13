@@ -243,8 +243,9 @@ export class DeadCodeDetector {
     const results = await Promise.all(
       files.map(async (file) => {
         try {
-          // 實際實作中應該讀取檔案內容
-          const content = ''; // 簡化實作
+          // 讀取檔案內容
+          const fs = await import('fs/promises');
+          const content = await fs.readFile(file, 'utf-8');
           const deadCode = await this.detectInFile(file, content);
           return { file, deadCode };
         } catch (error) {

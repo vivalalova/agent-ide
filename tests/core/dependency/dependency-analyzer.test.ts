@@ -198,6 +198,21 @@ describe('DependencyAnalyzer', () => {
 
   describe('依賴查詢', () => {
     beforeEach(async () => {
+      // 覆寫 readdir mock 以排除測試檔案
+      const fsPromises = await import('fs/promises');
+      vi.mocked(fsPromises.readdir).mockImplementation(async (dirPath: string) => {
+        if (dirPath === '/src') {
+          return [
+            { name: 'file1.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file2.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file3.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'utils.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'isolated.ts', isFile: () => true, isDirectory: () => false }
+          ] as any;
+        }
+        return [] as any;
+      });
+
       // 預先分析專案以建立依賴圖
       await analyzer.analyzeProject('/src');
     });
@@ -236,6 +251,21 @@ describe('DependencyAnalyzer', () => {
 
   describe('影響分析', () => {
     beforeEach(async () => {
+      // 覆寫 readdir mock 以排除測試檔案
+      const fsPromises = await import('fs/promises');
+      vi.mocked(fsPromises.readdir).mockImplementation(async (dirPath: string) => {
+        if (dirPath === '/src') {
+          return [
+            { name: 'file1.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file2.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file3.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'utils.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'isolated.ts', isFile: () => true, isDirectory: () => false }
+          ] as any;
+        }
+        return [] as any;
+      });
+
       await analyzer.analyzeProject('/src');
     });
 
@@ -275,34 +305,70 @@ describe('DependencyAnalyzer', () => {
           import { helper } from '../file2';
         `
       });
+
+      // 設定 readdir mock 以包含測試檔案目錄
+      const fsPromises = await import('fs/promises');
+      vi.mocked(fsPromises.readdir).mockImplementation(async (dirPath: string) => {
+        if (dirPath === '/src') {
+          return [
+            { name: 'file1.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file2.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file3.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'utils.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'isolated.ts', isFile: () => true, isDirectory: () => false },
+            { name: '__tests__', isFile: () => false, isDirectory: () => true }
+          ] as any;
+        } else if (dirPath === '/src/__tests__') {
+          return [
+            { name: 'file1.test.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file2.test.ts', isFile: () => true, isDirectory: () => false }
+          ] as any;
+        }
+        return [] as any;
+      });
     });
 
     it('應該識別受影響的測試檔案', async () => {
-      // TODO: 實作需要改進以正確識別測試檔案關聯
-      // Issue: https://github.com/agent-ide/agent-ide/issues/XXX
-      // 目前 getAffectedTests 只返回空陣列，需要實作測試檔案依賴掃描
-
       await analyzer.analyzeProject('/src');
       const affectedTests = analyzer.getAffectedTests('/src/file1.ts');
 
-      expect(affectedTests).toEqual([]); // 暫時期望空陣列直到功能實作
+      // file1 → file2 → file3 → file1 (循環依賴)
+      // 因此 file1.test 和 file2.test 都會受影響
+      expect(affectedTests).toHaveLength(2);
+      expect(affectedTests).toContain('/src/__tests__/file1.test.ts');
+      expect(affectedTests).toContain('/src/__tests__/file2.test.ts');
     });
 
     it('應該識別間接受影響的測試檔案', async () => {
-      // TODO: 實作需要改進以正確識別間接測試檔案關聯
-      // Issue: https://github.com/agent-ide/agent-ide/issues/XXX
-      // utils.ts 被 file1.ts 依賴，而 file1.ts 有測試
-      // 目前功能尚未實作，需要追蹤間接依賴的測試檔案
-
+      // utils.ts 被 file1.ts 依賴
+      // file1 → file2 → file3 → file1 (循環依賴)
+      // 因此 file1.test 和 file2.test 都會受影響
       await analyzer.analyzeProject('/src');
       const affectedTests = analyzer.getAffectedTests('/src/utils.ts');
 
-      expect(affectedTests).toEqual([]); // 暫時期望空陣列直到功能實作
+      expect(affectedTests).toHaveLength(2);
+      expect(affectedTests).toContain('/src/__tests__/file1.test.ts');
+      expect(affectedTests).toContain('/src/__tests__/file2.test.ts');
     });
   });
 
   describe('統計資訊', () => {
     beforeEach(async () => {
+      // 覆寫 readdir mock 以排除測試檔案
+      const fsPromises = await import('fs/promises');
+      vi.mocked(fsPromises.readdir).mockImplementation(async (dirPath: string) => {
+        if (dirPath === '/src') {
+          return [
+            { name: 'file1.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file2.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'file3.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'utils.ts', isFile: () => true, isDirectory: () => false },
+            { name: 'isolated.ts', isFile: () => true, isDirectory: () => false }
+          ] as any;
+        }
+        return [] as any;
+      });
+
       await analyzer.analyzeProject('/src');
     });
 
@@ -368,15 +434,23 @@ describe('DependencyAnalyzer', () => {
       const fsPromises = await import('fs/promises');
       const spy = vi.mocked(fsPromises.readFile);
 
+      // 清除之前的呼叫記錄
+      spy.mockClear();
+
       // 第一次分析
       await analyzer.analyzeFile('/src/file1.ts');
       const firstCallCount = spy.mock.calls.length;
+
+      // 清除呼叫記錄
+      spy.mockClear();
 
       // 第二次分析（應該使用快取）
       await analyzer.analyzeFile('/src/file1.ts');
       const secondCallCount = spy.mock.calls.length;
 
-      expect(secondCallCount).toBe(firstCallCount); // 沒有額外的檔案讀取
+      // 快取命中，不應該有任何新的 readFile 呼叫
+      expect(secondCallCount).toBe(0);
+      expect(firstCallCount).toBeGreaterThan(0);
     });
 
     it('應該在檔案變更時更新快取', async () => {
