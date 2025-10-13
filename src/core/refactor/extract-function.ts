@@ -3,6 +3,10 @@
  * 將選取的程式碼片段提取為獨立函式
  */
 
+import * as ts from 'typescript';
+import { TypeScriptParser } from '../../plugins/typescript/parser.js';
+import type { TypeScriptAST } from '../../plugins/typescript/types.js';
+
 // 程式碼選取範圍介面
 export interface Range {
   start: { line: number; column: number };
@@ -30,14 +34,17 @@ export interface VariableInfo {
 export interface ExtractionResult {
   success: boolean;
   functionName: string;
-  edits: CodeEdit[];
+  edits: CodeEdit[]; // 原始檔案的編輯
   parameters: VariableInfo[];
-  returnType?: string;
+  returnType?: string; // 推導出的返回型別
   errors: string[];
   warnings: string[];
+  // 跨檔案提取專用欄位
+  targetFileContent?: string; // 目標檔案的完整內容
+  importStatement?: string; // 需要加入的 import 語句
 }
 
-// AST 節點介面
+// AST 節點介面（相容舊版，但內部使用 TypeScript AST）
 export interface ASTNode {
   type: string;
   start: number;
@@ -46,7 +53,9 @@ export interface ASTNode {
   children?: ASTNode[];
   name?: string;
   value?: any;
-  code?: string; // 添加程式碼內容屬性
+  code?: string; // 程式碼內容
+  tsNode?: ts.Node; // TypeScript AST 節點
+  tsSourceFile?: ts.SourceFile; // TypeScript 原始檔
 }
 
 // 提取配置介面
@@ -56,6 +65,8 @@ export interface ExtractConfig {
   preserveFormatting: boolean;
   validateExtraction: boolean;
   insertionPoint?: 'before' | 'after' | 'top';
+  targetFile?: string; // 跨檔案提取的目標檔案路徑
+  sourceFile?: string; // 原始檔案路徑（用於計算相對 import 路徑）
 }
 
 /**
@@ -63,15 +74,22 @@ export interface ExtractConfig {
  * 分析選取的程式碼是否適合提取為函式
  */
 export class ExtractionAnalyzer {
+  private parser: TypeScriptParser;
+
+  constructor() {
+    this.parser = new TypeScriptParser();
+  }
+
   /**
    * 分析程式碼片段的可提取性
    */
-  analyze(code: string, selection: Range): {
+  async analyze(code: string, selection: Range): Promise<{
     canExtract: boolean;
     issues: string[];
     variables: VariableInfo[];
     dependencies: string[];
-  } {
+    returnType?: string;
+  }> {
     const issues: string[] = [];
     const variables: VariableInfo[] = [];
     const dependencies: string[] = [];
@@ -83,7 +101,7 @@ export class ExtractionAnalyzer {
     }
 
     // 解析 AST
-    const ast = this.parseCode(code);
+    const ast = await this.parseCode(code);
     if (!ast) {
       issues.push('程式碼解析失敗');
       return { canExtract: false, issues, variables, dependencies };
@@ -99,11 +117,15 @@ export class ExtractionAnalyzer {
     // 分析依賴
     dependencies.push(...this.findDependencies(ast));
 
+    // 推導返回值型別
+    const returnType = this.extractReturnType(ast);
+
     return {
       canExtract: issues.length === 0,
       issues,
       variables,
-      dependencies
+      dependencies,
+      returnType
     };
   }
 
@@ -244,11 +266,37 @@ export class ExtractionAnalyzer {
   }
 
   /**
-   * 簡化的 AST 解析
+   * 使用 TypeScript Parser 解析程式碼
    */
-  private parseCode(code: string): ASTNode | null {
+  private async parseCode(code: string): Promise<ASTNode | null> {
     try {
-      // 簡化實作：建立模擬 AST，包含程式碼內容
+      // 使用 TypeScript Parser 解析程式碼片段
+      // 為了解析片段，我們將它包裝在一個函式中以形成完整的語句
+      const wrappedCode = `function __extractedCode__() {\n${code}\n}`;
+      const virtualPath = 'virtual-extract.ts';
+
+      const tsAST = await this.parser.parse(wrappedCode, virtualPath) as TypeScriptAST;
+      const sourceFile = tsAST.tsSourceFile;
+
+      if (!sourceFile) {
+        return null;
+      }
+
+      // 找到我們包裝的函式內部的語句
+      let extractedStatements: ts.Node | null = null;
+      ts.forEachChild(sourceFile, (node) => {
+        if (ts.isFunctionDeclaration(node) && node.name?.text === '__extractedCode__') {
+          if (node.body) {
+            extractedStatements = node.body;
+          }
+        }
+      });
+
+      if (!extractedStatements) {
+        return null;
+      }
+
+      // 建立我們的 ASTNode 結構（相容舊版介面）
       return {
         type: 'Program',
         start: 0,
@@ -258,9 +306,12 @@ export class ExtractionAnalyzer {
           end: { line: code.split('\n').length, column: 0 }
         },
         children: [],
-        code // 添加程式碼內容以便分析
+        code,
+        tsNode: extractedStatements, // 保存 TypeScript AST 節點
+        tsSourceFile: sourceFile // 保存 SourceFile 供型別檢查使用
       };
     } catch (error) {
+      console.debug('Parse error:', error);
       return null;
     }
   }
@@ -278,16 +329,151 @@ export class ExtractionAnalyzer {
   }
 
   /**
-   * 檢查是否包含 return 語句
+   * 檢查是否包含 return 語句（使用真實 TypeScript AST）
    */
   private containsReturn(ast: ASTNode): boolean {
+    if (!ast.tsNode) {
+      // 降級到舊邏輯
+      let hasReturn = false;
+      this.traverse(ast, (node) => {
+        if (node.type === 'ReturnStatement') {
+          hasReturn = true;
+        }
+      });
+      return hasReturn;
+    }
+
     let hasReturn = false;
-    this.traverse(ast, (node) => {
-      if (node.type === 'ReturnStatement') {
+    const visit = (node: ts.Node) => {
+      if (ts.isReturnStatement(node)) {
         hasReturn = true;
+        return; // 找到就可以停止
       }
-    });
+      ts.forEachChild(node, visit);
+    };
+    visit(ast.tsNode);
     return hasReturn;
+  }
+
+  /**
+   * 推導返回值型別
+   */
+  private extractReturnType(ast: ASTNode): string {
+    if (!ast.tsNode || !ast.tsSourceFile) {
+      // 降級：簡單檢查是否有 return
+      return this.containsReturn(ast) ? 'any' : 'void';
+    }
+
+    // 收集所有 return 語句的型別
+    const returnTypes: string[] = [];
+    let hasReturnWithoutValue = false;
+
+    const visit = (node: ts.Node) => {
+      if (ts.isReturnStatement(node)) {
+        if (node.expression) {
+          // 嘗試推導 return 表達式的型別
+          const type = this.inferTypeFromExpression(node.expression, ast.tsSourceFile!);
+          returnTypes.push(type);
+        } else {
+          hasReturnWithoutValue = true;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(ast.tsNode);
+
+    // 決定最終返回型別
+    if (returnTypes.length === 0 && !hasReturnWithoutValue) {
+      return 'void';
+    }
+
+    if (hasReturnWithoutValue && returnTypes.length === 0) {
+      return 'void';
+    }
+
+    if (returnTypes.length === 0) {
+      return 'void';
+    }
+
+    // 如果所有返回型別都相同，使用該型別
+    const uniqueTypes = [...new Set(returnTypes)];
+    if (uniqueTypes.length === 1) {
+      return uniqueTypes[0];
+    }
+
+    // 如果有多種型別，使用 union type
+    return uniqueTypes.join(' | ');
+  }
+
+  /**
+   * 從表達式推導型別
+   */
+  private inferTypeFromExpression(expr: ts.Expression, sourceFile: ts.SourceFile): string {
+    // 字串字面量
+    if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+      return 'string';
+    }
+
+    // 數字字面量
+    if (ts.isNumericLiteral(expr)) {
+      return 'number';
+    }
+
+    // 布林字面量
+    if (expr.kind === ts.SyntaxKind.TrueKeyword || expr.kind === ts.SyntaxKind.FalseKeyword) {
+      return 'boolean';
+    }
+
+    // null
+    if (expr.kind === ts.SyntaxKind.NullKeyword) {
+      return 'null';
+    }
+
+    // undefined
+    if (expr.kind === ts.SyntaxKind.UndefinedKeyword) {
+      return 'undefined';
+    }
+
+    // 識別符號（變數）- 嘗試從上下文推導
+    if (ts.isIdentifier(expr)) {
+      // 檢查是否是參數或已知變數
+      const varName = expr.text;
+
+      // 嘗試在包裝函式的參數中查找型別
+      // 這裡簡化處理，實際專案中應該從完整檔案的上下文取得
+      const text = sourceFile.text;
+      const paramPattern = new RegExp(`\\b${varName}\\s*:\\s*([a-zA-Z][a-zA-Z0-9]*)`);
+      const match = text.match(paramPattern);
+      if (match) {
+        return match[1];
+      }
+
+      return 'any';
+    }
+
+    // 陣列字面量
+    if (ts.isArrayLiteralExpression(expr)) {
+      if (expr.elements.length === 0) {
+        return 'any[]';
+      }
+      const elementType = this.inferTypeFromExpression(expr.elements[0], sourceFile);
+      return `${elementType}[]`;
+    }
+
+    // 物件字面量
+    if (ts.isObjectLiteralExpression(expr)) {
+      return 'object';
+    }
+
+    // 函式呼叫
+    if (ts.isCallExpression(expr)) {
+      // 簡化：返回 any
+      return 'any';
+    }
+
+    // 預設返回 any
+    return 'any';
   }
 
   /**
@@ -396,8 +582,8 @@ export class FunctionExtractor {
       throw new Error('選取範圍無效');
     }
 
-    // 分析可提取性
-    const analysis = this.analyzer.analyze(code, selection);
+    // 分析可提取性（現在是 async）
+    const analysis = await this.analyzer.analyze(code, selection);
     if (!analysis.canExtract) {
       return {
         success: false,
@@ -415,15 +601,29 @@ export class FunctionExtractor {
     // 產生函式名稱
     const functionName = config.functionName || this.generateFunctionName(selectedCode);
 
-    // 產生函式程式碼
+    // 產生函式程式碼（使用推導出的返回型別）
     const functionCode = this.generateFunction(
       functionName,
       selectedCode,
       analysis.variables,
-      config
+      config,
+      analysis.returnType
     );
 
-    // 產生編輯操作
+    // 檢查是否為跨檔案提取
+    if (config.targetFile && config.sourceFile) {
+      // 跨檔案提取模式
+      return await this.extractToSeparateFile(
+        code,
+        selection,
+        functionName,
+        functionCode,
+        analysis.variables,
+        config
+      );
+    }
+
+    // 一般提取模式（同檔案）
     const edits = this.generateEdits(code, selection, functionName, functionCode, analysis.variables);
 
     return {
@@ -431,6 +631,7 @@ export class FunctionExtractor {
       functionName,
       edits,
       parameters: analysis.variables,
+      returnType: analysis.returnType,
       errors: [],
       warnings: []
     };
@@ -501,7 +702,8 @@ export class FunctionExtractor {
     functionName: string,
     code: string,
     parameters: VariableInfo[],
-    config: ExtractConfig
+    config: ExtractConfig,
+    inferredReturnType?: string
   ): string {
     // 生成帶型別的參數列表
     const params = parameters
@@ -514,9 +716,14 @@ export class FunctionExtractor {
       ? `\n  return ${returnVars.map(v => v.name).join(', ')};`
       : '';
 
-    // 推導返回型別
-    const hasReturn = code.includes('return') || returnVars.length > 0;
-    const returnType = hasReturn ? ': any' : ': any';
+    // 使用推導出的返回型別，如果沒有則降級到舊邏輯
+    let returnType: string;
+    if (inferredReturnType) {
+      returnType = `: ${inferredReturnType}`;
+    } else {
+      const hasReturn = code.includes('return') || returnVars.length > 0;
+      returnType = hasReturn ? ': any' : ': void';
+    }
 
     const comment = config.generateComments
       ? `/**\n * 提取的函式\n * @param ${params.split(', ').map(p => `${p.split(':')[0]} 參數`).join('\n * @param ')}\n */\n`
@@ -568,6 +775,114 @@ export class FunctionExtractor {
     });
 
     return edits;
+  }
+
+  /**
+   * 跨檔案提取：將函式提取到獨立檔案
+   */
+  private async extractToSeparateFile(
+    code: string,
+    selection: Range,
+    functionName: string,
+    functionCode: string,
+    parameters: VariableInfo[],
+    config: ExtractConfig
+  ): Promise<ExtractionResult> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    try {
+      // 計算相對 import 路徑
+      const sourceDir = path.dirname(config.sourceFile!);
+      const targetDir = path.dirname(config.targetFile!);
+      const targetFileName = path.basename(config.targetFile!, path.extname(config.targetFile!));
+
+      // 計算相對路徑
+      let relativePath = path.relative(sourceDir, config.targetFile!);
+      // 移除副檔名
+      if (relativePath.endsWith('.ts')) {
+        relativePath = relativePath.slice(0, -3);
+      } else if (relativePath.endsWith('.js')) {
+        relativePath = relativePath.slice(0, -3);
+      }
+      // 確保路徑以 ./ 或 ../ 開頭
+      if (!relativePath.startsWith('.')) {
+        relativePath = './' + relativePath;
+      }
+
+      // 生成 import 語句
+      const importStatement = `import { ${functionName} } from '${relativePath}';`;
+
+      // 生成 export function（移除註解中的 @param 部分，因為跨檔案不需要）
+      const exportedFunctionCode = functionCode
+        .replace(/\/\*\*[\s\S]*?\*\/\n?/, '') // 移除註解
+        .replace(/^function /, 'export function '); // 加上 export
+
+      // 讀取或建立目標檔案內容
+      let targetFileContent = '';
+      try {
+        targetFileContent = await fs.readFile(config.targetFile!, 'utf-8');
+      } catch (error) {
+        // 檔案不存在，建立新檔案
+        targetFileContent = '';
+      }
+
+      // 在目標檔案末尾加入函式
+      if (targetFileContent.trim().length > 0) {
+        targetFileContent += '\n\n' + exportedFunctionCode + '\n';
+      } else {
+        targetFileContent = exportedFunctionCode + '\n';
+      }
+
+      // 生成原始檔案的編輯：加入 import + 替換為函式呼叫
+      const edits: CodeEdit[] = [];
+
+      // 1. 替換選取範圍為函式呼叫
+      const callParams = parameters
+        .filter(p => p.isParameter)
+        .map(p => p.name)
+        .join(', ');
+
+      const returnVars = parameters.filter(p => p.isReturned);
+      const assignment = returnVars.length > 0
+        ? `${returnVars.map(v => v.name).join(', ')} = `
+        : '';
+
+      const functionCall = `${assignment}${functionName}(${callParams});`;
+
+      edits.push({
+        range: selection,
+        newText: functionCall,
+        type: 'replace'
+      });
+
+      // 2. 在檔案開頭加入 import 語句
+      edits.push({
+        range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
+        newText: importStatement + '\n',
+        type: 'insert'
+      });
+
+      return {
+        success: true,
+        functionName,
+        edits,
+        parameters,
+        errors: [],
+        warnings: [],
+        targetFileContent,
+        importStatement
+      };
+    } catch (error) {
+      return {
+        success: false,
+        functionName,
+        edits: [],
+        parameters: [],
+        errors: [`跨檔案提取失敗: ${error instanceof Error ? error.message : String(error)}`],
+        warnings: []
+      };
+    }
   }
 
   /**
