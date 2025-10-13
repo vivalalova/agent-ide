@@ -477,10 +477,21 @@ export class DependencyAnalyzer {
    */
   private matchGlob(filePath: string, pattern: string): boolean {
     // 簡化實作，實際應該使用專業的 glob 函式庫
-    const regexPattern = pattern
-      .replace(/\*\*/g, '.*')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\?/g, '.');
+    // ** 匹配任意層級目錄 (包含 0 層)
+    // * 匹配單層目錄或檔名中的任意字元（不包含 /）
+    // ? 匹配單一字元
+
+    // 將 ** 替換為特殊標記，避免與 * 衝突
+    let regexPattern = pattern.replace(/\*\*/g, '<!DOUBLE_STAR!>');
+
+    // 替換單個 *
+    regexPattern = regexPattern.replace(/\*/g, '[^/]*');
+
+    // 替換 **（之前的特殊標記）為匹配任意路徑
+    regexPattern = regexPattern.replace(/<!DOUBLE_STAR!>/g, '.*');
+
+    // 替換 ?
+    regexPattern = regexPattern.replace(/\?/g, '.');
 
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(filePath);
