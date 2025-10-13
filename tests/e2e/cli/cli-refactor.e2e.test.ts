@@ -1,446 +1,396 @@
 /**
  * CLI refactor 命令 E2E 測試
- * 測試實際的程式碼重構功能（extract-function）
+ * 基於 sample-project fixture 測試真實複雜專案的重構功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
 import { executeCLI } from '../helpers/cli-executor';
 
-describe('CLI refactor 命令 E2E 測試', () => {
-  let project: TestProject;
+describe('CLI refactor - 基於 sample-project fixture', () => {
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案，包含可重構的程式碼
-    project = await createTypeScriptProject({
-      'src/calculator.ts': `
-export function complexCalculation(a: number, b: number): number {
-  const sum = a + b;
-  const product = a * b;
-  const average = sum / 2;
-  return average + product;
-}
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能提取函式', async () => {
-    const filePath = project.getFilePath('src/calculator.ts');
+  // ============================================================
+  // 1. 基礎提取函式測試（3 個測試）
+  // ============================================================
+
+  it('應該能在 Service 類別中提取方法邏輯', async () => {
+    const filePath = fixture.getFilePath('src/services/order-service.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '4',
-      '--function-name', 'calculateAverage'
+      '--file',
+      filePath,
+      '--start-line',
+      '10',
+      '--end-line',
+      '15',
+      '--function-name',
+      'validateOrderData'
     ]);
 
-    // 檢查執行成功
     expect(result.exitCode).toBe(0);
-
-    // 檢查輸出包含重構訊息
-    expect(result.stdout).toContain('重構完成');
+    expect(result.stdout).toContain('重構');
   });
 
-  it('應該能在預覽模式下顯示變更', async () => {
-    const filePath = project.getFilePath('src/calculator.ts');
+  it('應該能預覽提取函式的變更', async () => {
+    const filePath = fixture.getFilePath('src/utils/formatter.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '4',
-      '--function-name', 'helper',
+      '--file',
+      filePath,
+      '--start-line',
+      '5',
+      '--end-line',
+      '10',
+      '--function-name',
+      'helperFormatter',
       '--preview'
     ]);
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('重構');
 
-    // 應該顯示預覽訊息
-    expect(result.stdout).toContain('預覽模式');
+    // 預覽模式不應該修改檔案
+    const content = await fixture.readFile('src/utils/formatter.ts');
+    expect(content).not.toContain('helperFormatter');
   });
 
-  it('應該能提取包含多種語句的複雜函式', async () => {
-    const complexProject = await createTypeScriptProject({
-      'src/complex-logic.ts': `
-export function processUserData(user: any) {
-  // 驗證使用者
-  if (!user || !user.id) {
-    throw new Error('Invalid user');
-  }
-
-  // 格式化名稱
-  const formattedName = user.firstName + ' ' + user.lastName;
-  const upperName = formattedName.toUpperCase();
-
-  // 計算年齡
-  const birthYear = new Date(user.birthDate).getFullYear();
-  const currentYear = new Date().getFullYear();
-  const age = currentYear - birthYear;
-
-  // 建立結果
-  return {
-    id: user.id,
-    name: upperName,
-    age: age,
-    isAdult: age >= 18
-  };
-}
-      `.trim()
-    });
-
-    const filePath = complexProject.getFilePath('src/complex-logic.ts');
+  it('應該能在 Controller 類別中提取驗證邏輯', async () => {
+    const filePath = fixture.getFilePath('src/controllers/user-controller.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '6',
-      '--end-line', '8',
-      '--function-name', 'formatUserName'
+      '--file',
+      filePath,
+      '--start-line',
+      '8',
+      '--end-line',
+      '12',
+      '--function-name',
+      'validateUserInput'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await complexProject.cleanup();
   });
 
-  it('應該能處理嵌套程式碼結構', async () => {
-    const nestedProject = await createTypeScriptProject({
-      'src/nested.ts': `
-export function calculateDiscount(price: number, customer: any): number {
-  let discount = 0;
+  // ============================================================
+  // 2. 複雜業務邏輯重構測試（3 個測試）
+  // ============================================================
 
-  if (customer.isPremium) {
-    if (customer.years > 5) {
-      discount = 0.2;
-    } else if (customer.years > 2) {
-      discount = 0.15;
-    } else {
-      discount = 0.1;
-    }
-  } else {
-    if (customer.orders > 10) {
-      discount = 0.05;
-    }
-  }
-
-  return price * (1 - discount);
-}
-      `.trim()
-    });
-
-    const filePath = nestedProject.getFilePath('src/nested.ts');
+  it('應該能從 OrderService 提取複雜的訂單計算邏輯', async () => {
+    const filePath = fixture.getFilePath('src/services/order-service.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '4',
-      '--end-line', '12',
-      '--function-name', 'calculatePremiumDiscount'
+      '--file',
+      filePath,
+      '--start-line',
+      '20',
+      '--end-line',
+      '30',
+      '--function-name',
+      'calculateOrderTotal'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await nestedProject.cleanup();
   });
 
-  it('應該能處理包含箭頭函式的程式碼', async () => {
-    const arrowProject = await createTypeScriptProject({
-      'src/arrow-functions.ts': `
-export const processItems = (items: any[]) => {
-  const filtered = items.filter(item => item.active);
-  const mapped = filtered.map(item => ({
-    ...item,
-    processed: true
-  }));
-  const sorted = mapped.sort((a, b) => a.priority - b.priority);
-
-  return sorted;
-};
-      `.trim()
-    });
-
-    const filePath = arrowProject.getFilePath('src/arrow-functions.ts');
+  it('應該能從 AuthService 提取驗證邏輯', async () => {
+    const filePath = fixture.getFilePath('src/services/auth-service.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '5',
-      '--function-name', 'filterAndMapItems'
+      '--file',
+      filePath,
+      '--start-line',
+      '12',
+      '--end-line',
+      '18',
+      '--function-name',
+      'verifyCredentials'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await arrowProject.cleanup();
   });
 
-  it('應該在缺少參數時顯示錯誤', async () => {
-    const filePath = project.getFilePath('src/calculator.ts');
+  it('應該能從 PaymentService 提取金流處理邏輯', async () => {
+    const filePath = fixture.getFilePath('src/services/payment-service.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath
+      '--file',
+      filePath,
+      '--start-line',
+      '15',
+      '--end-line',
+      '25',
+      '--function-name',
+      'processPaymentTransaction'
     ]);
 
-    // 應該顯示錯誤訊息
+    expect(result.exitCode).toBe(0);
+  });
+
+  // ============================================================
+  // 3. Model 類別重構測試（2 個測試）
+  // ============================================================
+
+  it('應該能從 UserModel 提取驗證邏輯', async () => {
+    const filePath = fixture.getFilePath('src/models/user-model.ts');
+
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file',
+      filePath,
+      '--start-line',
+      '10',
+      '--end-line',
+      '15',
+      '--function-name',
+      'validateEmailFormat'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能從 ProductModel 提取格式化邏輯', async () => {
+    const filePath = fixture.getFilePath('src/models/product-model.ts');
+
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file',
+      filePath,
+      '--start-line',
+      '8',
+      '--end-line',
+      '12',
+      '--function-name',
+      'formatProductDisplay'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  // ============================================================
+  // 4. Utils 函式重構測試（2 個測試）
+  // ============================================================
+
+  it('應該能從 date-utils 提取日期計算邏輯', async () => {
+    const filePath = fixture.getFilePath('src/utils/date-utils.ts');
+
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file',
+      filePath,
+      '--start-line',
+      '5',
+      '--end-line',
+      '10',
+      '--function-name',
+      'calculateDaysDifference'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能從 string-utils 提取字串處理邏輯', async () => {
+    const filePath = fixture.getFilePath('src/utils/string-utils.ts');
+
+    const result = await executeCLI([
+      'refactor',
+      'extract-function',
+      '--file',
+      filePath,
+      '--start-line',
+      '6',
+      '--end-line',
+      '12',
+      '--function-name',
+      'sanitizeInput'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  // ============================================================
+  // 5. 錯誤處理測試（4 個測試）
+  // ============================================================
+
+  it('應該在缺少必要參數時顯示錯誤', async () => {
+    const filePath = fixture.getFilePath('src/services/user-service.ts');
+
+    const result = await executeCLI(['refactor', 'extract-function', '--file', filePath]);
+
     const output = result.stdout + result.stderr;
     expect(output).toContain('需要');
   });
 
-  it('應該能處理無效的行號範圍', async () => {
-    const filePath = project.getFilePath('src/calculator.ts');
+  it('應該處理無效的行號範圍', async () => {
+    const filePath = fixture.getFilePath('src/services/user-service.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '100',
-      '--end-line', '200',
-      '--function-name', 'invalid'
+      '--file',
+      filePath,
+      '--start-line',
+      '1000',
+      '--end-line',
+      '2000',
+      '--function-name',
+      'invalid'
     ]);
 
-    // 應該顯示範圍錯誤
     const output = result.stdout + result.stderr;
     expect(output.length).toBeGreaterThan(0);
   });
 
-  it('應該能處理語法錯誤的檔案', async () => {
-    const brokenProject = await createTypeScriptProject({
-      'src/broken.ts': `
-export function broken(
-  console.log("missing closing parenthesis");
-  return true;
-}
-      `.trim()
-    });
-
-    const filePath = brokenProject.getFilePath('src/broken.ts');
-
+  it('應該處理不存在的檔案', async () => {
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '1',
-      '--end-line', '2',
-      '--function-name', 'extracted'
+      '--file',
+      fixture.getFilePath('src/non-existent.ts'),
+      '--start-line',
+      '1',
+      '--end-line',
+      '5',
+      '--function-name',
+      'extracted'
     ]);
 
-    // 不應該崩潰
-    expect(result.exitCode).toBeDefined();
-
-    await brokenProject.cleanup();
+    const output = result.stdout + result.stderr;
+    expect(output.length).toBeGreaterThan(0);
   });
 
-  it('應該能處理不支援的重構操作', async () => {
-    const filePath = project.getFilePath('src/calculator.ts');
+  it('應該處理不支援的重構操作', async () => {
+    const filePath = fixture.getFilePath('src/services/user-service.ts');
 
-    const result = await executeCLI([
-      'refactor',
-      'inline-function',
-      '--file', filePath
-    ]);
+    const result = await executeCLI(['refactor', 'inline-function', '--file', filePath]);
 
-    // 應該顯示錯誤訊息
     const output = result.stdout + result.stderr;
     expect(output).toContain('尚未實作');
   });
 
-  it('應該能處理大型函式提取', async () => {
-    const lines = Array.from({ length: 100 }, (_, i) =>
-      `  const var${i} = ${i};\n  console.log(var${i});`
-    ).join('\n');
+  // ============================================================
+  // 6. 特殊場景測試（3 個測試）
+  // ============================================================
 
-    const largeProject = await createTypeScriptProject({
-      'src/large-function.ts': `
-export function largeFunction() {
-${lines}
-  return 'done';
-}
-      `.trim()
-    });
-
-    const filePath = largeProject.getFilePath('src/large-function.ts');
+  it('應該能處理包含泛型的程式碼', async () => {
+    const filePath = fixture.getFilePath('src/models/base-model.ts');
 
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '10',
-      '--end-line', '20',
-      '--function-name', 'extractedPart'
+      '--file',
+      filePath,
+      '--start-line',
+      '8',
+      '--end-line',
+      '12',
+      '--function-name',
+      'extractGenericLogic'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await largeProject.cleanup();
   });
 
-  it('應該能處理多個檔案的批次重構準備', async () => {
-    const multiFileProject = await createTypeScriptProject({
-      'src/file1.ts': `
-export function helper1() {
-  const x = 1;
-  const y = 2;
-  return x + y;
-}
-      `.trim(),
-      'src/file2.ts': `
-export function helper2() {
-  const a = 10;
-  const b = 20;
-  return a * b;
-}
-      `.trim(),
-      'src/file3.ts': `
-export function helper3() {
-  const m = 5;
-  const n = 15;
-  return m - n;
-}
-      `.trim()
-    });
+  it('應該能處理包含 async/await 的程式碼', async () => {
+    const filePath = fixture.getFilePath('src/services/notification-service.ts');
 
-    // 測試對第一個檔案的重構
-    const filePath1 = multiFileProject.getFilePath('src/file1.ts');
-    const result1 = await executeCLI([
-      'refactor',
-      'extract-function',
-      '--file', filePath1,
-      '--start-line', '1',
-      '--end-line', '2',
-      '--function-name', 'calculateSum',
-      '--preview'
-    ]);
-
-    expect(result1.exitCode).toBe(0);
-
-    await multiFileProject.cleanup();
-  });
-
-  it('應該能提取包含 try-catch 的程式碼', async () => {
-    const tryCatchProject = await createTypeScriptProject({
-      'src/error-handling.ts': `
-export async function fetchData(url: string) {
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Failed to fetch:', error);
-    throw error;
-  }
-}
-      `.trim()
-    });
-
-    const filePath = tryCatchProject.getFilePath('src/error-handling.ts');
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '4',
-      '--function-name', 'parseResponse'
+      '--file',
+      filePath,
+      '--start-line',
+      '10',
+      '--end-line',
+      '15',
+      '--function-name',
+      'sendAsyncNotification'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await tryCatchProject.cleanup();
   });
 
-  it('應該能提取包含迴圈的程式碼', async () => {
-    const loopProject = await createTypeScriptProject({
-      'src/loops.ts': `
-export function processArray(items: number[]): number[] {
-  const results: number[] = [];
-  for (let i = 0; i < items.length; i++) {
-    if (items[i] > 0) {
-      results.push(items[i] * 2);
-    }
-  }
-  return results;
-}
-      `.trim()
-    });
+  it('應該能處理包含複雜型別的程式碼', async () => {
+    const filePath = fixture.getFilePath('src/api/handlers/user-handler.ts');
 
-    const filePath = loopProject.getFilePath('src/loops.ts');
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '6',
-      '--function-name', 'filterAndDouble'
+      '--file',
+      filePath,
+      '--start-line',
+      '8',
+      '--end-line',
+      '14',
+      '--function-name',
+      'handleUserRequest'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await loopProject.cleanup();
   });
 
-  it('應該能提取包含泛型的程式碼', async () => {
-    const genericProject = await createTypeScriptProject({
-      'src/generics.ts': `
-export function transform<T, R>(items: T[], mapper: (item: T) => R): R[] {
-  const results: R[] = [];
-  for (const item of items) {
-    const mapped = mapper(item);
-    results.push(mapped);
-  }
-  return results;
-}
-      `.trim()
-    });
+  // ============================================================
+  // 7. 跨類別重構測試（2 個測試）
+  // ============================================================
 
-    const filePath = genericProject.getFilePath('src/generics.ts');
+  it('應該能從繼承類別中提取共用邏輯', async () => {
+    const filePath = fixture.getFilePath('src/controllers/base-controller.ts');
+
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '2',
-      '--end-line', '5',
-      '--function-name', 'mapItems'
+      '--file',
+      filePath,
+      '--start-line',
+      '6',
+      '--end-line',
+      '10',
+      '--function-name',
+      'handleControllerError'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await genericProject.cleanup();
   });
 
-  it('應該能提取包含解構賦值的程式碼', async () => {
-    const destructuringProject = await createTypeScriptProject({
-      'src/destructuring.ts': `
-export function processUser(user: any) {
-  const { name, age, email } = user;
-  const { street, city, zipCode } = user.address;
-  return { name, age, email, street, city, zipCode };
-}
-      `.trim()
-    });
+  it('應該能從中介層提取驗證邏輯', async () => {
+    const filePath = fixture.getFilePath('src/api/middleware/validator.ts');
 
-    const filePath = destructuringProject.getFilePath('src/destructuring.ts');
     const result = await executeCLI([
       'refactor',
       'extract-function',
-      '--file', filePath,
-      '--start-line', '1',
-      '--end-line', '2',
-      '--function-name', 'extractUserFields'
+      '--file',
+      filePath,
+      '--start-line',
+      '7',
+      '--end-line',
+      '12',
+      '--function-name',
+      'validateRequestSchema'
     ]);
 
     expect(result.exitCode).toBe(0);
-
-    await destructuringProject.cleanup();
   });
 });

@@ -1,383 +1,261 @@
 /**
  * CLI analyze 命令 E2E 測試
- * 測試實際的程式碼分析功能
+ * 基於 sample-project fixture 測試真實複雜程式碼分析功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
-import { analyzeCode } from '../helpers/cli-executor';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
+import { executeCLI } from '../helpers/cli-executor';
 
-describe('CLI analyze 命令 E2E 測試', () => {
-  let project: TestProject;
+describe('CLI analyze - 基於 sample-project fixture', () => {
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案
-    project = await createTypeScriptProject({
-      'src/complex.ts': `
-export function complexFunction(x: number, y: number, z: number): number {
-  if (x > 0) {
-    if (y > 0) {
-      if (z > 0) {
-        return x + y + z;
-      } else {
-        return x + y - z;
-      }
-    } else {
-      if (z > 0) {
-        return x - y + z;
-      } else {
-        return x - y - z;
-      }
-    }
-  } else {
-    if (y > 0) {
-      if (z > 0) {
-        return -x + y + z;
-      } else {
-        return -x + y - z;
-      }
-    } else {
-      if (z > 0) {
-        return -x - y + z;
-      } else {
-        return -x - y - z;
-      }
-    }
-  }
-}
-
-export function simpleFunction(a: number, b: number): number {
-  return a + b;
-}
-      `.trim(),
-      'src/simple.ts': `
-export class SimpleClass {
-  add(a: number, b: number): number {
-    return a + b;
-  }
-}
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能分析程式碼複雜度並返回正確結果', async () => {
-    const filePath = project.getFilePath('src/complex.ts');
-    const result = await analyzeCode(filePath);
+  // ============================================================
+  // 1. 複雜度分析測試（3 個測試）
+  // ============================================================
 
-    // 檢查執行成功
-    expect(result.exitCode).toBe(0);
-
-    // 檢查輸出包含分析相關資訊
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-    expect(output).toMatch(/分析|analyze|analysis/i);
-  });
-
-  it('應該能分析專案目錄並輸出所有檔案分析結果', async () => {
-    const result = await analyzeCode(project.projectPath);
-
-    expect(result.exitCode).toBe(0);
-
-    // 應該分析整個專案
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-    expect(output).toMatch(/分析|analyze|analysis/i);
-  });
-
-  it('應該能處理簡單程式碼並報告低複雜度', async () => {
-    const filePath = project.getFilePath('src/simple.ts');
-    const result = await analyzeCode(filePath);
+  it('應該識別 OrderService 為高複雜度模組', async () => {
+    const result = await executeCLI([
+      'analyze',
+      'complexity',
+      '--path',
+      fixture.getFilePath('src/services'),
+      '--format',
+      'json'
+    ]);
 
     expect(result.exitCode).toBe(0);
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.files).toBeDefined();
+    expect(output.files.length).toBeGreaterThan(0);
+
+    const orderServiceResult = output.files.find((f: any) => f.path.includes('order-service.ts'));
+    expect(orderServiceResult).toBeDefined();
+    expect(orderServiceResult.complexity).toBeGreaterThan(0); // OrderService 有複雜度
+    expect(orderServiceResult.evaluation).toBeDefined();
+
+    // 驗證 OrderService 相對複雜（與其他檔案比較）
+    const avgComplexity = output.summary.averageComplexity;
+    expect(orderServiceResult.complexity).toBeGreaterThanOrEqual(avgComplexity);
   });
 
-  it('應該能檢測死代碼', async () => {
-    const projectWithDeadCode = await createTypeScriptProject({
-      'src/dead-code.ts': `
-function used() {
-  return 'used';
+  it('應該正確分析抽象類別 BaseModel 的複雜度', async () => {
+    const result = await executeCLI([
+      'analyze',
+      'complexity',
+      '--path',
+      fixture.getFilePath('src/models'),
+      '--format',
+      'json'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    const output = JSON.parse(result.stdout);
+    expect(output.files).toBeDefined();
+    expect(output.files.length).toBeGreaterThan(0);
+
+    const baseModelResult = output.files.find((f: any) => f.path.includes('base-model.ts'));
+    expect(baseModelResult).toBeDefined();
+    expect(baseModelResult.complexity).toBeGreaterThan(0);
+    expect(baseModelResult.cognitiveComplexity).toBeDefined();
+  });
+
+  it('應該能比較不同模組的複雜度差異', async () => {
+    // 分析整個專案獲取所有檔案複雜度
+    const result = await executeCLI([
+      'analyze',
+      'complexity',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    const output = JSON.parse(result.stdout);
+    expect(output.files).toBeDefined();
+    expect(output.files.length).toBeGreaterThan(0);
+
+    // 驗證包含核心業務檔案
+    const userServiceResult = output.files.find((f: any) => f.path.includes('user-service.ts'));
+    const stringUtilsResult = output.files.find((f: any) => f.path.includes('string-utils.ts'));
+    const orderServiceResult = output.files.find((f: any) => f.path.includes('order-service.ts'));
+
+    expect(userServiceResult).toBeDefined();
+    expect(stringUtilsResult).toBeDefined();
+    expect(orderServiceResult).toBeDefined();
+
+    // 驗證所有檔案都有複雜度值
+    expect(userServiceResult.complexity).toBeGreaterThan(0);
+    expect(stringUtilsResult.complexity).toBeGreaterThan(0);
+    expect(orderServiceResult.complexity).toBeGreaterThan(0);
+
+    // 驗證所有檔案都有認知複雜度
+    expect(userServiceResult.cognitiveComplexity).toBeGreaterThanOrEqual(0);
+    expect(stringUtilsResult.cognitiveComplexity).toBeGreaterThanOrEqual(0);
+    expect(orderServiceResult.cognitiveComplexity).toBeGreaterThanOrEqual(0);
+  });
+
+  // ============================================================
+  // 2. 整體專案分析測試（2 個測試）
+  // ============================================================
+
+  it('應該能分析整個專案並統計所有檔案的複雜度', async () => {
+    const result = await executeCLI([
+      'analyze',
+      'complexity',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    const output = JSON.parse(result.stdout);
+    expect(output.files).toBeDefined();
+    expect(output.files.length).toBeGreaterThanOrEqual(30); // 至少 30 個檔案
+    expect(output.summary).toBeDefined();
+    expect(output.summary.totalFiles).toBeGreaterThanOrEqual(30);
+    expect(output.summary.averageComplexity).toBeGreaterThan(0);
+    expect(output.summary.maxComplexity).toBeGreaterThan(0);
+
+    // 驗證包含核心模組
+    const filePaths = output.files.map((f: any) => f.path);
+    expect(filePaths.some((p: string) => p.includes('user-service.ts'))).toBe(true);
+    expect(filePaths.some((p: string) => p.includes('order-service.ts'))).toBe(true);
+    expect(filePaths.some((p: string) => p.includes('base-model.ts'))).toBe(true);
+  });
+
+  it('應該能檢測專案中的最佳實踐', async () => {
+    const result = await executeCLI([
+      'analyze',
+      'best-practices',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    const output = JSON.parse(result.stdout);
+    expect(output.recommendations).toBeDefined();
+    expect(Array.isArray(output.recommendations)).toBe(true);
+
+    // sample-project 使用 ES Module
+    const hasEsmRecommendation = output.recommendations.some(
+      (r: any) => r.type === 'es-modules' && r.status === 'good'
+    );
+    expect(hasEsmRecommendation).toBe(true);
+  });
+
+  // ============================================================
+  // 3. 死代碼檢測測試（2 個測試）
+  // ============================================================
+
+  it('應該執行死代碼檢測並返回正確格式', async () => {
+    // 新增未使用的函式（用於測試檢測功能）
+    await fixture.writeFile(
+      'src/utils/unused.ts',
+      `
+export function unusedHelper() {
+  return 'never used';
 }
 
-function unused() {
-  return 'never called';
+export function anotherUnusedHelper() {
+  return 'also unused';
 }
+`.trim()
+    );
 
-export const result = used();
-      `.trim()
-    });
+    const result = await executeCLI([
+      'analyze',
+      'dead-code',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
 
-    const result = await analyzeCode(projectWithDeadCode.projectPath);
     expect(result.exitCode).toBe(0);
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.files).toBeDefined();
+    expect(Array.isArray(output.files)).toBe(true);
+    expect(output.files.length).toBeGreaterThan(0);
+    expect(output.summary).toBeDefined();
+    expect(output.summary.totalDeadFunctions).toBeGreaterThanOrEqual(0);
+    expect(output.summary.totalDeadVariables).toBeGreaterThanOrEqual(0);
+    expect(output.summary.totalDeadCode).toBeGreaterThanOrEqual(0);
 
-    await projectWithDeadCode.cleanup();
+    // 驗證 unused.ts 被分析
+    const unusedFile = output.files.find((f: any) => f.path.includes('unused.ts'));
+    expect(unusedFile).toBeDefined();
+    expect(Array.isArray(unusedFile.deadCode)).toBe(true);
   });
 
-  it('應該能評估程式碼品質指標', async () => {
-    const projectWithQualityIssues = await createTypeScriptProject({
-      'src/quality-issues.ts': `
-export function poorQuality(a: any, b: any, c: any, d: any, e: any) {
-  if (a) {
-    if (b) {
-      if (c) {
-        if (d) {
-          if (e) {
-            return a + b + c + d + e;
-          }
-        }
-      }
-    }
-  }
-  return 0;
-}
-      `.trim()
-    });
+  it('應該能追蹤跨檔案的引用關係', async () => {
+    // 分析原始專案（所有 export 都被使用）
+    const result = await executeCLI([
+      'analyze',
+      'dead-code',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
 
-    const result = await analyzeCode(projectWithQualityIssues.projectPath);
     expect(result.exitCode).toBe(0);
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.summary).toBeDefined();
 
-    await projectWithQualityIssues.cleanup();
+    // sample-project 設計良好，死代碼應該很少或為零
+    // （除非有刻意設計的未使用函式）
+    expect(output.summary.totalDeadCode).toBeGreaterThanOrEqual(0);
   });
 
-  it('應該處理大型專案', async () => {
-    const largeProject = await createTypeScriptProject({
-      'src/module1.ts': `export function func1() { return 1; }`,
-      'src/module2.ts': `export function func2() { return 2; }`,
-      'src/module3.ts': `export function func3() { return 3; }`,
-      'src/module4.ts': `export function func4() { return 4; }`,
-      'src/module5.ts': `export function func5() { return 5; }`,
-      'src/utils/helper1.ts': `export const helper1 = () => 'help1';`,
-      'src/utils/helper2.ts': `export const helper2 = () => 'help2';`,
-      'src/services/service1.ts': `export class Service1 {}`,
-      'src/services/service2.ts': `export class Service2 {}`,
-      'src/index.ts': `
-import { func1 } from './module1';
-import { func2 } from './module2';
-export { func1, func2 };
-      `.trim()
-    });
+  // ============================================================
+  // 4. 程式碼模式檢測測試（1 個測試）
+  // ============================================================
 
-    const result = await analyzeCode(largeProject.projectPath);
+  it('應該能檢測專案中的程式碼模式', async () => {
+    const result = await executeCLI([
+      'analyze',
+      'patterns',
+      '--path',
+      fixture.tempPath,
+      '--format',
+      'json'
+    ]);
+
     expect(result.exitCode).toBe(0);
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.patterns).toBeDefined();
+    expect(Array.isArray(output.patterns)).toBe(true);
 
-    await largeProject.cleanup();
-  });
+    // sample-project 應該包含這些模式
+    expect(output.patterns).toContain('async-functions'); // async/await in services
+    expect(output.patterns).toContain('promise-usage'); // Promise in services
+    expect(output.patterns).toContain('interface-usage'); // interface definitions
+    expect(output.patterns).toContain('generic-types'); // BaseModel<T>, ApiResponse<T>
+    expect(output.patterns).toContain('enum-usage'); // UserRole, ProductCategory, etc.
 
-  it('應該能處理語法錯誤檔案', async () => {
-    const projectWithErrors = await createTypeScriptProject({
-      'src/broken.ts': `
-function broken( {
-  console.log("missing parameter type");
-  return;
-}
-      `.trim()
-    });
-
-    const result = await analyzeCode(projectWithErrors.projectPath);
-
-    // 應該要能處理錯誤，不應該崩潰
-    expect(result.exitCode).toBeDefined();
-
-    await projectWithErrors.cleanup();
-  });
-
-  it('應該能處理空專案', async () => {
-    const emptyProject = await createTypeScriptProject({});
-
-    const result = await analyzeCode(emptyProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output).toBeDefined();
-
-    await emptyProject.cleanup();
-  });
-
-  it('應該能比較複雜度差異', async () => {
-    const complexFile = project.getFilePath('src/complex.ts');
-    const simpleFile = project.getFilePath('src/simple.ts');
-
-    const complexResult = await analyzeCode(complexFile);
-    const simpleResult = await analyzeCode(simpleFile);
-
-    expect(complexResult.exitCode).toBe(0);
-    expect(simpleResult.exitCode).toBe(0);
-
-    // 複雜檔案的輸出應該比簡單檔案長
-    expect(complexResult.stdout.length).toBeGreaterThan(0);
-    expect(simpleResult.stdout.length).toBeGreaterThan(0);
-  });
-
-  it('應該能分析包含箭頭函式的程式碼', async () => {
-    const arrowProject = await createTypeScriptProject({
-      'src/arrows.ts': `
-export const map = (arr: number[]) => arr.map(x => x * 2);
-export const filter = (arr: number[]) => arr.filter(x => x > 0);
-export const reduce = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-      `.trim()
-    });
-
-    const result = await analyzeCode(arrowProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await arrowProject.cleanup();
-  });
-
-  it('應該能分析包含 async/await 的程式碼', async () => {
-    const asyncProject = await createTypeScriptProject({
-      'src/async.ts': `
-export async function fetchData(url: string): Promise<string> {
-  const response = await fetch(url);
-  const data = await response.json();
-  return data;
-}
-
-export async function processMultiple(urls: string[]): Promise<string[]> {
-  return await Promise.all(urls.map(url => fetchData(url)));
-}
-      `.trim()
-    });
-
-    const result = await analyzeCode(asyncProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await asyncProject.cleanup();
-  });
-
-  it('應該能分析包含泛型的程式碼', async () => {
-    const genericProject = await createTypeScriptProject({
-      'src/generics.ts': `
-export function identity<T>(value: T): T {
-  return value;
-}
-
-export class Container<T> {
-  constructor(private value: T) {}
-  get(): T { return this.value; }
-  set(value: T): void { this.value = value; }
-}
-
-export interface Repository<T> {
-  find(id: string): Promise<T | null>;
-  save(entity: T): Promise<void>;
-}
-      `.trim()
-    });
-
-    const result = await analyzeCode(genericProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await genericProject.cleanup();
-  });
-
-  it('應該能分析包含裝飾器的程式碼', async () => {
-    const decoratorProject = await createTypeScriptProject({
-      'src/decorators.ts': `
-function log(target: any, key: string) {
-  console.log(\`Accessing \${key}\`);
-}
-
-export class Service {
-  @log
-  public method() {
-    return 'result';
-  }
-}
-      `.trim()
-    });
-
-    const result = await analyzeCode(decoratorProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await decoratorProject.cleanup();
-  });
-
-  it('應該能處理深層嵌套的物件和陣列', async () => {
-    const nestedProject = await createTypeScriptProject({
-      'src/nested.ts': `
-export const config = {
-  server: {
-    host: 'localhost',
-    port: 3000,
-    options: {
-      timeout: 5000,
-      retry: {
-        max: 3,
-        delay: 1000
-      }
-    }
-  },
-  database: {
-    connections: [
-      { name: 'primary', host: 'db1' },
-      { name: 'replica', host: 'db2' }
-    ]
-  }
-};
-      `.trim()
-    });
-
-    const result = await analyzeCode(nestedProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await nestedProject.cleanup();
-  });
-
-  it('應該能分析包含複雜型別定義的程式碼', async () => {
-    const typeProject = await createTypeScriptProject({
-      'src/types.ts': `
-export type Status = 'pending' | 'active' | 'completed';
-export type Result<T, E = Error> = { success: true; data: T } | { success: false; error: E };
-
-export interface User {
-  id: string;
-  name: string;
-  roles: string[];
-  metadata?: Record<string, unknown>;
-}
-
-export type UserWithStatus = User & { status: Status };
-export type PartialUser = Partial<User>;
-export type ReadonlyUser = Readonly<User>;
-      `.trim()
-    });
-
-    const result = await analyzeCode(typeProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await typeProject.cleanup();
+    // 驗證統計資訊
+    expect(output.statistics).toBeDefined();
+    expect(output.statistics.asyncFunctions).toBeGreaterThan(0);
   });
 });

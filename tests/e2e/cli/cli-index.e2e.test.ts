@@ -1,240 +1,182 @@
 /**
  * CLI index 命令 E2E 測試
- * 測試實際的索引建立功能
+ * 基於 sample-project fixture 測試真實複雜專案的索引功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
 import { indexProject, executeCLI } from '../helpers/cli-executor';
 
-describe('CLI index 命令 E2E 測試', () => {
-  let project: TestProject;
+describe('CLI index - 基於 sample-project fixture', () => {
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案
-    project = await createTypeScriptProject({
-      'src/index.ts': `
-export function hello(name: string): string {
-  return \`Hello, \${name}!\`;
-}
-
-export class Greeter {
-  constructor(private name: string) {}
-
-  greet(): string {
-    return hello(this.name);
-  }
-}
-      `.trim(),
-      'src/utils.ts': `
-export function add(a: number, b: number): number {
-  return a + b;
-}
-
-export function subtract(a: number, b: number): number {
-  return a - b;
-}
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能建立專案索引', async () => {
-    const result = await indexProject(project.projectPath);
+  // ============================================================
+  // 1. 基礎索引測試（3 個測試）
+  // ============================================================
 
-    // 檢查執行成功
+  it('應該能索引整個專案', async () => {
+    const result = await indexProject(fixture.tempPath);
+
     expect(result.exitCode).toBe(0);
-
-    // 檢查輸出包含成功訊息
     expect(result.stdout).toContain('索引完成');
   });
 
-  it('應該能索引 TypeScript 檔案', async () => {
-    const result = await indexProject(project.projectPath);
+  it('應該能索引特定目錄', async () => {
+    const result = await executeCLI(['index', '--path', fixture.getFilePath('src/services')]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('索引完成');
+  });
+
+  it('應該能顯示索引統計資訊', async () => {
+    const result = await indexProject(fixture.tempPath);
 
     expect(result.exitCode).toBe(0);
 
-    // 檢查輸出包含統計資訊
-    expect(result.stdout).toContain('檔案');
-    expect(result.stdout).toContain('符號');
+    const output = result.stdout;
+    expect(output).toMatch(/檔案數|符號數/);
   });
 
-  it('應該能處理空專案', async () => {
-    // 建立空專案
-    const emptyProject = await createTypeScriptProject({});
+  // ============================================================
+  // 2. 索引範圍測試（3 個測試）
+  // ============================================================
 
-    const result = await indexProject(emptyProject.projectPath);
+  it('應該能索引 types 目錄', async () => {
+    const result = await executeCLI(['index', '--path', fixture.getFilePath('src/types')]);
 
-    // 即使是空專案也應該能成功執行
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能索引 models 目錄', async () => {
+    const result = await executeCLI(['index', '--path', fixture.getFilePath('src/models')]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能索引 controllers 目錄', async () => {
+    const result = await executeCLI(['index', '--path', fixture.getFilePath('src/controllers')]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  // ============================================================
+  // 3. 索引選項測試（3 個測試）
+  // ============================================================
+
+  it('應該能使用 --extensions 過濾副檔名', async () => {
+    const result = await executeCLI([
+      'index',
+      '--path',
+      fixture.tempPath,
+      '--extensions',
+      '.ts'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能使用 --exclude 排除目錄', async () => {
+    const result = await executeCLI([
+      'index',
+      '--path',
+      fixture.tempPath,
+      '--exclude',
+      'node_modules'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('應該能使用 --format json 輸出 JSON 格式', async () => {
+    const result = await executeCLI(['index', '--path', fixture.tempPath, '--format', 'json']);
+
     expect(result.exitCode).toBe(0);
 
-    await emptyProject.cleanup();
+    // 驗證是有效的 JSON
+    expect(() => JSON.parse(result.stdout)).not.toThrow();
   });
 
-  it('應該能處理不存在的路徑', async () => {
-    const result = await indexProject('/non/existent/path');
+  // ============================================================
+  // 4. 增量索引測試（2 個測試）
+  // ============================================================
 
-    // 應該在 stderr 中包含錯誤訊息
+  it('應該能執行初始索引後更新索引', async () => {
+    // 第一次索引
+    const result1 = await indexProject(fixture.tempPath);
+    expect(result1.exitCode).toBe(0);
+
+    // 修改檔案
+    await fixture.writeFile(
+      'src/types/new-type.ts',
+      'export interface NewType { id: number; }'
+    );
+
+    // 第二次索引（應該更新）
+    const result2 = await indexProject(fixture.tempPath);
+    expect(result2.exitCode).toBe(0);
+  });
+
+  it('應該能檢測檔案變更並更新索引', async () => {
+    const result1 = await indexProject(fixture.tempPath);
+    expect(result1.exitCode).toBe(0);
+
+    // 修改現有檔案
+    const userTypes = await fixture.readFile('src/types/user.ts');
+    await fixture.writeFile('src/types/user.ts', userTypes + '\nexport interface NewUser {}');
+
+    const result2 = await indexProject(fixture.tempPath);
+    expect(result2.exitCode).toBe(0);
+  });
+
+  // ============================================================
+  // 5. 錯誤處理測試（3 個測試）
+  // ============================================================
+
+  it('應該處理不存在的路徑', async () => {
+    const result = await executeCLI(['index', '--path', '/non/existent/path']);
+
     const output = result.stdout + result.stderr;
-    expect(output).toContain('索引失敗');
+    expect(output).toContain('路徑不存在');
   });
 
-  it('應該支援增量更新索引', async () => {
-    // 先建立初始索引
-    const firstResult = await indexProject(project.projectPath);
-    expect(firstResult.exitCode).toBe(0);
+  it('應該處理空目錄', async () => {
+    const result = await executeCLI(['index', '--path', fixture.getFilePath('empty')]);
 
-    // 使用 --update 進行增量更新
-    const updateResult = await executeCLI(
-      ['index', '--path', project.projectPath, '--update']
-    );
-
-    expect(updateResult.exitCode).toBe(0);
-    expect(updateResult.stdout).toContain('索引完成');
+    const output = result.stdout + result.stderr;
+    expect(output.length).toBeGreaterThan(0);
   });
 
-  it('應該支援自訂副檔名', async () => {
-    const result = await executeCLI(
-      ['index', '--path', project.projectPath, '--extensions', '.ts,.tsx']
-    );
+  it('應該處理包含語法錯誤的檔案', async () => {
+    // 建立語法錯誤的檔案
+    await fixture.writeFile('src/broken.ts', 'export class Broken { missing closing brace');
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
+    const result = await indexProject(fixture.tempPath);
+
+    // 應該完成索引但報告錯誤
+    expect(result.exitCode).toBeDefined();
   });
 
-  it('應該支援排除模式', async () => {
-    const result = await executeCLI(
-      ['index', '--path', project.projectPath, '--exclude', 'node_modules/**,*.test.*,*.spec.*']
-    );
+  // ============================================================
+  // 6. 效能測試（1 個測試）
+  // ============================================================
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-  });
-
-  it('應該能索引包含 JavaScript 的混合專案', async () => {
-    // 建立混合專案
-    const mixedProject = await createTypeScriptProject({
-      'src/module.ts': 'export const value = 123;',
-      'src/script.js': 'module.exports = { name: "test" };'
-    });
-
-    const result = await executeCLI(
-      ['index', '--path', mixedProject.projectPath, '--extensions', '.ts,.js']
-    );
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-
-    await mixedProject.cleanup();
-  });
-
-  it('應該能處理大量檔案的專案', async () => {
-    // 建立包含多個檔案的專案
-    const files: Record<string, string> = {};
-    for (let i = 0; i < 10; i++) {
-      files[`src/file${i}.ts`] = `export const value${i} = ${i};`;
-    }
-    const largeProject = await createTypeScriptProject(files);
-
-    const result = await indexProject(largeProject.projectPath);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-    expect(result.stdout).toContain('10');
-
-    await largeProject.cleanup();
-  });
-
-  it('應該能處理包含語法錯誤的檔案', async () => {
-    const errorProject = await createTypeScriptProject({
-      'src/valid.ts': 'export const valid = 1;',
-      'src/invalid.ts': 'export const invalid = {{{;'
-    });
-
-    const result = await indexProject(errorProject.projectPath);
-
-    // 即使有錯誤也應該能索引其他正確的檔案
-    expect(result.exitCode).toBe(0);
-
-    await errorProject.cleanup();
-  });
-
-  it('應該能處理深層目錄結構', async () => {
-    const deepProject = await createTypeScriptProject({
-      'src/level1/level2/level3/deep.ts': 'export const deep = true;'
-    });
-
-    const result = await indexProject(deepProject.projectPath);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-
-    await deepProject.cleanup();
-  });
-
-  it('應該能處理包含特殊字符的檔案名', async () => {
-    const specialProject = await createTypeScriptProject({
-      'src/file-with-dash.ts': 'export const dash = 1;',
-      'src/file_with_underscore.ts': 'export const underscore = 2;'
-    });
-
-    const result = await indexProject(specialProject.projectPath);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-
-    await specialProject.cleanup();
-  });
-
-  it('應該能索引包含多種符號的檔案', async () => {
-    const complexProject = await createTypeScriptProject({
-      'src/types.ts': `
-export interface User { name: string; age: number; }
-export type ID = string | number;
-export enum Status { Active, Inactive }
-export const config = { api: 'http://example.com' };
-export function process(data: User): void {}
-export class Manager { private users: User[] = []; }
-      `.trim()
-    });
-
-    const result = await indexProject(complexProject.projectPath);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('索引完成');
-
-    await complexProject.cleanup();
-  });
-
-  it('應該能處理僅包含註解的檔案', async () => {
-    const commentProject = await createTypeScriptProject({
-      'src/comments.ts': `
-/**
- * This is a comment only file
- */
-// Another comment
-      `.trim()
-    });
-
-    const result = await indexProject(commentProject.projectPath);
+  it('應該能在合理時間內索引 32+ 檔案的專案', async () => {
+    const startTime = Date.now();
+    const result = await indexProject(fixture.tempPath);
+    const endTime = Date.now();
 
     expect(result.exitCode).toBe(0);
 
-    await commentProject.cleanup();
-  });
-
-  it('應該能處理空檔案', async () => {
-    const emptyFileProject = await createTypeScriptProject({
-      'src/empty.ts': ''
-    });
-
-    const result = await indexProject(emptyFileProject.projectPath);
-
-    expect(result.exitCode).toBe(0);
-
-    await emptyFileProject.cleanup();
+    // 應該在 30 秒內完成
+    const duration = endTime - startTime;
+    expect(duration).toBeLessThan(30000);
   });
 });

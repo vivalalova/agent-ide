@@ -1,211 +1,27 @@
 /**
  * CLI move 命令 E2E 測試
- * 測試實際的檔案移動和 import 更新功能
+ * 使用 sample-project fixture 進行真實複雜場景測試
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
 import { executeCLI } from '../helpers/cli-executor';
 
 describe('CLI move 命令 E2E 測試', () => {
-  let project: TestProject;
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案，包含檔案和 import 關係
-    project = await createTypeScriptProject({
-      'src/utils.ts': `
-export function add(a: number, b: number): number {
-  return a + b;
-}
-
-export function subtract(a: number, b: number): number {
-  return a - b;
-}
-      `.trim(),
-      'src/index.ts': `
-import { add, subtract } from './utils';
-
-console.log(add(1, 2));
-console.log(subtract(5, 3));
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能移動檔案', async () => {
-    const sourcePath = project.getFilePath('src/utils.ts');
-    const targetPath = project.getFilePath('src/helpers/utils.ts');
-
-    const result = await executeCLI(
-      ['move', sourcePath, targetPath]
-    );
-
-    // 檢查執行成功
-    expect(result.exitCode).toBe(0);
-
-    // 檢查輸出包含移動訊息
-    expect(result.stdout).toContain('移動');
-  });
-
-  it('應該能處理不存在的源檔案', async () => {
-    const sourcePath = project.getFilePath('src/nonexistent.ts');
-    const targetPath = project.getFilePath('src/target.ts');
-
-    const result = await executeCLI(
-      ['move', sourcePath, targetPath]
-    );
-
-    // 應該顯示錯誤訊息
-    const output = result.stdout;
-    expect(output).toContain('移動失敗');
-  });
-
-  it('應該能在預覽模式下顯示變更', async () => {
-    const sourcePath = project.getFilePath('src/utils.ts');
-    const targetPath = project.getFilePath('src/helpers/utils.ts');
-
-    const result = await executeCLI(
-      ['move', sourcePath, targetPath, '--preview']
-    );
-
-    expect(result.exitCode).toBe(0);
-
-    // 應該顯示預覽訊息
-    expect(result.stdout).toContain('預覽');
-  });
-
-  it('應該能處理相同的源和目標路徑', async () => {
-    const samePath = project.getFilePath('src/utils.ts');
-
-    const result = await executeCLI(
-      ['move', samePath, samePath]
-    );
-
-    // 應該成功執行或顯示適當訊息
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('應該能處理目標目錄不存在的情況', async () => {
-    const sourcePath = project.getFilePath('src/utils.ts');
-    const targetPath = project.getFilePath('src/deep/nested/path/utils.ts');
-
-    const result = await executeCLI(['move', sourcePath, targetPath]);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('移動');
-  });
-
-  it('應該能移動並更新相對路徑 import', async () => {
-    const moveProject = await createTypeScriptProject({
-      'src/utils/helper.ts': `
-export function help() {
-  return 'helping';
-}
-      `.trim(),
-      'src/main.ts': `
-import { help } from './utils/helper';
-console.log(help());
-      `.trim()
-    });
-
-    const sourcePath = moveProject.getFilePath('src/utils/helper.ts');
-    const targetPath = moveProject.getFilePath('src/shared/helper.ts');
-
-    const result = await executeCLI(['move', sourcePath, targetPath]);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('移動');
-
-    await moveProject.cleanup();
-  });
-
-  it('應該能處理檔案名稱變更的移動', async () => {
-    const renameProject = await createTypeScriptProject({
-      'src/old-name.ts': `
-export const VALUE = 42;
-      `.trim(),
-      'src/index.ts': `
-import { VALUE } from './old-name';
-console.log(VALUE);
-      `.trim()
-    });
-
-    const sourcePath = renameProject.getFilePath('src/old-name.ts');
-    const targetPath = renameProject.getFilePath('src/new-name.ts');
-
-    const result = await executeCLI(['move', sourcePath, targetPath]);
-
-    expect(result.exitCode).toBe(0);
-
-    await renameProject.cleanup();
-  });
-
-  it('應該能處理多層嵌套目錄移動', async () => {
-    const nestedProject = await createTypeScriptProject({
-      'src/a/b/c/deep.ts': `
-export const DEEP = 'very deep';
-      `.trim(),
-      'src/index.ts': `
-import { DEEP } from './a/b/c/deep';
-console.log(DEEP);
-      `.trim()
-    });
-
-    const sourcePath = nestedProject.getFilePath('src/a/b/c/deep.ts');
-    const targetPath = nestedProject.getFilePath('src/shallow.ts');
-
-    const result = await executeCLI(['move', sourcePath, targetPath]);
-
-    expect(result.exitCode).toBe(0);
-
-    await nestedProject.cleanup();
-  });
-
-  it('應該能處理包含特殊字符的檔案名', async () => {
-    const specialProject = await createTypeScriptProject({
-      'src/special-file.ts': `
-export const SPECIAL = 'special';
-      `.trim()
-    });
-
-    const sourcePath = specialProject.getFilePath('src/special-file.ts');
-    const targetPath = specialProject.getFilePath('src/utils/special-file.ts');
-
-    const result = await executeCLI(['move', sourcePath, targetPath]);
-
-    expect(result.exitCode).toBe(0);
-
-    await specialProject.cleanup();
-  });
-
-  // === 複雜跨檔案引用測試 ===
-
-  describe('複雜跨檔案引用場景', () => {
-    it('應該能移動被多個檔案引用的模組', async () => {
-      const multiRefProject = await createTypeScriptProject({
-        'src/shared.ts': `
-export const SHARED_VALUE = 'shared';
-export function sharedFunc() { return 'shared'; }
-        `.trim(),
-        'src/file1.ts': `
-import { SHARED_VALUE } from './shared';
-console.log(SHARED_VALUE);
-        `.trim(),
-        'src/file2.ts': `
-import { sharedFunc } from './shared';
-console.log(sharedFunc());
-        `.trim(),
-        'src/file3.ts': `
-import { SHARED_VALUE, sharedFunc } from './shared';
-console.log(SHARED_VALUE, sharedFunc());
-        `.trim()
-      });
-
-      const sourcePath = multiRefProject.getFilePath('src/shared.ts');
-      const targetPath = multiRefProject.getFilePath('src/common/shared.ts');
+  describe('基礎移動測試', () => {
+    it('應該能移動單一檔案到新目錄', async () => {
+      const sourcePath = fixture.getFilePath('src/utils/formatter.ts');
+      const targetPath = fixture.getFilePath('src/shared/formatter.ts');
 
       const result = await executeCLI(['move', sourcePath, targetPath]);
 
@@ -213,236 +29,237 @@ console.log(SHARED_VALUE, sharedFunc());
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('移動');
 
-      await multiRefProject.cleanup();
+      // 驗證目標檔案存在
+      const targetExists = await fixture.fileExists('src/shared/formatter.ts');
+      expect(targetExists).toBe(true);
+
+      // 驗證源檔案不存在
+      const sourceExists = await fixture.fileExists('src/utils/formatter.ts');
+      expect(sourceExists).toBe(false);
     });
 
-    it('應該能移動跨多層目錄引用的檔案', async () => {
-      const crossDirProject = await createTypeScriptProject({
-        'src/core/utils/formatter.ts': `
-export function format(text: string): string {
-  return text.toUpperCase();
-}
-        `.trim(),
-        'src/services/service.ts': `
-import { format } from '../core/utils/formatter';
-export const formatted = format('test');
-        `.trim(),
-        'src/api/handler.ts': `
-import { format } from '../core/utils/formatter';
-console.log(format('api'));
-        `.trim()
-      });
-
-      // 從深層移到淺層
-      const sourcePath = crossDirProject.getFilePath('src/core/utils/formatter.ts');
-      const targetPath = crossDirProject.getFilePath('src/utils/formatter.ts');
+    it('應該能移動檔案並更名', async () => {
+      const sourcePath = fixture.getFilePath('src/utils/array-utils.ts');
+      const targetPath = fixture.getFilePath('src/utils/array-helpers.ts');
 
       const result = await executeCLI(['move', sourcePath, targetPath]);
 
-      // 驗證命令執行成功
+      expect(result.exitCode).toBe(0);
+
+      // 驗證新檔案存在
+      const targetExists = await fixture.fileExists('src/utils/array-helpers.ts');
+      expect(targetExists).toBe(true);
+
+      // 驗證舊檔案不存在
+      const sourceExists = await fixture.fileExists('src/utils/array-utils.ts');
+      expect(sourceExists).toBe(false);
+    });
+
+    it('應該能處理目標目錄不存在的情況', async () => {
+      const sourcePath = fixture.getFilePath('src/utils/string-utils.ts');
+      const targetPath = fixture.getFilePath('src/helpers/text/string-utils.ts');
+
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      // 應該自動建立目錄並成功移動
+      expect(result.exitCode).toBe(0);
+
+      const targetExists = await fixture.fileExists('src/helpers/text/string-utils.ts');
+      expect(targetExists).toBe(true);
+    });
+
+    it('應該能處理源檔案不存在的錯誤', async () => {
+      const sourcePath = fixture.getFilePath('src/nonexistent.ts');
+      const targetPath = fixture.getFilePath('src/target.ts');
+
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      // 應該顯示錯誤訊息
+      expect(result.stdout).toContain('移動失敗');
+    });
+
+    it('應該能在預覽模式下顯示變更', async () => {
+      const sourcePath = fixture.getFilePath('src/utils/date-utils.ts');
+      const targetPath = fixture.getFilePath('src/shared/date-utils.ts');
+
+      const result = await executeCLI(['move', sourcePath, targetPath, '--preview']);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('預覽');
+
+      // 預覽模式不應該真的移動檔案
+      const sourceExists = await fixture.fileExists('src/utils/date-utils.ts');
+      expect(sourceExists).toBe(true);
+    });
+  });
+
+  describe('複雜跨檔案引用測試', () => {
+    it('應該移動被多處引用的型別檔案', async () => {
+      const sourcePath = fixture.getFilePath('src/types/user.ts');
+      const targetPath = fixture.getFilePath('src/types/entities/user.ts');
+
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      // 驗證移動成功
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('移動');
 
-      await crossDirProject.cleanup();
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/types/entities/user.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/types/user.ts');
+      expect(sourceExists).toBe(false);
+
+      // 驗證檔案內容保持不變
+      const targetContent = await fixture.readFile('src/types/entities/user.ts');
+      expect(targetContent).toContain('export interface User');
+      expect(targetContent).toContain('export enum UserRole');
+      expect(targetContent).toContain('export enum UserStatus');
     });
 
-    it('應該能處理從淺層移到深層目錄', async () => {
-      const shallowToDeepProject = await createTypeScriptProject({
-        'src/config.ts': `
-export const API_URL = 'http://api.example.com';
-export const TIMEOUT = 5000;
-        `.trim(),
-        'src/services/api-service.ts': `
-import { API_URL, TIMEOUT } from '../config';
-
-export class ApiService {
-  url = API_URL;
-  timeout = TIMEOUT;
-}
-        `.trim(),
-        'src/utils/api-utils.ts': `
-import { API_URL } from '../config';
-
-export function buildUrl(path: string): string {
-  return API_URL + path;
-}
-        `.trim()
-      });
-
-      // 從淺層移到深層
-      const sourcePath = shallowToDeepProject.getFilePath('src/config.ts');
-      const targetPath = shallowToDeepProject.getFilePath('src/core/config/settings.ts');
-
-      const result = await executeCLI(['move', sourcePath, targetPath]);
-
-      // 驗證命令執行成功
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('移動');
-
-      await shallowToDeepProject.cleanup();
-    });
-
-    it('應該能處理多個檔案同時引用同一模組的場景', async () => {
-      const multiRefProject = await createTypeScriptProject({
-        'src/constants.ts': `
-export const APP_NAME = 'MyApp';
-export const VERSION = '1.0.0';
-        `.trim(),
-        'src/services/service1.ts': 'import { APP_NAME } from \'../constants\';',
-        'src/services/service2.ts': 'import { APP_NAME } from \'../constants\';',
-        'src/services/service3.ts': 'import { VERSION } from \'../constants\';',
-        'src/api/api1.ts': 'import { APP_NAME, VERSION } from \'../constants\';',
-        'src/api/api2.ts': 'import { VERSION } from \'../constants\';',
-        'src/controllers/ctrl1.ts': 'import { APP_NAME } from \'../constants\';',
-        'src/controllers/ctrl2.ts': 'import { APP_NAME } from \'../constants\';',
-        'src/controllers/ctrl3.ts': 'import { VERSION } from \'../constants\';',
-        'src/utils/util1.ts': 'import { APP_NAME } from \'../constants\';',
-        'src/utils/util2.ts': 'import { VERSION } from \'../constants\';'
-      });
-
-      const sourcePath = multiRefProject.getFilePath('src/constants.ts');
-      const targetPath = multiRefProject.getFilePath('src/config/constants.ts');
-
-      const result = await executeCLI(['move', sourcePath, targetPath]);
-
-      // 驗證命令執行成功
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('移動');
-
-      await multiRefProject.cleanup();
-    });
-
-    it('應該能處理循環引用的檔案移動', async () => {
-      const circularProject = await createTypeScriptProject({
-        'src/a.ts': `
-import { bFunction } from './b';
-export function aFunction() {
-  return 'a' + bFunction();
-}
-        `.trim(),
-        'src/b.ts': `
-import { aFunction } from './a';
-export function bFunction() {
-  return 'b';
-}
-        `.trim()
-      });
-
-      const sourcePath = circularProject.getFilePath('src/a.ts');
-      const targetPath = circularProject.getFilePath('src/utils/a.ts');
+    it('應該移動配置檔案並更新跨層級引用', async () => {
+      const sourcePath = fixture.getFilePath('src/core/config/settings.ts');
+      const targetPath = fixture.getFilePath('src/config/app-settings.ts');
 
       const result = await executeCLI(['move', sourcePath, targetPath]);
 
       expect(result.exitCode).toBe(0);
 
-      await circularProject.cleanup();
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/config/app-settings.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/core/config/settings.ts');
+      expect(sourceExists).toBe(false);
     });
 
-    it('應該能處理大型專案的檔案移動', async () => {
-      const files: Record<string, string> = {
-        'src/core.ts': `
-export const CORE_VALUE = 'core';
-        `.trim()
-      };
-
-      // 建立 20 個引用檔案
-      for (let i = 0; i < 20; i++) {
-        files[`src/file${i}.ts`] = `
-import { CORE_VALUE } from './core';
-export const value${i} = CORE_VALUE + ${i};
-        `.trim();
-      }
-
-      const largeProject = await createTypeScriptProject(files);
-
-      const sourcePath = largeProject.getFilePath('src/core.ts');
-      const targetPath = largeProject.getFilePath('src/shared/core.ts');
-
-      const result = await executeCLI(['move', sourcePath, targetPath]);
-
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('移動');
-
-      await largeProject.cleanup();
-    });
-
-    it('應該能處理包含多種 import 語法的檔案', async () => {
-      const importProject = await createTypeScriptProject({
-        'src/module.ts': `
-export default class MyClass {}
-export const named = 'named';
-export function namedFunc() {}
-        `.trim(),
-        'src/user1.ts': 'import MyClass from \'./module\';',
-        'src/user2.ts': 'import { named } from \'./module\';',
-        'src/user3.ts': 'import { namedFunc } from \'./module\';',
-        'src/user4.ts': 'import MyClass, { named } from \'./module\';',
-        'src/user5.ts': 'import * as mod from \'./module\';'
-      });
-
-      const sourcePath = importProject.getFilePath('src/module.ts');
-      const targetPath = importProject.getFilePath('src/lib/module.ts');
+    it('應該移動 Model 檔案', async () => {
+      const sourcePath = fixture.getFilePath('src/models/product-model.ts');
+      const targetPath = fixture.getFilePath('src/domain/models/product-model.ts');
 
       const result = await executeCLI(['move', sourcePath, targetPath]);
 
       expect(result.exitCode).toBe(0);
 
-      await importProject.cleanup();
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/domain/models/product-model.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/models/product-model.ts');
+      expect(sourceExists).toBe(false);
+
+      // 驗證檔案內容保持不變
+      const targetContent = await fixture.readFile('src/domain/models/product-model.ts');
+      expect(targetContent).toContain('export class ProductModel');
     });
 
-    it('應該能處理相對路徑別名', async () => {
-      const aliasProject = await createTypeScriptProject({
-        'src/utils/helper.ts': `
-export function help() { return 'help'; }
-        `.trim(),
-        'src/main.ts': `
-import { help } from '@/utils/helper';
-console.log(help());
-        `.trim(),
-        'tsconfig.json': JSON.stringify({
-          compilerOptions: {
-            paths: {
-              '@/*': ['./src/*']
-            }
-          }
-        })
-      });
-
-      const sourcePath = aliasProject.getFilePath('src/utils/helper.ts');
-      const targetPath = aliasProject.getFilePath('src/shared/helper.ts');
+    it('應該移動 Service 檔案', async () => {
+      const sourcePath = fixture.getFilePath('src/services/user-service.ts');
+      const targetPath = fixture.getFilePath('src/application/services/user-service.ts');
 
       const result = await executeCLI(['move', sourcePath, targetPath]);
 
       expect(result.exitCode).toBe(0);
 
-      await aliasProject.cleanup();
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/application/services/user-service.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/services/user-service.ts');
+      expect(sourceExists).toBe(false);
+
+      // 驗證檔案內容保持不變
+      const targetContent = await fixture.readFile('src/application/services/user-service.ts');
+      expect(targetContent).toContain('export class UserService');
     });
 
-    it('應該能處理同時移動多個相關檔案', async () => {
-      const batchProject = await createTypeScriptProject({
-        'src/module-a.ts': 'export const A = "a";',
-        'src/module-b.ts': 'export const B = "b";',
-        'src/module-c.ts': 'export const C = "c";',
-        'src/index.ts': `
-import { A } from './module-a';
-import { B } from './module-b';
-import { C } from './module-c';
-        `.trim()
-      });
+    it('應該移動深層檔案到淺層', async () => {
+      const sourcePath = fixture.getFilePath('src/api/handlers/user-handler.ts');
+      const targetPath = fixture.getFilePath('src/handlers/user.ts');
 
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      expect(result.exitCode).toBe(0);
+
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/handlers/user.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/api/handlers/user-handler.ts');
+      expect(sourceExists).toBe(false);
+    });
+
+    it('應該移動淺層檔案到深層', async () => {
+      const sourcePath = fixture.getFilePath('src/core/constants.ts');
+      const targetPath = fixture.getFilePath('src/shared/config/app/constants.ts');
+
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      expect(result.exitCode).toBe(0);
+
+      // 驗證檔案移動
+      const targetExists = await fixture.fileExists('src/shared/config/app/constants.ts');
+      expect(targetExists).toBe(true);
+
+      const sourceExists = await fixture.fileExists('src/core/constants.ts');
+      expect(sourceExists).toBe(false);
+
+      // 驗證檔案內容保持不變
+      const targetContent = await fixture.readFile('src/shared/config/app/constants.ts');
+      expect(targetContent).toContain('export const API_BASE_URL');
+    });
+  });
+
+  describe('批次移動測試', () => {
+    it('應該能連續移動多個相關檔案', async () => {
       // 移動第一個檔案
-      const source1 = batchProject.getFilePath('src/module-a.ts');
-      const target1 = batchProject.getFilePath('src/lib/module-a.ts');
+      const source1 = fixture.getFilePath('src/types/order.ts');
+      const target1 = fixture.getFilePath('src/types/entities/order.ts');
       const result1 = await executeCLI(['move', source1, target1]);
       expect(result1.exitCode).toBe(0);
 
       // 移動第二個檔案
-      const source2 = batchProject.getFilePath('src/module-b.ts');
-      const target2 = batchProject.getFilePath('src/lib/module-b.ts');
+      const source2 = fixture.getFilePath('src/models/order-model.ts');
+      const target2 = fixture.getFilePath('src/domain/models/order-model.ts');
       const result2 = await executeCLI(['move', source2, target2]);
       expect(result2.exitCode).toBe(0);
 
-      await batchProject.cleanup();
+      // 驗證兩個檔案都成功移動
+      const target1Exists = await fixture.fileExists('src/types/entities/order.ts');
+      expect(target1Exists).toBe(true);
+
+      const target2Exists = await fixture.fileExists('src/domain/models/order-model.ts');
+      expect(target2Exists).toBe(true);
+
+      // 驗證源檔案不存在
+      const source1Exists = await fixture.fileExists('src/types/order.ts');
+      expect(source1Exists).toBe(false);
+
+      const source2Exists = await fixture.fileExists('src/models/order-model.ts');
+      expect(source2Exists).toBe(false);
+    });
+  });
+
+  describe('錯誤處理測試', () => {
+    it('應該能處理相同的源和目標路徑', async () => {
+      const samePath = fixture.getFilePath('src/utils/validator.ts');
+
+      const result = await executeCLI(['move', samePath, samePath]);
+
+      // 應該成功執行或顯示適當訊息
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('應該能處理目標檔案已存在的情況', async () => {
+      const sourcePath = fixture.getFilePath('src/utils/formatter.ts');
+      const targetPath = fixture.getFilePath('src/utils/validator.ts'); // 已存在的檔案
+
+      const result = await executeCLI(['move', sourcePath, targetPath]);
+
+      // 根據實作，可能會覆蓋或報錯
+      // 這裡我們檢查命令有適當的回應
+      expect(result.stdout.length).toBeGreaterThan(0);
     });
   });
 });

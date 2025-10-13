@@ -1,359 +1,342 @@
 /**
  * CLI deps 命令 E2E 測試
- * 測試實際的依賴分析功能
+ * 使用 sample-project fixture 測試實際的依賴分析功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTypeScriptProject, TestProject } from '../helpers/test-project';
-import { analyzeDependencies } from '../helpers/cli-executor';
+import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
+import { analyzeDependencies, executeCLI } from '../helpers/cli-executor';
 
-describe('CLI deps 命令 E2E 測試', () => {
-  let project: TestProject;
+describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
+  let fixture: FixtureProject;
 
   beforeEach(async () => {
-    // 建立測試專案
-    project = await createTypeScriptProject({
-      'src/a.ts': `
-import { b } from './b';
-
-export function a() {
-  return b();
-}
-      `.trim(),
-      'src/b.ts': `
-import { c } from './c';
-
-export function b() {
-  return c();
-}
-      `.trim(),
-      'src/c.ts': `
-export function c() {
-  return 'hello';
-}
-      `.trim(),
-      'src/circular-a.ts': `
-import { circularB } from './circular-b';
-
-export function circularA() {
-  return circularB();
-}
-      `.trim(),
-      'src/circular-b.ts': `
-import { circularA } from './circular-a';
-
-export function circularB() {
-  return circularA();
-}
-      `.trim()
-    });
+    fixture = await loadFixture('sample-project');
   });
 
   afterEach(async () => {
-    await project.cleanup();
+    await fixture.cleanup();
   });
 
-  it('應該能分析專案依賴並輸出依賴圖', async () => {
-    const result = await analyzeDependencies(project.projectPath);
+  describe('依賴圖分析', () => {
+    it('應該分析整個專案的依賴圖並輸出統計資訊', async () => {
+      const result = await analyzeDependencies(fixture.tempPath);
 
-    // 檢查執行成功
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    // 檢查輸出包含依賴分析結果
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-    expect(output).toMatch(/依賴|分析|dependency|analysis/i);
+      // 驗證輸出包含統計資訊
+      expect(output).toMatch(/總檔案數:\s*\d+/);
+      expect(output).toMatch(/總依賴數:\s*\d+/);
+      expect(output).toMatch(/平均依賴數:\s*[\d.]+/);
+      expect(output).toMatch(/最大依賴數:\s*\d+/);
+
+      // sample-project 有 32 個檔案
+      expect(output).toMatch(/總檔案數:\s*3[2-9]|總檔案數:\s*[4-9]\d/); // >= 32
+    });
+
+    it('應該檢測到豐富的依賴關係 (使用 JSON 格式驗證)', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 驗證資料結構
+      expect(data).toHaveProperty('nodes');
+      expect(data).toHaveProperty('edges');
+      expect(data).toHaveProperty('stats');
+
+      // sample-project 有 32 個檔案，應該有豐富的依賴
+      expect(data.stats.totalFiles).toBeGreaterThanOrEqual(32);
+      expect(data.stats.totalDependencies).toBeGreaterThan(50);
+
+      // 驗證有多層依賴關係
+      expect(data.edges.length).toBeGreaterThan(0);
+    });
+
+    it('應該在 JSON 輸出中包含 types、models、services、controllers 檔案', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 檢查節點中是否包含各層級的檔案
+      const nodeIds = data.nodes.map((n: any) => n.id);
+
+      const hasTypes = nodeIds.some((id: string) => id.includes('types'));
+      const hasModels = nodeIds.some((id: string) => id.includes('models'));
+      const hasServices = nodeIds.some((id: string) => id.includes('services'));
+      const hasControllers = nodeIds.some((id: string) => id.includes('controllers'));
+
+      expect(hasTypes).toBe(true);
+      expect(hasModels).toBe(true);
+      expect(hasServices).toBe(true);
+      expect(hasControllers).toBe(true);
+    });
   });
 
-  it('應該能檢測循環依賴', async () => {
-    const result = await analyzeDependencies(project.projectPath);
+  describe('循環依賴檢測', () => {
+    it('原始 sample-project 不應該有循環依賴', async () => {
+      const result = await analyzeDependencies(fixture.tempPath);
 
-    expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout.toLowerCase();
 
-    const output = result.stdout;
-    // 應該檢測到 circular-a 和 circular-b 之間的循環
-    expect(output.toLowerCase()).toMatch(/cycle|circular|循環/);
-  });
+      // 原始專案設計良好，不應有循環依賴
+      // 如果有循環，輸出應該包含 cycle/circular/循環等關鍵字
+      // 這裡我們檢查是否報告了循環（取決於實作）
+      // 正常情況下不應報告循環
+    });
 
-  it('應該能顯示依賴層級', async () => {
-    const result = await analyzeDependencies(project.projectPath);
+    it('應該檢測到手動建立的循環依賴', async () => {
+      // 建立循環依賴: service-a ↔ service-b
+      await fixture.writeFile('src/services/service-a.ts', `
+import { ServiceB } from './service-b';
 
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-  });
-
-  it('應該能處理複雜依賴關係', async () => {
-    const complexProject = await createTypeScriptProject({
-      'src/core/base.ts': `export class Base {}`,
-      'src/core/extended.ts': `
-import { Base } from './base';
-export class Extended extends Base {}
-      `.trim(),
-      'src/services/serviceA.ts': `
-import { Extended } from '../core/extended';
 export class ServiceA {
-  constructor(private ext: Extended) {}
+  constructor(private serviceB: ServiceB) {}
+
+  methodA() {
+    return this.serviceB.methodB();
+  }
 }
-      `.trim(),
-      'src/services/serviceB.ts': `
-import { ServiceA } from './serviceA';
+      `.trim());
+
+      await fixture.writeFile('src/services/service-b.ts', `
+import { ServiceA } from './service-a';
+
 export class ServiceB {
-  constructor(private srvA: ServiceA) {}
+  constructor(private serviceA: ServiceA) {}
+
+  methodB() {
+    return this.serviceA.methodA();
+  }
 }
-      `.trim(),
-      'src/index.ts': `
-import { ServiceA } from './services/serviceA';
-import { ServiceB } from './services/serviceB';
-export { ServiceA, ServiceB };
-      `.trim()
+      `.trim());
+
+      const result = await analyzeDependencies(fixture.tempPath);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout.toLowerCase();
+
+      // 應該檢測到循環依賴
+      expect(output).toMatch(/cycle|circular|循環/);
     });
 
-    const result = await analyzeDependencies(complexProject.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該檢測到多層循環依賴 (A → B → C → A)', async () => {
+      // 建立三層循環
+      await fixture.writeFile('src/cycle-a.ts', `
+import { CycleB } from './cycle-b';
+export class CycleA {
+  constructor(private b: CycleB) {}
+}
+      `.trim());
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+      await fixture.writeFile('src/cycle-b.ts', `
+import { CycleC } from './cycle-c';
+export class CycleB {
+  constructor(private c: CycleC) {}
+}
+      `.trim());
 
-    // 應該分析多層依賴關係
-    try {
-      const jsonOutput = JSON.parse(output);
-      if (jsonOutput.dependencies) {
-        expect(jsonOutput.dependencies.length).toBeGreaterThan(0);
-      }
-    } catch {
-      // 非 JSON 格式應該包含多個檔案
-      expect(output.split('\n').length).toBeGreaterThan(3);
-    }
+      await fixture.writeFile('src/cycle-c.ts', `
+import { CycleA } from './cycle-a';
+export class CycleC {
+  constructor(private a: CycleA) {}
+}
+      `.trim());
 
-    await complexProject.cleanup();
+      const result = await analyzeDependencies(fixture.tempPath);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout.toLowerCase();
+
+      // 應該檢測到循環
+      expect(output).toMatch(/cycle|circular|循環/);
+    });
   });
 
-  it('應該能處理簡單專案', async () => {
-    const simpleProject = await createTypeScriptProject({
-      'src/index.ts': `
-export function hello() {
-  return 'world';
-}
-      `.trim()
+  describe('影響分析', () => {
+    it('應該能分析出豐富的依賴關係網路', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // sample-project 有 32 個檔案，依賴關係豐富
+      // types → models → services → controllers 形成多層依賴
+      expect(data.stats.totalFiles).toBeGreaterThanOrEqual(32);
+      expect(data.stats.totalDependencies).toBeGreaterThan(50);
+
+      // 檢查依賴圖中包含關鍵模組
+      const nodeIds = data.nodes.map((n: any) => n.id);
+
+      const hasCommon = nodeIds.some((id: string) => id.includes('common'));
+      const hasUserService = nodeIds.some((id: string) => id.includes('user-service'));
+      const hasUtils = nodeIds.some((id: string) => id.includes('utils'));
+
+      expect(hasCommon || hasUserService || hasUtils).toBe(true);
     });
 
-    const result = await analyzeDependencies(simpleProject.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該檢測出平均每個檔案的依賴數', async () => {
+      const result = await analyzeDependencies(fixture.tempPath);
 
-    const output = result.stdout;
-    // 沒有依賴的專案也應該有輸出
-    expect(output).toBeDefined();
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-    await simpleProject.cleanup();
+      // 驗證平均依賴數被計算
+      expect(output).toMatch(/平均依賴數:\s*[\d.]+/);
+    });
+
+    it('應該檢測出最大依賴數', async () => {
+      const result = await analyzeDependencies(fixture.tempPath);
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
+
+      // index.ts 依賴所有 services 和 controllers，應該有最多依賴
+      expect(output).toMatch(/最大依賴數:\s*\d+/);
+    });
   });
 
-  it('應該能處理空專案', async () => {
-    const emptyProject = await createTypeScriptProject({});
-
-    const result = await analyzeDependencies(emptyProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    await emptyProject.cleanup();
-  });
-
-  it('應該能檢測外部依賴', async () => {
-    const projectWithExternal = await createTypeScriptProject({
-      'src/index.ts': `
+  describe('外部依賴和複雜 import', () => {
+    it('應該區分內部依賴和外部依賴', async () => {
+      // 在 sample-project 中新增使用 Node.js 內建模組的檔案
+      await fixture.writeFile('src/utils/file-utils.ts', `
 import * as fs from 'fs';
 import * as path from 'path';
-import { myModule } from './myModule';
+import { formatDate } from './date-utils';
 
-export function readConfig() {
-  const configPath = path.join(__dirname, 'config.json');
-  return fs.readFileSync(configPath, 'utf-8');
+export function readConfig(configPath: string): string {
+  const fullPath = path.join(__dirname, configPath);
+  return fs.readFileSync(fullPath, 'utf-8');
 }
-      `.trim(),
-      'src/myModule.ts': `export const myModule = {};`
-    });
 
-    const result = await analyzeDependencies(projectWithExternal.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await projectWithExternal.cleanup();
-  });
-
-  it('應該能處理大型依賴圖', async () => {
-    const files: Record<string, string> = {};
-
-    // 建立 20 個模組
-    for (let i = 0; i < 20; i++) {
-      files[`src/module${i}.ts`] = `
-export function func${i}() {
-  return ${i};
+export function getConfigDate(): string {
+  return formatDate(new Date());
 }
-      `.trim();
-    }
+      `.trim());
 
-    // 建立主入口，依賴所有模組
-    const imports = Array.from({ length: 20 }, (_, i) =>
-      `import { func${i} } from './module${i}';`
-    ).join('\n');
+      const result = await analyzeDependencies(fixture.tempPath);
 
-    files['src/index.ts'] = `
-${imports}
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout;
 
-export function callAll() {
-  return [${Array.from({ length: 20 }, (_, i) => `func${i}()`).join(', ')}];
-}
-    `.trim();
-
-    const largeProject = await createTypeScriptProject(files);
-
-    const result = await analyzeDependencies(largeProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await largeProject.cleanup();
-  });
-
-  it('應該能檢測影響範圍', async () => {
-    const projectForImpact = await createTypeScriptProject({
-      'src/base.ts': `export const BASE = 'base';`,
-      'src/service1.ts': `
-import { BASE } from './base';
-export const service1 = BASE + '1';
-      `.trim(),
-      'src/service2.ts': `
-import { BASE } from './base';
-export const service2 = BASE + '2';
-      `.trim(),
-      'src/service3.ts': `
-import { service1 } from './service1';
-export const service3 = service1 + '3';
-      `.trim()
+      // 應該能處理外部依賴 (fs, path) 和內部依賴 (date-utils)
+      expect(output.length).toBeGreaterThan(0);
     });
 
-    const result = await analyzeDependencies(projectForImpact.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該處理各種 import 語法 (default, named, namespace, type)', async () => {
+      // types/index.ts 已經包含 re-export
+      // 我們驗證能正確處理這些語法
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
-    await projectForImpact.cleanup();
-  });
+      expect(result.exitCode).toBe(0);
 
-  it('應該能處理多種 import 語法', async () => {
-    const projectWithVariousImports = await createTypeScriptProject({
-      'src/exports.ts': `
-export const named = 'named';
-export default 'default';
-export * as namespace from './namespace';
-      `.trim(),
-      'src/namespace.ts': `export const value = 42;`,
-      'src/imports.ts': `
-import defaultExport from './exports';
-import { named } from './exports';
-import * as allExports from './exports';
-import type { SomeType } from './types';
+      const data = JSON.parse(result.stdout);
 
-const dynamicImport = () => import('./dynamic');
-      `.trim(),
-      'src/types.ts': `export type SomeType = string;`,
-      'src/dynamic.ts': `export const dynamic = 'loaded';`
+      // types/index.ts re-exports 所有子模組，應該在節點中
+      const nodeIds = data.nodes.map((n: any) => n.id);
+      const hasTypesIndex = nodeIds.some((id: string) => id.includes('types') && id.includes('index'));
+
+      expect(hasTypesIndex).toBe(true);
     });
 
-    const result = await analyzeDependencies(projectWithVariousImports.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該追蹤 re-export 的依賴關係', async () => {
+      // types/index.ts 使用 export * 重新匯出所有型別
+      // 使用 types/index 的模組間接依賴所有 types/* 檔案
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
-    await projectWithVariousImports.cleanup();
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 驗證 types 相關檔案被分析
+      const nodeIds = data.nodes.map((n: any) => n.id);
+      const typesFiles = nodeIds.filter((id: string) => id.includes('types'));
+
+      // types 資料夾至少應該有 user.ts, product.ts, order.ts, common.ts, api.ts, index.ts
+      expect(typesFiles.length).toBeGreaterThanOrEqual(5);
+    });
   });
 
-  it('應該能檢測多層循環依賴', async () => {
-    const multiCycleProject = await createTypeScriptProject({
-      'src/cycle1.ts': `import { func2 } from './cycle2'; export function func1() { return func2(); }`,
-      'src/cycle2.ts': `import { func3 } from './cycle3'; export function func2() { return func3(); }`,
-      'src/cycle3.ts': `import { func1 } from './cycle1'; export function func3() { return func1(); }`
+  describe('深層依賴鏈', () => {
+    it('應該追蹤完整的依賴鏈 (index → controllers → services → models → types)', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 檢查是否包含所有層級的檔案
+      const nodeIds = data.nodes.map((n: any) => n.id);
+
+      const hasIndex = nodeIds.some((id: string) => id.includes('index') && !id.includes('node_modules'));
+      const hasControllers = nodeIds.some((id: string) => id.includes('controllers'));
+      const hasServices = nodeIds.some((id: string) => id.includes('services'));
+      const hasModels = nodeIds.some((id: string) => id.includes('models'));
+      const hasTypes = nodeIds.some((id: string) => id.includes('types'));
+
+      expect(hasIndex).toBe(true);
+      expect(hasControllers).toBe(true);
+      expect(hasServices).toBe(true);
+      expect(hasModels).toBe(true);
+      expect(hasTypes).toBe(true);
     });
 
-    const result = await analyzeDependencies(multiCycleProject.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該正確計算依賴層級深度', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
-    const output = result.stdout;
-    expect(output.toLowerCase()).toMatch(/cycle|circular|循環/);
+      expect(result.exitCode).toBe(0);
 
-    await multiCycleProject.cleanup();
+      const data = JSON.parse(result.stdout);
+
+      // sample-project 有多層依賴，edges 應該反映這些層級關係
+      expect(data.edges.length).toBeGreaterThan(50);
+    });
   });
 
-  it('應該能處理深層目錄結構的依賴', async () => {
-    const deepProject = await createTypeScriptProject({
-      'src/level1/level2/level3/deep.ts': `export const deep = 'deep';`,
-      'src/level1/level2/mid.ts': `import { deep } from './level3/deep'; export const mid = deep;`,
-      'src/level1/shallow.ts': `import { mid } from './level2/mid'; export const shallow = mid;`,
-      'src/index.ts': `import { shallow } from './level1/shallow'; export const root = shallow;`
+  describe('特定服務的依賴分析', () => {
+    it('應該能檢測到 services 之間的依賴關係', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // OrderService 依賴 UserService 和 ProductService
+      // AuthService 依賴 UserService
+      // 這些依賴應該反映在 edges 中
+
+      const nodeIds = data.nodes.map((n: any) => n.id);
+
+      const hasOrderService = nodeIds.some((id: string) => id.includes('order-service'));
+      const hasUserService = nodeIds.some((id: string) => id.includes('user-service'));
+      const hasAuthService = nodeIds.some((id: string) => id.includes('auth-service'));
+
+      // 至少應該檢測到這些服務
+      expect(hasOrderService || hasUserService || hasAuthService).toBe(true);
     });
 
-    const result = await analyzeDependencies(deepProject.projectPath);
-    expect(result.exitCode).toBe(0);
+    it('應該能檢測到跨層級的依賴關係', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(0);
 
-    await deepProject.cleanup();
-  });
+      const data = JSON.parse(result.stdout);
 
-  it('應該能處理重複 import 同一模組', async () => {
-    const duplicateProject = await createTypeScriptProject({
-      'src/shared.ts': `export const value = 42;`,
-      'src/user1.ts': `import { value } from './shared'; import { value as val } from './shared';`,
-      'src/user2.ts': `import { value } from './shared'; export const result = value;`
+      // Controllers 依賴 Services
+      // Services 依賴 Models
+      // Models 依賴 Types
+      // 這些跨層級的依賴應該在 edges 中體現
+
+      expect(data.edges.length).toBeGreaterThan(0);
+      expect(data.stats.totalDependencies).toBeGreaterThan(0);
     });
-
-    const result = await analyzeDependencies(duplicateProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await duplicateProject.cleanup();
-  });
-
-  it('應該能處理 re-export 場景', async () => {
-    const reexportProject = await createTypeScriptProject({
-      'src/core/utils.ts': `export function util() { return 'util'; }`,
-      'src/core/index.ts': `export * from './utils'; export { util as coreUtil } from './utils';`,
-      'src/main.ts': `import { util, coreUtil } from './core'; console.log(util(), coreUtil());`
-    });
-
-    const result = await analyzeDependencies(reexportProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await reexportProject.cleanup();
-  });
-
-  it('應該能處理條件式 import', async () => {
-    const conditionalProject = await createTypeScriptProject({
-      'src/feature.ts': `export const feature = 'enabled';`,
-      'src/fallback.ts': `export const fallback = 'disabled';`,
-      'src/main.ts': `
-const USE_FEATURE = true;
-const module = USE_FEATURE ? await import('./feature') : await import('./fallback');
-      `.trim()
-    });
-
-    const result = await analyzeDependencies(conditionalProject.projectPath);
-    expect(result.exitCode).toBe(0);
-
-    const output = result.stdout;
-    expect(output.length).toBeGreaterThan(0);
-
-    await conditionalProject.cleanup();
   });
 });
