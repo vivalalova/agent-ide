@@ -145,6 +145,36 @@ export class IndexEngine {
   }
 
   /**
+   * 獲取有效的排除模式
+   * 整合 config 設定和所有 parser 的預設排除模式
+   */
+  private getEffectiveExcludePatterns(): string[] {
+    // 取得 config 的排除模式
+    const configPatterns = [...this.config.excludePatterns];
+
+    // 取得所有註冊 parser 的排除模式
+    const registeredParsers = this.parserRegistry.listParsers();
+    const parserPatterns: string[] = [];
+
+    for (const parserInfo of registeredParsers) {
+      try {
+        // 檢查 parser 是否支援 getDefaultExcludePatterns 方法
+        if (parserInfo.plugin.getDefaultExcludePatterns) {
+          const patterns = parserInfo.plugin.getDefaultExcludePatterns();
+          parserPatterns.push(...patterns);
+        }
+      } catch (error) {
+        // 如果 parser 不支援此方法，忽略錯誤
+        console.warn(`Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
+      }
+    }
+
+    // 合併並去重
+    const allPatterns = [...configPatterns, ...parserPatterns];
+    return [...new Set(allPatterns)];
+  }
+
+  /**
    * 索引目錄
    */
   async indexDirectory(dirPath: string): Promise<void> {
@@ -162,11 +192,14 @@ export class IndexEngine {
       `**/*${ext}`
     );
 
+    // 使用整合後的排除模式
+    const effectiveExcludePatterns = this.getEffectiveExcludePatterns();
+
     const allFiles: string[] = [];
     for (const pattern of includePatterns) {
       const files = await glob(pattern, {
         cwd: dirPath,
-        ignore: [...this.config.excludePatterns],
+        ignore: effectiveExcludePatterns,
         absolute: true
       });
       allFiles.push(...files);
