@@ -18,7 +18,7 @@ export {
   UnusedSymbolDetector,
   UnreachableCodeDetector,
   type UnusedCode,
-  type Symbol,
+  type LegacySymbol,
   type Reference
 } from './dead-code-detector.js';
 

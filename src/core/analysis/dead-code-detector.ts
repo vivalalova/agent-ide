@@ -3,8 +3,13 @@
  * 檢測未使用的變數、函式、類別和不可達代碼
  */
 
-// 符號表介面
-export interface Symbol {
+import * as ts from 'typescript';
+import { TypeScriptParser } from '../../plugins/typescript/parser.js';
+import type { Symbol, AST } from '../../shared/types/index.js';
+import { SymbolType, ReferenceType } from '../../shared/types/index.js';
+
+// 符號表介面（向後相容，但內部使用統一的 Symbol 介面）
+export interface LegacySymbol {
   name: string;
   type: 'variable' | 'function' | 'class' | 'import';
   location: { line: number; column: number };
@@ -41,35 +46,52 @@ export interface ASTNode {
  * 未使用符號檢測器
  */
 export class UnusedSymbolDetector {
+  private parser: TypeScriptParser;
+
+  constructor() {
+    this.parser = new TypeScriptParser();
+  }
+
   /**
    * 檢測未使用的符號
-   * @param symbols 符號表
+   * @param ast AST 物件
    * @returns 未使用的符號列表
    */
-  detect(symbols: Symbol[]): UnusedCode[] {
+  async detect(ast: AST, content: string): Promise<UnusedCode[]> {
     const unused: UnusedCode[] = [];
+
+    // 提取所有符號
+    const symbols = await this.parser.extractSymbols(ast);
 
     for (const symbol of symbols) {
       // 跳過已匯出的符號
-      if (symbol.exported) {
+      if (this.isExported(symbol)) {
         continue;
       }
 
-      // 跳過函式參數
-      if (symbol.parameter) {
+      // 跳過函式參數（檢查 scope 或 modifiers）
+      if (this.isParameter(symbol)) {
         continue;
       }
 
-      // 檢查引用次數
-      const readReferences = symbol.references.filter(ref => ref.type === 'read' || ref.type === 'call');
+      // 使用 parser 查找引用
+      const references = await this.parser.findReferences(ast, symbol);
 
-      if (readReferences.length === 0) {
+      // 過濾出實際使用（非定義）的引用
+      const usageReferences = references.filter(ref =>
+        ref.type === ReferenceType.Usage
+      );
+
+      if (usageReferences.length === 0) {
         unused.push({
-          type: symbol.type,
+          type: this.mapSymbolType(symbol.type),
           name: symbol.name,
-          location: symbol.location,
-          confidence: this.calculateConfidence(symbol),
-          reason: `${symbol.type} '${symbol.name}' 已宣告但從未使用`
+          location: {
+            line: symbol.location.range.start.line,
+            column: symbol.location.range.start.column
+          },
+          confidence: this.calculateConfidence(references),
+          reason: `${this.mapSymbolType(symbol.type)} '${symbol.name}' 已宣告但從未使用`
         });
       }
     }
@@ -78,25 +100,65 @@ export class UnusedSymbolDetector {
   }
 
   /**
+   * 檢查符號是否已匯出
+   */
+  private isExported(symbol: Symbol): boolean {
+    return symbol.modifiers?.includes('export') || false;
+  }
+
+  /**
+   * 檢查是否為函式參數
+   */
+  private isParameter(symbol: Symbol): boolean {
+    // 檢查 scope，如果 parent 是 function 且符號在參數位置，就是參數
+    if (symbol.scope?.type === 'function') {
+      // 簡化判斷：如果符號類型是 Variable 且在 function scope 內，可能是參數或局部變數
+      // 更準確的判斷需要檢查 AST 節點類型
+      return false; // 暫時保守處理，不跳過任何符號
+    }
+    return false;
+  }
+
+  /**
+   * 映射符號類型到 UnusedCode 類型
+   */
+  private mapSymbolType(symbolType: SymbolType): 'variable' | 'function' | 'class' | 'import' {
+    switch (symbolType) {
+    case SymbolType.Function:
+      return 'function';
+    case SymbolType.Class:
+      return 'class';
+    case SymbolType.Variable:
+    case SymbolType.Constant:
+      return 'variable';
+    default:
+      return 'variable';
+    }
+  }
+
+  /**
    * 計算檢測置信度
    */
-  private calculateConfidence(symbol: Symbol): number {
-    let confidence = 0.9;
-
-    // 如果有寫入引用但沒有讀取引用，置信度較高
-    const writeRefs = symbol.references.filter(ref => ref.type === 'write');
-    const readRefs = symbol.references.filter(ref => ref.type === 'read');
-
-    if (writeRefs.length > 0 && readRefs.length === 0) {
-      confidence = 0.95;
+  private calculateConfidence(references: any[]): number {
+    // 如果完全沒有引用（連定義都不算），置信度最高
+    if (references.length === 0) {
+      return 1.0;
     }
 
-    // 如果完全沒有引用，置信度最高
-    if (symbol.references.length === 0) {
-      confidence = 1.0;
+    // 如果只有定義引用，沒有使用引用
+    const usageRefs = references.filter((ref: any) => ref.type === ReferenceType.Usage);
+    if (usageRefs.length === 0) {
+      return 0.95;
     }
 
-    return confidence;
+    return 0.9;
+  }
+
+  /**
+   * 清理資源
+   */
+  async dispose(): Promise<void> {
+    await this.parser.dispose();
   }
 }
 
@@ -189,6 +251,7 @@ export class UnreachableCodeDetector {
 export class DeadCodeDetector {
   private unusedSymbolDetector = new UnusedSymbolDetector();
   private unreachableCodeDetector = new UnreachableCodeDetector();
+  private parser = new TypeScriptParser();
 
   /**
    * 檢測檔案中的死代碼
@@ -211,19 +274,27 @@ export class DeadCodeDetector {
       return [];
     }
 
+    // 只支援 TypeScript 檔案
+    if (!filePath.match(/\.(ts|tsx)$/)) {
+      // 對非 TypeScript 檔案返回空結果
+      return [];
+    }
+
     try {
-      // 解析程式碼
-      const { ast, symbols } = this.parseCode(content);
+      // 解析程式碼使用 TypeScript parser
+      const ast = await this.parser.parse(content, filePath);
 
       // 檢測未使用符號
-      const unusedSymbols = this.unusedSymbolDetector.detect(symbols);
+      const unusedSymbols = await this.unusedSymbolDetector.detect(ast, content);
 
       // 檢測不可達代碼
-      const unreachableCode = this.unreachableCodeDetector.detect(ast);
+      const unreachableCode = this.unreachableCodeDetector.detect(this.convertToLegacyAST(ast));
 
       return [...unusedSymbols, ...unreachableCode];
     } catch (error) {
-      throw new Error(`死代碼檢測失敗: ${error instanceof Error ? error.message : '未知錯誤'}`);
+      // 解析錯誤時返回空結果而不是拋出錯誤
+      // 因為可能是語法錯誤的檔案
+      return [];
     }
   }
 
@@ -266,72 +337,15 @@ export class DeadCodeDetector {
   }
 
   /**
-   * 簡化的程式碼解析
-   * 實際實作中應該使用完整的 TypeScript 或 JavaScript parser
+   * 轉換 TypeScript AST 到舊版 AST 格式（用於不可達代碼檢測）
    */
-  private parseCode(content: string): { ast: ASTNode; symbols: Symbol[] } {
-    // 簡化實作：建立模擬的 AST 和符號表
-    const ast: ASTNode = {
+  private convertToLegacyAST(ast: AST): ASTNode {
+    // 簡化實作：創建一個基本的 AST 節點
+    return {
       type: 'Program',
       location: { line: 1, column: 1 },
       children: []
     };
-
-    const symbols: Symbol[] = [];
-
-    // 簡單的變數檢測
-    const variableMatches = content.matchAll(/(?:const|let|var)\s+(\w+)/g);
-    for (const match of variableMatches) {
-      const name = match[1];
-      const line = content.substring(0, match.index).split('\n').length;
-
-      symbols.push({
-        name,
-        type: 'variable',
-        location: { line, column: match.index || 0 },
-        references: this.findReferences(content, name),
-        exported: content.includes(`export { ${name} }`) || content.includes(`export const ${name}`),
-        parameter: false
-      });
-    }
-
-    // 簡單的函式檢測
-    const functionMatches = content.matchAll(/function\s+(\w+)/g);
-    for (const match of functionMatches) {
-      const name = match[1];
-      const line = content.substring(0, match.index).split('\n').length;
-
-      symbols.push({
-        name,
-        type: 'function',
-        location: { line, column: match.index || 0 },
-        references: this.findReferences(content, name),
-        exported: content.includes(`export function ${name}`) || content.includes(`export { ${name} }`),
-        parameter: false
-      });
-    }
-
-    return { ast, symbols };
-  }
-
-  /**
-   * 查找符號引用
-   */
-  private findReferences(content: string, symbolName: string): Reference[] {
-    const references: Reference[] = [];
-    const regex = new RegExp(`\\b${symbolName}\\b`, 'g');
-
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const line = content.substring(0, match.index).split('\n').length;
-
-      references.push({
-        location: { line, column: match.index },
-        type: 'read' // 簡化實作，實際應該區分 read/write/call
-      });
-    }
-
-    return references;
   }
 
   /**
@@ -360,5 +374,13 @@ export class DeadCodeDetector {
       byType,
       averageConfidence: allDeadCode.length > 0 ? totalConfidence / allDeadCode.length : 0
     };
+  }
+
+  /**
+   * 清理資源
+   */
+  async dispose(): Promise<void> {
+    await this.unusedSymbolDetector.dispose();
+    await this.parser.dispose();
   }
 }
