@@ -79,6 +79,7 @@ export function validateUser(user: Partial<User>): ValidationResult {
 
 export function validateUrl(url: string): boolean {
   try {
+    // eslint-disable-next-line no-undef
     new URL(url);
     return true;
   } catch {
