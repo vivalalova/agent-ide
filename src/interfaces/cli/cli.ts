@@ -160,6 +160,7 @@ export class AgentIdeCLI {
       .option('-s, --start-line <line>', '起始行號')
       .option('-e, --end-line <line>', '結束行號')
       .option('-n, --function-name <name>', '函式名稱')
+      .option('-t, --target-file <file>', '目標檔案路徑（跨檔案提取）')
       .option('-p, --path <path>', '專案路徑', '.')
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
@@ -463,12 +464,18 @@ export class AgentIdeCLI {
         const extractor = new FunctionExtractor();
 
         // 執行提取
-        const result = await extractor.extract(code, range, {
+        const extractConfig = {
           functionName: options.functionName,
           generateComments: true,
           preserveFormatting: true,
-          validateExtraction: true
-        });
+          validateExtraction: true,
+          ...(options.targetFile ? {
+            targetFile: path.resolve(options.targetFile),
+            sourceFile: filePath
+          } : {})
+        };
+
+        const result = await extractor.extract(code, range, extractConfig);
 
         if (result.success) {
           // 套用編輯（按正確順序）
@@ -497,12 +504,30 @@ export class AgentIdeCLI {
           console.log(functionSignature);
 
           if (!options.preview) {
-            // 寫入檔案
+            // 寫入原始檔案
             await fs.writeFile(filePath, modifiedCode, 'utf-8');
             console.log(`✓ 已更新 ${filePath}`);
+
+            // 如果是跨檔案提取，寫入目標檔案
+            if (result.targetFileContent && options.targetFile) {
+              const targetPath = path.resolve(options.targetFile);
+              // 確保目標目錄存在
+              const targetDir = path.dirname(targetPath);
+              await fs.mkdir(targetDir, { recursive: true });
+              // 寫入目標檔案
+              await fs.writeFile(targetPath, result.targetFileContent, 'utf-8');
+              console.log(`✓ 已建立/更新目標檔案 ${targetPath}`);
+              if (result.importStatement) {
+                console.log(`✓ 已加入 import: ${result.importStatement}`);
+              }
+            }
           } else {
             console.log('\n🔍 預覽模式 - 未寫入檔案');
             console.log(`📊 參數: ${result.parameters.map(p => p.name).join(', ')}`);
+            if (result.targetFileContent && options.targetFile) {
+              console.log(`📁 目標檔案: ${options.targetFile}`);
+              console.log(`📥 Import: ${result.importStatement || '(無)'}`);
+            }
           }
         } else {
           console.error('❌ 重構失敗:', result.errors.join(', '));
