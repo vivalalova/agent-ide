@@ -499,6 +499,69 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
   }
 
+  /**
+   * 獲取 TypeScript 特定的排除模式
+   * 包含基礎排除模式 + TypeScript 測試檔案和型別定義
+   */
+  getDefaultExcludePatterns(): string[] {
+    return [
+      // 通用排除模式
+      'node_modules/**',
+      '.git/**',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      '.next/**',
+      '.nuxt/**',
+      'out/**',
+      '.cache/**',
+      '.turbo/**',
+      // TypeScript 特定排除模式
+      '**/*.test.ts',
+      '**/*.spec.ts',
+      '**/*.test.tsx',
+      '**/*.spec.tsx',
+      '**/__tests__/**',
+      '**/__mocks__/**',
+      '**/*.d.ts' // 型別定義檔案通常不需要分析
+    ];
+  }
+
+  /**
+   * 判斷是否應該忽略特定檔案
+   * TypeScript parser 會忽略測試檔案和型別定義檔案
+   */
+  shouldIgnoreFile(filePath: string): boolean {
+    const patterns = this.getDefaultExcludePatterns();
+    const normalizedPath = filePath.replace(/^\.?\//, '');
+
+    // 使用 minimatch 進行模式匹配
+    return patterns.some(pattern => {
+      try {
+        // 直接使用字串包含檢查來提高效能
+        if (pattern.includes('**')) {
+          // 對於包含 ** 的模式，進行簡單的子字串匹配
+          const simplePattern = pattern.replace(/\*\*/g, '').replace(/\//g, '');
+          if (normalizedPath.includes(simplePattern)) {
+            return true;
+          }
+        }
+
+        // 檢查檔案路徑是否匹配模式
+        if (pattern.startsWith('**/')) {
+          const suffix = pattern.substring(3);
+          if (normalizedPath.endsWith(suffix) || normalizedPath.includes('/' + suffix)) {
+            return true;
+          }
+        }
+
+        return false;
+      } catch (error) {
+        return false;
+      }
+    });
+  }
+
   // 私有輔助方法
 
   private validateInput(code: string, filePath: string): void {
