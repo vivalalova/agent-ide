@@ -431,8 +431,8 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
       expect(indexResult.exitCode).toBe(0);
     });
 
-    // TODO: Extract Function 需要使用真正的 TypeScript AST parser 改進變數分析
-    it.skip('提取包含返回值的程式碼塊應該正確處理返回值', async () => {
+    // ✅ 已實作：使用 TypeScript AST parser 進行返回值型別推導
+    it('提取包含返回值的程式碼塊應該正確處理返回值', async () => {
       const filePath = fixture.getFilePath('src/utils/string-utils.ts');
 
       // 找一段有返回值的程式碼提取
@@ -547,8 +547,8 @@ export function processData(items: string[]) {
       expect(searchResult.stdout).toContain('extractedHelper');
     });
 
-    // TODO: Extract Function 需要支援跨檔案提取（--target-file 參數）
-    it.skip('提取共用邏輯到獨立檔案後應該更新所有引用', async () => {
+    // ✅ 已實作：跨檔案 Extract Function 支援
+    it('提取共用邏輯到獨立檔案後應該更新所有引用', async () => {
       // 這個測試驗證跨檔案重構
       const filePath = fixture.getFilePath('src/models/base-model.ts');
 

@@ -456,7 +456,7 @@ function anotherUnusedFunction(param: string): string {
     });
 
     // TODO: reference finding 需要正確處理 class 繼承的方法呼叫
-    it.skip('不應該將有引用的函式標記為死代碼', async () => {
+    it('不應該將有引用的函式標記為死代碼', async () => {
       const result = await executeCLI([
         'analyze',
         'dead-code',

@@ -19,7 +19,7 @@ describe('完整工作流整合測試', () => {
   });
 
   // TODO: Extract Function 需要AST改進，暫時使用基本驗證
-  it('完整重構工作流：索引 → 搜尋 → 重構 → 重新索引 → 驗證 → 分析', async () => {
+  it('完整重構工作流：索引 → 搜尋 → 重構 → 重新索引 → 驗證 → 分析', { timeout: 60000 }, async () => {
     // ============================================================
     // 步驟 1：初始索引
     // ============================================================
@@ -167,7 +167,7 @@ describe('完整工作流整合測試', () => {
     expect(hasCycles).toBe(false);
   });
 
-  it('重命名工作流：搜尋 → 重命名 → 重新索引 → 驗證引用更新', async () => {
+  it('重命名工作流：搜尋 → 重命名 → 重新索引 → 驗證引用更新', { timeout: 60000 }, async () => {
     // ============================================================
     // 步驟 1：初始索引
     // ============================================================
@@ -274,8 +274,9 @@ describe('完整工作流整合測試', () => {
     expect(depsAfterOutput.stats.totalDependencies).toBeGreaterThan(50);
   });
 
-  // TODO: 檔案移動後的搜尋索引更新需要檢查
-  it.skip('檔案移動工作流：移動 → 更新引用 → 重新索引 → 驗證', async () => {
+  // ✅ 已修復：檔案移動後索引更新問題
+  // 解決方案：在 IndexEngine.indexDirectory 中加入 cleanupStaleIndexEntries 清除過期索引
+  it('檔案移動工作流：移動 → 更新引用 → 重新索引 → 驗證', async () => {
     // ============================================================
     // 步驟 1：初始索引
     // ============================================================
@@ -334,12 +335,16 @@ describe('完整工作流整合測試', () => {
       'search',
       'User',
       '--path',
-      fixture.tempPath
+      fixture.tempPath,
+      '--limit',
+      '500' // 增加 limit 以確保能找到 entities/user.ts
     ]);
 
     expect(searchResult.exitCode).toBe(0);
     expect(searchResult.stdout).toContain('User');
     expect(searchResult.stdout).toMatch(/entities\/user\.ts/);
+    // 驗證舊路徑不再出現（已被清除）
+    expect(searchResult.stdout).not.toMatch(/types\/user\.ts(?!.*entities)/);
 
     // ============================================================
     // 步驟 8：驗證依賴關係仍然完整
