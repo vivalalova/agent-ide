@@ -3,6 +3,7 @@
  * 提供 Parser 插件的基礎實作和通用功能
  */
 
+import { minimatch } from 'minimatch';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
 import { isPosition } from '../../shared/types/index.js';
 import type { ParserPlugin } from './interface.js';
@@ -340,5 +341,47 @@ export abstract class BaseParserPlugin implements ParserPlugin {
       this.handleError(error as Error, context);
       return defaultValue;
     }
+  }
+
+  // ===== 檔案過濾支援 =====
+
+  /**
+   * 獲取預設的排除模式
+   * 子類可以 override 此方法提供語言特定的排除模式
+   */
+  getDefaultExcludePatterns(): string[] {
+    return [
+      'node_modules/**',
+      '.git/**',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      '.next/**',
+      '.nuxt/**',
+      'out/**',
+      '.cache/**',
+      '.turbo/**'
+    ];
+  }
+
+  /**
+   * 判斷是否應該忽略特定檔案
+   * 使用 minimatch 比對檔案路徑與排除模式
+   */
+  shouldIgnoreFile(filePath: string): boolean {
+    const patterns = this.getDefaultExcludePatterns();
+
+    // 正規化路徑（移除開頭的 ./ 或 /）
+    const normalizedPath = filePath.replace(/^\.?\//, '');
+
+    // 檢查是否匹配任一排除模式
+    return patterns.some(pattern => {
+      try {
+        return minimatch(normalizedPath, pattern, { dot: true });
+      } catch (error) {
+        this.log('warn', `無效的排除模式: ${pattern}`);
+        return false;
+      }
+    });
   }
 }
