@@ -108,6 +108,22 @@ export interface ParserPlugin {
    * 應該釋放插件使用的所有資源
    */
   dispose(): Promise<void>;
+
+  // ===== 檔案過濾支援 =====
+
+  /**
+   * 獲取預設的排除模式
+   * 每個語言可以定義自己特定的忽略規則
+   * @returns 排除模式列表（glob patterns）
+   */
+  getDefaultExcludePatterns?(): string[];
+
+  /**
+   * 判斷是否應該忽略特定檔案
+   * @param filePath 檔案路徑
+   * @returns true 表示應該忽略此檔案
+   */
+  shouldIgnoreFile?(filePath: string): boolean;
 }
 
 /**
@@ -150,6 +166,9 @@ export function isParserPlugin(value: unknown): value is ParserPlugin {
       return false;
     }
   }
+
+  // 可選方法不檢查（用於向後相容）
+  // getDefaultExcludePatterns 和 shouldIgnoreFile 是可選的
 
   return true;
 }
