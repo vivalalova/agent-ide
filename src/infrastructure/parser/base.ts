@@ -5,7 +5,7 @@
 
 import { minimatch } from 'minimatch';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
-import { isPosition } from '../../shared/types/index.js';
+import { isPosition, SymbolType } from '../../shared/types/index.js';
 import type { ParserPlugin } from './interface.js';
 import type {
   CodeEdit,
@@ -383,5 +383,25 @@ export abstract class BaseParserPlugin implements ParserPlugin {
         return false;
       }
     });
+  }
+
+  /**
+   * 判斷符號是否為抽象宣告
+   * 預設實作：class, interface, type, enum, function, module, namespace 視為抽象宣告
+   * 排除實體：variable, constant（這些是具體的值實例）
+   * 子類別可以覆寫此方法以實作語言特定的判斷邏輯
+   */
+  isAbstractDeclaration(symbol: Symbol): boolean {
+    const abstractTypes = [
+      SymbolType.Class,
+      SymbolType.Interface,
+      SymbolType.Type,
+      SymbolType.Enum,
+      SymbolType.Function,
+      SymbolType.Module,
+      SymbolType.Namespace
+    ];
+
+    return abstractTypes.includes(symbol.type);
   }
 }

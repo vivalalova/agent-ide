@@ -413,6 +413,16 @@ export class JavaScriptParser implements ParserPlugin {
     });
   }
 
+  /**
+   * 判斷符號是否為抽象宣告
+   * JavaScript 支援：class（ES6+）、function
+   * JavaScript 沒有 interface、type、namespace 等概念
+   * 排除實體：variable, constant
+   */
+  isAbstractDeclaration(symbol: Symbol): boolean {
+    return symbol.type === SymbolType.Class || symbol.type === SymbolType.Function;
+  }
+
   // 私有輔助方法
 
   private validateInput(code: string, filePath: string): void {

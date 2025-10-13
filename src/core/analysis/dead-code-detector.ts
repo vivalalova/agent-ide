@@ -64,6 +64,11 @@ export class UnusedSymbolDetector {
     const referenceMap = await this.buildReferenceMap(ast, parser, symbols);
 
     for (const symbol of symbols) {
+      // 跳過非抽象宣告（只檢測 class, interface, type, enum 等抽象宣告）
+      if (parser.isAbstractDeclaration && !parser.isAbstractDeclaration(symbol)) {
+        continue;
+      }
+
       // 跳過已匯出的符號
       if (this.isExported(symbol)) {
         continue;

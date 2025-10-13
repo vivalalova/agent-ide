@@ -106,6 +106,18 @@ abstract class BaseTestParser implements ParserPlugin {
     const patterns = this.getDefaultExcludePatterns();
     return patterns.some(pattern => filePath.includes(pattern.replace('/**', '')));
   }
+
+  isAbstractDeclaration(symbol: Symbol): boolean {
+    // 測試用簡化實作：class, interface, type, enum, function 是抽象宣告
+    const abstractTypes = [
+      SymbolType.Class,
+      SymbolType.Interface,
+      SymbolType.Type,
+      SymbolType.Enum,
+      SymbolType.Function
+    ];
+    return abstractTypes.includes(symbol.type);
+  }
 }
 
 /**

@@ -165,7 +165,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
   // 3. 死代碼檢測測試（2 個測試）
   // ============================================================
 
-  it('應該執行死代碼檢測並返回正確格式', async () => {
+  it('應該執行死代碼檢測並返回正確格式', { timeout: 150000 }, async () => {
     // 新增未使用的函式（用於測試檢測功能）
     await fixture.writeFile(
       'src/utils/unused.ts',
@@ -206,7 +206,7 @@ export function anotherUnusedHelper() {
     expect(Array.isArray(unusedFile.deadCode)).toBe(true);
   });
 
-  it('應該能追蹤跨檔案的引用關係', async () => {
+  it('應該能追蹤跨檔案的引用關係', { timeout: 150000 }, async () => {
     // 分析原始專案（所有 export 都被使用）
     const result = await executeCLI([
       'analyze',

@@ -562,6 +562,25 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     });
   }
 
+  /**
+   * 判斷符號是否為抽象宣告
+   * TypeScript 支援所有抽象宣告：class, interface, type, enum, function, namespace, module
+   * 排除實體：variable, constant
+   */
+  isAbstractDeclaration(symbol: Symbol): boolean {
+    const abstractTypes = [
+      SymbolType.Class,
+      SymbolType.Interface,
+      SymbolType.Type,
+      SymbolType.Enum,
+      SymbolType.Function,
+      SymbolType.Module,
+      SymbolType.Namespace
+    ];
+
+    return abstractTypes.includes(symbol.type);
+  }
+
   // 私有輔助方法
 
   private validateInput(code: string, filePath: string): void {

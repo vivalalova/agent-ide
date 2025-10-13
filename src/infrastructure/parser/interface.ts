@@ -124,6 +124,17 @@ export interface ParserPlugin {
    * @returns true 表示應該忽略此檔案
    */
   shouldIgnoreFile?(filePath: string): boolean;
+
+  // ===== 符號類型判斷支援 =====
+
+  /**
+   * 判斷符號是否為抽象宣告
+   * 抽象宣告是指不產生實際執行程式碼的型別定義，如 class、interface、type、enum 等
+   * 各語言的抽象宣告定義不同，由各 Parser 實作
+   * @param symbol 要判斷的符號
+   * @returns true 表示此符號是抽象宣告
+   */
+  isAbstractDeclaration?(symbol: Symbol): boolean;
 }
 
 /**
