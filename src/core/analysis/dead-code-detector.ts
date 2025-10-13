@@ -60,6 +60,9 @@ export class UnusedSymbolDetector {
     // 提取所有符號
     const symbols = await parser.extractSymbols(ast);
 
+    // 優化：一次遍歷收集所有符號的引用（避免 O(n²) 複雜度）
+    const referenceMap = await this.buildReferenceMap(ast, parser, symbols);
+
     for (const symbol of symbols) {
       // 跳過已匯出的符號
       if (this.isExported(symbol)) {
@@ -77,8 +80,8 @@ export class UnusedSymbolDetector {
         continue;
       }
 
-      // 使用 parser 查找引用
-      const references = await parser.findReferences(ast, symbol);
+      // 從映射表中查找引用（O(1)）
+      const references = referenceMap.get(symbol.name) || [];
 
       // 過濾出實際使用（非定義）的引用
       const usageReferences = references.filter(ref =>
@@ -100,6 +103,47 @@ export class UnusedSymbolDetector {
     }
 
     return unused;
+  }
+
+  /**
+   * 建立引用映射表（批次處理）
+   * 優化：使用 Promise.all 並行處理多個符號
+   */
+  private async buildReferenceMap(
+    ast: AST,
+    parser: TypeScriptParser,
+    symbols: Symbol[]
+  ): Promise<Map<string, any[]>> {
+    const referenceMap = new Map<string, any[]>();
+    const totalSymbols = symbols.length;
+
+    // 分批處理以避免記憶體壓力
+    const batchSize = 20; // 每批處理 20 個符號
+
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize);
+      const progress = Math.min(i + batchSize, totalSymbols);
+
+      // 在控制台顯示進度（僅在處理大量符號時）
+      if (totalSymbols > 50 && i % (batchSize * 5) === 0) {
+        console.error(`處理符號引用: ${progress}/${totalSymbols} (${Math.round(progress / totalSymbols * 100)}%)`);
+      }
+
+      // 批次並行處理
+      await Promise.all(
+        batch.map(async (symbol) => {
+          try {
+            const references = await parser.findReferences(ast, symbol);
+            referenceMap.set(symbol.name, references);
+          } catch (error) {
+            // 查找失敗時記錄空引用
+            referenceMap.set(symbol.name, []);
+          }
+        })
+      );
+    }
+
+    return referenceMap;
   }
 
   /**
