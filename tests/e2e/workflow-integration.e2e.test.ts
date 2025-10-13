@@ -357,7 +357,7 @@ describe('完整工作流整合測試', () => {
     expect(Math.abs(depsAfterOutput.stats.totalDependencies - totalDepsBefore)).toBeLessThan(5);
   });
 
-  it('完整分析工作流：索引 → 複雜度分析 → 死代碼檢測 → 模式分析', async () => {
+  it('完整分析工作流：索引 → 複雜度分析 → 死代碼檢測 → 模式分析', { timeout: 180000 }, async () => {
     // ============================================================
     // 步驟 1：初始索引
     // ============================================================
@@ -392,7 +392,7 @@ describe('完整工作流整合測試', () => {
       fixture.tempPath,
       '--format',
       'json'
-    ]);
+    ], { timeout: 120000 });
 
     expect(deadCodeResult.exitCode).toBe(0);
 

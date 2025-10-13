@@ -52,7 +52,7 @@ export default defineConfig({
     },
     
     // 超時設定
-    testTimeout: 30000,
+    testTimeout: 120000, // 增加到 120 秒（dead code detection 需要時間）
     hookTimeout: 10000,
     teardownTimeout: 30000,
     

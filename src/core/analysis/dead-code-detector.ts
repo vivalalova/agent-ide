@@ -46,22 +46,19 @@ export interface ASTNode {
  * 未使用符號檢測器
  */
 export class UnusedSymbolDetector {
-  private parser: TypeScriptParser;
-
-  constructor() {
-    this.parser = new TypeScriptParser();
-  }
+  // 移除 parser，改由外部傳入
 
   /**
    * 檢測未使用的符號
    * @param ast AST 物件
+   * @param parser TypeScript parser 實例（重用以提升效能）
    * @returns 未使用的符號列表
    */
-  async detect(ast: AST, content: string): Promise<UnusedCode[]> {
+  async detect(ast: AST, parser: TypeScriptParser): Promise<UnusedCode[]> {
     const unused: UnusedCode[] = [];
 
     // 提取所有符號
-    const symbols = await this.parser.extractSymbols(ast);
+    const symbols = await parser.extractSymbols(ast);
 
     for (const symbol of symbols) {
       // 跳過已匯出的符號
@@ -75,7 +72,7 @@ export class UnusedSymbolDetector {
       }
 
       // 使用 parser 查找引用
-      const references = await this.parser.findReferences(ast, symbol);
+      const references = await parser.findReferences(ast, symbol);
 
       // 過濾出實際使用（非定義）的引用
       const usageReferences = references.filter(ref =>
@@ -158,7 +155,7 @@ export class UnusedSymbolDetector {
    * 清理資源
    */
   async dispose(): Promise<void> {
-    await this.parser.dispose();
+    // Parser 由外部管理，不需要清理
   }
 }
 
@@ -284,8 +281,8 @@ export class DeadCodeDetector {
       // 解析程式碼使用 TypeScript parser
       const ast = await this.parser.parse(content, filePath);
 
-      // 檢測未使用符號
-      const unusedSymbols = await this.unusedSymbolDetector.detect(ast, content);
+      // 檢測未使用符號（傳入 parser 實例以重用）
+      const unusedSymbols = await this.unusedSymbolDetector.detect(ast, this.parser);
 
       // 檢測不可達代碼
       const unreachableCode = this.unreachableCodeDetector.detect(this.convertToLegacyAST(ast));
