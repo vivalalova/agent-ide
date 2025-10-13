@@ -471,11 +471,22 @@ export class AgentIdeCLI {
         });
 
         if (result.success) {
-          // 套用編輯
+          // 套用編輯（按正確順序）
           let modifiedCode = code;
-          result.edits.forEach(edit => {
-            modifiedCode = this.applyCodeEdit(modifiedCode, edit);
-          });
+
+          // 先處理所有 insert 類型（在檔案開頭插入函式定義）
+          const insertEdits = result.edits.filter(e => e.type === 'insert');
+          const replaceEdits = result.edits.filter(e => e.type === 'replace');
+
+          // 先應用 replace（替換選取範圍為函式呼叫）
+          for (const edit of replaceEdits) {
+            modifiedCode = this.applyEditCorrectly(modifiedCode, edit);
+          }
+
+          // 再應用 insert（插入函式定義）
+          for (const edit of insertEdits) {
+            modifiedCode = this.applyEditCorrectly(modifiedCode, edit);
+          }
 
           // 提取函式簽名（從修改後的程式碼中）
           const functionSignatureMatch = modifiedCode.match(new RegExp(`(async\\s+)?function\\s+${result.functionName}\\s*\\([^)]*\\)`));
@@ -495,6 +506,7 @@ export class AgentIdeCLI {
           }
         } else {
           console.error('❌ 重構失敗:', result.errors.join(', '));
+          process.exitCode = 1;
           if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         }
 
@@ -1116,7 +1128,52 @@ export class AgentIdeCLI {
   }
 
   /**
-   * 套用程式碼編輯
+   * 正確套用程式碼編輯
+   */
+  private applyEditCorrectly(code: string, edit: { type: 'replace' | 'insert' | 'delete'; range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
+    const lines = code.split('\n');
+
+    switch (edit.type) {
+    case 'replace': {
+      // 計算起始和結束位置的偏移量
+      const startOffset = this.positionToOffset(lines, edit.range.start);
+      const endOffset = this.positionToOffset(lines, edit.range.end);
+
+      return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
+    }
+
+    case 'insert': {
+      const offset = this.positionToOffset(lines, edit.range.start);
+      return code.substring(0, offset) + edit.newText + code.substring(offset);
+    }
+
+    case 'delete': {
+      const startOffset = this.positionToOffset(lines, edit.range.start);
+      const endOffset = this.positionToOffset(lines, edit.range.end);
+      return code.substring(0, startOffset) + code.substring(endOffset);
+    }
+
+    default:
+      return code;
+    }
+  }
+
+  /**
+   * 將行列位置轉換為字元偏移量
+   */
+  private positionToOffset(lines: string[], position: { line: number; column: number }): number {
+    let offset = 0;
+
+    for (let i = 0; i < position.line - 1 && i < lines.length; i++) {
+      offset += lines[i].length + 1; // +1 for newline
+    }
+
+    offset += position.column;
+    return Math.min(offset, lines.join('\n').length);
+  }
+
+  /**
+   * @deprecated 使用 applyEditCorrectly 代替
    */
   private applyCodeEdit(code: string, edit: { range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
     const lines = code.split('\n');
