@@ -29,6 +29,7 @@ import {
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
 import { ParserRegistry } from '../../infrastructure/parser/index.js';
+import { TypeScriptParser } from '../../plugins/typescript/parser.js';
 
 /**
  * 索引引擎類別
@@ -57,6 +58,12 @@ export class IndexEngine {
       this.parserRegistry = ParserRegistry.getInstance();
     } else {
       this.parserRegistry = registry;
+    }
+
+    // 確保 TypeScript Parser 已註冊
+    if (!this.parserRegistry.getParser('.ts')) {
+      const tsParser = new TypeScriptParser();
+      this.parserRegistry.register(tsParser);
     }
   }
 
