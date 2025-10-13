@@ -409,7 +409,7 @@ export function multipleBranches(value: number): string {
   // ============================================================
 
   describe('真實死代碼檢測', () => {
-    it.skip('應該檢測真實的未使用函式', async () => {
+    it('應該檢測真實的未使用函式', async () => {
       // 在 user-service.ts 中新增一個未使用的函式
       const originalContent = await fixture.readFile('src/services/user-service.ts');
 
@@ -455,8 +455,8 @@ function anotherUnusedFunction(param: string): string {
       expect(hasUnusedHelper || hasAnotherUnused).toBe(true);
     });
 
+    // TODO: reference finding 需要正確處理 class 繼承的方法呼叫
     it.skip('不應該將有引用的函式標記為死代碼', async () => {
-      // TODO: reference finding 需要正確處理 class 繼承的方法呼叫
       const result = await executeCLI([
         'analyze',
         'dead-code',
