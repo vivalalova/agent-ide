@@ -1139,6 +1139,22 @@ export class AgentIdeCLI {
     const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
     const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
 
+    // 檢查路徑是檔案還是目錄
+    try {
+      const stats = await fs.stat(projectPath);
+
+      if (stats.isFile()) {
+        // 如果是單一檔案，直接返回
+        if (allowedExtensions.some(ext => projectPath.endsWith(ext))) {
+          return [projectPath];
+        }
+        return [];
+      }
+    } catch (error) {
+      // 路徑不存在
+      return [];
+    }
+
     async function walkDir(dir: string): Promise<void> {
       try {
         const entries = await fs.readdir(dir, { withFileTypes: true });
