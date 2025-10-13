@@ -1,6 +1,6 @@
 {
   "name": "agent-ide",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "程式碼智能工具集 for AI Agents",
   "type": "module",
   "main": "dist/shared/index.js",
