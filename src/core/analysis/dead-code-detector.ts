@@ -71,6 +71,12 @@ export class UnusedSymbolDetector {
         continue;
       }
 
+      // 跳過可能被外部使用的類別成員（public/protected 方法和屬性）
+      // 因為單檔案模式無法檢測跨檔案引用（如子類別對父類別方法的呼叫）
+      if (this.isPublicOrProtectedMember(symbol)) {
+        continue;
+      }
+
       // 使用 parser 查找引用
       const references = await parser.findReferences(ast, symbol);
 
@@ -113,6 +119,26 @@ export class UnusedSymbolDetector {
       // 更準確的判斷需要檢查 AST 節點類型
       return false; // 暫時保守處理，不跳過任何符號
     }
+    return false;
+  }
+
+  /**
+   * 檢查是否為 public 或 protected 類別成員
+   * 這些成員可能被子類別或外部程式碼使用，單檔案模式無法檢測
+   */
+  private isPublicOrProtectedMember(symbol: Symbol): boolean {
+    const modifiers = symbol.modifiers || [];
+
+    // 如果有 public 或 protected 修飾符
+    if (modifiers.includes('public') || modifiers.includes('protected')) {
+      return true;
+    }
+
+    // 檢查 scope：如果是類別成員（scope.parent.type === 'class'），且沒有 private 修飾符，預設就是 public
+    if (symbol.scope?.parent?.type === 'class' && !modifiers.includes('private')) {
+      return true;
+    }
+
     return false;
   }
 
