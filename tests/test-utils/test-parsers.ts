@@ -92,6 +92,20 @@ abstract class BaseTestParser implements ParserPlugin {
   async dispose(): Promise<void> {
     // 清理資源
   }
+
+  getDefaultExcludePatterns(): string[] {
+    return [
+      'node_modules/**',
+      '.git/**',
+      'dist/**',
+      'build/**'
+    ];
+  }
+
+  shouldIgnoreFile(filePath: string): boolean {
+    const patterns = this.getDefaultExcludePatterns();
+    return patterns.some(pattern => filePath.includes(pattern.replace('/**', '')));
+  }
 }
 
 /**
