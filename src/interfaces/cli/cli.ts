@@ -211,6 +211,7 @@ export class AgentIdeCLI {
       .option('-p, --path <path>', '分析路徑', '.')
       .option('--pattern <pattern>', '分析模式')
       .option('--format <format>', '輸出格式 (json|table|summary)', 'summary')
+      .option('--all', '顯示所有掃描結果（預設只顯示有問題的項目）', false)
       .action(async (type, options) => {
         await this.handleAnalyzeCommand(type, options);
       });
@@ -224,6 +225,7 @@ export class AgentIdeCLI {
       .option('-t, --type <type>', '分析類型 (graph|cycles|impact)')
       .option('-f, --file <file>', '特定檔案分析')
       .option('--format <format>', '輸出格式 (json|dot|summary)', 'summary')
+      .option('--all', '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）', false)
       .action(async (options) => {
         await this.handleDepsCommand(options);
       });
@@ -812,6 +814,11 @@ export class AgentIdeCLI {
         const files = await this.getAllProjectFiles(analyzePath);
         const results = await analyzer.analyzeFiles(files);
 
+        // 過濾高複雜度檔案（evaluation === 'high' 或 complexity > 10）
+        const highComplexityFiles = results.filter(r =>
+          r.complexity.evaluation === 'high' || r.complexity.cyclomaticComplexity > 10
+        );
+
         // 計算統計資訊
         const complexities = results.map(r => r.complexity.cyclomaticComplexity);
         const averageComplexity = complexities.length > 0
@@ -822,24 +829,43 @@ export class AgentIdeCLI {
           : 0;
 
         if (options.format === 'json') {
-          console.log(JSON.stringify({
-            files: results.map(r => ({
+          const outputData: any = {
+            summary: {
+              totalScanned: results.length,
+              issuesFound: highComplexityFiles.length,
+              averageComplexity,
+              maxComplexity
+            }
+          };
+
+          if (options.all) {
+            outputData.all = results.map(r => ({
               path: r.file,
               complexity: r.complexity.cyclomaticComplexity,
               cognitiveComplexity: r.complexity.cognitiveComplexity,
               evaluation: r.complexity.evaluation
-            })),
-            summary: {
-              averageComplexity,
-              maxComplexity,
-              totalFiles: results.length
-            }
-          }, null, 2));
+            }));
+          } else {
+            outputData.issues = highComplexityFiles.map(r => ({
+              path: r.file,
+              complexity: r.complexity.cyclomaticComplexity,
+              cognitiveComplexity: r.complexity.cognitiveComplexity,
+              evaluation: r.complexity.evaluation
+            }));
+          }
+
+          console.log(JSON.stringify(outputData, null, 2));
         } else {
           console.log('✅ 複雜度分析完成!');
-          console.log(`📊 統計: ${results.length} 個檔案`);
+          console.log(`📊 統計: ${results.length} 個檔案，${highComplexityFiles.length} 個高複雜度檔案`);
           console.log(`   平均複雜度: ${averageComplexity.toFixed(2)}`);
           console.log(`   最高複雜度: ${maxComplexity}`);
+          if (!options.all && highComplexityFiles.length > 0) {
+            console.log(`\n⚠️  高複雜度檔案:`);
+            highComplexityFiles.forEach(r => {
+              console.log(`   - ${r.file}: ${r.complexity.cyclomaticComplexity}`);
+            });
+          }
         }
       } else if (analyzeType === 'dead-code') {
         const detector = new DeadCodeDetector();
@@ -848,30 +874,53 @@ export class AgentIdeCLI {
         const files = await this.getAllProjectFiles(analyzePath);
         const results = await detector.detectInFiles(files);
 
+        // 過濾有 dead code 的檔案
+        const filesWithDeadCode = results.filter(r => r.deadCode.length > 0);
+
         // 統計結果
         const allDeadCode = results.flatMap(r => r.deadCode);
         const deadFunctions = allDeadCode.filter(d => d.type === 'function');
         const deadVariables = allDeadCode.filter(d => d.type === 'variable');
 
         if (options.format === 'json') {
-          console.log(JSON.stringify({
-            files: results.map(r => ({
-              path: r.file,
-              deadCode: r.deadCode
-            })),
-            deadFunctions: allDeadCode.filter(d => d.type === 'function'),
-            deadVariables: allDeadCode.filter(d => d.type === 'variable'),
+          const outputData: any = {
             summary: {
+              totalScanned: results.length,
+              filesWithIssues: filesWithDeadCode.length,
               totalDeadFunctions: deadFunctions.length,
               totalDeadVariables: deadVariables.length,
               totalDeadCode: allDeadCode.length
             }
-          }, null, 2));
+          };
+
+          if (options.all) {
+            outputData.all = results.map(r => ({
+              path: r.file,
+              deadCode: r.deadCode
+            }));
+          } else {
+            outputData.issues = filesWithDeadCode.map(r => ({
+              path: r.file,
+              deadCode: r.deadCode
+            }));
+          }
+
+          outputData.deadFunctions = deadFunctions;
+          outputData.deadVariables = deadVariables;
+
+          console.log(JSON.stringify(outputData, null, 2));
         } else {
           console.log('✅ 死代碼檢測完成!');
+          console.log(`📊 統計: ${results.length} 個檔案，${filesWithDeadCode.length} 個有死代碼`);
           console.log('📊 發現:');
           console.log(`   未使用函式: ${deadFunctions.length} 個`);
           console.log(`   未使用變數: ${deadVariables.length} 個`);
+          if (!options.all && filesWithDeadCode.length > 0) {
+            console.log(`\n⚠️  有死代碼的檔案:`);
+            filesWithDeadCode.forEach(r => {
+              console.log(`   - ${r.file}: ${r.deadCode.length} 項`);
+            });
+          }
         }
       } else if (analyzeType === 'best-practices') {
         // 檢查最佳實踐
@@ -997,19 +1046,6 @@ export class AgentIdeCLI {
 
       // 輸出結果
       if (options.format === 'json') {
-        // 建立 nodes 和 edges 格式（為了符合測試期望）
-        const nodes = graph.getAllNodes().map((nodeId: string) => ({
-          id: nodeId,
-          dependencies: graph.getDependencies(nodeId)
-        }));
-
-        const edges: Array<{source: string; target: string}> = [];
-        for (const nodeId of graph.getAllNodes()) {
-          for (const depId of graph.getDependencies(nodeId)) {
-            edges.push({ source: nodeId, target: depId });
-          }
-        }
-
         // 根據 --file 選項決定輸出格式
         if (options.file) {
           // 單檔案依賴查詢模式
@@ -1022,23 +1058,46 @@ export class AgentIdeCLI {
           }, null, 2));
         } else {
           // 專案依賴圖模式
-          console.log(JSON.stringify({
-            nodes,
-            edges,
-            cycles: cycles.map(c => ({
-              cycle: c.cycle,
-              length: c.length,
-              severity: c.severity
-            })),
-            stats: {
+          const outputData: any = {
+            summary: {
               totalFiles: stats.totalFiles,
               totalDependencies: stats.totalDependencies,
               averageDependenciesPerFile: stats.averageDependenciesPerFile,
               maxDependenciesInFile: stats.maxDependenciesInFile,
+              issuesFound: cycles.length + stats.orphanedFiles
+            },
+            issues: {
+              cycles: cycles.map(c => ({
+                cycle: c.cycle,
+                length: c.length,
+                severity: c.severity
+              })),
               circularDependencies: cycles.length,
               orphanedFiles: stats.orphanedFiles
             }
-          }, null, 2));
+          };
+
+          // 只有在 --all 時才輸出完整依賴圖
+          if (options.all) {
+            const nodes = graph.getAllNodes().map((nodeId: string) => ({
+              id: nodeId,
+              dependencies: graph.getDependencies(nodeId)
+            }));
+
+            const edges: Array<{source: string; target: string}> = [];
+            for (const nodeId of graph.getAllNodes()) {
+              for (const depId of graph.getDependencies(nodeId)) {
+                edges.push({ source: nodeId, target: depId });
+              }
+            }
+
+            outputData.all = {
+              nodes,
+              edges
+            };
+          }
+
+          console.log(JSON.stringify(outputData, null, 2));
         }
       } else {
         console.log('✅ 依賴分析完成!');

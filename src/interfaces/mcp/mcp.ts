@@ -221,6 +221,11 @@ export class AgentIdeMCP {
               enum: ['json', 'summary'],
               description: '輸出格式',
               default: 'summary'
+            },
+            showAll: {
+              type: 'boolean',
+              description: '顯示所有掃描結果（預設只顯示有問題的項目）',
+              default: false
             }
           }
         }
@@ -251,6 +256,11 @@ export class AgentIdeMCP {
               enum: ['json', 'dot', 'summary'],
               description: '輸出格式',
               default: 'summary'
+            },
+            showAll: {
+              type: 'boolean',
+              description: '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）',
+              default: false
             }
           }
         }

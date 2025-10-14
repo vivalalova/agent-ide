@@ -29,16 +29,18 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       '--path',
       fixture.getFilePath('src/services'),
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(result.exitCode).toBe(0);
 
     const output = JSON.parse(result.stdout);
-    expect(output.files).toBeDefined();
-    expect(output.files.length).toBeGreaterThan(0);
+    expect(output.all).toBeDefined();
+    const files = output.all;
+    expect(files.length).toBeGreaterThan(0);
 
-    const orderServiceResult = output.files.find((f: any) => f.path.includes('order-service.ts'));
+    const orderServiceResult = files.find((f: any) => f.path.includes('order-service.ts'));
     expect(orderServiceResult).toBeDefined();
     expect(orderServiceResult.complexity).toBeGreaterThan(0); // OrderService 有複雜度
     expect(orderServiceResult.evaluation).toBeDefined();
@@ -55,16 +57,18 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       '--path',
       fixture.getFilePath('src/models'),
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(result.exitCode).toBe(0);
 
     const output = JSON.parse(result.stdout);
-    expect(output.files).toBeDefined();
-    expect(output.files.length).toBeGreaterThan(0);
+    expect(output.all).toBeDefined();
+    const files = output.all;
+    expect(files.length).toBeGreaterThan(0);
 
-    const baseModelResult = output.files.find((f: any) => f.path.includes('base-model.ts'));
+    const baseModelResult = files.find((f: any) => f.path.includes('base-model.ts'));
     expect(baseModelResult).toBeDefined();
     expect(baseModelResult.complexity).toBeGreaterThan(0);
     expect(baseModelResult.cognitiveComplexity).toBeDefined();
@@ -78,19 +82,21 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(result.exitCode).toBe(0);
 
     const output = JSON.parse(result.stdout);
-    expect(output.files).toBeDefined();
-    expect(output.files.length).toBeGreaterThan(0);
+    expect(output.all).toBeDefined();
+    const files = output.all;
+    expect(files.length).toBeGreaterThan(0);
 
     // 驗證包含核心業務檔案
-    const userServiceResult = output.files.find((f: any) => f.path.includes('user-service.ts'));
-    const stringUtilsResult = output.files.find((f: any) => f.path.includes('string-utils.ts'));
-    const orderServiceResult = output.files.find((f: any) => f.path.includes('order-service.ts'));
+    const userServiceResult = files.find((f: any) => f.path.includes('user-service.ts'));
+    const stringUtilsResult = files.find((f: any) => f.path.includes('string-utils.ts'));
+    const orderServiceResult = files.find((f: any) => f.path.includes('order-service.ts'));
 
     expect(userServiceResult).toBeDefined();
     expect(stringUtilsResult).toBeDefined();
@@ -118,21 +124,23 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(result.exitCode).toBe(0);
 
     const output = JSON.parse(result.stdout);
-    expect(output.files).toBeDefined();
-    expect(output.files.length).toBeGreaterThanOrEqual(30); // 至少 30 個檔案
+    expect(output.all).toBeDefined();
+    const files = output.all;
+    expect(files.length).toBeGreaterThanOrEqual(30); // 至少 30 個檔案
     expect(output.summary).toBeDefined();
-    expect(output.summary.totalFiles).toBeGreaterThanOrEqual(30);
+    expect(output.summary.totalScanned).toBeGreaterThanOrEqual(30);
     expect(output.summary.averageComplexity).toBeGreaterThan(0);
     expect(output.summary.maxComplexity).toBeGreaterThan(0);
 
     // 驗證包含核心模組
-    const filePaths = output.files.map((f: any) => f.path);
+    const filePaths = files.map((f: any) => f.path);
     expect(filePaths.some((p: string) => p.includes('user-service.ts'))).toBe(true);
     expect(filePaths.some((p: string) => p.includes('order-service.ts'))).toBe(true);
     expect(filePaths.some((p: string) => p.includes('base-model.ts'))).toBe(true);
@@ -186,22 +194,24 @@ export function anotherUnusedHelper() {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ], { timeout: 120000 }); // 增加 timeout 到 120 秒
 
     expect(result.exitCode).toBe(0);
 
     const output = JSON.parse(result.stdout);
-    expect(output.files).toBeDefined();
-    expect(Array.isArray(output.files)).toBe(true);
-    expect(output.files.length).toBeGreaterThan(0);
+    expect(output.all).toBeDefined();
+    const files = output.all;
+    expect(Array.isArray(files)).toBe(true);
+    expect(files.length).toBeGreaterThan(0);
     expect(output.summary).toBeDefined();
     expect(output.summary.totalDeadFunctions).toBeGreaterThanOrEqual(0);
     expect(output.summary.totalDeadVariables).toBeGreaterThanOrEqual(0);
     expect(output.summary.totalDeadCode).toBeGreaterThanOrEqual(0);
 
     // 驗證 unused.ts 被分析
-    const unusedFile = output.files.find((f: any) => f.path.includes('unused.ts'));
+    const unusedFile = files.find((f: any) => f.path.includes('unused.ts'));
     expect(unusedFile).toBeDefined();
     expect(Array.isArray(unusedFile.deadCode)).toBe(true);
   });
@@ -271,13 +281,15 @@ export function anotherUnusedHelper() {
         '--path',
         fixture.getFilePath('src/services/order-service.ts'),
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
-      const orderServiceFile = output.files.find((f: any) => f.path.includes('order-service.ts'));
+      const files = output.all;
+      const orderServiceFile = files.find((f: any) => f.path.includes('order-service.ts'));
       expect(orderServiceFile).toBeDefined();
 
       // createOrder 有複雜的業務邏輯：
@@ -330,13 +342,15 @@ export function multipleBranches(value: number): string {
         '--path',
         fixture.getFilePath('src/test-complexity.ts'),
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
-      const testFile = output.files.find((f: any) => f.path.includes('test-complexity.ts'));
+      const files = output.all;
+      const testFile = files.find((f: any) => f.path.includes('test-complexity.ts'));
       expect(testFile).toBeDefined();
 
       // 檔案總複雜度應該 >= 9 (實際解析結果)
@@ -373,13 +387,15 @@ export function multipleBranches(value: number): string {
         '--path',
         fixture.getFilePath('src/utils/string-utils.ts'),
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
-      const stringUtilsFile = output.files.find((f: any) => f.path.includes('string-utils.ts'));
+      const files = output.all;
+      const stringUtilsFile = files.find((f: any) => f.path.includes('string-utils.ts'));
       expect(stringUtilsFile).toBeDefined();
 
       // string-utils 應該是簡單的 utility 函式
@@ -392,11 +408,12 @@ export function multipleBranches(value: number): string {
           '--path',
           fixture.getFilePath('src/services/order-service.ts'),
           '--format',
-          'json'
+          'json',
+          '--all'
         ]);
 
         const orderOutput = JSON.parse(orderServiceResult.stdout);
-        const orderFile = orderOutput.files[0];
+        const orderFile = orderOutput.all[0];
 
         // OrderService 複雜度應該高於 string-utils
         expect(orderFile.complexity).toBeGreaterThan(stringUtilsFile.complexity);
@@ -432,15 +449,17 @@ function anotherUnusedFunction(param: string): string {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
+      const files = output.all;
 
       // 收集所有死代碼函式
-      const allDeadFunctions = output.files
+      const allDeadFunctions = files
         .flatMap((f: any) => f.deadCode || [])
         .filter((dc: any) => dc.type === 'function' || dc.kind === 'function');
 
@@ -463,15 +482,17 @@ function anotherUnusedFunction(param: string): string {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ], { timeout: 120000 }); // 增加 timeout 到 120 秒
 
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
+      const files = output.all;
 
       // 收集所有死代碼函式名稱
-      const deadFunctions = output.files
+      const deadFunctions = files
         .flatMap((f: any) => f.deadCode || [])
         .filter((dc: any) => dc.type === 'function' || dc.kind === 'function')
         .map((dc: any) => dc.name || dc.symbol);
@@ -553,6 +574,93 @@ function anotherUnusedFunction(param: string): string {
       if (output.statistics.enumCount !== undefined) {
         expect(output.statistics.enumCount).toBeGreaterThanOrEqual(6);
       }
+    });
+  });
+
+  // ============================================================
+  // 7. 預設行為測試（不加 --all 參數）
+  // ============================================================
+
+  describe('預設輸出行為（只顯示問題）', () => {
+    it('complexity 預設只輸出高複雜度檔案', async () => {
+      const result = await executeCLI([
+        'analyze',
+        'complexity',
+        '--path',
+        fixture.getFilePath('src/services'),
+        '--format',
+        'json'
+        // 不加 --all
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+
+      // 預設應該只有 issues，沒有 all
+      expect(output.issues).toBeDefined();
+      expect(output.all).toBeUndefined();
+      expect(output.summary).toBeDefined();
+
+      // issues 只包含高複雜度檔案
+      for (const file of output.issues) {
+        expect(
+          file.evaluation === 'high' || file.complexity > 10
+        ).toBe(true);
+      }
+
+      // summary 應該顯示掃描總數 >= 問題數
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(output.issues.length);
+    });
+
+    it('dead-code 預設只輸出有死代碼的檔案', async () => {
+      // 建立一個有死代碼的檔案
+      await fixture.writeFile('src/test-dead.ts', `
+export function usedFunction() {
+  return 'used';
+}
+
+function unusedFunction() {
+  return 'unused';
+}
+
+export function anotherUsed() {
+  return usedFunction();
+}
+      `.trim());
+
+      const result = await executeCLI([
+        'analyze',
+        'dead-code',
+        '--path',
+        fixture.getFilePath('src'),
+        '--format',
+        'json'
+        // 不加 --all
+      ]);
+
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+
+      // 預設應該只有 issues，沒有 all
+      expect(output.issues).toBeDefined();
+      expect(output.all).toBeUndefined();
+      expect(output.summary).toBeDefined();
+
+      // issues 只包含有死代碼的檔案
+      for (const file of output.issues) {
+        expect(file.deadCode.length).toBeGreaterThan(0);
+      }
+
+      // 應該檢測到 test-dead.ts 的 unusedFunction
+      const testDeadFile = output.issues.find((f: any) => f.path.includes('test-dead.ts'));
+      expect(testDeadFile).toBeDefined();
+      expect(testDeadFile.deadCode).toContainEqual(
+        expect.objectContaining({
+          name: 'unusedFunction'
+        })
+      );
     });
   });
 });

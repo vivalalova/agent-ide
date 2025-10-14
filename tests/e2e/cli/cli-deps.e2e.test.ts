@@ -37,34 +37,34 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
     });
 
     it('應該檢測到豐富的依賴關係 (使用 JSON 格式驗證)', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // 驗證資料結構
-      expect(data).toHaveProperty('nodes');
-      expect(data).toHaveProperty('edges');
-      expect(data).toHaveProperty('stats');
+      expect(data).toHaveProperty('all');
+      expect(data).toHaveProperty('summary');
+      expect(data).toHaveProperty('issues');
 
       // sample-project 有 32 個檔案，應該有豐富的依賴
-      expect(data.stats.totalFiles).toBeGreaterThanOrEqual(32);
-      expect(data.stats.totalDependencies).toBeGreaterThan(50);
+      expect(data.summary.totalFiles).toBeGreaterThanOrEqual(32);
+      expect(data.summary.totalDependencies).toBeGreaterThan(50);
 
       // 驗證有多層依賴關係
-      expect(data.edges.length).toBeGreaterThan(0);
+      expect(data.all.edges.length).toBeGreaterThan(0);
     });
 
     it('應該在 JSON 輸出中包含 types、models、services、controllers 檔案', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // 檢查節點中是否包含各層級的檔案
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
 
       const hasTypes = nodeIds.some((id: string) => id.includes('types'));
       const hasModels = nodeIds.some((id: string) => id.includes('models'));
@@ -161,7 +161,7 @@ export class CycleC {
 
   describe('影響分析', () => {
     it('應該能分析出豐富的依賴關係網路', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -169,11 +169,11 @@ export class CycleC {
 
       // sample-project 有 32 個檔案，依賴關係豐富
       // types → models → services → controllers 形成多層依賴
-      expect(data.stats.totalFiles).toBeGreaterThanOrEqual(32);
-      expect(data.stats.totalDependencies).toBeGreaterThan(50);
+      expect(data.summary.totalFiles).toBeGreaterThanOrEqual(32);
+      expect(data.summary.totalDependencies).toBeGreaterThan(50);
 
       // 檢查依賴圖中包含關鍵模組
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
 
       const hasCommon = nodeIds.some((id: string) => id.includes('common'));
       const hasUserService = nodeIds.some((id: string) => id.includes('user-service'));
@@ -234,14 +234,14 @@ export function getConfigDate(): string {
       // types/index.ts 已經包含 re-export
       // 我們驗證能正確處理這些語法
 
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // types/index.ts re-exports 所有子模組，應該在節點中
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
       const hasTypesIndex = nodeIds.some((id: string) => id.includes('types') && id.includes('index'));
 
       expect(hasTypesIndex).toBe(true);
@@ -251,14 +251,14 @@ export function getConfigDate(): string {
       // types/index.ts 使用 export * 重新匯出所有型別
       // 使用 types/index 的模組間接依賴所有 types/* 檔案
 
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // 驗證 types 相關檔案被分析
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
       const typesFiles = nodeIds.filter((id: string) => id.includes('types'));
 
       // types 資料夾至少應該有 user.ts, product.ts, order.ts, common.ts, api.ts, index.ts
@@ -268,14 +268,14 @@ export function getConfigDate(): string {
 
   describe('深層依賴鏈', () => {
     it('應該追蹤完整的依賴鏈 (index → controllers → services → models → types)', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // 檢查是否包含所有層級的檔案
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
 
       const hasIndex = nodeIds.some((id: string) => id.includes('index') && !id.includes('node_modules'));
       const hasControllers = nodeIds.some((id: string) => id.includes('controllers'));
@@ -291,20 +291,20 @@ export function getConfigDate(): string {
     });
 
     it('應該正確計算依賴層級深度', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
       const data = JSON.parse(result.stdout);
 
       // sample-project 有多層依賴，edges 應該反映這些層級關係
-      expect(data.edges.length).toBeGreaterThan(50);
+      expect(data.all.edges.length).toBeGreaterThan(50);
     });
   });
 
   describe('特定服務的依賴分析', () => {
     it('應該能檢測到 services 之間的依賴關係', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -314,7 +314,7 @@ export function getConfigDate(): string {
       // AuthService 依賴 UserService
       // 這些依賴應該反映在 edges 中
 
-      const nodeIds = data.nodes.map((n: any) => n.id);
+      const nodeIds = data.all.nodes.map((n: any) => n.id);
 
       const hasOrderService = nodeIds.some((id: string) => id.includes('order-service'));
       const hasUserService = nodeIds.some((id: string) => id.includes('user-service'));
@@ -325,7 +325,7 @@ export function getConfigDate(): string {
     });
 
     it('應該能檢測到跨層級的依賴關係', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -336,8 +336,62 @@ export function getConfigDate(): string {
       // Models 依賴 Types
       // 這些跨層級的依賴應該在 edges 中體現
 
-      expect(data.edges.length).toBeGreaterThan(0);
-      expect(data.stats.totalDependencies).toBeGreaterThan(0);
+      expect(data.all.edges.length).toBeGreaterThan(0);
+      expect(data.summary.totalDependencies).toBeGreaterThan(0);
+    });
+  });
+
+  describe('預設輸出行為（只顯示問題）', () => {
+    it('預設只輸出循環依賴和孤立檔案，不包含完整依賴圖', async () => {
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 預設應該有 issues 和 summary，沒有 all
+      expect(data.issues).toBeDefined();
+      expect(data.all).toBeUndefined();
+      expect(data.summary).toBeDefined();
+
+      // issues 應該包含循環依賴和孤立檔案資訊
+      expect(data.issues.cycles).toBeDefined();
+      expect(data.issues.circularDependencies).toBeDefined();
+      expect(data.issues.orphanedFiles).toBeDefined();
+
+      // summary 應該包含統計資訊
+      expect(data.summary.totalFiles).toBeGreaterThan(0);
+      expect(data.summary.totalDependencies).toBeGreaterThan(0);
+    });
+
+    it('檢測到循環依賴時應該在 issues 中回報', async () => {
+      // 建立循環依賴
+      await fixture.writeFile('src/cycle-x.ts', `
+import { CycleY } from './cycle-y';
+export class CycleX {
+  constructor(private y: CycleY) {}
+}
+      `.trim());
+
+      await fixture.writeFile('src/cycle-y.ts', `
+import { CycleX } from './cycle-x';
+export class CycleY {
+  constructor(private x: CycleX) {}
+}
+      `.trim());
+
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+
+      expect(result.exitCode).toBe(0);
+
+      const data = JSON.parse(result.stdout);
+
+      // 應該檢測到循環依賴
+      expect(data.issues.circularDependencies).toBeGreaterThan(0);
+      expect(data.issues.cycles.length).toBeGreaterThan(0);
+
+      // 應該不包含完整依賴圖
+      expect(data.all).toBeUndefined();
     });
   });
 });

@@ -66,6 +66,45 @@ src/
 - **MCP**：`code_[index|search|rename|move|analyze|deps|parser_plugins]`
   - MCP 規範、非同步、工具註冊
 
+## 診斷命令輸出優化（Token 效率）
+
+**目的**：診斷命令（analyze、deps）預設只回傳有問題的程式碼，節省 AI agent 的 token 消耗
+
+**原理**：正常程式碼佔掃描結果的 99%，但 AI agent 通常只關心問題項目
+
+### 預設行為（只輸出問題）
+
+- `analyze complexity`：只輸出 evaluation=high 或 complexity>10 的檔案
+- `analyze dead-code`：只輸出有 dead code 的檔案
+- `deps`：只輸出循環依賴和孤立檔案
+
+### 完整輸出（`--all` 參數）
+
+```bash
+# 顯示所有掃描的檔案
+agent-ide analyze complexity --all
+agent-ide analyze dead-code --all
+agent-ide deps --all
+```
+
+### 輸出結構
+
+```json
+{
+  "issues": [...],      // 預設：只有問題項目
+  "all": [...],         // --all：完整掃描結果
+  "summary": {          // 統計資訊（永遠存在）
+    "totalScanned": 100,
+    "issuesFound": 5
+  }
+}
+```
+
+### MCP 對應
+
+- CLI `--all` 對應 MCP `showAll: true`
+- 預設 `showAll: false`
+
 ## Parser 插件介面
 
 ```typescript

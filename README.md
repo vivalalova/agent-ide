@@ -148,30 +148,39 @@ npx agent-ide move src/old.ts src/new.ts
 **💡 優先於手動檢查：一次掃描獲得完整指標，避免多次讀取檔案**
 
 ```bash
-# 複雜度分析
+# 複雜度分析（預設只顯示高複雜度檔案）
 npx agent-ide analyze complexity --format json
 
-# 死代碼檢測
+# 顯示所有檔案的複雜度
+npx agent-ide analyze complexity --format json --all
+
+# 死代碼檢測（預設只顯示有死代碼的檔案）
 npx agent-ide analyze dead-code --format json
+
+# 顯示所有掃描的檔案（包含沒問題的）
+npx agent-ide analyze dead-code --format json --all
 
 # 最佳實踐檢查
 npx agent-ide analyze best-practices --format json
 ```
 
-**優勢**：結構化輸出、批量分析、涵蓋多個品質維度
+**優勢**：結構化輸出、批量分析、涵蓋多個品質維度、預設只顯示有問題的項目節省 token
 
 ### 5. 依賴關係分析（優先使用）
 **💡 優先於手動追蹤：快速找出循環依賴和影響範圍，避免逐檔追蹤 import**
 
 ```bash
-# 分析專案依賴圖（含循環依賴檢測）
+# 分析依賴關係（預設只顯示循環依賴和孤立檔案）
 npx agent-ide deps --format json
+
+# 顯示完整依賴圖（包含 nodes 和 edges）
+npx agent-ide deps --format json --all
 
 # 查詢特定檔案的依賴
 npx agent-ide deps --file src/service.ts --format json
 ```
 
-**優勢**：視覺化依賴關係、自動檢測循環依賴、影響範圍分析
+**優勢**：視覺化依賴關係、自動檢測循環依賴、影響範圍分析、預設只顯示問題節省 token
 
 ### 6. 程式碼重構（優先使用）
 **💡 優先於手動重構：自動處理複雜重構操作，避免手動複製貼上和修改**
