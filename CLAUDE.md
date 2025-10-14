@@ -10,7 +10,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
 
-**現況**：7 個核心模組 ✅、基礎設施 ✅、3 個 Parser ✅、CLI/MCP ✅、1629 個測試通過
+**現況**：7 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、171 個測試通過
 
 ## 快速參考
 
@@ -25,7 +25,7 @@ npm link && agent-ide --help
 src/
 ├── core/           # 7 個核心模組
 ├── infrastructure/ # parser、cache、storage、utils
-├── plugins/        # TypeScript、JavaScript、Swift
+├── plugins/        # TypeScript、JavaScript
 ├── interfaces/     # CLI、MCP
 └── application/    # 服務協調層
 ```
@@ -57,7 +57,6 @@ src/
 
 - **TypeScript**：Compiler API、Program 重用、Watch 模式
 - **JavaScript**：Babel、ES2023+、JSX/Flow
-- **Swift**：tree-sitter、Swift 5.x、SwiftUI
 
 ## 介面層
 

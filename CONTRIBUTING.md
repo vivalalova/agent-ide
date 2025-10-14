@@ -26,7 +26,7 @@ node dist/interfaces/cli/index.js --help
 src/
 ├── core/           # 7個核心模組（indexing, search, rename, move, refactor, analysis, dependency）
 ├── infrastructure/ # parser, cache, storage, utils
-├── plugins/        # TypeScript, JavaScript, Swift
+├── plugins/        # TypeScript, JavaScript
 ├── application/    # 服務協調層
 ├── interfaces/     # CLI, MCP
 └── shared/         # types, constants, errors

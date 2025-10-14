@@ -216,7 +216,7 @@ npx agent-ide refactor extract-function \
 Agent IDE
 ├── 核心模組：索引、搜尋、重構、移動、依賴分析
 ├── 基礎設施：Parser 框架、快取、儲存
-├── 插件系統：TypeScript、JavaScript、Swift
+├── 插件系統：TypeScript、JavaScript
 └── 介面層：CLI、MCP
 ```
 
@@ -226,7 +226,7 @@ Agent IDE
 - 並行處理
 - 記憶體優化（~100MB / 10k 檔案）
 
-**支援語言**：TypeScript、JavaScript、Swift（開發中）
+**支援語言**：TypeScript、JavaScript
 
 </details>
 
