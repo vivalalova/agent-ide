@@ -58,32 +58,37 @@ export class UnusedSymbolDetector {
     const unused: UnusedCode[] = [];
 
     // 提取所有符號
-    const symbols = await parser.extractSymbols(ast);
+    const allSymbols = await parser.extractSymbols(ast);
 
-    // 優化：一次遍歷收集所有符號的引用（避免 O(n²) 複雜度）
-    const referenceMap = await this.buildReferenceMap(ast, parser, symbols);
-
-    for (const symbol of symbols) {
-      // 跳過非抽象宣告（只檢測 class, interface, type, enum 等抽象宣告）
+    // 優化：提早過濾，只對需要檢測的符號建立 reference map
+    const symbolsToCheck = allSymbols.filter(symbol => {
+      // 只檢測抽象宣告
       if (parser.isAbstractDeclaration && !parser.isAbstractDeclaration(symbol)) {
-        continue;
+        return false;
       }
 
       // 跳過已匯出的符號
       if (this.isExported(symbol)) {
-        continue;
+        return false;
       }
 
-      // 跳過函式參數（檢查 scope 或 modifiers）
+      // 跳過函式參數
       if (this.isParameter(symbol)) {
-        continue;
+        return false;
       }
 
-      // 跳過可能被外部使用的類別成員（public/protected 方法和屬性）
-      // 因為單檔案模式無法檢測跨檔案引用（如子類別對父類別方法的呼叫）
+      // 跳過 public/protected 類別成員
       if (this.isPublicOrProtectedMember(symbol)) {
-        continue;
+        return false;
       }
+
+      return true;
+    });
+
+    // 只對需要檢測的符號建立 reference map
+    const referenceMap = await this.buildReferenceMap(ast, parser, symbolsToCheck);
+
+    for (const symbol of symbolsToCheck) {
 
       // 從映射表中查找引用（O(1)）
       const references = referenceMap.get(symbol.name) || [];
@@ -120,19 +125,17 @@ export class UnusedSymbolDetector {
     symbols: Symbol[]
   ): Promise<Map<string, any[]>> {
     const referenceMap = new Map<string, any[]>();
-    const totalSymbols = symbols.length;
 
-    // 分批處理以避免記憶體壓力
-    const batchSize = 20; // 每批處理 20 個符號
+    // 如果符號數量很少，直接處理
+    if (symbols.length === 0) {
+      return referenceMap;
+    }
+
+    // 增加批次大小以提升效能
+    const batchSize = 50;
 
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
-      const progress = Math.min(i + batchSize, totalSymbols);
-
-      // 在控制台顯示進度（僅在處理大量符號時）
-      if (totalSymbols > 50 && i % (batchSize * 5) === 0) {
-        console.error(`處理符號引用: ${progress}/${totalSymbols} (${Math.round(progress / totalSymbols * 100)}%)`);
-      }
 
       // 批次並行處理
       await Promise.all(
