@@ -13,6 +13,7 @@ import { TestCoverageChecker } from './collectors/test-coverage-checker.js';
 import { ErrorHandlingChecker } from './collectors/error-handling-checker.js';
 import { NamingChecker } from './collectors/naming-checker.js';
 import { SecurityChecker } from './collectors/security-checker.js';
+import { DuplicationDetector } from '../analysis/duplication-detector.js';
 import type {
   ShitScoreResult,
   ShitScoreOptions,
@@ -44,6 +45,7 @@ export class ShitScoreAnalyzer {
   private readonly calculator: ScoreCalculator;
   private readonly grading: Grading;
   private readonly qualityAssuranceCollector: QualityAssuranceCollector;
+  private readonly duplicationDetector: DuplicationDetector;
 
   constructor() {
     this.calculator = new ScoreCalculator();
@@ -55,6 +57,7 @@ export class ShitScoreAnalyzer {
       new NamingChecker(),
       new SecurityChecker()
     );
+    this.duplicationDetector = new DuplicationDetector();
   }
 
   /**
@@ -132,7 +135,7 @@ export class ShitScoreAnalyzer {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // 忽略無法讀取的目錄
       }
     }
@@ -220,11 +223,20 @@ export class ShitScoreAnalyzer {
       }
     }
 
+    // 檢測重複代碼
+    const clones = await this.duplicationDetector.detect(files, {
+      minLines: 3,
+      minTokens: 5,
+      similarityThreshold: 0.7,
+    });
+
+    const duplicateCodeCount = clones.length;
+
     return {
       totalFiles: files.length,
       deadCodeCount,
       largeFileCount,
-      duplicateCodeCount: 0,
+      duplicateCodeCount,
     };
   }
 

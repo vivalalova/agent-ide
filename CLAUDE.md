@@ -10,7 +10,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
 
-**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、204 個測試通過
+**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、218 個測試通過
 
 ## 快速參考
 
@@ -293,6 +293,36 @@ interface ParserPlugin {
 ## 新增功能流程
 
 1. 建立規格 → 2. 設計 API → 3. 寫測試 → 4. 實作 → 5. CLI/MCP → 6. 文件
+
+## 重要改進記錄
+
+### 重複代碼檢測整合（2025-01-17）
+
+**問題**：ShitScore 報告重複代碼永遠 0%，DuplicationDetector 完整實作但未整合
+
+**解決方案**：
+1. ✅ 整合 DuplicationDetector 到 ShitScoreAnalyzer
+2. ✅ 調整檢測門檻：minLines: 3, minTokens: 5（可檢測小方法）
+3. ✅ 實作方法級片段提取（基於正則表達式和大括號配對）
+4. ✅ 跨檔案檢測邏輯（避免同檔案內方法誤判為重複）
+5. ✅ Type-1、Type-2、Type-3 克隆檢測完整運作
+
+**技術細節**：
+- 提取共用 `calculateAverageLines` 函式
+- Type-2/Type-3 檢測器過濾同檔案重複
+- 改善 JSDoc 文件
+- 移除 non-null assertions 和未使用變數
+
+**測試覆蓋**：
+- 新增 12 個 E2E 測試（cli-shit-duplication.e2e.test.ts）
+- 驗證 Type-1、Type-2 檢測
+- 驗證維護性評分整合
+- 驗證 --detailed 參數輸出
+
+**改善成果**：
+- 重複代碼檢測從 0% → 實際檢測結果
+- 維護性評分準確度提升（重複代碼佔 20% 權重）
+- 全專案測試：218 passed | 2 skipped
 
 ## 授權
 

@@ -45,6 +45,15 @@ export interface DetectionConfig {
 }
 
 /**
+ * 計算程式碼片段的平均行數
+ */
+function calculateAverageLines(fragments: CodeFragment[]): number {
+  const totalLines = fragments.reduce((sum, f) =>
+    sum + (f.location.endLine - f.location.startLine + 1), 0);
+  return Math.round(totalLines / fragments.length);
+}
+
+/**
  * Type-1 克隆檢測器（完全相同的代碼，除了空白和註釋）
  */
 export class Type1CloneDetector {
@@ -60,24 +69,30 @@ export class Type1CloneDetector {
 
     // 按 hash 分組
     for (const fragment of fragments) {
-      if (fragment.tokens.length < config.minTokens) {continue;}
+      if (fragment.tokens.length < config.minTokens) {
+        continue;
+      }
 
       const hash = this.computeHash(fragment, config);
+
       if (!hashGroups.has(hash)) {
         hashGroups.set(hash, []);
       }
-      hashGroups.get(hash)!.push(fragment);
+      const group = hashGroups.get(hash);
+      if (group) {
+        group.push(fragment);
+      }
     }
 
     // 找出重複的組
-    for (const [hash, group] of hashGroups) {
+    for (const group of hashGroups.values()) {
       if (group.length > 1) {
         clones.push({
           type: 'type-1',
           instances: group,
-          lines: this.calculateAverageLines(group),
+          lines: calculateAverageLines(group),
           similarity: 1.0,
-          severity: this.calculateSeverity(group.length, this.calculateAverageLines(group))
+          severity: this.calculateSeverity(group.length, calculateAverageLines(group))
         });
       }
     }
@@ -103,12 +118,6 @@ export class Type1CloneDetector {
     return createHash('md5').update(normalized).digest('hex');
   }
 
-  private calculateAverageLines(fragments: CodeFragment[]): number {
-    const totalLines = fragments.reduce((sum, f) =>
-      sum + (f.location.endLine - f.location.startLine + 1), 0);
-    return Math.round(totalLines / fragments.length);
-  }
-
   private calculateSeverity(instanceCount: number, lines: number): 'low' | 'medium' | 'high' {
     if (instanceCount >= 5 || lines >= 50) {return 'high';}
     if (instanceCount >= 3 || lines >= 20) {return 'medium';}
@@ -122,6 +131,9 @@ export class Type1CloneDetector {
 export class Type2CloneDetector {
   /**
    * 檢測 Type-2 克隆
+   * @param fragments 程式碼片段列表
+   * @param config 檢測配置
+   * @returns Type-2 克隆列表（僅包含跨檔案重複）
    */
   detect(fragments: CodeFragment[], config: DetectionConfig): Clone[] {
     const clones: Clone[] = [];
@@ -136,22 +148,52 @@ export class Type2CloneDetector {
       if (!normalizedGroups.has(hash)) {
         normalizedGroups.set(hash, []);
       }
-      normalizedGroups.get(hash)!.push(fragment);
+      const group = normalizedGroups.get(hash);
+      if (group) {
+        group.push(fragment);
+      }
     }
 
-    for (const [hash, group] of normalizedGroups) {
+    for (const group of normalizedGroups.values()) {
       if (group.length > 1) {
-        clones.push({
-          type: 'type-2',
-          instances: group,
-          lines: this.calculateAverageLines(group),
-          similarity: this.calculateSimilarity(group),
-          severity: this.calculateSeverity(group.length, this.calculateAverageLines(group))
-        });
+        // 過濾掉同一檔案內的重複（同一個類的不同方法不應視為重複）
+        const crossFileInstances = this.filterCrossFileInstances(group);
+        if (crossFileInstances.length > 1) {
+          clones.push({
+            type: 'type-2',
+            instances: crossFileInstances,
+            lines: calculateAverageLines(crossFileInstances),
+            similarity: this.calculateSimilarity(crossFileInstances),
+            severity: this.calculateSeverity(crossFileInstances.length, calculateAverageLines(crossFileInstances))
+          });
+        }
       }
     }
 
     return clones;
+  }
+
+  /**
+   * 過濾掉同一檔案內的實例，只保留跨檔案的重複
+   */
+  private filterCrossFileInstances(instances: CodeFragment[]): CodeFragment[] {
+    const fileGroups = new Map<string, CodeFragment[]>();
+
+    for (const instance of instances) {
+      const file = instance.location.file;
+      if (!fileGroups.has(file)) {
+        fileGroups.set(file, []);
+      }
+      fileGroups.get(file)!.push(instance);
+    }
+
+    // 如果所有實例都在同一個檔案，返回空陣列
+    if (fileGroups.size === 1) {
+      return [];
+    }
+
+    // 每個檔案只保留一個代表
+    return Array.from(fileGroups.values()).map(group => group[0]);
   }
 
   /**
@@ -187,12 +229,6 @@ export class Type2CloneDetector {
     return createHash('md5').update(json).digest('hex');
   }
 
-  private calculateAverageLines(fragments: CodeFragment[]): number {
-    const totalLines = fragments.reduce((sum, f) =>
-      sum + (f.location.endLine - f.location.startLine + 1), 0);
-    return Math.round(totalLines / fragments.length);
-  }
-
   private calculateSimilarity(fragments: CodeFragment[]): number {
     // Type-2 克隆的相似度計算
     return 0.85; // 簡化實作
@@ -213,6 +249,7 @@ export class Type3CloneDetector {
 
   /**
    * 設定相似度閾值
+   * @param threshold 相似度閾值（0-1 之間）
    */
   setThreshold(threshold: number): void {
     this.threshold = Math.max(0, Math.min(1, threshold));
@@ -220,6 +257,9 @@ export class Type3CloneDetector {
 
   /**
    * 檢測 Type-3 克隆
+   * @param fragments 程式碼片段列表
+   * @param config 檢測配置
+   * @returns Type-3 克隆列表（僅包含跨檔案重複）
    */
   detect(fragments: CodeFragment[], config: DetectionConfig): Clone[] {
     const clones: Clone[] = [];
@@ -228,13 +268,12 @@ export class Type3CloneDetector {
     // Type-3 檢測需要比較每對片段的相似度
     for (let i = 0; i < fragments.length; i++) {
       for (let j = i + 1; j < fragments.length; j++) {
-        const similarity = this.calculateSimilarity(fragments[i], fragments[j]);
+        // 跳過同一檔案內的片段
+        if (fragments[i].location.file === fragments[j].location.file) {
+          continue;
+        }
 
-        // 除錯輸出
-        console.log(`Debug - similarity between fragments ${i} and ${j}:`, similarity);
-        console.log('Debug - tokens1:', fragments[i].tokens);
-        console.log('Debug - tokens2:', fragments[j].tokens);
-        console.log('Debug - effectiveThreshold:', effectiveThreshold);
+        const similarity = this.calculateSimilarity(fragments[i], fragments[j]);
 
         if (similarity >= effectiveThreshold && similarity < 0.95) { // Type-3 不是完全相同
           clones.push({
@@ -369,13 +408,6 @@ export class DuplicationDetector {
     const type2Clones = this.type2Detector.detect(fragments, fullConfig);
     const type3Clones = this.type3Detector.detect(fragments, fullConfig);
 
-    // 除錯：輸出檢測結果
-    console.log('Debug - fragments count:', fragments.length);
-    console.log('Debug - type3Clones count:', type3Clones.length);
-    if (type3Clones.length > 0) {
-      console.log('Debug - type3 similarity:', type3Clones[0].similarity);
-    }
-
     return [...type1Clones, ...type2Clones, ...type3Clones];
   }
 
@@ -392,8 +424,8 @@ export class DuplicationDetector {
     }
 
     const fullConfig: DetectionConfig = {
-      minLines: 5,
-      minTokens: 10,
+      minLines: 3,
+      minTokens: 5,
       similarityThreshold: 0.7,
       ignoreWhitespace: true,
       ignoreComments: true,
@@ -415,16 +447,15 @@ export class DuplicationDetector {
    * 從檔案中提取程式碼片段
    */
   private async extractFragments(files: string[]): Promise<CodeFragment[]> {
+    const { readFile } = await import('fs/promises');
     const fragments: CodeFragment[] = [];
 
     for (const file of files) {
       try {
-        // 實際實作中應該讀取檔案內容並解析
-        const content = ''; // 簡化實作
+        const content = await readFile(file, 'utf-8');
         const fileFragments = this.parseFileToFragments(file, content);
         fragments.push(...fileFragments);
       } catch (error) {
-        // 忽略解析錯誤的檔案
         continue;
       }
     }
@@ -433,7 +464,7 @@ export class DuplicationDetector {
   }
 
   /**
-   * 將檔案內容解析為程式碼片段
+   * 將檔案內容解析為程式碼片段（提取方法和函式）
    */
   private parseFileToFragments(filePath: string, content: string): CodeFragment[] {
     if (typeof filePath !== 'string' || filePath.trim() === '') {
@@ -444,29 +475,108 @@ export class DuplicationDetector {
       throw new Error('檔案內容必須是字串');
     }
 
-    // 簡化實作：將內容按行分割成片段
-    const lines = content.split('\n');
     const fragments: CodeFragment[] = [];
+    const lines = content.split('\n');
 
-    for (let i = 0; i < lines.length; i += 10) {
-      const endLine = Math.min(i + 9, lines.length - 1);
-      const fragmentContent = lines.slice(i, endLine + 1).join('\n');
+    // 提取方法和函式的正則表達式（更寬鬆的匹配）
+    const methodRegex = /(\s*)(async\s+)?(\w+)\s*\([^)]*\)\s*\{/gm;
+    let match: RegExpExecArray | null;
 
-      if (fragmentContent.trim().length > 0) {
+    while ((match = methodRegex.exec(content)) !== null) {
+      const startPos = match.index;
+      const startLine = content.substring(0, startPos).split('\n').length;
+      const methodName = match[3];
+
+      // 找到方法開始的 { 位置
+      const bracePos = startPos + match[0].length - 1;
+
+      // 找到方法的結束位置（配對大括號）
+      const endPos = this.findMatchingBrace(content, bracePos);
+      if (endPos === -1) {
+        continue;
+      }
+
+      const endLine = content.substring(0, endPos + 1).split('\n').length;
+      const fragmentContent = content.substring(startPos, endPos + 1);
+      const lineCount = endLine - startLine + 1;
+
+      // 只處理行數 >= 3 的方法
+      if (lineCount >= 3) {
+        const tokens = this.tokenize(fragmentContent);
+
         fragments.push({
-          id: `${filePath}:${i + 1}-${endLine + 1}`,
+          id: `${filePath}:${startLine}:${methodName}`,
           ast: this.parseToAST(fragmentContent),
-          tokens: this.tokenize(fragmentContent),
+          tokens,
           location: {
             file: filePath,
-            startLine: i + 1,
-            endLine: endLine + 1
+            startLine,
+            endLine
           }
         });
       }
     }
 
+    // 如果沒有找到方法，回退到按行分割
+    if (fragments.length === 0) {
+      for (let i = 0; i < lines.length; i += 10) {
+        const endLine = Math.min(i + 9, lines.length - 1);
+        const fragmentContent = lines.slice(i, endLine + 1).join('\n');
+
+        if (fragmentContent.trim().length > 0) {
+          fragments.push({
+            id: `${filePath}:${i + 1}-${endLine + 1}`,
+            ast: this.parseToAST(fragmentContent),
+            tokens: this.tokenize(fragmentContent),
+            location: {
+              file: filePath,
+              startLine: i + 1,
+              endLine: endLine + 1
+            }
+          });
+        }
+      }
+    }
+
     return fragments;
+  }
+
+  /**
+   * 找到配對的右大括號
+   */
+  private findMatchingBrace(content: string, startPos: number): number {
+    let braceCount = 1;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = startPos + 1; i < content.length; i++) {
+      const char = content[i];
+      const prevChar = content[i - 1];
+
+      // 處理字串
+      if ((char === '"' || char === '\'' || char === '`') && prevChar !== '\\') {
+        if (!inString) {
+          inString = true;
+          stringChar = char;
+        } else if (char === stringChar) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          if (braceCount === 0) {
+            return i;
+          }
+        }
+      }
+    }
+
+    return -1;
   }
 
   /**
