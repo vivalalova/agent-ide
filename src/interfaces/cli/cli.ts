@@ -242,6 +242,7 @@ export class AgentIdeCLI {
       .option('-t, --top <num>', '顯示前 N 個最糟項目', '10')
       .option('-m, --max-allowed <score>', '最大允許分數（超過則 exit 1）')
       .option('--format <format>', '輸出格式 (json|summary)', 'summary')
+      .option('--show-files', '顯示問題檔案列表（detailedFiles）', false)
       .option('-o, --output <file>', '輸出到檔案')
       .action(async (options) => {
         await this.handleShitCommand(options);
@@ -1051,7 +1052,8 @@ export class AgentIdeCLI {
       const result = await analyzer.analyze(analyzePath, {
         detailed: options.detailed,
         topCount,
-        maxAllowed
+        maxAllowed,
+        showFiles: options.showFiles
       });
 
       if (options.format === 'json') {
