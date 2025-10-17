@@ -1,3 +1,4 @@
+/* eslint-disable no-empty */
 /**
  * 錯誤處理問題測試檔案
  * 用於測試 ErrorHandlingChecker 的檢測能力

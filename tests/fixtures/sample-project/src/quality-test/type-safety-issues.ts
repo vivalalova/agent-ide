@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /**
  * 型別安全問題測試檔案
  * 用於測試 TypeSafetyChecker 的檢測能力

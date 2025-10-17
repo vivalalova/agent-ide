@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /**
  * 安全風險測試檔案
  * 用於測試 SecurityChecker 的檢測能力

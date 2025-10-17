@@ -257,7 +257,7 @@ describe('CLI shit - 重複代碼檢測', () => {
   // ============================================================
 
   describe('--show-files 重複代碼位置', () => {
-    it.skip('--show-files 應該列出重複代碼位置', async () => {
+    it('--show-files 應該列出重複代碼位置', async () => {
       const result = await executeCLI([
         'shit',
         '--path',
@@ -270,13 +270,13 @@ describe('CLI shit - 重複代碼檢測', () => {
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
-      expect(output.files).toBeDefined();
-      expect(output.files.maintainability).toBeDefined();
-      expect(output.files.maintainability.duplicateCode).toBeDefined();
-      expect(Array.isArray(output.files.maintainability.duplicateCode)).toBe(true);
+      expect(output.detailedFiles).toBeDefined();
+      expect(output.detailedFiles.maintainability).toBeDefined();
+      expect(output.detailedFiles.maintainability.duplicateCode).toBeDefined();
+      expect(Array.isArray(output.detailedFiles.maintainability.duplicateCode)).toBe(true);
     });
 
-    it.skip('重複代碼位置應該包含檔案路徑和行號', async () => {
+    it('重複代碼位置應該包含檔案路徑和行號', async () => {
       const result = await executeCLI([
         'shit',
         '--path',
@@ -289,11 +289,11 @@ describe('CLI shit - 重複代碼檢測', () => {
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
-      const duplicateFiles = output.files?.maintainability?.duplicateCode;
+      const duplicateFiles = output.detailedFiles?.maintainability?.duplicateCode;
 
       if (duplicateFiles && duplicateFiles.length > 0) {
         const firstFile = duplicateFiles[0];
-        expect(firstFile.file).toBeDefined();
+        expect(firstFile.path).toBeDefined();
         expect(firstFile.location).toBeDefined();
         expect(firstFile.location.start).toBeDefined();
         expect(firstFile.location.end).toBeDefined();

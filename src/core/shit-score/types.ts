@@ -202,6 +202,10 @@ export interface FileDetail {
   readonly emptyCatchCount?: number;
   readonly namingIssues?: number;
   readonly securityIssues?: number;
+  readonly location?: {
+    readonly start: number;
+    readonly end: number;
+  };
 }
 
 /**
@@ -217,6 +221,7 @@ export interface DetailedFiles {
   readonly maintainability: {
     readonly deadCode: readonly FileDetail[];
     readonly largeFile: readonly FileDetail[];
+    readonly duplicateCode: readonly FileDetail[];
   };
   readonly architecture: {
     readonly orphanFile: readonly FileDetail[];

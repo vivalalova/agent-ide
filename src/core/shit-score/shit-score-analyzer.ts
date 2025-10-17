@@ -530,6 +530,7 @@ export class ShitScoreAnalyzer {
     const errorHandlingFiles: FileDetail[] = [];
     const namingViolationFiles: FileDetail[] = [];
     const securityRiskFiles: FileDetail[] = [];
+    const duplicateCodeFiles: FileDetail[] = [];
 
     for (const file of files) {
       try {
@@ -612,6 +613,25 @@ export class ShitScoreAnalyzer {
       });
     }
 
+    // 檢測重複代碼
+    const clones = await this.duplicationDetector.detect(files, {
+      minLines: 3,
+      minTokens: 5,
+      similarityThreshold: 0.7,
+    });
+
+    for (const clone of clones) {
+      for (const instance of clone.instances) {
+        duplicateCodeFiles.push({
+          path: instance.location.file,
+          location: {
+            start: instance.location.startLine,
+            end: instance.location.endLine,
+          },
+        });
+      }
+    }
+
     return {
       complexity: {
         highComplexity: [],
@@ -622,6 +642,7 @@ export class ShitScoreAnalyzer {
       maintainability: {
         deadCode: [],
         largeFile: [],
+        duplicateCode: duplicateCodeFiles,
       },
       architecture: {
         orphanFile: [],
