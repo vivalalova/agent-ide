@@ -60,9 +60,9 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     expect(output.dimensions.maintainability).toBeDefined();
     expect(output.dimensions.architecture).toBeDefined();
 
-    // 驗證權重
-    expect(output.dimensions.complexity.weight).toBe(0.35);
-    expect(output.dimensions.maintainability.weight).toBe(0.35);
+    // 驗證權重（新增品質保證維度後調整為 30%/30%/30%/20%）
+    expect(output.dimensions.complexity.weight).toBe(0.3);
+    expect(output.dimensions.maintainability.weight).toBe(0.3);
     expect(output.dimensions.architecture.weight).toBe(0.3);
 
     // 驗證分數範圍
@@ -436,12 +436,13 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       // 但可能有一些複雜的業務邏輯（如 OrderService）
       expect(output.shitScore).toBeGreaterThanOrEqual(0);
 
-      // 驗證分數組成合理
-      const { complexity, maintainability, architecture } = output.dimensions;
+      // 驗證分數組成合理（包含第四個維度 qualityAssurance）
+      const { complexity, maintainability, architecture, qualityAssurance } = output.dimensions;
       const calculatedScore =
         complexity.weightedScore +
         maintainability.weightedScore +
-        architecture.weightedScore;
+        architecture.weightedScore +
+        qualityAssurance.weightedScore;
 
       // 允許小數點誤差
       expect(Math.abs(calculatedScore - output.shitScore)).toBeLessThan(0.1);
