@@ -12,6 +12,7 @@ import { ImportResolver } from '../../core/move/index.js';
 import { MoveService } from '../../core/move/move-service.js';
 import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { QualityMetricsAnalyzer } from '../../core/analysis/quality-metrics.js';
+import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
@@ -266,6 +267,34 @@ export class AgentIdeMCP {
         }
       },
       {
+        name: 'code_shit',
+        description: '分析程式碼垃圾度，評分越高代表品質越差（0-100分）',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: '分析路徑',
+              default: '.'
+            },
+            detailed: {
+              type: 'boolean',
+              description: '是否顯示詳細資訊（topShit + recommendations）',
+              default: false
+            },
+            topCount: {
+              type: 'number',
+              description: '顯示前 N 個最糟項目',
+              default: 10
+            },
+            maxAllowed: {
+              type: 'number',
+              description: '最大允許分數（超過則報錯）'
+            }
+          }
+        }
+      },
+      {
         name: 'parser_plugins',
         description: '管理 Parser 插件，查看和操作插件狀態',
         parameters: {
@@ -311,6 +340,8 @@ export class AgentIdeMCP {
         return await this.handleCodeAnalyze(parameters);
       case 'code_deps':
         return await this.handleCodeDeps(parameters);
+      case 'code_shit':
+        return await this.handleCodeShit(parameters);
       case 'parser_plugins':
         return await this.handleParserPlugins(parameters);
       default:
@@ -876,6 +907,83 @@ export class AgentIdeMCP {
       return relativePath.startsWith('..') ? filePath : relativePath;
     } catch {
       return filePath;
+    }
+  }
+
+  private async handleCodeShit(params: any): Promise<MCPResult> {
+    const analyzePath = params.path || '.';
+    const detailed = params.detailed || false;
+    const topCount = params.topCount || 10;
+    const maxAllowed = params.maxAllowed;
+
+    try {
+      const workspacePath = process.cwd();
+      const targetPath = path.isAbsolute(analyzePath)
+        ? analyzePath
+        : path.resolve(workspacePath, analyzePath);
+
+      const analyzer = new ShitScoreAnalyzer();
+      const result = await analyzer.analyze(targetPath, {
+        detailed,
+        topCount,
+        maxAllowed
+      });
+
+      return {
+        success: true,
+        data: {
+          shitScore: result.shitScore,
+          grade: result.grade,
+          emoji: result.gradeInfo.emoji,
+          verdict: result.gradeInfo.message,
+          dimensions: {
+            complexity: {
+              score: result.dimensions.complexity.score,
+              weight: result.dimensions.complexity.weight,
+              contribution: result.dimensions.complexity.weightedScore
+            },
+            maintainability: {
+              score: result.dimensions.maintainability.score,
+              weight: result.dimensions.maintainability.weight,
+              contribution: result.dimensions.maintainability.weightedScore
+            },
+            architecture: {
+              score: result.dimensions.architecture.score,
+              weight: result.dimensions.architecture.weight,
+              contribution: result.dimensions.architecture.weightedScore
+            }
+          },
+          summary: {
+            totalFiles: result.summary.totalFiles,
+            analyzedFiles: result.summary.analyzedFiles,
+            totalShit: result.summary.totalShit
+          },
+          ...(detailed && result.topShit && {
+            topShit: result.topShit.map(item => ({
+              type: item.type,
+              severity: item.severity,
+              score: item.score,
+              file: this.formatRelativePath(item.filePath, workspacePath),
+              description: item.description,
+              location: item.location
+            }))
+          }),
+          ...(detailed && result.recommendations && {
+            recommendations: result.recommendations.map(rec => ({
+              priority: rec.priority,
+              category: rec.category,
+              suggestion: rec.suggestion,
+              estimatedImpact: rec.estimatedImpact,
+              affectedFiles: rec.affectedFiles.map(f => this.formatRelativePath(f, workspacePath))
+            }))
+          })
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `垃圾度分析失敗: ${error instanceof Error ? error.message : String(error)}`
+      };
     }
   }
 

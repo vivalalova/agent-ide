@@ -15,6 +15,7 @@ import { TypeScriptParser } from '../../plugins/typescript/parser.js';
 import { JavaScriptParser } from '../../plugins/javascript/parser.js';
 import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { DeadCodeDetector } from '../../core/analysis/dead-code-detector.js';
+import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
@@ -118,6 +119,7 @@ export class AgentIdeCLI {
     this.setupSearchCommand();
     this.setupAnalyzeCommand();
     this.setupDepsCommand();
+    this.setupShitCommand();
     this.setupPluginsCommand();
   }
 
@@ -228,6 +230,21 @@ export class AgentIdeCLI {
       .option('--all', '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）', false)
       .action(async (options) => {
         await this.handleDepsCommand(options);
+      });
+  }
+
+  private setupShitCommand(): void {
+    this.program
+      .command('shit')
+      .description('分析程式碼垃圾度（分數越高越糟糕）')
+      .option('-p, --path <path>', '分析路徑', '.')
+      .option('-d, --detailed', '顯示詳細資訊（topShit + recommendations）', false)
+      .option('-t, --top <num>', '顯示前 N 個最糟項目', '10')
+      .option('-m, --max-allowed <score>', '最大允許分數（超過則 exit 1）')
+      .option('--format <format>', '輸出格式 (json|summary)', 'summary')
+      .option('-o, --output <file>', '輸出到檔案')
+      .action(async (options) => {
+        await this.handleShitCommand(options);
       });
   }
 
@@ -861,7 +878,7 @@ export class AgentIdeCLI {
           console.log(`   平均複雜度: ${averageComplexity.toFixed(2)}`);
           console.log(`   最高複雜度: ${maxComplexity}`);
           if (!options.all && highComplexityFiles.length > 0) {
-            console.log(`\n⚠️  高複雜度檔案:`);
+            console.log('\n⚠️  高複雜度檔案:');
             highComplexityFiles.forEach(r => {
               console.log(`   - ${r.file}: ${r.complexity.cyclomaticComplexity}`);
             });
@@ -916,7 +933,7 @@ export class AgentIdeCLI {
           console.log(`   未使用函式: ${deadFunctions.length} 個`);
           console.log(`   未使用變數: ${deadVariables.length} 個`);
           if (!options.all && filesWithDeadCode.length > 0) {
-            console.log(`\n⚠️  有死代碼的檔案:`);
+            console.log('\n⚠️  有死代碼的檔案:');
             filesWithDeadCode.forEach(r => {
               console.log(`   - ${r.file}: ${r.deadCode.length} 項`);
             });
@@ -1017,6 +1034,97 @@ export class AgentIdeCLI {
       if (process.env.NODE_ENV !== 'test') {
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       }
+    }
+  }
+
+  private async handleShitCommand(options: any): Promise<void> {
+    if (options.format !== 'json') {
+      console.log('💩 分析程式碼垃圾度...');
+    }
+
+    try {
+      const analyzePath = options.path || process.cwd();
+      const topCount = parseInt(options.top) || 10;
+      const maxAllowed = options.maxAllowed ? parseFloat(options.maxAllowed) : undefined;
+
+      const analyzer = new ShitScoreAnalyzer();
+      const result = await analyzer.analyze(analyzePath, {
+        detailed: options.detailed,
+        topCount,
+        maxAllowed
+      });
+
+      if (options.format === 'json') {
+        const output = JSON.stringify(result, null, 2);
+        if (options.output) {
+          await fs.writeFile(options.output, output, 'utf-8');
+          console.log(`✅ 結果已儲存至 ${options.output}`);
+        } else {
+          console.log(output);
+        }
+      } else {
+        console.log('\n' + '='.repeat(50));
+        console.log(`垃圾度評分報告 ${result.gradeInfo.emoji}`);
+        console.log('='.repeat(50));
+        console.log(`\n總分: ${result.shitScore} / 100  [${result.gradeInfo.emoji} ${result.grade}級]`);
+        console.log(`評語: ${result.gradeInfo.message}\n`);
+
+        console.log('維度分析:');
+        console.log(`  複雜度垃圾:   ${result.dimensions.complexity.score.toFixed(1)} (${(result.dimensions.complexity.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.complexity.weightedScore.toFixed(1)} 分`);
+        console.log(`  維護性垃圾:   ${result.dimensions.maintainability.score.toFixed(1)} (${(result.dimensions.maintainability.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.maintainability.weightedScore.toFixed(1)} 分`);
+        console.log(`  架構垃圾:     ${result.dimensions.architecture.score.toFixed(1)} (${(result.dimensions.architecture.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.architecture.weightedScore.toFixed(1)} 分\n`);
+
+        const criticalCount = result.topShit ? result.topShit.filter(s => s.severity === 'critical').length : 0;
+        const highCount = result.topShit ? result.topShit.filter(s => s.severity === 'high').length : 0;
+        const mediumCount = result.topShit ? result.topShit.filter(s => s.severity === 'medium').length : 0;
+        const lowCount = result.topShit ? result.topShit.filter(s => s.severity === 'low').length : 0;
+
+        console.log('問題統計:');
+        console.log(`  🔴 嚴重問題:   ${criticalCount} 個`);
+        console.log(`  🟠 高優先級:  ${highCount} 個`);
+        console.log(`  🟡 中優先級:  ${mediumCount} 個`);
+        console.log(`  🟢 低優先級:  ${lowCount} 個\n`);
+
+        console.log(`掃描檔案: ${result.summary.analyzedFiles} 個（共 ${result.summary.totalFiles} 個）`);
+        console.log(`總問題數: ${result.summary.totalShit} 個`);
+
+        if (options.detailed && result.topShit && result.topShit.length > 0) {
+          console.log('\n' + '='.repeat(50));
+          console.log(`最糟的 ${result.topShit.length} 個項目:`);
+          console.log('='.repeat(50));
+          result.topShit.forEach((item, index) => {
+            console.log(`\n${index + 1}. [${item.severity.toUpperCase()}] ${item.type}`);
+            console.log(`   檔案: ${item.filePath}${item.location ? `:${item.location.line}` : ''}`);
+            console.log(`   分數: ${item.score.toFixed(1)}`);
+            console.log(`   描述: ${item.description}`);
+          });
+
+          if (result.recommendations && result.recommendations.length > 0) {
+            console.log('\n' + '='.repeat(50));
+            console.log('修復建議:');
+            console.log('='.repeat(50));
+            result.recommendations.forEach((rec, index) => {
+              console.log(`\n${index + 1}. [優先級 ${rec.priority}] ${rec.category}`);
+              console.log(`   建議: ${rec.suggestion}`);
+              console.log(`   預期改善: ${rec.estimatedImpact.toFixed(1)} 分`);
+              console.log(`   影響檔案: ${rec.affectedFiles.length} 個`);
+            });
+          }
+        }
+
+        console.log('\n' + '='.repeat(50));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (options.format === 'json') {
+        console.error(JSON.stringify({ error: errorMessage }));
+      } else {
+        console.error('\n❌ 垃圾度分析失敗:', errorMessage);
+      }
+
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   }
 
