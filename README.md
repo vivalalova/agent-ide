@@ -65,15 +65,16 @@ pnpm install && pnpm build && npm link
 
 ### 可用工具
 
-| 工具             | 功能                  |
-| ---------------- | --------------------- |
-| `code_index`     | 建立程式碼索引        |
-| `code_search`    | 搜尋符號、文字        |
-| `code_rename`    | 重新命名符號          |
-| `code_move`      | 移動檔案並更新 import |
-| `code_analyze`   | 分析程式碼品質        |
-| `code_deps`      | 依賴關係分析          |
-| `parser_plugins` | Parser 插件管理       |
+| 工具             | 功能                                   |
+| ---------------- | -------------------------------------- |
+| `code_index`     | 建立程式碼索引                         |
+| `code_search`    | 搜尋符號、文字                         |
+| `code_rename`    | 重新命名符號                           |
+| `code_move`      | 移動檔案並更新 import                  |
+| `code_analyze`   | 分析程式碼品質                         |
+| `code_deps`      | 依賴關係分析                           |
+| `code_shit`      | 垃圾度評分（分數越高越糟，含修復建議） |
+| `parser_plugins` | Parser 插件管理                        |
 
 ---
 
@@ -182,7 +183,38 @@ npx agent-ide deps --file src/service.ts --format json
 
 **優勢**：視覺化依賴關係、自動檢測循環依賴、影響範圍分析、預設只顯示問題節省 token
 
-### 6. 程式碼重構（優先使用）
+### 6. 垃圾度評分（綜合品質評估）
+**💩 一次掃描獲得完整垃圾度評分：分數越高越糟，自動產生修復建議**
+
+```bash
+# 基本評分（0-100分，分數越高越糟糕）
+npx agent-ide shit --format json
+
+# 詳細分析（包含 topShit 和 recommendations）
+npx agent-ide shit --detailed --format json
+
+# 顯示前 20 個最糟項目
+npx agent-ide shit --detailed --top=20 --format json
+
+# CI/CD 門檻檢查（超過 70 分則失敗）
+npx agent-ide shit --max-allowed=70
+```
+
+**評分維度**：
+- **複雜度垃圾**（35%）：高圈複雜度、長函式、深層巢狀、過多參數
+- **維護性垃圾**（35%）：死代碼、超大檔案
+- **架構垃圾**（30%）：循環依賴、孤立檔案、高耦合
+
+**評級系統**：
+- ✅ A (0-29)：優秀
+- ⚠️ B (30-49)：良好
+- 💩 C (50-69)：需重構
+- 💩💩 D (70-84)：強烈建議重構
+- 💩💩💩 F (85-100)：建議重寫
+
+**優勢**：綜合評估、具體建議、CI/CD 整合、token 效率高
+
+### 7. 程式碼重構（優先使用）
 **💡 優先於手動重構：自動處理複雜重構操作，避免手動複製貼上和修改**
 
 ```bash
