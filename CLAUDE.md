@@ -10,7 +10,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
 
-**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、188 個測試通過
+**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、204 個測試通過
 
 ## 快速參考
 
@@ -205,6 +205,16 @@ await executeCLI(['shit', '--path', fixture.tempPath]);
 6. **Rename**：符號重命名、引用更新、作用域分析
 7. **Search**：文字/語義/結構化搜尋
 8. **ShitScore**：垃圾度評分系統（綜合品質評估，0-100分反向評分）
+   - **四大維度**（30%/30%/30%/20%）：
+     - Complexity（複雜度）：高複雜度函式、過長函式、深層巢狀、過多參數
+     - Maintainability（維護性）：死代碼、大檔案、重複代碼
+     - Architecture（架構）：循環依賴、孤立檔案、高耦合
+     - **QualityAssurance（品質保證）** ✨ 新增：
+       - Type Safety（型別安全 30%）：any 型別、@ts-ignore、as any、strict 模式
+       - Test Coverage（測試覆蓋率 25%）：測試檔案比例
+       - Error Handling（錯誤處理 20%）：空 catch 區塊、靜默吞錯
+       - Naming Conventions（命名規範 15%）：底線開頭變數、檔案命名
+       - Security（安全性 10%）：硬編碼密碼、eval、innerHTML
 
 ## 基礎設施
 
