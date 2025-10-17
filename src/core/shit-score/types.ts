@@ -37,6 +37,12 @@ export enum ShitType {
   CircularDependency = 'circular_dependency',
   OrphanFile = 'orphan_file',
   HighCoupling = 'high_coupling',
+  // 品質保證相關類型
+  TypeSafety = 'type_safety',
+  LowTestCoverage = 'low_test_coverage',
+  PoorErrorHandling = 'poor_error_handling',
+  NamingViolation = 'naming_violation',
+  SecurityRisk = 'security_risk',
 }
 
 /**
@@ -108,6 +114,7 @@ export interface ShitScoreResult {
     readonly complexity: DimensionScore;
     readonly maintainability: DimensionScore;
     readonly architecture: DimensionScore;
+    readonly qualityAssurance: DimensionScore;
   };
   readonly summary: {
     readonly totalFiles: number;
@@ -116,6 +123,7 @@ export interface ShitScoreResult {
   };
   readonly topShit?: readonly ShitItem[];
   readonly recommendations?: readonly Recommendation[];
+  readonly detailedFiles?: DetailedFiles;
   readonly analyzedAt: Date;
 }
 
@@ -124,6 +132,7 @@ export interface ShitScoreResult {
  */
 export interface ShitScoreOptions {
   readonly detailed: boolean;
+  readonly showFiles: boolean;
   readonly topCount: number;
   readonly maxAllowed?: number;
   readonly excludePatterns?: readonly string[];
@@ -162,11 +171,74 @@ export interface ArchitectureData {
 }
 
 /**
+ * 品質保證資料
+ */
+export interface QualityAssuranceData {
+  readonly totalFiles: number;
+  readonly typeSafetyIssues: number;
+  readonly testCoverageRatio: number;
+  readonly errorHandlingIssues: number;
+  readonly namingIssues: number;
+  readonly securityIssues: number;
+  readonly strictModeEnabled: boolean;
+  readonly strictNullChecksEnabled: boolean;
+}
+
+/**
+ * 檔案詳細資訊
+ */
+export interface FileDetail {
+  readonly path: string;
+  readonly complexity?: number;
+  readonly cognitiveComplexity?: number;
+  readonly lines?: number;
+  readonly maxDepth?: number;
+  readonly paramCount?: number;
+  readonly dependencies?: number;
+  readonly deadCodeCount?: number;
+  readonly anyTypeCount?: number;
+  readonly tsIgnoreCount?: number;
+  readonly testCoverageRatio?: number;
+  readonly emptyCatchCount?: number;
+  readonly namingIssues?: number;
+  readonly securityIssues?: number;
+}
+
+/**
+ * 詳細檔案列表（按維度分類）
+ */
+export interface DetailedFiles {
+  readonly complexity: {
+    readonly highComplexity: readonly FileDetail[];
+    readonly longFunction: readonly FileDetail[];
+    readonly deepNesting: readonly FileDetail[];
+    readonly tooManyParams: readonly FileDetail[];
+  };
+  readonly maintainability: {
+    readonly deadCode: readonly FileDetail[];
+    readonly largeFile: readonly FileDetail[];
+  };
+  readonly architecture: {
+    readonly orphanFile: readonly FileDetail[];
+    readonly highCoupling: readonly FileDetail[];
+    readonly circularDependency: readonly FileDetail[];
+  };
+  readonly qualityAssurance: {
+    readonly typeSafety: readonly FileDetail[];
+    readonly testCoverage: readonly FileDetail[];
+    readonly errorHandling: readonly FileDetail[];
+    readonly namingViolation: readonly FileDetail[];
+    readonly securityRisk: readonly FileDetail[];
+  };
+}
+
+/**
  * 建立預設分析選項
  */
 export function createDefaultShitScoreOptions(): ShitScoreOptions {
   return {
     detailed: false,
+    showFiles: false,
     topCount: 10,
     excludePatterns: ['node_modules', '.git', 'dist', 'build', 'coverage'],
     includePatterns: ['**/*.ts', '**/*.js', '**/*.tsx', '**/*.jsx'],

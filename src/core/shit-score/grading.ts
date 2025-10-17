@@ -71,14 +71,15 @@ export class Grading {
   }
 
   /**
-   * 生成改進建議
+   * 生成改進建議（四個維度）
    */
-  generateRecommendations(complexity: DimensionScore, maintainability: DimensionScore, architecture: DimensionScore): readonly Recommendation[] {
+  generateRecommendations(complexity: DimensionScore, maintainability: DimensionScore, architecture: DimensionScore, qualityAssurance: DimensionScore): readonly Recommendation[] {
     const recommendations: Recommendation[] = [];
 
     recommendations.push(...this.generateComplexityRecommendations(complexity));
     recommendations.push(...this.generateMaintainabilityRecommendations(maintainability));
     recommendations.push(...this.generateArchitectureRecommendations(architecture));
+    recommendations.push(...this.generateQualityAssuranceRecommendations(qualityAssurance));
 
     return recommendations.sort((a, b) => {
       const priorityOrder = {
@@ -212,6 +213,65 @@ export class Grading {
         suggestion: `有 ${dimension.breakdown.highCoupling.toFixed(0)}% 的檔案耦合度過高（>10 個依賴）。建議降低模組間的耦合度。`,
         affectedFiles: [],
         estimatedImpact: Math.round(dimension.breakdown.highCoupling * 0.15 * 0.3),
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * 生成品質保證建議
+   */
+  generateQualityAssuranceRecommendations(dimension: DimensionScore): readonly Recommendation[] {
+    const recommendations: Recommendation[] = [];
+
+    if (dimension.breakdown.typeSafety > 30) {
+      recommendations.push({
+        priority: dimension.breakdown.typeSafety > 50 ? SeverityLevelEnum.High : SeverityLevelEnum.Medium,
+        category: '品質保證',
+        suggestion: `型別安全問題評分 ${dimension.breakdown.typeSafety.toFixed(0)}。檢測到 any 型別、@ts-ignore 或 as any 使用。建議修正型別定義，啟用 strict 模式。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.typeSafety * 0.3 * 0.2),
+      });
+    }
+
+    if (dimension.breakdown.testCoverage > 30) {
+      recommendations.push({
+        priority: dimension.breakdown.testCoverage > 50 ? SeverityLevelEnum.High : SeverityLevelEnum.Medium,
+        category: '品質保證',
+        suggestion: `測試覆蓋率不足（評分 ${dimension.breakdown.testCoverage.toFixed(0)}）。建議增加單元測試和整合測試，提高程式碼可靠性。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.testCoverage * 0.25 * 0.2),
+      });
+    }
+
+    if (dimension.breakdown.errorHandling > 30) {
+      recommendations.push({
+        priority: dimension.breakdown.errorHandling > 50 ? SeverityLevelEnum.High : SeverityLevelEnum.Medium,
+        category: '品質保證',
+        suggestion: `錯誤處理問題評分 ${dimension.breakdown.errorHandling.toFixed(0)}。檢測到空 catch 區塊或靜默吞錯。建議加上適當的錯誤處理和日誌記錄。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.errorHandling * 0.2 * 0.2),
+      });
+    }
+
+    if (dimension.breakdown.naming > 30) {
+      recommendations.push({
+        priority: SeverityLevelEnum.Low,
+        category: '品質保證',
+        suggestion: `命名規範問題評分 ${dimension.breakdown.naming.toFixed(0)}。檢測到底線開頭變數或不符合規範的檔案命名。建議遵循專案命名規範。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.naming * 0.15 * 0.2),
+      });
+    }
+
+    if (dimension.breakdown.security > 30) {
+      recommendations.push({
+        priority: dimension.breakdown.security > 50 ? SeverityLevelEnum.Critical : SeverityLevelEnum.High,
+        category: '品質保證',
+        suggestion: `安全性問題評分 ${dimension.breakdown.security.toFixed(0)}。檢測到硬編碼密碼、eval 使用或 innerHTML 賦值。建議立即修正安全漏洞。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.security * 0.1 * 0.2),
       });
     }
 

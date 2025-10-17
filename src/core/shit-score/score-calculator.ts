@@ -8,6 +8,7 @@ import type {
   ComplexityData,
   MaintainabilityData,
   ArchitectureData,
+  QualityAssuranceData,
 } from './types.js';
 
 /**
@@ -15,29 +16,32 @@ import type {
  */
 export class ScoreCalculator {
   /**
-   * 計算總分
+   * 計算總分（四個維度）
    */
-  calculate(complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData): {
+  calculate(complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData, qualityAssurance: QualityAssuranceData): {
     readonly complexityScore: DimensionScore;
     readonly maintainabilityScore: DimensionScore;
     readonly architectureScore: DimensionScore;
+    readonly qualityAssuranceScore: DimensionScore;
     readonly totalScore: number;
   } {
     const complexityScore = this.calculateComplexityShit(complexity);
     const maintainabilityScore = this.calculateMaintainabilityShit(maintainability);
     const architectureScore = this.calculateArchitectureShit(architecture);
-    const totalScore = this.calculateTotalScore(complexityScore, maintainabilityScore, architectureScore);
+    const qualityAssuranceScore = this.calculateQualityAssuranceShit(qualityAssurance);
+    const totalScore = this.calculateTotalScore(complexityScore, maintainabilityScore, architectureScore, qualityAssuranceScore);
 
     return {
       complexityScore,
       maintainabilityScore,
       architectureScore,
+      qualityAssuranceScore,
       totalScore,
     };
   }
 
   /**
-   * 計算複雜度垃圾（35%）
+   * 計算複雜度垃圾（30%）
    * complexityShit = (
    *   highComplexityRatio * 0.4 +
    *   longFunctionRatio * 0.25 +
@@ -52,7 +56,7 @@ export class ScoreCalculator {
       return {
         dimension: 'complexity',
         score: 0,
-        weight: 0.35,
+        weight: 0.3,
         weightedScore: 0,
         breakdown: {
           highComplexity: 0,
@@ -79,8 +83,8 @@ export class ScoreCalculator {
     return {
       dimension: 'complexity',
       score,
-      weight: 0.35,
-      weightedScore: this.round(score * 0.35),
+      weight: 0.3,
+      weightedScore: this.round(score * 0.3),
       breakdown: {
         highComplexity: this.round(highComplexityRatio * 100),
         longFunction: this.round(longFunctionRatio * 100),
@@ -91,7 +95,7 @@ export class ScoreCalculator {
   }
 
   /**
-   * 計算維護性垃圾（35%）
+   * 計算維護性垃圾（30%）
    * maintainabilityShit = (
    *   deadCodeRatio * 0.5 +
    *   largeFileRatio * 0.3 +
@@ -105,7 +109,7 @@ export class ScoreCalculator {
       return {
         dimension: 'maintainability',
         score: 0,
-        weight: 0.35,
+        weight: 0.3,
         weightedScore: 0,
         breakdown: {
           deadCode: 0,
@@ -126,8 +130,8 @@ export class ScoreCalculator {
     return {
       dimension: 'maintainability',
       score,
-      weight: 0.35,
-      weightedScore: this.round(score * 0.35),
+      weight: 0.3,
+      weightedScore: this.round(score * 0.3),
       breakdown: {
         deadCode: this.round(deadCodeRatio * 100),
         largeFile: this.round(largeFileRatio * 100),
@@ -183,16 +187,84 @@ export class ScoreCalculator {
   }
 
   /**
+   * 計算品質保證垃圾（20%）
+   * qualityAssuranceShit = (
+   *   typeSafetyScore * 0.3 +
+   *   testCoverageScore * 0.25 +
+   *   errorHandlingScore * 0.2 +
+   *   namingScore * 0.15 +
+   *   securityScore * 0.1
+   * ) * 100
+   */
+  calculateQualityAssuranceShit(data: QualityAssuranceData): DimensionScore {
+    const total = data.totalFiles;
+
+    if (total === 0) {
+      return {
+        dimension: 'qualityAssurance',
+        score: 0,
+        weight: 0.2,
+        weightedScore: 0,
+        breakdown: {
+          typeSafety: 0,
+          testCoverage: 0,
+          errorHandling: 0,
+          naming: 0,
+          security: 0,
+        },
+      };
+    }
+
+    // 1. 型別安全評分（30%）
+    const typeSafetyScore = Math.min((data.typeSafetyIssues / total) * 100, 100);
+
+    // 2. 測試覆蓋率評分（25%）- 反向評分
+    const testCoverageScore = (1 - data.testCoverageRatio) * 100;
+
+    // 3. 錯誤處理評分（20%）
+    const errorHandlingScore = Math.min((data.errorHandlingIssues / total) * 100, 100);
+
+    // 4. 命名規範評分（15%）
+    const namingScore = Math.min((data.namingIssues / total) * 100, 100);
+
+    // 5. 安全性評分（10%）
+    const securityScore = Math.min((data.securityIssues / total) * 100, 100);
+
+    const score = this.round(
+      typeSafetyScore * 0.3 +
+        testCoverageScore * 0.25 +
+        errorHandlingScore * 0.2 +
+        namingScore * 0.15 +
+        securityScore * 0.1
+    );
+
+    return {
+      dimension: 'qualityAssurance',
+      score,
+      weight: 0.2,
+      weightedScore: this.round(score * 0.2),
+      breakdown: {
+        typeSafety: this.round(typeSafetyScore),
+        testCoverage: this.round(testCoverageScore),
+        errorHandling: this.round(errorHandlingScore),
+        naming: this.round(namingScore),
+        security: this.round(securityScore),
+      },
+    };
+  }
+
+  /**
    * 計算總分
    * shitScore = (
-   *   complexityShit * 0.35 +
-   *   maintainabilityShit * 0.35 +
-   *   architectureShit * 0.3
+   *   complexityShit * 0.3 +
+   *   maintainabilityShit * 0.3 +
+   *   architectureShit * 0.3 +
+   *   qualityAssuranceShit * 0.2
    * )
    */
-  calculateTotalScore(complexity: DimensionScore, maintainability: DimensionScore, architecture: DimensionScore): number {
+  calculateTotalScore(complexity: DimensionScore, maintainability: DimensionScore, architecture: DimensionScore, qualityAssurance: DimensionScore): number {
     return this.round(
-      complexity.weightedScore + maintainability.weightedScore + architecture.weightedScore
+      complexity.weightedScore + maintainability.weightedScore + architecture.weightedScore + qualityAssurance.weightedScore
     );
   }
 

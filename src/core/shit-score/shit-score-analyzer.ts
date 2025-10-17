@@ -7,13 +7,22 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ScoreCalculator } from './score-calculator.js';
 import { Grading } from './grading.js';
+import { QualityAssuranceCollector } from './collectors/quality-assurance-collector.js';
+import { TypeSafetyChecker } from './collectors/type-safety-checker.js';
+import { TestCoverageChecker } from './collectors/test-coverage-checker.js';
+import { ErrorHandlingChecker } from './collectors/error-handling-checker.js';
+import { NamingChecker } from './collectors/naming-checker.js';
+import { SecurityChecker } from './collectors/security-checker.js';
 import type {
   ShitScoreResult,
   ShitScoreOptions,
   ComplexityData,
   MaintainabilityData,
   ArchitectureData,
+  QualityAssuranceData,
   ShitItem,
+  DetailedFiles,
+  FileDetail,
 } from './types.js';
 import { createDefaultShitScoreOptions } from './types.js';
 import { ShitType, SeverityLevel } from './types.js';
@@ -34,10 +43,18 @@ export class ShitScoreError extends Error {
 export class ShitScoreAnalyzer {
   private readonly calculator: ScoreCalculator;
   private readonly grading: Grading;
+  private readonly qualityAssuranceCollector: QualityAssuranceCollector;
 
   constructor() {
     this.calculator = new ScoreCalculator();
     this.grading = new Grading();
+    this.qualityAssuranceCollector = new QualityAssuranceCollector(
+      new TypeSafetyChecker(),
+      new TestCoverageChecker(),
+      new ErrorHandlingChecker(),
+      new NamingChecker(),
+      new SecurityChecker()
+    );
   }
 
   /**
@@ -51,9 +68,10 @@ export class ShitScoreAnalyzer {
     const complexityData = await this.collectComplexityData(files);
     const maintainabilityData = await this.collectMaintainabilityData(files);
     const architectureData = await this.collectArchitectureData(files);
+    const qualityAssuranceData = await this.qualityAssuranceCollector.collect(files, projectPath);
 
-    const { complexityScore, maintainabilityScore, architectureScore, totalScore } =
-      this.calculator.calculate(complexityData, maintainabilityData, architectureData);
+    const { complexityScore, maintainabilityScore, architectureScore, qualityAssuranceScore, totalScore } =
+      this.calculator.calculate(complexityData, maintainabilityData, architectureData, qualityAssuranceData);
 
     const gradeInfo = this.grading.getGrade(totalScore);
 
@@ -73,6 +91,7 @@ export class ShitScoreAnalyzer {
         complexity: complexityScore,
         maintainability: maintainabilityScore,
         architecture: architectureScore,
+        qualityAssurance: qualityAssuranceScore,
       },
       summary: {
         totalFiles: files.length,
@@ -82,8 +101,8 @@ export class ShitScoreAnalyzer {
       analyzedAt: new Date(),
     };
 
-    if (fullOptions.detailed) {
-      return this.buildDetailedResult(result, fullOptions, files, complexityData, maintainabilityData, architectureData);
+    if (fullOptions.detailed || fullOptions.showFiles) {
+      return await this.buildDetailedResult(result, fullOptions, files, complexityData, maintainabilityData, architectureData, qualityAssuranceData);
     }
 
     return result;
@@ -249,15 +268,16 @@ export class ShitScoreAnalyzer {
   /**
    * 建立詳細結果
    */
-  private buildDetailedResult(baseResult: ShitScoreResult, options: ShitScoreOptions, files: string[], complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData): ShitScoreResult {
-    const topShit = this.extractTopShit(files, complexity, maintainability, architecture, options.topCount);
+  private async buildDetailedResult(baseResult: ShitScoreResult, options: ShitScoreOptions, files: string[], complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData, qualityAssurance: QualityAssuranceData): Promise<ShitScoreResult> {
+    const topShit = this.extractTopShit(files, complexity, maintainability, architecture, qualityAssurance, options.topCount);
     const recommendations = this.grading.generateRecommendations(
       baseResult.dimensions.complexity,
       baseResult.dimensions.maintainability,
-      baseResult.dimensions.architecture
+      baseResult.dimensions.architecture,
+      baseResult.dimensions.qualityAssurance
     );
 
-    return {
+    const result: ShitScoreResult = {
       ...baseResult,
       topShit,
       recommendations,
@@ -266,12 +286,22 @@ export class ShitScoreAnalyzer {
         totalShit: topShit.length,
       },
     };
+
+    if (options.showFiles) {
+      const detailedFiles = await this.collectDetailedFiles(files);
+      return {
+        ...result,
+        detailedFiles,
+      };
+    }
+
+    return result;
   }
 
   /**
    * 提取最嚴重的垃圾項目
    */
-  private extractTopShit(files: string[], complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData, topCount: number): readonly ShitItem[] {
+  private extractTopShit(files: string[], complexity: ComplexityData, maintainability: MaintainabilityData, architecture: ArchitectureData, qualityAssurance: QualityAssuranceData, topCount: number): readonly ShitItem[] {
     const items: ShitItem[] = [];
 
     // 簡化實作：根據各維度的問題數量生成垃圾項目
@@ -302,6 +332,56 @@ export class ShitScoreAnalyzer {
         severity: SeverityLevel.Critical,
         score: 90,
         description: '循環依賴',
+      });
+    }
+
+    if (qualityAssurance.typeSafetyIssues > 0) {
+      items.push({
+        filePath: files[0] || '',
+        type: ShitType.TypeSafety,
+        severity: SeverityLevel.High,
+        score: 75,
+        description: '檢測到 any 型別、@ts-ignore 或 type assertions',
+      });
+    }
+
+    if (qualityAssurance.testCoverageRatio < 0.5) {
+      items.push({
+        filePath: files[0] || '',
+        type: ShitType.LowTestCoverage,
+        severity: SeverityLevel.Medium,
+        score: 65,
+        description: '測試覆蓋率不足',
+      });
+    }
+
+    if (qualityAssurance.errorHandlingIssues > 0) {
+      items.push({
+        filePath: files[0] || '',
+        type: ShitType.PoorErrorHandling,
+        severity: SeverityLevel.High,
+        score: 70,
+        description: '錯誤處理問題',
+      });
+    }
+
+    if (qualityAssurance.namingIssues > 0) {
+      items.push({
+        filePath: files[0] || '',
+        type: ShitType.NamingViolation,
+        severity: SeverityLevel.Low,
+        score: 50,
+        description: '命名規範違反',
+      });
+    }
+
+    if (qualityAssurance.securityIssues > 0) {
+      items.push({
+        filePath: files[0] || '',
+        type: ShitType.SecurityRisk,
+        severity: SeverityLevel.Critical,
+        score: 95,
+        description: '安全性風險',
       });
     }
 
@@ -427,5 +507,122 @@ export class ShitScoreAnalyzer {
       }
     }
     return highCoupling;
+  }
+
+  /**
+   * 收集詳細檔案列表
+   */
+  private async collectDetailedFiles(files: string[]): Promise<DetailedFiles> {
+    const typeSafetyFiles: FileDetail[] = [];
+    const testCoverageFiles: FileDetail[] = [];
+    const errorHandlingFiles: FileDetail[] = [];
+    const namingViolationFiles: FileDetail[] = [];
+    const securityRiskFiles: FileDetail[] = [];
+
+    for (const file of files) {
+      try {
+        const content = await fs.readFile(file, 'utf-8');
+        const lines = content.split('\n').length;
+
+        // 檢測型別安全問題
+        if (file.endsWith('.ts') || file.endsWith('.tsx')) {
+          const anyMatches = content.match(/:\s*any\b/g);
+          const tsIgnoreMatches = content.match(/@ts-ignore/g);
+          const asAnyMatches = content.match(/as\s+any\b|<any>/g);
+
+          const anyCount = (anyMatches?.length || 0) + (tsIgnoreMatches?.length || 0) * 2 + (asAnyMatches?.length || 0) * 1.5;
+
+          if (anyCount > 0) {
+            typeSafetyFiles.push({
+              path: file,
+              lines,
+              anyTypeCount: anyMatches?.length || 0,
+              tsIgnoreCount: tsIgnoreMatches?.length || 0,
+            });
+          }
+        }
+
+        // 檢測錯誤處理問題
+        const emptyCatchMatches = content.match(/catch\s*\([^)]*\)\s*\{\s*\}/g);
+        if (emptyCatchMatches && emptyCatchMatches.length > 0) {
+          errorHandlingFiles.push({
+            path: file,
+            lines,
+            emptyCatchCount: emptyCatchMatches.length,
+          });
+        }
+
+        // 檢測命名問題
+        const underscoreVarMatches = content.match(/(const|let|var)\s+_[a-zA-Z]/g);
+        if (underscoreVarMatches && underscoreVarMatches.length > 0) {
+          namingViolationFiles.push({
+            path: file,
+            lines,
+            namingIssues: underscoreVarMatches.length,
+          });
+        }
+
+        // 檢測安全問題
+        const hardcodedPasswordMatches = content.match(/password\s*=\s*['"][^'"]+['"]/gi);
+        const evalMatches = content.match(/\beval\s*\(/g);
+        const innerHTMLMatches = content.match(/\.innerHTML\s*=/g);
+
+        const securityIssueCount =
+          (hardcodedPasswordMatches?.length || 0) * 5 +
+          (evalMatches?.length || 0) * 5 +
+          (innerHTMLMatches?.length || 0) * 3;
+
+        if (securityIssueCount > 0) {
+          securityRiskFiles.push({
+            path: file,
+            lines,
+            securityIssues: securityIssueCount,
+          });
+        }
+      } catch {
+        // 忽略無法讀取的檔案
+      }
+    }
+
+    // 檢測測試覆蓋率
+    const sourceFiles = files.filter(
+      (f) =>
+        !f.match(/\.test\.|\.spec\.|\.e2e\.test\./) &&
+        !f.includes('/tests/') &&
+        !f.includes('/__tests__/') &&
+        (f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js') || f.endsWith('.jsx'))
+    );
+
+    for (const file of sourceFiles) {
+      testCoverageFiles.push({
+        path: file,
+        testCoverageRatio: 0, // 簡化實作：標記為無測試
+      });
+    }
+
+    return {
+      complexity: {
+        highComplexity: [],
+        longFunction: [],
+        deepNesting: [],
+        tooManyParams: [],
+      },
+      maintainability: {
+        deadCode: [],
+        largeFile: [],
+      },
+      architecture: {
+        orphanFile: [],
+        highCoupling: [],
+        circularDependency: [],
+      },
+      qualityAssurance: {
+        typeSafety: typeSafetyFiles,
+        testCoverage: testCoverageFiles,
+        errorHandling: errorHandlingFiles,
+        namingViolation: namingViolationFiles,
+        securityRisk: securityRiskFiles,
+      },
+    };
   }
 }
