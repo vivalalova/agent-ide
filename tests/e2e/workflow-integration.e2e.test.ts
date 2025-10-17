@@ -51,13 +51,14 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.getFilePath('src/services/order-service.ts'),
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(complexityBefore.exitCode).toBe(0);
 
     const beforeOutput = JSON.parse(complexityBefore.stdout);
-    const orderServiceBefore = beforeOutput.files.find((f: any) =>
+    const orderServiceBefore = beforeOutput.all.find((f: any) =>
       f.path.includes('order-service.ts')
     );
     expect(orderServiceBefore).toBeDefined();
@@ -122,13 +123,14 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.getFilePath('src/services/order-service.ts'),
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(complexityAfter.exitCode).toBe(0);
 
     const afterOutput = JSON.parse(complexityAfter.stdout);
-    const orderServiceAfter = afterOutput.files.find((f: any) =>
+    const orderServiceAfter = afterOutput.all.find((f: any) =>
       f.path.includes('order-service.ts')
     );
     expect(orderServiceAfter).toBeDefined();
@@ -146,7 +148,8 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(depsResult.exitCode).toBe(0);
@@ -154,7 +157,7 @@ describe('完整工作流整合測試', () => {
     const depsOutput = JSON.parse(depsResult.stdout);
 
     // 驗證依賴圖包含 order-service
-    const hasOrderService = depsOutput.nodes.some((n: any) =>
+    const hasOrderService = depsOutput.all.nodes.some((n: any) =>
       n.id.includes('order-service')
     );
     expect(hasOrderService).toBe(true);
@@ -163,7 +166,7 @@ describe('完整工作流整合測試', () => {
     // 步驟 10：檢查是否有循環依賴
     // ============================================================
     // 原始專案不應該有循環依賴
-    const hasCycles = depsOutput.cycles && depsOutput.cycles.length > 0;
+    const hasCycles = depsOutput.issues.cycles && depsOutput.issues.cycles.length > 0;
     expect(hasCycles).toBe(false);
   });
 
@@ -194,11 +197,12 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     const depsBeforeOutput = JSON.parse(depsBefore.stdout);
-    const userTypeFile = depsBeforeOutput.nodes.find((n: any) =>
+    const userTypeFile = depsBeforeOutput.all.nodes.find((n: any) =>
       n.id.includes('types/user')
     );
     expect(userTypeFile).toBeDefined();
@@ -262,7 +266,8 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(depsAfter.exitCode).toBe(0);
@@ -270,8 +275,8 @@ describe('完整工作流整合測試', () => {
     const depsAfterOutput = JSON.parse(depsAfter.stdout);
 
     // 依賴關係應該保持完整（只是名稱改變）
-    expect(depsAfterOutput.stats.totalFiles).toBeGreaterThanOrEqual(30);
-    expect(depsAfterOutput.stats.totalDependencies).toBeGreaterThan(50);
+    expect(depsAfterOutput.summary.totalFiles).toBeGreaterThanOrEqual(30);
+    expect(depsAfterOutput.summary.totalDependencies).toBeGreaterThan(50);
   });
 
   // ✅ 已修復：檔案移動後索引更新問題
@@ -290,11 +295,12 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     const depsBeforeOutput = JSON.parse(depsBefore.stdout);
-    const totalDepsBefore = depsBeforeOutput.stats.totalDependencies;
+    const totalDepsBefore = depsBeforeOutput.summary.totalDependencies;
 
     // ============================================================
     // 步驟 3：移動檔案（user.ts → entities/user.ts）
@@ -354,14 +360,15 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     const depsAfterOutput = JSON.parse(depsAfter.stdout);
 
     // 依賴總數應該保持不變（只是路徑改變）
     // 允許一定誤差範圍
-    expect(Math.abs(depsAfterOutput.stats.totalDependencies - totalDepsBefore)).toBeLessThan(5);
+    expect(Math.abs(depsAfterOutput.summary.totalDependencies - totalDepsBefore)).toBeLessThan(5);
   });
 
   it('完整分析工作流：索引 → 複雜度分析 → 死代碼檢測 → 模式分析', { timeout: 180000 }, async () => {
@@ -380,13 +387,14 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(complexityResult.exitCode).toBe(0);
 
     const complexityOutput = JSON.parse(complexityResult.stdout);
-    expect(complexityOutput.files.length).toBeGreaterThanOrEqual(30);
+    expect(complexityOutput.all.length).toBeGreaterThanOrEqual(30);
     expect(complexityOutput.summary.averageComplexity).toBeGreaterThan(0);
 
     // ============================================================
@@ -398,7 +406,8 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ], { timeout: 120000 });
 
     expect(deadCodeResult.exitCode).toBe(0);
@@ -436,20 +445,21 @@ describe('完整工作流整合測試', () => {
       '--path',
       fixture.tempPath,
       '--format',
-      'json'
+      'json',
+      '--all'
     ]);
 
     expect(depsResult.exitCode).toBe(0);
 
     const depsOutput = JSON.parse(depsResult.stdout);
-    expect(depsOutput.stats.totalFiles).toBeGreaterThanOrEqual(30);
-    expect(depsOutput.stats.totalDependencies).toBeGreaterThan(50);
+    expect(depsOutput.summary.totalFiles).toBeGreaterThanOrEqual(30);
+    expect(depsOutput.summary.totalDependencies).toBeGreaterThan(50);
 
     // ============================================================
     // 步驟 6：整合報告（驗證所有資料一致）
     // ============================================================
     // 檔案數量應該在所有分析中一致
-    expect(complexityOutput.summary.totalFiles).toBeGreaterThanOrEqual(30);
-    expect(depsOutput.stats.totalFiles).toBeGreaterThanOrEqual(30);
+    expect(complexityOutput.summary.totalScanned).toBeGreaterThanOrEqual(30);
+    expect(depsOutput.summary.totalFiles).toBeGreaterThanOrEqual(30);
   });
 });
