@@ -177,6 +177,16 @@ export class Grading {
       });
     }
 
+    if (dimension.breakdown.patternDuplication !== undefined && dimension.breakdown.patternDuplication > 20) {
+      recommendations.push({
+        priority: dimension.breakdown.patternDuplication > 50 ? SeverityLevelEnum.High : SeverityLevelEnum.Medium,
+        category: '維護性',
+        suggestion: `檢測到 ${dimension.breakdown.patternDuplication.toFixed(0)}% 的模式重複（try-catch、logger、建構函式 DI、環境變數存取等）。建議使用裝飾器、Interceptor 或 ConfigService 統一管理。`,
+        affectedFiles: [],
+        estimatedImpact: Math.round(dimension.breakdown.patternDuplication * 0.25 * 0.35),
+      });
+    }
+
     return recommendations;
   }
 

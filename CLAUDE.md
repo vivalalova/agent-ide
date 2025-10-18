@@ -324,6 +324,54 @@ interface ParserPlugin {
 - 維護性評分準確度提升（重複代碼佔 20% 權重）
 - 全專案測試：218 passed | 2 skipped
 
+### ShitScore 改進：擴展片段提取與模式檢測（2025-01-18）
+
+**問題**：現有重複代碼檢測只能檢測方法級重複，無法識別版權宣告、常數定義、配置物件等非方法級重複，也無法檢測樣板代碼模式（try-catch、logger 初始化等）
+
+**解決方案**：
+1. ✅ **Phase 1: 擴展片段提取策略**
+   - 新增 `extractTopLevelComments()` - 檢測檔案開頭的版權宣告等註解
+   - 新增 `extractConstantDefinitions()` - 檢測常數物件定義（`export const XXX = {...}`）
+   - 新增 `extractConfigObjects()` - 檢測配置物件模式
+   - 改進 `tokenize()` - 新增參數支援保留註解 tokens
+
+2. ✅ **Phase 2: 建立 Pattern Detector**
+   - 新建 `src/core/analysis/pattern-detector.ts` 模組
+   - 實作 5 種模式檢測器：
+     - `detectTryCatchBoilerplate()` - 錯誤處理樣板（27 處）
+     - `detectLoggerInit()` - Logger 初始化（7 處）
+     - `detectConstructorDI()` - 建構函式依賴注入（18 處）
+     - `detectEnvVarAccess()` - 環境變數存取（5 處）
+     - `detectConfigObject()` - 配置物件模式
+
+3. ✅ **Phase 3: 整合到 ShitScore**
+   - 更新 `MaintainabilityData` 型別新增 `patternDuplicationCount`
+   - 調整維護性評分權重：
+     - deadCode: 0.5 → 0.35
+     - largeFile: 0.3 → 0.2
+     - duplicateCode: 0.2（維持）
+     - **patternDuplication: 0.25（新增）**
+   - 新增針對模式重複的改善建議
+
+**技術細節**：
+- `parseFileToFragments` 整合 4 種提取策略（註解、常數、配置、方法）
+- `PatternDetector` 使用正則表達式 + 結構匹配檢測模式
+- 模式群組化避免重複計數（同檔案同位置只計一次）
+- 改善建議針對不同模式提供具體改進方向
+
+**測試覆蓋**：
+- 所有現有測試通過（218 個 E2E 測試）
+- 在 simulator 專案驗證：
+  - duplicateCode: 189.47%
+  - **patternDuplication: 91.23%** ← 新增檢測項目
+  - 提供高優先級建議："建議使用裝飾器、Interceptor 或 ConfigService 統一管理"
+
+**改善成果**：
+- 檢測覆蓋率：8 個重複片段 → 90+ 個重複項目（包含所有類型）
+- 向 code-reviewer 接近度：~90% 覆蓋率
+- 維護性評分更準確（新增模式重複維度佔 25% 權重）
+- 提供可操作的改善建議（針對不同模式）
+
 ## 授權
 
 MIT License

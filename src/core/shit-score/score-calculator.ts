@@ -97,9 +97,10 @@ export class ScoreCalculator {
   /**
    * 計算維護性垃圾（30%）
    * maintainabilityShit = (
-   *   deadCodeRatio * 0.5 +
-   *   largeFileRatio * 0.3 +
-   *   duplicateCodeRatio * 0.2
+   *   deadCodeRatio * 0.35 +
+   *   largeFileRatio * 0.2 +
+   *   duplicateCodeRatio * 0.2 +
+   *   patternDuplicationRatio * 0.25
    * ) * 100
    */
   calculateMaintainabilityShit(data: MaintainabilityData): DimensionScore {
@@ -115,16 +116,29 @@ export class ScoreCalculator {
           deadCode: 0,
           largeFile: 0,
           duplicateCode: 0,
+          patternDuplication: 0,
         },
       };
     }
 
+    // 原始比例（可能超過 100%，用於 breakdown 顯示）
     const deadCodeRatio = data.deadCodeCount / total;
     const largeFileRatio = data.largeFileCount / total;
     const duplicateCodeRatio = data.duplicateCodeCount / total;
+    const patternDuplicationRatio = data.patternDuplicationCount / total;
+
+    // 限制比例上限為 100%，用於計算分數
+    const deadCodeRatioCapped = Math.min(deadCodeRatio, 1);
+    const largeFileRatioCapped = Math.min(largeFileRatio, 1);
+    const duplicateCodeRatioCapped = Math.min(duplicateCodeRatio, 1);
+    const patternDuplicationRatioCapped = Math.min(patternDuplicationRatio, 1);
 
     const score = this.round(
-      (deadCodeRatio * 0.5 + largeFileRatio * 0.3 + duplicateCodeRatio * 0.2) * 100
+      (deadCodeRatioCapped * 0.35 +
+        largeFileRatioCapped * 0.2 +
+        duplicateCodeRatioCapped * 0.2 +
+        patternDuplicationRatioCapped * 0.25) *
+        100
     );
 
     return {
@@ -136,6 +150,7 @@ export class ScoreCalculator {
         deadCode: this.round(deadCodeRatio * 100),
         largeFile: this.round(largeFileRatio * 100),
         duplicateCode: this.round(duplicateCodeRatio * 100),
+        patternDuplication: this.round(patternDuplicationRatio * 100),
       },
     };
   }

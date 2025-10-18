@@ -464,7 +464,7 @@ export class DuplicationDetector {
   }
 
   /**
-   * 將檔案內容解析為程式碼片段（提取方法和函式）
+   * 將檔案內容解析為程式碼片段（提取多種類型的代碼結構）
    */
   private parseFileToFragments(filePath: string, content: string): CodeFragment[] {
     if (typeof filePath !== 'string' || filePath.trim() === '') {
@@ -476,7 +476,217 @@ export class DuplicationDetector {
     }
 
     const fragments: CodeFragment[] = [];
+
+    // 1. 提取頂層註解（版權宣告等）
+    fragments.push(...this.extractTopLevelComments(filePath, content));
+
+    // 2. 提取常數定義
+    fragments.push(...this.extractConstantDefinitions(filePath, content));
+
+    // 3. 提取配置物件
+    fragments.push(...this.extractConfigObjects(filePath, content));
+
+    // 4. 提取方法和函式
+    fragments.push(...this.extractMethods(filePath, content));
+
+    // 如果仍然沒有找到任何片段，回退到按行分割
+    if (fragments.length === 0) {
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i += 10) {
+        const endLine = Math.min(i + 9, lines.length - 1);
+        const fragmentContent = lines.slice(i, endLine + 1).join('\n');
+
+        if (fragmentContent.trim().length > 0) {
+          fragments.push({
+            id: `${filePath}:${i + 1}-${endLine + 1}`,
+            ast: this.parseToAST(fragmentContent),
+            tokens: this.tokenize(fragmentContent),
+            location: {
+              file: filePath,
+              startLine: i + 1,
+              endLine: endLine + 1
+            }
+          });
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  /**
+   * 提取檔案開頭的頂層註解（如版權宣告）
+   */
+  private extractTopLevelComments(filePath: string, content: string): CodeFragment[] {
+    const fragments: CodeFragment[] = [];
     const lines = content.split('\n');
+
+    // 只檢查檔案開頭的註解（前 50 行內）
+    const headerLines = lines.slice(0, Math.min(50, lines.length));
+    let commentStart = -1;
+    let commentEnd = -1;
+    let inBlockComment = false;
+
+    for (let i = 0; i < headerLines.length; i++) {
+      const line = headerLines[i].trim();
+
+      // 檢測多行註解開始
+      if (line.startsWith('/**') || line.startsWith('/*')) {
+        if (commentStart === -1) {
+          commentStart = i;
+        }
+        inBlockComment = true;
+      }
+
+      // 檢測多行註解結束
+      if (inBlockComment && line.includes('*/')) {
+        commentEnd = i;
+        inBlockComment = false;
+
+        // 提取完整的註解區塊
+        const commentContent = lines.slice(commentStart, commentEnd + 1).join('\n');
+        const lineCount = commentEnd - commentStart + 1;
+
+        // 只處理 >= 3 行的註解區塊
+        if (lineCount >= 3) {
+          fragments.push({
+            id: `${filePath}:comment:${commentStart + 1}-${commentEnd + 1}`,
+            ast: this.parseToAST(commentContent),
+            tokens: this.tokenize(commentContent, true), // 保留註解
+            location: {
+              file: filePath,
+              startLine: commentStart + 1,
+              endLine: commentEnd + 1
+            }
+          });
+        }
+
+        commentStart = -1;
+        commentEnd = -1;
+      }
+
+      // 遇到非空白、非註解的行就停止（不再是頂層註解）
+      if (!line.startsWith('//') &&
+          !line.startsWith('/*') &&
+          !line.startsWith('*') &&
+          !line.includes('*/') &&
+          line.length > 0) {
+        break;
+      }
+    }
+
+    return fragments;
+  }
+
+  /**
+   * 提取常數定義（export const、const 等）
+   */
+  private extractConstantDefinitions(filePath: string, content: string): CodeFragment[] {
+    const fragments: CodeFragment[] = [];
+
+    // 匹配常數定義（包括物件定義）
+    // 例如：export const XXX = { ... }; 或 const XXX = { ... };
+    const constRegex = /(export\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*=\s*\{/gm;
+    let match: RegExpExecArray | null;
+
+    while ((match = constRegex.exec(content)) !== null) {
+      const startPos = match.index;
+      const startLine = content.substring(0, startPos).split('\n').length;
+      const constName = match[2];
+
+      // 找到物件定義的開始 { 位置
+      const bracePos = match.index + match[0].length - 1;
+
+      // 找到配對的 }
+      const endPos = this.findMatchingBrace(content, bracePos);
+      if (endPos === -1) {
+        continue;
+      }
+
+      const endLine = content.substring(0, endPos + 1).split('\n').length;
+      const fragmentContent = content.substring(startPos, endPos + 1);
+      const lineCount = endLine - startLine + 1;
+
+      // 只處理 >= 3 行的常數定義
+      if (lineCount >= 3) {
+        fragments.push({
+          id: `${filePath}:const:${startLine}:${constName}`,
+          ast: this.parseToAST(fragmentContent),
+          tokens: this.tokenize(fragmentContent),
+          location: {
+            file: filePath,
+            startLine,
+            endLine
+          }
+        });
+      }
+    }
+
+    return fragments;
+  }
+
+  /**
+   * 提取配置物件（識別常見的配置模式）
+   */
+  private extractConfigObjects(filePath: string, content: string): CodeFragment[] {
+    const fragments: CodeFragment[] = [];
+
+    // 匹配常見的配置物件模式
+    // 例如：{ host: ..., port: ..., database: ... }
+    const configKeywords = ['host', 'port', 'database', 'uri', 'url', 'connection', 'options', 'config'];
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // 檢查是否包含配置相關關鍵字
+      const hasConfigKeyword = configKeywords.some(keyword =>
+        line.includes(`${keyword}:`) || line.includes(`${keyword} =`)
+      );
+
+      if (hasConfigKeyword && line.includes('{')) {
+        // 找到配置物件的開始
+        const startPos = content.substring(0, content.indexOf(lines.slice(0, i + 1).join('\n'))).length;
+        const braceIndex = line.indexOf('{');
+        const bracePos = startPos + braceIndex;
+
+        const endPos = this.findMatchingBrace(content, bracePos);
+        if (endPos === -1) {
+          continue;
+        }
+
+        const startLine = i + 1;
+        const endLine = content.substring(0, endPos + 1).split('\n').length;
+        const fragmentContent = content.substring(bracePos, endPos + 1);
+        const lineCount = endLine - startLine + 1;
+
+        // 只處理 >= 3 行的配置物件
+        if (lineCount >= 3) {
+          fragments.push({
+            id: `${filePath}:config:${startLine}-${endLine}`,
+            ast: this.parseToAST(fragmentContent),
+            tokens: this.tokenize(fragmentContent),
+            location: {
+              file: filePath,
+              startLine,
+              endLine
+            }
+          });
+
+          // 跳過已處理的行
+          i = endLine - 1;
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  /**
+   * 提取方法和函式（原有邏輯）
+   */
+  private extractMethods(filePath: string, content: string): CodeFragment[] {
+    const fragments: CodeFragment[] = [];
 
     // 提取方法和函式的正則表達式（更寬鬆的匹配）
     const methodRegex = /(\s*)(async\s+)?(\w+)\s*\([^)]*\)\s*\{/gm;
@@ -514,27 +724,6 @@ export class DuplicationDetector {
             endLine
           }
         });
-      }
-    }
-
-    // 如果沒有找到方法，回退到按行分割
-    if (fragments.length === 0) {
-      for (let i = 0; i < lines.length; i += 10) {
-        const endLine = Math.min(i + 9, lines.length - 1);
-        const fragmentContent = lines.slice(i, endLine + 1).join('\n');
-
-        if (fragmentContent.trim().length > 0) {
-          fragments.push({
-            id: `${filePath}:${i + 1}-${endLine + 1}`,
-            ast: this.parseToAST(fragmentContent),
-            tokens: this.tokenize(fragmentContent),
-            location: {
-              file: filePath,
-              startLine: i + 1,
-              endLine: endLine + 1
-            }
-          });
-        }
       }
     }
 
@@ -595,12 +784,27 @@ export class DuplicationDetector {
 
   /**
    * 程式碼分詞
+   * @param content 程式碼內容
+   * @param preserveComments 是否保留註解（預設false會過濾註解）
    */
-  private tokenize(content: string): string[] {
-    // 簡化實作：按空白和操作符分割
-    return content
+  private tokenize(content: string, preserveComments = false): string[] {
+    // 按空白和操作符分割
+    const tokens = content
       .split(/(\s+|[(){}[\];,.]|\+|\-|\*|\/|=|!|<|>|&|\|)/)
       .filter(token => token.trim().length > 0);
+
+    // 如果不保留註解，過濾掉註解 tokens
+    if (!preserveComments) {
+      return tokens.filter(token => {
+        const trimmed = token.trim();
+        return !trimmed.startsWith('//') &&
+               !trimmed.startsWith('/*') &&
+               !trimmed.startsWith('*') &&
+               !trimmed.includes('*/');
+      });
+    }
+
+    return tokens;
   }
 
   /**

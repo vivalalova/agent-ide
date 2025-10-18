@@ -158,6 +158,7 @@ export interface MaintainabilityData {
   readonly deadCodeCount: number;
   readonly largeFileCount: number;
   readonly duplicateCodeCount: number;
+  readonly patternDuplicationCount: number;
 }
 
 /**

@@ -14,6 +14,7 @@ import { ErrorHandlingChecker } from './collectors/error-handling-checker.js';
 import { NamingChecker } from './collectors/naming-checker.js';
 import { SecurityChecker } from './collectors/security-checker.js';
 import { DuplicationDetector } from '../analysis/duplication-detector.js';
+import { PatternDetector } from '../analysis/pattern-detector.js';
 import type {
   ShitScoreResult,
   ShitScoreOptions,
@@ -46,6 +47,7 @@ export class ShitScoreAnalyzer {
   private readonly grading: Grading;
   private readonly qualityAssuranceCollector: QualityAssuranceCollector;
   private readonly duplicationDetector: DuplicationDetector;
+  private readonly patternDetector: PatternDetector;
 
   constructor() {
     this.calculator = new ScoreCalculator();
@@ -58,6 +60,7 @@ export class ShitScoreAnalyzer {
       new SecurityChecker()
     );
     this.duplicationDetector = new DuplicationDetector();
+    this.patternDetector = new PatternDetector();
   }
 
   /**
@@ -232,11 +235,17 @@ export class ShitScoreAnalyzer {
 
     const duplicateCodeCount = clones.length;
 
+    // 檢測模式重複
+    const patterns = await this.patternDetector.detectAll(files);
+    const patternDuplicationCount = Array.from(patterns.values())
+      .reduce((sum, group) => sum + group.count, 0);
+
     return {
       totalFiles: files.length,
       deadCodeCount,
       largeFileCount,
       duplicateCodeCount,
+      patternDuplicationCount,
     };
   }
 
