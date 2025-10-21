@@ -41,18 +41,17 @@
   "devDependencies": {
     "@types/babel__generator": "^7.27.0",
     "@types/babel__traverse": "^7.28.0",
-    "@types/minimatch": "^6.0.0",
-    "@types/node": "^24.3.1",
-    "@typescript-eslint/eslint-plugin": "^8.44.1",
-    "@typescript-eslint/parser": "^8.44.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@types/node": "^24.9.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "@vitest/coverage-v8": "^3.2.4",
     "chokidar": "^4.0.3",
-    "eslint": "^9.36.0",
+    "eslint": "^9.38.0",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
-    "memfs": "^4.38.2",
-    "tsx": "^4.20.5",
-    "vitest": "^2.0.0"
+    "memfs": "^4.49.0",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -67,10 +66,10 @@
     "@babel/parser": "^7.28.4",
     "@babel/traverse": "^7.28.4",
     "@babel/types": "^7.28.4",
-    "commander": "^12.1.0",
+    "commander": "^14.0.1",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3",
-    "typescript": "^5.0.0",
+    "typescript": "^5.9.3",
     "web-tree-sitter": "^0.25.10"
   }
 }

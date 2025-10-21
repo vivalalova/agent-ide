@@ -20,7 +20,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
 
   describe('依賴圖分析', () => {
     it('應該分析整個專案的依賴圖並輸出統計資訊', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--all']);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -80,15 +80,14 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
 
   describe('循環依賴檢測', () => {
     it('原始 sample-project 不應該有循環依賴', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
       expect(result.exitCode).toBe(0);
-      const output = result.stdout.toLowerCase();
+      const data = JSON.parse(result.stdout);
 
       // 原始專案設計良好，不應有循環依賴
-      // 如果有循環，輸出應該包含 cycle/circular/循環等關鍵字
-      // 這裡我們檢查是否報告了循環（取決於實作）
-      // 正常情況下不應報告循環
+      expect(data.issues.circularDependencies).toBe(0);
+      expect(data.issues.cycles.length).toBe(0);
     });
 
     it('應該檢測到手動建立的循環依賴', async () => {
@@ -117,13 +116,14 @@ export class ServiceB {
 }
       `.trim());
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
       expect(result.exitCode).toBe(0);
-      const output = result.stdout.toLowerCase();
+      const data = JSON.parse(result.stdout);
 
       // 應該檢測到循環依賴
-      expect(output).toMatch(/cycle|circular|循環/);
+      expect(data.issues.circularDependencies).toBeGreaterThan(0);
+      expect(data.issues.cycles.length).toBeGreaterThan(0);
     });
 
     it('應該檢測到多層循環依賴 (A → B → C → A)', async () => {
@@ -149,13 +149,14 @@ export class CycleC {
 }
       `.trim());
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
 
       expect(result.exitCode).toBe(0);
-      const output = result.stdout.toLowerCase();
+      const data = JSON.parse(result.stdout);
 
       // 應該檢測到循環
-      expect(output).toMatch(/cycle|circular|循環/);
+      expect(data.issues.circularDependencies).toBeGreaterThan(0);
+      expect(data.issues.cycles.length).toBeGreaterThan(0);
     });
   });
 
@@ -183,7 +184,7 @@ export class CycleC {
     });
 
     it('應該檢測出平均每個檔案的依賴數', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--all']);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -193,7 +194,7 @@ export class CycleC {
     });
 
     it('應該檢測出最大依賴數', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--all']);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -221,13 +222,14 @@ export function getConfigDate(): string {
 }
       `.trim());
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
-      const output = result.stdout;
+      const data = JSON.parse(result.stdout);
 
       // 應該能處理外部依賴 (fs, path) 和內部依賴 (date-utils)
-      expect(output.length).toBeGreaterThan(0);
+      expect(data.summary.totalFiles).toBeGreaterThan(0);
+      expect(data.summary.totalDependencies).toBeGreaterThan(0);
     });
 
     it('應該處理各種 import 語法 (default, named, namespace, type)', async () => {
