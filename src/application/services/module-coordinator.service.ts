@@ -10,7 +10,6 @@ import { ErrorHandlerService } from './error-handler.service.js';
 import { EventPriority } from '../events/event-types.js';
 
 // 核心模組引入
-import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { FunctionExtractor } from '../../core/refactor/extract-function.js';
 import { InlineAnalyzer } from '../../core/refactor/inline-function.js';
 import { RenameEngine } from '../../core/rename/rename-engine.js';
@@ -61,7 +60,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly modules: Map<string, CoreModule>;
 
   // 核心模組實例
-  private readonly complexityAnalyzer: ComplexityAnalyzer;
   private readonly functionExtractor: FunctionExtractor;
   private readonly inlineAnalyzer: InlineAnalyzer;
   private readonly renameEngine: RenameEngine;
@@ -83,7 +81,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.modules = new Map();
 
     // 初始化核心模組實例
-    this.complexityAnalyzer = new ComplexityAnalyzer();
     this.functionExtractor = new FunctionExtractor();
     this.inlineAnalyzer = new InlineAnalyzer();
     this.renameEngine = new RenameEngine();
@@ -108,11 +105,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     };
 
     try {
-      // 1. 分析檔案複雜度
-      const code = await this.readFile(filePath);
-      const analysisResult = await this.complexityAnalyzer.analyzeCode(code);
-
-      // 2. 執行重構操作
+      // 1. 執行重構操作
       const changes: CodeChange[] = [];
       let success = true;
 
@@ -413,7 +406,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
    */
   private registerModules(): void {
     const moduleConfigs = [
-      { id: 'analysis', name: 'analysis', instance: this.complexityAnalyzer },
+      // analysis module is now handled through ParserPlugin
       { id: 'dependency', name: 'dependency', instance: this.dependencyAnalyzer },
       { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
