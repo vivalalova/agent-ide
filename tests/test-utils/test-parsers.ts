@@ -3,10 +3,11 @@
  * 為所有測試提供統一的 Mock Parser 實作
  */
 
-import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range, Scope, ASTNode } from '../../src/shared/types';
-import { SymbolType, ReferenceType, DependencyType } from '../../src/shared/types';
+import type { ParserPlugin, AST, Symbol, Reference, Dependency, Position, Range, Scope, ASTNode } from '../../src/shared/types/index.js';
+import { SymbolType, ReferenceType, DependencyType } from '../../src/shared/types/index.js';
 import type { CodeEdit, Definition, Usage, ValidationResult, DefinitionKind } from '../../src/infrastructure/parser/types';
 import { ParserRegistry } from '../../src/infrastructure/parser/registry';
+import { isParserPlugin } from '../../src/infrastructure/parser/interface';
 import { TypeScriptParser } from '../../src/plugins/typescript/parser';
 import { JavaScriptParser } from '../../src/plugins/javascript/parser';
 
@@ -117,6 +118,53 @@ abstract class BaseTestParser implements ParserPlugin {
       SymbolType.Function
     ];
     return abstractTypes.includes(symbol.type);
+  }
+
+  // ===== 新增的 9 個必需方法（測試用簡化實作）=====
+
+  async detectUnusedSymbols(_ast: AST, _allSymbols: Symbol[]): Promise<any[]> {
+    return [];
+  }
+
+  async analyzeComplexity(_code: string, _ast: AST): Promise<any> {
+    return {
+      cyclomaticComplexity: 1,
+      cognitiveComplexity: 0,
+      evaluation: 'simple',
+      functionCount: 0,
+      averageComplexity: 0,
+      maxComplexity: 0
+    };
+  }
+
+  async extractCodeFragments(_code: string, _filePath: string): Promise<any[]> {
+    return [];
+  }
+
+  async detectPatterns(_code: string, _ast: AST): Promise<any[]> {
+    return [];
+  }
+
+  async checkTypeSafety(_code: string, _ast: AST): Promise<any[]> {
+    return [];
+  }
+
+  async checkErrorHandling(_code: string, _ast: AST): Promise<any[]> {
+    return [];
+  }
+
+  async checkSecurity(_code: string, _ast: AST): Promise<any[]> {
+    return [];
+  }
+
+  async checkNamingConventions(_symbols: Symbol[], _filePath: string): Promise<any[]> {
+    return [];
+  }
+
+  isTestFile(filePath: string): boolean {
+    return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filePath) ||
+           filePath.includes('/__tests__/') ||
+           filePath.includes('/__mocks__/');
   }
 }
 
@@ -414,12 +462,14 @@ export function registerTestParsers(): void {
     // 使用真實的 TypeScript 和 JavaScript Parser 以獲得更準確的測試結果
     // 註冊 TypeScript Parser
     if (!newRegistry.getParserByName('typescript')) {
-      newRegistry.register(new TypeScriptParser());
+      const tsParser = new TypeScriptParser();
+      newRegistry.register(tsParser);
     }
 
     // 註冊 JavaScript Parser
     if (!newRegistry.getParserByName('javascript')) {
-      newRegistry.register(new JavaScriptParser());
+      const jsParser = new JavaScriptParser();
+      newRegistry.register(jsParser);
     }
   } catch (error) {
     // 如果已經註冊過就忽略錯誤
