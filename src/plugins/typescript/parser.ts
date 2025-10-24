@@ -1168,4 +1168,401 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     return false;
   }
+
+  // ===== 新增：程式碼分析方法 =====
+
+  /**
+   * 檢測未使用的符號
+   */
+  async detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<import('../../infrastructure/parser/analysis-types.js').UnusedCode[]> {
+    const { UnusedSymbolDetector } = await import('./analyzers/unused-symbol-detector.js');
+    const detector = new UnusedSymbolDetector();
+    return detector.detect(
+      ast as TypeScriptAST,
+      allSymbols,
+      this.findReferences.bind(this)
+    );
+  }
+
+  /**
+   * 分析程式碼複雜度
+   */
+  async analyzeComplexity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ComplexityMetrics> {
+    const { ComplexityAnalyzer } = await import('./analyzers/complexity-analyzer.js');
+    const analyzer = new ComplexityAnalyzer();
+    return analyzer.analyze(code, ast as TypeScriptAST);
+  }
+
+  /**
+   * 提取程式碼片段（用於重複代碼檢測）
+   */
+  async extractCodeFragments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+
+    // 1. 提取頂層註解
+    const commentFragments = await this.extractTopLevelComments(code, filePath);
+    fragments.push(...commentFragments);
+
+    // 2. 提取方法
+    const methodFragments = await this.extractMethods(code, filePath);
+    fragments.push(...methodFragments);
+
+    // 3. 提取常數定義
+    const constantFragments = await this.extractConstants(code, filePath);
+    fragments.push(...constantFragments);
+
+    // 4. 提取配置物件
+    const configFragments = await this.extractConfigObjects(code, filePath);
+    fragments.push(...configFragments);
+
+    return fragments;
+  }
+
+  private async extractTopLevelComments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const { createHash } = await import('crypto');
+    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const lines = code.split('\n');
+
+    let commentStart = -1;
+    let inBlockComment = false;
+
+    for (let i = 0; i < Math.min(50, lines.length); i++) {
+      const line = lines[i].trim();
+
+      if ((line.startsWith('/**') || line.startsWith('/*')) && commentStart === -1) {
+        commentStart = i;
+        inBlockComment = true;
+      }
+
+      if (inBlockComment && line.includes('*/')) {
+        const commentEnd = i;
+        const commentCode = lines.slice(commentStart, commentEnd + 1).join('\n');
+        const lineCount = commentEnd - commentStart + 1;
+
+        if (lineCount >= 3) {
+          fragments.push({
+            type: 'comment',
+            code: commentCode,
+            tokens: this.tokenizeCode(commentCode, true),
+            location: { filePath, startLine: commentStart + 1, endLine: commentEnd + 1 },
+            hash: createHash('md5').update(commentCode).digest('hex')
+          });
+        }
+
+        commentStart = -1;
+        inBlockComment = false;
+      }
+
+      // 遇到非註解行就停止
+      if (!inBlockComment && line && !line.startsWith('//') && !line.startsWith('*')) {
+        break;
+      }
+    }
+
+    return fragments;
+  }
+
+  private async extractMethods(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const { createHash } = await import('crypto');
+    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // 匹配方法定義
+      if (/(async\s+)?(function\s+\w+|const\s+\w+\s*=\s*(async\s+)?\([^)]*\)\s*=>|\w+\s*\([^)]*\)\s*{)/.test(line)) {
+        let braceCount = (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
+        let endLine = i;
+
+        // 找到方法結尾
+        for (let j = i + 1; j < lines.length && braceCount > 0; j++) {
+          braceCount += (lines[j].match(/{/g) || []).length;
+          braceCount -= (lines[j].match(/}/g) || []).length;
+          endLine = j;
+        }
+
+        if (endLine > i && (endLine - i + 1) >= 3) {
+          const methodCode = lines.slice(i, endLine + 1).join('\n');
+          fragments.push({
+            type: 'method',
+            code: methodCode,
+            tokens: this.tokenizeCode(methodCode, false),
+            location: { filePath, startLine: i + 1, endLine: endLine + 1 },
+            hash: createHash('md5').update(methodCode).digest('hex')
+          });
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  private async extractConstants(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const { createHash } = await import('crypto');
+    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // 匹配 export const XXX = { ... }
+      if (/export\s+const\s+\w+\s*=\s*{/.test(line)) {
+        let braceCount = 1;
+        let endLine = i;
+
+        for (let j = i + 1; j < lines.length && braceCount > 0; j++) {
+          braceCount += (lines[j].match(/{/g) || []).length;
+          braceCount -= (lines[j].match(/}/g) || []).length;
+          endLine = j;
+        }
+
+        if (endLine > i && (endLine - i + 1) >= 3) {
+          const constantCode = lines.slice(i, endLine + 1).join('\n');
+          fragments.push({
+            type: 'constant',
+            code: constantCode,
+            tokens: this.tokenizeCode(constantCode, false),
+            location: { filePath, startLine: i + 1, endLine: endLine + 1 },
+            hash: createHash('md5').update(constantCode).digest('hex')
+          });
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  private async extractConfigObjects(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const { createHash } = await import('crypto');
+    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // 匹配配置物件模式
+      if (/config|Config|options|Options/.test(line) && /{/.test(line)) {
+        let braceCount = (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
+        let endLine = i;
+
+        for (let j = i + 1; j < lines.length && braceCount > 0; j++) {
+          braceCount += (lines[j].match(/{/g) || []).length;
+          braceCount -= (lines[j].match(/}/g) || []).length;
+          endLine = j;
+        }
+
+        if (endLine > i && (endLine - i + 1) >= 3) {
+          const configCode = lines.slice(i, endLine + 1).join('\n');
+          fragments.push({
+            type: 'config',
+            code: configCode,
+            tokens: this.tokenizeCode(configCode, false),
+            location: { filePath, startLine: i + 1, endLine: endLine + 1 },
+            hash: createHash('md5').update(configCode).digest('hex')
+          });
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  private tokenizeCode(code: string, includeComments: boolean): string[] {
+    if (includeComments) {
+      return code.split(/\s+/).filter(t => t.length > 0);
+    }
+    // 移除註解
+    const withoutComments = code
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*/g, '');
+    return withoutComments.split(/\s+/).filter(t => t.length > 0);
+  }
+
+  /**
+   * 檢測樣板模式
+   */
+  async detectPatterns(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').PatternMatch[]> {
+    const { PatternDetector, PatternType } = await import('./analyzers/pattern-detector.js');
+    const detector = new PatternDetector();
+    const groups = await detector.detectAll([ast.sourceFile]);
+
+    const patterns: import('../../infrastructure/parser/analysis-types.js').PatternMatch[] = [];
+    for (const [type, group] of groups.entries()) {
+      patterns.push({
+        pattern: type,
+        type: 'boilerplate',
+        locations: group.instances.map(instance => ({
+          filePath: instance.file,
+          startLine: instance.startLine,
+          endLine: instance.endLine
+        })),
+        count: group.count,
+        severity: group.count > 10 ? 'high' : group.count > 5 ? 'medium' : 'low',
+        suggestion: group.recommendation
+      });
+    }
+    return patterns;
+  }
+
+  /**
+   * 檢查型別安全問題
+   */
+  async checkTypeSafety(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
+    const { TypeSafetyChecker } = await import('./analyzers/type-safety-checker.js');
+    const checker = new TypeSafetyChecker();
+    const result = await checker.check([ast.sourceFile], process.cwd());
+
+    const issues: import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[] = [];
+
+    // any 型別使用
+    for (let i = 0; i < result.anyTypeCount; i++) {
+      issues.push({
+        type: 'any-type',
+        location: { filePath: ast.sourceFile, line: 0, column: 0 },
+        message: '使用了 any 型別，降低型別安全性',
+        severity: 'warning'
+      });
+    }
+
+    // @ts-ignore 指令
+    for (let i = 0; i < result.tsIgnoreCount; i++) {
+      issues.push({
+        type: 'ignore-directive',
+        location: { filePath: ast.sourceFile, line: 0, column: 0 },
+        message: '使用了 @ts-ignore 忽略型別檢查',
+        severity: 'warning'
+      });
+    }
+
+    // as any 轉型
+    for (let i = 0; i < result.asAnyCount; i++) {
+      issues.push({
+        type: 'unsafe-cast',
+        location: { filePath: ast.sourceFile, line: 0, column: 0 },
+        message: '使用了 as any 強制轉型',
+        severity: 'error'
+      });
+    }
+
+    return issues;
+  }
+
+  /**
+   * 檢查錯誤處理問題
+   */
+  async checkErrorHandling(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
+    const issues: import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[] = [];
+    const lines = code.split('\n');
+
+    // 檢測空 catch 區塊
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/catch\s*\([^)]*\)\s*\{\s*\}/.test(line)) {
+        issues.push({
+          type: 'empty-catch',
+          location: { filePath: ast.sourceFile, line: i + 1, column: 0 },
+          message: '空的 catch 區塊，應該處理錯誤或記錄日誌',
+          severity: 'warning'
+        });
+      }
+
+      // 檢測靜默吞錯（catch 內只有註解）
+      if (/catch\s*\([^)]*\)\s*\{[^}]*\/\/\s*(ignore|skip|TODO)[^}]*\}/.test(line)) {
+        issues.push({
+          type: 'silent-error',
+          location: { filePath: ast.sourceFile, line: i + 1, column: 0 },
+          message: 'catch 區塊靜默吞錯，只有註解沒有實際處理',
+          severity: 'warning'
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  /**
+   * 檢查安全性問題
+   */
+  async checkSecurity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').SecurityIssue[]> {
+    const issues: import('../../infrastructure/parser/analysis-types.js').SecurityIssue[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // 檢測硬編碼密碼
+      if (/(password|passwd|pwd|secret|apiKey|token)\s*[:=]\s*['"][^'"]{3,}['"]/.test(line) &&
+          !/(process\.env|config\.|import)/.test(line)) {
+        issues.push({
+          type: 'hardcoded-secret',
+          location: { filePath: ast.sourceFile, line: i + 1, column: 0 },
+          message: '硬編碼的密碼或密鑰，應使用環境變數',
+          severity: 'critical'
+        });
+      }
+
+      // 檢測 eval 使用
+      if (/\beval\s*\(/.test(line)) {
+        issues.push({
+          type: 'unsafe-eval',
+          location: { filePath: ast.sourceFile, line: i + 1, column: 0 },
+          message: '使用 eval 可能導致代碼注入風險',
+          severity: 'high'
+        });
+      }
+
+      // 檢測 innerHTML
+      if (/\.innerHTML\s*=/.test(line) && !/(DOMPurify|sanitize)/.test(line)) {
+        issues.push({
+          type: 'xss-vulnerability',
+          location: { filePath: ast.sourceFile, line: i + 1, column: 0 },
+          message: '直接設定 innerHTML 可能導致 XSS 攻擊',
+          severity: 'medium'
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  /**
+   * 檢查命名規範問題
+   */
+  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').NamingIssue[]> {
+    const issues: import('../../infrastructure/parser/analysis-types.js').NamingIssue[] = [];
+
+    for (const symbol of symbols) {
+      // 檢測底線開頭變數（JavaScript/TypeScript 規範不建議）
+      if (symbol.name.startsWith('_') && symbol.type === SymbolType.Variable) {
+        issues.push({
+          type: 'invalid-naming',
+          symbolName: symbol.name,
+          symbolType: symbol.type,
+          location: {
+            filePath,
+            line: symbol.location.range.start.line,
+            column: symbol.location.range.start.column
+          },
+          message: `變數 "${symbol.name}" 以底線開頭，違反命名規範`
+        });
+      }
+
+      // 檢測常數未使用大寫（如果標記為 const）
+      if (symbol.modifiers?.includes('const') &&
+          symbol.type === SymbolType.Variable &&
+          !/^[A-Z_]+$/.test(symbol.name) &&
+          symbol.name.length > 1) {
+        // 這是建議性質，不一定要強制
+      }
+    }
+
+    return issues;
+  }
+
+  /**
+   * 判斷檔案是否為測試檔案
+   */
+  isTestFile(filePath: string): boolean {
+    return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
+           filePath.includes('/__tests__/') ||
+           filePath.includes('/__mocks__/');
+  }
 }
