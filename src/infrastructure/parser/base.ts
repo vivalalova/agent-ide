@@ -404,4 +404,86 @@ export abstract class BaseParserPlugin implements ParserPlugin {
 
     return abstractTypes.includes(symbol.type);
   }
+
+  // ===== 程式碼分析方法（預設實作）=====
+
+  /**
+   * 檢測未使用的符號（預設實作返回空陣列）
+   */
+  async detectUnusedSymbols(_ast: AST, _allSymbols: Symbol[]): Promise<any[]> {
+    this.log('debug', 'detectUnusedSymbols not implemented');
+    return [];
+  }
+
+  /**
+   * 分析程式碼複雜度（預設實作返回簡單複雜度）
+   */
+  async analyzeComplexity(_code: string, _ast: AST): Promise<any> {
+    this.log('debug', 'analyzeComplexity not implemented');
+    return {
+      cyclomaticComplexity: 1,
+      cognitiveComplexity: 0,
+      evaluation: 'simple',
+      functionCount: 0,
+      averageComplexity: 0,
+      maxComplexity: 0
+    };
+  }
+
+  /**
+   * 提取程式碼片段（預設實作返回空陣列）
+   */
+  async extractCodeFragments(_code: string, _filePath: string): Promise<any[]> {
+    this.log('debug', 'extractCodeFragments not implemented');
+    return [];
+  }
+
+  /**
+   * 檢測樣板模式（預設實作返回空陣列）
+   */
+  async detectPatterns(_code: string, _ast: AST): Promise<any[]> {
+    this.log('debug', 'detectPatterns not implemented');
+    return [];
+  }
+
+  /**
+   * 檢查型別安全問題（預設實作返回空陣列）
+   */
+  async checkTypeSafety(_code: string, _ast: AST): Promise<any[]> {
+    this.log('debug', 'checkTypeSafety not implemented');
+    return [];
+  }
+
+  /**
+   * 檢查錯誤處理問題（預設實作返回空陣列）
+   */
+  async checkErrorHandling(_code: string, _ast: AST): Promise<any[]> {
+    this.log('debug', 'checkErrorHandling not implemented');
+    return [];
+  }
+
+  /**
+   * 檢查安全性問題（預設實作返回空陣列）
+   */
+  async checkSecurity(_code: string, _ast: AST): Promise<any[]> {
+    this.log('debug', 'checkSecurity not implemented');
+    return [];
+  }
+
+  /**
+   * 檢查命名規範問題（預設實作返回空陣列）
+   */
+  async checkNamingConventions(_symbols: Symbol[], _filePath: string): Promise<any[]> {
+    this.log('debug', 'checkNamingConventions not implemented');
+    return [];
+  }
+
+  /**
+   * 判斷檔案是否為測試檔案（預設實作）
+   */
+  isTestFile(filePath: string): boolean {
+    return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filePath) ||
+           filePath.includes('/__tests__/') ||
+           filePath.includes('/__mocks__/');
+  }
 }

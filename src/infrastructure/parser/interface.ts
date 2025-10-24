@@ -5,6 +5,16 @@
 
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
 import type { CodeEdit, Definition, Usage, ValidationResult } from './types.js';
+import type {
+  UnusedCode,
+  ComplexityMetrics,
+  CodeFragment,
+  PatternMatch,
+  TypeSafetyIssue,
+  ErrorHandlingIssue,
+  SecurityIssue,
+  NamingIssue
+} from './analysis-types.js';
 
 /**
  * Parser 插件主介面
@@ -135,6 +145,79 @@ export interface ParserPlugin {
    * @returns true 表示此符號是抽象宣告
    */
   isAbstractDeclaration?(symbol: Symbol): boolean;
+
+  // ===== 程式碼分析支援（必需方法）=====
+
+  /**
+   * 檢測未使用的符號
+   * @param ast AST 物件
+   * @param allSymbols 所有符號列表
+   * @returns 未使用程式碼列表
+   */
+  detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<UnusedCode[]>;
+
+  /**
+   * 分析程式碼複雜度
+   * @param code 原始程式碼
+   * @param ast AST 物件
+   * @returns 複雜度指標
+   */
+  analyzeComplexity(code: string, ast: AST): Promise<ComplexityMetrics>;
+
+  /**
+   * 提取程式碼片段（用於重複代碼檢測）
+   * @param code 原始程式碼
+   * @param filePath 檔案路徑
+   * @returns 程式碼片段列表
+   */
+  extractCodeFragments(code: string, filePath: string): Promise<CodeFragment[]>;
+
+  /**
+   * 檢測樣板模式
+   * @param code 原始程式碼
+   * @param ast AST 物件
+   * @returns 模式匹配列表
+   */
+  detectPatterns(code: string, ast: AST): Promise<PatternMatch[]>;
+
+  /**
+   * 檢查型別安全問題
+   * @param code 原始程式碼
+   * @param ast AST 物件
+   * @returns 型別安全問題列表
+   */
+  checkTypeSafety(code: string, ast: AST): Promise<TypeSafetyIssue[]>;
+
+  /**
+   * 檢查錯誤處理問題
+   * @param code 原始程式碼
+   * @param ast AST 物件
+   * @returns 錯誤處理問題列表
+   */
+  checkErrorHandling(code: string, ast: AST): Promise<ErrorHandlingIssue[]>;
+
+  /**
+   * 檢查安全性問題
+   * @param code 原始程式碼
+   * @param ast AST 物件
+   * @returns 安全性問題列表
+   */
+  checkSecurity(code: string, ast: AST): Promise<SecurityIssue[]>;
+
+  /**
+   * 檢查命名規範問題
+   * @param symbols 符號列表
+   * @param filePath 檔案路徑
+   * @returns 命名規範問題列表
+   */
+  checkNamingConventions(symbols: Symbol[], filePath: string): Promise<NamingIssue[]>;
+
+  /**
+   * 判斷檔案是否為測試檔案
+   * @param filePath 檔案路徑
+   * @returns true 表示此檔案是測試檔案
+   */
+  isTestFile(filePath: string): boolean;
 }
 
 /**
@@ -169,7 +252,17 @@ export function isParserPlugin(value: unknown): value is ParserPlugin {
     'findDefinition',
     'findUsages',
     'validate',
-    'dispose'
+    'dispose',
+    // 新增的必需方法
+    'detectUnusedSymbols',
+    'analyzeComplexity',
+    'extractCodeFragments',
+    'detectPatterns',
+    'checkTypeSafety',
+    'checkErrorHandling',
+    'checkSecurity',
+    'checkNamingConventions',
+    'isTestFile'
   ];
 
   for (const method of requiredMethods) {
