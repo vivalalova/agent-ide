@@ -10,7 +10,6 @@ import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js
 import { RenameEngine } from '../../core/rename/rename-engine.js';
 import { ImportResolver } from '../../core/move/index.js';
 import { MoveService } from '../../core/move/move-service.js';
-import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
 import { QualityMetricsAnalyzer } from '../../core/analysis/quality-metrics.js';
 import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
@@ -682,9 +681,13 @@ export class AgentIdeMCP {
         const content = await fs.readFile(targetPath, 'utf-8');
 
         if (analyzeType === 'complexity' || analyzeType === 'all') {
-          const complexityAnalyzer = new ComplexityAnalyzer();
-          const complexityResult = await complexityAnalyzer.analyzeCode(content);
-          results.complexity = complexityResult;
+          const registry = ParserRegistry.getInstance();
+          const parser = registry.getParser(path.extname(targetPath));
+          if (parser) {
+            const ast = await parser.parse(content, targetPath);
+            const complexityResult = await parser.analyzeComplexity(content, ast);
+            results.complexity = complexityResult;
+          }
         }
 
         if (analyzeType === 'quality' || analyzeType === 'all') {
@@ -701,6 +704,7 @@ export class AgentIdeMCP {
         });
 
         const fileResults: any[] = [];
+        const registry = ParserRegistry.getInstance();
 
         for (const file of files.slice(0, 10)) {
           try {
@@ -710,8 +714,11 @@ export class AgentIdeMCP {
             };
 
             if (analyzeType === 'complexity' || analyzeType === 'all') {
-              const complexityAnalyzer = new ComplexityAnalyzer();
-              fileResult.complexity = await complexityAnalyzer.analyzeCode(content);
+              const parser = registry.getParser(path.extname(file));
+              if (parser) {
+                const ast = await parser.parse(content, file);
+                fileResult.complexity = await parser.analyzeComplexity(content, ast);
+              }
             }
 
             if (analyzeType === 'quality' || analyzeType === 'all') {
@@ -922,7 +929,8 @@ export class AgentIdeMCP {
         ? analyzePath
         : path.resolve(workspacePath, analyzePath);
 
-      const analyzer = new ShitScoreAnalyzer();
+      const registry = ParserRegistry.getInstance();
+      const analyzer = new ShitScoreAnalyzer(registry);
       const result = await analyzer.analyze(targetPath, {
         detailed,
         topCount,

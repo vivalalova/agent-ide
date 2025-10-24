@@ -13,8 +13,6 @@ import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
 import { JavaScriptParser } from '../../plugins/javascript/parser.js';
-import { ComplexityAnalyzer } from '../../core/analysis/complexity-analyzer.js';
-import { DeadCodeDetector } from '../../core/analysis/dead-code-detector.js';
 import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import * as fs from 'fs/promises';
@@ -826,11 +824,25 @@ export class AgentIdeCLI {
 
       // 根據分析類型執行對應分析
       if (analyzeType === 'complexity') {
-        const analyzer = new ComplexityAnalyzer();
-
-        // 獲取需要分析的檔案列表
+        // 使用 ParserPlugin 分析複雜度
+        const registry = ParserRegistry.getInstance();
         const files = await this.getAllProjectFiles(analyzePath);
-        const results = await analyzer.analyzeFiles(files);
+        const results: Array<{ file: string; complexity: any }> = [];
+
+        for (const file of files) {
+          try {
+            const parser = registry.getParser(path.extname(file));
+            if (!parser) continue;
+
+            const content = await fs.readFile(file, 'utf-8');
+            const ast = await parser.parse(content, file);
+            const complexity = await parser.analyzeComplexity(content, ast);
+
+            results.push({ file, complexity });
+          } catch {
+            // 忽略無法分析的檔案
+          }
+        }
 
         // 過濾高複雜度檔案（evaluation === 'high' 或 complexity > 10）
         const highComplexityFiles = results.filter(r =>
@@ -886,11 +898,27 @@ export class AgentIdeCLI {
           }
         }
       } else if (analyzeType === 'dead-code') {
-        const detector = new DeadCodeDetector();
+        // 使用 ParserPlugin 檢測死代碼
+        const registry = ParserRegistry.getInstance();
 
-        // 獲取需要分析的檔案列表
         const files = await this.getAllProjectFiles(analyzePath);
-        const results = await detector.detectInFiles(files);
+        const results: Array<{ file: string; deadCode: any[] }> = [];
+
+        for (const file of files) {
+          try {
+            const parser = registry.getParser(path.extname(file));
+            if (!parser) continue;
+
+            const content = await fs.readFile(file, 'utf-8');
+            const ast = await parser.parse(content, file);
+            const symbols = await parser.extractSymbols(ast);
+            const deadCode = await parser.detectUnusedSymbols(ast, symbols);
+
+            results.push({ file, deadCode });
+          } catch {
+            // 忽略無法分析的檔案
+          }
+        }
 
         // 過濾有 dead code 的檔案
         const filesWithDeadCode = results.filter(r => r.deadCode.length > 0);
@@ -1048,7 +1076,8 @@ export class AgentIdeCLI {
       const topCount = parseInt(options.top) || 10;
       const maxAllowed = options.maxAllowed ? parseFloat(options.maxAllowed) : undefined;
 
-      const analyzer = new ShitScoreAnalyzer();
+      const registry = ParserRegistry.getInstance();
+      const analyzer = new ShitScoreAnalyzer(registry);
       const result = await analyzer.analyze(analyzePath, {
         detailed: options.detailed,
         topCount,
