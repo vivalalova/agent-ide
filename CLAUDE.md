@@ -10,7 +10,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 **目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
 
-**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、**220 個測試通過 (100%)**
+**現況**：8 個核心模組 ✅、基礎設施 ✅、3 個 Parser ✅（TypeScript、JavaScript、Swift）、CLI/MCP ✅、**220+ 個測試通過**
 
 ## 快速參考
 
@@ -23,9 +23,9 @@ npm link && agent-ide --help
 **架構**：
 ```
 src/
-├── core/           # 7 個核心模組
+├── core/           # 8 個核心模組（含 ShitScore）
 ├── infrastructure/ # parser、cache、storage、utils
-├── plugins/        # TypeScript、JavaScript
+├── plugins/        # TypeScript、JavaScript、Swift
 ├── interfaces/     # CLI、MCP
 └── application/    # 服務協調層
 ```
@@ -227,6 +227,7 @@ await executeCLI(['shit', '--path', fixture.tempPath]);
 
 - **TypeScript**：Compiler API、Program 重用、Watch 模式
 - **JavaScript**：Babel、ES2023+、JSX/Flow
+- **Swift**：SwiftSyntax 509+、CLI Bridge、MVVM/SwiftUI 支援
 
 ## 介面層
 
