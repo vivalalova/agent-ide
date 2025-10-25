@@ -30,6 +30,8 @@ import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
 import { ParserRegistry } from '../../infrastructure/parser/index.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
+import { JavaScriptParser } from '../../plugins/javascript/parser.js';
+import { SwiftParser } from '../../plugins/swift/parser.js';
 
 /**
  * 索引引擎類別
@@ -60,10 +62,20 @@ export class IndexEngine {
       this.parserRegistry = registry;
     }
 
-    // 確保 TypeScript Parser 已註冊
+    // 確保所有內建 Parser 已註冊
     if (!this.parserRegistry.getParser('.ts')) {
       const tsParser = new TypeScriptParser();
       this.parserRegistry.register(tsParser);
+    }
+
+    if (!this.parserRegistry.getParser('.js')) {
+      const jsParser = new JavaScriptParser();
+      this.parserRegistry.register(jsParser);
+    }
+
+    if (!this.parserRegistry.getParser('.swift')) {
+      const swiftParser = new SwiftParser();
+      this.parserRegistry.register(swiftParser);
     }
   }
 
@@ -374,6 +386,23 @@ export class IndexEngine {
    */
   async searchSymbols(pattern: string, options?: SearchOptions): Promise<SymbolSearchResult[]> {
     return await this.symbolIndex.searchSymbols(pattern, options);
+  }
+
+  /**
+   * 獲取所有符號
+   */
+  async getAllSymbols(): Promise<SymbolSearchResult[]> {
+    // 檢查是否已被釋放
+    if (this._disposed) {
+      throw new Error('索引引擎已被釋放');
+    }
+
+    // 如果尚未索引，返回空結果
+    if (!this._indexed) {
+      return [];
+    }
+
+    return await this.symbolIndex.getAllSymbols();
   }
 
   /**

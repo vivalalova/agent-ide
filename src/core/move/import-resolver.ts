@@ -27,6 +27,7 @@ export class ImportResolver {
   parseImportStatements(code: string, filePath: string): ImportStatement[] {
     const statements: ImportStatement[] = [];
     const lines = code.split('\n');
+    const isSwiftFile = filePath.endsWith('.swift');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -35,6 +36,14 @@ export class ImportResolver {
       // 跳過註解行
       if (this.isCommentLine(line)) {
         continue;
+      }
+
+      // 處理 Swift import 語句
+      if (isSwiftFile && line.trim().startsWith('import ')) {
+        // Swift import 格式: import ModuleName 或 import struct ModuleName.TypeName
+        // 我們只關心本地檔案的 import（不處理系統模組）
+        // Swift 不需要路徑，因為它使用模組系統，但我們仍然記錄以供未來擴展
+        continue; // 暫時跳過 Swift 模組 import，因為 Swift 使用模組系統而非檔案路徑
       }
 
       // 解析 ES6 import

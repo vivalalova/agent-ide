@@ -406,7 +406,7 @@ export class TextSearchEngine {
         '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.txt',
         '.css', '.scss', '.sass', '.less', '.html', '.xml',
         '.vue', '.svelte', '.py', '.java', '.c', '.cpp', '.h',
-        '.cs', '.go', '.rs', '.php', '.rb', '.kt'
+        '.cs', '.go', '.rs', '.php', '.rb', '.kt', '.swift'
       ];
 
       return textExtensions.includes(ext);
