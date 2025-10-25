@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "agent-ide": {
-      "command": "agent-ide-mcp",
-      "args": [],
-      "env": {}
-    }
-  }
-}

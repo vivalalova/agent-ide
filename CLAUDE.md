@@ -8,9 +8,9 @@ This file provides guidance to Claude Code when working with this repository.
 
 為 AI 代理設計的程式碼智能工具集。
 
-**目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
+**目標**：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 個核心模組 ✅、基礎設施 ✅、3 個 Parser ✅（TypeScript、JavaScript、Swift）、CLI/MCP ✅、**220+ 個測試通過**
+**現況**：8 個核心模組 ✅、基礎設施 ✅、3 個 Parser ✅（TypeScript、JavaScript、Swift）、CLI ✅、**220+ 個測試通過**
 
 ## 快速參考
 
@@ -26,7 +26,7 @@ src/
 ├── core/           # 8 個核心模組（含 ShitScore）
 ├── infrastructure/ # parser、cache、storage、utils
 ├── plugins/        # TypeScript、JavaScript、Swift
-├── interfaces/     # CLI、MCP
+├── interfaces/     # CLI
 └── application/    # 服務協調層
 ```
 
@@ -239,8 +239,6 @@ await executeCLI(['shit', '--path', fixture.tempPath]);
 
 - **CLI**：`agent-ide [index|search|rename|move|analyze|deps|shit]`
   - Unix 哲學、JSON 輸出、管道支援
-- **MCP**：`code_[index|search|rename|move|analyze|deps|shit|parser_plugins]`
-  - MCP 規範、非同步、工具註冊
 
 ## 診斷命令輸出優化（Token 效率）
 
@@ -276,10 +274,6 @@ agent-ide deps --all
 }
 ```
 
-### MCP 對應
-
-- CLI `--all` 對應 MCP `showAll: true`
-- 預設 `showAll: false`
 
 ## Parser 插件介面
 
@@ -338,7 +332,7 @@ interface ParserPlugin {
 
 ## 新增功能流程
 
-1. 建立規格 → 2. 設計 API → 3. 寫測試 → 4. 實作 → 5. CLI/MCP → 6. 文件
+1. 建立規格 → 2. 設計 API → 3. 寫測試 → 4. 實作 → 5. CLI → 6. 文件
 
 ## 重要改進記錄
 
@@ -471,7 +465,6 @@ interface ParserPlugin {
 
 6. ✅ **Phase 7: 更新介面層**
    - CLI: 移除舊 API 依賴
-   - MCP: 移除舊 API 依賴
    - 確保向下相容
 
 **技術細節**：
