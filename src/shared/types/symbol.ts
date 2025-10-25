@@ -11,9 +11,12 @@ import { Location } from './core.js';
 export enum SymbolType {
   Class = 'class',
   Interface = 'interface',
+  Protocol = 'protocol',
+  Struct = 'struct',
   Function = 'function',
   Variable = 'variable',
   Constant = 'constant',
+  Property = 'property',
   Type = 'type',
   Enum = 'enum',
   Module = 'module',
@@ -43,6 +46,9 @@ export interface Symbol {
   readonly location: Location;
   readonly scope: Scope | undefined;
   readonly modifiers: readonly string[];
+  readonly attributes?: readonly string[];
+  readonly superclass?: string;
+  readonly implements?: readonly string[];
 }
 
 /**
@@ -111,7 +117,10 @@ export function createSymbol(
   type: SymbolType,
   location: Location,
   scope?: Scope,
-  modifiers: string[] = []
+  modifiers: string[] = [],
+  attributes?: string[],
+  superclass?: string,
+  implementsProtocols?: string[]
 ): Symbol {
   if (!name.trim()) {
     throw new Error('Symbol 名稱不能為空');
@@ -128,7 +137,10 @@ export function createSymbol(
     type,
     location,
     scope: scope || undefined,
-    modifiers: [...modifiers]
+    modifiers: [...modifiers],
+    ...(attributes && attributes.length > 0 ? { attributes: [...attributes] } : {}),
+    ...(superclass ? { superclass } : {}),
+    ...(implementsProtocols && implementsProtocols.length > 0 ? { implements: [...implementsProtocols] } : {})
   };
 }
 
