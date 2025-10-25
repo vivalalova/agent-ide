@@ -11,7 +11,8 @@
   },
   "scripts": {
     "prepare": "npm run build",
-    "build": "tsc",
+    "build": "tsc && npm run postbuild",
+    "postbuild": "mkdir -p dist/plugins/swift/swift-bridge && cp src/plugins/swift/swift-bridge/swift-parser dist/plugins/swift/swift-bridge/ 2>/dev/null || true",
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run",
     "test:watch": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest --watch",
     "test:coverage": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --coverage",
