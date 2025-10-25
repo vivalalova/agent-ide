@@ -241,7 +241,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
     const result = await executeCLI(['refactor', 'extract-function', '--file', filePath]);
 
     const output = result.stdout + result.stderr;
-    expect(output).toContain('需要');
+    expect(output).toContain('缺少必要參數');
   });
 
   it('應該處理無效的行號範圍', async () => {
