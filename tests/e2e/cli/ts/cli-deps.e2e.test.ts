@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
-import { analyzeDependencies, executeCLI } from '../helpers/cli-executor';
+import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { analyzeDependencies, executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
   let fixture: FixtureProject;

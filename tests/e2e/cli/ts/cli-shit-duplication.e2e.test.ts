@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
-import { executeCLI } from '../helpers/cli-executor';
+import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI shit - 重複代碼檢測', () => {
   let fixture: FixtureProject;

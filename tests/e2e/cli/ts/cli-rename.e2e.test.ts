@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../helpers/fixture-manager';
-import { executeCLI } from '../helpers/cli-executor';
+import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI rename E2E 測試', () => {
   let fixture: FixtureProject;

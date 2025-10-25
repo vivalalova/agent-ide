@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../helpers/fixture-manager.js';
-import { executeCLI } from '../helpers/cli-executor.js';
+import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
+import { executeCLI } from '../../helpers/cli-executor.js';
 
 describe('CLI shit - 品質保證維度測試', () => {
   let fixture: FixtureProject;

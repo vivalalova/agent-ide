@@ -47,16 +47,22 @@ src/
 ```
 tests/
 ├── e2e/
-│   ├── cli/                    # CLI 命令測試
-│   │   ├── cli-shit.e2e.test.ts
-│   │   ├── cli-analyze.e2e.test.ts
-│   │   ├── cli-deps.e2e.test.ts
-│   │   └── ...
-│   ├── helpers/                # 測試輔助工具
-│   │   ├── fixture-manager.ts  # Fixture 管理
-│   │   └── cli-executor.ts     # CLI 執行器
+│   ├── cli/
+│   │   ├── ts/                # TypeScript/JavaScript 測試
+│   │   │   ├── cli-shit.e2e.test.ts
+│   │   │   ├── cli-analyze.e2e.test.ts
+│   │   │   ├── cli-deps.e2e.test.ts
+│   │   │   └── ...
+│   │   └── swift/             # Swift 測試
+│   │       ├── cli-swift-analyze.e2e.test.ts
+│   │       ├── cli-swift-deps.e2e.test.ts
+│   │       └── ...
+│   ├── helpers/               # 測試輔助工具
+│   │   ├── fixture-manager.ts # Fixture 管理
+│   │   └── cli-executor.ts    # CLI 執行器
 │   └── fixtures/
-│       └── sample-project/     # 測試專案
+│       ├── sample-project/    # TypeScript/JavaScript 測試專案
+│       └── swift-sample-project/  # Swift 測試專案
 └── ...
 ```
 
