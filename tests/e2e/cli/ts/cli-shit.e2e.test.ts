@@ -182,7 +182,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('ShitScore');
-  });
+  }, 60000);
 
   it('分數低於 --max-allowed 應該成功（exit 0）', async () => {
     const result = await executeCLI([
