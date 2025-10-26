@@ -180,7 +180,7 @@ export class ShitScoreAnalyzer {
     let highComplexityCount = 0;
     let longFunctionCount = 0;
     let deepNestingCount = 0;
-    let tooManyParamsCount = 0;
+    const tooManyParamsCount = 0;
 
     for (const { ast, parser, content } of fileCache.values()) {
       try {
@@ -503,9 +503,9 @@ export class ShitScoreAnalyzer {
           const castCount = typeSafetyIssues.filter(i => i.type === 'unsafe-cast').length;
 
           const details: string[] = [];
-          if (anyCount > 0) details.push(`any 型別 ${anyCount} 處`);
-          if (ignoreCount > 0) details.push(`@ts-ignore ${ignoreCount} 處`);
-          if (castCount > 0) details.push(`as any ${castCount} 處`);
+          if (anyCount > 0) {details.push(`any 型別 ${anyCount} 處`);}
+          if (ignoreCount > 0) {details.push(`@ts-ignore ${ignoreCount} 處`);}
+          if (castCount > 0) {details.push(`as any ${castCount} 處`);}
 
           items.push({
             filePath: file,

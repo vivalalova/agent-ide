@@ -17,7 +17,7 @@ export class MoveService {
     } else {
       const defaultConfig: ImportResolverConfig = {
         pathAliases: {},
-        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue'],
+        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue', '.swift'],
         ...config
       };
       this.importResolver = new ImportResolver(defaultConfig);
@@ -199,8 +199,8 @@ export class MoveService {
    */
   private async getAllProjectFiles(projectRoot: string): Promise<string[]> {
     const files: string[] = [];
-    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
-    const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
+    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.swift'];
+    const excludePatterns = ['node_modules', 'dist', '.git', 'coverage', '.build'];
 
     const walkDir = async (dir: string): Promise<void> => {
       try {
@@ -344,7 +344,7 @@ export class MoveService {
    */
   private removeExtension(filePath: string): string {
     const ext = path.extname(filePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+    if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
       return filePath.slice(0, -ext.length);
     }
     return filePath;
@@ -471,7 +471,7 @@ export class MoveService {
 
           // 移除副檔名
           const ext = path.extname(relativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+          if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
             relativeToAlias = relativeToAlias.slice(0, -ext.length);
           }
 
@@ -481,7 +481,7 @@ export class MoveService {
 
           // 移除副檔名
           const newExt = path.extname(newRelativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx'].includes(newExt)) {
+          if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(newExt)) {
             newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
           }
 
@@ -504,7 +504,7 @@ export class MoveService {
 
     // 移除副檔名（如果目標是支援的檔案類型）
     const ext = path.extname(relativePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+    if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
       relativePath = relativePath.slice(0, -ext.length);
     }
 

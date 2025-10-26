@@ -319,6 +319,17 @@ export class DependencyAnalyzer {
     fromFile: string
   ): Promise<PathResolutionResult | null> {
     const isRelative = importPath.startsWith('.') || importPath.startsWith('/');
+    const fileExt = path.extname(fromFile);
+
+    // Swift 外部依賴（system frameworks）直接回傳模組名稱
+    if (!isRelative && fileExt === '.swift') {
+      return {
+        resolvedPath: importPath, // 保留模組名稱（如 Foundation, UIKit）
+        isRelative: false,
+        exists: true, // 外部依賴視為存在
+        extension: '' // 外部依賴沒有副檔名
+      };
+    }
 
     if (!isRelative && !this.options.includeNodeModules) {
       return null; // 忽略 node_modules

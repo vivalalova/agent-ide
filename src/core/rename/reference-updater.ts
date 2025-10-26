@@ -131,17 +131,24 @@ export class ReferenceUpdater {
           // 解析 AST
           const ast = await parser.parse(content, filePath);
 
-          // 提取所有符號
-          const symbols = await parser.extractSymbols(ast);
-
-          // 找到匹配的符號
-          const targetSymbol = symbols.find((s: Symbol) => s.name === symbolName);
-          if (!targetSymbol) {
-            return []; // 符號不存在
-          }
+          // 建立一個虛擬符號用於查找引用
+          // 注意：我們不需要符號定義在這個檔案中，只需要查找引用
+          const dummySymbol: Symbol = {
+            name: symbolName,
+            type: 'class' as any, // 型別不重要，只是為了滿足介面
+            location: {
+              filePath,
+              range: {
+                start: { line: 0, column: 0, offset: 0 },
+                end: { line: 0, column: 0, offset: 0 }
+              }
+            },
+            scope: undefined,
+            modifiers: []
+          };
 
           // 使用 Parser 的 findReferences 查找所有引用
-          const references = await parser.findReferences(ast, targetSymbol);
+          const references = await parser.findReferences(ast, dummySymbol);
 
           // 轉換為 SymbolReference 格式
           return references.map((ref: any) => ({

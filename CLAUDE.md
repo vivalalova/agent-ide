@@ -8,9 +8,9 @@ This file provides guidance to Claude Code when working with this repository.
 
 為 AI 代理設計的程式碼智能工具集。
 
-**目標**：最小化 token、最大化準確性、CLI + MCP 介面、模組化架構
+**目標**：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 個核心模組 ✅、基礎設施 ✅、2 個 Parser ✅（TypeScript、JavaScript）、CLI/MCP ✅、**220 個測試通過 (100%)**
+**現況**：8 個核心模組 ✅、基礎設施 ✅、3 個 Parser ✅（TypeScript、JavaScript、Swift）、CLI ✅、**220+ 個測試通過**
 
 ## 快速參考
 
@@ -23,10 +23,10 @@ npm link && agent-ide --help
 **架構**：
 ```
 src/
-├── core/           # 7 個核心模組
+├── core/           # 8 個核心模組（含 ShitScore）
 ├── infrastructure/ # parser、cache、storage、utils
-├── plugins/        # TypeScript、JavaScript
-├── interfaces/     # CLI、MCP
+├── plugins/        # TypeScript、JavaScript、Swift
+├── interfaces/     # CLI
 └── application/    # 服務協調層
 ```
 
@@ -47,16 +47,22 @@ src/
 ```
 tests/
 ├── e2e/
-│   ├── cli/                    # CLI 命令測試
-│   │   ├── cli-shit.e2e.test.ts
-│   │   ├── cli-analyze.e2e.test.ts
-│   │   ├── cli-deps.e2e.test.ts
-│   │   └── ...
-│   ├── helpers/                # 測試輔助工具
-│   │   ├── fixture-manager.ts  # Fixture 管理
-│   │   └── cli-executor.ts     # CLI 執行器
+│   ├── cli/
+│   │   ├── ts/                # TypeScript/JavaScript 測試
+│   │   │   ├── cli-shit.e2e.test.ts
+│   │   │   ├── cli-analyze.e2e.test.ts
+│   │   │   ├── cli-deps.e2e.test.ts
+│   │   │   └── ...
+│   │   └── swift/             # Swift 測試
+│   │       ├── cli-swift-analyze.e2e.test.ts
+│   │       ├── cli-swift-deps.e2e.test.ts
+│   │       └── ...
+│   ├── helpers/               # 測試輔助工具
+│   │   ├── fixture-manager.ts # Fixture 管理
+│   │   └── cli-executor.ts    # CLI 執行器
 │   └── fixtures/
-│       └── sample-project/     # 測試專案
+│       ├── sample-project/    # TypeScript/JavaScript 測試專案
+│       └── swift-sample-project/  # Swift 測試專案
 └── ...
 ```
 
@@ -227,13 +233,12 @@ await executeCLI(['shit', '--path', fixture.tempPath]);
 
 - **TypeScript**：Compiler API、Program 重用、Watch 模式
 - **JavaScript**：Babel、ES2023+、JSX/Flow
+- **Swift**：SwiftSyntax 509+、CLI Bridge、MVVM/SwiftUI 支援
 
 ## 介面層
 
 - **CLI**：`agent-ide [index|search|rename|move|analyze|deps|shit]`
   - Unix 哲學、JSON 輸出、管道支援
-- **MCP**：`code_[index|search|rename|move|analyze|deps|shit|parser_plugins]`
-  - MCP 規範、非同步、工具註冊
 
 ## 診斷命令輸出優化（Token 效率）
 
@@ -269,10 +274,6 @@ agent-ide deps --all
 }
 ```
 
-### MCP 對應
-
-- CLI `--all` 對應 MCP `showAll: true`
-- 預設 `showAll: false`
 
 ## Parser 插件介面
 
@@ -331,7 +332,7 @@ interface ParserPlugin {
 
 ## 新增功能流程
 
-1. 建立規格 → 2. 設計 API → 3. 寫測試 → 4. 實作 → 5. CLI/MCP → 6. 文件
+1. 建立規格 → 2. 設計 API → 3. 寫測試 → 4. 實作 → 5. CLI → 6. 文件
 
 ## 重要改進記錄
 
@@ -464,7 +465,6 @@ interface ParserPlugin {
 
 6. ✅ **Phase 7: 更新介面層**
    - CLI: 移除舊 API 依賴
-   - MCP: 移除舊 API 依賴
    - 確保向下相容
 
 **技術細節**：

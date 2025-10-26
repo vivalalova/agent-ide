@@ -199,6 +199,26 @@ export class SymbolIndex {
   }
 
   /**
+   * 獲取所有符號
+   */
+  async getAllSymbols(): Promise<SymbolSearchResult[]> {
+    const results: SymbolSearchResult[] = [];
+
+    // 遍歷所有符號項目
+    for (const entries of this.symbolsByName.values()) {
+      for (const entry of entries) {
+        results.push({
+          symbol: entry.symbol,
+          fileInfo: entry.fileInfo,
+          score: 1.0
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * 取得檔案的所有符號
    */
   async getFileSymbols(filePath: string): Promise<readonly Symbol[]> {

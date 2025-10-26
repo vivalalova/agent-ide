@@ -13,6 +13,7 @@ import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
 import { JavaScriptParser } from '../../plugins/javascript/parser.js';
+import { SwiftParser } from '../../plugins/swift/parser.js';
 import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import * as fs from 'fs/promises';
@@ -98,6 +99,20 @@ export class AgentIdeCLI {
         console.debug('JavaScript parser loading failed:', jsError);
         console.debug('JavaScript Parser initialization warning:', jsError);
       }
+
+      // 嘗試註冊內建的 Swift Parser
+      try {
+        // 解析 Swift CLI Bridge 路徑
+        const swiftBridgePath = path.resolve(__dirname, '../../plugins/swift/swift-bridge/swift-parser');
+        const swiftParser = new SwiftParser(swiftBridgePath);
+        if (!registry.getParserByName('swift')) {
+          registry.register(swiftParser);
+        }
+      } catch (swiftError) {
+        // 如果 Swift Parser 載入失敗，記錄錯誤
+        console.debug('Swift parser loading failed:', swiftError);
+        console.debug('Swift Parser initialization warning:', swiftError);
+      }
     } catch (error) {
       // 靜默處理初始化錯誤，避免影響 CLI 啟動
       console.debug('Parser initialization warning:', error);
@@ -127,7 +142,7 @@ export class AgentIdeCLI {
       .description('建立或更新程式碼索引')
       .option('-p, --path <path>', '專案路徑', process.cwd())
       .option('-u, --update', '增量更新索引')
-      .option('-e, --extensions <exts>', '包含的檔案副檔名', '.ts,.js,.tsx,.jsx')
+      .option('-e, --extensions <exts>', '包含的檔案副檔名', '.ts,.js,.tsx,.jsx,.swift')
       .option('-x, --exclude <patterns>', '排除模式', 'node_modules/**,*.test.*')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (options) => {
@@ -155,13 +170,14 @@ export class AgentIdeCLI {
   private setupRefactorCommand(): void {
     this.program
       .command('refactor <action>')
-      .description('重構程式碼 (extract-function | inline-function)')
+      .description('重構程式碼 (extract-function | extract-closure | inline-function)')
       .option('-f, --file <file>', '檔案路徑')
+      .option('--path <path>', '檔案路徑（--file 的別名）')
       .option('-s, --start-line <line>', '起始行號')
       .option('-e, --end-line <line>', '結束行號')
       .option('-n, --function-name <name>', '函式名稱')
+      .option('--new-name <name>', '新名稱（--function-name 的別名）')
       .option('-t, --target-file <file>', '目標檔案路徑（跨檔案提取）')
-      .option('-p, --path <path>', '專案路徑', '.')
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (action, options) => {
@@ -171,14 +187,28 @@ export class AgentIdeCLI {
 
   private setupMoveCommand(): void {
     this.program
-      .command('move')
+      .command('move [source] [target]')
       .description('移動檔案或目錄')
-      .argument('<source>', '來源路徑')
-      .argument('<target>', '目標路徑')
+      .option('-s, --source <path>', '來源路徑')
+      .option('-t, --target <path>', '目標路徑')
       .option('--update-imports', '自動更新 import 路徑', true)
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
-      .action(async (source, target, options) => {
+      .action(async (sourceArg, targetArg, options) => {
+        // 支援兩種語法：
+        // 1. move <source> <target> (位置參數)
+        // 2. move --source <source> --target <target> (選項參數)
+        const source = sourceArg || options.source;
+        const target = targetArg || options.target;
+
+        if (!source || !target) {
+          console.error('❌ 必須指定來源和目標路徑');
+          console.error('   使用方式: agent-ide move <source> <target>');
+          console.error('   或: agent-ide move --source <source> --target <target>');
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
         await this.handleMoveCommand(source, target, options);
       });
   }
@@ -187,20 +217,62 @@ export class AgentIdeCLI {
     this.program
       .command('search')
       .description('搜尋程式碼')
-      .argument('<query>', '搜尋查詢')
-      .option('-t, --type <type>', '搜尋類型 (text|regex|fuzzy)', 'text')
+      .argument('[query]', '搜尋查詢字串（簡化語法，等同於 text 搜尋）')
+      .option('-t, --type <type>', '搜尋類型 (text|regex|fuzzy|symbol|function|class|protocol|variable|enum)', 'text')
       .option('-p, --path <path>', '搜尋路徑', '.')
-      .option('-e, --extensions <exts>', '檔案副檔名', '.ts,.js,.tsx,.jsx')
+      .option('-e, --extensions <exts>', '檔案副檔名', '.ts,.js,.tsx,.jsx,.swift')
       .option('-l, --limit <num>', '結果數量限制', '50')
       .option('-c, --context <lines>', '上下文行數', '2')
       .option('--case-sensitive', '大小寫敏感')
+      .option('--case-insensitive', '大小寫不敏感')
       .option('--whole-word', '全字匹配')
       .option('--multiline', '多行匹配')
       .option('--include <patterns>', '包含模式')
       .option('--exclude <patterns>', '排除模式', 'node_modules/**,*.test.*')
-      .option('--format <format>', '輸出格式 (list|json|minimal)', 'list')
-      .action(async (query, options) => {
-        await this.handleSearchCommand(query, options);
+      .option('--format <format>', '輸出格式 (list|json|minimal|summary)', 'list')
+      .option('-q, --query <name>', '搜尋查詢字串')
+      .option('--pattern <pattern>', '符號名稱模式（用於 structural 搜尋）')
+      .option('--regex', '使用正則表達式')
+      .option('--file-pattern <pattern>', '檔案模式過濾')
+      .option('--with-attribute <attr>', '過濾帶有特定屬性的符號')
+      .option('--with-modifier <mod>', '過濾帶有特定修飾符的符號')
+      .option('--implements <protocol>', '過濾實作特定協定的類別')
+      .option('--extends <class>', '過濾繼承特定類別的子類別')
+      .action(async (queryOrSubcommand, options) => {
+        // 支援三種語法：
+        // 1. search <query> --path <path>  (簡化語法，預設為 text 搜尋)
+        // 2. search text --query <query> --path <path>
+        // 3. search symbol --query <query> --path <path>
+        // 4. search structural --type <type> --path <path>
+
+        // 檢查空字串或未提供
+        if (!queryOrSubcommand || queryOrSubcommand.trim() === '') {
+          console.error('❌ 請提供搜尋查詢或子命令');
+          console.error('   使用方式: agent-ide search <query>');
+          console.error('   或: agent-ide search text --query <query>');
+          console.error('   或: agent-ide search symbol --query <query>');
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
+        // 判斷是子命令還是查詢字串
+        const knownSubcommands = ['text', 'symbol', 'structural'];
+        const isSubcommand = knownSubcommands.includes(queryOrSubcommand);
+
+        if (isSubcommand) {
+          // 使用子命令語法
+          if (queryOrSubcommand === 'symbol') {
+            await this.handleSymbolSearchCommand(options);
+          } else if (queryOrSubcommand === 'text') {
+            await this.handleTextSearchCommand(options);
+          } else if (queryOrSubcommand === 'structural') {
+            await this.handleStructuralSearchCommand(options);
+          }
+        } else {
+          // 簡化語法：直接使用查詢字串
+          await this.handleSearchCommand(queryOrSubcommand, options);
+        }
       });
   }
 
@@ -219,15 +291,14 @@ export class AgentIdeCLI {
 
   private setupDepsCommand(): void {
     this.program
-      .command('deps')
-      .description('分析依賴關係')
+      .command('deps [subcommand]')
+      .description('分析依賴關係 (subcommand: graph|cycles|impact|orphans)')
       .option('-p, --path <path>', '分析路徑', '.')
-      .option('-t, --type <type>', '分析類型 (graph|cycles|impact)')
       .option('-f, --file <file>', '特定檔案分析')
       .option('--format <format>', '輸出格式 (json|dot|summary)', 'summary')
       .option('--all', '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）', false)
-      .action(async (options) => {
-        await this.handleDepsCommand(options);
+      .action(async (subcommand, options) => {
+        await this.handleDepsCommand(subcommand, options);
       });
   }
 
@@ -333,22 +404,47 @@ export class AgentIdeCLI {
     // 支援多種參數名稱
     const from = options.symbol || options.from;
     const to = options.newName || options.to;
+    const isJsonFormat = options.format === 'json';
 
     if (!from || !to) {
-      console.error('❌ 必須指定符號名稱和新名稱');
-      console.error('   使用方式: agent-ide rename --symbol <name> --new-name <name>');
+      if (isJsonFormat) {
+        console.error(JSON.stringify({ error: '必須指定符號名稱和新名稱' }));
+      } else {
+        console.error('❌ 必須指定符號名稱和新名稱');
+        console.error('   使用方式: agent-ide rename --symbol <name> --new-name <name>');
+      }
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
-    console.log(`🔄 重新命名 ${from} → ${to}`);
+    if (!isJsonFormat) {
+      console.log(`🔄 重新命名 ${from} → ${to}`);
+    }
 
     try {
-      const workspacePath = options.path || process.cwd();
+      let workspacePath = options.path || process.cwd();
+
+      // 如果路徑指向檔案，取其所在目錄
+      const stats = await fs.stat(workspacePath);
+      if (stats.isFile()) {
+        workspacePath = path.dirname(workspacePath);
+        // 往上查找專案根目錄（包含 package.json、.git 等）
+        let currentDir = workspacePath;
+        while (currentDir !== path.dirname(currentDir)) {
+          const hasPackageJson = await this.fileExists(path.join(currentDir, 'package.json'));
+          const hasGit = await this.fileExists(path.join(currentDir, '.git'));
+          const hasSwiftPackage = await this.fileExists(path.join(currentDir, 'Package.swift'));
+          if (hasPackageJson || hasGit || hasSwiftPackage) {
+            workspacePath = currentDir;
+            break;
+          }
+          currentDir = path.dirname(currentDir);
+        }
+      }
 
       // 初始化索引引擎（每次都重新索引以確保資料是最新的）
       const config = createIndexConfig(workspacePath, {
-        includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
+        includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
         excludePatterns: ['node_modules/**', '*.test.*']
       });
       this.indexEngine = new IndexEngine(config);
@@ -360,16 +456,21 @@ export class AgentIdeCLI {
       }
 
       // 1. 查找符號
-      console.log(`🔍 查找符號 "${from}"...`);
+      if (!isJsonFormat) {
+        console.log(`🔍 查找符號 "${from}"...`);
+      }
       const searchResults = await this.indexEngine.findSymbol(from);
 
       if (searchResults.length === 0) {
-        console.log(`❌ 找不到符號 "${from}"`);
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-        return;
+        if (isJsonFormat) {
+          console.error(JSON.stringify({ error: `找不到符號 "${from}"` }));
+        } else {
+          console.log(`❌ 找不到符號 "${from}"`);
+        }
+        process.exit(1);
       }
 
-      if (searchResults.length > 1) {
+      if (searchResults.length > 1 && !isJsonFormat) {
         console.log('⚠️  找到多個符號，使用第一個:');
         searchResults.forEach((result, index) => {
           console.log(`   ${index + 1}. ${result.symbol.name} 在 ${result.symbol.location.filePath}:${result.symbol.location.range.start.line}`);
@@ -380,10 +481,13 @@ export class AgentIdeCLI {
 
       // 2. 預覽變更
       if (options.preview) {
-        console.log('🔍 預覽變更...');
+        if (!isJsonFormat) {
+          console.log('🔍 預覽變更...');
+        }
         try {
           // 取得所有專案檔案以進行跨檔案引用查找
-          const allProjectFiles = await this.getAllProjectFiles(options.path || workspacePath);
+          // 使用 workspacePath（已解析為目錄）而不是 options.path（可能是檔案）
+          const allProjectFiles = await this.getAllProjectFiles(workspacePath);
 
           const preview = await this.renameEngine.previewRename({
             symbol: targetSymbol,
@@ -391,34 +495,50 @@ export class AgentIdeCLI {
             filePaths: allProjectFiles
           });
 
-          console.log('📝 預計變更:');
-          console.log(`   檔案數: ${preview.affectedFiles.length}`);
-          console.log(`   操作數: ${preview.operations.length}`);
+          if (isJsonFormat) {
+            console.log(JSON.stringify({
+              preview: true,
+              affectedFiles: preview.affectedFiles.length,
+              operations: preview.operations.length,
+              conflicts: preview.conflicts
+            }, null, 2));
+          } else {
+            console.log('📝 預計變更:');
+            console.log(`   檔案數: ${preview.affectedFiles.length}`);
+            console.log(`   操作數: ${preview.operations.length}`);
 
-          if (preview.conflicts.length > 0) {
-            console.log('⚠️  發現衝突:');
-            preview.conflicts.forEach(conflict => {
-              console.log(`   - ${conflict.message}`);
+            if (preview.conflicts.length > 0) {
+              console.log('⚠️  發現衝突:');
+              preview.conflicts.forEach(conflict => {
+                console.log(`   - ${conflict.message}`);
+              });
+            }
+
+            preview.operations.forEach(op => {
+              console.log(`   ${op.filePath}: "${op.oldText}" → "${op.newText}"`);
             });
+
+            console.log('✅ 預覽完成');
           }
-
-          preview.operations.forEach(op => {
-            console.log(`   ${op.filePath}: "${op.oldText}" → "${op.newText}"`);
-          });
-
-          console.log('✅ 預覽完成');
           return;
         } catch (previewError) {
-          console.error('❌ 預覽失敗:', previewError instanceof Error ? previewError.message : previewError);
+          if (isJsonFormat) {
+            console.error(JSON.stringify({ error: previewError instanceof Error ? previewError.message : String(previewError) }));
+          } else {
+            console.error('❌ 預覽失敗:', previewError instanceof Error ? previewError.message : previewError);
+          }
           if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         }
       }
 
       // 3. 執行重新命名（處理跨檔案引用）
-      console.log('✏️  執行重新命名...');
+      if (!isJsonFormat) {
+        console.log('✏️  執行重新命名...');
+      }
 
       // 取得所有專案檔案（使用與 preview 相同的邏輯）
-      const allProjectFiles = await this.getAllProjectFiles(options.path || workspacePath);
+      // 使用 workspacePath（已解析為目錄）而不是 options.path（可能是檔案）
+      const allProjectFiles = await this.getAllProjectFiles(workspacePath);
 
       // 使用 renameEngine 執行重新命名（與 preview 使用相同的引擎）
       const renameResult = await this.renameEngine.rename({
@@ -428,62 +548,165 @@ export class AgentIdeCLI {
       });
 
       if (renameResult.success) {
-        console.log('✅ 重新命名成功!');
-        console.log(`📊 統計: ${renameResult.affectedFiles.length} 檔案, ${renameResult.operations.length} 變更`);
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            success: true,
+            affectedFiles: renameResult.affectedFiles.length,
+            operations: renameResult.operations.length,
+            files: renameResult.affectedFiles
+          }, null, 2));
+        } else {
+          console.log('✅ 重新命名成功!');
+          console.log(`📊 統計: ${renameResult.affectedFiles.length} 檔案, ${renameResult.operations.length} 變更`);
 
-        renameResult.operations.forEach(operation => {
-          console.log(`   ✓ ${operation.filePath}: "${operation.oldText}" → "${operation.newText}"`);
-        });
+          renameResult.operations.forEach(operation => {
+            console.log(`   ✓ ${operation.filePath}: "${operation.oldText}" → "${operation.newText}"`);
+          });
+        }
       } else {
-        console.error('❌ 重新命名失敗:');
-        renameResult.errors?.forEach(error => {
-          console.error(`   - ${error}`);
-        });
+        if (isJsonFormat) {
+          console.error(JSON.stringify({
+            success: false,
+            errors: renameResult.errors || ['重新命名失敗']
+          }));
+        } else {
+          console.error('❌ 重新命名失敗:');
+          renameResult.errors?.forEach(error => {
+            console.error(`   - ${error}`);
+          });
+        }
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       }
 
     } catch (error) {
-      console.error('❌ 重新命名失敗:', error instanceof Error ? error.message : error);
+      if (isJsonFormat) {
+        console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      } else {
+        console.error('❌ 重新命名失敗:', error instanceof Error ? error.message : error);
+      }
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   }
 
   private async handleRefactorCommand(action: string, options: any): Promise<void> {
-    if (!options.file) {
-      console.error('❌ 必須指定 --file 參數');
+    // 支援 --path 作為 --file 的別名
+    const fileOption = options.file || options.path;
+
+    if (!fileOption) {
+      console.error('❌ 必須指定 --file 或 --path 參數');
+      process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
-    console.log(`🔧 重構: ${action}`);
+    // 支援 --new-name 作為 --function-name 的別名
+    const functionNameOption = options.functionName || options.newName;
+
+    const isJsonFormat = options.format === 'json';
+
+    if (!isJsonFormat) {
+      console.log(`🔧 重構: ${action}`);
+    }
 
     try {
-      const filePath = path.resolve(options.file);
+      const filePath = path.resolve(fileOption);
 
-      if (action === 'extract-function') {
-        if (!options.startLine || !options.endLine || !options.functionName) {
-          console.error('❌ extract-function 需要 --start-line, --end-line 和 --function-name 參數');
+      if (action === 'extract-function' || action === 'extract-closure') {
+        if (!options.startLine || !options.endLine || !functionNameOption) {
+          console.error(`❌ ${action} 缺少必要參數: --start-line, --end-line 和 --function-name (或 --new-name)`);
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
+        // 驗證行號範圍
+        const startLine = parseInt(options.startLine);
+        const endLine = parseInt(options.endLine);
+        if (startLine > endLine) {
+          console.error(`❌ 無效的行號範圍: 起始行號 (${startLine}) 大於結束行號 (${endLine})`);
+          process.exitCode = 1;
           if (process.env.NODE_ENV !== 'test') { process.exit(1); }
           return;
         }
 
         // 讀取檔案內容
         const fs = await import('fs/promises');
+
+        // 檢查檔案是否存在
+        try {
+          await fs.access(filePath);
+        } catch {
+          console.error(`❌ 找不到檔案: ${filePath}`);
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
         const code = await fs.readFile(filePath, 'utf-8');
 
         // 建立範圍
         const range = {
-          start: { line: parseInt(options.startLine), column: 0 },
-          end: { line: parseInt(options.endLine), column: 0 }
+          start: { line: startLine, column: 0 },
+          end: { line: endLine, column: 0 }
         };
 
-        // 初始化 FunctionExtractor
+        // 檢測檔案類型
+        const isSwift = filePath.endsWith('.swift');
+
+        if (isSwift) {
+          // 使用 Swift 提取器
+          const { SwiftExtractor } = await import('../../core/refactor/swift-extractor.js');
+          const extractor = new SwiftExtractor();
+
+          const extractConfig = {
+            functionName: functionNameOption,
+            generateComments: true,
+            preserveFormatting: true
+          };
+
+          const result = action === 'extract-closure'
+            ? await extractor.extractClosure(code, range, extractConfig)
+            : await extractor.extractFunction(code, range, extractConfig);
+
+          if (result.success) {
+            if (isJsonFormat) {
+              console.log(JSON.stringify({
+                success: true,
+                extractedFunction: result.extractedFunction
+              }, null, 2));
+            } else {
+              console.log('✅ 重構完成');
+              console.log(`📝 提取的函式: ${result.extractedFunction.signature}`);
+            }
+
+            if (!options.preview) {
+              await fs.writeFile(filePath, result.modifiedCode, 'utf-8');
+              if (!isJsonFormat) {
+                console.log(`✓ 已更新 ${filePath}`);
+              }
+            } else {
+              if (!isJsonFormat) {
+                console.log('預覽模式 - 未寫入檔案');
+              }
+            }
+          } else {
+            if (isJsonFormat) {
+              console.error(JSON.stringify({ success: false, errors: result.errors }));
+            } else {
+              console.error('❌ 重構失敗:', result.errors.join(', '));
+            }
+            if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          }
+          return;
+        }
+
+        // TypeScript/JavaScript 提取器（原有邏輯）
         const { FunctionExtractor } = await import('../../core/refactor/extract-function.js');
         const extractor = new FunctionExtractor();
 
         // 執行提取
         const extractConfig = {
-          functionName: options.functionName,
+          functionName: functionNameOption,
           generateComments: true,
           preserveFormatting: true,
           validateExtraction: true,
@@ -555,27 +778,62 @@ export class AgentIdeCLI {
 
       } else if (action === 'inline-function') {
         console.error('❌ inline-function 尚未實作');
+        process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       } else {
         console.error(`❌ 未知的重構操作: ${action}`);
+        process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       }
 
     } catch (error) {
       console.error('❌ 重構失敗:', error instanceof Error ? error.message : error);
+      process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   }
 
   private async handleMoveCommand(source: string, target: string, options: any): Promise<void> {
-    console.log(`📦 移動 ${source} → ${target}`);
+    const isJsonFormat = options.format === 'json';
+
+    if (!isJsonFormat) {
+      console.log(`📦 移動 ${source} → ${target}`);
+    }
 
     try {
       // 檢查源檔案是否存在
       const sourceExists = await this.fileExists(source);
       if (!sourceExists) {
-        console.log(`❌ 移動失敗: 源檔案不存在 "${source}"`);
+        const errorMsg = `源檔案找不到: ${source}`;
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            success: false,
+            error: errorMsg
+          }, null, 2));
+        } else {
+          console.log(`❌ 移動失敗: ${errorMsg}`);
+        }
+        process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        return;
+      }
+
+      // 檢查源和目標是否相同
+      const normalizedSource = path.resolve(source);
+      const normalizedTarget = path.resolve(target);
+      if (normalizedSource === normalizedTarget) {
+        // 源和目標相同時，視為 no-op，成功返回
+        const message = 'Source and target are identical. No changes made.';
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            success: true,
+            message,
+            changes: []
+          }, null, 2));
+        } else {
+          console.log(`✓ ${message}`);
+        }
+        return;
       }
 
       // 初始化移動服務
@@ -585,14 +843,14 @@ export class AgentIdeCLI {
 
         this.moveService = new MoveService({
           pathAliases,
-          supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
+          supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue', '.swift'],
           includeNodeModules: false
         });
       }
 
       const moveOperation = {
-        source: path.resolve(source),
-        target: path.resolve(target),
+        source: normalizedSource,
+        target: normalizedTarget,
         updateImports: options.updateImports
       };
 
@@ -605,39 +863,64 @@ export class AgentIdeCLI {
       const result = await this.moveService.moveFile(moveOperation, moveOptions);
 
       if (result.success) {
-        if (options.preview) {
-          console.log('🔍 預覽移動操作:');
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            moved: result.moved,
+            affectedFiles: result.pathUpdates.length,
+            pathUpdates: result.pathUpdates
+          }, null, 2));
         } else {
-          console.log('✅ 移動成功!');
-        }
+          if (options.preview) {
+            console.log('🔍 預覽移動操作:');
+          } else {
+            console.log('✅ 移動成功!');
+          }
 
-        console.log(`📊 統計: ${result.pathUpdates.length} 個 import 需要更新`);
+          console.log(`📊 統計: ${result.pathUpdates.length} 個 import 需要更新`);
 
-        if (result.pathUpdates.length > 0) {
-          console.log('📝 影響的檔案:');
-          const fileGroups = new Map<string, any[]>();
+          if (result.pathUpdates.length > 0) {
+            console.log('📝 影響的檔案:');
+            const fileGroups = new Map<string, any[]>();
 
-          result.pathUpdates.forEach(update => {
-            if (!fileGroups.has(update.filePath)) {
-              fileGroups.set(update.filePath, []);
-            }
-            fileGroups.get(update.filePath)!.push(update);
-          });
-
-          for (const [filePath, updates] of fileGroups) {
-            console.log(`   📄 ${path.relative(process.cwd(), filePath)}:`);
-            updates.forEach(update => {
-              console.log(`      第 ${update.line} 行: "${path.basename(source)}" → "${path.basename(target)}"`);
+            result.pathUpdates.forEach(update => {
+              if (!fileGroups.has(update.filePath)) {
+                fileGroups.set(update.filePath, []);
+              }
+              fileGroups.get(update.filePath)!.push(update);
             });
+
+            for (const [filePath, updates] of fileGroups) {
+              console.log(`   📄 ${path.relative(process.cwd(), filePath)}:`);
+              updates.forEach(update => {
+                console.log(`      第 ${update.line} 行: "${path.basename(source)}" → "${path.basename(target)}"`);
+              });
+            }
           }
         }
       } else {
-        console.error('❌ 移動失敗:', result.error);
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            success: false,
+            error: result.error
+          }, null, 2));
+        } else {
+          console.error('❌ 移動失敗:', result.error);
+        }
+        process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       }
 
     } catch (error) {
-      console.error('❌ 移動失敗:', error instanceof Error ? error.message : error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (isJsonFormat) {
+        console.log(JSON.stringify({
+          success: false,
+          error: errorMsg
+        }, null, 2));
+      } else {
+        console.error('❌ 移動失敗:', errorMsg);
+      }
+      process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   }
@@ -714,8 +997,13 @@ export class AgentIdeCLI {
    * 建構搜尋選項
    */
   private buildSearchOptions(options: any) {
-    const includeFiles = options.include ? options.include.split(',') : undefined;
+    let includeFiles = options.include ? options.include.split(',') : undefined;
     const excludeFiles = options.exclude ? options.exclude.split(',') : undefined;
+
+    // --file-pattern 參數轉換為 includeFiles
+    if (options.filePattern) {
+      includeFiles = [options.filePattern];
+    }
 
     return {
       scope: {
@@ -724,9 +1012,9 @@ export class AgentIdeCLI {
         recursive: true
       },
       maxResults: parseInt(options.limit),
-      caseSensitive: options.caseSensitive || false,
+      caseSensitive: options.caseInsensitive ? false : (options.caseSensitive || false),
       wholeWord: options.wholeWord || false,
-      regex: options.type === 'regex',
+      regex: options.regex || options.type === 'regex',
       fuzzy: options.type === 'fuzzy',
       multiline: options.multiline || false,
       showContext: options.context > 0,
@@ -744,11 +1032,24 @@ export class AgentIdeCLI {
     switch (options.format) {
     case 'json':
       // 測試期望的格式是 { results: [...] } 而不是 { matches: [...] }
-      // 將絕對路徑轉換為相對路徑
-      const resultsWithRelativePaths = result.matches.map((match: any) => ({
-        ...match,
-        file: this.formatFilePath(match.file)
-      }));
+      // 將絕對路徑轉換為相對路徑，並增加 contextBefore/contextAfter
+      const resultsWithRelativePaths = result.matches.map((match: any) => {
+        const formatted: any = {
+          ...match,
+          filePath: this.formatFilePath(match.file)
+        };
+
+        // 移除 'file'
+        delete formatted.file;
+
+        // 增加 contextBefore/contextAfter（測試需要這些欄位）
+        if (match.context) {
+          formatted.contextBefore = match.context.before || [];
+          formatted.contextAfter = match.context.after || [];
+        }
+
+        return formatted;
+      });
       console.log(JSON.stringify({ results: resultsWithRelativePaths }, null, 2));
       break;
 
@@ -812,6 +1113,311 @@ export class AgentIdeCLI {
     }
   }
 
+  /**
+   * 處理文字搜尋命令
+   */
+  private async handleTextSearchCommand(options: any): Promise<void> {
+    const query = options.query;
+
+    if (!query) {
+      console.error('❌ 文字搜尋需要指定 --query 參數');
+      console.error('   使用方式: agent-ide search text --query <text>');
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    // 使用既有的 handleSearchCommand 邏輯
+    await this.handleSearchCommand(query, options);
+  }
+
+  /**
+   * 處理結構化搜尋命令
+   */
+  private async handleStructuralSearchCommand(options: any): Promise<void> {
+    const pattern = options.pattern;
+    const type = options.type;
+
+    if (!type) {
+      console.error('❌ 結構化搜尋需要指定 --type 參數');
+      console.error('   使用方式: agent-ide search structural --type <class|protocol|function|...> [--pattern <pattern>]');
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    const isMinimalOrJson = options.format === 'minimal' || options.format === 'json';
+
+    if (!isMinimalOrJson) {
+      console.log(`🔍 結構化搜尋: ${type}${pattern ? ` (pattern: ${pattern})` : ''}`);
+    }
+
+    try {
+      const searchPath = path.resolve(options.path || process.cwd());
+
+      // 初始化索引引擎
+      const config = createIndexConfig(searchPath, {
+        includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+        excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
+      });
+      this.indexEngine = new IndexEngine(config);
+
+      // 建立索引
+      if (!isMinimalOrJson) {
+        console.log('📝 正在建立索引...');
+      }
+      await this.indexEngine.indexProject(searchPath);
+
+      // 獲取所有符號
+      const allSymbols = await this.indexEngine.getAllSymbols();
+
+      // 過濾符號
+      let filteredSymbols = allSymbols.filter(symbolResult => {
+        const symbol = symbolResult.symbol;
+
+        // 1. 過濾檔案模式
+        if (options.filePattern) {
+          const regex = new RegExp(options.filePattern.replace(/\*/g, '.*').replace(/\?/g, '.'));
+          if (!regex.test(symbol.location.filePath)) {
+            return false;
+          }
+        }
+
+        // 2. 過濾符號類型
+        if (type) {
+          if (symbol.type !== type) {
+            return false;
+          }
+        }
+
+        // 3. 過濾符號名稱模式
+        if (pattern) {
+          const regex = new RegExp(pattern.replace(/\*/g, '.*').replace(/\?/g, '.'));
+          if (!regex.test(symbol.name)) {
+            return false;
+          }
+        }
+
+        // 4. 過濾屬性
+        if (options.withAttribute) {
+          if (!(symbol as any).attributes || !(symbol as any).attributes.includes(options.withAttribute)) {
+            return false;
+          }
+        }
+
+        // 5. 過濾修飾符
+        if (options.withModifier) {
+          if (!(symbol as any).modifiers || !(symbol as any).modifiers.includes(options.withModifier)) {
+            return false;
+          }
+        }
+
+        // 6. 過濾實作的協定
+        if (options.implements) {
+          if (!(symbol as any).implements || !(symbol as any).implements.includes(options.implements)) {
+            return false;
+          }
+        }
+
+        // 7. 過濾繼承的類別
+        if (options.extends) {
+          if ((symbol as any).superclass !== options.extends) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      // 應用 limit
+      const limit = options.limit ? parseInt(options.limit) : 50;
+      if (filteredSymbols.length > limit) {
+        filteredSymbols = filteredSymbols.slice(0, limit);
+      }
+
+      if (filteredSymbols.length === 0) {
+        if (options.format === 'json') {
+          console.log(JSON.stringify({ results: [] }, null, 2));
+        } else if (!isMinimalOrJson) {
+          console.log('📝 沒有找到符合條件的符號');
+        }
+        return;
+      }
+
+      if (!isMinimalOrJson && options.format !== 'summary') {
+        console.log(`✅ 找到 ${filteredSymbols.length} 個符號`);
+      }
+
+      // 格式化輸出
+      this.formatSymbolSearchResults(filteredSymbols, options);
+
+    } catch (error) {
+      if (isMinimalOrJson) {
+        if (options.format === 'json') {
+          console.log(JSON.stringify({
+            results: [],
+            error: error instanceof Error ? error.message : String(error)
+          }));
+        } else {
+          console.error(`Error: ${error instanceof Error ? error.message : error}`);
+        }
+      } else {
+        console.error('❌ 結構化搜尋失敗:', error instanceof Error ? error.message : error);
+      }
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    }
+  }
+
+  /**
+   * 處理符號搜尋命令
+   */
+  private async handleSymbolSearchCommand(options: any): Promise<void> {
+    const symbolName = options.query;
+
+    if (!symbolName) {
+      console.error('❌ 符號搜尋需要指定 --query 參數');
+      console.error('   使用方式: agent-ide search symbol --query <name>');
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    const isMinimalOrJson = options.format === 'minimal' || options.format === 'json';
+
+    if (!isMinimalOrJson) {
+      console.log(`🔍 搜尋符號: "${symbolName}"`);
+    }
+
+    try {
+      const searchPath = path.resolve(options.path || process.cwd());
+
+      // 初始化索引引擎（每次都重新建立以確保索引是最新的）
+      const config = createIndexConfig(searchPath, {
+        includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+        excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
+      });
+      this.indexEngine = new IndexEngine(config);
+
+      // 建立索引
+      if (!isMinimalOrJson) {
+        console.log('📝 正在建立索引...');
+      }
+      await this.indexEngine.indexProject(searchPath);
+
+      // 搜尋符號：如果包含 wildcard，使用模式搜尋
+      let results: any[];
+      if (symbolName.includes('*') || symbolName.includes('?')) {
+        // Wildcard 模式搜尋
+        const allSymbols = await this.indexEngine.getAllSymbols();
+        const pattern = symbolName
+          .replace(/\*/g, '.*')
+          .replace(/\?/g, '.');
+        const regex = new RegExp(`^${pattern}$`);
+
+        results = allSymbols.filter(result => regex.test(result.symbol.name));
+
+        // 應用 limit
+        const limit = options.limit ? parseInt(options.limit) : 50;
+        if (results.length > limit) {
+          results = results.slice(0, limit);
+        }
+      } else {
+        // 精確名稱搜尋
+        results = await this.indexEngine.findSymbol(symbolName);
+      }
+
+      if (results.length === 0) {
+        if (options.format === 'json') {
+          console.log(JSON.stringify({ results: [] }, null, 2));
+        } else if (!isMinimalOrJson) {
+          console.log(`📝 找不到符號 "${symbolName}"`);
+        }
+        return;
+      }
+
+      if (!isMinimalOrJson) {
+        console.log(`✅ 找到 ${results.length} 個符號`);
+      }
+
+      // 格式化輸出
+      this.formatSymbolSearchResults(results, options);
+
+    } catch (error) {
+      if (isMinimalOrJson) {
+        if (options.format === 'json') {
+          console.log(JSON.stringify({
+            results: [],
+            error: error instanceof Error ? error.message : String(error)
+          }));
+        } else {
+          console.error(`Error: ${error instanceof Error ? error.message : error}`);
+        }
+      } else {
+        console.error('❌ 符號搜尋失敗:', error instanceof Error ? error.message : error);
+      }
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    }
+  }
+
+  /**
+   * 格式化符號搜尋結果輸出
+   */
+  private formatSymbolSearchResults(results: any[], options: any): void {
+    switch (options.format) {
+    case 'json':
+      // 轉換為測試期望的格式
+      const formattedResults = results.map(result => {
+        const formatted: any = {
+          name: result.symbol.name,
+          type: result.symbol.type,
+          filePath: this.formatFilePath(result.symbol.location.filePath),
+          line: result.symbol.location.range.start.line,
+          column: result.symbol.location.range.start.column
+        };
+
+        // 只在有值時才加入可選欄位
+        if ((result.symbol as any).attributes && (result.symbol as any).attributes.length > 0) {
+          formatted.attributes = (result.symbol as any).attributes;
+        }
+        if ((result.symbol as any).modifiers && (result.symbol as any).modifiers.length > 0) {
+          formatted.modifiers = (result.symbol as any).modifiers;
+        }
+        if ((result.symbol as any).superclass) {
+          formatted.superclass = (result.symbol as any).superclass;
+        }
+        if ((result.symbol as any).implements && (result.symbol as any).implements.length > 0) {
+          formatted.implements = (result.symbol as any).implements;
+        }
+
+        return formatted;
+      });
+      console.log(JSON.stringify({ results: formattedResults }, null, 2));
+      break;
+
+    case 'minimal':
+      results.forEach(result => {
+        const symbol = result.symbol;
+        console.log(
+          `${symbol.location.filePath}:${symbol.location.range.start.line}:${symbol.location.range.start.column}:${symbol.type}:${symbol.name}`
+        );
+      });
+      break;
+
+    case 'list':
+    default:
+      results.forEach((result, index) => {
+        const symbol = result.symbol;
+        console.log(`\n${index + 1}. ${symbol.name} (${symbol.type})`);
+        console.log(`   ${this.formatFilePath(symbol.location.filePath)}:${symbol.location.range.start.line}:${symbol.location.range.start.column}`);
+
+        if ((symbol as any).attributes && (symbol as any).attributes.length > 0) {
+          console.log(`   屬性: ${(symbol as any).attributes.join(', ')}`);
+        }
+        if ((symbol as any).modifiers && (symbol as any).modifiers.length > 0) {
+          console.log(`   修飾符: ${(symbol as any).modifiers.join(', ')}`);
+        }
+      });
+      break;
+    }
+  }
+
   private async handleAnalyzeCommand(type: string | undefined, options: any): Promise<void> {
     const analyzeType = type || 'complexity';
 
@@ -832,7 +1438,7 @@ export class AgentIdeCLI {
         for (const file of files) {
           try {
             const parser = registry.getParser(path.extname(file));
-            if (!parser) continue;
+            if (!parser) {continue;}
 
             const content = await fs.readFile(file, 'utf-8');
             const ast = await parser.parse(content, file);
@@ -865,18 +1471,17 @@ export class AgentIdeCLI {
               issuesFound: highComplexityFiles.length,
               averageComplexity,
               maxComplexity
-            }
-          };
-
-          if (options.all) {
-            outputData.all = results.map(r => ({
+            },
+            issues: highComplexityFiles.map(r => ({
               path: r.file,
               complexity: r.complexity.cyclomaticComplexity,
               cognitiveComplexity: r.complexity.cognitiveComplexity,
               evaluation: r.complexity.evaluation
-            }));
-          } else {
-            outputData.issues = highComplexityFiles.map(r => ({
+            }))
+          };
+
+          if (options.all) {
+            outputData.all = results.map(r => ({
               path: r.file,
               complexity: r.complexity.cyclomaticComplexity,
               cognitiveComplexity: r.complexity.cognitiveComplexity,
@@ -907,7 +1512,7 @@ export class AgentIdeCLI {
         for (const file of files) {
           try {
             const parser = registry.getParser(path.extname(file));
-            if (!parser) continue;
+            if (!parser) {continue;}
 
             const content = await fs.readFile(file, 'utf-8');
             const ast = await parser.parse(content, file);
@@ -936,16 +1541,15 @@ export class AgentIdeCLI {
               totalDeadFunctions: deadFunctions.length,
               totalDeadVariables: deadVariables.length,
               totalDeadCode: allDeadCode.length
-            }
+            },
+            issues: filesWithDeadCode.map(r => ({
+              path: r.file,
+              deadCode: r.deadCode
+            }))
           };
 
           if (options.all) {
             outputData.all = results.map(r => ({
-              path: r.file,
-              deadCode: r.deadCode
-            }));
-          } else {
-            outputData.issues = filesWithDeadCode.map(r => ({
               path: r.file,
               deadCode: r.deadCode
             }));
@@ -1051,17 +1655,224 @@ export class AgentIdeCLI {
           console.log('✅ 模式檢測完成!');
           console.log(`📊 發現模式: ${patterns.join(', ')}`);
         }
+      } else if (analyzeType === 'quality') {
+        // 品質分析（整合多個維度）
+        const registry = ParserRegistry.getInstance();
+        const files = await this.getAllProjectFiles(analyzePath);
+
+        // 檢查路徑是否存在或沒有找到檔案
+        if (files.length === 0) {
+          const pathExists = await this.fileExists(analyzePath);
+          if (!pathExists) {
+            throw new Error(`路徑不存在: ${analyzePath}`);
+          }
+          throw new Error(`在路徑 ${analyzePath} 中找不到支援的檔案`);
+        }
+
+        // 統計資料
+        const summary = {
+          totalScanned: files.length,
+          totalIssues: 0,
+          qualityScore: 0
+        };
+
+        // 各維度問題列表
+        const allIssues: any[] = [];
+        const recommendations: string[] = [];
+
+        // 各維度分數（權重參考 ShitScore QA 維度）
+        let typeSafetyScore = 100;
+        let errorHandlingScore = 100;
+        let securityScore = 100;
+        let namingScore = 100;
+        let testCoverageScore = 0;
+
+        let testFileCount = 0;
+
+        for (const file of files) {
+          try {
+            const parser = registry.getParser(path.extname(file));
+            if (!parser) {continue;}
+
+            const content = await fs.readFile(file, 'utf-8');
+            const ast = await parser.parse(content, file);
+
+            // 判斷是否為測試檔案
+            if (parser.isTestFile && parser.isTestFile(file)) {
+              testFileCount++;
+              continue; // 跳過測試檔案
+            }
+
+            // 1. 型別安全檢測
+            if (parser.checkTypeSafety) {
+              const typeSafetyIssues = await parser.checkTypeSafety(content, ast);
+              typeSafetyIssues.forEach((issue) => {
+                allIssues.push({
+                  type: 'type-safety',
+                  severity: issue.severity === 'error' ? 'high' : 'medium',
+                  message: issue.message,
+                  filePath: issue.location.filePath,
+                  line: issue.location.line
+                });
+                typeSafetyScore -= issue.severity === 'error' ? 10 : 5;
+              });
+            }
+
+            // 2. 錯誤處理檢測
+            if (parser.checkErrorHandling) {
+              const errorHandlingIssues = await parser.checkErrorHandling(content, ast);
+              errorHandlingIssues.forEach((issue) => {
+                allIssues.push({
+                  type: 'error-handling',
+                  severity: issue.severity === 'error' ? 'high' : 'medium',
+                  message: issue.message,
+                  filePath: issue.location.filePath,
+                  line: issue.location.line
+                });
+                errorHandlingScore -= issue.severity === 'error' ? 10 : 5;
+              });
+            }
+
+            // 3. 安全性檢測
+            if (parser.checkSecurity) {
+              const securityIssues = await parser.checkSecurity(content, ast);
+              securityIssues.forEach((issue) => {
+                allIssues.push({
+                  type: 'security',
+                  severity: issue.severity === 'critical' ? 'high' : 'medium',
+                  message: issue.message,
+                  filePath: issue.location.filePath,
+                  line: issue.location.line
+                });
+                securityScore -= issue.severity === 'critical' ? 15 : 10;
+              });
+            }
+
+            // 4. 命名規範檢測
+            if (parser.checkNamingConventions) {
+              const symbols = await parser.extractSymbols(ast);
+              const namingIssues = await parser.checkNamingConventions(symbols, file);
+              namingIssues.forEach((issue) => {
+                allIssues.push({
+                  type: 'naming',
+                  severity: 'low',
+                  message: issue.message,
+                  filePath: issue.location.filePath,
+                  line: issue.location.line
+                });
+                namingScore -= 3;
+              });
+            }
+          } catch {
+            // 忽略無法分析的檔案
+          }
+        }
+
+        // 5. 測試覆蓋率評估
+        const testFileRatio = files.length > 0 ? testFileCount / files.length : 0;
+        testCoverageScore = Math.min(100, testFileRatio * 200); // 50% 測試覆蓋率 = 100 分
+
+        // 確保分數不低於 0
+        typeSafetyScore = Math.max(0, typeSafetyScore);
+        errorHandlingScore = Math.max(0, errorHandlingScore);
+        securityScore = Math.max(0, securityScore);
+        namingScore = Math.max(0, namingScore);
+
+        // 計算整體品質評分（加權平均，參考 ShitScore QA 維度權重）
+        const overallScore = Math.round(
+          typeSafetyScore * 0.30 +      // Type Safety 30%
+          testCoverageScore * 0.25 +    // Test Coverage 25%
+          errorHandlingScore * 0.20 +   // Error Handling 20%
+          namingScore * 0.15 +          // Naming 15%
+          securityScore * 0.10          // Security 10%
+        );
+
+        summary.totalIssues = allIssues.length;
+        summary.qualityScore = overallScore;
+
+        // 產生改善建議
+        if (typeSafetyScore < 80) {
+          recommendations.push('型別安全：建議使用可選綁定（if let, guard let）代替強制解包');
+        }
+        if (errorHandlingScore < 80) {
+          recommendations.push('錯誤處理：建議使用 do-catch 明確處理錯誤，避免空 catch 區塊');
+        }
+        if (securityScore < 80) {
+          recommendations.push('安全性：建議使用 Keychain 或環境變數儲存敏感資訊');
+        }
+        if (namingScore < 80) {
+          recommendations.push('命名規範：建議遵循 Swift API Design Guidelines 命名規範');
+        }
+        if (testCoverageScore < 50) {
+          recommendations.push('測試覆蓋率：建議提升測試覆蓋率至 50% 以上');
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify({
+            summary,
+            issues: allIssues,
+            complexity: {
+              score: 100 // 預留位置（可選擇整合複雜度分析）
+            },
+            maintainability: {
+              score: 100 // 預留位置（可選擇整合維護性分析）
+            },
+            typeSafety: {
+              score: typeSafetyScore,
+              issues: allIssues.filter((i) => i.type === 'type-safety')
+            },
+            errorHandling: {
+              score: errorHandlingScore,
+              issues: allIssues.filter((i) => i.type === 'error-handling')
+            },
+            security: {
+              score: securityScore,
+              issues: allIssues.filter((i) => i.type === 'security')
+            },
+            namingConventions: {
+              score: namingScore,
+              issues: allIssues.filter((i) => i.type === 'naming')
+            },
+            testCoverage: {
+              score: testCoverageScore,
+              testFileRatio,
+              testFiles: testFileCount,
+              totalFiles: files.length
+            },
+            overallScore,
+            recommendations
+          }, null, 2));
+        } else {
+          console.log('✅ 品質分析完成!');
+          console.log(`📊 整體評分: ${overallScore}/100`);
+          console.log(`   總問題數: ${summary.totalIssues}`);
+          console.log('\n維度評分:');
+          console.log(`   型別安全:     ${typeSafetyScore.toFixed(1)}/100`);
+          console.log(`   錯誤處理:     ${errorHandlingScore.toFixed(1)}/100`);
+          console.log(`   安全性:       ${securityScore.toFixed(1)}/100`);
+          console.log(`   命名規範:     ${namingScore.toFixed(1)}/100`);
+          console.log(`   測試覆蓋率:   ${testCoverageScore.toFixed(1)}/100 (${(testFileRatio * 100).toFixed(1)}%)`);
+
+          if (recommendations.length > 0) {
+            console.log('\n改善建議:');
+            recommendations.forEach((rec, index) => {
+              console.log(`   ${index + 1}. ${rec}`);
+            });
+          }
+        }
       } else {
         throw new Error(`不支援的分析類型: ${analyzeType}`);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (options.format === 'json') {
-        console.log(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        console.error(JSON.stringify({ error: errorMessage }));
       } else {
-        console.error('❌ 分析失敗:', error instanceof Error ? error.message : error);
+        console.error('❌ 分析失敗:', errorMessage);
       }
+      process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') {
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        process.exit(1);
       }
     }
   }
@@ -1159,9 +1970,15 @@ export class AgentIdeCLI {
     }
   }
 
-  private async handleDepsCommand(options: any): Promise<void> {
+  private async handleDepsCommand(subcommand: string, options: any): Promise<void> {
     if (options.format !== 'json') {
-      console.log('🕸️ 分析依賴關係...');
+      const titles: Record<string, string> = {
+        'graph': '🕸️ 依賴圖分析...',
+        'cycles': '🔄 循環依賴分析...',
+        'impact': '💥 影響分析...',
+        'orphans': '🏝️ 孤立檔案分析...'
+      };
+      console.log(titles[subcommand] || '🕸️ 分析依賴關係...');
     }
 
     try {
@@ -1185,8 +2002,159 @@ export class AgentIdeCLI {
 
       // 輸出結果
       if (options.format === 'json') {
-        // 根據 --file 選項決定輸出格式
-        if (options.file) {
+        // 根據子命令決定輸出格式
+        if (subcommand === 'graph') {
+          // graph 子命令：輸出完整依賴圖（nodes, edges, summary）
+          const allNodes = graph.getAllNodes();
+          const allNodesSet = new Set(allNodes);
+
+          // 計算每個節點的入度和出度
+          const inDegreeMap = new Map<string, number>();
+          const outDegreeMap = new Map<string, number>();
+
+          for (const nodeId of allNodes) {
+            const deps = graph.getDependencies(nodeId);
+            outDegreeMap.set(nodeId, deps.length);
+
+            for (const depId of deps) {
+              if (allNodesSet.has(depId)) {
+                inDegreeMap.set(depId, (inDegreeMap.get(depId) || 0) + 1);
+              }
+            }
+          }
+
+          const nodes = allNodes.map((nodeId: string) => ({
+            id: nodeId,
+            dependencies: graph.getDependencies(nodeId),
+            inDegree: inDegreeMap.get(nodeId) || 0,
+            outDegree: outDegreeMap.get(nodeId) || 0
+          }));
+
+          // 判斷是否為系統框架
+          const isSystemFramework = (name: string): boolean => {
+            const systemFrameworks = [
+              'Foundation', 'UIKit', 'SwiftUI', 'Combine', 'CoreData',
+              'CoreGraphics', 'CoreLocation', 'AVFoundation', 'MapKit',
+              'WebKit', 'Security', 'PackageDescription'
+            ];
+            return systemFrameworks.includes(name);
+          };
+
+          const edges: Array<{source: string; target: string; type: string}> = [];
+          for (const nodeId of allNodes) {
+            for (const depId of graph.getDependencies(nodeId)) {
+              // 系統框架一律標記為 external
+              const isExternal = isSystemFramework(depId) || !allNodesSet.has(depId);
+              edges.push({
+                source: nodeId,
+                target: depId,
+                type: isExternal ? 'external' : 'internal'
+              });
+            }
+          }
+
+          // graph 子命令：保持原格式（nodes, edges, summary）
+          console.log(JSON.stringify({
+            nodes,
+            edges,
+            summary: {
+              totalFiles: stats.totalFiles,
+              totalDependencies: stats.totalDependencies,
+              averageDependenciesPerFile: stats.averageDependenciesPerFile,
+              maxDependenciesInFile: stats.maxDependenciesInFile
+            }
+          }, null, 2));
+        } else if (subcommand === 'impact' && options.file) {
+          // impact 子命令：分析檔案修改的影響範圍
+          const targetFile = path.resolve(options.file);
+
+          let actualTargetFile = targetFile;
+          const directDependents = graph.getDependents(targetFile);
+
+          // 如果找不到依賴關係，可能是路徑格式不匹配
+          if (directDependents.length === 0) {
+            // 嘗試在 graph 中找到匹配的路徑
+            const allNodes = graph.getAllNodes();
+            const matchingNode = allNodes.find((node: string) => node.endsWith(options.file) || options.file.endsWith(node));
+
+            if (matchingNode) {
+              // 找到匹配的節點，使用該路徑重新查詢
+              actualTargetFile = matchingNode;
+              const altDependents = graph.getDependents(matchingNode);
+              directDependents.length = 0;
+              directDependents.push(...altDependents);
+            } else {
+              // 檔案不在專案中或未被索引
+              console.error(`❌ 錯誤：檔案不存在或未被索引: ${options.file}`);
+              process.exit(1);
+            }
+          }
+
+          // BFS 計算傳遞依賴
+          const transitiveDependents: Set<string> = new Set();
+          const visited = new Set<string>();
+          const queue = [...directDependents];
+
+          while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (visited.has(current)) {continue;}
+            visited.add(current);
+            transitiveDependents.add(current);
+
+            const deps = graph.getDependents(current);
+            for (const dep of deps) {
+              if (!visited.has(dep)) {
+                queue.push(dep);
+              }
+            }
+          }
+
+          // 計算影響等級
+          const totalImpacted = transitiveDependents.size;
+          let impactLevel: string;
+          if (totalImpacted > 10) {impactLevel = 'high';}
+          else if (totalImpacted > 3) {impactLevel = 'medium';}
+          else {impactLevel = 'low';}
+
+          // 計算影響評分 (0-100)
+          const impactScore = Math.min(100, Math.round((totalImpacted / stats.totalFiles) * 100 * 2));
+
+          console.log(JSON.stringify({
+            file: options.file,
+            impactLevel,
+            impactScore,
+            directDependents,
+            transitiveDependents: Array.from(transitiveDependents),
+            summary: {
+              totalImpacted,
+              directCount: directDependents.length,
+              transitiveCount: transitiveDependents.size
+            }
+          }, null, 2));
+        } else if (subcommand === 'orphans') {
+          // orphans 子命令：檢測孤立檔案
+          const allNodes = graph.getAllNodes();
+          const orphans: Array<{filePath: string; reason: string}> = [];
+
+          for (const node of allNodes) {
+            const dependents = graph.getDependents(node);
+            if (dependents.length === 0) {
+              orphans.push({
+                filePath: node,
+                reason: 'No files depend on this file'
+              });
+            }
+          }
+
+          console.log(JSON.stringify({
+            orphans,
+            summary: {
+              totalOrphans: orphans.length,
+              totalFiles: stats.totalFiles,
+              orphanPercentage: Math.round((orphans.length / stats.totalFiles) * 100)
+            }
+          }, null, 2));
+        } else if (options.file) {
           // 單檔案依賴查詢模式
           const targetFile = path.resolve(options.file);
           const dependencies: Record<string, string[]> = {};
@@ -1196,15 +2164,8 @@ export class AgentIdeCLI {
             dependencies
           }, null, 2));
         } else {
-          // 專案依賴圖模式
+          // 其他子命令（cycles）或無子命令：輸出問題導向格式
           const outputData: any = {
-            summary: {
-              totalFiles: stats.totalFiles,
-              totalDependencies: stats.totalDependencies,
-              averageDependenciesPerFile: stats.averageDependenciesPerFile,
-              maxDependenciesInFile: stats.maxDependenciesInFile,
-              issuesFound: cycles.length + stats.orphanedFiles
-            },
             issues: {
               cycles: cycles.map(c => ({
                 cycle: c.cycle,
@@ -1213,6 +2174,14 @@ export class AgentIdeCLI {
               })),
               circularDependencies: cycles.length,
               orphanedFiles: stats.orphanedFiles
+            },
+            summary: {
+              totalFiles: stats.totalFiles,
+              totalDependencies: stats.totalDependencies,
+              averageDependenciesPerFile: stats.averageDependenciesPerFile,
+              maxDependenciesInFile: stats.maxDependenciesInFile,
+              cyclesFound: cycles.length,
+              issuesFound: cycles.length + stats.orphanedFiles
             }
           };
 
@@ -1239,7 +2208,13 @@ export class AgentIdeCLI {
           console.log(JSON.stringify(outputData, null, 2));
         }
       } else {
-        console.log('✅ 依賴分析完成!');
+        const completeTitles: Record<string, string> = {
+          'graph': '✅ 依賴圖分析',
+          'cycles': '✅ 循環依賴分析',
+          'impact': '✅ 影響分析',
+          'orphans': '✅ 孤立檔案分析'
+        };
+        console.log(completeTitles[subcommand] || '✅ 依賴分析完成!');
         console.log('📊 統計:');
         console.log(`   總檔案數: ${stats.totalFiles}`);
         console.log(`   總依賴數: ${stats.totalDependencies}`);
@@ -1416,7 +2391,9 @@ export class AgentIdeCLI {
    */
   private async getAllProjectFiles(projectPath: string): Promise<string[]> {
     const files: string[] = [];
-    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
+    // 從 ParserRegistry 獲取所有支援的副檔名
+    const registry = ParserRegistry.getInstance();
+    const allowedExtensions = registry.getSupportedExtensions();
     const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
 
     // 檢查路徑是檔案還是目錄
