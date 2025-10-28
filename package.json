@@ -9,7 +9,7 @@
     "agent-ide": "./bin/agent-ide.js"
   },
   "scripts": {
-    "prepare": "npm run build",
+    "prepare": "husky",
     "build": "tsc && npm run postbuild",
     "postbuild": "mkdir -p dist/plugins/swift/swift-bridge && cp src/plugins/swift/swift-bridge/swift-parser dist/plugins/swift/swift-bridge/ 2>/dev/null || true",
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run",
@@ -39,6 +39,14 @@
     "url": "https://github.com/vivalalova/agent-ide/issues"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/npm": "^13.1.1",
+    "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/babel__generator": "^7.27.0",
     "@types/babel__traverse": "^7.28.0",
     "@types/minimatch": "^6.0.0",
@@ -50,7 +58,9 @@
     "eslint": "^9.36.0",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
+    "husky": "^9.1.7",
     "memfs": "^4.38.2",
+    "semantic-release": "^25.0.1",
     "tsx": "^4.20.5",
     "vitest": "^4.0.0"
   },
