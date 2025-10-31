@@ -1,0 +1,28 @@
+{
+  "name": "agent-ide",
+  "owner": {
+    "name": "vivalalova",
+    "email": "[email protected]"
+  },
+  "metadata": {
+    "description": "Code intelligence toolkit for AI agents",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-ide",
+      "source": "./plugin/skills/agent-ide",
+      "description": "Comprehensive code intelligence toolkit: indexing, search, refactoring, dependency analysis, quality assessment with automated workflows",
+      "version": "1.0.0",
+      "author": {
+        "name": "vivalalova",
+        "email": "[email protected]"
+      },
+      "homepage": "https://github.com/vivalalova/agent-ide",
+      "repository": "https://github.com/vivalalova/agent-ide",
+      "license": "MIT",
+      "keywords": ["code-intelligence", "refactoring", "quality", "analysis"],
+      "category": "development"
+    }
+  ]
+}
