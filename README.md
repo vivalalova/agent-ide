@@ -6,36 +6,6 @@
 
 ## 🚀 快速開始
 
-### 🎯 Plugin 安裝（最簡單，推薦）
-
-**一鍵安裝完整 AI Skill**：
-
-在 Claude Code 中執行：
-```bash
-/plugin marketplace add vivalalova/agent-ide
-```
-
-安裝後立即獲得：
-- ✅ **完整 AI Skill**：直接對話式使用所有功能
-- ✅ **自動化工作流程**：智能分析、安全重構、品質改善
-- ✅ **7 個實戰案例**：抽取重複邏輯、API 重命名、清理死代碼等
-
-**使用範例**：
-```
-你：「分析這個專案的品質」
-AI：[自動執行診斷流程，呈現完整報告和建議]
-
-你：「重構 getUserData 為 fetchUserProfile」
-AI：[預覽影響 → 確認 → 執行 → 驗證 → 品質對比]
-
-你：「清理這個專案的死代碼」
-AI：[掃描 → 分類 → 確認 → 清理 → 報告改善]
-```
-
-📖 **完整 Skill 文件**：查看 [SKILL.md](./plugin/skills/agent-ide/SKILL.md) 了解所有功能和工作流程
-
----
-
 ### CLI 安裝
 
 ```bash

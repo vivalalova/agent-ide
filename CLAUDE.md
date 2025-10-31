@@ -25,15 +25,6 @@ npm link           # 本地 CLI 安裝
 **架構**：`core/`（8模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
 
 ## 參考文件
-
-**AI Skill 能力**（給 AI 使用）：
-- [**SKILL.md**](./plugin/skills/agent-ide/SKILL.md) - **完整 AI Skill 定義：所有功能、工作流程、實戰案例的詳細指令**
-  - 當此專案作為 Claude Code Plugin 安裝時啟用
-  - 提供對話式使用所有 agent-ide 功能的完整指令
-  - 包含 5 個自動化工作流程、7 個實戰案例、最佳實踐
-  - 用戶安裝：`/plugin marketplace add vivalalova/agent-ide`
-
-**功能詳細說明**（docs/，給人類使用）：
 - [**實戰指南**](./docs/GUIDE.md) - **7 個完整案例：新增/刪除/重構的組合使用方法**
 - [Snapshot](./docs/SNAPSHOT.md) - 快照生成與使用、型別安全重構案例
 - [Indexing](./docs/INDEXING.md) - 增量索引、三層快取、並行處理
