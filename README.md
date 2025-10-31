@@ -36,52 +36,7 @@ AI：[掃描 → 分類 → 確認 → 清理 → 報告改善]
 
 ---
 
-### MCP 整合（Claude Code / Claude Desktop）
-
-**Claude Code（推薦）：**
-```bash
-claude mcp add agent-ide -- npx -y agent-ide-mcp
-```
-
-安裝完成後：
-1. 重新啟動 Claude Code
-2. 輸入「請列出所有可用的 agent-ide 工具」驗證安裝
-3. 開始使用！
-
-<details>
-<summary>手動設定 MCP（Claude Desktop / 其他）</summary>
-
-編輯設定檔：
-- **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) 或 `%APPDATA%/Claude/claude_desktop_config.json` (Windows)
-- **Claude Code**: 使用 `claude mcp add` 命令（自動設定）
-
-加入以下設定：
-```json
-{
-  "mcpServers": {
-    "agent-ide": {
-      "command": "npx",
-      "args": ["-y", "agent-ide-mcp"],
-      "env": {}
-    }
-  }
-}
-```
-
-**其他管理命令**：
-```bash
-# 列出所有 MCP servers
-claude mcp list
-
-# 移除 MCP server
-claude mcp remove agent-ide
-
-# 檢查連接狀態
-claude mcp list
-```
-</details>
-
-### CLI 安裝（獨立使用）
+### CLI 安裝
 
 ```bash
 # 從 npm（發布後）
@@ -113,9 +68,7 @@ pnpm install && pnpm build && npm link
 <details>
 <summary>📋 AI Agent 使用指南（CLAUDE.md 提示詞）</summary>
 
-> **注意**：此指南適用於透過 CLI 使用 agent-ide 的情境。
-> - 如果你已透過 MCP 整合，則可直接使用 `code_index`、`code_search` 等 MCP 工具，無需使用這些 CLI 命令。
-> - 如果未安裝 MCP 或需要獨立使用，請複製以下內容到你的 `CLAUDE.md` 或 `.claude/CLAUDE.md`。
+請複製以下內容到你的 `CLAUDE.md` 或 `.claude/CLAUDE.md`。
 
 ````markdown
 # agent-ide CLI 工具使用規範
@@ -281,7 +234,7 @@ Agent IDE
 ├── 核心模組：索引、搜尋、重構、移動、依賴分析
 ├── 基礎設施：Parser 框架、快取、儲存
 ├── 插件系統：TypeScript、JavaScript
-└── 介面層：CLI、MCP
+└── 介面層：CLI
 ```
 
 **效能特色**：
@@ -291,31 +244,6 @@ Agent IDE
 - 記憶體優化（~100MB / 10k 檔案）
 
 **支援語言**：TypeScript、JavaScript
-
-</details>
-
----
-
-<details>
-<summary>🔌 程式化 API</summary>
-
-```typescript
-import { AgentIdeMCP } from 'agent-ide';
-
-const mcp = new AgentIdeMCP();
-
-// 建立索引
-await mcp.executeTool('code_index', {
-  action: 'create',
-  path: '/path/to/project'
-});
-
-// 搜尋程式碼
-const result = await mcp.executeTool('code_search', {
-  query: 'UserService',
-  path: '/path/to/project'
-});
-```
 
 </details>
 

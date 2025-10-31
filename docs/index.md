@@ -17,23 +17,7 @@
 
 ## 快速開始
 
-### MCP 整合（推薦）
-
-適用於 Claude Code 或 Claude Desktop：
-
-```bash
-# Claude Code（一鍵安裝）
-claude mcp add agent-ide -- npx -y agent-ide-mcp
-
-# 安裝後重啟 Claude Code，輸入以下驗證：
-# 「請列出所有可用的 agent-ide 工具」
-```
-
-詳細說明請參考 [MCP 使用指南](mcp-guide.md)。
-
 ### CLI 安裝
-
-適用於獨立使用或整合到其他工具：
 
 ```bash
 # 從 npm（發布後）
@@ -49,16 +33,16 @@ pnpm install && pnpm build && npm link
 
 ## 核心功能
 
-| 功能 | CLI 命令 | MCP 工具 | 說明 |
-|------|---------|----------|------|
-| 程式碼索引 | `index` | `code_index` | 建立和管理程式碼索引 |
-| 程式碼搜尋 | `search` | `code_search` | 搜尋符號、文字、正則表達式 |
-| 符號重命名 | `rename` | `code_rename` | 安全重命名，自動更新引用 |
-| 檔案移動 | `move` | `code_move` | 移動檔案，自動更新 import |
-| 程式碼重構 | `refactor` | - | 提取/內聯函式 |
-| 品質分析 | `analyze` | `code_analyze` | 複雜度、品質指標分析 |
-| 依賴分析 | `deps` | `code_deps` | 依賴圖、循環依賴、影響分析 |
-| 插件管理 | `plugins` | `parser_plugins` | Parser 插件管理 |
+| 功能 | CLI 命令 | 說明 |
+|------|---------|------|
+| 程式碼索引 | `index` | 建立和管理程式碼索引 |
+| 程式碼搜尋 | `search` | 搜尋符號、文字、正則表達式 |
+| 符號重命名 | `rename` | 安全重命名，自動更新引用 |
+| 檔案移動 | `move` | 移動檔案，自動更新 import |
+| 程式碼重構 | `refactor` | 提取/內聯函式 |
+| 品質分析 | `analyze` | 複雜度、品質指標分析 |
+| 依賴分析 | `deps` | 依賴圖、循環依賴、影響分析 |
+| 插件管理 | `plugins` | Parser 插件管理 |
 
 ## 效能指標
 
@@ -71,7 +55,6 @@ pnpm install && pnpm build && npm link
 ## 文件導航
 
 - [CLI 使用指南](cli-guide.md) - 完整的 CLI 命令參考
-- [MCP 使用指南](mcp-guide.md) - MCP 工具參考與整合指南
 - [使用範例](examples.md) - 實際使用場景與最佳實踐
 - [GitHub Repository](https://github.com/vivalalova/agent-ide) - 原始碼與問題回報
 
@@ -97,8 +80,7 @@ Agent IDE
 │   ├── JavaScript Parser
 │   └── Swift Parser（開發中）
 └── 介面層
-    ├── CLI（命令列介面）
-    └── MCP（Model Context Protocol）
+    └── CLI（命令列介面）
 ```
 
 ## 支援語言

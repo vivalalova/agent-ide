@@ -22,33 +22,19 @@ npm view agent-ide
 npm install -g agent-ide
 ```
 
-### 提交到 MCP Registry
-
-1. Fork https://github.com/modelcontextprotocol/servers
-2. 參考 `.github/MCP_REGISTRY_SUBMISSION.md` 建立 PR
-3. 等待審核
-
 ### 驗證安裝
 
 ```bash
 # npm 安裝測試
 npm install -g agent-ide
 agent-ide --version
-agent-ide-mcp
-
-# Claude Code 整合測試
-claude mcp add agent-ide npx https://github.com/vivalalova/agent-ide.git agent-ide-mcp
 ```
-
-重新啟動 Claude Code，輸入「請列出所有可用的 agent-ide 工具」驗證。
 
 ## 已準備的檔案
 
-✅ `mcp.json` - MCP 設定
 ✅ `.npmignore` - npm 排除清單
 ✅ `package.json` - 完整發布資訊
 ✅ `PUBLISH_CHECKLIST.md` - 詳細檢查清單
-✅ `.github/MCP_REGISTRY_SUBMISSION.md` - MCP PR 文件
 
 ## 發布後連結
 
@@ -65,12 +51,6 @@ claude mcp add agent-ide npx https://github.com/vivalalova/agent-ide.git agent-i
 - 版本號無法重複使用
 - 發布後 24 小時內可以 unpublish
 
-### MCP Registry
-
-- 需要維護者審核 PR
-- 確保所有測試通過
-- 文件要清楚完整
-
 ## 發布後
 
 ### 建立 GitHub Release
@@ -85,10 +65,9 @@ git push origin v0.1.0
 ### 更新版本
 
 下次更新時：
-1. 更新版本號：`package.json`, `mcp.json`
+1. 更新版本號：`package.json`
 2. 執行檢查清單
 3. 發布：`npm publish`
-4. 更新 MCP Registry（如有需要）
 
 ---
 

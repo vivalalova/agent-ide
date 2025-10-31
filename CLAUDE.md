@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## 專案概述
 
-AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI/MCP 介面、模組化架構
+AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
 **現況**：8 核心模組、3 Parser（TS/JS/Swift）、220+ 測試通過
 
@@ -22,7 +22,7 @@ pnpm lint          # ESLint
 npm link           # 本地 CLI 安裝
 ```
 
-**架構**：`core/`（8模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI/MCP）、`application/`（服務層）
+**架構**：`core/`（8模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
 
 ## 參考文件
 
@@ -116,7 +116,6 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 ## 介面層
 
 - **CLI**：`agent-ide [index|search|rename|move|analyze|deps|shit]`（Unix哲學/JSON輸出）
-- **MCP**：`npx agent-ide-mcp`（Claude Code/Desktop整合，工具：code_*）
 
 ## 診斷命令輸出優化
 
