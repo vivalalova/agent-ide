@@ -24,16 +24,6 @@ npm link           # 本地 CLI 安裝
 
 **架構**：`core/`（8模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
 
-## 參考文件
-- [**實戰指南**](./docs/GUIDE.md) - **7 個完整案例：新增/刪除/重構的組合使用方法**
-- [Snapshot](./docs/SNAPSHOT.md) - 快照生成與使用、型別安全重構案例
-- [Indexing](./docs/INDEXING.md) - 增量索引、三層快取、並行處理
-- [Search](./docs/SEARCH.md) - 文字/符號/語義搜尋、正規表達式
-- [Rename](./docs/RENAME.md) - 符號重命名、衝突檢測、備份回退
-- [Move](./docs/MOVE.md) - 檔案移動、import 自動更新、批量操作
-- [Dependencies](./docs/DEPENDENCIES.md) - 循環依賴檢測（Tarjan）、影響分析（BFS）
-- [Quality](./docs/QUALITY.md) - ShitScore 評分、複雜度分析、死代碼檢測
-
 ## 開發規範
 
 - **TDD**：紅→綠→重構
@@ -130,23 +120,5 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 
 ## 流程
 
-**開發**：規格→API→測試→實作→CLI/MCP→文件
+**開發**：規格→API→測試→實作→CLI→文件
 **發布**：`pnpm build && pnpm test` → `npm version patch/minor/major` → `npm publish`
-
-## 架構演進記錄
-
-### 重複代碼檢測整合（2025-01-17）
-整合 DuplicationDetector、調整門檻（minLines:3/minTokens:5）、Type-1/2/3 克隆檢測、重複代碼從 0%→實際檢測
-
-### 擴展片段提取與模式檢測（2025-01-18）
-新增 4 種片段提取（註解/常數/配置/方法）、5 種模式檢測（try-catch/logger/DI/env/config）、維護性權重調整（deadCode:0.35/largeFile:0.2/duplicateCode:0.2/patternDuplication:0.25）
-
-### ParserPlugin 架構重構（2025-01-24）
-語言特定功能從 core/ 遷移至 plugins/、新增 9 個 ParserPlugin 必需方法、所有 analyzers 移至 `plugins/typescript/analyzers/`、測試 220/220 通過、遷移路徑：`core/analysis/*.ts` → `plugins/*/analyzers/*.ts`
-
-### Snapshot 模組實作（2025-01-31）
-新增 `core/snapshot/` 程式碼快照系統、支援三種壓縮層級（minimal/medium/full）、增量更新機制（基於檔案 hash）、CLI 命令整合（`agent-ide snapshot`）、配置檔支援（`.agent-ide.json`）、目標：中型專案 ~50K tokens（節省 75%）、核心類別：SnapshotEngine/CodeCompressor/SnapshotDiffer/ConfigManager
-
-## 授權
-
-MIT License
