@@ -37,21 +37,6 @@ agent-ide analyze -p src/services
 agent-ide deps -t cycles
 ```
 
-### MCP 快速開始
-
-在 Claude Code 中：
-
-```
-User: 請為當前專案建立索引
-Claude: [執行 code_index create]
-
-User: 搜尋 UserService
-Claude: [執行 code_search]
-
-User: 分析程式碼品質
-Claude: [執行 code_analyze]
-```
-
 ## 常見使用場景
 
 ### 場景 1：專案重構
@@ -75,34 +60,6 @@ agent-ide search "from.*services" -t regex --format json
 
 # 5. 檢查是否有循環依賴
 agent-ide deps -t cycles
-```
-
-#### 使用 MCP（Claude Code）
-
-```
-User: 我想把 src/services 移到 src/core/services，請幫我分析影響並執行
-
-Claude: 好的，讓我先分析影響範圍。
-
-[執行 code_deps]
-分析結果：會影響 45 個檔案
-
-讓我預覽移動操作：
-[執行 code_move preview]
-
-預覽顯示需要更新 45 個 import 路徑。確認執行嗎？
-
-User: 確認
-
-Claude: 執行移動：
-[執行 code_move]
-✓ 完成！已更新 45 個檔案的 import 路徑。
-
-讓我檢查是否有循環依賴：
-[執行 code_deps cycles]
-✓ 沒有循環依賴。
-
-建議執行測試確認功能正常。
 ```
 
 ---
@@ -130,51 +87,6 @@ agent-ide search "payment" -t text --include "*.test.*"
 agent-ide analyze all -p src/services/payment.ts --format json > review.json
 ```
 
-#### 使用 MCP（Claude Code）
-
-```
-User: 請審查 src/services/payment.ts 的程式碼品質
-
-Claude: 我來進行完整審查。
-
-1. 複雜度分析
-[執行 code_analyze complexity]
-
-結果：
-- 循環複雜度: 15 (高)
-- 認知複雜度: 20 (高)
-- processPayment 函式特別複雜（10）
-
-2. 品質指標
-[執行 code_analyze quality]
-
-結果：
-- 可維護性指數: 58.3 (C級)
-- 程式碼行數: 345
-- 註解覆蓋率: 8.5%
-
-3. 依賴分析
-[執行 code_deps impact]
-
-結果：
-- 直接影響 12 個檔案
-- 間接影響 34 個檔案
-- 影響分數: 8.5/10 (高)
-
-審查結論：
-
-⚠️ 需要改善的項目：
-1. 複雜度過高，建議拆分 processPayment 函式
-2. 可維護性指數偏低，建議重構
-3. 註解覆蓋率不足，需增加文件
-4. 影響範圍大，修改需特別謹慎
-
-建議：
-1. 使用策略模式拆分支付邏輯
-2. 增加單元測試覆蓋率
-3. 補充函式和類別註解
-```
-
 ---
 
 ### 場景 3：依賴關係清理
@@ -198,52 +110,6 @@ agent-ide deps -t all | grep "orphaned"
 for file in $(jq -r '.data.cycles.files[]' cycles.json); do
   agent-ide deps -t impact -f "$file"
 done
-```
-
-#### 使用 MCP（Claude Code）
-
-```
-User: 幫我找出專案中的循環依賴並提供修復建議
-
-Claude: 我來進行完整的依賴分析。
-
-[執行 code_deps cycles]
-
-⚠️ 發現 3 個循環依賴：
-
-1. src/services/user.ts ⟷ src/services/auth.ts
-   [執行 code_search 分析引用]
-
-   原因：
-   - UserService 引用 AuthService 進行驗證
-   - AuthService 引用 UserService 獲取使用者資料
-
-   修復建議：
-   - 建立獨立的 AuthenticationService
-   - 使用依賴注入解耦
-
-2. src/models/user.ts ⟷ src/models/post.ts
-   [執行 code_search 分析引用]
-
-   原因：
-   - User 模型包含 posts: Post[]
-   - Post 模型包含 author: User
-
-   修復建議：
-   - 使用介面定義關聯
-   - 考慮延遲載入
-
-3. src/utils/helper.ts ⟷ src/utils/validator.ts
-   [執行 code_search 分析引用]
-
-   原因：
-   - helper 使用 validator 驗證資料
-   - validator 使用 helper 處理資料
-
-   修復建議：
-   - 拆分共用邏輯到獨立模組
-
-需要我協助修復嗎？
 ```
 
 ---
@@ -272,52 +138,6 @@ agent-ide search "UserService"  # 應該沒有結果
 npm test
 ```
 
-#### 使用 MCP（Claude Code）
-
-```
-User: 把 UserService 重命名為 UserManager
-
-Claude: 我來幫你重命名。先建立索引：
-[執行 code_index create]
-
-搜尋所有 UserService 引用：
-[執行 code_search "UserService"]
-
-找到 23 個引用：
-- 1 個類別定義 (src/services/user.ts)
-- 15 個 import 語句
-- 7 個型別註解
-
-預覽變更：
-[執行 code_rename preview]
-
-影響檔案：
-1. src/services/user.ts - 類別定義
-2. src/controllers/user.ts - import 和使用
-3. src/app.ts - import 和初始化
-... (還有 20 個檔案)
-
-確認執行嗎？
-
-User: 確認
-
-Claude: 執行重命名：
-[執行 code_rename]
-
-✓ 重命名完成！
-- 更新了 23 個引用
-- 影響 15 個檔案
-
-驗證結果：
-[執行 code_search "UserService"]
-✓ 沒有找到舊名稱的引用
-
-[執行 code_search "UserManager"]
-✓ 找到 23 個新名稱的引用
-
-建議執行測試確認功能正常。
-```
-
 ---
 
 ### 場景 5：技術債務分析
@@ -344,84 +164,6 @@ agent-ide deps -t cycles
 
 # 6. 生成報告
 cat complexity.json quality.json | jq -s '.[0] + .[1]' > tech-debt.json
-```
-
-#### 使用 MCP（Claude Code）
-
-```
-User: 分析專案的技術債務並提供優化建議
-
-Claude: 我來進行全面的技術債務分析。
-
-1. 複雜度分析
-[執行 code_analyze complexity]
-
-高複雜度檔案 (Top 5)：
-1. src/services/payment.ts - 循環複雜度 25
-2. src/services/order.ts - 循環複雜度 18
-3. src/controllers/user.ts - 循環複雜度 15
-4. src/utils/validator.ts - 循環複雜度 14
-5. src/services/notification.ts - 循環複雜度 12
-
-2. 品質指標分析
-[執行 code_analyze quality]
-
-低可維護性檔案 (Top 5)：
-1. src/services/payment.ts - 指數 45.2 (D級)
-2. src/legacy/processor.ts - 指數 48.8 (D級)
-3. src/utils/helper.ts - 指數 52.1 (C級)
-4. src/services/order.ts - 指數 55.3 (C級)
-5. src/models/complex-model.ts - 指數 57.9 (C級)
-
-3. 依賴關係分析
-[執行 code_deps all]
-
-問題：
-- 3 個循環依賴
-- 8 個孤立檔案
-- 5 個高影響檔案（影響分數 > 8）
-
-4. 死代碼檢測
-[執行 code_search 未使用的匯出]
-
-發現 12 個未使用的匯出
-
-技術債務總結：
-
-🔴 嚴重問題：
-1. src/services/payment.ts - 複雜度極高且可維護性差
-2. 3 個循環依賴需要立即處理
-3. src/legacy/processor.ts - 遺留程式碼需要重構
-
-🟡 中等問題：
-1. 8 個孤立檔案可以移除
-2. 12 個未使用的匯出需要清理
-3. 5 個檔案註解覆蓋率 < 10%
-
-優化建議（優先順序排序）：
-
-優先級 1（高）：
-1. 重構 src/services/payment.ts
-   - 拆分為多個小函式
-   - 使用策略模式降低複雜度
-   - 增加單元測試
-
-2. 解決循環依賴
-   - user.ts ⟷ auth.ts
-   - models/user.ts ⟷ models/post.ts
-   - helper.ts ⟷ validator.ts
-
-優先級 2（中）：
-1. 重構 src/services/order.ts
-2. 清理 src/legacy/processor.ts 或移除
-3. 移除 8 個孤立檔案
-
-優先級 3（低）：
-1. 清理 12 個未使用的匯出
-2. 補充程式碼註解
-3. 提升測試覆蓋率
-
-需要我協助處理任何項目嗎？
 ```
 
 ---
@@ -706,5 +448,4 @@ agent-ide rename -f old -o new  # 沒有錯誤處理
 ## 相關文件
 
 - [CLI 使用指南](cli-guide.md)
-- [MCP 使用指南](mcp-guide.md)
 - [返回首頁](index.md)

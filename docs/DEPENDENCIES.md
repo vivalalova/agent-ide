@@ -39,27 +39,6 @@ agent-ide deps --file src/service.ts --format json
 agent-ide deps --check-cycles --format json
 ```
 
-### MCP 工具
-
-```typescript
-// 基本依賴分析
-const result = await mcp.executeTool('code_deps', {
-  path: '/path/to/project'
-});
-
-// 分析特定檔案
-const result = await mcp.executeTool('code_deps', {
-  path: '/path/to/project',
-  file: 'src/service.ts'
-});
-
-// 檢測循環依賴
-const result = await mcp.executeTool('code_deps', {
-  path: '/path/to/project',
-  checkCycles: true
-});
-```
-
 ---
 
 ## 分析結果結構

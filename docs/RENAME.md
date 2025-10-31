@@ -39,24 +39,6 @@ agent-ide rename --from oldName --to newName --backup
 agent-ide rename --from oldName --to newName --format json
 ```
 
-### MCP 工具
-
-```typescript
-// 預覽重命名
-const preview = await mcp.executeTool('code_rename', {
-  oldName: 'getUserData',
-  newName: 'fetchUserInfo',
-  preview: true
-});
-
-// 執行重命名
-const result = await mcp.executeTool('code_rename', {
-  oldName: 'getUserData',
-  newName: 'fetchUserInfo',
-  backup: true
-});
-```
-
 ---
 
 ## 重命名流程

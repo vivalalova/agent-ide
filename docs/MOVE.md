@@ -39,24 +39,6 @@ agent-ide move --batch move-list.json
 agent-ide move src/old.ts src/new.ts --backup
 ```
 
-### MCP 工具
-
-```typescript
-// 預覽移動
-const preview = await mcp.executeTool('code_move', {
-  from: 'src/api/user.ts',
-  to: 'src/services/user.service.ts',
-  preview: true
-});
-
-// 執行移動
-const result = await mcp.executeTool('code_move', {
-  from: 'src/api/user.ts',
-  to: 'src/services/user.service.ts',
-  updateImports: true
-});
-```
-
 ---
 
 ## 移動流程

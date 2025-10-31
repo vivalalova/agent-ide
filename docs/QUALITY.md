@@ -75,28 +75,6 @@ agent-ide analyze dead-code --path /path/to/project --format json
 agent-ide analyze best-practices --path /path/to/project --format json
 ```
 
-### MCP 工具
-
-```typescript
-// ShitScore 評分
-const result = await mcp.executeTool('code_shit', {
-  path: '/path/to/project',
-  detailed: true
-});
-
-// 複雜度分析
-const result = await mcp.executeTool('code_analyze', {
-  path: '/path/to/project',
-  type: 'complexity'
-});
-
-// 死代碼檢測
-const result = await mcp.executeTool('code_analyze', {
-  path: '/path/to/project',
-  type: 'dead-code'
-});
-```
-
 ---
 
 ## ShitScore 詳細分析

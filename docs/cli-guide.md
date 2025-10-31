@@ -678,6 +678,5 @@ swift        1.0.0   Swift         .swift
 
 ## 相關文件
 
-- [MCP 使用指南](mcp-guide.md)
 - [使用範例](examples.md)
 - [返回首頁](index.md)

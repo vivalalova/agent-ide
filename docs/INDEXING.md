@@ -44,28 +44,6 @@ node dist/interfaces/cli/index.js index --path /path/to/project --force
 node dist/interfaces/cli/index.js index --path /path/to/project --status
 ```
 
-### MCP 工具
-
-```typescript
-// 建立索引
-await mcp.executeTool('code_index', {
-  action: 'create',
-  path: '/path/to/project'
-});
-
-// 更新索引
-await mcp.executeTool('code_index', {
-  action: 'update',
-  path: '/path/to/project'
-});
-
-// 查詢索引狀態
-await mcp.executeTool('code_index', {
-  action: 'status',
-  path: '/path/to/project'
-});
-```
-
 ---
 
 ## 索引內容
@@ -288,7 +266,6 @@ function updateIndex(changedFile: string) {
 
 ❌ **無需手動索引**：
 - 使用 search 命令（自動索引）
-- 使用 MCP 工具（自動索引）
 - 單一檔案修改
 
 ### 索引維護

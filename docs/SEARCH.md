@@ -42,31 +42,6 @@ agent-ide search "import" --limit 10
 agent-ide search "class" --format json
 ```
 
-### MCP 工具
-
-```typescript
-// 基本搜尋
-const result = await mcp.executeTool('code_search', {
-  query: 'UserService',
-  path: '/path/to/project'
-});
-
-// 符號搜尋
-const result = await mcp.executeTool('code_search', {
-  query: 'UserService',
-  type: 'symbol',
-  symbolKind: 'class'
-});
-
-// 進階過濾
-const result = await mcp.executeTool('code_search', {
-  query: 'getData',
-  type: 'symbol',
-  symbolKind: 'method',
-  modifiers: ['public', 'async']
-});
-```
-
 ---
 
 ## 文字搜尋
