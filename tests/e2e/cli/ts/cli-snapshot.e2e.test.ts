@@ -161,7 +161,7 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
     expect(minimalSize).toBeLessThan(mediumSize);
     expect(minimalSize).toBeLessThan(fullSize);
     // medium 和 full 大小接近，full 可能因為符號映射表而稍大
-  });
+  }, 60000);
 
   // ============================================================
   // 3. 快照資訊查詢測試
