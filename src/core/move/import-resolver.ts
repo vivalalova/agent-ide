@@ -46,8 +46,8 @@ export class ImportResolver {
         continue; // 暫時跳過 Swift 模組 import，因為 Swift 使用模組系統而非檔案路徑
       }
 
-      // 解析 ES6 import
-      const importMatches = line.matchAll(/import\s+(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
+      // 解析 ES6 import（包含 import type 語法）
+      const importMatches = line.matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
       for (const match of importMatches) {
         const importPath = match[1];
         const statement = this.createImportStatement('import', importPath, lineNumber, match.index || 0, line);
