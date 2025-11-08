@@ -679,7 +679,12 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       }
     }
 
-    // 3. 對於變數、函式和方法，使用作用域檢查
+    // 3. 檢查是否在同一個檔案中
+    if (node.getSourceFile() !== symbolIdentifier.getSourceFile()) {
+      return false;
+    }
+
+    // 4. 對於變數、函式和方法，使用作用域檢查
     const symbolScope = this.getScopeContainer(symbolIdentifier);
     const nodeScope = this.getScopeContainer(node);
 
@@ -689,6 +694,12 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       if (!this.isShadowed(node, symbolIdentifier)) {
         return true;
       }
+    }
+
+    // 5. 對於頂層函式和變數，放寬檢查條件
+    // 如果符號在頂層作用域（SourceFile），則同一檔案中所有同名標識符都可能是引用
+    if (ts.isSourceFile(symbolScope) && !this.isShadowed(node, symbolIdentifier)) {
+      return true;
     }
 
     return false;
