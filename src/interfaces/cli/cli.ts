@@ -194,6 +194,7 @@ export class AgentIdeCLI {
       .description('移動檔案或目錄')
       .option('-s, --source <path>', '來源路徑')
       .option('-t, --target <path>', '目標路徑')
+      .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
       .option('--update-imports', '自動更新 import 路徑', true)
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
@@ -859,7 +860,7 @@ export class AgentIdeCLI {
       // 初始化移動服務
       if (!this.moveService) {
         // 讀取 tsconfig.json 路徑別名
-        const pathAliases = await this.loadPathAliases(process.cwd());
+        const pathAliases = await this.loadPathAliases(options.path || process.cwd());
 
         this.moveService = new MoveService({
           pathAliases,
@@ -876,7 +877,7 @@ export class AgentIdeCLI {
 
       const moveOptions = {
         preview: options.preview,
-        projectRoot: process.cwd()
+        projectRoot: options.path || process.cwd()
       };
 
       // 執行移動操作
