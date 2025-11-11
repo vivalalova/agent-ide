@@ -61,15 +61,14 @@ export class ImportResolver {
         // 收集多行 export 語句
         const exportStatement = this.collectMultilineExportStatement(lines, i);
         if (exportStatement) {
-          const { statement: fullStatement, endLineIndex } = exportStatement;
+          const { statement: fullStatement, endLineIndex, startLineIndex } = exportStatement;
           // 在完整語句中查找 from '...'
           const fromMatch = fullStatement.match(/from\s+['"`]([^'"`]+)['"`]/);
           if (fromMatch) {
             const importPath = fromMatch[1];
-            // 使用 from 所在的行號
-            const fromLineIndex = this.findFromLineIndex(lines, i, endLineIndex);
-            const fromLine = lines[fromLineIndex];
-            const statement = this.createImportStatement('export', importPath, fromLineIndex + 1, fromLine.indexOf('from'), fromLine);
+            // 使用起始行號和原始多行語句
+            const rawStatement = lines.slice(startLineIndex, endLineIndex + 1).join('\n');
+            const statement = this.createImportStatement('export', importPath, startLineIndex + 1, lines[startLineIndex].indexOf('export'), rawStatement);
             if (statement) {
               statements.push(statement);
             }
@@ -108,7 +107,7 @@ export class ImportResolver {
   /**
    * 收集多行的 export 語句
    */
-  private collectMultilineExportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number } | null {
+  private collectMultilineExportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number; startLineIndex: number } | null {
     const startLine = lines[startIndex];
     if (!startLine.includes('export')) {
       return null;
@@ -116,7 +115,7 @@ export class ImportResolver {
 
     // 如果 export 和 from 在同一行，直接返回
     if (startLine.includes('from') && startLine.match(/from\s+['"`]/)) {
-      return { statement: startLine, endLineIndex: startIndex };
+      return { statement: startLine, endLineIndex: startIndex, startLineIndex: startIndex };
     }
 
     // 收集多行直到找到 from
@@ -124,7 +123,7 @@ export class ImportResolver {
     for (let i = startIndex + 1; i < lines.length; i++) {
       fullStatement += ' ' + lines[i].trim();
       if (lines[i].includes('from') && lines[i].match(/from\s+['"`]/)) {
-        return { statement: fullStatement, endLineIndex: i };
+        return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
       }
       // 最多往後看 10 行
       if (i - startIndex > 10) {

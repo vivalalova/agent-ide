@@ -282,9 +282,9 @@ export class MoveService {
     }
 
     if (importPath.startsWith('.')) {
-      // 相對路徑 - 使用 path.join 而不是 path.resolve 以避免依賴 cwd
-      const fromDir = path.dirname(fromFile);
-      const resolved = path.join(fromDir, importPath);
+      // 相對路徑 - 轉換為絕對路徑
+      const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
+      const resolved = path.resolve(fromDir, importPath);
       // 正規化路徑
       return path.normalize(resolved);
     }
@@ -297,9 +297,10 @@ export class MoveService {
         // 絕對路徑直接返回
         return path.normalize(resolved);
       } else if (resolved.startsWith('.')) {
-        // 相對路徑需要加上 fromDir
-        const fromDir = path.dirname(fromFile);
-        return path.normalize(path.join(fromDir, resolved));
+        // 相對路徑需要轉換為絕對路徑
+        const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
+        const absoluteResolved = path.resolve(fromDir, resolved);
+        return path.normalize(absoluteResolved);
       }
     }
 
@@ -310,30 +311,25 @@ export class MoveService {
    * 檢查兩個路徑是否指向同一個檔案
    */
   private pathsMatch(path1: string, path2: string): boolean {
-    // 正規化路徑以便比較
-    const normalized1 = path.normalize(path1);
-    const normalized2 = path.normalize(path2);
-
-    // 檢查完全匹配
-    if (normalized1 === normalized2) {return true;}
-
-    // 檢查去除副檔名後是否匹配（TypeScript/JavaScript 可以省略副檔名）
-    const withoutExt1 = this.removeExtension(normalized1);
-    const withoutExt2 = this.removeExtension(normalized2);
-
-    if (withoutExt1 === withoutExt2) {return true;}
-
-    // 檢查是否為相同的絕對路徑（處理相對路徑差異）
     try {
-      const abs1 = path.isAbsolute(normalized1) ? normalized1 : path.resolve(normalized1);
-      const abs2 = path.isAbsolute(normalized2) ? normalized2 : path.resolve(normalized2);
+      // 確保兩個路徑都是絕對路徑並正規化
+      const abs1 = path.isAbsolute(path1)
+        ? path.normalize(path1)
+        : path.normalize(path.resolve(path1));
+      const abs2 = path.isAbsolute(path2)
+        ? path.normalize(path2)
+        : path.normalize(path.resolve(path2));
 
-      if (abs1 === abs2) {return true;}
+      // 檢查完全匹配
+      if (abs1 === abs2) {
+        return true;
+      }
 
-      const withoutExtAbs1 = this.removeExtension(abs1);
-      const withoutExtAbs2 = this.removeExtension(abs2);
+      // 檢查去除副檔名後是否匹配（TypeScript/JavaScript 可以省略副檔名）
+      const withoutExt1 = this.removeExtension(abs1);
+      const withoutExt2 = this.removeExtension(abs2);
 
-      return withoutExtAbs1 === withoutExtAbs2;
+      return withoutExt1 === withoutExt2;
     } catch {
       return false;
     }
@@ -366,25 +362,34 @@ export class MoveService {
           continue;
         }
 
+        // 將 oldPath 規範化為絕對路徑以便比較
+        const normalizedOldPath = path.isAbsolute(oldPath)
+          ? path.normalize(oldPath)
+          : path.normalize(path.resolve(oldPath));
+
+        // 計算 import 指向的絕對路徑
         const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
 
-        if (this.pathsMatch(resolvedPath, oldPath)) {
+        // 使用 pathsMatch 檢查是否指向被移動的檔案
+        if (this.pathsMatch(resolvedPath, normalizedOldPath)) {
           // 計算新的 import 路徑，保留原始路徑類型（別名或相對路徑）
           const newImportPath = this.calculateNewImportPathPreservingStyle(
             importStatement.path,
             filePath,
-            oldPath,
+            normalizedOldPath,
             newPath
+          );
+
+          const newImport = importStatement.rawStatement.replace(
+            new RegExp(`(['"\`])${this.escapeRegex(importStatement.path)}\\1`),
+            `$1${newImportPath}$1`
           );
 
           updates.push({
             filePath,
             line: importStatement.position.line,
             oldImport: importStatement.rawStatement,
-            newImport: importStatement.rawStatement.replace(
-              new RegExp(`(['"\`])${this.escapeRegex(importStatement.path)}\\1`),
-              `$1${newImportPath}$1`
-            )
+            newImport
           });
         }
       }
@@ -543,21 +548,30 @@ export class MoveService {
   private async applyFileUpdates(filePath: string, updates: PathUpdate[]): Promise<void> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const lines = content.split('\n');
 
-      // 按行號從高到低排序，避免行號偏移問題
-      const sortedUpdates = updates.sort((a, b) => b.line - a.line);
+      let newContent = content;
 
-      for (const update of sortedUpdates) {
-        const lineIndex = update.line - 1;
-        if (lineIndex >= 0 && lineIndex < lines.length) {
-          const oldLine = lines[lineIndex];
-          const newLine = oldLine.replace(update.oldImport, update.newImport);
-          lines[lineIndex] = newLine;
+      // 對於多行語句，需要特別處理
+      for (const update of updates) {
+        // 直接使用字串替換，支援多行
+        newContent = newContent.replace(update.oldImport, update.newImport);
+
+        // 如果未找到完全匹配，嘗試規範化並再試一次
+        if (newContent.indexOf(update.oldImport) === -1) {
+          // 嘗試將多行 oldImport 規範化（移除額外的空格和換行）
+          const normalizedOldImport = update.oldImport.replace(/\s+/g, ' ').trim();
+          const contentNormalized = newContent.replace(/\s+/g, ' ');
+
+          if (contentNormalized.indexOf(normalizedOldImport) !== -1) {
+            newContent = content; // 重置
+            newContent = newContent.replace(
+              new RegExp(this.escapeRegex(normalizedOldImport).replace(/\s+/g, '\\s+'), 'g'),
+              update.newImport.replace(/\s+/g, ' ').trim()
+            );
+          }
         }
       }
 
-      const newContent = lines.join('\n');
       await fs.writeFile(filePath, newContent, 'utf-8');
     } catch (error) {
       throw new Error(`更新檔案 ${filePath} 失敗: ${error instanceof Error ? error.message : 'Unknown error'}`);
