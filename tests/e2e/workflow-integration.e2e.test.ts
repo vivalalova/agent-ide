@@ -19,15 +19,9 @@ describe('完整工作流整合測試', () => {
   });
 
   // TODO: Extract Function 需要AST改進，暫時使用基本驗證
-  it('完整重構工作流：索引 → 搜尋 → 重構 → 重新索引 → 驗證 → 分析', { timeout: 60000 }, async () => {
+  it('完整重構工作流：搜尋 → 重構 → 驗證 → 分析', { timeout: 60000 }, async () => {
     // ============================================================
-    // 步驟 1：初始索引
-    // ============================================================
-    const indexResult1 = await executeCLI(['index', '--path', fixture.tempPath]);
-    expect(indexResult1.exitCode).toBe(0);
-
-    // ============================================================
-    // 步驟 2：搜尋目標程式碼（OrderService.createOrder）
+    // 步驟 1：搜尋目標程式碼（OrderService.createOrder）
     // ============================================================
     const searchResult1 = await executeCLI([
       'search',
@@ -96,13 +90,7 @@ describe('完整工作流整合測試', () => {
     expect(refactoredContent).toContain('validateUserExists(');
 
     // ============================================================
-    // 步驟 6：重新索引（更新符號表）
-    // ============================================================
-    const indexResult2 = await executeCLI(['index', '--path', fixture.tempPath]);
-    expect(indexResult2.exitCode).toBe(0);
-
-    // ============================================================
-    // 步驟 7：搜尋新提取的函式
+    // 步驟 6：搜尋新提取的函式
     // ============================================================
     const searchResult2 = await executeCLI([
       'search',
@@ -115,7 +103,7 @@ describe('完整工作流整合測試', () => {
     expect(searchResult2.stdout).toContain('validateUserExists');
 
     // ============================================================
-    // 步驟 8：分析重構後的複雜度
+    // 步驟 7：分析重構後的複雜度
     // ============================================================
     const complexityAfter = await executeCLI([
       'analyze',
@@ -141,7 +129,7 @@ describe('完整工作流整合測試', () => {
     expect(orderServiceAfter.complexity).toBeGreaterThan(0);
 
     // ============================================================
-    // 步驟 9：分析依賴關係
+    // 步驟 8：分析依賴關係
     // ============================================================
     const depsResult = await executeCLI([
       'deps',
@@ -170,14 +158,9 @@ describe('完整工作流整合測試', () => {
     expect(hasCycles).toBe(false);
   });
 
-  it('重命名工作流：搜尋 → 重命名 → 重新索引 → 驗證引用更新', { timeout: 60000 }, async () => {
+  it('重命名工作流：搜尋 → 重命名 → 驗證引用更新', { timeout: 60000 }, async () => {
     // ============================================================
-    // 步驟 1：初始索引
-    // ============================================================
-    await executeCLI(['index', '--path', fixture.tempPath]);
-
-    // ============================================================
-    // 步驟 2：搜尋目標符號（User interface）
+    // 步驟 1：搜尋目標符號（User interface）
     // ============================================================
     const searchBefore = await executeCLI([
       'search',
@@ -241,12 +224,7 @@ describe('完整工作流整合測試', () => {
     expect(userServiceContent).toContain('Person');
 
     // ============================================================
-    // 步驟 7：重新索引
-    // ============================================================
-    await executeCLI(['index', '--path', fixture.tempPath]);
-
-    // ============================================================
-    // 步驟 8：搜尋新名稱
+    // 步驟 7：搜尋新名稱
     // ============================================================
     const searchAfter = await executeCLI([
       'search',
@@ -259,7 +237,7 @@ describe('完整工作流整合測試', () => {
     expect(searchAfter.stdout).toContain('Person');
 
     // ============================================================
-    // 步驟 9：驗證依賴關係仍然正確
+    // 步驟 8：驗證依賴關係仍然正確
     // ============================================================
     const depsAfter = await executeCLI([
       'deps',
@@ -281,14 +259,9 @@ describe('完整工作流整合測試', () => {
 
   // ✅ 已修復：檔案移動後索引更新問題
   // 解決方案：在 IndexEngine.indexDirectory 中加入 cleanupStaleIndexEntries 清除過期索引
-  it('檔案移動工作流：移動 → 更新引用 → 重新索引 → 驗證', async () => {
+  it('檔案移動工作流：移動 → 更新引用 → 驗證', async () => {
     // ============================================================
-    // 步驟 1：初始索引
-    // ============================================================
-    await executeCLI(['index', '--path', fixture.tempPath]);
-
-    // ============================================================
-    // 步驟 2：分析移動前的依賴關係
+    // 步驟 1：分析移動前的依賴關係
     // ============================================================
     const depsBefore = await executeCLI([
       'deps',
@@ -330,12 +303,7 @@ describe('完整工作流整合測試', () => {
     expect(movedContent).toContain('export enum UserRole');
 
     // ============================================================
-    // 步驟 6：重新索引
-    // ============================================================
-    await executeCLI(['index', '--path', fixture.tempPath]);
-
-    // ============================================================
-    // 步驟 7：搜尋符號應該在新位置找到
+    // 步驟 6：搜尋符號應該在新位置找到
     // ============================================================
     const searchResult = await executeCLI([
       'search',
@@ -353,7 +321,7 @@ describe('完整工作流整合測試', () => {
     expect(searchResult.stdout).not.toMatch(/types\/user\.ts(?!.*entities)/);
 
     // ============================================================
-    // 步驟 8：驗證依賴關係仍然完整
+    // 步驟 7：驗證依賴關係仍然完整
     // ============================================================
     const depsAfter = await executeCLI([
       'deps',
@@ -371,15 +339,9 @@ describe('完整工作流整合測試', () => {
     expect(Math.abs(depsAfterOutput.summary.totalDependencies - totalDepsBefore)).toBeLessThan(5);
   });
 
-  it('完整分析工作流：索引 → 複雜度分析 → 死代碼檢測 → 模式分析', { timeout: 180000 }, async () => {
+  it('完整分析工作流：複雜度分析 → 死代碼檢測 → 模式分析', { timeout: 180000 }, async () => {
     // ============================================================
-    // 步驟 1：初始索引
-    // ============================================================
-    const indexResult = await executeCLI(['index', '--path', fixture.tempPath]);
-    expect(indexResult.exitCode).toBe(0);
-
-    // ============================================================
-    // 步驟 2：複雜度分析
+    // 步驟 1：複雜度分析
     // ============================================================
     const complexityResult = await executeCLI([
       'analyze',
@@ -398,7 +360,7 @@ describe('完整工作流整合測試', () => {
     expect(complexityOutput.summary.averageComplexity).toBeGreaterThan(0);
 
     // ============================================================
-    // 步驟 3：死代碼檢測
+    // 步驟 2：死代碼檢測
     // ============================================================
     const deadCodeResult = await executeCLI([
       'analyze',
@@ -419,7 +381,7 @@ describe('完整工作流整合測試', () => {
     expect(deadCodeOutput.summary.totalDeadCode).toBeGreaterThanOrEqual(0);
 
     // ============================================================
-    // 步驟 4：程式碼模式分析
+    // 步驟 3：程式碼模式分析
     // ============================================================
     const patternsResult = await executeCLI([
       'analyze',
@@ -438,7 +400,7 @@ describe('完整工作流整合測試', () => {
     expect(patternsOutput.statistics.asyncFunctions).toBeGreaterThanOrEqual(8);
 
     // ============================================================
-    // 步驟 5：依賴分析
+    // 步驟 4：依賴分析
     // ============================================================
     const depsResult = await executeCLI([
       'deps',
@@ -456,7 +418,7 @@ describe('完整工作流整合測試', () => {
     expect(depsOutput.summary.totalDependencies).toBeGreaterThan(50);
 
     // ============================================================
-    // 步驟 6：整合報告（驗證所有資料一致）
+    // 步驟 5：整合報告（驗證所有資料一致）
     // ============================================================
     // 檔案數量應該在所有分析中一致
     expect(complexityOutput.summary.totalScanned).toBeGreaterThanOrEqual(30);
