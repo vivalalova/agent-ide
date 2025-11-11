@@ -96,7 +96,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 
 ## 介面層
 
-- **CLI**：`agent-ide [index|search|rename|move|analyze|deps|shit]`（Unix哲學/JSON輸出）
+- **CLI**：`agent-ide [search|rename|move|analyze|deps|shit]`（Unix哲學/JSON輸出）
 
 ## 診斷命令輸出優化
 

@@ -2,7 +2,7 @@
 
 > 📝 本文件由 AI Agent 生成
 
-為 AI 代理設計的程式碼智能工具集，提供索引、搜尋、重構、依賴分析等功能。
+為 AI 代理設計的程式碼智能工具集，提供搜尋、重構、依賴分析等功能。
 
 ## 🚀 快速開始
 
@@ -22,7 +22,6 @@ pnpm install && pnpm build && npm link
 
 | 工具             | 功能                                   |
 | ---------------- | -------------------------------------- |
-| `code_index`     | 建立程式碼索引                         |
 | `code_search`    | 搜尋符號、文字                         |
 | `code_rename`    | 重新命名符號                           |
 | `code_move`      | 移動檔案並更新 import                  |
@@ -188,7 +187,7 @@ npx agent-ide refactor extract-function \
 - **npx 執行**：無需全域安裝，直接使用 `npx agent-ide` 執行命令
 - **JSON 格式優先**：需要解析結果時使用 `--format json`
 - **預覽模式**：重構/移動前先用 `--preview` 確認影響範圍
-- **搜尋優先於索引**：search 命令會自動處理索引，無需手動執行 index
+- **自動索引**：search、rename 等命令會自動建立和更新索引，無需手動操作
 - **限制結果數量**：大型專案使用 `--limit` 避免輸出過多
 ````
 
@@ -201,8 +200,8 @@ npx agent-ide refactor extract-function \
 
 ```
 Agent IDE
-├── 核心模組：索引、搜尋、重構、移動、依賴分析
-├── 基礎設施：Parser 框架、快取、儲存
+├── 核心模組：搜尋、重構、移動、依賴分析
+├── 基礎設施：Parser 框架、索引引擎、快取、儲存
 ├── 插件系統：TypeScript、JavaScript
 └── 介面層：CLI
 ```
