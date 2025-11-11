@@ -127,7 +127,6 @@ export class AgentIdeCLI {
       .description('程式碼智能工具集 for AI Agents')
       .version(packageVersion);
 
-    this.setupIndexCommand();
     this.setupRenameCommand();
     this.setupRefactorCommand();
     this.setupMoveCommand();
@@ -137,20 +136,6 @@ export class AgentIdeCLI {
     this.setupShitCommand();
     this.setupSnapshotCommand();
     this.setupPluginsCommand();
-  }
-
-  private setupIndexCommand(): void {
-    this.program
-      .command('index')
-      .description('建立或更新程式碼索引')
-      .option('-p, --path <path>', '專案路徑', process.cwd())
-      .option('-u, --update', '增量更新索引')
-      .option('-e, --extensions <exts>', '包含的檔案副檔名', '.ts,.js,.tsx,.jsx,.swift')
-      .option('-x, --exclude <patterns>', '排除模式', 'node_modules/**,*.test.*')
-      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
-      .action(async (options) => {
-        await this.handleIndexCommand(options);
-      });
   }
 
   private setupRenameCommand(): void {
@@ -362,65 +347,6 @@ export class AgentIdeCLI {
   }
 
   // Command handlers
-  private async handleIndexCommand(options: any): Promise<void> {
-    const formatter = this.createFormatter(options.format);
-    const startTime = Date.now();
-
-    if (options.format !== 'json' && options.format !== 'minimal') {
-      console.log(formatter.formatTitle('程式碼索引', 1));
-      console.log('\n🔍 開始建立程式碼索引...\n');
-    }
-
-    try {
-      const config = createIndexConfig(options.path, {
-        includeExtensions: options.extensions.split(','),
-        excludePatterns: options.exclude.split(',')
-      });
-
-      this.indexEngine = new IndexEngine(config);
-
-      if (options.update) {
-        if (options.format !== 'json' && options.format !== 'minimal') {
-          console.log('📝 執行增量索引更新...');
-        }
-      } else {
-        await this.indexEngine.indexProject(options.path);
-      }
-
-      const stats = await this.indexEngine.getStats();
-      const duration = Date.now() - startTime;
-
-      const statsData = {
-        檔案數: stats.totalFiles,
-        符號數: stats.totalSymbols,
-        '執行時間(ms)': duration
-      };
-
-      if (options.format === 'json') {
-        console.log(formatter.formatSuccess('索引完成', statsData));
-      } else if (options.format === 'minimal') {
-        console.log(`index:success files=${stats.totalFiles} symbols=${stats.totalSymbols} time=${duration}ms`);
-      } else {
-        console.log('\n' + formatter.formatSuccess('索引完成'));
-        console.log('\n' + formatter.formatTitle('統計資訊', 2));
-        console.log(formatter.formatStats(statsData));
-      }
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      if (options.format === 'json') {
-        console.error(formatter.formatError(errorMessage));
-      } else if (options.format === 'minimal') {
-        console.error(`index:error ${errorMessage}`);
-      } else {
-        console.error('\n' + formatter.formatError(`索引失敗: ${errorMessage}`));
-      }
-
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    }
-  }
-
   private async handleRenameCommand(options: any): Promise<void> {
     // 支援多種參數名稱
     const from = options.symbol || options.from;
