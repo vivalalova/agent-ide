@@ -268,7 +268,7 @@ describe('CLI move 命令 E2E 測試', () => {
       const sourcePath = fixture.getFilePath('src/types/user.ts');
       const targetPath = fixture.getFilePath('src/types/entities/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath], { cwd: fixture.tempPath });
 
       expect(result.exitCode).toBe(0);
 
@@ -302,7 +302,7 @@ describe('CLI move 命令 E2E 測試', () => {
       const sourcePath = fixture.getFilePath('src/types/api.ts');
       const targetPath = fixture.getFilePath('src/types/responses/api.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath], { cwd: fixture.tempPath });
 
       expect(result.exitCode).toBe(0);
 
@@ -331,7 +331,7 @@ export function processUser(user: User, role: UserRole): void {
       const sourcePath = fixture.getFilePath('src/types/user.ts');
       const targetPath = fixture.getFilePath('src/domain/user-types.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -357,7 +357,7 @@ export function lazyLoadProduct() {
       const sourcePath = fixture.getFilePath('src/services/user-service.ts');
       const targetPath = fixture.getFilePath('src/app/services/user-service.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -378,7 +378,7 @@ export const userService = new UserService();`;
       const sourcePath = fixture.getFilePath('src/core/config/settings.ts');
       const targetPath = fixture.getFilePath('src/config/settings.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -409,7 +409,7 @@ export function test() {
       const sourcePath = fixture.getFilePath('src/utils/helper.ts');
       const targetPath = fixture.getFilePath('src/shared/helper.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -435,7 +435,7 @@ export function callApi() { return fetch(getApiUrl()); }`;
       const sourcePath = fixture.getFilePath('src/service-b-test.ts');
       const targetPath = fixture.getFilePath('src/services/api-service.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -464,7 +464,7 @@ export function format() {
       const sourcePath = fixture.getFilePath('src/utils/date-utils.ts');
       const targetPath = fixture.getFilePath('src/formatters/date-utils.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -490,7 +490,7 @@ export async function loadServices() {
       const userSourcePath = fixture.getFilePath('src/services/user-service.ts');
       const userTargetPath = fixture.getFilePath('src/app/services/user-service.ts');
 
-      const result = await executeCLI(['move', userSourcePath, userTargetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', userSourcePath, userTargetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
@@ -514,7 +514,7 @@ export type { CreateUserData } from './types/user';`;
       const sourcePath = fixture.getFilePath('src/types/user.ts');
       const targetPath = fixture.getFilePath('src/domain/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
 
       expect(result.exitCode).toBe(0);
 
