@@ -212,6 +212,17 @@ export function getNodeModifiers(node: ts.Node): string[] {
       } else {
         modifiers.push('var');
       }
+
+      // 檢查 VariableStatement 的 modifiers (export, declare 等)
+      const statement = parent.parent;
+      if (statement && ts.canHaveModifiers(statement) && ts.getModifiers(statement)) {
+        for (const modifier of ts.getModifiers(statement)!) {
+          const modifierName = MODIFIER_MAP[modifier.kind];
+          if (modifierName && !modifiers.includes(modifierName)) {
+            modifiers.push(modifierName);
+          }
+        }
+      }
     }
   }
 

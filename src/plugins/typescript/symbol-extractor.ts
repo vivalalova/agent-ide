@@ -243,10 +243,23 @@ export class TypeScriptSymbolExtractor {
     }
 
     // 處理 export 修飾符
+    // 首先檢查節點本身
     if (ts.canHaveModifiers(node)) {
       const nodeModifiers = ts.getModifiers(node);
       if (nodeModifiers) {
         const hasExport = nodeModifiers.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+        if (hasExport && !modifiers.includes('export')) {
+          modifiers.push('export');
+        }
+      }
+    }
+
+    // 對於 VariableDeclaration，檢查父節點（VariableStatement）的修飾符
+    // 因為 export 修飾符在 VariableStatement 上，不是在 VariableDeclaration 上
+    if (ts.isVariableDeclaration(node) && node.parent && ts.isVariableStatement(node.parent)) {
+      const parentModifiers = ts.getModifiers(node.parent);
+      if (parentModifiers) {
+        const hasExport = parentModifiers.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
         if (hasExport && !modifiers.includes('export')) {
           modifiers.push('export');
         }
