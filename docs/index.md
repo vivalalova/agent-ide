@@ -39,6 +39,7 @@ pnpm install && pnpm build && npm link
 | 程式碼搜尋 | `search` | 搜尋符號、文字、正則表達式 |
 | 符號重命名 | `rename` | 安全重命名，自動更新引用 |
 | 檔案移動 | `move` | 移動檔案，自動更新 import |
+| 行移動 | `shift` | 行級移動（單檔案內/跨檔案/新檔案生成） |
 | 程式碼重構 | `refactor` | 提取/內聯函式 |
 | 品質分析 | `analyze` | 複雜度、品質指標分析 |
 | 依賴分析 | `deps` | 依賴圖、循環依賴、影響分析 |
@@ -67,6 +68,7 @@ Agent IDE
 │   ├── Search（搜尋引擎）
 │   ├── Rename（重命名引擎）
 │   ├── Move（移動服務）
+│   ├── Shift（行移動服務）
 │   ├── Refactor（重構引擎）
 │   ├── Analysis（品質分析）
 │   └── Dependency（依賴分析）

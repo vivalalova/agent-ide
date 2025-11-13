@@ -13,6 +13,7 @@
   - [場景 3：依賴關係清理](#場景-3依賴關係清理)
   - [場景 4：大規模重命名](#場景-4大規模重命名)
   - [場景 5：技術債務分析](#場景-5技術債務分析)
+  - [場景 6：程式碼重排與提取](#場景-6程式碼重排與提取)
 - [進階使用](#進階使用)
   - [組合命令](#組合命令)
   - [自動化腳本](#自動化腳本)
@@ -165,6 +166,58 @@ agent-ide deps -t cycles
 # 6. 生成報告
 cat complexity.json quality.json | jq -s '.[0] + .[1]' > tech-debt.json
 ```
+
+---
+
+### 場景 6：程式碼重排與提取
+
+**目標**：整理混亂的檔案結構，將相關程式碼移到一起或提取到新檔案。
+
+#### 使用 CLI
+
+```bash
+# 1. 檢視檔案結構
+cat src/utils/helpers.ts | nl
+# 發現型別定義散落在不同位置
+
+# 2. 移動型別定義到檔案頂部（第 50-70 行移到第 1 行之前）
+agent-ide shift src/utils/helpers.ts --from 50 --to 70 --position 1 --preview
+
+# 3. 確認後執行
+agent-ide shift src/utils/helpers.ts --from 50 --to 70 --position 1
+
+# 4. 提取工具函式到新檔案（第 80-120 行提取到 string-utils.ts）
+agent-ide shift src/utils/helpers.ts \
+  --from 80 \
+  --to 120 \
+  --target src/utils/string-utils \
+  --position 1 \
+  --format json
+
+# 5. 合併分散的相關函式（將 date.ts 的第 10-30 行合併到 date-helpers.ts）
+agent-ide shift src/utils/date.ts \
+  --from 10 \
+  --to 30 \
+  --target src/utils/date-helpers \
+  --position 1
+
+# 6. 驗證檔案大小合理
+wc -l src/utils/*.ts
+
+# 7. 檢查需要更新的 import（shift 不會自動更新引用）
+agent-ide search "from.*helpers" --type regex --format json
+```
+
+**成果**：
+- ✅ 型別定義集中在檔案頂部
+- ✅ 工具函式按類別分檔（string-utils.ts、date-helpers.ts）
+- ✅ 每個檔案大小合理（20-100 行）
+- ✅ 程式碼結構清晰
+
+**注意事項**：
+- shift 不會自動更新 import 引用，需手動調整或使用其他工具
+- 適合快速重排程式碼或提取程式碼片段
+- 跨檔案移動時會自動處理檔名衝突（newfile.ts → newfile01.ts）
 
 ---
 

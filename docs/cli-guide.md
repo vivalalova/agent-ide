@@ -13,6 +13,7 @@
   - [search - 程式碼搜尋](#search---程式碼搜尋)
   - [rename - 符號重命名](#rename---符號重命名)
   - [move - 檔案移動](#move---檔案移動)
+  - [shift - 行移動](#shift---行移動)
   - [refactor - 程式碼重構](#refactor---程式碼重構)
   - [analyze - 品質分析](#analyze---品質分析)
   - [deps - 依賴分析](#deps---依賴分析)
@@ -318,6 +319,95 @@ agent-ide move src/old.ts src/new.ts --update-imports=false
     + import { UserService } from './core/services/user';
 
 ✓ 共更新 12 個檔案
+```
+
+---
+
+### shift - 行移動
+
+移動程式碼行到同一檔案的不同位置、其他檔案或新建立的檔案。
+
+#### 語法
+
+```bash
+agent-ide shift <file> [options]
+```
+
+#### 參數
+
+| 參數 | 說明 | 必填 |
+|------|------|------|
+| `file` | 來源檔案路徑 | 是 |
+
+#### 選項
+
+| 選項 | 說明 | 預設值 |
+|------|------|--------|
+| `--from <number>` | 起始行號（1-based，包含） | - |
+| `--to <number>` | 結束行號（1-based，包含） | - |
+| `--position <number>` | 目標位置行號（1-based，插入到此行之前） | - |
+| `--target <file>` | 目標檔案路徑（選填，預設為來源檔案） | - |
+| `--preview` | 預覽變更而不執行 | false |
+| `--format <format>` | 輸出格式（plain\|json） | `plain` |
+
+#### 範例
+
+```bash
+# 單檔案內移動（第 2-5 行移到第 10 行之前）
+agent-ide shift src/file.ts --from 2 --to 5 --position 10
+
+# 跨檔案移動到已存在的檔案
+agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
+
+# 移動到新檔案（自動生成檔名）
+agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
+# → 生成 src/newfile.ts，若已存在則生成 newfile01.ts、newfile02.ts...
+
+# 預覽模式
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+
+# JSON 輸出
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+
+# 移動單行
+agent-ide shift src/file.ts --from 5 --to 5 --position 1
+
+# 移動到檔案末尾（假設檔案有 100 行）
+agent-ide shift src/file.ts --from 1 --to 5 --position 101
+```
+
+#### 輸出
+
+**Plain 格式（預設）：**
+
+```
+✓ 行移動成功
+
+來源檔案: src/file.ts
+目標檔案: src/file.ts
+移動範圍: 第 2-5 行
+目標位置: 第 10 行之前
+操作類型: 單檔案內移動
+
+統計資訊:
+  移動行數: 4 行
+  操作耗時: 12ms
+```
+
+**JSON 格式：**
+
+```json
+{
+  "success": true,
+  "operationType": "within_file",
+  "sourceFile": "src/file.ts",
+  "targetFile": "src/file.ts",
+  "fromLine": 2,
+  "toLine": 5,
+  "position": 10,
+  "linesCount": 4,
+  "message": "成功移動行"
+}
 ```
 
 ---

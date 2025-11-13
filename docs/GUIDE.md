@@ -849,6 +849,143 @@ EOF
 
 ---
 
+## 案例 8：程式碼重排 - 使用 shift 整理檔案
+
+### 情境
+
+`src/utils/helpers.ts` 檔案中的工具函式順序混亂，需要重新組織程式碼結構：
+- 將型別定義移到檔案頂部
+- 將輔助函式提取到獨立檔案
+- 合併分散在多個檔案的相關函式
+
+### 步驟
+
+#### 1. 檢視檔案結構
+
+```bash
+# 查看檔案內容（假設有 150 行）
+cat src/utils/helpers.ts | nl
+
+# 發現問題：
+# - 第 1-20 行：型別定義
+# - 第 21-50 行：字串處理函式
+# - 第 51-80 行：又是型別定義（應該在頂部）
+# - 第 81-120 行：陣列處理函式
+# - 第 121-150 行：日期處理函式
+```
+
+#### 2. 移動型別定義到頂部
+
+```bash
+# 預覽：將第 51-80 行的型別定義移到第 21 行之前（型別定義區之後）
+npx agent-ide shift src/utils/helpers.ts --from 51 --to 80 --position 21 --preview
+
+# 確認無誤後執行
+npx agent-ide shift src/utils/helpers.ts --from 51 --to 80 --position 21 --format json
+
+# 結果：所有型別定義現在都在第 1-50 行
+```
+
+#### 3. 提取字串處理函式到新檔案
+
+```bash
+# 將字串處理函式（現在是第 51-80 行）提取到新檔案
+npx agent-ide shift src/utils/helpers.ts \
+  --from 51 \
+  --to 80 \
+  --target src/utils/string-helpers \
+  --position 1 \
+  --format json
+
+# 自動生成 src/utils/string-helpers.ts
+# helpers.ts 現在只剩 120 行
+```
+
+#### 4. 提取陣列處理函式
+
+```bash
+# 將陣列處理函式提取到新檔案
+npx agent-ide shift src/utils/helpers.ts \
+  --from 51 \
+  --to 90 \
+  --target src/utils/array-helpers \
+  --position 1
+
+# 生成 src/utils/array-helpers.ts
+```
+
+#### 5. 合併分散的日期處理函式
+
+```bash
+# 發現 src/utils/date.ts 也有一些日期處理函式
+# 將它們合併到 src/utils/date-helpers.ts
+
+# 先移動 helpers.ts 中的日期函式（第 51-80 行）
+npx agent-ide shift src/utils/helpers.ts \
+  --from 51 \
+  --to 80 \
+  --target src/utils/date-helpers \
+  --position 1
+
+# 再移動 date.ts 中的函式（第 10-30 行）
+npx agent-ide shift src/utils/date.ts \
+  --from 10 \
+  --to 30 \
+  --target src/utils/date-helpers \
+  --position 1
+```
+
+#### 6. 驗證結果
+
+```bash
+# 檢查檔案大小（應該都在合理範圍內）
+wc -l src/utils/*.ts
+
+# 檢查是否需要手動調整 import（shift 不會自動更新引用）
+npx agent-ide search "from.*helpers" --type regex --format json
+
+# 手動更新 import 或使用 rename 工具
+```
+
+### 成果
+
+**重組前**：
+```
+src/utils/
+├── helpers.ts (150 行，混亂)
+└── date.ts (50 行)
+```
+
+**重組後**：
+```
+src/utils/
+├── helpers.ts (20 行，只剩型別定義)
+├── string-helpers.ts (30 行)
+├── array-helpers.ts (40 行)
+└── date-helpers.ts (60 行)
+```
+
+**改善**：
+- ✅ 每個檔案職責單一
+- ✅ 型別定義集中管理
+- ✅ 相關函式合併在一起
+- ✅ 檔案大小合理（20-60 行）
+
+### Shift vs Move vs Refactor
+
+| 功能 | 適用場景 | 是否更新引用 |
+|------|---------|-------------|
+| **shift** | 行級程式碼移動、檔案內重排、提取程式碼片段 | ❌ 否 |
+| **move** | 檔案級移動、目錄重組 | ✅ 是（自動更新 import） |
+| **refactor** | 提取函式、內聯函式（語法級重構） | ✅ 是 |
+
+**使用建議**：
+- 使用 **shift** 當你只需要移動程式碼行，不涉及引用更新
+- 使用 **move** 當你需要移動整個檔案並自動更新所有 import
+- 使用 **refactor** 當你需要保證語法正確性的重構操作
+
+---
+
 ## 最佳實踐總結
 
 ### 1. 重構前先分析
