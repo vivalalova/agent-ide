@@ -278,8 +278,8 @@ describe('CLI move 命令 E2E 測試', () => {
 
       // 驗證 index.ts 中的 export 語句被更新
       const indexContent = await fixture.readFile('src/types/index.ts');
-      expect(indexContent).toContain("export * from './entities/user'");
-      expect(indexContent).not.toContain("export * from './user'");
+      expect(indexContent).toContain('export * from \'./entities/user\'');
+      expect(indexContent).not.toContain('export * from \'./user\'');
     });
 
     it('應該移動 index 檔案並更新所有引用', async () => {
@@ -312,7 +312,7 @@ describe('CLI move 命令 E2E 測試', () => {
 
       // 驗證 index.ts 被更新
       const indexContent = await fixture.readFile('src/types/index.ts');
-      expect(indexContent).toContain("export * from './responses/api'");
+      expect(indexContent).toContain('export * from \'./responses/api\'');
     });
   });
 
@@ -337,8 +337,8 @@ export function processUser(user: User, role: UserRole): void {
 
       // 驗證 type import 被更新
       const testFileUpdated = await fixture.readFile('src/type-import-test.ts');
-      expect(testFileUpdated).toContain("import type { User } from './domain/user-types'");
-      expect(testFileUpdated).toContain("import { type UserRole, UserStatus } from './domain/user-types'");
+      expect(testFileUpdated).toContain('import type { User } from \'./domain/user-types\'');
+      expect(testFileUpdated).toContain('import { type UserRole, UserStatus } from \'./domain/user-types\'');
     });
 
     it('應該處理動態 import 語句', async () => {
@@ -363,7 +363,7 @@ export function lazyLoadProduct() {
 
       // 驗證動態 import 被更新
       const loaderContent = await fixture.readFile('src/dynamic-loader.ts');
-      expect(loaderContent).toContain("await import('./app/services/user-service')");
+      expect(loaderContent).toContain('await import(\'./app/services/user-service\')');
     });
 
     it('應該處理 side-effect import', async () => {
@@ -384,15 +384,15 @@ export const userService = new UserService();`;
 
       // 驗證 side-effect import 被更新
       const initContent = await fixture.readFile('src/app-init.ts');
-      expect(initContent).toContain("import './config/settings'");
+      expect(initContent).toContain('import \'./config/settings\'');
     });
   });
 
   describe('複雜引用場景測試 - 同名檔案和嵌套引用', () => {
     it('應該只更新正確路徑的同名檔案引用', async () => {
       // 創建兩個同名但路徑不同的檔案
-      const helper1Content = `export function utilHelper() { return 'util'; }`;
-      const helper2Content = `export function componentHelper() { return 'component'; }`;
+      const helper1Content = 'export function utilHelper() { return \'util\'; }';
+      const helper2Content = 'export function componentHelper() { return \'component\'; }';
       await fixture.writeFile('src/utils/helper.ts', helper1Content);
       await fixture.writeFile('src/components/helper.ts', helper2Content);
 
@@ -415,13 +415,13 @@ export function test() {
 
       // 驗證只有正確的引用被更新
       const testUpdated = await fixture.readFile('src/test-helpers.ts');
-      expect(testUpdated).toContain("import { utilHelper } from './shared/helper'");
-      expect(testUpdated).toContain("import { componentHelper } from './components/helper'");
+      expect(testUpdated).toContain('import { utilHelper } from \'./shared/helper\'');
+      expect(testUpdated).toContain('import { componentHelper } from \'./components/helper\'');
     });
 
     it('應該處理嵌套引用鏈 (A→B→C)', async () => {
       // 創建引用鏈: service-a → service-b → config
-      const configContent = `export const CONFIG = { api: 'http://api.example.com' };`;
+      const configContent = 'export const CONFIG = { api: \'http://api.example.com\' };';
       const serviceBContent = `import { CONFIG } from '../core/config/settings';
 export function getApiUrl() { return CONFIG.api; }`;
       const serviceAContent = `import { getApiUrl } from './service-b-test';
@@ -441,11 +441,11 @@ export function callApi() { return fetch(getApiUrl()); }`;
 
       // 驗證 service-a 的引用被更新
       const serviceAUpdated = await fixture.readFile('src/service-a-test.ts');
-      expect(serviceAUpdated).toContain("import { getApiUrl } from './services/api-service'");
+      expect(serviceAUpdated).toContain('import { getApiUrl } from \'./services/api-service\'');
 
       // 驗證 service-b（現在是 api-service）內部的引用被更新
       const serviceBUpdated = await fixture.readFile('src/services/api-service.ts');
-      expect(serviceBUpdated).toContain("import { CONFIG } from '../../core/config/settings'");
+      expect(serviceBUpdated).toContain('import { CONFIG } from \'../../core/config/settings\'');
     });
   });
 
@@ -470,7 +470,7 @@ export function format() {
 
       // 驗證兩種引用都被更新
       const testUpdated = await fixture.readFile('src/mixed-ext-test.ts');
-      expect(testUpdated).toContain("import { formatDate } from './formatters/date-utils'");
+      expect(testUpdated).toContain('import { formatDate } from \'./formatters/date-utils\'');
       // 注意：.ts 副檔名應該被保留或移除，取決於實作
       expect(testUpdated).toMatch(/from ['"]\.\/formatters\/date-utils(\.ts)?['"]/);
     });
@@ -496,7 +496,7 @@ export async function loadServices() {
 
       // 驗證所有類型的 import 都被更新
       const testUpdated = await fixture.readFile('src/multi-import-test.ts');
-      expect(testUpdated).toContain("from './app/services/user-service'");
+      expect(testUpdated).toContain('from \'./app/services/user-service\'');
     });
 
     it('應該處理多行跨越的 export from 語句', async () => {
@@ -520,7 +520,7 @@ export type { CreateUserData } from './types/user';`;
 
       // 驗證多行 export 被更新
       const testUpdated = await fixture.readFile('src/multi-line-export-test.ts');
-      expect(testUpdated).toContain("from './domain/user'");
+      expect(testUpdated).toContain('from \'./domain/user\'');
     });
   });
 });
