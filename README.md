@@ -25,10 +25,102 @@ pnpm install && pnpm build && npm link
 | `code_search`    | 搜尋符號、文字                         |
 | `code_rename`    | 重新命名符號                           |
 | `code_move`      | 移動檔案並更新 import                  |
+| `code_shift`     | 移動行（單檔案內/跨檔案/新檔案生成）   |
 | `code_analyze`   | 分析程式碼品質                         |
 | `code_deps`      | 依賴關係分析                           |
 | `code_shit`      | 垃圾度評分（分數越高越糟，含修復建議） |
 | `parser_plugins` | Parser 插件管理                        |
+
+<details>
+<summary>📖 使用指南</summary>
+
+### 行移動（shift）
+
+```bash
+# 單檔案內移動（第 2-5 行移到第 10 行之前）
+npx agent-ide shift src/file.ts --from 2 --to 5 --position 10
+
+# 跨檔案移動
+npx agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
+
+# 移動到新檔案（自動生成檔名）
+npx agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
+# → 生成 src/newfile.ts，若已存在則生成 newfile01.ts、newfile02.ts...
+
+# 預覽模式
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+
+# JSON 輸出
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+```
+
+### 檔案移動（move）
+
+```bash
+# 移動檔案並自動更新所有 import
+npx agent-ide move src/old.ts src/new.ts
+
+# 預覽影響範圍
+npx agent-ide move src/old.ts src/new.ts --preview
+```
+
+### 符號重命名（rename）
+
+```bash
+# 重命名符號並更新所有引用
+npx agent-ide rename --from oldName --to newName
+
+# 預覽變更
+npx agent-ide rename --from oldName --to newName --preview
+```
+
+### 程式碼搜尋（search）
+
+```bash
+# 搜尋符號/文字
+npx agent-ide search "UserService" --format json
+
+# 正規表達式搜尋
+npx agent-ide search "function.*User" --type regex --format json
+```
+
+### 品質分析（analyze）
+
+```bash
+# 複雜度分析
+npx agent-ide analyze complexity --format json
+
+# 死代碼檢測
+npx agent-ide analyze dead-code --format json
+
+# 顯示所有結果（包含無問題項目）
+npx agent-ide analyze complexity --format json --all
+```
+
+### 依賴關係（deps）
+
+```bash
+# 分析依賴關係（預設只顯示問題）
+npx agent-ide deps --format json
+
+# 顯示完整依賴圖
+npx agent-ide deps --format json --all
+```
+
+### 垃圾度評分（shit）
+
+```bash
+# 基本評分（0-100，越高越糟）
+npx agent-ide shit --format json
+
+# 詳細分析
+npx agent-ide shit --detailed --format json
+
+# CI/CD 門檻檢查
+npx agent-ide shit --max-allowed=70
+```
+
+</details>
 
 > 💡 **Snapshot 功能詳解**：查看 [SNAPSHOT.md](./docs/SNAPSHOT.md) 了解如何使用快照功能完成 TypeScript 專案型別安全重構（ShitScore 改善 11%）
 
