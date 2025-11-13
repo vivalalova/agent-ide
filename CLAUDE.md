@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 核心模組、3 Parser（TS/JS/Swift）、220+ 測試通過
+**現況**：9 核心模組、3 Parser（TS/JS/Swift）、235+ 測試通過
 
 ## 快速參考
 
@@ -22,7 +22,7 @@ pnpm lint          # ESLint
 npm link           # 本地 CLI 安裝
 ```
 
-**架構**：`core/`（8模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
+**架構**：`core/`（9模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
 
 ## 開發規範
 
@@ -80,7 +80,8 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 5. **Refactor**：提取/內聯函式
 6. **Rename**：符號重命名+引用更新
 7. **Search**：文字/語義/結構化
-8. **ShitScore**：0-100分垃圾度評分
+8. **Shift**：行級移動（單檔案內/跨檔案/新檔案生成）
+9. **ShitScore**：0-100分垃圾度評分
    - **四維度**（30%/30%/30%/20%）：Complexity、Maintainability、Architecture、QualityAssurance
    - QA 子維度：Type Safety 30%、Test Coverage 25%、Error Handling 20%、Naming 15%、Security 10%
 
@@ -96,7 +97,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 
 ## 介面層
 
-- **CLI**：`agent-ide [search|rename|move|analyze|deps|shit]`（Unix哲學/JSON輸出）
+- **CLI**：`agent-ide [search|rename|move|shift|analyze|deps|shit]`（Unix哲學/JSON輸出）
 
 ## 診斷命令輸出優化
 
