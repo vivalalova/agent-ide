@@ -3,19 +3,17 @@
  * 測試 Index → Search → Refactor → Analyze 的完整流程
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from './helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from './helpers/fixture-manager';
 import { executeCLI } from './helpers/cli-executor';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 
 describe('完整工作流整合測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
-  });
-
-  afterEach(async () => {
-    await fixture.cleanup();
+    await resetFixtures();
   });
 
   // TODO: Extract Function 需要AST改進，暫時使用基本驗證
@@ -27,7 +25,7 @@ describe('完整工作流整合測試', () => {
       'search',
       'createOrder',
       '--path',
-      fixture.tempPath
+      fixturePath
     ]);
 
     expect(searchResult1.exitCode).toBe(0);
@@ -43,7 +41,7 @@ describe('完整工作流整合測試', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.getFilePath('src/services/order-service.ts'),
+      path.join(fixturePath, 'src/services/order-service.ts'),
       '--format',
       'json',
       '--all'
@@ -67,7 +65,7 @@ describe('完整工作流整合測試', () => {
       'refactor',
       'extract-function',
       '--file',
-      fixture.getFilePath('src/services/order-service.ts'),
+      path.join(fixturePath, 'src/services/order-service.ts'),
       '--start-line',
       '24',
       '--end-line',
@@ -81,7 +79,7 @@ describe('完整工作流整合測試', () => {
     // ============================================================
     // 步驟 5：驗證重構後的程式碼
     // ============================================================
-    const refactoredContent = await fixture.readFile('src/services/order-service.ts');
+    const refactoredContent = await fs.readFile(path.join(fixturePath, 'src/services/order-service.ts'), 'utf-8');
 
     // 5.1 驗證新函式存在
     expect(refactoredContent).toContain('validateUserExists');
@@ -96,7 +94,7 @@ describe('完整工作流整合測試', () => {
       'search',
       'validateUserExists',
       '--path',
-      fixture.tempPath
+      fixturePath
     ]);
 
     expect(searchResult2.exitCode).toBe(0);
@@ -109,7 +107,7 @@ describe('完整工作流整合測試', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.getFilePath('src/services/order-service.ts'),
+      path.join(fixturePath, 'src/services/order-service.ts'),
       '--format',
       'json',
       '--all'
@@ -134,7 +132,7 @@ describe('完整工作流整合測試', () => {
     const depsResult = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -166,7 +164,7 @@ describe('完整工作流整合測試', () => {
       'search',
       'User',
       '--path',
-      fixture.tempPath
+      fixturePath
     ]);
 
     expect(searchBefore.exitCode).toBe(0);
@@ -178,7 +176,7 @@ describe('完整工作流整合測試', () => {
     const depsBefore = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -202,7 +200,7 @@ describe('完整工作流整合測試', () => {
       '--type',
       'interface',
       '--path',
-      fixture.tempPath
+      fixturePath
     ]);
 
     expect(renameResult.exitCode).toBe(0);
@@ -210,17 +208,17 @@ describe('完整工作流整合測試', () => {
     // ============================================================
     // 步驟 5：驗證定義檔案
     // ============================================================
-    const userTypesContent = await fixture.readFile('src/types/user.ts');
+    const userTypesContent = await fs.readFile(path.join(fixturePath, 'src/types/user.ts'), 'utf-8');
     expect(userTypesContent).toContain('interface Person');
     expect(userTypesContent).not.toMatch(/export interface User\s*\{/);
 
     // ============================================================
     // 步驟 6：驗證引用檔案更新
     // ============================================================
-    const userModelContent = await fixture.readFile('src/models/user-model.ts');
+    const userModelContent = await fs.readFile(path.join(fixturePath, 'src/models/user-model.ts'), 'utf-8');
     expect(userModelContent).toContain('Person');
 
-    const userServiceContent = await fixture.readFile('src/services/user-service.ts');
+    const userServiceContent = await fs.readFile(path.join(fixturePath, 'src/services/user-service.ts'), 'utf-8');
     expect(userServiceContent).toContain('Person');
 
     // ============================================================
@@ -230,7 +228,7 @@ describe('完整工作流整合測試', () => {
       'search',
       'Person',
       '--path',
-      fixture.tempPath
+      fixturePath
     ]);
 
     expect(searchAfter.exitCode).toBe(0);
@@ -242,7 +240,7 @@ describe('完整工作流整合測試', () => {
     const depsAfter = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -266,7 +264,7 @@ describe('完整工作流整合測試', () => {
     const depsBefore = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -280,8 +278,8 @@ describe('完整工作流整合測試', () => {
     // ============================================================
     const moveResult = await executeCLI([
       'move',
-      fixture.getFilePath('src/types/user.ts'),
-      fixture.getFilePath('src/types/entities/user.ts')
+      path.join(fixturePath, 'src/types/user.ts'),
+      path.join(fixturePath, 'src/types/entities/user.ts')
     ]);
 
     expect(moveResult.exitCode).toBe(0);
@@ -289,16 +287,16 @@ describe('完整工作流整合測試', () => {
     // ============================================================
     // 步驟 4：驗證檔案移動
     // ============================================================
-    const targetExists = await fixture.fileExists('src/types/entities/user.ts');
+    const targetExists = await fs.access(path.join(fixturePath, 'src/types/entities/user.ts')).then(() => true).catch(() => false);
     expect(targetExists).toBe(true);
 
-    const sourceExists = await fixture.fileExists('src/types/user.ts');
+    const sourceExists = await fs.access(path.join(fixturePath, 'src/types/user.ts')).then(() => true).catch(() => false);
     expect(sourceExists).toBe(false);
 
     // ============================================================
     // 步驟 5：驗證檔案內容保持不變
     // ============================================================
-    const movedContent = await fixture.readFile('src/types/entities/user.ts');
+    const movedContent = await fs.readFile(path.join(fixturePath, 'src/types/entities/user.ts'), 'utf-8');
     expect(movedContent).toContain('export interface User');
     expect(movedContent).toContain('export enum UserRole');
 
@@ -309,7 +307,7 @@ describe('完整工作流整合測試', () => {
       'search',
       'User',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--limit',
       '500' // 增加 limit 以確保能找到 entities/user.ts
     ]);
@@ -326,7 +324,7 @@ describe('完整工作流整合測試', () => {
     const depsAfter = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -347,7 +345,7 @@ describe('完整工作流整合測試', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -366,7 +364,7 @@ describe('完整工作流整合測試', () => {
       'analyze',
       'dead-code',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -387,7 +385,7 @@ describe('完整工作流整合測試', () => {
       'analyze',
       'patterns',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -405,7 +403,7 @@ describe('完整工作流整合測試', () => {
     const depsResult = await executeCLI([
       'deps',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'

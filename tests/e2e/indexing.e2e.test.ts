@@ -3,30 +3,26 @@
  * 使用 sample-project fixture 進行完整的索引功能測試
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from './helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from './helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { IndexEngine } from '../../src/core/indexing/index-engine';
 import { createIndexConfig } from '../../src/core/indexing/types';
 import { SymbolType } from '../../src/shared/types';
 
 describe('Indexing E2E 測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
   let indexEngine: IndexEngine;
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    if (indexEngine) {
-      indexEngine.dispose();
-    }
-    await fixture.cleanup();
-  });
 
   describe('索引建立', () => {
     it('應該成功索引整個 sample-project', async () => {
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         includeExtensions: ['.ts'],
         excludePatterns: ['node_modules/**', '.git/**']
       });
@@ -48,7 +44,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該正確統計不同類型的檔案', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
@@ -60,7 +56,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該記錄檔案的完整資訊', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
@@ -81,7 +77,7 @@ describe('Indexing E2E 測試', () => {
 
   describe('符號搜尋', () => {
     beforeEach(async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
     });
@@ -131,17 +127,17 @@ describe('Indexing E2E 測試', () => {
 
     it('應該能搜尋到各檔案的符號', async () => {
       // UserModel 應該有符號
-      const userModelFile = fixture.getFilePath('src/models/user-model.ts');
+      const userModelFile = path.join(fixturePath, 'src/models/user-model.ts');
       const userModelSymbols = await indexEngine.getFileSymbols(userModelFile);
       expect(userModelSymbols.length).toBeGreaterThan(0);
 
       // UserService 應該有符號
-      const userServiceFile = fixture.getFilePath('src/services/user-service.ts');
+      const userServiceFile = path.join(fixturePath, 'src/services/user-service.ts');
       const userServiceSymbols = await indexEngine.getFileSymbols(userServiceFile);
       expect(userServiceSymbols.length).toBeGreaterThan(0);
 
       // UserController 應該有符號
-      const userControllerFile = fixture.getFilePath('src/controllers/user-controller.ts');
+      const userControllerFile = path.join(fixturePath, 'src/controllers/user-controller.ts');
       const userControllerSymbols = await indexEngine.getFileSymbols(userControllerFile);
       expect(userControllerSymbols.length).toBeGreaterThan(0);
     });
@@ -170,7 +166,7 @@ describe('Indexing E2E 測試', () => {
 
   describe('檔案索引', () => {
     it('應該只索引指定副檔名的檔案', async () => {
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         includeExtensions: ['.ts'],
         excludePatterns: []
       });
@@ -187,7 +183,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該正確識別檔案語言', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
@@ -203,9 +199,9 @@ describe('Indexing E2E 測試', () => {
 
     it('應該遵守排除模式', async () => {
       // 建立一個 node_modules 目錄和檔案
-      await fixture.writeFile('node_modules/test/index.ts', 'export const test = 1;');
+      await fs.writeFile(path.join(fixturePath, 'node_modules/test/index.ts'), 'export const test = 1;', 'utf-8');
 
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         excludePatterns: ['node_modules/**']
       });
 
@@ -220,7 +216,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該正確處理多層目錄結構', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
@@ -241,7 +237,7 @@ describe('Indexing E2E 測試', () => {
 
   describe('索引更新', () => {
     beforeEach(async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
     });
@@ -250,7 +246,7 @@ describe('Indexing E2E 測試', () => {
       const statsBefore = await indexEngine.getStats();
 
       // 新增一個新檔案
-      const newFilePath = fixture.getFilePath('src/services/test-service.ts');
+      const newFilePath = path.join(fixturePath, 'src/services/test-service.ts');
       await fixture.writeFile('src/services/test-service.ts', `
         export class TestService {
           test(): string {
@@ -271,16 +267,16 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該能修改檔案並更新索引', async () => {
-      const userServicePath = fixture.getFilePath('src/services/user-service.ts');
+      const userServicePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       // 修改檔案，新增一個方法
-      const originalContent = await fixture.readFile('src/services/user-service.ts');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'src/services/user-service.ts'), 'utf-8');
       const modifiedContent = originalContent + `
         export function newUserFunction() {
           return 'new function';
         }
       `;
-      await fixture.writeFile('src/services/user-service.ts', modifiedContent);
+      await fs.writeFile(path.join(fixturePath, 'src/services/user-service.ts'), modifiedContent, 'utf-8');
 
       await indexEngine.updateFile(userServicePath);
 
@@ -291,7 +287,7 @@ describe('Indexing E2E 測試', () => {
 
     it('應該能刪除檔案並更新索引', async () => {
       const statsBefore = await indexEngine.getStats();
-      const userServicePath = fixture.getFilePath('src/services/user-service.ts');
+      const userServicePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       await indexEngine.removeFile(userServicePath);
 
@@ -303,20 +299,20 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該在檔案更新時同步更新符號索引', async () => {
-      const userServicePath = fixture.getFilePath('src/services/user-service.ts');
+      const userServicePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       // 記錄原始符號數量
       const symbolsBefore = await indexEngine.getFileSymbols(userServicePath);
       const symbolCountBefore = symbolsBefore.length;
 
       // 修改檔案，新增多個函式
-      const originalContent = await fixture.readFile('src/services/user-service.ts');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'src/services/user-service.ts'), 'utf-8');
       const modifiedContent = originalContent + `
         export function helperFunction1() {}
         export function helperFunction2() {}
         export function helperFunction3() {}
       `;
-      await fixture.writeFile('src/services/user-service.ts', modifiedContent);
+      await fs.writeFile(path.join(fixturePath, 'src/services/user-service.ts'), modifiedContent, 'utf-8');
 
       await indexEngine.updateFile(userServicePath);
 
@@ -329,7 +325,7 @@ describe('Indexing E2E 測試', () => {
   describe('錯誤處理', () => {
     it('應該處理語法錯誤的檔案', async () => {
       // 建立一個語法錯誤的檔案
-      const errorFilePath = fixture.getFilePath('src/error-file.ts');
+      const errorFilePath = path.join(fixturePath, 'src/error-file.ts');
       await fixture.writeFile('src/error-file.ts', `
         export class BrokenClass {
           // 語法錯誤：缺少 }
@@ -337,7 +333,7 @@ describe('Indexing E2E 測試', () => {
             return 'test'
       `);
 
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
 
       // TypeScript 編譯器能從語法錯誤中恢復，所以不一定拋出錯誤
@@ -356,11 +352,11 @@ describe('Indexing E2E 測試', () => {
 
     it('應該能檢查檔案的解析狀態', async () => {
       // 索引一個正常檔案
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
-      const userServiceFile = fixture.getFilePath('src/services/user-service.ts');
+      const userServiceFile = path.join(fixturePath, 'src/services/user-service.ts');
 
       // 驗證正常檔案沒有解析錯誤
       expect(indexEngine.hasFileParseErrors(userServiceFile)).toBe(false);
@@ -382,13 +378,13 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該處理超大檔案', async () => {
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         maxFileSize: 100 // 設定很小的限制
       });
       indexEngine = new IndexEngine(config);
 
       // user-service.ts 應該超過 100 bytes
-      const userServicePath = fixture.getFilePath('src/services/user-service.ts');
+      const userServicePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       // 索引時應該靜默跳過大檔案（不報錯）
       await expect(indexEngine.indexFile(userServicePath)).resolves.not.toThrow();
@@ -398,7 +394,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該處理已被釋放的索引引擎', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
       await indexEngine.indexProject();
 
@@ -410,7 +406,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該在尚未索引時返回空結果', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
 
       // 尚未呼叫 indexProject
@@ -426,7 +422,7 @@ describe('Indexing E2E 測試', () => {
   describe('CLI 參數測試（從 cli-index 整合）', () => {
     it('應該支援 --extensions 過濾副檔名', async () => {
       // 測試只索引 .ts 檔案
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         includeExtensions: ['.ts']
       });
 
@@ -445,9 +441,9 @@ describe('Indexing E2E 測試', () => {
 
     it('應該支援 --exclude 排除目錄', async () => {
       // 建立 node_modules 測試目錄
-      await fixture.writeFile('node_modules/test/index.ts', 'export const test = 1;');
+      await fs.writeFile(path.join(fixturePath, 'node_modules/test/index.ts'), 'export const test = 1;', 'utf-8');
 
-      const config = createIndexConfig(fixture.tempPath, {
+      const config = createIndexConfig(fixturePath, {
         excludePatterns: ['node_modules/**', '.git/**']
       });
 
@@ -462,7 +458,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該能檢測增量索引更新', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
 
       // 第一次索引
@@ -470,8 +466,8 @@ describe('Indexing E2E 測試', () => {
       const statsBefore = await indexEngine.getStats();
 
       // 新增新檔案
-      await fixture.writeFile('src/types/new-type.ts', 'export interface NewType { id: number; }');
-      const newFilePath = fixture.getFilePath('src/types/new-type.ts');
+      await fs.writeFile(path.join(fixturePath, 'src/types/new-type.ts'), 'export interface NewType { id: number; }', 'utf-8');
+      const newFilePath = path.join(fixturePath, 'src/types/new-type.ts');
 
       // 索引新檔案
       await indexEngine.indexFile(newFilePath);
@@ -484,7 +480,7 @@ describe('Indexing E2E 測試', () => {
     });
 
     it('應該在合理時間內索引 32+ 檔案專案', async () => {
-      const config = createIndexConfig(fixture.tempPath);
+      const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
 
       const startTime = Date.now();
