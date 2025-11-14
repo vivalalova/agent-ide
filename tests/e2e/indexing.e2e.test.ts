@@ -441,6 +441,7 @@ describe('Indexing E2E 測試', () => {
 
     it('應該支援 --exclude 排除目錄', async () => {
       // 建立 node_modules 測試目錄
+      await fs.mkdir(path.join(fixturePath, 'node_modules/test'), { recursive: true });
       await fs.writeFile(path.join(fixturePath, 'node_modules/test/index.ts'), 'export const test = 1;', 'utf-8');
 
       const config = createIndexConfig(fixturePath, {
