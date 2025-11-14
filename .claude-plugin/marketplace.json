@@ -1,0 +1,41 @@
+{
+  "name": "agent-ide-marketplace",
+  "owner": {
+    "name": "Agent IDE Team",
+    "url": "https://github.com/vivalalova/agent-ide"
+  },
+  "description": "Agent IDE - 程式碼智能工具集 for Claude Code",
+  "version": "1.0.0",
+  "homepage": "https://github.com/vivalalova/agent-ide",
+  "plugins": [
+    {
+      "name": "agent-ide",
+      "source": "./.claude/skills/agent-ide",
+      "description": "程式碼智能工具集 - 提供搜尋、重構、移動、依賴分析等功能，專為 AI 代理設計的程式碼操作工具",
+      "version": "0.2.0",
+      "author": {
+        "name": "Agent IDE Team",
+        "url": "https://github.com/vivalalova/agent-ide",
+        "email": ""
+      },
+      "category": "code-analysis",
+      "homepage": "https://github.com/vivalalova/agent-ide",
+      "keywords": [
+        "code-analysis",
+        "refactoring",
+        "code-quality",
+        "development-tools",
+        "typescript",
+        "javascript",
+        "swift",
+        "ast",
+        "parser",
+        "code-intelligence",
+        "dependency-analysis",
+        "code-search",
+        "code-metrics",
+        "shitscore"
+      ]
+    }
+  ]
+}
