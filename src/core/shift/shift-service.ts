@@ -256,7 +256,7 @@ export class ShiftService {
       // 找到最後一個 import 語句的位置
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line.startsWith('import ') || line.startsWith('export ') && line.includes('from')) {
+        if (line.startsWith('import ') || (line.startsWith('export ') && line.includes('from'))) {
           insertIndex = i + 1;
         } else if (line && !line.startsWith('//') && !line.startsWith('/*') && insertIndex > 0) {
           // 遇到第一個非 import/export 的實際代碼，停止
