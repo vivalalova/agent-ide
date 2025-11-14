@@ -14,10 +14,7 @@ describe('constants', () => {
     });
 
     it('應該是唯讀常量', () => {
-      expect(() => {
-        // @ts-expect-error - 測試唯讀屬性
-        DEFAULT_VALUES.SEARCH_LIMIT = 100;
-      }).toThrow();
+      expect(Object.isFrozen(DEFAULT_VALUES)).toBe(true);
     });
   });
 
@@ -29,10 +26,7 @@ describe('constants', () => {
     });
 
     it('應該是唯讀常量', () => {
-      expect(() => {
-        // @ts-expect-error - 測試唯讀屬性
-        FORMAT.SEPARATOR_LENGTH = 60;
-      }).toThrow();
+      expect(Object.isFrozen(FORMAT)).toBe(true);
     });
   });
 

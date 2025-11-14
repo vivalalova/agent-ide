@@ -6,26 +6,26 @@
 /**
  * 默認值常量
  */
-export const DEFAULT_VALUES = {
+export const DEFAULT_VALUES = Object.freeze({
   /** 搜尋結果數量限制 */
   SEARCH_LIMIT: 50,
   /** ShitScore 顯示的最糟項目數量 */
   TOP_SHIT_COUNT: 10,
   /** 高複雜度閾值 */
   HIGH_COMPLEXITY_THRESHOLD: 10,
-} as const;
+} as const);
 
 /**
  * 格式化常量
  */
-export const FORMAT = {
+export const FORMAT = Object.freeze({
   /** 分隔線長度 */
   SEPARATOR_LENGTH: 50,
   /** 最大評分 */
   MAX_SCORE: 100,
   /** 百分比轉換係數 */
   PERCENTAGE_MULTIPLIER: 100,
-} as const;
+} as const);
 
 /**
  * 輸出格式類型
