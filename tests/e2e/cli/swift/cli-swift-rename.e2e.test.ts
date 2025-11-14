@@ -258,11 +258,10 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
         'struct'
       ]);
 
-      const modifiedFiles = await fixture.getModifiedFiles();
-      expect(modifiedFiles.length).toBeGreaterThan(0);
-
-      // 至少應該修改定義檔案
-      expect(modifiedFiles.some(f => f.includes('Product.swift'))).toBe(true);
+      // 驗證至少修改了定義檔案
+      const productFile = path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Product.swift');
+      const productContent = await fs.readFile(productFile, 'utf-8');
+      expect(productContent).toContain('struct Item');
     });
 
     it('應該保持檔案完整性（無語法錯誤）', async () => {

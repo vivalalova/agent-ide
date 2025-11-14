@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 
 
 describe('CLI swift shit - 品質保證維度測試', () => {
@@ -93,7 +95,7 @@ class UnsafeTypeTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/TypeSafetyTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/TypeSafetyTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -122,7 +124,7 @@ class ForceUnwrapTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceCastTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceCastTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -159,7 +161,7 @@ class AnyTypeTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/AnyTypeTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/AnyTypeTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -188,7 +190,7 @@ class ImplicitUnwrapTest {
     @IBOutlet weak var button: UIButton!
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ImplicitUnwrapTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ImplicitUnwrapTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -283,7 +285,7 @@ class ErrorHandlingTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ErrorHandlingTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ErrorHandlingTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -311,7 +313,7 @@ class ForceUnwrapTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceTryTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceTryTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -352,7 +354,7 @@ enum http_method {
     case get, post
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/NamingTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/NamingTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -378,7 +380,7 @@ class naming_violation {
     var user_name: String = ""
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/NamingViolation.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/NamingViolation.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -426,7 +428,7 @@ class SecurityTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/SecurityTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/SecurityTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -454,7 +456,7 @@ class UserDefaultsTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/UserDefaultsTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/UserDefaultsTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -575,7 +577,7 @@ class ViewModel: ObservableObject {
     @Published var count: Int = 0
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ViewModelTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModelTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
@@ -605,7 +607,7 @@ class ForceUnwrapOveruse {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceUnwrapOveruse.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceUnwrapOveruse.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',

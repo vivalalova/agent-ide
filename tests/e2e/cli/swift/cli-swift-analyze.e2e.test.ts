@@ -199,7 +199,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
     });
 
     it('應該處理單一檔案的複雜度分析', async () => {
-      const filePath = fixture.getFilePath(
+      const filePath = path.join(fixturePath, 
         'Sources/SwiftSampleApp/Features/Orders/ViewModels/OrderViewModel.swift'
       );
       const result = await executeCLI([
