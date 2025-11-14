@@ -23,10 +23,10 @@ export function highlightMatch(text: string, query: string): string {
     return text;
   }
 
-  // 簡單的高亮實作
+  // 使用 ANSI 顏色碼高亮
   try {
     const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    return text.replace(regex, `[${query}]`);
+    return text.replace(regex, (match) => `\x1b[33m${match}\x1b[0m`);
   } catch {
     return text;
   }
