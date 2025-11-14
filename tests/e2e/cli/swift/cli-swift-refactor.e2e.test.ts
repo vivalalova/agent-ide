@@ -5,9 +5,9 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
   const fixturePath = getFixturePath('swift-sample-project');

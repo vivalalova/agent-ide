@@ -4,7 +4,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { executeCLI } from '../../helpers/cli-executor.js';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
+
 
 describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
   const fixturePath = getFixturePath('swift-sample-project');
