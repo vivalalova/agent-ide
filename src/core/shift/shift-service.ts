@@ -254,11 +254,35 @@ export class ShiftService {
       let insertIndex = 0;
 
       // 找到最後一個 import 語句的位置
+      let inMultilineComment = false;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
+
+        // 處理多行註解狀態
+        if (inMultilineComment) {
+          if (line.includes('*/')) {
+            inMultilineComment = false;
+          }
+          continue;
+        }
+
+        // 檢查多行註解開始
+        if (line.startsWith('/*')) {
+          if (!line.includes('*/')) {
+            inMultilineComment = true;
+          }
+          continue;
+        }
+
+        // 跳過單行註解和空行
+        if (!line || line.startsWith('//')) {
+          continue;
+        }
+
+        // 檢查是否為 import 或 export from 語句
         if (line.startsWith('import ') || (line.startsWith('export ') && line.includes('from'))) {
           insertIndex = i + 1;
-        } else if (line && !line.startsWith('//') && !line.startsWith('/*') && insertIndex > 0) {
+        } else if (insertIndex > 0) {
           // 遇到第一個非 import/export 的實際代碼，停止
           break;
         }
@@ -279,11 +303,35 @@ export class ShiftService {
       let insertIndex = 0;
 
       // 找到最後一個 import 語句的位置
+      let inMultilineComment = false;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
+
+        // 處理多行註解狀態
+        if (inMultilineComment) {
+          if (line.includes('*/')) {
+            inMultilineComment = false;
+          }
+          continue;
+        }
+
+        // 檢查多行註解開始
+        if (line.startsWith('/*')) {
+          if (!line.includes('*/')) {
+            inMultilineComment = true;
+          }
+          continue;
+        }
+
+        // 跳過單行註解和空行
+        if (!line || line.startsWith('//')) {
+          continue;
+        }
+
+        // 檢查是否為 import 語句
         if (line.startsWith('import ')) {
           insertIndex = i + 1;
-        } else if (line && !line.startsWith('//') && insertIndex > 0) {
+        } else if (insertIndex > 0) {
           break;
         }
       }
