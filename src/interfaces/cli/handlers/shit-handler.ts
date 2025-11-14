@@ -6,6 +6,7 @@
 import * as fs from 'fs/promises';
 import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
 import { ShitScoreAnalyzer } from '../../../core/shit-score/shit-score-analyzer.js';
+import { DEFAULT_VALUES, FORMAT, createSeparator } from '../constants.js';
 
 /**
  * 處理 ShitScore 命令
@@ -17,7 +18,7 @@ export async function handleShitCommand(options: any): Promise<void> {
 
   try {
     const analyzePath = options.path || process.cwd();
-    const topCount = parseInt(options.top) || 10;
+    const topCount = parseInt(options.top) || DEFAULT_VALUES.TOP_SHIT_COUNT;
     const maxAllowed = options.maxAllowed ? parseFloat(options.maxAllowed) : undefined;
 
     const registry = ParserRegistry.getInstance();
@@ -38,16 +39,16 @@ export async function handleShitCommand(options: any): Promise<void> {
         console.log(output);
       }
     } else {
-      console.log('\n' + '='.repeat(50));
+      console.log('\n' + createSeparator());
       console.log(`垃圾度評分報告 ${result.gradeInfo.emoji}`);
-      console.log('='.repeat(50));
-      console.log(`\n總分: ${result.shitScore} / 100  [${result.gradeInfo.emoji} ${result.grade}級]`);
+      console.log(createSeparator());
+      console.log(`\n總分: ${result.shitScore} / ${FORMAT.MAX_SCORE}  [${result.gradeInfo.emoji} ${result.grade}級]`);
       console.log(`評語: ${result.gradeInfo.message}\n`);
 
       console.log('維度分析:');
-      console.log(`  複雜度垃圾:   ${result.dimensions.complexity.score.toFixed(1)} (${(result.dimensions.complexity.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.complexity.weightedScore.toFixed(1)} 分`);
-      console.log(`  維護性垃圾:   ${result.dimensions.maintainability.score.toFixed(1)} (${(result.dimensions.maintainability.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.maintainability.weightedScore.toFixed(1)} 分`);
-      console.log(`  架構垃圾:     ${result.dimensions.architecture.score.toFixed(1)} (${(result.dimensions.architecture.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.architecture.weightedScore.toFixed(1)} 分\n`);
+      console.log(`  複雜度垃圾:   ${result.dimensions.complexity.score.toFixed(1)} (${(result.dimensions.complexity.weight * FORMAT.PERCENTAGE_MULTIPLIER).toFixed(0)}%) → 貢獻 ${result.dimensions.complexity.weightedScore.toFixed(1)} 分`);
+      console.log(`  維護性垃圾:   ${result.dimensions.maintainability.score.toFixed(1)} (${(result.dimensions.maintainability.weight * FORMAT.PERCENTAGE_MULTIPLIER).toFixed(0)}%) → 貢獻 ${result.dimensions.maintainability.weightedScore.toFixed(1)} 分`);
+      console.log(`  架構垃圾:     ${result.dimensions.architecture.score.toFixed(1)} (${(result.dimensions.architecture.weight * FORMAT.PERCENTAGE_MULTIPLIER).toFixed(0)}%) → 貢獻 ${result.dimensions.architecture.weightedScore.toFixed(1)} 分\n`);
 
       const criticalCount = result.topShit ? result.topShit.filter(s => s.severity === 'critical').length : 0;
       const highCount = result.topShit ? result.topShit.filter(s => s.severity === 'high').length : 0;
@@ -64,9 +65,9 @@ export async function handleShitCommand(options: any): Promise<void> {
       console.log(`總問題數: ${result.summary.totalShit} 個`);
 
       if (options.detailed && result.topShit && result.topShit.length > 0) {
-        console.log('\n' + '='.repeat(50));
+        console.log('\n' + createSeparator());
         console.log(`最糟的 ${result.topShit.length} 個項目:`);
-        console.log('='.repeat(50));
+        console.log(createSeparator());
         result.topShit.forEach((item, index) => {
           console.log(`\n${index + 1}. [${item.severity.toUpperCase()}] ${item.type}`);
           console.log(`   檔案: ${item.filePath}${item.location ? `:${item.location.line}` : ''}`);
@@ -75,9 +76,9 @@ export async function handleShitCommand(options: any): Promise<void> {
         });
 
         if (result.recommendations && result.recommendations.length > 0) {
-          console.log('\n' + '='.repeat(50));
+          console.log('\n' + createSeparator());
           console.log('修復建議:');
-          console.log('='.repeat(50));
+          console.log(createSeparator());
           result.recommendations.forEach((rec, index) => {
             console.log(`\n${index + 1}. [優先級 ${rec.priority}] ${rec.category}`);
             console.log(`   建議: ${rec.suggestion}`);
@@ -87,7 +88,7 @@ export async function handleShitCommand(options: any): Promise<void> {
         }
       }
 
-      console.log('\n' + '='.repeat(50));
+      console.log('\n' + createSeparator());
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

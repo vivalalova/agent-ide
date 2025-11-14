@@ -38,6 +38,7 @@ import * as RefactorHandler from './handlers/refactor-handler.js';
 import * as MoveHandler from './handlers/move-handler.js';
 import * as ShiftHandler from './handlers/shift-handler.js';
 import * as ShitHandler from './handlers/shit-handler.js';
+import { DEFAULT_VALUES } from './constants.js';
 
 // 讀取 package.json 版本
 const __filename = fileURLToPath(import.meta.url);
@@ -246,7 +247,7 @@ export class AgentIdeCLI {
       .option('-t, --type <type>', '搜尋類型 (text|regex|fuzzy|symbol|function|class|protocol|variable|enum)', 'text')
       .option('-p, --path <path>', '搜尋路徑', '.')
       .option('-e, --extensions <exts>', '檔案副檔名', '.ts,.js,.tsx,.jsx,.swift')
-      .option('-l, --limit <num>', '結果數量限制', '50')
+      .option('-l, --limit <num>', '結果數量限制', String(DEFAULT_VALUES.SEARCH_LIMIT))
       .option('-c, --context <lines>', '上下文行數', '2')
       .option('--case-sensitive', '大小寫敏感')
       .option('--case-insensitive', '大小寫不敏感')
@@ -333,7 +334,7 @@ export class AgentIdeCLI {
       .description('分析程式碼垃圾度（分數越高越糟糕）')
       .option('-p, --path <path>', '分析路徑', '.')
       .option('-d, --detailed', '顯示詳細資訊（topShit + recommendations）', false)
-      .option('-t, --top <num>', '顯示前 N 個最糟項目', '10')
+      .option('-t, --top <num>', '顯示前 N 個最糟項目', String(DEFAULT_VALUES.TOP_SHIT_COUNT))
       .option('-m, --max-allowed <score>', '最大允許分數（超過則 exit 1）')
       .option('--format <format>', '輸出格式 (json|summary)', 'summary')
       .option('--show-files', '顯示問題檔案列表（detailedFiles）', false)

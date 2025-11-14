@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
 import * as FileUtils from '../utils/file-utils.js';
+import { DEFAULT_VALUES } from '../constants.js';
 
 /**
  * 處理分析命令
@@ -43,9 +44,9 @@ export async function handleAnalyzeCommand(type: string | undefined, options: an
         }
       }
 
-      // 過濾高複雜度檔案（evaluation === 'high' 或 complexity > 10）
+      // 過濾高複雜度檔案（evaluation === 'high' 或 complexity > DEFAULT_VALUES.HIGH_COMPLEXITY_THRESHOLD）
       const highComplexityFiles = results.filter(r =>
-        r.complexity.evaluation === 'high' || r.complexity.cyclomaticComplexity > 10
+        r.complexity.evaluation === 'high' || r.complexity.cyclomaticComplexity > DEFAULT_VALUES.HIGH_COMPLEXITY_THRESHOLD
       );
 
       // 計算統計資訊
