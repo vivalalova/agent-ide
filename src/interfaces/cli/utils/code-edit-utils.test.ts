@@ -69,7 +69,10 @@ describe('code-edit-utils', () => {
       const code = 'line1\nline2';
       const edit = {
         type: 'insert' as const,
-        position: { line: 1, column: 5 },
+        range: {
+          start: { line: 1, column: 5 },
+          end: { line: 1, column: 5 }
+        },
         newText: '\ninserted'
       };
 
@@ -87,7 +90,8 @@ describe('code-edit-utils', () => {
         range: {
           start: { line: 2, column: 2 },
           end: { line: 2, column: 13 }
-        }
+        },
+        newText: ''
       };
 
       const result = applyEditCorrectly(code, edit);
