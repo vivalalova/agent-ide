@@ -285,7 +285,7 @@ export async function handleDepsCommand(
       console.error('❌ 依賴分析失敗:', error instanceof Error ? error.message : error);
     }
     if (process.env.NODE_ENV !== 'test') {
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      process.exit(1);
     }
   }
 }

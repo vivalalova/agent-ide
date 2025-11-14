@@ -76,7 +76,7 @@ export async function handleSearchCommand(query: string, options: any, searchSer
     }
     // 測試環境不 exit
     if (process.env.NODE_ENV !== 'test') {
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      process.exit(1);
     }
   }
 }
