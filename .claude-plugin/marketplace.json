@@ -5,7 +5,7 @@
     "url": "https://github.com/vivalalova/agent-ide"
   },
   "description": "Agent IDE - 程式碼智能工具集 for Claude Code",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "homepage": "https://github.com/vivalalova/agent-ide",
   "plugins": [
     {

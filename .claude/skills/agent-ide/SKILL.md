@@ -88,18 +88,71 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview --format jso
 
 ### 5. 程式碼分析 (analyze)
 
+analyze 命令提供多種子命令來分析程式碼：
+
+#### 5.1 複雜度分析 (complexity)
 ```bash
-# 複雜度分析
+# 分析程式碼複雜度
 agent-ide analyze complexity --path ./src --format json
 
-# 死代碼檢測
-agent-ide analyze dead-code --path ./src --format json
-
-# 顯示所有結果（包含無問題項目，使用 --all 參數）
+# 顯示所有結果（包含無問題項目）
 agent-ide analyze complexity --path ./src --format json --all
 ```
 
-**輸出結構**：
+#### 5.2 死代碼檢測 (dead-code)
+```bash
+# 檢測未使用的函數和變數
+agent-ide analyze dead-code --path ./src --format json
+
+# 顯示完整分析結果
+agent-ide analyze dead-code --path ./src --format json --all
+```
+
+#### 5.3 最佳實踐檢查 (best-practices)
+```bash
+# 檢查程式碼是否遵循最佳實踐
+agent-ide analyze best-practices --path ./src --format json
+```
+
+**輸出範例**：
+```json
+{
+  "recommendations": [
+    {
+      "type": "es-modules",
+      "status": "good",
+      "message": "使用 ES Modules"
+    }
+  ]
+}
+```
+
+#### 5.4 程式碼模式檢測 (patterns)
+```bash
+# 檢測程式碼中使用的模式
+agent-ide analyze patterns --path ./src --format json
+```
+
+**輸出範例**：
+```json
+{
+  "patterns": [
+    "async-functions",
+    "promise-usage",
+    "interface-usage",
+    "generic-types",
+    "enum-usage"
+  ],
+  "statistics": {
+    "asyncFunctions": 15,
+    "classCount": 20,
+    "interfaceCount": 12,
+    "enumCount": 8
+  }
+}
+```
+
+**通用輸出結構**（complexity 和 dead-code）：
 ```json
 {
   "summary": { /* 統計資訊 */ },
