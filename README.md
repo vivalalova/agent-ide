@@ -25,173 +25,104 @@ pnpm install && pnpm build && npm link
 | `code_search`    | 搜尋符號、文字                         |
 | `code_rename`    | 重新命名符號                           |
 | `code_move`      | 移動檔案並更新 import                  |
+| `code_shift`     | 移動行（單檔案內/跨檔案/新檔案生成）   |
 | `code_analyze`   | 分析程式碼品質                         |
 | `code_deps`      | 依賴關係分析                           |
 | `code_shit`      | 垃圾度評分（分數越高越糟，含修復建議） |
 | `parser_plugins` | Parser 插件管理                        |
 
-> 💡 **Snapshot 功能詳解**：查看 [SNAPSHOT.md](./docs/SNAPSHOT.md) 了解如何使用快照功能完成 TypeScript 專案型別安全重構（ShitScore 改善 11%）
-
----
-
 <details>
-<summary>📋 AI Agent 使用指南（CLAUDE.md 提示詞）</summary>
+<summary>📖 使用指南</summary>
 
-請複製以下內容到你的 `CLAUDE.md` 或 `.claude/CLAUDE.md`。
+### 行移動（shift）
 
-````markdown
-# agent-ide CLI 工具使用規範
-
-## 核心功能
-
-agent-ide 提供程式碼索引、搜尋、重構、依賴分析等功能。所有命令支援 `--format json` 輸出。
-
-## 相比 Claude Code 原生工具的優勢
-
-agent-ide 在以下場景中比原生工具（Grep、Read、Edit）更高效：
-
-1. **跨檔案符號重命名**：一次命令更新所有引用，原生工具需要手動 Edit 每個檔案
-2. **自動更新 import 路徑**：移動檔案時自動處理所有 import 語句，避免手動追蹤
-3. **依賴關係分析**：快速找出循環依賴和影響範圍，原生工具需要手動追蹤
-4. **程式碼品質分析**：一次掃描獲得複雜度、死代碼等指標，節省多次檔案讀取
-5. **統一 JSON 輸出**：結構化資料易於解析和自動化處理
-6. **批量操作**：一次處理數十個檔案，避免重複執行命令
-
-**使用建議**：重構、移動檔案、依賴分析時優先使用 agent-ide；簡單的檔案讀寫繼續使用原生工具。
-
-## 使用場景與命令
-
-### 1. 程式碼搜尋（優先使用）
 ```bash
-# 搜尋符號/文字（JSON 輸出方便解析）
+# 單檔案內移動（第 2-5 行移到第 10 行之前）
+npx agent-ide shift src/file.ts --from 2 --to 5 --position 10
+
+# 跨檔案移動
+npx agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
+
+# 移動到新檔案（自動生成檔名）
+npx agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
+# → 生成 src/newfile.ts，若已存在則生成 newfile01.ts、newfile02.ts...
+
+# 預覽模式
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+
+# JSON 輸出
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+```
+
+### 檔案移動（move）
+
+```bash
+# 移動檔案並自動更新所有 import
+npx agent-ide move src/old.ts src/new.ts
+
+# 預覽影響範圍
+npx agent-ide move src/old.ts src/new.ts --preview
+```
+
+### 符號重命名（rename）
+
+```bash
+# 重命名符號並更新所有引用
+npx agent-ide rename --from oldName --to newName
+
+# 預覽變更
+npx agent-ide rename --from oldName --to newName --preview
+```
+
+### 程式碼搜尋（search）
+
+```bash
+# 搜尋符號/文字
 npx agent-ide search "UserService" --format json
 
 # 正規表達式搜尋
 npx agent-ide search "function.*User" --type regex --format json
-
-# 限制結果數量
-npx agent-ide search "import" --limit 10 --format json
 ```
 
-### 2. 符號重新命名（變數改名時強制使用）
-**🚨 重要：變數/函數/類別改名時必須使用此工具，禁止手動逐一修改**
+### 品質分析（analyze）
 
 ```bash
-# 預覽變更（查看影響範圍）
-npx agent-ide rename --from oldName --to newName --preview
-
-# 執行重新命名（一次更新所有引用）
-npx agent-ide rename --from oldName --to newName
-```
-
-**優勢**：自動更新所有檔案中的引用，避免遺漏或手動修改錯誤
-
-### 3. 檔案移動（自動更新 import，強制使用）
-**🚨 重要：移動檔案時必須使用此工具，禁止手動移動後逐一修改 import**
-
-```bash
-# 預覽影響範圍（查看哪些檔案的 import 會被更新）
-npx agent-ide move src/old.ts src/new.ts --preview
-
-# 移動檔案並自動更新所有 import 路徑
-npx agent-ide move src/old.ts src/new.ts
-```
-
-**優勢**：自動處理所有檔案的 import 路徑更新，避免遺漏或路徑錯誤
-
-### 4. 程式碼品質分析（優先使用）
-**💡 優先於手動檢查：一次掃描獲得完整指標，避免多次讀取檔案**
-
-```bash
-# 複雜度分析（預設只顯示高複雜度檔案）
+# 複雜度分析
 npx agent-ide analyze complexity --format json
 
-# 顯示所有檔案的複雜度
-npx agent-ide analyze complexity --format json --all
-
-# 死代碼檢測（預設只顯示有死代碼的檔案）
+# 死代碼檢測
 npx agent-ide analyze dead-code --format json
 
-# 顯示所有掃描的檔案（包含沒問題的）
-npx agent-ide analyze dead-code --format json --all
-
-# 最佳實踐檢查
-npx agent-ide analyze best-practices --format json
+# 顯示所有結果（包含無問題項目）
+npx agent-ide analyze complexity --format json --all
 ```
 
-**優勢**：結構化輸出、批量分析、涵蓋多個品質維度、預設只顯示有問題的項目節省 token
-
-### 5. 依賴關係分析（優先使用）
-**💡 優先於手動追蹤：快速找出循環依賴和影響範圍，避免逐檔追蹤 import**
+### 依賴關係（deps）
 
 ```bash
-# 分析依賴關係（預設只顯示循環依賴和孤立檔案）
+# 分析依賴關係（預設只顯示問題）
 npx agent-ide deps --format json
 
-# 顯示完整依賴圖（包含 nodes 和 edges）
+# 顯示完整依賴圖
 npx agent-ide deps --format json --all
-
-# 查詢特定檔案的依賴
-npx agent-ide deps --file src/service.ts --format json
 ```
 
-**優勢**：視覺化依賴關係、自動檢測循環依賴、影響範圍分析、預設只顯示問題節省 token
-
-### 6. 垃圾度評分（綜合品質評估）
-**💩 一次掃描獲得完整垃圾度評分：分數越高越糟，自動產生修復建議**
+### 垃圾度評分（shit）
 
 ```bash
-# 基本評分（0-100分，分數越高越糟糕）
+# 基本評分（0-100，越高越糟）
 npx agent-ide shit --format json
 
-# 詳細分析（包含 topShit 和 recommendations）
+# 詳細分析
 npx agent-ide shit --detailed --format json
 
-# 顯示前 20 個最糟項目
-npx agent-ide shit --detailed --top=20 --format json
-
-# CI/CD 門檻檢查（超過 70 分則失敗）
+# CI/CD 門檻檢查
 npx agent-ide shit --max-allowed=70
 ```
 
-**評分維度**：
-- **複雜度垃圾**（35%）：高圈複雜度、長函式、深層巢狀、過多參數
-- **維護性垃圾**（35%）：死代碼、超大檔案
-- **架構垃圾**（30%）：循環依賴、孤立檔案、高耦合
-
-**評級系統**：
-- ✅ A (0-29)：優秀
-- ⚠️ B (30-49)：良好
-- 💩 C (50-69)：需重構
-- 💩💩 D (70-84)：強烈建議重構
-- 💩💩💩 F (85-100)：建議重寫
-
-**優勢**：綜合評估、具體建議、CI/CD 整合、token 效率高
-
-### 7. 程式碼重構（優先使用）
-**💡 優先於手動重構：自動處理複雜重構操作，避免手動複製貼上和修改**
-
-```bash
-# 提取函式
-npx agent-ide refactor extract-function \
-  --file src/app.ts \
-  --start-line 10 \
-  --end-line 20 \
-  --function-name handleUser
-```
-
-**優勢**：保持程式碼結構完整性、自動處理變數作用域、減少人為錯誤
-
-## 使用建議
-
-- **npx 執行**：無需全域安裝，直接使用 `npx agent-ide` 執行命令
-- **JSON 格式優先**：需要解析結果時使用 `--format json`
-- **預覽模式**：重構/移動前先用 `--preview` 確認影響範圍
-- **自動索引**：search、rename 等命令會自動建立和更新索引，無需手動操作
-- **限制結果數量**：大型專案使用 `--limit` 避免輸出過多
-````
-
 </details>
+
+> 💡 **Snapshot 功能詳解**：查看 [SNAPSHOT.md](./docs/SNAPSHOT.md) 了解如何使用快照功能完成 TypeScript 專案型別安全重構（ShitScore 改善 11%）
 
 ---
 

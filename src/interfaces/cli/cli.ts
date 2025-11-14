@@ -9,6 +9,7 @@ import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js
 import { RenameEngine } from '../../core/rename/rename-engine.js';
 import { ImportResolver, MoveService } from '../../core/move/index.js';
 import { SearchService } from '../../core/search/service.js';
+import { ShiftService } from '../../core/shift/index.js';
 import { createIndexConfig } from '../../core/indexing/types.js';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { TypeScriptParser } from '../../plugins/typescript/parser.js';
@@ -44,6 +45,7 @@ export class AgentIdeCLI {
   private importResolver?: ImportResolver;
   private moveService?: MoveService;
   private searchService?: SearchService;
+  private shiftService?: ShiftService;
 
   constructor() {
     this.program = new Command();
@@ -130,6 +132,7 @@ export class AgentIdeCLI {
     this.setupRenameCommand();
     this.setupRefactorCommand();
     this.setupMoveCommand();
+    this.setupShiftCommand();
     this.setupSearchCommand();
     this.setupAnalyzeCommand();
     this.setupDepsCommand();
@@ -199,6 +202,22 @@ export class AgentIdeCLI {
         }
 
         await this.handleMoveCommand(source, target, options);
+      });
+  }
+
+  private setupShiftCommand(): void {
+    this.program
+      .command('shift <file>')
+      .description('移動檔案中的指定行到目標位置')
+      .requiredOption('--from <number>', '起始行號（1-based，包含）')
+      .requiredOption('--to <number>', '結束行號（1-based，包含）')
+      .requiredOption('--position <number>', '目標位置行號（1-based，插入到此行之前）')
+      .option('--target <file>', '目標檔案路徑（選填，預設為來源檔案）')
+      .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
+      .option('--preview', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (json|plain)', 'plain')
+      .action(async (file, options) => {
+        await this.handleShiftCommand(file, options);
       });
   }
 
@@ -866,6 +885,108 @@ export class AgentIdeCLI {
         }, null, 2));
       } else {
         console.error('❌ 移動失敗:', errorMsg);
+      }
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    }
+  }
+
+  private async handleShiftCommand(file: string, options: any): Promise<void> {
+    const isJsonFormat = options.format === 'json';
+
+    try {
+      // 解析參數
+      const fromLine = parseInt(options.from, 10);
+      const toLine = parseInt(options.to, 10);
+      const position = parseInt(options.position, 10);
+
+      // 驗證參數
+      if (isNaN(fromLine) || isNaN(toLine) || isNaN(position)) {
+        const errorMsg = '行號和位置必須為有效數字';
+        if (isJsonFormat) {
+          console.log(JSON.stringify({ success: false, error: errorMsg }, null, 2));
+        } else {
+          console.error(`❌ ${errorMsg}`);
+        }
+        process.exitCode = 1;
+        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        return;
+      }
+
+      // 解析檔案路徑（支援相對路徑）
+      const sourceFile = path.resolve(options.path || process.cwd(), file);
+      const targetFile = options.target ? path.resolve(options.path || process.cwd(), options.target) : undefined;
+
+      if (!isJsonFormat) {
+        const targetDesc = targetFile ? ` → ${path.basename(targetFile)}` : '（同檔案內）';
+        console.log(`✂️  移動行 ${fromLine}-${toLine} 到位置 ${position}${targetDesc}`);
+      }
+
+      // 初始化服務
+      if (!this.shiftService) {
+        this.shiftService = new ShiftService();
+      }
+
+      // 執行行移動操作
+      const shiftOptions = {
+        sourceFile,
+        fromLine,
+        toLine,
+        targetFile,
+        position,
+        preview: options.preview,
+        projectRoot: options.path || process.cwd()
+      };
+
+      const result = await this.shiftService.shift(shiftOptions);
+
+      if (result.success) {
+        if (isJsonFormat) {
+          console.log(JSON.stringify({
+            success: true,
+            operationType: result.operationType,
+            sourceFile: result.sourceFile,
+            targetFile: result.targetFile,
+            fromLine: result.fromLine,
+            toLine: result.toLine,
+            position: result.position,
+            linesCount: result.linesCount,
+            executed: result.executed,
+            message: result.message
+          }, null, 2));
+        } else {
+          if (options.preview) {
+            console.log('🔍 預覽行移動操作:');
+          } else {
+            console.log('✅ 行移動成功!');
+          }
+
+          console.log(`📊 統計: 移動了 ${result.linesCount} 行`);
+          console.log(`📝 來源檔案: ${path.relative(process.cwd(), result.sourceFile)}`);
+          console.log(`📝 目標檔案: ${path.relative(process.cwd(), result.targetFile)}`);
+
+          if (options.preview && result.movedLines) {
+            console.log('\n移動的內容:');
+            result.movedLines.forEach((line, index) => {
+              console.log(`  ${result.fromLine + index}: ${line}`);
+            });
+          }
+        }
+      } else {
+        if (isJsonFormat) {
+          console.log(JSON.stringify({ success: false, error: result.error }, null, 2));
+        } else {
+          console.error('❌ 行移動失敗:', result.error);
+        }
+        process.exitCode = 1;
+        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (isJsonFormat) {
+        console.log(JSON.stringify({ success: false, error: errorMsg }, null, 2));
+      } else {
+        console.error('❌ 執行失敗:', errorMsg);
       }
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
