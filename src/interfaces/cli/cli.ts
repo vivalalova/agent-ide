@@ -212,8 +212,10 @@ export class AgentIdeCLI {
       .requiredOption('--from <number>', '起始行號（1-based，包含）')
       .requiredOption('--to <number>', '結束行號（1-based，包含）')
       .requiredOption('--position <number>', '目標位置行號（1-based，插入到此行之前）')
-      .option('--target <file>', '目標檔案路徑（選填，預設為來源檔案）')
+      .option('--target <file>', '目標檔案路徑（必須包含副檔名，例如：newfile.ts）')
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
+      .option('--update-references', '自動更新引用（在來源檔案中添加 import）', true)
+      .option('--no-update-references', '不更新引用')
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (json|plain)', 'plain')
       .action(async (file, options) => {
@@ -935,7 +937,8 @@ export class AgentIdeCLI {
         targetFile,
         position,
         preview: options.preview,
-        projectRoot: options.path || process.cwd()
+        projectRoot: options.path || process.cwd(),
+        updateReferences: options.updateReferences
       };
 
       const result = await this.shiftService.shift(shiftOptions);
@@ -952,7 +955,9 @@ export class AgentIdeCLI {
             position: result.position,
             linesCount: result.linesCount,
             executed: result.executed,
-            message: result.message
+            message: result.message,
+            referencesUpdated: result.referencesUpdated,
+            updatedReferences: result.updatedReferences
           }, null, 2));
         } else {
           if (options.preview) {
@@ -964,6 +969,10 @@ export class AgentIdeCLI {
           console.log(`📊 統計: 移動了 ${result.linesCount} 行`);
           console.log(`📝 來源檔案: ${path.relative(process.cwd(), result.sourceFile)}`);
           console.log(`📝 目標檔案: ${path.relative(process.cwd(), result.targetFile)}`);
+
+          if (result.referencesUpdated && result.updatedReferences && result.updatedReferences.length > 0) {
+            console.log(`🔗 已更新引用: ${result.updatedReferences.join(', ')}`);
+          }
 
           if (options.preview && result.movedLines) {
             console.log('\n移動的內容:');
