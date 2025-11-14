@@ -40,18 +40,16 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            請使用繁體中文審查此 Pull Request，並針對以下項目提供回饋：
-            - 程式碼品質與最佳實踐
-            - 潛在的 bug 或問題
-            - 效能考量
-            - 安全性疑慮
-            - 測試覆蓋率
+            Please review this pull request and provide feedback on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
 
-            請參考專案的 CLAUDE.md 檔案，了解程式碼風格與慣例。請提供建設性且有幫助的回饋。
+            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
 
-            **重要：請使用繁體中文撰寫所有審查意見。**
-
-            使用 `gh pr comment` 指令（透過 Bash 工具）將你的審查意見發布為 PR 評論。
+            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
