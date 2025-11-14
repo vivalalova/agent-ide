@@ -4,13 +4,14 @@
 
 ## 概述
 
-Shift 提供精確的行級程式碼移動能力：單檔案內重排、跨檔案移動、新檔案生成（自動處理檔名衝突）。
+Shift 提供精確的行級程式碼移動能力：單檔案內重排、跨檔案移動、新檔案生成。支援自動更新引用，在來源檔案中添加 import 提示，方便後續手動調整導入的符號。
 
 ### 核心特性
 
 - 單檔案內移動：重新排列程式碼行
 - 跨檔案移動：移動到已存在檔案
-- 新檔案生成：自動處理衝突（newfile.ts → newfile01.ts → newfile02.ts）
+- 新檔案生成：必須提供完整檔名（包括副檔名）
+- 自動更新引用：在來源檔案中添加 import 提示（預設啟用，可用 `--no-update-references` 禁用）
 - 預覽模式、精確控制、多種輸出格式
 
 ---
@@ -24,14 +25,17 @@ agent-ide shift src/file.ts --from 2 --to 5 --position 10
 # 跨檔案移動
 agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 
-# 移動到新檔案（自動生成檔名）
-agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
+# 移動到新檔案（必須提供完整檔名，包括副檔名）
+agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile.ts --position 1
 
 # 預覽模式
 agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
 
 # JSON 輸出
 agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+
+# 禁用自動更新引用
+agent-ide shift src/file.ts --from 1 --to 5 --target src/new.ts --position 1 --no-update-references
 ```
 
 ### 參數
@@ -42,7 +46,9 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 | `--from <number>` | 起始行號（1-based，包含） | 是 |
 | `--to <number>` | 結束行號（1-based，包含） | 是 |
 | `--position <number>` | 目標位置行號（1-based，插入到此行之前） | 是 |
-| `--target <file>` | 目標檔案路徑（選填） | 否 |
+| `--target <file>` | 目標檔案路徑（必須包含副檔名，例如：newfile.ts） | 否 |
+| `--update-references` | 自動更新引用（在來源檔案中添加 import 提示，預設：true） | 否 |
+| `--no-update-references` | 禁用自動更新引用 | 否 |
 | `--preview` | 預覽變更而不執行 | 否 |
 | `--format <format>` | 輸出格式（plain\|json） | 否 |
 
@@ -99,8 +105,8 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 # 4. 無需移動（目標位置在移動範圍內）
 # 成功：目標位置在移動範圍內，無需移動
 
-# 5. 檔名衝突達到上限
-# 錯誤：無法生成唯一檔名：已存在 100 個相同名稱的檔案
+# 5. 目標檔案缺少副檔名
+# 錯誤：目標檔案必須包含副檔名（例如：.ts, .js, .swift）
 ```
 
 ---
@@ -133,11 +139,14 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 101
 ### 4. 檔名命名
 
 ```bash
-# ✅ 良好：描述性檔名
-agent-ide shift src/user.ts --from 10 --to 50 --target src/user-helpers --position 1
+# ✅ 良好：描述性檔名（必須包含副檔名）
+agent-ide shift src/user.ts --from 10 --to 50 --target src/user-helpers.ts --position 1
 
 # ❌ 不良：無意義的檔名
-agent-ide shift src/user.ts --from 10 --to 50 --target src/temp --position 1
+agent-ide shift src/user.ts --from 10 --to 50 --target src/temp.ts --position 1
+
+# ❌ 錯誤：缺少副檔名
+agent-ide shift src/user.ts --from 10 --to 50 --target src/helpers --position 1
 ```
 
 ---
@@ -154,8 +163,8 @@ agent-ide shift src/app.ts --from 50 --to 80 --position 1
 ### 提取到新檔案
 
 ```bash
-# 提取輔助函式
-agent-ide shift src/user.ts --from 100 --to 150 --target src/user-helpers --position 1
+# 提取輔助函式（必須提供完整檔名）
+agent-ide shift src/user.ts --from 100 --to 150 --target src/user-helpers.ts --position 1
 ```
 
 ### 合併分散的程式碼
@@ -180,16 +189,16 @@ agent-ide shift src/types.ts --from 1 --to 10 --position 50
 |------|-------|------|----------|
 | **操作層級** | 行級 | 檔案級 | 語法級 |
 | **跨檔案** | ✅ | ✅ | ❌ |
-| **更新引用** | ❌ | ✅ | ✅ |
-| **新檔案生成** | ✅ | ❌ | ❌ |
+| **更新引用** | ✅（添加 import 提示） | ✅（完整更新） | ✅ |
+| **新檔案生成** | ✅（需指定檔名） | ❌ | ❌ |
 | **語法檢查** | ❌ | ✅ | ✅ |
-| **適用場景** | 程式碼重排、提取片段 | 檔案移動、目錄重組 | 函式提取、內聯 |
+| **適用場景** | 程式碼重排、快速提取片段 | 檔案移動、目錄重組 | 函式提取、內聯 |
 
 **選擇建議**：
 
-- **Shift**：行級別的程式碼移動，不涉及語法分析
-- **Move**：檔案級別的移動，需要更新 import 路徑
-- **Refactor**：語法級別的重構，保證程式碼正確性
+- **Shift**：行級別的程式碼移動，適合快速提取片段。會自動添加 import 提示（TODO 註解），需手動調整導入的符號
+- **Move**：檔案級別的移動，完整更新所有引用，適合整個檔案的移動
+- **Refactor**：語法級別的重構，完全基於語法分析，保證程式碼正確性
 
 ---
 

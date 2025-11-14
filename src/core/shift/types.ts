@@ -59,6 +59,11 @@ export interface ShiftOptions {
    * 專案根目錄路徑
    */
   readonly projectRoot?: string;
+
+  /**
+   * 是否自動更新引用（預設為 true）
+   */
+  readonly updateReferences?: boolean;
 }
 
 /**
@@ -134,6 +139,16 @@ export interface ShiftResult {
    * 目標檔案的新內容（預覽模式下）
    */
   readonly targetContent?: string;
+
+  /**
+   * 是否已更新引用
+   */
+  readonly referencesUpdated?: boolean;
+
+  /**
+   * 更新的引用資訊
+   */
+  readonly updatedReferences?: readonly string[];
 }
 
 /**

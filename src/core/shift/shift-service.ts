@@ -127,10 +127,16 @@ export class ShiftService {
    * @returns 移動結果
    */
   private async shiftBetweenFiles(options: ShiftOptions): Promise<ShiftResult> {
-    const { sourceFile, targetFile, fromLine, toLine, position, preview } = options;
+    const { sourceFile, targetFile, fromLine, toLine, position, preview, updateReferences = true } = options;
 
     if (!targetFile) {
       throw new Error('跨檔案移動需要指定目標檔案');
+    }
+
+    // 檢查目標文件名是否包含副檔名
+    const targetExt = path.extname(targetFile);
+    if (!targetExt) {
+      throw new Error('目標檔案必須包含副檔名（例如：.ts, .js, .swift）');
     }
 
     // 讀取來源檔案內容
@@ -146,26 +152,10 @@ export class ShiftService {
 
     // 處理目標檔案
     const targetFileExists = this.fileExists(targetFile);
-    let finalTargetPath = targetFile;
-    let operationType = ShiftOperationType.BETWEEN_FILES;
-
-    if (!targetFileExists) {
-      // 目標檔案不存在，生成唯一檔名
-      const sourceExt = path.extname(sourceFile);
-      const targetDir = path.dirname(targetFile);
-      const targetBasePath = path.join(targetDir, path.parse(targetFile).name);
-
-      const generationResult = this.fileGenerator.generateUniqueFilename(
-        targetBasePath,
-        sourceExt
-      );
-
-      finalTargetPath = generationResult.filePath;
-      operationType = ShiftOperationType.TO_NEW_FILE;
-    }
+    const operationType = targetFileExists ? ShiftOperationType.BETWEEN_FILES : ShiftOperationType.TO_NEW_FILE;
 
     // 讀取或初始化目標檔案內容
-    const targetContent = targetFileExists ? this.readFile(finalTargetPath) : '';
+    const targetContent = targetFileExists ? this.readFile(targetFile) : '';
 
     // 驗證目標檔案的插入位置
     if (!this.lineExtractor.validatePosition(targetContent, position)) {
@@ -179,27 +169,138 @@ export class ShiftService {
       position
     );
 
+    // 更新引用
+    let updatedSourceContent = extractionResult.remainingContent;
+    let referencesUpdated = false;
+    const updatedReferences: string[] = [];
+
+    if (updateReferences && !preview) {
+      const referenceUpdate = this.updateSourceReferences(
+        sourceFile,
+        targetFile,
+        extractionResult.remainingContent
+      );
+      updatedSourceContent = referenceUpdate.content;
+      referencesUpdated = referenceUpdate.updated;
+      if (referenceUpdate.importStatement) {
+        updatedReferences.push(referenceUpdate.importStatement);
+      }
+    }
+
     // 預覽模式或實際寫入
     if (!preview) {
-      this.writeFile(sourceFile, extractionResult.remainingContent);
-      this.writeFile(finalTargetPath, insertionResult.content);
+      this.writeFile(sourceFile, updatedSourceContent);
+      this.writeFile(targetFile, insertionResult.content);
     }
 
     const message = preview
-      ? `預覽：從 ${path.basename(sourceFile)} 移動到 ${path.basename(finalTargetPath)}`
-      : `成功從 ${path.basename(sourceFile)} 移動到 ${path.basename(finalTargetPath)}`;
+      ? `預覽：從 ${path.basename(sourceFile)} 移動到 ${path.basename(targetFile)}`
+      : `成功從 ${path.basename(sourceFile)} 移動到 ${path.basename(targetFile)}`;
 
     return createShiftResult(
       true,
       operationType,
-      { ...options, targetFile: finalTargetPath },
+      { ...options, targetFile },
       message,
       {
         movedLines: extractionResult.extractedLines,
-        sourceContent: extractionResult.remainingContent,
-        targetContent: insertionResult.content
+        sourceContent: updatedSourceContent,
+        targetContent: insertionResult.content,
+        referencesUpdated,
+        updatedReferences
       }
     );
+  }
+
+  /**
+   * 更新來源檔案的引用
+   * @param sourceFile - 來源檔案路徑
+   * @param targetFile - 目標檔案路徑
+   * @param sourceContent - 來源檔案內容
+   * @returns 更新結果
+   */
+  private updateSourceReferences(
+    sourceFile: string,
+    targetFile: string,
+    sourceContent: string
+  ): { content: string; updated: boolean; importStatement?: string } {
+    // 計算相對路徑
+    const sourceDir = path.dirname(sourceFile);
+    let relativePath = path.relative(sourceDir, targetFile);
+
+    // 移除副檔名
+    const ext = path.extname(relativePath);
+    if (ext) {
+      relativePath = relativePath.slice(0, -ext.length);
+    }
+
+    // 確保相對路徑以 ./ 或 ../ 開始
+    if (!relativePath.startsWith('.')) {
+      relativePath = './' + relativePath;
+    }
+
+    // 統一使用正斜線
+    relativePath = relativePath.replace(/\\/g, '/');
+
+    // 根據檔案類型生成 import 語句
+    const sourceExt = path.extname(sourceFile);
+    let importStatement = '';
+
+    if (sourceExt === '.ts' || sourceExt === '.tsx' || sourceExt === '.js' || sourceExt === '.jsx') {
+      // TypeScript/JavaScript: 添加到檔案頂部（在現有 import 之後）
+      importStatement = `// TODO: import from '${relativePath}';`;
+
+      const lines = sourceContent.split('\n');
+      let insertIndex = 0;
+
+      // 找到最後一個 import 語句的位置
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('import ') || line.startsWith('export ') && line.includes('from')) {
+          insertIndex = i + 1;
+        } else if (line && !line.startsWith('//') && !line.startsWith('/*') && insertIndex > 0) {
+          // 遇到第一個非 import/export 的實際代碼，停止
+          break;
+        }
+      }
+
+      // 插入 import 語句
+      lines.splice(insertIndex, 0, importStatement);
+      return {
+        content: lines.join('\n'),
+        updated: true,
+        importStatement
+      };
+    } else if (sourceExt === '.swift') {
+      // Swift: 添加註解提示（Swift 使用模組系統，不是基於檔案的 import）
+      importStatement = `// TODO: 確認是否需要 import 對應的模組`;
+
+      const lines = sourceContent.split('\n');
+      let insertIndex = 0;
+
+      // 找到最後一個 import 語句的位置
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('import ')) {
+          insertIndex = i + 1;
+        } else if (line && !line.startsWith('//') && insertIndex > 0) {
+          break;
+        }
+      }
+
+      lines.splice(insertIndex, 0, importStatement);
+      return {
+        content: lines.join('\n'),
+        updated: true,
+        importStatement
+      };
+    }
+
+    // 不支援的檔案類型，不更新
+    return {
+      content: sourceContent,
+      updated: false
+    };
   }
 
   /**

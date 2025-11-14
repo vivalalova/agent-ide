@@ -107,10 +107,13 @@ describe('CLI shift - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('行移動成功');
 
-      // 驗證來源檔案已移除指定行
+      // 驗證來源檔案已移除指定行（並添加了 import 提示）
       const newSourceContent = await fixture.readFile('src/utils/formatter.ts');
       const newSourceLines = newSourceContent.split('\n');
-      expect(newSourceLines.length).toBe(sourceLines.length - 3);
+      // 移動了 3 行，添加了 1 行 import，所以總共減少 2 行
+      expect(newSourceLines.length).toBe(sourceLines.length - 2);
+      // 驗證已添加 import 提示
+      expect(newSourceContent).toContain('TODO: import from');
 
       // 驗證目標檔案已插入行
       const newTargetContent = await fixture.readFile('src/utils/array-utils.ts');
@@ -120,7 +123,32 @@ describe('CLI shift - 基於 sample-project fixture', () => {
       expect(newTargetLines[2]).toBe(sourceLines[3]);
     });
 
-    it('應該能移動到新檔案（自動生成檔名）', async () => {
+    it('應該能移動到新檔案（必須提供完整檔名）', async () => {
+      const sourceFile = fixture.getFilePath('src/utils/formatter.ts');
+      const targetFile = fixture.getFilePath('src/utils/newfile.ts');
+
+      const result = await executeCLI([
+        'shift',
+        sourceFile,
+        '--from', '1',
+        '--to', '3',
+        '--target', targetFile,
+        '--position', '1'
+      ], { cwd: fixture.tempPath });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('行移動成功');
+
+      // 驗證新檔案已建立
+      const newFileExists = await fixture.fileExists('src/utils/newfile.ts');
+      expect(newFileExists).toBe(true);
+
+      // 驗證來源檔案中已添加引用提示
+      const sourceContent = await fixture.readFile('src/utils/formatter.ts');
+      expect(sourceContent).toContain('TODO: import from');
+    });
+
+    it('應該拒絕沒有副檔名的目標檔案', async () => {
       const sourceFile = fixture.getFilePath('src/utils/formatter.ts');
       const targetBase = fixture.getFilePath('src/utils/newfile');
 
@@ -128,61 +156,34 @@ describe('CLI shift - 基於 sample-project fixture', () => {
         'shift',
         sourceFile,
         '--from', '1',
-        '--to', '3',
+        '--to', '2',
         '--target', targetBase,
         '--position', '1'
+      ], { cwd: fixture.tempPath });
+
+      const output = result.stdout + result.stderr;
+      expect(output).toContain('必須包含副檔名');
+    });
+
+    it('應該支援禁用更新引用', async () => {
+      const sourceFile = fixture.getFilePath('src/utils/formatter.ts');
+      const targetFile = fixture.getFilePath('src/utils/extracted.ts');
+
+      const result = await executeCLI([
+        'shift',
+        sourceFile,
+        '--from', '1',
+        '--to', '3',
+        '--target', targetFile,
+        '--position', '1',
+        '--no-update-references'
       ], { cwd: fixture.tempPath });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('行移動成功');
 
-      // 驗證新檔案已建立（帶有來源檔案的副檔名）
-      const newFileExists = await fixture.fileExists('src/utils/newfile.ts');
-      expect(newFileExists).toBe(true);
-    });
-
-    it('應該處理檔名衝突（自動加數字後綴）', async () => {
-      const sourceFile = fixture.getFilePath('src/utils/formatter.ts');
-      const targetBase = fixture.getFilePath('src/utils/newfile');
-
-      // 第一次移動 - 建立 newfile.ts
-      await executeCLI([
-        'shift',
-        sourceFile,
-        '--from', '1',
-        '--to', '2',
-        '--target', targetBase,
-        '--position', '1'
-      ], { cwd: fixture.tempPath });
-
-      // 第二次移動 - 應該建立 newfile01.ts
-      const result2 = await executeCLI([
-        'shift',
-        sourceFile,
-        '--from', '1',
-        '--to', '2',
-        '--target', targetBase,
-        '--position', '1'
-      ], { cwd: fixture.tempPath });
-
-      expect(result2.exitCode).toBe(0);
-
-      // 驗證兩個檔案都存在
-      expect(await fixture.fileExists('src/utils/newfile.ts')).toBe(true);
-      expect(await fixture.fileExists('src/utils/newfile01.ts')).toBe(true);
-
-      // 第三次移動 - 應該建立 newfile02.ts
-      const result3 = await executeCLI([
-        'shift',
-        sourceFile,
-        '--from', '1',
-        '--to', '2',
-        '--target', targetBase,
-        '--position', '1'
-      ], { cwd: fixture.tempPath });
-
-      expect(result3.exitCode).toBe(0);
-      expect(await fixture.fileExists('src/utils/newfile02.ts')).toBe(true);
+      // 驗證來源檔案中沒有添加引用提示
+      const sourceContent = await fixture.readFile('src/utils/formatter.ts');
+      expect(sourceContent).not.toContain('TODO: import from');
     });
   });
 
