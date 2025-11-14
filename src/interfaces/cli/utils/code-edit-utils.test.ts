@@ -13,8 +13,8 @@ describe('code-edit-utils', () => {
 
       const offset = positionToOffset(lines, position);
 
-      // line1\n (6) + line2\n (6) + 3 = 15
-      expect(offset).toBe(15);
+      // line1\n (6) + 3 = 9
+      expect(offset).toBe(9);
     });
 
     it('應該處理第一行', () => {
