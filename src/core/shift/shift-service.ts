@@ -297,7 +297,7 @@ export class ShiftService {
       };
     } else if (sourceExt === '.swift') {
       // Swift: 添加註解提示（Swift 使用模組系統，不是基於檔案的 import）
-      importStatement = `// TODO: 確認是否需要 import 對應的模組`;
+      importStatement = '// TODO: 確認是否需要 import 對應的模組';
 
       const lines = sourceContent.split('\n');
       let insertIndex = 0;
