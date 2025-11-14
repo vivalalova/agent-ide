@@ -44,7 +44,7 @@ export default defineConfig({
 
     // 記憶體優化設定
     pool: 'forks',
-    maxWorkers: 2,
+    maxWorkers: 1,
     // 超時設定
     testTimeout: 120000, // 增加到 120 秒（dead code detection 需要時間）
     hookTimeout: 10000,
