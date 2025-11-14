@@ -458,7 +458,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
     it('提取包含外部變數引用的程式碼應該將變數作為參數傳入', async () => {
       // 在 fixture 中新增一個測試檔案
-      await fixture.writeFile('src/test-refactor.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-refactor.ts'), `
 export function processData(items: string[]) {
   const prefix = 'item_';
   const results: string[] = [];
@@ -470,7 +470,7 @@ export function processData(items: string[]) {
 
   return results;
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const filePath = path.join(fixturePath, 'src/test-refactor.ts');
 
@@ -577,7 +577,7 @@ export function processData(items: string[]) {
 
   describe('重構錯誤處理', () => {
     it('無法提取包含 early return 的程式碼片段', async () => {
-      await fixture.writeFile('src/test-early-return.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-early-return.ts'), `
 export function testFunction(value: number): string {
   if (value < 0) {
     return 'negative';
@@ -587,7 +587,7 @@ export function testFunction(value: number): string {
   }
   return 'positive';
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const filePath = path.join(fixturePath, 'src/test-early-return.ts');
 

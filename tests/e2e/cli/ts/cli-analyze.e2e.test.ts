@@ -174,8 +174,8 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
 
   it('應該執行死代碼檢測並返回正確格式', { timeout: 150000 }, async () => {
     // 新增未使用的函式（用於測試檢測功能）
-    await fixture.writeFile(
-      'src/utils/unused.ts',
+    await fs.writeFile(
+      path.join(fixturePath, 'src/utils/unused.ts'),
       `
 export function unusedHelper() {
   return 'never used';
@@ -184,7 +184,8 @@ export function unusedHelper() {
 export function anotherUnusedHelper() {
   return 'also unused';
 }
-`.trim()
+`.trim(),
+      'utf-8'
     );
 
     const result = await executeCLI([
@@ -306,7 +307,7 @@ export function anotherUnusedHelper() {
 
     it('應該正確識別巢狀複雜度', async () => {
       // 建立包含巢狀結構的測試檔案
-      await fixture.writeFile('src/test-complexity.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-complexity.ts'), `
 export function simpleFunction() {
   return 'simple'; // 複雜度 = 1
 }
@@ -333,7 +334,7 @@ export function multipleBranches(value: number): string {
   return 'large';
   // 圈複雜度 = 5
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await executeCLI([
         'analyze',
@@ -440,7 +441,7 @@ function anotherUnusedFunction(param: string): string {
   return param.toUpperCase();
 }
 `;
-      await fixture.writeFile('src/services/user-service.ts', modifiedContent);
+      await fs.writeFile(path.join(fixturePath, 'src/services/user-service.ts'), modifiedContent, 'utf-8');
 
       const result = await executeCLI([
         'analyze',
@@ -614,7 +615,7 @@ function anotherUnusedFunction(param: string): string {
 
     it('dead-code 預設只輸出有死代碼的檔案', async () => {
       // 建立一個有死代碼的檔案
-      await fixture.writeFile('src/test-dead.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-dead.ts'), `
 export function usedFunction() {
   return 'used';
 }
@@ -626,7 +627,7 @@ function unusedFunction() {
 export function anotherUsed() {
   return usedFunction();
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await executeCLI([
         'analyze',

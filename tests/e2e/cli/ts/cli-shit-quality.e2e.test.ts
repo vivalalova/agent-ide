@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor.js';
 
 describe('CLI shit - 品質保證維度測試', () => {

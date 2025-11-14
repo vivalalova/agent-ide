@@ -324,7 +324,7 @@ import { type UserRole, UserStatus } from './types/user';
 export function processUser(user: User, role: UserRole): void {
   console.log(user, role);
 }`;
-      await fixture.writeFile('src/type-import-test.ts', testFileContent);
+      await fs.writeFile(path.join(fixturePath, 'src/type-import-test.ts'), testFileContent, 'utf-8');
 
       // 移動被引用的檔案
       const sourcePath = path.join(fixturePath, 'src/types/user.ts');
@@ -350,7 +350,7 @@ export function processUser(user: User, role: UserRole): void {
 export function lazyLoadProduct() {
   return import('./services/product-service').then(m => m.ProductService);
 }`;
-      await fixture.writeFile('src/dynamic-loader.ts', testFileContent);
+      await fs.writeFile(path.join(fixturePath, 'src/dynamic-loader.ts'), testFileContent, 'utf-8');
 
       // 移動被動態引用的檔案
       const sourcePath = path.join(fixturePath, 'src/services/user-service.ts');
@@ -371,7 +371,7 @@ export function lazyLoadProduct() {
 import { UserService } from './services/user-service';
 
 export const userService = new UserService();`;
-      await fixture.writeFile('src/app-init.ts', testFileContent);
+      await fs.writeFile(path.join(fixturePath, 'src/app-init.ts'), testFileContent, 'utf-8');
 
       // 移動被 side-effect import 的檔案
       const sourcePath = path.join(fixturePath, 'src/core/config/settings.ts');
@@ -392,8 +392,9 @@ export const userService = new UserService();`;
       // 創建兩個同名但路徑不同的檔案
       const helper1Content = 'export function utilHelper() { return \'util\'; }';
       const helper2Content = 'export function componentHelper() { return \'component\'; }';
-      await fixture.writeFile('src/utils/helper.ts', helper1Content);
-      await fixture.writeFile('src/components/helper.ts', helper2Content);
+      await fs.writeFile(path.join(fixturePath, 'src/utils/helper.ts'), helper1Content, 'utf-8');
+      await fs.mkdir(path.join(fixturePath, 'src/components'), { recursive: true });
+      await fs.writeFile(path.join(fixturePath, 'src/components/helper.ts'), helper2Content, 'utf-8');
 
       // 創建引用兩個 helper 的檔案
       const testContent = `import { utilHelper } from './utils/helper';
@@ -402,7 +403,7 @@ import { componentHelper } from './components/helper';
 export function test() {
   return utilHelper() + componentHelper();
 }`;
-      await fixture.writeFile('src/test-helpers.ts', testContent);
+      await fs.writeFile(path.join(fixturePath, 'src/test-helpers.ts'), testContent, 'utf-8');
 
       // 只移動 utils/helper.ts
       const sourcePath = path.join(fixturePath, 'src/utils/helper.ts');
@@ -426,9 +427,9 @@ export function getApiUrl() { return CONFIG.api; }`;
       const serviceAContent = `import { getApiUrl } from './service-b-test';
 export function callApi() { return fetch(getApiUrl()); }`;
 
-      await fixture.writeFile('src/config-test.ts', configContent);
-      await fixture.writeFile('src/service-b-test.ts', serviceBContent);
-      await fixture.writeFile('src/service-a-test.ts', serviceAContent);
+      await fs.writeFile(path.join(fixturePath, 'src/config-test.ts'), configContent, 'utf-8');
+      await fs.writeFile(path.join(fixturePath, 'src/service-b-test.ts'), serviceBContent, 'utf-8');
+      await fs.writeFile(path.join(fixturePath, 'src/service-a-test.ts'), serviceAContent, 'utf-8');
 
       // 移動中間的 service-b
       const sourcePath = path.join(fixturePath, 'src/service-b-test.ts');
@@ -457,7 +458,7 @@ import { formatTime } from './utils/date-utils.ts';
 export function format() {
   return formatDate(new Date()) + formatTime(new Date());
 }`;
-      await fixture.writeFile('src/mixed-ext-test.ts', testContent);
+      await fs.writeFile(path.join(fixturePath, 'src/mixed-ext-test.ts'), testContent, 'utf-8');
 
       // 移動被引用的檔案
       const sourcePath = path.join(fixturePath, 'src/utils/date-utils.ts');
@@ -483,7 +484,7 @@ export async function loadServices() {
   const OrderService = await import('./services/order-service');
   return { UserService, ProductService, OrderService };
 }`;
-      await fixture.writeFile('src/multi-import-test.ts', testContent);
+      await fs.writeFile(path.join(fixturePath, 'src/multi-import-test.ts'), testContent, 'utf-8');
 
       // 移動 services 目錄
       const userSourcePath = path.join(fixturePath, 'src/services/user-service.ts');
@@ -507,7 +508,7 @@ export async function loadServices() {
 } from './types/user';
 
 export type { CreateUserData } from './types/user';`;
-      await fixture.writeFile('src/multi-line-export-test.ts', testContent);
+      await fs.writeFile(path.join(fixturePath, 'src/multi-line-export-test.ts'), testContent, 'utf-8');
 
       // 移動被引用的檔案
       const sourcePath = path.join(fixturePath, 'src/types/user.ts');

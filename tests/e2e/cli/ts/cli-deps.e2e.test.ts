@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { analyzeDependencies, executeCLI } from '../../helpers/cli-executor';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
   const fixturePath = getFixturePath('sample-project');
@@ -90,7 +92,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
 
     it('應該檢測到手動建立的循環依賴', async () => {
       // 建立循環依賴: service-a ↔ service-b
-      await fixture.writeFile('src/services/service-a.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/services/service-a.ts'), `
 import { ServiceB } from './service-b';
 
 export class ServiceA {
@@ -100,9 +102,9 @@ export class ServiceA {
     return this.serviceB.methodB();
   }
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/services/service-b.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/services/service-b.ts'), `
 import { ServiceA } from './service-a';
 
 export class ServiceB {
@@ -112,7 +114,7 @@ export class ServiceB {
     return this.serviceA.methodA();
   }
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await analyzeDependencies(fixturePath);
 
@@ -125,26 +127,26 @@ export class ServiceB {
 
     it('應該檢測到多層循環依賴 (A → B → C → A)', async () => {
       // 建立三層循環
-      await fixture.writeFile('src/cycle-a.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-a.ts'), `
 import { CycleB } from './cycle-b';
 export class CycleA {
   constructor(private b: CycleB) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-b.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-b.ts'), `
 import { CycleC } from './cycle-c';
 export class CycleB {
   constructor(private c: CycleC) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-c.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-c.ts'), `
 import { CycleA } from './cycle-a';
 export class CycleC {
   constructor(private a: CycleA) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await analyzeDependencies(fixturePath);
 
@@ -203,7 +205,7 @@ export class CycleC {
   describe('外部依賴和複雜 import', () => {
     it('應該區分內部依賴和外部依賴', async () => {
       // 在 sample-project 中新增使用 Node.js 內建模組的檔案
-      await fixture.writeFile('src/utils/file-utils.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/utils/file-utils.ts'), `
 import * as fs from 'fs';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -217,7 +219,7 @@ export function readConfig(configPath: string): string {
 export function getConfigDate(): string {
   return formatDate(new Date());
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await analyzeDependencies(fixturePath);
 
@@ -364,19 +366,19 @@ export function getConfigDate(): string {
 
     it('檢測到循環依賴時應該在 issues 中回報', async () => {
       // 建立循環依賴
-      await fixture.writeFile('src/cycle-x.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-x.ts'), `
 import { CycleY } from './cycle-y';
 export class CycleX {
   constructor(private y: CycleY) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-y.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-y.ts'), `
 import { CycleX } from './cycle-x';
 export class CycleY {
   constructor(private x: CycleX) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json']);
 

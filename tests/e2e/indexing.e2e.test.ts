@@ -199,6 +199,7 @@ describe('Indexing E2E 測試', () => {
 
     it('應該遵守排除模式', async () => {
       // 建立一個 node_modules 目錄和檔案
+      await fs.mkdir(path.join(fixturePath, 'node_modules/test'), { recursive: true });
       await fs.writeFile(path.join(fixturePath, 'node_modules/test/index.ts'), 'export const test = 1;', 'utf-8');
 
       const config = createIndexConfig(fixturePath, {
@@ -247,13 +248,13 @@ describe('Indexing E2E 測試', () => {
 
       // 新增一個新檔案
       const newFilePath = path.join(fixturePath, 'src/services/test-service.ts');
-      await fixture.writeFile('src/services/test-service.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/services/test-service.ts'), `
         export class TestService {
           test(): string {
             return 'test';
           }
         }
-      `);
+      `, 'utf-8');
 
       await indexEngine.indexFile(newFilePath);
 
@@ -326,12 +327,12 @@ describe('Indexing E2E 測試', () => {
     it('應該處理語法錯誤的檔案', async () => {
       // 建立一個語法錯誤的檔案
       const errorFilePath = path.join(fixturePath, 'src/error-file.ts');
-      await fixture.writeFile('src/error-file.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/error-file.ts'), `
         export class BrokenClass {
           // 語法錯誤：缺少 }
           method() {
             return 'test'
-      `);
+      `, 'utf-8');
 
       const config = createIndexConfig(fixturePath);
       indexEngine = new IndexEngine(config);
