@@ -40,7 +40,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
 
     // 測試包含/排除
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: ['node_modules/**', 'dist/**'],
     
     // 記憶體優化設定
