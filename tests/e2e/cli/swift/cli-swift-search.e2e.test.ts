@@ -3,20 +3,16 @@
  * 基於 swift-sample-project fixture 測試搜尋功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { executeCLI } from '../../helpers/cli-executor.js';
 
 describe('CLI swift search - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 符號搜尋測試（10 個測試）
@@ -30,7 +26,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'OrderViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -53,7 +49,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'NetworkServiceProtocol',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -74,7 +70,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'Product',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -96,7 +92,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'OrderStatus',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -117,7 +113,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'orders',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -144,7 +140,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'Order*',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -167,7 +163,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'loadOrders',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -188,7 +184,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'OrderViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -209,7 +205,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         '*',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--limit',
         '10',
         '--format',
@@ -228,7 +224,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'OrderViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -250,7 +246,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'async',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -268,7 +264,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         '@Published',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -287,7 +283,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '@[A-Z]\\w+',
         '--regex',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -305,7 +301,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'guard let',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -324,7 +320,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         'VIEWMODEL',
         '--case-insensitive',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -343,7 +339,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--context',
         '2',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -363,7 +359,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'ViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--file-pattern',
         '**/*ViewModel.swift',
         '--format',
@@ -386,7 +382,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--query',
         'async',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -411,7 +407,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--pattern',
         '*ViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -434,7 +430,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--type',
         'protocol',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -457,7 +453,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--pattern',
         '*Service',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -481,7 +477,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--with-attribute',
         '@MainActor',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -506,7 +502,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--with-modifier',
         'async',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -530,7 +526,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--implements',
         'NetworkServiceProtocol',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -555,7 +551,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--extends',
         'BaseViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -583,7 +579,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--extends',
         'BaseViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -611,7 +607,7 @@ describe('CLI swift search - 基於 swift-sample-project fixture', () => {
         '--pattern',
         '*ViewModel',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);

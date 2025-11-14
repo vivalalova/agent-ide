@@ -3,20 +3,19 @@
  * 使用 swift-sample-project fixture 進行真實重構場景測試
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('提取函式', () => {
     it('應該能從 ViewModel 提取方法邏輯', async () => {
@@ -24,7 +23,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
         '--start-line',
         '30',
         '--end-line',
@@ -41,7 +40,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
       expect(output.extractedFunction).toBeDefined();
       expect(output.extractedFunction.name).toBe('handleUserLoadError');
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'), 'utf-8');
       expect(content).toContain('func handleUserLoadError');
     });
 
@@ -50,7 +49,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '44',
         '--end-line',
@@ -63,7 +62,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(content).toContain('func performUserValidation');
     });
 
@@ -72,7 +71,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
         '--start-line',
         '51',
         '--end-line',
@@ -85,7 +84,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'), 'utf-8');
       expect(content).toContain('func computeTotal');
     });
 
@@ -94,7 +93,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'),
         '--start-line',
         '24',
         '--end-line',
@@ -107,18 +106,18 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/NetworkService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'), 'utf-8');
       expect(content).toContain('func buildRequest');
     });
 
     it('應該支援預覽提取變更', async () => {
-      const originalContent = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
 
       const result = await executeCLI([
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '20',
         '--end-line',
@@ -132,7 +131,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
       expect(result.stdout.toLowerCase()).toMatch(/預覽|preview/);
 
       // 驗證檔案未被修改
-      const currentContent = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const currentContent = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(currentContent).toBe(originalContent);
     });
 
@@ -141,7 +140,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
         '--start-line',
         '44',
         '--end-line',
@@ -154,7 +153,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'), 'utf-8');
       expect(content).toContain('func processCheckout');
       // 確保 guard 語句被保留
       expect(content).toContain('guard');
@@ -167,7 +166,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-closure',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift'),
         '--start-line',
         '26',
         '--end-line',
@@ -180,7 +179,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift'), 'utf-8');
       expect(content).toContain('filterProductsByCategory');
     });
 
@@ -189,7 +188,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-closure',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
         '--start-line',
         '36',
         '--end-line',
@@ -208,7 +207,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-closure',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/ProductService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/ProductService.swift'),
         '--start-line',
         '18',
         '--end-line',
@@ -229,7 +228,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
         '--start-line',
         '45',
         '--end-line',
@@ -242,7 +241,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'), 'utf-8');
       expect(content).toContain('func checkFormValidity');
     });
 
@@ -251,7 +250,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/OrderService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/OrderService.swift'),
         '--start-line',
         '36',
         '--end-line',
@@ -264,7 +263,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/OrderService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/OrderService.swift'), 'utf-8');
       expect(content).toContain('func sumItemPrices');
     });
 
@@ -273,7 +272,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Models/Product.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Product.swift'),
         '--start-line',
         '21',
         '--end-line',
@@ -292,7 +291,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Extensions/String+Extensions.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Extensions/String+Extensions.swift'),
         '--start-line',
         '7',
         '--end-line',
@@ -311,7 +310,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Utils/Formatter.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Utils/Formatter.swift'),
         '--start-line',
         '8',
         '--end-line',
@@ -332,7 +331,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '20'
         // 缺少 end-line 和 new-name
@@ -348,7 +347,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '100',
         '--end-line',
@@ -367,7 +366,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('NonExistent.swift'),
+        path.join(fixturePath, 'NonExistent.swift'),
         '--start-line',
         '1',
         '--end-line',
@@ -386,7 +385,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'unsupported-operation',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift')
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift')
       ]);
 
       expect(result.exitCode).not.toBe(0);
@@ -401,7 +400,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'),
         '--start-line',
         '18',
         '--end-line',
@@ -414,7 +413,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/NetworkService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'), 'utf-8');
       expect(content).toContain('createGenericRequest');
     });
 
@@ -423,7 +422,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '15',
         '--end-line',
@@ -436,7 +435,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(content).toContain('async');
     });
 
@@ -445,7 +444,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'),
         '--start-line',
         '28',
         '--end-line',
@@ -464,7 +463,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/ProductViewModel.swift'),
         '--start-line',
         '25',
         '--end-line',
@@ -485,7 +484,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/OrderService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/OrderService.swift'),
         '--start-line',
         '20',
         '--end-line',
@@ -503,7 +502,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
       expect(output.extractedFunction.name).toBe('buildOrder');
       expect(output.extractedFunction.parameters).toBeDefined();
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/OrderService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/OrderService.swift'), 'utf-8');
       expect(content).toContain('func buildOrder');
       expect(content).toMatch(/func buildOrder\([^)]*\)/);
     });
@@ -513,7 +512,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--start-line',
         '44',
         '--end-line',
@@ -526,7 +525,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(content).toContain('func validateUserData');
       // 應該有 throws 關鍵字
       expect(content).toMatch(/func validateUserData.*throws/);
@@ -537,7 +536,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/OrderViewModel.swift'),
         '--start-line',
         '38',
         '--end-line',
@@ -561,7 +560,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'refactor',
         'extract-function',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/ProductService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/ProductService.swift'),
         '--start-line',
         '28',
         '--end-line',
@@ -575,7 +574,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         'index',
         'create',
         '--path',
-        fixture.tempPath
+        fixturePath
       ]);
 
       // 搜尋新函式
@@ -585,7 +584,7 @@ describe('CLI swift refactor - 基於 swift-sample-project fixture', () => {
         '--query',
         'getStockInfo',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);

@@ -3,20 +3,16 @@
  * 測試 Swift 特定的型別安全、測試覆蓋率、錯誤處理、命名規範、安全性檢測
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { executeCLI } from '../../helpers/cli-executor.js';
 
 describe('CLI swift shit - 品質保證維度測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基本功能（3 個測試）
@@ -27,7 +23,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -44,7 +40,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -59,7 +55,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -100,7 +96,7 @@ class UnsafeTypeTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -129,7 +125,7 @@ class ForceUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -166,7 +162,7 @@ class AnyTypeTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -195,7 +191,7 @@ class ImplicitUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -218,7 +214,7 @@ class ImplicitUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -237,7 +233,7 @@ class ImplicitUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -290,7 +286,7 @@ class ErrorHandlingTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -318,7 +314,7 @@ class ForceUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -359,7 +355,7 @@ enum http_method {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -385,7 +381,7 @@ class naming_violation {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -433,7 +429,7 @@ class SecurityTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -461,7 +457,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -484,7 +480,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -506,7 +502,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -530,7 +526,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -582,7 +578,7 @@ class ViewModel: ObservableObject {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -612,7 +608,7 @@ class ForceUnwrapOveruse {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
