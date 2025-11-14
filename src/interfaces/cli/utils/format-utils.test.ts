@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { formatFilePath, highlightMatch } from '../../../../src/interfaces/cli/utils/format-utils.js';
+import { formatFilePath, highlightMatch } from './format-utils.js';
 
 describe('format-utils', () => {
   describe('formatFilePath', () => {
