@@ -23,6 +23,12 @@ import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import * as FormatUtils from './utils/format-utils.js';
+import * as CodeEditUtils from './utils/code-edit-utils.js';
+import * as FileUtils from './utils/file-utils.js';
+import * as SearchUtils from './utils/search-utils.js';
+import * as DependencyUtils from './utils/dependency-utils.js';
+import * as SnapshotHandler from './utils/snapshot-handler.js';
 
 // 讀取 package.json 版本
 const __filename = fileURLToPath(import.meta.url);
@@ -399,9 +405,9 @@ export class AgentIdeCLI {
         // 往上查找專案根目錄（包含 package.json、.git 等）
         let currentDir = workspacePath;
         while (currentDir !== path.dirname(currentDir)) {
-          const hasPackageJson = await this.fileExists(path.join(currentDir, 'package.json'));
-          const hasGit = await this.fileExists(path.join(currentDir, '.git'));
-          const hasSwiftPackage = await this.fileExists(path.join(currentDir, 'Package.swift'));
+          const hasPackageJson = await FileUtils.fileExists(path.join(currentDir, 'package.json'));
+          const hasGit = await FileUtils.fileExists(path.join(currentDir, '.git'));
+          const hasSwiftPackage = await FileUtils.fileExists(path.join(currentDir, 'Package.swift'));
           if (hasPackageJson || hasGit || hasSwiftPackage) {
             workspacePath = currentDir;
             break;
@@ -455,7 +461,7 @@ export class AgentIdeCLI {
         try {
           // 取得所有專案檔案以進行跨檔案引用查找
           // 使用 workspacePath（已解析為目錄）而不是 options.path（可能是檔案）
-          const allProjectFiles = await this.getAllProjectFiles(workspacePath);
+          const allProjectFiles = await FileUtils.getAllProjectFiles(workspacePath);
 
           const preview = await this.renameEngine.previewRename({
             symbol: targetSymbol,
@@ -506,7 +512,7 @@ export class AgentIdeCLI {
 
       // 取得所有專案檔案（使用與 preview 相同的邏輯）
       // 使用 workspacePath（已解析為目錄）而不是 options.path（可能是檔案）
-      const allProjectFiles = await this.getAllProjectFiles(workspacePath);
+      const allProjectFiles = await FileUtils.getAllProjectFiles(workspacePath);
 
       // 使用 renameEngine 執行重新命名（與 preview 使用相同的引擎）
       const renameResult = await this.renameEngine.rename({
@@ -696,12 +702,12 @@ export class AgentIdeCLI {
 
           // 先應用 replace（替換選取範圍為函式呼叫）
           for (const edit of replaceEdits) {
-            modifiedCode = this.applyEditCorrectly(modifiedCode, edit);
+            modifiedCode = CodeEditUtils.applyEditCorrectly(modifiedCode, edit);
           }
 
           // 再應用 insert（插入函式定義）
           for (const edit of insertEdits) {
-            modifiedCode = this.applyEditCorrectly(modifiedCode, edit);
+            modifiedCode = CodeEditUtils.applyEditCorrectly(modifiedCode, edit);
           }
 
           // 提取函式簽名（從修改後的程式碼中）
@@ -770,7 +776,7 @@ export class AgentIdeCLI {
 
     try {
       // 檢查源檔案是否存在
-      const sourceExists = await this.fileExists(source);
+      const sourceExists = await FileUtils.fileExists(source);
       if (!sourceExists) {
         const errorMsg = `源檔案找不到: ${source}`;
         if (isJsonFormat) {
@@ -807,7 +813,7 @@ export class AgentIdeCLI {
       // 初始化移動服務
       if (!this.moveService) {
         // 讀取 tsconfig.json 路徑別名
-        const pathAliases = await this.loadPathAliases(options.path || process.cwd());
+        const pathAliases = await FileUtils.loadPathAliases(options.path || process.cwd());
 
         this.moveService = new MoveService({
           pathAliases,
@@ -1016,7 +1022,7 @@ export class AgentIdeCLI {
       }
 
       // 建構搜尋選項
-      const searchOptions = this.buildSearchOptions(options);
+      const searchOptions = SearchUtils.buildSearchOptions(options);
 
       // 根據搜尋類型建立查詢
       const searchQuery = {
@@ -1050,7 +1056,7 @@ export class AgentIdeCLI {
       }
 
       // 格式化輸出
-      this.formatSearchResults(result, options);
+      FormatUtils.formatSearchResults(result, options);
 
     } catch (error) {
       if (isMinimalOrJson) {
@@ -1067,126 +1073,6 @@ export class AgentIdeCLI {
       if (process.env.NODE_ENV !== 'test') {
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       }
-    }
-  }
-
-  /**
-   * 建構搜尋選項
-   */
-  private buildSearchOptions(options: any) {
-    let includeFiles = options.include ? options.include.split(',') : undefined;
-    const excludeFiles = options.exclude ? options.exclude.split(',') : undefined;
-
-    // --file-pattern 參數轉換為 includeFiles
-    if (options.filePattern) {
-      includeFiles = [options.filePattern];
-    }
-
-    return {
-      scope: {
-        type: 'directory' as const,
-        path: path.resolve(options.path),
-        recursive: true
-      },
-      maxResults: parseInt(options.limit),
-      caseSensitive: options.caseInsensitive ? false : (options.caseSensitive || false),
-      wholeWord: options.wholeWord || false,
-      regex: options.regex || options.type === 'regex',
-      fuzzy: options.type === 'fuzzy',
-      multiline: options.multiline || false,
-      showContext: options.context > 0,
-      contextLines: parseInt(options.context),
-      includeFiles,
-      excludeFiles,
-      timeout: 30000
-    };
-  }
-
-  /**
-   * 格式化搜尋結果輸出
-   */
-  private formatSearchResults(result: any, options: any): void {
-    switch (options.format) {
-    case 'json':
-      // 測試期望的格式是 { results: [...] } 而不是 { matches: [...] }
-      // 將絕對路徑轉換為相對路徑，並增加 contextBefore/contextAfter
-      const resultsWithRelativePaths = result.matches.map((match: any) => {
-        const formatted: any = {
-          ...match,
-          filePath: this.formatFilePath(match.file)
-        };
-
-        // 移除 'file'
-        delete formatted.file;
-
-        // 增加 contextBefore/contextAfter（測試需要這些欄位）
-        if (match.context) {
-          formatted.contextBefore = match.context.before || [];
-          formatted.contextAfter = match.context.after || [];
-        }
-
-        return formatted;
-      });
-      console.log(JSON.stringify({ results: resultsWithRelativePaths }, null, 2));
-      break;
-
-    case 'minimal':
-      // AI Agent 友善的最小輸出
-      result.matches.forEach((match: any) => {
-        console.log(`${match.file}:${match.line}:${match.column}:${match.content.trim()}`);
-      });
-      break;
-
-    case 'list':
-    default:
-      result.matches.forEach((match: any, index: number) => {
-        console.log(`\n${index + 1}. ${this.formatFilePath(match.file)}:${match.line}:${match.column}`);
-        console.log(`   ${this.highlightMatch(match.content, options.query)}`);
-
-        // 顯示上下文
-        if (options.context > 0 && match.context) {
-          if (match.context.before.length > 0) {
-            match.context.before.forEach((line: string, i: number) => {
-              const lineNum = match.line - match.context.before.length + i;
-              console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
-            });
-          }
-
-          console.log(`>> ${match.line.toString().padStart(3, ' ')}: ${this.highlightMatch(match.content, options.query)}`);
-
-          if (match.context.after.length > 0) {
-            match.context.after.forEach((line: string, i: number) => {
-              const lineNum = match.line + i + 1;
-              console.log(`   ${lineNum.toString().padStart(3, ' ')}: ${line}`);
-            });
-          }
-        }
-      });
-      break;
-    }
-  }
-
-  /**
-   * 格式化檔案路徑（顯示相對路徑）
-   */
-  private formatFilePath(filePath: string): string {
-    const cwd = process.cwd();
-    const relativePath = path.relative(cwd, filePath);
-    return relativePath.startsWith('..') ? filePath : relativePath;
-  }
-
-  /**
-   * 高亮匹配內容
-   */
-  private highlightMatch(text: string, query: string): string {
-    if (!text || !query) {return text;}
-
-    // 簡單的高亮實作
-    try {
-      const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      return text.replace(regex, `[${query}]`);
-    } catch {
-      return text;
     }
   }
 
@@ -1324,7 +1210,7 @@ export class AgentIdeCLI {
       }
 
       // 格式化輸出
-      this.formatSymbolSearchResults(filteredSymbols, options);
+      FormatUtils.formatSymbolSearchResults(filteredSymbols, options);
 
     } catch (error) {
       if (isMinimalOrJson) {
@@ -1414,7 +1300,7 @@ export class AgentIdeCLI {
       }
 
       // 格式化輸出
-      this.formatSymbolSearchResults(results, options);
+      FormatUtils.formatSymbolSearchResults(results, options);
 
     } catch (error) {
       if (isMinimalOrJson) {
@@ -1433,68 +1319,6 @@ export class AgentIdeCLI {
     }
   }
 
-  /**
-   * 格式化符號搜尋結果輸出
-   */
-  private formatSymbolSearchResults(results: any[], options: any): void {
-    switch (options.format) {
-    case 'json':
-      // 轉換為測試期望的格式
-      const formattedResults = results.map(result => {
-        const formatted: any = {
-          name: result.symbol.name,
-          type: result.symbol.type,
-          filePath: this.formatFilePath(result.symbol.location.filePath),
-          line: result.symbol.location.range.start.line,
-          column: result.symbol.location.range.start.column
-        };
-
-        // 只在有值時才加入可選欄位
-        if ((result.symbol as any).attributes && (result.symbol as any).attributes.length > 0) {
-          formatted.attributes = (result.symbol as any).attributes;
-        }
-        if ((result.symbol as any).modifiers && (result.symbol as any).modifiers.length > 0) {
-          formatted.modifiers = (result.symbol as any).modifiers;
-        }
-        if ((result.symbol as any).superclass) {
-          formatted.superclass = (result.symbol as any).superclass;
-        }
-        if ((result.symbol as any).implements && (result.symbol as any).implements.length > 0) {
-          formatted.implements = (result.symbol as any).implements;
-        }
-
-        return formatted;
-      });
-      console.log(JSON.stringify({ results: formattedResults }, null, 2));
-      break;
-
-    case 'minimal':
-      results.forEach(result => {
-        const symbol = result.symbol;
-        console.log(
-          `${symbol.location.filePath}:${symbol.location.range.start.line}:${symbol.location.range.start.column}:${symbol.type}:${symbol.name}`
-        );
-      });
-      break;
-
-    case 'list':
-    default:
-      results.forEach((result, index) => {
-        const symbol = result.symbol;
-        console.log(`\n${index + 1}. ${symbol.name} (${symbol.type})`);
-        console.log(`   ${this.formatFilePath(symbol.location.filePath)}:${symbol.location.range.start.line}:${symbol.location.range.start.column}`);
-
-        if ((symbol as any).attributes && (symbol as any).attributes.length > 0) {
-          console.log(`   屬性: ${(symbol as any).attributes.join(', ')}`);
-        }
-        if ((symbol as any).modifiers && (symbol as any).modifiers.length > 0) {
-          console.log(`   修飾符: ${(symbol as any).modifiers.join(', ')}`);
-        }
-      });
-      break;
-    }
-  }
-
   private async handleAnalyzeCommand(type: string | undefined, options: any): Promise<void> {
     const analyzeType = type || 'complexity';
 
@@ -1509,7 +1333,7 @@ export class AgentIdeCLI {
       if (analyzeType === 'complexity') {
         // 使用 ParserPlugin 分析複雜度
         const registry = ParserRegistry.getInstance();
-        const files = await this.getAllProjectFiles(analyzePath);
+        const files = await FileUtils.getAllProjectFiles(analyzePath);
         const results: Array<{ file: string; complexity: any }> = [];
 
         for (const file of files) {
@@ -1583,7 +1407,7 @@ export class AgentIdeCLI {
         // 使用 ParserPlugin 檢測死代碼
         const registry = ParserRegistry.getInstance();
 
-        const files = await this.getAllProjectFiles(analyzePath);
+        const files = await FileUtils.getAllProjectFiles(analyzePath);
         const results: Array<{ file: string; deadCode: any[] }> = [];
 
         for (const file of files) {
@@ -1651,7 +1475,7 @@ export class AgentIdeCLI {
         }
       } else if (analyzeType === 'best-practices') {
         // 檢查最佳實踐
-        const files = await this.getAllProjectFiles(analyzePath);
+        const files = await FileUtils.getAllProjectFiles(analyzePath);
         const issues: any[] = [];
         const recommendations: any[] = [];
 
@@ -1680,7 +1504,7 @@ export class AgentIdeCLI {
         }
       } else if (analyzeType === 'patterns') {
         // 檢測程式碼模式
-        const files = await this.getAllProjectFiles(analyzePath);
+        const files = await FileUtils.getAllProjectFiles(analyzePath);
         const patterns: string[] = [];
         let asyncFunctionCount = 0;
 
@@ -1735,11 +1559,11 @@ export class AgentIdeCLI {
       } else if (analyzeType === 'quality') {
         // 品質分析（整合多個維度）
         const registry = ParserRegistry.getInstance();
-        const files = await this.getAllProjectFiles(analyzePath);
+        const files = await FileUtils.getAllProjectFiles(analyzePath);
 
         // 檢查路徑是否存在或沒有找到檔案
         if (files.length === 0) {
-          const pathExists = await this.fileExists(analyzePath);
+          const pathExists = await FileUtils.fileExists(analyzePath);
           if (!pathExists) {
             throw new Error(`路徑不存在: ${analyzePath}`);
           }
@@ -2080,24 +1904,24 @@ export class AgentIdeCLI {
 
       switch (action) {
         case 'generate':
-          await this.handleSnapshotGenerate(engine, finalOptions, isJsonFormat);
+          await SnapshotHandler.handleSnapshotGenerate(engine, finalOptions, isJsonFormat);
           break;
 
         case 'info':
-          await this.handleSnapshotInfo(finalOptions, isJsonFormat);
+          await SnapshotHandler.handleSnapshotInfo(finalOptions, isJsonFormat);
           break;
 
         case 'diff':
-          await this.handleSnapshotDiff(options, isJsonFormat);
+          await SnapshotHandler.handleSnapshotDiff(options, isJsonFormat);
           break;
 
         case 'init':
-          await this.handleSnapshotInit(configManager, projectPath, isJsonFormat);
+          await SnapshotHandler.handleSnapshotInit(configManager, projectPath, isJsonFormat);
           break;
 
         default:
           // 預設執行生成
-          await this.handleSnapshotGenerate(engine, finalOptions, isJsonFormat);
+          await SnapshotHandler.handleSnapshotGenerate(engine, finalOptions, isJsonFormat);
           break;
       }
     } catch (error) {
@@ -2111,181 +1935,6 @@ export class AgentIdeCLI {
 
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    }
-  }
-
-  private async handleSnapshotGenerate(
-    engine: SnapshotEngine,
-    options: SnapshotOptions,
-    isJsonFormat: boolean
-  ): Promise<void> {
-    if (!isJsonFormat) {
-      console.log('📸 生成程式碼快照...');
-      if (options.incremental) {
-        console.log('  模式: 增量更新');
-      } else {
-        console.log('  模式: 完整生成');
-      }
-      console.log(`  壓縮層級: ${options.level}`);
-    }
-
-    const startTime = Date.now();
-    const snapshot = await engine.generate(options);
-    const stats = engine.getStats(snapshot);
-    const duration = Date.now() - startTime;
-    stats.generationTime = duration;
-
-    // 保存快照
-    if (options.outputPath) {
-      await engine.save(snapshot, options.outputPath);
-    }
-
-    // 如果是多層級模式，生成其他層級
-    if (options.multiLevel && options.outputDir) {
-      if (!isJsonFormat) {
-        console.log('\n📚 生成多層級快照...');
-      }
-
-      const levels: CompressionLevel[] = [
-        CompressionLevel.Minimal,
-        CompressionLevel.Medium,
-        CompressionLevel.Full
-      ];
-
-      for (const level of levels) {
-        const levelOptions = { ...options, level, incremental: false };
-        const levelSnapshot = await engine.generate(levelOptions);
-        const outputPath = path.join(
-          options.outputDir,
-          `snapshot-${level}.json`
-        );
-        await engine.save(levelSnapshot, outputPath);
-
-        if (!isJsonFormat) {
-          const levelStats = engine.getStats(levelSnapshot);
-          console.log(`  ✅ ${level}: ${levelStats.estimatedTokens} tokens`);
-        }
-      }
-    }
-
-    if (isJsonFormat) {
-      console.log(JSON.stringify({
-        success: true,
-        snapshot: options.outputPath,
-        stats
-      }, null, 2));
-    } else {
-      console.log('\n✅ 快照生成完成');
-      console.log(`  輸出位置: ${options.outputPath}`);
-      console.log('\n統計資訊:');
-      console.log(`  檔案數量: ${stats.fileCount}`);
-      console.log(`  程式碼行數: ${stats.totalLines}`);
-      console.log(`  符號數量: ${stats.symbolCount}`);
-      console.log(`  依賴關係: ${stats.dependencyCount}`);
-      console.log(`  估計 token 數: ${stats.estimatedTokens}`);
-      console.log(`  壓縮率: ${stats.compressionRatio.toFixed(1)}%`);
-      console.log(`  生成耗時: ${stats.generationTime}ms`);
-    }
-  }
-
-  private async handleSnapshotInfo(
-    options: SnapshotOptions,
-    isJsonFormat: boolean
-  ): Promise<void> {
-    if (!options.outputPath) {
-      throw new Error('請指定快照檔案路徑 (--output)');
-    }
-
-    const engine = new SnapshotEngine();
-    const snapshot = await engine.load(options.outputPath);
-    const stats = engine.getStats(snapshot);
-
-    if (isJsonFormat) {
-      console.log(JSON.stringify({
-        snapshot: {
-          version: snapshot.v,
-          project: snapshot.p,
-          timestamp: snapshot.t,
-          level: snapshot.l
-        },
-        stats
-      }, null, 2));
-    } else {
-      console.log('\n📊 快照資訊');
-      console.log('='.repeat(50));
-      console.log(`  專案: ${snapshot.p}`);
-      console.log(`  版本: ${snapshot.v}`);
-      console.log(`  時間: ${new Date(snapshot.t).toLocaleString()}`);
-      console.log(`  壓縮層級: ${snapshot.l}`);
-      console.log('\n統計資訊:');
-      console.log(`  檔案數量: ${stats.fileCount}`);
-      console.log(`  程式碼行數: ${stats.totalLines}`);
-      console.log(`  符號數量: ${stats.symbolCount}`);
-      console.log(`  估計 token 數: ${stats.estimatedTokens}`);
-      console.log(`  語言: ${snapshot.md.lg.join(', ')}`);
-      console.log('='.repeat(50));
-    }
-  }
-
-  private async handleSnapshotDiff(
-    options: any,
-    isJsonFormat: boolean
-  ): Promise<void> {
-    const oldPath = options.old;
-    const newPath = options.new;
-
-    if (!oldPath || !newPath) {
-      throw new Error('請指定兩個快照檔案路徑 (--old <path> --new <path>)');
-    }
-
-    const engine = new SnapshotEngine();
-    const differ = new SnapshotDiffer();
-
-    const oldSnapshot = await engine.load(oldPath);
-    const newSnapshot = await engine.load(newPath);
-
-    const diff = differ.diff(oldSnapshot, newSnapshot);
-
-    if (isJsonFormat) {
-      console.log(JSON.stringify(diff, null, 2));
-    } else {
-      console.log('\n📊 快照差異');
-      console.log('='.repeat(50));
-      console.log(`  新增檔案: ${diff.added.length}`);
-      console.log(`  修改檔案: ${diff.modified.length}`);
-      console.log(`  刪除檔案: ${diff.deleted.length}`);
-      console.log(`  總變更: ${diff.summary.totalChanges}`);
-      console.log(`  變更行數: ${diff.summary.linesChanged}`);
-      console.log('='.repeat(50));
-
-      if (diff.added.length > 0) {
-        console.log('\n新增檔案:');
-        diff.added.forEach(file => console.log(`  + ${file}`));
-      }
-
-      if (diff.modified.length > 0) {
-        console.log('\n修改檔案:');
-        diff.modified.forEach(file => console.log(`  ~ ${file}`));
-      }
-
-      if (diff.deleted.length > 0) {
-        console.log('\n刪除檔案:');
-        diff.deleted.forEach(file => console.log(`  - ${file}`));
-      }
-    }
-  }
-
-  private async handleSnapshotInit(
-    configManager: ConfigManager,
-    projectPath: string,
-    isJsonFormat: boolean
-  ): Promise<void> {
-    await configManager.createExampleConfig(projectPath);
-
-    if (isJsonFormat) {
-      console.log(JSON.stringify({ success: true, config: '.agent-ide.json' }));
-    } else {
-      console.log('✅ 已建立配置檔: .agent-ide.json');
     }
   }
 
@@ -2316,7 +1965,7 @@ export class AgentIdeCLI {
 
       // 使用 CycleDetector 檢測循環依賴
       const cycleDetector = new (await import('../../core/dependency/cycle-detector.js')).CycleDetector();
-      const graph = await this.buildGraphFromProjectDeps(projectDeps);
+      const graph = await DependencyUtils.buildGraphFromProjectDeps(projectDeps);
       const cycles = cycleDetector.detectCycles(graph);
 
       // 輸出結果
@@ -2568,22 +2217,6 @@ export class AgentIdeCLI {
   /**
    * 從專案依賴資訊建立依賴圖
    */
-  private async buildGraphFromProjectDeps(projectDeps: any): Promise<any> {
-    const { DependencyGraph } = await import('../../core/dependency/dependency-graph.js');
-    const graph = new DependencyGraph();
-
-    // 新增所有檔案節點及其依賴關係
-    for (const fileDep of projectDeps.fileDependencies) {
-      graph.addNode(fileDep.filePath);
-
-      for (const dep of fileDep.dependencies) {
-        graph.addDependency(fileDep.filePath, dep.path);
-      }
-    }
-
-    return graph;
-  }
-
   private async handlePluginsListCommand(options: any): Promise<void> {
     console.log('🔌 插件列表:');
 
@@ -2631,192 +2264,4 @@ export class AgentIdeCLI {
     // TODO: 顯示詳細插件資訊
   }
 
-
-  /**
-   * 檢查檔案是否存在
-   */
-  private async fileExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * 正確套用程式碼編輯
-   */
-  private applyEditCorrectly(code: string, edit: { type: 'replace' | 'insert' | 'delete'; range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
-    const lines = code.split('\n');
-
-    switch (edit.type) {
-    case 'replace': {
-      // 計算起始和結束位置的偏移量
-      const startOffset = this.positionToOffset(lines, edit.range.start);
-      const endOffset = this.positionToOffset(lines, edit.range.end);
-
-      return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
-    }
-
-    case 'insert': {
-      const offset = this.positionToOffset(lines, edit.range.start);
-      return code.substring(0, offset) + edit.newText + code.substring(offset);
-    }
-
-    case 'delete': {
-      const startOffset = this.positionToOffset(lines, edit.range.start);
-      const endOffset = this.positionToOffset(lines, edit.range.end);
-      return code.substring(0, startOffset) + code.substring(endOffset);
-    }
-
-    default:
-      return code;
-    }
-  }
-
-  /**
-   * 將行列位置轉換為字元偏移量
-   */
-  private positionToOffset(lines: string[], position: { line: number; column: number }): number {
-    let offset = 0;
-
-    for (let i = 0; i < position.line - 1 && i < lines.length; i++) {
-      offset += lines[i].length + 1; // +1 for newline
-    }
-
-    offset += position.column;
-    return Math.min(offset, lines.join('\n').length);
-  }
-
-  /**
-   * @deprecated 使用 applyEditCorrectly 代替
-   */
-  private applyCodeEdit(code: string, edit: { range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
-    const lines = code.split('\n');
-    const startLine = edit.range.start.line - 1; // 轉為 0-based
-    const endLine = edit.range.end.line - 1;
-
-    // 取得編輯範圍前後的內容
-    const before = lines.slice(0, startLine);
-    const after = lines.slice(endLine + 1);
-
-    // 組合新的內容
-    return [...before, edit.newText, ...after].join('\n');
-  }
-
-  /**
-   * 獲取專案中的所有檔案
-   */
-  private async getAllProjectFiles(projectPath: string): Promise<string[]> {
-    const files: string[] = [];
-    // 從 ParserRegistry 獲取所有支援的副檔名
-    const registry = ParserRegistry.getInstance();
-    const allowedExtensions = registry.getSupportedExtensions();
-    const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
-
-    // 檢查路徑是檔案還是目錄
-    try {
-      const stats = await fs.stat(projectPath);
-
-      if (stats.isFile()) {
-        // 如果是單一檔案，直接返回
-        if (allowedExtensions.some(ext => projectPath.endsWith(ext))) {
-          return [projectPath];
-        }
-        return [];
-      }
-    } catch (error) {
-      // 路徑不存在
-      return [];
-    }
-
-    async function walkDir(dir: string): Promise<void> {
-      try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          if (entry.isDirectory()) {
-            // 跳過排除的目錄
-            if (excludePatterns.some(pattern => entry.name.includes(pattern))) {
-              continue;
-            }
-            await walkDir(fullPath);
-          } else if (entry.isFile()) {
-            // 只包含支援的副檔名
-            if (allowedExtensions.some(ext => entry.name.endsWith(ext))) {
-              files.push(fullPath);
-            }
-          }
-        }
-      } catch (error) {
-        // 忽略無法存取的目錄
-      }
-    }
-
-    await walkDir(projectPath);
-    return files;
-  }
-
-  /**
-   * 讀取 tsconfig.json 的路徑別名設定
-   */
-  private async loadPathAliases(projectRoot: string): Promise<Record<string, string>> {
-    const pathAliases: Record<string, string> = {};
-
-    try {
-      const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
-      const tsconfigContent = await fs.readFile(tsconfigPath, 'utf-8');
-      const tsconfig = JSON.parse(tsconfigContent);
-
-      if (tsconfig.compilerOptions?.paths) {
-        const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-        const basePath = path.resolve(projectRoot, baseUrl);
-
-        for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-          if (Array.isArray(paths) && paths.length > 0) {
-            // 移除 /* 後綴
-            const cleanAlias = alias.replace(/\/\*$/, '');
-            const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
-            // 轉換為絕對路徑
-            pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
-          }
-        }
-      }
-    } catch (error) {
-      // tsconfig.json 不存在或解析失敗，使用空的路徑別名
-      if (process.env.NODE_ENV !== 'test') {
-        console.warn('⚠️  無法讀取 tsconfig.json 路徑別名設定');
-      }
-    }
-
-    return pathAliases;
-  }
-
-  /**
-   * 建立輸出格式化器
-   */
-  private createFormatter(format?: string): OutputFormatter {
-    let outputFormat: OutputFormat;
-
-    switch (format?.toLowerCase()) {
-    case 'markdown':
-      outputFormat = OutputFormat.Markdown;
-      break;
-    case 'json':
-      outputFormat = OutputFormat.Json;
-      break;
-    case 'minimal':
-      outputFormat = OutputFormat.Minimal;
-      break;
-    case 'plain':
-    default:
-      outputFormat = OutputFormat.Plain;
-      break;
-    }
-
-    return new OutputFormatter(outputFormat);
-  }
 }
