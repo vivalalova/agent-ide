@@ -3,34 +3,31 @@
  * 基於 sample-project fixture 測試程式碼快照功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
 describe('CLI snapshot - 基於 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基本功能測試
   // ============================================================
 
   it('應該生成快照並輸出 JSON 格式', async () => {
-    const outputPath = path.join(fixture.tempPath, '.agent-ide', 'snapshot.json');
+    const outputPath = path.join(fixturePath, '.agent-ide', 'snapshot.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath,
       '--format',
@@ -53,12 +50,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該生成快照並包含所有必要欄位', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot-test.json');
+    const outputPath = path.join(fixturePath, 'snapshot-test.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);
@@ -88,12 +85,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該支援 minimal 壓縮層級', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot-minimal.json');
+    const outputPath = path.join(fixturePath, 'snapshot-minimal.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath,
       '--level',
@@ -107,12 +104,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該支援 medium 壓縮層級', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot-medium.json');
+    const outputPath = path.join(fixturePath, 'snapshot-medium.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath,
       '--level',
@@ -126,12 +123,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該支援 full 壓縮層級（預設）', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot-full.json');
+    const outputPath = path.join(fixturePath, 'snapshot-full.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath,
       '--level',
@@ -145,13 +142,13 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('minimal 層級的 token 數應該最少', async () => {
-    const minimalPath = path.join(fixture.tempPath, 'snapshot-minimal.json');
-    const mediumPath = path.join(fixture.tempPath, 'snapshot-medium.json');
-    const fullPath = path.join(fixture.tempPath, 'snapshot-full.json');
+    const minimalPath = path.join(fixturePath, 'snapshot-minimal.json');
+    const mediumPath = path.join(fixturePath, 'snapshot-medium.json');
+    const fullPath = path.join(fixturePath, 'snapshot-full.json');
 
-    await executeCLI(['snapshot', '--path', fixture.tempPath, '--output', minimalPath, '--level', 'minimal']);
-    await executeCLI(['snapshot', '--path', fixture.tempPath, '--output', mediumPath, '--level', 'medium']);
-    await executeCLI(['snapshot', '--path', fixture.tempPath, '--output', fullPath, '--level', 'full']);
+    await executeCLI(['snapshot', '--path', fixturePath, '--output', minimalPath, '--level', 'minimal']);
+    await executeCLI(['snapshot', '--path', fixturePath, '--output', mediumPath, '--level', 'medium']);
+    await executeCLI(['snapshot', '--path', fixturePath, '--output', fullPath, '--level', 'full']);
 
     const minimalSize = (await fs.readFile(minimalPath, 'utf-8')).length;
     const mediumSize = (await fs.readFile(mediumPath, 'utf-8')).length;
@@ -168,13 +165,13 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能查看快照資訊', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     // 先生成快照
     await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);
@@ -209,7 +206,7 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
       'snapshot',
       'init',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -221,7 +218,7 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
     expect(output.config).toBe('.agent-ide.json');
 
     // 驗證配置檔已建立
-    const configPath = path.join(fixture.tempPath, '.agent-ide.json');
+    const configPath = path.join(fixturePath, '.agent-ide.json');
     const configExists = await fs.access(configPath).then(() => true).catch(() => false);
     expect(configExists).toBe(true);
 
@@ -237,12 +234,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該輸出正確的統計資訊', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     const result = await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath,
       '--format',
@@ -269,12 +266,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該包含架構資訊', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);
@@ -296,12 +293,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該包含符號索引', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);
@@ -328,12 +325,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該包含依賴關係', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);
@@ -350,12 +347,12 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
   });
 
   it('應該包含品質指標', async () => {
-    const outputPath = path.join(fixture.tempPath, 'snapshot.json');
+    const outputPath = path.join(fixturePath, 'snapshot.json');
 
     await executeCLI([
       'snapshot',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--output',
       outputPath
     ]);

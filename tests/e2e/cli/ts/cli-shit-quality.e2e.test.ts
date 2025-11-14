@@ -3,27 +3,23 @@
  * 測試型別安全、測試覆蓋率、錯誤處理、命名規範、安全性檢測
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { executeCLI } from '../../helpers/cli-executor.js';
 
 describe('CLI shit - 品質保證維度測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('基本功能', () => {
     it('應該輸出 qualityAssurance 維度評分', async () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -40,7 +36,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -55,7 +51,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -78,7 +74,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -97,7 +93,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -118,7 +114,7 @@ describe('CLI shit - 品質保證維度測試', () => {
     });
 
     it('應該檢測 as any 斷言', async () => {
-      const content = await fixture.readFile('src/quality-test/type-safety-issues.ts');
+      const content = await fs.readFile(path.join(fixturePath, 'src/quality-test/type-safety-issues.ts'), 'utf-8');
 
       // 確認測試檔案包含 as any
       expect(content).toContain('as any');
@@ -126,7 +122,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -143,7 +139,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -169,7 +165,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -187,7 +183,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -213,7 +209,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -228,7 +224,7 @@ describe('CLI shit - 品質保證維度測試', () => {
     });
 
     it('應該檢測靜默吞錯（catch 有註解但無處理）', async () => {
-      const content = await fixture.readFile('src/quality-test/error-handling-bad.ts');
+      const content = await fs.readFile(path.join(fixturePath, 'src/quality-test/error-handling-bad.ts'), 'utf-8');
 
       // 確認測試檔案包含靜默吞錯模式
       expect(content).toContain('// ignore');
@@ -237,7 +233,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -255,7 +251,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -273,7 +269,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -304,7 +300,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -319,7 +315,7 @@ describe('CLI shit - 品質保證維度測試', () => {
     });
 
     it('應該檢測 eval 使用', async () => {
-      const content = await fixture.readFile('src/quality-test/security-risks.ts');
+      const content = await fs.readFile(path.join(fixturePath, 'src/quality-test/security-risks.ts'), 'utf-8');
 
       // 確認測試檔案包含 eval
       expect(content).toContain('eval(');
@@ -327,7 +323,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -347,7 +343,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -377,7 +373,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -401,7 +397,7 @@ describe('CLI shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);

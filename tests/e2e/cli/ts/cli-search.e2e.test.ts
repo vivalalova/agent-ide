@@ -3,22 +3,21 @@
  * 基於 sample-project fixture 測試真實複雜專案的搜尋功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { searchCode, executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI search - 基於 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
     // 建立索引以支援符號搜尋
-    await executeCLI(['index', '--path', fixture.tempPath]);
+    await executeCLI(['index', '--path', fixturePath]);
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 符號搜尋測試（6 個測試）
@@ -26,7 +25,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
 
   describe('符號搜尋', () => {
     it('應該能搜尋 enum 成員', async () => {
-      const result = await searchCode(fixture.tempPath, 'UserRole');
+      const result = await searchCode(fixturePath, 'UserRole');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -38,7 +37,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋 interface 欄位型別', async () => {
-      const result = await searchCode(fixture.tempPath, 'UserProfile');
+      const result = await searchCode(fixturePath, 'UserProfile');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -50,7 +49,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋 type alias', async () => {
-      const result = await searchCode(fixture.tempPath, 'CreateUserData');
+      const result = await searchCode(fixturePath, 'CreateUserData');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -62,7 +61,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋泛型型別 ApiResponse', async () => {
-      const result = await searchCode(fixture.tempPath, 'ApiResponse');
+      const result = await searchCode(fixturePath, 'ApiResponse');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -78,7 +77,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋繼承關係 extends', async () => {
-      const result = await searchCode(fixture.tempPath, 'extends');
+      const result = await searchCode(fixturePath, 'extends');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -90,7 +89,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋常數物件成員', async () => {
-      const result = await searchCode(fixture.tempPath, 'ERROR_CODES');
+      const result = await searchCode(fixturePath, 'ERROR_CODES');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -107,7 +106,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
 
   describe('跨檔案引用搜尋', () => {
     it('應該能追蹤 User 型別在多個模組中的使用', async () => {
-      const result = await searchCode(fixture.tempPath, 'User');
+      const result = await searchCode(fixturePath, 'User');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -124,7 +123,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能追蹤 ApiResponse 的跨層使用', async () => {
-      const result = await searchCode(fixture.tempPath, 'ApiResponse');
+      const result = await searchCode(fixturePath, 'ApiResponse');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -135,7 +134,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能追蹤 ValidationResult 的傳遞鏈', async () => {
-      const result = await searchCode(fixture.tempPath, 'ValidationResult');
+      const result = await searchCode(fixturePath, 'ValidationResult');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -146,7 +145,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能分析 UserRole enum 的使用分布', async () => {
-      const result = await searchCode(fixture.tempPath, 'UserRole');
+      const result = await searchCode(fixturePath, 'UserRole');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -157,7 +156,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋 import 語句中的符號', async () => {
-      const result = await searchCode(fixture.tempPath, 'import');
+      const result = await searchCode(fixturePath, 'import');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -174,7 +173,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
 
   describe('程式碼結構搜尋', () => {
     it('應該能搜尋 async/await 模式', async () => {
-      const result = await searchCode(fixture.tempPath, 'async');
+      const result = await searchCode(fixturePath, 'async');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -185,7 +184,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋錯誤處理模式 try-catch', async () => {
-      const result = await searchCode(fixture.tempPath, 'try');
+      const result = await searchCode(fixturePath, 'try');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -196,7 +195,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋泛型使用模式', async () => {
-      const result = await searchCode(fixture.tempPath, 'Omit');
+      const result = await searchCode(fixturePath, 'Omit');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -207,7 +206,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋 middleware 模式方法', async () => {
-      const result = await searchCode(fixture.tempPath, 'authenticate');
+      const result = await searchCode(fixturePath, 'authenticate');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -218,7 +217,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該能搜尋 service 層的 CRUD 方法', async () => {
-      const result = await searchCode(fixture.tempPath, 'createUser');
+      const result = await searchCode(fixturePath, 'createUser');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -241,7 +240,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
         '--type',
         'regex',
         '--path',
-        fixture.tempPath
+        fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -256,7 +255,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
         'search',
         'Service',
         '--path',
-        fixture.getFilePath('src/services')
+        path.join(fixturePath, 'src/services')
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -274,7 +273,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
         'search',
         'validate',
         '--path',
-        fixture.getFilePath('src/utils')
+        path.join(fixturePath, 'src/utils')
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -288,7 +287,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
     });
 
     it('應該支援搜尋複雜的型別表達式', async () => {
-      const result = await searchCode(fixture.tempPath, 'Pick<User');
+      const result = await searchCode(fixturePath, 'Pick<User');
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -305,7 +304,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
   describe('邊界與錯誤處理', () => {
     it('應該處理找不到結果的情況', async () => {
       const result = await searchCode(
-        fixture.tempPath,
+        fixturePath,
         'NonExistentSymbolXYZ123ABC'
       );
 
@@ -326,7 +325,7 @@ describe('CLI search - 基於 sample-project fixture', () => {
         'search',
         '',
         '--path',
-        fixture.tempPath
+        fixturePath
       ]);
 
       // 空查詢應該要有明確處理：

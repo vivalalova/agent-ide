@@ -3,20 +3,19 @@
  * 使用 sample-project fixture 進行真實複雜場景測試
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI rename E2E 測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('基礎重命名功能', () => {
     it('應該能重命名 User interface（跨多檔案引用）', async () => {
@@ -26,7 +25,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'User',
         '--new-name', 'Person',
         '--type', 'interface',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -46,7 +45,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'UserService',
         '--new-name', 'PersonService',
         '--type', 'class',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -65,7 +64,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'UserRole',
         '--new-name', 'PersonRole',
         '--type', 'enum',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -83,7 +82,7 @@ describe('CLI rename E2E 測試', () => {
         'rename',
         '--symbol', 'NonExistentSymbol',
         '--new-name', 'NewName',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       const output = result.stdout + result.stderr;
@@ -99,7 +98,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'ApiResponse',
         '--new-name', 'ApiResult',
         '--type', 'interface',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -120,7 +119,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'BaseModel',
         '--new-name', 'AbstractModel',
         '--type', 'class',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -141,7 +140,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'validate',
         '--new-name', 'check',
         '--type', 'function',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -159,7 +158,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'CreateUserData',
         '--new-name', 'UserCreationData',
         '--type', 'type',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -178,7 +177,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'UserStatus',
         '--new-name', 'AccountStatus',
         '--type', 'enum',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -198,7 +197,7 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'UserProfile',
         '--new-name', 'PersonProfile',
         '--type', 'interface',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       const modifiedFiles = await fixture.getModifiedFiles();
@@ -214,11 +213,11 @@ describe('CLI rename E2E 測試', () => {
         '--symbol', 'UserAddress',
         '--new-name', 'PersonAddress',
         '--type', 'interface',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       // 讀取修改後的檔案，確保仍然是有效的 TypeScript
-      const content = await fixture.readFile('src/types/user.ts');
+      const content = await fs.readFile(path.join(fixturePath, 'src/types/user.ts'), 'utf-8');
       expect(content).toBeTruthy();
       expect(content).toContain('export interface PersonAddress');
 
@@ -227,21 +226,21 @@ describe('CLI rename E2E 測試', () => {
     });
 
     it('應該支援 preview 模式（不實際修改檔案）', async () => {
-      const originalContent = await fixture.readFile('src/types/user.ts');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'src/types/user.ts'), 'utf-8');
 
       const result = await executeCLI([
         'rename',
         '--symbol', 'UserID',
         '--new-name', 'PersonID',
         '--preview',
-        '--path', fixture.tempPath
+        '--path', fixturePath
       ]);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('預覽');
 
       // 驗證檔案未被修改
-      const currentContent = await fixture.readFile('src/types/user.ts');
+      const currentContent = await fs.readFile(path.join(fixturePath, 'src/types/user.ts'), 'utf-8');
       expect(currentContent).toBe(originalContent);
     });
   });

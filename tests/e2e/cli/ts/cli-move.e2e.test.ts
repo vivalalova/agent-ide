@@ -3,210 +3,209 @@
  * 使用 sample-project fixture 進行真實複雜場景測試
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI move 命令 E2E 測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('基礎移動測試', () => {
     it('應該能移動單一檔案到新目錄', async () => {
-      const sourcePath = fixture.getFilePath('src/utils/formatter.ts');
-      const targetPath = fixture.getFilePath('src/shared/formatter.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/formatter.ts');
+      const targetPath = path.join(fixturePath, 'src/shared/formatter.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       // 驗證命令執行成功
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('移動');
 
       // 驗證目標檔案存在
-      const targetExists = await fixture.fileExists('src/shared/formatter.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/shared/formatter.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
       // 驗證源檔案不存在
-      const sourceExists = await fixture.fileExists('src/utils/formatter.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/utils/formatter.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
     });
 
     it('應該能移動檔案並更名', async () => {
-      const sourcePath = fixture.getFilePath('src/utils/array-utils.ts');
-      const targetPath = fixture.getFilePath('src/utils/array-helpers.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/array-utils.ts');
+      const targetPath = path.join(fixturePath, 'src/utils/array-helpers.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證新檔案存在
-      const targetExists = await fixture.fileExists('src/utils/array-helpers.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/utils/array-helpers.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
       // 驗證舊檔案不存在
-      const sourceExists = await fixture.fileExists('src/utils/array-utils.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/utils/array-utils.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
     });
 
     it('應該能處理目標目錄不存在的情況', async () => {
-      const sourcePath = fixture.getFilePath('src/utils/string-utils.ts');
-      const targetPath = fixture.getFilePath('src/helpers/text/string-utils.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/string-utils.ts');
+      const targetPath = path.join(fixturePath, 'src/helpers/text/string-utils.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       // 應該自動建立目錄並成功移動
       expect(result.exitCode).toBe(0);
 
-      const targetExists = await fixture.fileExists('src/helpers/text/string-utils.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/helpers/text/string-utils.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
     });
 
     it('應該能處理源檔案不存在的錯誤', async () => {
-      const sourcePath = fixture.getFilePath('src/nonexistent.ts');
-      const targetPath = fixture.getFilePath('src/target.ts');
+      const sourcePath = path.join(fixturePath, 'src/nonexistent.ts');
+      const targetPath = path.join(fixturePath, 'src/target.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       // 應該顯示錯誤訊息
       expect(result.stdout).toContain('移動失敗');
     });
 
     it('應該能在預覽模式下顯示變更', async () => {
-      const sourcePath = fixture.getFilePath('src/utils/date-utils.ts');
-      const targetPath = fixture.getFilePath('src/shared/date-utils.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/date-utils.ts');
+      const targetPath = path.join(fixturePath, 'src/shared/date-utils.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--preview'], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--preview'], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('預覽');
 
       // 預覽模式不應該真的移動檔案
-      const sourceExists = await fixture.fileExists('src/utils/date-utils.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/utils/date-utils.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(true);
     });
   });
 
   describe('複雜跨檔案引用測試', () => {
     it('應該移動被多處引用的型別檔案', async () => {
-      const sourcePath = fixture.getFilePath('src/types/user.ts');
-      const targetPath = fixture.getFilePath('src/types/entities/user.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/user.ts');
+      const targetPath = path.join(fixturePath, 'src/types/entities/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       // 驗證移動成功
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('移動');
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/types/entities/user.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/types/entities/user.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/types/user.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/types/user.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
 
       // 驗證檔案內容保持不變
-      const targetContent = await fixture.readFile('src/types/entities/user.ts');
+      const targetContent = await fs.readFile(path.join(fixturePath, 'src/types/entities/user.ts'), 'utf-8');
       expect(targetContent).toContain('export interface User');
       expect(targetContent).toContain('export enum UserRole');
       expect(targetContent).toContain('export enum UserStatus');
     });
 
     it('應該移動配置檔案並更新跨層級引用', async () => {
-      const sourcePath = fixture.getFilePath('src/core/config/settings.ts');
-      const targetPath = fixture.getFilePath('src/config/app-settings.ts');
+      const sourcePath = path.join(fixturePath, 'src/core/config/settings.ts');
+      const targetPath = path.join(fixturePath, 'src/config/app-settings.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/config/app-settings.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/config/app-settings.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/core/config/settings.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/core/config/settings.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
     });
 
     it('應該移動 Model 檔案', async () => {
-      const sourcePath = fixture.getFilePath('src/models/product-model.ts');
-      const targetPath = fixture.getFilePath('src/domain/models/product-model.ts');
+      const sourcePath = path.join(fixturePath, 'src/models/product-model.ts');
+      const targetPath = path.join(fixturePath, 'src/domain/models/product-model.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/domain/models/product-model.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/domain/models/product-model.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/models/product-model.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/models/product-model.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
 
       // 驗證檔案內容保持不變
-      const targetContent = await fixture.readFile('src/domain/models/product-model.ts');
+      const targetContent = await fs.readFile(path.join(fixturePath, 'src/domain/models/product-model.ts'), 'utf-8');
       expect(targetContent).toContain('export class ProductModel');
     });
 
     it('應該移動 Service 檔案', async () => {
-      const sourcePath = fixture.getFilePath('src/services/user-service.ts');
-      const targetPath = fixture.getFilePath('src/application/services/user-service.ts');
+      const sourcePath = path.join(fixturePath, 'src/services/user-service.ts');
+      const targetPath = path.join(fixturePath, 'src/application/services/user-service.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/application/services/user-service.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/application/services/user-service.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/services/user-service.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/services/user-service.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
 
       // 驗證檔案內容保持不變
-      const targetContent = await fixture.readFile('src/application/services/user-service.ts');
+      const targetContent = await fs.readFile(path.join(fixturePath, 'src/application/services/user-service.ts'), 'utf-8');
       expect(targetContent).toContain('export class UserService');
     });
 
     it('應該移動深層檔案到淺層', async () => {
-      const sourcePath = fixture.getFilePath('src/api/handlers/user-handler.ts');
-      const targetPath = fixture.getFilePath('src/handlers/user.ts');
+      const sourcePath = path.join(fixturePath, 'src/api/handlers/user-handler.ts');
+      const targetPath = path.join(fixturePath, 'src/handlers/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/handlers/user.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/handlers/user.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/api/handlers/user-handler.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/api/handlers/user-handler.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
     });
 
     it('應該移動淺層檔案到深層', async () => {
-      const sourcePath = fixture.getFilePath('src/core/constants.ts');
-      const targetPath = fixture.getFilePath('src/shared/config/app/constants.ts');
+      const sourcePath = path.join(fixturePath, 'src/core/constants.ts');
+      const targetPath = path.join(fixturePath, 'src/shared/config/app/constants.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/shared/config/app/constants.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/shared/config/app/constants.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/core/constants.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/core/constants.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
 
       // 驗證檔案內容保持不變
-      const targetContent = await fixture.readFile('src/shared/config/app/constants.ts');
+      const targetContent = await fs.readFile(path.join(fixturePath, 'src/shared/config/app/constants.ts'), 'utf-8');
       expect(targetContent).toContain('export const API_BASE_URL');
     });
   });
@@ -214,48 +213,48 @@ describe('CLI move 命令 E2E 測試', () => {
   describe('批次移動測試', () => {
     it('應該能連續移動多個相關檔案', async () => {
       // 移動第一個檔案
-      const source1 = fixture.getFilePath('src/types/order.ts');
-      const target1 = fixture.getFilePath('src/types/entities/order.ts');
-      const result1 = await executeCLI(['move', source1, target1], { cwd: fixture.tempPath });
+      const source1 = path.join(fixturePath, 'src/types/order.ts');
+      const target1 = path.join(fixturePath, 'src/types/entities/order.ts');
+      const result1 = await executeCLI(['move', source1, target1], { cwd: fixturePath });
       expect(result1.exitCode).toBe(0);
 
       // 移動第二個檔案
-      const source2 = fixture.getFilePath('src/models/order-model.ts');
-      const target2 = fixture.getFilePath('src/domain/models/order-model.ts');
-      const result2 = await executeCLI(['move', source2, target2], { cwd: fixture.tempPath });
+      const source2 = path.join(fixturePath, 'src/models/order-model.ts');
+      const target2 = path.join(fixturePath, 'src/domain/models/order-model.ts');
+      const result2 = await executeCLI(['move', source2, target2], { cwd: fixturePath });
       expect(result2.exitCode).toBe(0);
 
       // 驗證兩個檔案都成功移動
-      const target1Exists = await fixture.fileExists('src/types/entities/order.ts');
+      const target1Exists = await fs.access(path.join(fixturePath, 'src/types/entities/order.ts')).then(() => true).catch(() => false);
       expect(target1Exists).toBe(true);
 
-      const target2Exists = await fixture.fileExists('src/domain/models/order-model.ts');
+      const target2Exists = await fs.access(path.join(fixturePath, 'src/domain/models/order-model.ts')).then(() => true).catch(() => false);
       expect(target2Exists).toBe(true);
 
       // 驗證源檔案不存在
-      const source1Exists = await fixture.fileExists('src/types/order.ts');
+      const source1Exists = await fs.access(path.join(fixturePath, 'src/types/order.ts')).then(() => true).catch(() => false);
       expect(source1Exists).toBe(false);
 
-      const source2Exists = await fixture.fileExists('src/models/order-model.ts');
+      const source2Exists = await fs.access(path.join(fixturePath, 'src/models/order-model.ts')).then(() => true).catch(() => false);
       expect(source2Exists).toBe(false);
     });
   });
 
   describe('錯誤處理測試', () => {
     it('應該能處理相同的源和目標路徑', async () => {
-      const samePath = fixture.getFilePath('src/utils/validator.ts');
+      const samePath = path.join(fixturePath, 'src/utils/validator.ts');
 
-      const result = await executeCLI(['move', samePath, samePath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', samePath, samePath], { cwd: fixturePath });
 
       // 應該成功執行或顯示適當訊息
       expect(result.exitCode).toBe(0);
     });
 
     it('應該能處理目標檔案已存在的情況', async () => {
-      const sourcePath = fixture.getFilePath('src/utils/formatter.ts');
-      const targetPath = fixture.getFilePath('src/utils/validator.ts'); // 已存在的檔案
+      const sourcePath = path.join(fixturePath, 'src/utils/formatter.ts');
+      const targetPath = path.join(fixturePath, 'src/utils/validator.ts'); // 已存在的檔案
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       // 根據實作，可能會覆蓋或報錯
       // 這裡我們檢查命令有適當的回應
@@ -265,53 +264,53 @@ describe('CLI move 命令 E2E 測試', () => {
 
   describe('複雜引用場景測試 - Re-export 和 Index 檔案', () => {
     it('應該移動被 re-export 的型別檔案並更新 index', async () => {
-      const sourcePath = fixture.getFilePath('src/types/user.ts');
-      const targetPath = fixture.getFilePath('src/types/entities/user.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/user.ts');
+      const targetPath = path.join(fixturePath, 'src/types/entities/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/types/entities/user.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/types/entities/user.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
       // 驗證 index.ts 中的 export 語句被更新
-      const indexContent = await fixture.readFile('src/types/index.ts');
+      const indexContent = await fs.readFile(path.join(fixturePath, 'src/types/index.ts'), 'utf-8');
       expect(indexContent).toContain('export * from \'./entities/user\'');
       expect(indexContent).not.toContain('export * from \'./user\'');
     });
 
     it('應該移動 index 檔案並更新所有引用', async () => {
-      const sourcePath = fixture.getFilePath('src/types/index.ts');
-      const targetPath = fixture.getFilePath('src/types/main.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/index.ts');
+      const targetPath = path.join(fixturePath, 'src/types/main.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/types/main.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/types/main.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
-      const sourceExists = await fixture.fileExists('src/types/index.ts');
+      const sourceExists = await fs.access(path.join(fixturePath, 'src/types/index.ts')).then(() => true).catch(() => false);
       expect(sourceExists).toBe(false);
     });
 
     it('應該移動有多個 export from 語句的檔案', async () => {
-      const sourcePath = fixture.getFilePath('src/types/api.ts');
-      const targetPath = fixture.getFilePath('src/types/responses/api.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/api.ts');
+      const targetPath = path.join(fixturePath, 'src/types/responses/api.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath], { cwd: fixture.tempPath });
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
 
       // 驗證檔案移動
-      const targetExists = await fixture.fileExists('src/types/responses/api.ts');
+      const targetExists = await fs.access(path.join(fixturePath, 'src/types/responses/api.ts')).then(() => true).catch(() => false);
       expect(targetExists).toBe(true);
 
       // 驗證 index.ts 被更新
-      const indexContent = await fixture.readFile('src/types/index.ts');
+      const indexContent = await fs.readFile(path.join(fixturePath, 'src/types/index.ts'), 'utf-8');
       expect(indexContent).toContain('export * from \'./responses/api\'');
     });
   });
@@ -328,15 +327,15 @@ export function processUser(user: User, role: UserRole): void {
       await fixture.writeFile('src/type-import-test.ts', testFileContent);
 
       // 移動被引用的檔案
-      const sourcePath = fixture.getFilePath('src/types/user.ts');
-      const targetPath = fixture.getFilePath('src/domain/user-types.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/user.ts');
+      const targetPath = path.join(fixturePath, 'src/domain/user-types.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證 type import 被更新
-      const testFileUpdated = await fixture.readFile('src/type-import-test.ts');
+      const testFileUpdated = await fs.readFile(path.join(fixturePath, 'src/type-import-test.ts'), 'utf-8');
       expect(testFileUpdated).toContain('import type { User } from \'./domain/user-types\'');
       expect(testFileUpdated).toContain('import { type UserRole, UserStatus } from \'./domain/user-types\'');
     });
@@ -354,15 +353,15 @@ export function lazyLoadProduct() {
       await fixture.writeFile('src/dynamic-loader.ts', testFileContent);
 
       // 移動被動態引用的檔案
-      const sourcePath = fixture.getFilePath('src/services/user-service.ts');
-      const targetPath = fixture.getFilePath('src/app/services/user-service.ts');
+      const sourcePath = path.join(fixturePath, 'src/services/user-service.ts');
+      const targetPath = path.join(fixturePath, 'src/app/services/user-service.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證動態 import 被更新
-      const loaderContent = await fixture.readFile('src/dynamic-loader.ts');
+      const loaderContent = await fs.readFile(path.join(fixturePath, 'src/dynamic-loader.ts'), 'utf-8');
       expect(loaderContent).toContain('await import(\'./app/services/user-service\')');
     });
 
@@ -375,15 +374,15 @@ export const userService = new UserService();`;
       await fixture.writeFile('src/app-init.ts', testFileContent);
 
       // 移動被 side-effect import 的檔案
-      const sourcePath = fixture.getFilePath('src/core/config/settings.ts');
-      const targetPath = fixture.getFilePath('src/config/settings.ts');
+      const sourcePath = path.join(fixturePath, 'src/core/config/settings.ts');
+      const targetPath = path.join(fixturePath, 'src/config/settings.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證 side-effect import 被更新
-      const initContent = await fixture.readFile('src/app-init.ts');
+      const initContent = await fs.readFile(path.join(fixturePath, 'src/app-init.ts'), 'utf-8');
       expect(initContent).toContain('import \'./config/settings\'');
     });
   });
@@ -406,15 +405,15 @@ export function test() {
       await fixture.writeFile('src/test-helpers.ts', testContent);
 
       // 只移動 utils/helper.ts
-      const sourcePath = fixture.getFilePath('src/utils/helper.ts');
-      const targetPath = fixture.getFilePath('src/shared/helper.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/helper.ts');
+      const targetPath = path.join(fixturePath, 'src/shared/helper.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證只有正確的引用被更新
-      const testUpdated = await fixture.readFile('src/test-helpers.ts');
+      const testUpdated = await fs.readFile(path.join(fixturePath, 'src/test-helpers.ts'), 'utf-8');
       expect(testUpdated).toContain('import { utilHelper } from \'./shared/helper\'');
       expect(testUpdated).toContain('import { componentHelper } from \'./components/helper\'');
     });
@@ -432,19 +431,19 @@ export function callApi() { return fetch(getApiUrl()); }`;
       await fixture.writeFile('src/service-a-test.ts', serviceAContent);
 
       // 移動中間的 service-b
-      const sourcePath = fixture.getFilePath('src/service-b-test.ts');
-      const targetPath = fixture.getFilePath('src/services/api-service.ts');
+      const sourcePath = path.join(fixturePath, 'src/service-b-test.ts');
+      const targetPath = path.join(fixturePath, 'src/services/api-service.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證 service-a 的引用被更新
-      const serviceAUpdated = await fixture.readFile('src/service-a-test.ts');
+      const serviceAUpdated = await fs.readFile(path.join(fixturePath, 'src/service-a-test.ts'), 'utf-8');
       expect(serviceAUpdated).toContain('import { getApiUrl } from \'./services/api-service\'');
 
       // 驗證 service-b（現在是 api-service）內部的引用被更新
-      const serviceBUpdated = await fixture.readFile('src/services/api-service.ts');
+      const serviceBUpdated = await fs.readFile(path.join(fixturePath, 'src/services/api-service.ts'), 'utf-8');
       expect(serviceBUpdated).toContain('import { CONFIG } from \'../../core/config/settings\'');
     });
   });
@@ -461,15 +460,15 @@ export function format() {
       await fixture.writeFile('src/mixed-ext-test.ts', testContent);
 
       // 移動被引用的檔案
-      const sourcePath = fixture.getFilePath('src/utils/date-utils.ts');
-      const targetPath = fixture.getFilePath('src/formatters/date-utils.ts');
+      const sourcePath = path.join(fixturePath, 'src/utils/date-utils.ts');
+      const targetPath = path.join(fixturePath, 'src/formatters/date-utils.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證兩種引用都被更新
-      const testUpdated = await fixture.readFile('src/mixed-ext-test.ts');
+      const testUpdated = await fs.readFile(path.join(fixturePath, 'src/mixed-ext-test.ts'), 'utf-8');
       expect(testUpdated).toContain('import { formatDate } from \'./formatters/date-utils\'');
       // 注意：.ts 副檔名應該被保留或移除，取決於實作
       expect(testUpdated).toMatch(/from ['"]\.\/formatters\/date-utils(\.ts)?['"]/);
@@ -487,15 +486,15 @@ export async function loadServices() {
       await fixture.writeFile('src/multi-import-test.ts', testContent);
 
       // 移動 services 目錄
-      const userSourcePath = fixture.getFilePath('src/services/user-service.ts');
-      const userTargetPath = fixture.getFilePath('src/app/services/user-service.ts');
+      const userSourcePath = path.join(fixturePath, 'src/services/user-service.ts');
+      const userTargetPath = path.join(fixturePath, 'src/app/services/user-service.ts');
 
-      const result = await executeCLI(['move', userSourcePath, userTargetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', userSourcePath, userTargetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證所有類型的 import 都被更新
-      const testUpdated = await fixture.readFile('src/multi-import-test.ts');
+      const testUpdated = await fs.readFile(path.join(fixturePath, 'src/multi-import-test.ts'), 'utf-8');
       expect(testUpdated).toContain('from \'./app/services/user-service\'');
     });
 
@@ -511,15 +510,15 @@ export type { CreateUserData } from './types/user';`;
       await fixture.writeFile('src/multi-line-export-test.ts', testContent);
 
       // 移動被引用的檔案
-      const sourcePath = fixture.getFilePath('src/types/user.ts');
-      const targetPath = fixture.getFilePath('src/domain/user.ts');
+      const sourcePath = path.join(fixturePath, 'src/types/user.ts');
+      const targetPath = path.join(fixturePath, 'src/domain/user.ts');
 
-      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixture.tempPath]);
+      const result = await executeCLI(['move', sourcePath, targetPath, '--path', fixturePath]);
 
       expect(result.exitCode).toBe(0);
 
       // 驗證多行 export 被更新
-      const testUpdated = await fixture.readFile('src/multi-line-export-test.ts');
+      const testUpdated = await fs.readFile(path.join(fixturePath, 'src/multi-line-export-test.ts'), 'utf-8');
       expect(testUpdated).toContain('from \'./domain/user\'');
     });
   });
