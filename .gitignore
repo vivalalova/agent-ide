@@ -155,3 +155,4 @@ review.md
 # Claude Code local settings
 .claude/settings.local.json
 .build
+\n# Test results\ntest-results*.json

@@ -14,15 +14,19 @@
     "postbuild": "mkdir -p dist/plugins/swift/swift-bridge && cp src/plugins/swift/swift-bridge/swift-parser dist/plugins/swift/swift-bridge/ 2>/dev/null || true",
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --config vitest.unit.config.ts",
     "test:unit": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --config vitest.unit.config.ts",
+    "test:integration": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --config vitest.integration.config.ts",
     "test:e2e": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --config vitest.e2e.config.ts",
-    "test:all": "npm run test:unit && npm run test:e2e",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:watch": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest --watch --config vitest.unit.config.ts",
     "test:coverage": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --coverage --config vitest.unit.config.ts",
     "test:single": "NODE_OPTIONS='--expose-gc --max-old-space-size=2048' npx vitest run --no-file-parallelism --config vitest.unit.config.ts",
     "test:bail": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --bail=1 --config vitest.unit.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",
-    "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\""
+    "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\"",
+    "test:perf": "node scripts/test-performance-monitor.js --report",
+    "test:perf:baseline": "node scripts/test-performance-monitor.js --baseline",
+    "test:perf:compare": "node scripts/test-performance-monitor.js --compare"
   },
   "keywords": [
     "agent-ide",

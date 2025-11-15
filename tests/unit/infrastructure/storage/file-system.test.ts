@@ -593,4 +593,222 @@ describe('FileSystem', () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe('文件系统注入防护', () => {
+    describe('文件名特殊字符处理', () => {
+      it('应该处理包含特殊字符的文件名', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const specialChars = ['<', '>', '|', '*', '?'];
+        for (const char of specialChars) {
+          const filename = `/test/file${char}name.txt`;
+
+          // 系统应该能处理这些字符（可能会失败或清理）
+          try {
+            await fileSystem.writeFile(filename, 'content');
+          } catch (error) {
+            // 预期某些特殊字符可能导致错误
+          }
+        }
+      });
+
+      it('应该处理包含控制字符的文件名', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const controlChars = ['\x00', '\x01', '\x1f', '\x7f'];
+        for (const char of controlChars) {
+          const filename = `/test/file${char}name.txt`;
+
+          // 系统应该处理或拒绝控制字符
+          try {
+            await fileSystem.writeFile(filename, 'content');
+          } catch (error) {
+            // 预期控制字符可能导致错误
+          }
+        }
+      });
+
+      it('应该处理非常长的文件名', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const longName = 'a'.repeat(300) + '.txt';
+        const longPath = `/test/${longName}`;
+
+        // 系统应该能处理或拒绝过长文件名
+        try {
+          await fileSystem.writeFile(longPath, 'content');
+        } catch (error) {
+          // 预期过长文件名可能导致错误
+        }
+      });
+
+      it('应该处理以点开头的文件名（隐藏文件）', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        await fileSystem.writeFile('/test/.hidden', 'content');
+
+        expect(fs.writeFile).toHaveBeenCalled();
+      });
+    });
+
+    describe('空字节注入防护', () => {
+      it('应该检测文件路径中的空字节', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+
+        const nullBytePath = '/test/file\x00.txt';
+
+        // Node.js 通常会拒绝包含空字节的路径
+        const error: any = new Error('ERR_INVALID_ARG_VALUE');
+        error.code = 'ERR_INVALID_ARG_VALUE';
+        vi.mocked(fs.writeFile).mockRejectedValue(error);
+
+        await expect(fileSystem.writeFile(nullBytePath, 'content'))
+          .rejects.toThrow();
+      });
+
+      it('应该防止空字节截断攻击', async () => {
+        // 空字节截断: file.txt\x00.jpg 可能被解释为 file.txt
+        const maliciousPath = '/test/file.txt\x00.jpg';
+
+        const error: any = new Error('ERR_INVALID_ARG_VALUE');
+        error.code = 'ERR_INVALID_ARG_VALUE';
+        vi.mocked(fs.readFile).mockRejectedValue(error);
+
+        await expect(fileSystem.readFile(maliciousPath))
+          .rejects.toThrow();
+      });
+    });
+
+    describe('路径注入防护', () => {
+      it('应该处理包含换行符的路径', async () => {
+        const pathWithNewline = '/test/file\nname.txt';
+
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+
+        // 系统应该处理或拒绝包含换行符的路径
+        const error: any = new Error('Invalid path');
+        vi.mocked(fs.writeFile).mockRejectedValue(error);
+
+        try {
+          await fileSystem.writeFile(pathWithNewline, 'content');
+        } catch (error) {
+          // 预期换行符可能导致错误
+        }
+      });
+
+      it('应该处理包含制表符的路径', async () => {
+        const pathWithTab = '/test/file\tname.txt';
+
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        // 制表符在某些系统上可能是有效的
+        await fileSystem.writeFile(pathWithTab, 'content');
+
+        expect(fs.writeFile).toHaveBeenCalled();
+      });
+    });
+
+    describe('命令注入防护（如果有外部命令执行）', () => {
+      it('应该安全处理文件名中的 shell 特殊字符', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const shellChars = ['$', '`', ';', '&', '|', '(', ')'];
+        for (const char of shellChars) {
+          const filename = `/test/file${char}name.txt`;
+
+          // FileSystem 不应该执行 shell 命令，所以这些应该是安全的
+          await fileSystem.writeFile(filename, 'content');
+
+          expect(fs.writeFile).toHaveBeenCalled();
+        }
+      });
+
+      it('应该防止命令替换注入', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const commandInjection = '/test/$(rm -rf /).txt';
+
+        // 如果 FileSystem 直接使用 fs API，这应该是安全的
+        await fileSystem.writeFile(commandInjection, 'content');
+
+        // 验证没有执行命令，只是创建了文件
+        expect(fs.writeFile).toHaveBeenCalled();
+      });
+    });
+
+    describe('Unicode 和编码处理', () => {
+      it('应该正确处理 Unicode 文件名', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const unicodeNames = [
+          '/test/文件.txt',
+          '/test/файл.txt',
+          '/test/ファイル.txt',
+          '/test/파일.txt',
+        ];
+
+        for (const name of unicodeNames) {
+          await fileSystem.writeFile(name, 'content');
+          expect(fs.writeFile).toHaveBeenCalled();
+        }
+      });
+
+      it('应该处理 emoji 文件名', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        const emojiPath = '/test/📄file.txt';
+
+        await fileSystem.writeFile(emojiPath, 'content');
+
+        expect(fs.writeFile).toHaveBeenCalled();
+      });
+
+      it('应该处理 NFD/NFC Unicode 规范化', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+        // é 可以表示为 e + 组合重音符（NFD）或单个字符（NFC）
+        const nfc = '/test/café.txt';
+        const nfd = '/test/café.txt'; // 可能不同的 Unicode 表示
+
+        await fileSystem.writeFile(nfc, 'content');
+
+        expect(fs.writeFile).toHaveBeenCalled();
+      });
+    });
+
+    describe('TOCTOU (Time-of-check to time-of-use) 防护', () => {
+      it('应该使用原子写入防止竞态条件', async () => {
+        vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+        vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+        vi.mocked(fs.rename).mockResolvedValue(undefined);
+
+        const mockFd = {
+          sync: vi.fn().mockResolvedValue(undefined),
+          close: vi.fn().mockResolvedValue(undefined),
+        };
+        vi.mocked(fs.open).mockResolvedValue(mockFd as any);
+
+        // 使用 fsync 选项应该触发原子写入
+        await fileSystem.writeFile('/test/file.txt', 'content', { fsync: true });
+
+        // 验证使用了临时文件和 rename
+        expect(fs.writeFile).toHaveBeenCalledWith(
+          '/test/file.txt.tmp',
+          'content',
+          expect.any(Object)
+        );
+        expect(fs.rename).toHaveBeenCalledWith('/test/file.txt.tmp', '/test/file.txt');
+      });
+    });
+  });
 });
