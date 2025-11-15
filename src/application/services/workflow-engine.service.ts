@@ -3,11 +3,11 @@
  * 提供工作流程執行、暫停、恢復、回滾等功能
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
-import { EventBus } from '../events/event-bus.js';
-import { EventPriority } from '../events/event-types.js';
-import { ErrorHandlerService } from './error-handler.service.js';
-import { StateManager } from '../state/state-manager.js';
+import { BaseError } from '@shared/errors/base-error.js';
+import { EventBus } from '@application/events/event-bus.js';
+import { EventPriority } from '@application/events/event-types.js';
+import { ErrorHandlerService } from '@application/services/error-handler.service.js';
+import { StateManager } from '@application/state/state-manager.js';
 import {
   WorkflowStatus,
   type IWorkflowEngine,
@@ -17,7 +17,7 @@ import {
   type WorkflowState,
   type StepResult,
   type ErrorContext
-} from '../types.js';
+} from '@application/types.js';
 
 /**
  * 工作流程執行錯誤

@@ -4,8 +4,8 @@
  */
 
 import * as ts from 'typescript';
-import { TypeScriptParser } from '../../plugins/typescript/parser.js';
-import type { TypeScriptAST } from '../../plugins/typescript/types.js';
+import { TypeScriptParser } from '@plugins/typescript/parser.js';
+import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 // 程式碼選取範圍介面
 export interface Range {

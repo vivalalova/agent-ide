@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import * as CodeEditUtils from '../utils/code-edit-utils.js';
+import * as CodeEditUtils from '@interfaces/cli/utils/code-edit-utils.js';
 
 /**
  * 處理重構命令

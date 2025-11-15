@@ -4,8 +4,8 @@
  */
 
 import * as path from 'path';
-import { MoveService } from '../../../core/move/index.js';
-import * as FileUtils from '../utils/file-utils.js';
+import { MoveService } from '@core/move/index.js';
+import * as FileUtils from '@interfaces/cli/utils/file-utils.js';
 
 /**
  * 處理移動命令

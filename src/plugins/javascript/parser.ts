@@ -23,7 +23,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '../../infrastructure/parser/index.js';
+} from '@/infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -31,7 +31,7 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
@@ -41,7 +41,7 @@ import {
   createSymbol,
   createReference,
   createDependency
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   JavaScriptAST,
   JavaScriptASTNode,
@@ -864,8 +864,8 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 提取程式碼片段（用於重複代碼檢測）
    */
-  async extractCodeFragments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+  async extractCodeFragments(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
 
     // 1. 提取頂層註解
     const commentFragments = await this.extractTopLevelComments(code, filePath);
@@ -886,9 +886,9 @@ export class JavaScriptParser implements ParserPlugin {
     return fragments;
   }
 
-  private async extractTopLevelComments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractTopLevelComments(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     let commentStart = -1;
@@ -929,9 +929,9 @@ export class JavaScriptParser implements ParserPlugin {
     return fragments;
   }
 
-  private async extractMethods(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractMethods(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -963,9 +963,9 @@ export class JavaScriptParser implements ParserPlugin {
     return fragments;
   }
 
-  private async extractConstants(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractConstants(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -997,9 +997,9 @@ export class JavaScriptParser implements ParserPlugin {
     return fragments;
   }
 
-  private async extractConfigObjects(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractConfigObjects(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1043,7 +1043,7 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 檢測樣板模式
    */
-  async detectPatterns(_code: string, _ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').PatternMatch[]> {
+  async detectPatterns(_code: string, _ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').PatternMatch[]> {
     // JavaScript 可以檢測相同的模式
     return [];
   }
@@ -1051,7 +1051,7 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 檢查型別安全問題（JavaScript 無型別系統）
    */
-  async checkTypeSafety(_code: string, _ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
+  async checkTypeSafety(_code: string, _ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
     // JavaScript 沒有型別系統
     return [];
   }
@@ -1059,8 +1059,8 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 檢查錯誤處理問題
    */
-  async checkErrorHandling(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[] = [];
+  async checkErrorHandling(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').ErrorHandlingIssue[] = [];
     const lines = code.split('\n');
 
     // 檢測空 catch 區塊
@@ -1092,8 +1092,8 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 檢查安全性問題
    */
-  async checkSecurity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').SecurityIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').SecurityIssue[] = [];
+  async checkSecurity(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').SecurityIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').SecurityIssue[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1137,8 +1137,8 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 檢查命名規範問題
    */
-  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').NamingIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').NamingIssue[] = [];
+  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').NamingIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').NamingIssue[] = [];
 
     for (const symbol of symbols) {
       // 檢測底線開頭變數

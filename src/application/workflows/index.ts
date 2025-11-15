@@ -25,7 +25,7 @@ export {
 } from './analysis-workflow.js';
 
 // 工作流程工廠方法
-import type { IModuleCoordinatorService } from '../types.js';
+import type { IModuleCoordinatorService } from '@application/types.js';
 import { RefactorWorkflow } from './refactor-workflow.js';
 import { AnalysisWorkflow } from './analysis-workflow.js';
 

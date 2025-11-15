@@ -3,12 +3,12 @@
  * 實作程式碼分析的完整工作流程：索引 → 複雜度分析 → 依賴分析 → 生成報告
  */
 
-import { BaseWorkflow, WorkflowError, type StepContext } from './base-workflow.js';
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseWorkflow, WorkflowError, type StepContext } from '@application/workflows/base-workflow.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import type {
   IModuleCoordinatorService,
   StepResult
-} from '../types.js';
+} from '@application/types.js';
 
 /**
  * 分析類型枚舉

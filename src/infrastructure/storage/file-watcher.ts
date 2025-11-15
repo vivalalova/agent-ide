@@ -5,7 +5,7 @@ import {
   FileChangeEvent,
   FileWatcherEventListener,
   FileStats
-} from './types.js';
+} from '@infrastructure/storage/types.js';
 
 /**
  * 檔案監控器

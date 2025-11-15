@@ -4,9 +4,9 @@
  */
 
 import { minimatch } from 'minimatch';
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
-import { isPosition, SymbolType } from '../../shared/types/index.js';
-import type { ParserPlugin } from './interface.js';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
+import { isPosition, SymbolType } from '@shared/types/index.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
 import type {
   CodeEdit,
   Definition,
@@ -14,8 +14,8 @@ import type {
   ValidationResult,
   ParserOptions,
   ParserCapabilities
-} from './types.js';
-import { createValidationSuccess as createSuccessResult } from './types.js';
+} from '@infrastructure/parser/types.js';
+import { createValidationSuccess as createSuccessResult } from '@infrastructure/parser/types.js';
 
 /**
  * 日誌等級
@@ -293,13 +293,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   protected getFileExtension(filePath: string): string {
     const lastDot = filePath.lastIndexOf('.');
     return lastDot === -1 ? '' : filePath.substring(lastDot);
-  }
-
-  /**
-   * 檢查插件是否支援特定檔案
-   */
-  protected supportsFile(filePath: string): boolean {
-    return this.validateFilePath(filePath);
   }
 
   /**

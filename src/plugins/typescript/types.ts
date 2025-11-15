@@ -10,9 +10,9 @@ import type {
   Symbol,
   Reference,
   Dependency
-} from '../../shared/types/index.js';
-import { SymbolType, DependencyType, ReferenceType } from '../../shared/types/index.js';
-import type { CodeEdit } from '../../infrastructure/parser/types.js';
+} from '@/shared/types/index.js';
+import { SymbolType, DependencyType, ReferenceType } from '@/shared/types/index.js';
+import type { CodeEdit } from '@/infrastructure/parser/types.js';
 import * as ts from 'typescript';
 
 /**

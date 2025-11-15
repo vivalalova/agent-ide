@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { positionToOffset, applyEditCorrectly } from './code-edit-utils.js';
+import { positionToOffset, applyEditCorrectly } from '@interfaces/cli/utils/code-edit-utils.js';
 
 describe('code-edit-utils', () => {
   describe('positionToOffset', () => {

@@ -5,10 +5,10 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { IndexEngine } from '../../../core/indexing/index-engine.js';
-import { RenameEngine } from '../../../core/rename/rename-engine.js';
-import { createIndexConfig } from '../../../core/indexing/types.js';
-import * as FileUtils from '../utils/file-utils.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import * as FileUtils from '@interfaces/cli/utils/file-utils.js';
 
 /**
  * 處理重命名命令

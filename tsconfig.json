@@ -20,7 +20,17 @@
     "noImplicitThis": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false
+    "exactOptionalPropertyTypes": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@core/*": ["src/core/*"],
+      "@infrastructure/*": ["src/infrastructure/*"],
+      "@shared/*": ["src/shared/*"],
+      "@plugins/*": ["src/plugins/*"],
+      "@application/*": ["src/application/*"],
+      "@interfaces/*": ["src/interfaces/*"]
+    }
   },
   "include": [
     "src/**/*"

@@ -5,7 +5,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 /**
  * 檢查檔案是否存在

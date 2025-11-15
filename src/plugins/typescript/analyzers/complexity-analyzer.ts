@@ -4,7 +4,7 @@
  */
 
 import * as ts from 'typescript';
-import type { ComplexityMetrics } from '../../../infrastructure/parser/analysis-types.js';
+import type { ComplexityMetrics } from '@/infrastructure/parser/analysis-types.js';
 import type { TypeScriptAST } from '../types.js';
 
 /**

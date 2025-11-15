@@ -9,6 +9,7 @@ const __dirname = dirname(__filename);
 export default defineConfig({
   resolve: {
     alias: {
+      '@': resolve(__dirname, 'src'),
       '@core': resolve(__dirname, 'src/core'),
       '@infrastructure': resolve(__dirname, 'src/infrastructure'),
       '@plugins': resolve(__dirname, 'src/plugins'),

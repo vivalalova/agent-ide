@@ -6,7 +6,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { CodeCompressor } from './code-compressor.js';
 import type {
   Snapshot,

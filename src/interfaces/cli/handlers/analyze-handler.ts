@@ -5,9 +5,9 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
-import * as FileUtils from '../utils/file-utils.js';
-import { DEFAULT_VALUES } from '../constants.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import * as FileUtils from '@interfaces/cli/utils/file-utils.js';
+import { DEFAULT_VALUES } from '@interfaces/cli/constants.js';
 
 /**
  * 處理分析命令

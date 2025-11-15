@@ -7,10 +7,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ScoreCalculator } from './score-calculator.js';
 import { Grading } from './grading.js';
-import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import type { ParserPlugin } from '../../infrastructure/parser/interface.js';
-import type { AST, Symbol } from '../../shared/types/index.js';
-import type { CodeFragment } from '../../infrastructure/parser/analysis-types.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
+import type { AST, Symbol } from '@shared/types/index.js';
+import type { CodeFragment } from '@infrastructure/parser/analysis-types.js';
 import type {
   ShitScoreResult,
   ShitScoreOptions,

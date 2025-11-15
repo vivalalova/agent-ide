@@ -3,7 +3,7 @@
  * 所有 ParserPlugin 檢測方法使用的通用型別
  */
 
-import type { Position, Range, Symbol } from '../../shared/types/index.js';
+import type { Position, Range, Symbol } from '@shared/types/index.js';
 
 /**
  * 未使用程式碼
