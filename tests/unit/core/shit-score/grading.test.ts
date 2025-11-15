@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { Grading, gradeTable } from '@core/shit-score/grading';
 import { GradeLevel, SeverityLevel, type DimensionScore } from '@core/shit-score/types';
 

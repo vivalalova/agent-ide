@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { CodeCompressor } from '@core/snapshot/code-compressor';
 import { CompressionLevel } from '@core/snapshot/types';
 
