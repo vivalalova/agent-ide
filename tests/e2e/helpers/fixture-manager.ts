@@ -17,7 +17,7 @@ const FIXTURES_DIR = path.resolve(dirname, '../../fixtures');
  */
 export async function resetFixtures(): Promise<void> {
   const projectRoot = path.resolve(dirname, '../../..');
-  await execAsync('git restore tests/fixtures/ && git clean -fd tests/fixtures/', {
+  await execAsync('git restore tests/fixtures/ && git clean -fdx tests/fixtures/', {
     cwd: projectRoot
   });
 }
