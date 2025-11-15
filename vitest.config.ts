@@ -26,7 +26,6 @@ export default defineConfig({
 
     // 報告器設定
     reporters: ['default'],
-    hideSkipped: true,
     outputFile: {
       json: './test-results.json'
     },
@@ -40,34 +39,29 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
 
     // 測試包含/排除
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: ['node_modules/**', 'dist/**'],
-    
+
     // 記憶體優化設定
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        maxWorkers: 2, // 限制 Worker 數量
-      },
-    },
-    
+    maxWorkers: 1,
     // 超時設定
     testTimeout: 120000, // 增加到 120 秒（dead code detection 需要時間）
     hookTimeout: 10000,
     teardownTimeout: 30000,
-    
+
     // 並發控制 - 降低並發數減少 Worker 負載
-    maxConcurrency: 3,
-    
+    maxConcurrency: 2,
+
     // 清理設定
     clearMocks: true,
     restoreMocks: true,
     unstubEnvs: true,
     unstubGlobals: true,
-    
+
     // 記憶體報告
     logHeapUsage: false,
-    
+
     // 覆蓋率設定
     coverage: {
       provider: 'v8',

@@ -3,20 +3,19 @@
  * 測試各種 deadcode 檢測情況
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI dead-code - 基於 deadcode-test fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('deadcode-test');
 
   beforeEach(async () => {
-    fixture = await loadFixture('deadcode-test');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 真正的 deadcode 檢測
@@ -28,7 +27,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/true-deadcode.ts'),
+        path.join(fixturePath, 'src/true-deadcode.ts'),
         '--format',
         'json',
         '--all'
@@ -56,7 +55,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/true-deadcode.ts'),
+        path.join(fixturePath, 'src/true-deadcode.ts'),
         '--format',
         'json',
         '--all'
@@ -84,7 +83,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/true-deadcode.ts'),
+        path.join(fixturePath, 'src/true-deadcode.ts'),
         '--format',
         'json',
         '--all'
@@ -112,7 +111,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/true-deadcode.ts'),
+        path.join(fixturePath, 'src/true-deadcode.ts'),
         '--format',
         'json',
         '--all'
@@ -145,7 +144,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/false-positive-cases.ts'),
+        path.join(fixturePath, 'src/false-positive-cases.ts'),
         '--format',
         'json',
         '--all'
@@ -183,7 +182,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/true-deadcode.ts'),
+        path.join(fixturePath, 'src/true-deadcode.ts'),
         '--format',
         'json',
         '--all'
@@ -211,7 +210,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/false-positive-cases.ts'),
+        path.join(fixturePath, 'src/false-positive-cases.ts'),
         '--format',
         'json',
         '--all'
@@ -239,7 +238,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/false-positive-cases.ts'),
+        path.join(fixturePath, 'src/false-positive-cases.ts'),
         '--format',
         'json',
         '--all'
@@ -273,7 +272,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/class-members.ts'),
+        path.join(fixturePath, 'src/class-members.ts'),
         '--format',
         'json',
         '--all'
@@ -301,7 +300,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/class-members.ts'),
+        path.join(fixturePath, 'src/class-members.ts'),
         '--format',
         'json',
         '--all'
@@ -329,7 +328,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/class-members.ts'),
+        path.join(fixturePath, 'src/class-members.ts'),
         '--format',
         'json',
         '--all'
@@ -357,7 +356,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/class-members.ts'),
+        path.join(fixturePath, 'src/class-members.ts'),
         '--format',
         'json',
         '--all'
@@ -391,7 +390,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/complex-references.ts'),
+        path.join(fixturePath, 'src/complex-references.ts'),
         '--format',
         'json',
         '--all'
@@ -419,7 +418,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/complex-references.ts'),
+        path.join(fixturePath, 'src/complex-references.ts'),
         '--format',
         'json',
         '--all'
@@ -447,7 +446,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src/complex-references.ts'),
+        path.join(fixturePath, 'src/complex-references.ts'),
         '--format',
         'json',
         '--all'
@@ -481,7 +480,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
         // 不加 --all
@@ -507,7 +506,7 @@ describe('CLI dead-code - 基於 deadcode-test fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'

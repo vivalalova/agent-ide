@@ -3,27 +3,26 @@
  * 基於 sample-project fixture 測試真實複雜專案的重構功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI refactor - 基於 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基礎提取函式測試（3 個測試）
   // ============================================================
 
   it('應該能在 Service 類別中提取方法邏輯', async () => {
-    const filePath = fixture.getFilePath('src/services/order-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/order-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -43,7 +42,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能預覽提取函式的變更', async () => {
-    const filePath = fixture.getFilePath('src/utils/formatter.ts');
+    const filePath = path.join(fixturePath, 'src/utils/formatter.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -63,12 +62,12 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
     expect(result.stdout).toContain('重構');
 
     // 預覽模式不應該修改檔案
-    const content = await fixture.readFile('src/utils/formatter.ts');
+    const content = await fs.readFile(path.join(fixturePath, 'src/utils/formatter.ts'), 'utf-8');
     expect(content).not.toContain('helperFormatter');
   });
 
   it('應該能在 Controller 類別中提取驗證邏輯', async () => {
-    const filePath = fixture.getFilePath('src/controllers/user-controller.ts');
+    const filePath = path.join(fixturePath, 'src/controllers/user-controller.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -91,7 +90,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能從 OrderService 提取複雜的訂單計算邏輯', async () => {
-    const filePath = fixture.getFilePath('src/services/order-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/order-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -110,7 +109,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能從 AuthService 提取驗證邏輯', async () => {
-    const filePath = fixture.getFilePath('src/services/auth-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/auth-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -129,7 +128,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能從 PaymentService 提取金流處理邏輯', async () => {
-    const filePath = fixture.getFilePath('src/services/payment-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/payment-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -152,7 +151,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能從 UserModel 提取驗證邏輯', async () => {
-    const filePath = fixture.getFilePath('src/models/user-model.ts');
+    const filePath = path.join(fixturePath, 'src/models/user-model.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -171,7 +170,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能從 ProductModel 提取格式化邏輯', async () => {
-    const filePath = fixture.getFilePath('src/models/product-model.ts');
+    const filePath = path.join(fixturePath, 'src/models/product-model.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -194,7 +193,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能從 date-utils 提取日期計算邏輯', async () => {
-    const filePath = fixture.getFilePath('src/utils/date-utils.ts');
+    const filePath = path.join(fixturePath, 'src/utils/date-utils.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -213,7 +212,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能從 string-utils 提取字串處理邏輯', async () => {
-    const filePath = fixture.getFilePath('src/utils/string-utils.ts');
+    const filePath = path.join(fixturePath, 'src/utils/string-utils.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -236,7 +235,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該在缺少必要參數時顯示錯誤', async () => {
-    const filePath = fixture.getFilePath('src/services/user-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/user-service.ts');
 
     const result = await executeCLI(['refactor', 'extract-function', '--file', filePath]);
 
@@ -245,7 +244,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該處理無效的行號範圍', async () => {
-    const filePath = fixture.getFilePath('src/services/user-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/user-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -269,7 +268,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
       'refactor',
       'extract-function',
       '--file',
-      fixture.getFilePath('src/non-existent.ts'),
+      path.join(fixturePath, 'src/non-existent.ts'),
       '--start-line',
       '1',
       '--end-line',
@@ -283,7 +282,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該處理不支援的重構操作', async () => {
-    const filePath = fixture.getFilePath('src/services/user-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/user-service.ts');
 
     const result = await executeCLI(['refactor', 'inline-function', '--file', filePath]);
 
@@ -296,7 +295,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能處理包含泛型的程式碼', async () => {
-    const filePath = fixture.getFilePath('src/models/base-model.ts');
+    const filePath = path.join(fixturePath, 'src/models/base-model.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -315,7 +314,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能處理包含 async/await 的程式碼', async () => {
-    const filePath = fixture.getFilePath('src/services/notification-service.ts');
+    const filePath = path.join(fixturePath, 'src/services/notification-service.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -334,7 +333,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能處理包含複雜型別的程式碼', async () => {
-    const filePath = fixture.getFilePath('src/api/handlers/user-handler.ts');
+    const filePath = path.join(fixturePath, 'src/api/handlers/user-handler.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -357,7 +356,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   // ============================================================
 
   it('應該能從繼承類別中提取共用邏輯', async () => {
-    const filePath = fixture.getFilePath('src/controllers/base-controller.ts');
+    const filePath = path.join(fixturePath, 'src/controllers/base-controller.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -376,7 +375,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
   });
 
   it('應該能從中介層提取驗證邏輯', async () => {
-    const filePath = fixture.getFilePath('src/api/middleware/validator.ts');
+    const filePath = path.join(fixturePath, 'src/api/middleware/validator.ts');
 
     const result = await executeCLI([
       'refactor',
@@ -400,7 +399,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
   describe('重構後程式碼正確性驗證', () => {
     it('提取函式後應該產生正確的函式定義和呼叫', async () => {
-      const filePath = fixture.getFilePath('src/services/order-service.ts');
+      const filePath = path.join(fixturePath, 'src/services/order-service.ts');
 
       // 提取 createOrder 中的使用者驗證邏輯（行 24-28）
       const result = await executeCLI([
@@ -418,7 +417,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const modifiedContent = await fixture.readFile('src/services/order-service.ts');
+      const modifiedContent = await fs.readFile(path.join(fixturePath, 'src/services/order-service.ts'), 'utf-8');
 
       // 驗證：1. 新函式存在
       expect(modifiedContent).toContain('validateUserExists');
@@ -429,7 +428,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
     // ✅ 已實作：使用 TypeScript AST parser 進行返回值型別推導
     it('提取包含返回值的程式碼塊應該正確處理返回值', async () => {
-      const filePath = fixture.getFilePath('src/utils/string-utils.ts');
+      const filePath = path.join(fixturePath, 'src/utils/string-utils.ts');
 
       // 找一段有返回值的程式碼提取
       const result = await executeCLI([
@@ -447,7 +446,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const modifiedContent = await fixture.readFile('src/utils/string-utils.ts');
+      const modifiedContent = await fs.readFile(path.join(fixturePath, 'src/utils/string-utils.ts'), 'utf-8');
 
       // 驗證：1. 提取的函式有返回值型別
       expect(modifiedContent).toContain('normalizeText');
@@ -459,7 +458,7 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
 
     it('提取包含外部變數引用的程式碼應該將變數作為參數傳入', async () => {
       // 在 fixture 中新增一個測試檔案
-      await fixture.writeFile('src/test-refactor.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-refactor.ts'), `
 export function processData(items: string[]) {
   const prefix = 'item_';
   const results: string[] = [];
@@ -471,9 +470,9 @@ export function processData(items: string[]) {
 
   return results;
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const filePath = fixture.getFilePath('src/test-refactor.ts');
+      const filePath = path.join(fixturePath, 'src/test-refactor.ts');
 
       // 提取迴圈邏輯
       const result = await executeCLI([
@@ -491,7 +490,7 @@ export function processData(items: string[]) {
 
       expect(result.exitCode).toBe(0);
 
-      const modifiedContent = await fixture.readFile('src/test-refactor.ts');
+      const modifiedContent = await fs.readFile(path.join(fixturePath, 'src/test-refactor.ts'), 'utf-8');
 
       // 驗證：1. 新函式存在
       expect(modifiedContent).toContain('addPrefixToItems');
@@ -502,7 +501,7 @@ export function processData(items: string[]) {
     });
 
     it('提取後應該能搜尋到新函式', async () => {
-      const filePath = fixture.getFilePath('src/services/user-service.ts');
+      const filePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       // 提取函式
       const result = await executeCLI([
@@ -525,7 +524,7 @@ export function processData(items: string[]) {
         'search',
         'extractedHelper',
         '--path',
-        fixture.tempPath
+        fixturePath
       ]);
 
       expect(searchResult.exitCode).toBe(0);
@@ -535,7 +534,7 @@ export function processData(items: string[]) {
     // ✅ 已實作：跨檔案 Extract Function 支援
     it('提取共用邏輯到獨立檔案後應該更新所有引用', async () => {
       // 這個測試驗證跨檔案重構
-      const filePath = fixture.getFilePath('src/models/base-model.ts');
+      const filePath = path.join(fixturePath, 'src/models/base-model.ts');
 
       // 提取 validateEmail 到獨立檔案
       const result = await executeCLI([
@@ -550,7 +549,7 @@ export function processData(items: string[]) {
         '--function-name',
         'validateEmailAddress',
         '--target-file',
-        fixture.getFilePath('src/utils/validation-helpers.ts')
+        path.join(fixturePath, 'src/utils/validation-helpers.ts')
       ]);
 
       // 如果功能尚未實作，應該明確報錯而不是靜默失敗
@@ -559,11 +558,11 @@ export function processData(items: string[]) {
       } else {
         // 如果實作了，驗證：
         // 1. 新檔案存在且包含函式
-        const helperContent = await fixture.readFile('src/utils/validation-helpers.ts');
+        const helperContent = await fs.readFile(path.join(fixturePath, 'src/utils/validation-helpers.ts'), 'utf-8');
         expect(helperContent).toContain('validateEmailAddress');
 
         // 2. 原始檔案引用了新函式
-        const baseModelContent = await fixture.readFile('src/models/base-model.ts');
+        const baseModelContent = await fs.readFile(path.join(fixturePath, 'src/models/base-model.ts'), 'utf-8');
         expect(baseModelContent).toContain('validateEmailAddress');
 
         // 3. 有 import 語句
@@ -578,7 +577,7 @@ export function processData(items: string[]) {
 
   describe('重構錯誤處理', () => {
     it('無法提取包含 early return 的程式碼片段', async () => {
-      await fixture.writeFile('src/test-early-return.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-early-return.ts'), `
 export function testFunction(value: number): string {
   if (value < 0) {
     return 'negative';
@@ -588,9 +587,9 @@ export function testFunction(value: number): string {
   }
   return 'positive';
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const filePath = fixture.getFilePath('src/test-early-return.ts');
+      const filePath = path.join(fixturePath, 'src/test-early-return.ts');
 
       // 嘗試提取包含 return 的片段
       const result = await executeCLI([
@@ -612,7 +611,7 @@ export function testFunction(value: number): string {
     });
 
     it('提取不存在的行號範圍應該報錯', async () => {
-      const filePath = fixture.getFilePath('src/services/user-service.ts');
+      const filePath = path.join(fixturePath, 'src/services/user-service.ts');
 
       const result = await executeCLI([
         'refactor',

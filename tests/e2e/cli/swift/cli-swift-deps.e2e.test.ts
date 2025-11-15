@@ -3,20 +3,19 @@
  * 基於 swift-sample-project fixture 測試依賴分析功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
-import { executeCLI } from '../../helpers/cli-executor.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
+import path from 'node:path';
+
 
 describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 依賴圖生成測試（6 個測試）
@@ -28,7 +27,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -46,7 +45,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -62,7 +61,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -83,7 +82,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -111,7 +110,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -132,7 +131,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'graph',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -154,7 +153,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'cycles',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -170,7 +169,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'cycles',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -189,7 +188,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'cycles',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -211,7 +210,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'cycles',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -228,7 +227,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'cycles',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -248,9 +247,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'impact',
         '--file',
-        fixture.getFilePath('Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -267,9 +266,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'impact',
         '--file',
-        fixture.getFilePath('Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -287,9 +286,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'impact',
         '--file',
-        fixture.getFilePath('Sources/SwiftSampleApp/Features/Products/Views/ProductDetailView.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Features/Products/Views/ProductDetailView.swift'),
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -305,9 +304,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'impact',
         '--file',
-        fixture.getFilePath('Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -328,9 +327,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'impact',
         '--file',
-        fixture.getFilePath('Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Core/Networking/NetworkService.swift'),
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -349,7 +348,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--file',
         '/nonexistent/file.swift',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -369,7 +368,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'orphans',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -385,7 +384,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'orphans',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -405,7 +404,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         'deps',
         'orphans',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);

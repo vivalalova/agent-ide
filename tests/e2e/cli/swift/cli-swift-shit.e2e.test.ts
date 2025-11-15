@@ -3,20 +3,19 @@
  * 基於 swift-sample-project fixture 測試垃圾度評分功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
-import { executeCLI } from '../../helpers/cli-executor.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
+import path from 'node:path';
+
 
 describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基本功能測試（5 個測試）
@@ -27,7 +26,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -48,7 +47,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -73,7 +72,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -91,7 +90,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -110,7 +109,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -132,7 +131,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--top',
         '3',
@@ -153,7 +152,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const scoreResult = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -167,7 +166,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
         const result = await executeCLI([
           'shit',
           '--path',
-          fixture.tempPath,
+          fixturePath,
           '--max-allowed',
           '-1',
           '--format',
@@ -184,7 +183,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--max-allowed',
         maxAllowed.toString(),
         '--format',
@@ -199,7 +198,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--max-allowed',
         '100', // 設定極高門檻，必定通過
         '--format',
@@ -222,7 +221,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -237,7 +236,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -260,7 +259,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -278,7 +277,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -317,7 +316,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed'
@@ -335,7 +334,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed'
@@ -359,7 +358,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -382,7 +381,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -414,7 +413,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/App/SwiftSampleApp.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/App/SwiftSampleApp.swift'),
         '--format',
         'json'
       ]);
@@ -432,7 +431,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp'),
         '--format',
         'json'
       ]);
@@ -454,7 +453,7 @@ describe('CLI swift shit - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);

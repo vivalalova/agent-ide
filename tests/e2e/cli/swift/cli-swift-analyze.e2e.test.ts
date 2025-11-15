@@ -3,20 +3,19 @@
  * 基於 swift-sample-project fixture 測試程式碼分析功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
-import { executeCLI } from '../../helpers/cli-executor.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
+import path from 'node:path';
+
 
 describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 複雜度分析測試（10 個測試）
@@ -28,7 +27,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -45,7 +44,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -64,7 +63,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -81,7 +80,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -103,7 +102,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -124,7 +123,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -146,7 +145,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -168,7 +167,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -190,7 +189,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'complexity',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -201,7 +200,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
     });
 
     it('應該處理單一檔案的複雜度分析', async () => {
-      const filePath = fixture.getFilePath(
+      const filePath = path.join(fixturePath,
         'Sources/SwiftSampleApp/Features/Orders/ViewModels/OrderViewModel.swift'
       );
       const result = await executeCLI([
@@ -230,7 +229,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -246,7 +245,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -267,7 +266,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -298,7 +297,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -326,7 +325,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -343,7 +342,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -359,7 +358,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -380,7 +379,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);
@@ -401,7 +400,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -419,7 +418,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -441,7 +440,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -463,7 +462,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -478,7 +477,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -493,7 +492,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -510,7 +509,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -526,7 +525,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -542,7 +541,7 @@ describe('CLI swift analyze - 基於 swift-sample-project fixture', () => {
         'analyze',
         'quality',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'summary'
       ]);

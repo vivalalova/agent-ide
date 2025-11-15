@@ -3,20 +3,20 @@
  * 測試 Swift 特定的型別安全、測試覆蓋率、錯誤處理、命名規範、安全性檢測
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, type FixtureProject } from '../../helpers/fixture-manager.js';
-import { executeCLI } from '../../helpers/cli-executor.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import { executeCLI } from '../../helpers/cli-executor';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+
 
 describe('CLI swift shit - 品質保證維度測試', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基本功能（3 個測試）
@@ -27,7 +27,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -44,7 +44,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -59,7 +59,7 @@ describe('CLI swift shit - 品質保證維度測試', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -95,12 +95,12 @@ class UnsafeTypeTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/TypeSafetyTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/TypeSafetyTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -124,12 +124,12 @@ class ForceUnwrapTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceCastTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceCastTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -161,12 +161,12 @@ class AnyTypeTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/AnyTypeTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/AnyTypeTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -190,12 +190,12 @@ class ImplicitUnwrapTest {
     @IBOutlet weak var button: UIButton!
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ImplicitUnwrapTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ImplicitUnwrapTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -218,7 +218,7 @@ class ImplicitUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -237,7 +237,7 @@ class ImplicitUnwrapTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -285,12 +285,12 @@ class ErrorHandlingTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ErrorHandlingTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ErrorHandlingTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -313,12 +313,12 @@ class ForceUnwrapTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceTryTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceTryTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -354,12 +354,12 @@ enum http_method {
     case get, post
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/NamingTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/NamingTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -380,12 +380,12 @@ class naming_violation {
     var user_name: String = ""
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/NamingViolation.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/NamingViolation.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -428,12 +428,12 @@ class SecurityTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/SecurityTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/SecurityTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -456,12 +456,12 @@ class UserDefaultsTest {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/UserDefaultsTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/UserDefaultsTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -484,7 +484,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',
@@ -506,7 +506,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--show-files',
@@ -530,7 +530,7 @@ class UserDefaultsTest {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -577,12 +577,12 @@ class ViewModel: ObservableObject {
     @Published var count: Int = 0
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ViewModelTest.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModelTest.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
       ]);
@@ -607,12 +607,12 @@ class ForceUnwrapOveruse {
     }
 }
 `;
-      fixture.writeFile('Sources/SwiftSampleApp/ForceUnwrapOveruse.swift', testFile);
+      await fs.writeFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ForceUnwrapOveruse.swift'), testFile, 'utf-8');
 
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed',

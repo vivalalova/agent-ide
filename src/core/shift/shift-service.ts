@@ -127,16 +127,22 @@ export class ShiftService {
    * @returns 移動結果
    */
   private async shiftBetweenFiles(options: ShiftOptions): Promise<ShiftResult> {
-    const { sourceFile, targetFile, fromLine, toLine, position, preview, updateReferences = true } = options;
+    const { sourceFile, fromLine, toLine, position, preview, updateReferences = true } = options;
+    let { targetFile } = options;
 
     if (!targetFile) {
       throw new Error('跨檔案移動需要指定目標檔案');
     }
 
-    // 檢查目標文件名是否包含副檔名
+    // 檢查目標文件名是否包含副檔名，如果沒有則自動添加來源檔案的副檔名
     const targetExt = path.extname(targetFile);
     if (!targetExt) {
-      throw new Error('目標檔案必須包含副檔名（例如：.ts, .js, .swift）');
+      const sourceExt = path.extname(sourceFile);
+      if (sourceExt) {
+        targetFile = targetFile + sourceExt;
+      } else {
+        throw new Error('無法推斷目標檔案副檔名，請明確指定（例如：.ts, .js, .swift）');
+      }
     }
 
     // 讀取來源檔案內容
@@ -297,7 +303,7 @@ export class ShiftService {
       };
     } else if (sourceExt === '.swift') {
       // Swift: 添加註解提示（Swift 使用模組系統，不是基於檔案的 import）
-      importStatement = `// TODO: 確認是否需要 import 對應的模組`;
+      importStatement = '// TODO: 確認是否需要 import 對應的模組';
 
       const lines = sourceContent.split('\n');
       let insertIndex = 0;

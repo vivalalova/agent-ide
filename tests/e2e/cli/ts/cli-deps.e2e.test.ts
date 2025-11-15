@@ -3,24 +3,23 @@
  * 使用 sample-project fixture 測試實際的依賴分析功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { analyzeDependencies, executeCLI } from '../../helpers/cli-executor';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('依賴圖分析', () => {
     it('應該分析整個專案的依賴圖並輸出統計資訊', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -37,7 +36,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
     });
 
     it('應該檢測到豐富的依賴關係 (使用 JSON 格式驗證)', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -57,7 +56,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
     });
 
     it('應該在 JSON 輸出中包含 types、models、services、controllers 檔案', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -80,7 +79,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
 
   describe('循環依賴檢測', () => {
     it('原始 sample-project 不應該有循環依賴', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toLowerCase();
@@ -93,7 +92,7 @@ describe('CLI deps 命令 E2E 測試 - 使用 sample-project fixture', () => {
 
     it('應該檢測到手動建立的循環依賴', async () => {
       // 建立循環依賴: service-a ↔ service-b
-      await fixture.writeFile('src/services/service-a.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/services/service-a.ts'), `
 import { ServiceB } from './service-b';
 
 export class ServiceA {
@@ -103,9 +102,9 @@ export class ServiceA {
     return this.serviceB.methodB();
   }
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/services/service-b.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/services/service-b.ts'), `
 import { ServiceA } from './service-a';
 
 export class ServiceB {
@@ -115,9 +114,9 @@ export class ServiceB {
     return this.serviceA.methodA();
   }
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toLowerCase();
@@ -128,28 +127,28 @@ export class ServiceB {
 
     it('應該檢測到多層循環依賴 (A → B → C → A)', async () => {
       // 建立三層循環
-      await fixture.writeFile('src/cycle-a.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-a.ts'), `
 import { CycleB } from './cycle-b';
 export class CycleA {
   constructor(private b: CycleB) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-b.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-b.ts'), `
 import { CycleC } from './cycle-c';
 export class CycleB {
   constructor(private c: CycleC) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-c.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-c.ts'), `
 import { CycleA } from './cycle-a';
 export class CycleC {
   constructor(private a: CycleA) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout.toLowerCase();
@@ -161,7 +160,7 @@ export class CycleC {
 
   describe('影響分析', () => {
     it('應該能分析出豐富的依賴關係網路', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -183,7 +182,7 @@ export class CycleC {
     });
 
     it('應該檢測出平均每個檔案的依賴數', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -193,7 +192,7 @@ export class CycleC {
     });
 
     it('應該檢測出最大依賴數', async () => {
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -206,9 +205,10 @@ export class CycleC {
   describe('外部依賴和複雜 import', () => {
     it('應該區分內部依賴和外部依賴', async () => {
       // 在 sample-project 中新增使用 Node.js 內建模組的檔案
-      await fixture.writeFile('src/utils/file-utils.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/utils/file-utils.ts'), `
 import * as fs from 'fs';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { formatDate } from './date-utils';
 
 export function readConfig(configPath: string): string {
@@ -219,9 +219,9 @@ export function readConfig(configPath: string): string {
 export function getConfigDate(): string {
   return formatDate(new Date());
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const result = await analyzeDependencies(fixture.tempPath);
+      const result = await analyzeDependencies(fixturePath);
 
       expect(result.exitCode).toBe(0);
       const output = result.stdout;
@@ -234,7 +234,7 @@ export function getConfigDate(): string {
       // types/index.ts 已經包含 re-export
       // 我們驗證能正確處理這些語法
 
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -251,7 +251,7 @@ export function getConfigDate(): string {
       // types/index.ts 使用 export * 重新匯出所有型別
       // 使用 types/index 的模組間接依賴所有 types/* 檔案
 
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -268,7 +268,7 @@ export function getConfigDate(): string {
 
   describe('深層依賴鏈', () => {
     it('應該追蹤完整的依賴鏈 (index → controllers → services → models → types)', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -291,7 +291,7 @@ export function getConfigDate(): string {
     });
 
     it('應該正確計算依賴層級深度', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -304,7 +304,7 @@ export function getConfigDate(): string {
 
   describe('特定服務的依賴分析', () => {
     it('應該能檢測到 services 之間的依賴關係', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -325,7 +325,7 @@ export function getConfigDate(): string {
     });
 
     it('應該能檢測到跨層級的依賴關係', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json', '--all']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json', '--all']);
 
       expect(result.exitCode).toBe(0);
 
@@ -343,7 +343,7 @@ export function getConfigDate(): string {
 
   describe('預設輸出行為（只顯示問題）', () => {
     it('預設只輸出循環依賴和孤立檔案，不包含完整依賴圖', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json']);
 
       expect(result.exitCode).toBe(0);
 
@@ -366,21 +366,21 @@ export function getConfigDate(): string {
 
     it('檢測到循環依賴時應該在 issues 中回報', async () => {
       // 建立循環依賴
-      await fixture.writeFile('src/cycle-x.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-x.ts'), `
 import { CycleY } from './cycle-y';
 export class CycleX {
   constructor(private y: CycleY) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      await fixture.writeFile('src/cycle-y.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/cycle-y.ts'), `
 import { CycleX } from './cycle-x';
 export class CycleY {
   constructor(private x: CycleX) {}
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
-      const result = await executeCLI(['deps', '--path', fixture.tempPath, '--format', 'json']);
+      const result = await executeCLI(['deps', '--path', fixturePath, '--format', 'json']);
 
       expect(result.exitCode).toBe(0);
 

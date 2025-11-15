@@ -3,20 +3,19 @@
  * 基於 sample-project fixture 測試垃圾度評分功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI shit - 基於 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 基本功能測試
@@ -26,7 +25,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -47,7 +46,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -74,7 +73,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -96,7 +95,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--detailed',
       '--format',
       'json'
@@ -115,7 +114,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -135,7 +134,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--detailed',
       '--top',
       '5',
@@ -160,7 +159,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const scoreResult = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -173,7 +172,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--max-allowed',
       maxAllowed.toString(),
       '--format',
@@ -188,7 +187,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--max-allowed',
       '100', // 設定極高門檻，必定通過
       '--format',
@@ -209,7 +208,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     const result = await executeCLI([
       'shit',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'summary'
     ]);
@@ -229,7 +228,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -247,7 +246,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -286,7 +285,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('src/services'),
+        path.join(fixturePath, 'src/services'),
         '--format',
         'json',
         '--detailed'
@@ -304,7 +303,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed'
@@ -328,7 +327,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -351,7 +350,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -383,7 +382,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('src/services/user-service.ts'),
+        path.join(fixturePath, 'src/services/user-service.ts'),
         '--format',
         'json'
       ]);
@@ -401,7 +400,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('src/models'),
+        path.join(fixturePath, 'src/models'),
         '--format',
         'json'
       ]);
@@ -423,7 +422,7 @@ describe('CLI shit - 基於 sample-project fixture', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'

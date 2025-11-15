@@ -3,27 +3,26 @@
  * 使用 swift-sample-project fixture 進行真實複雜場景測試
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 
 describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('swift-sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   describe('基礎重命名', () => {
     it('應該能重命名 struct（跨多檔案引用）', async () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Models/User.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/User.swift'),
         '--symbol',
         'User',
         '--new-name',
@@ -41,12 +40,12 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       expect(output.affectedFiles).toBeGreaterThan(1);
 
       // 驗證新名稱存在
-      const userFile = await fixture.readFile('Sources/SwiftSampleApp/Shared/Models/User.swift');
+      const userFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/User.swift'), 'utf-8');
       expect(userFile).toContain('struct UserProfile');
       expect(userFile).not.toContain('struct User {');
 
       // 驗證引用檔案（UserService 引用 User）
-      const userService = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const userService = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(userService).toContain('UserProfile');
     });
 
@@ -54,7 +53,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--symbol',
         'UserService',
         '--new-name',
@@ -71,12 +70,12 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       expect(output.affectedFiles).toBeGreaterThan(0);
 
       // 驗證定義
-      const serviceFile = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const serviceFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(serviceFile).toContain('class PersonService');
       expect(serviceFile).not.toContain('class UserService');
 
       // 驗證 ViewModel 引用
-      const viewModel = await fixture.readFile('Sources/SwiftSampleApp/ViewModels/UserViewModel.swift');
+      const viewModel = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/ViewModels/UserViewModel.swift'), 'utf-8');
       expect(viewModel).toContain('PersonService');
     });
 
@@ -84,7 +83,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Protocols/Repository.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Repository.swift'),
         '--symbol',
         'Repository',
         '--new-name',
@@ -97,7 +96,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const protocolFile = await fixture.readFile('Sources/SwiftSampleApp/Shared/Protocols/Repository.swift');
+      const protocolFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Repository.swift'), 'utf-8');
       expect(protocolFile).toContain('protocol DataRepository');
       expect(protocolFile).not.toContain('protocol Repository {');
     });
@@ -106,7 +105,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--symbol',
         'NonExistentSymbol',
         '--new-name',
@@ -126,7 +125,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'),
         '--symbol',
         'Validatable',
         '--new-name',
@@ -139,7 +138,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const protocolFile = await fixture.readFile('Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift');
+      const protocolFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'), 'utf-8');
       expect(protocolFile).toContain('protocol Checkable');
     });
 
@@ -147,7 +146,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'),
         '--symbol',
         'NetworkService',
         '--new-name',
@@ -161,14 +160,14 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
 
       // 驗證定義
-      const networkFile = await fixture.readFile('Sources/SwiftSampleApp/Services/NetworkService.swift');
+      const networkFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'), 'utf-8');
       expect(networkFile).toContain('class APIService');
 
       // 驗證所有引用 NetworkService 的服務
-      const userService = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const userService = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(userService).toContain('APIService');
 
-      const productService = await fixture.readFile('Sources/SwiftSampleApp/Services/ProductService.swift');
+      const productService = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/ProductService.swift'), 'utf-8');
       expect(productService).toContain('APIService');
     });
 
@@ -176,7 +175,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Models/User.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/User.swift'),
         '--symbol',
         'UserRole',
         '--new-name',
@@ -189,12 +188,12 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const userFile = await fixture.readFile('Sources/SwiftSampleApp/Shared/Models/User.swift');
+      const userFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/User.swift'), 'utf-8');
       expect(userFile).toContain('enum AccountRole');
       expect(userFile).not.toContain('enum UserRole');
 
       // 驗證引用
-      const userService = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const userService = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(userService).toContain('AccountRole');
     });
 
@@ -202,7 +201,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/NetworkService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'),
         '--symbol',
         'ApiResponse',
         '--new-name',
@@ -215,7 +214,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const networkFile = await fixture.readFile('Sources/SwiftSampleApp/Services/NetworkService.swift');
+      const networkFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/NetworkService.swift'), 'utf-8');
       expect(networkFile).toContain('struct NetworkResponse');
 
       // 驗證泛型使用
@@ -226,7 +225,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'),
         '--symbol',
         'ValidationError',
         '--new-name',
@@ -239,7 +238,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const validatableFile = await fixture.readFile('Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift');
+      const validatableFile = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Protocols/Validatable.swift'), 'utf-8');
       expect(validatableFile).toContain('enum CheckError');
       expect(validatableFile).not.toContain('enum ValidationError');
     });
@@ -250,7 +249,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Models/Product.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Product.swift'),
         '--symbol',
         'Product',
         '--new-name',
@@ -259,18 +258,17 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
         'struct'
       ]);
 
-      const modifiedFiles = await fixture.getModifiedFiles();
-      expect(modifiedFiles.length).toBeGreaterThan(0);
-
-      // 至少應該修改定義檔案
-      expect(modifiedFiles.some(f => f.includes('Product.swift'))).toBe(true);
+      // 驗證至少修改了定義檔案
+      const productFile = path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Product.swift');
+      const productContent = await fs.readFile(productFile, 'utf-8');
+      expect(productContent).toContain('struct Item');
     });
 
     it('應該保持檔案完整性（無語法錯誤）', async () => {
       await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Shared/Models/Order.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Order.swift'),
         '--symbol',
         'Order',
         '--new-name',
@@ -280,7 +278,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       ]);
 
       // 讀取修改後的檔案，確保仍然是有效的 Swift
-      const content = await fixture.readFile('Sources/SwiftSampleApp/Shared/Models/Order.swift');
+      const content = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Shared/Models/Order.swift'), 'utf-8');
       expect(content).toBeTruthy();
       expect(content).toContain('struct Purchase');
 
@@ -289,12 +287,12 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
     });
 
     it('應該支援 preview 模式（不實際修改檔案）', async () => {
-      const originalContent = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
 
       const result = await executeCLI([
         'rename',
         '--path',
-        fixture.getFilePath('Sources/SwiftSampleApp/Services/UserService.swift'),
+        path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'),
         '--symbol',
         'UserService',
         '--new-name',
@@ -306,7 +304,7 @@ describe('CLI swift rename - 基於 swift-sample-project fixture', () => {
       expect(result.stdout.toLowerCase()).toMatch(/預覽|preview/);
 
       // 驗證檔案未被修改
-      const currentContent = await fixture.readFile('Sources/SwiftSampleApp/Services/UserService.swift');
+      const currentContent = await fs.readFile(path.join(fixturePath, 'Sources/SwiftSampleApp/Services/UserService.swift'), 'utf-8');
       expect(currentContent).toBe(originalContent);
     });
   });

@@ -3,20 +3,19 @@
  * 基於 sample-project-duplication fixture 測試重複代碼檢測功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI shit - 重複代碼檢測', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project-duplication');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project-duplication');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. Type 1 檢測：完全相同的小方法（3 行）
@@ -27,7 +26,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--format',
         'json'
       ]);
@@ -46,7 +45,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const type1Result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--format',
         'json'
       ]);
@@ -54,7 +53,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const cleanResult = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('clean'),
+        path.join(fixturePath, 'clean'),
         '--format',
         'json'
       ]);
@@ -75,7 +74,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--format',
         'json',
         '--detailed'
@@ -101,7 +100,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type2'),
+        path.join(fixturePath, 'type2'),
         '--format',
         'json'
       ]);
@@ -118,7 +117,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const type2Result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type2'),
+        path.join(fixturePath, 'type2'),
         '--format',
         'json'
       ]);
@@ -126,7 +125,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const cleanResult = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('clean'),
+        path.join(fixturePath, 'clean'),
         '--format',
         'json'
       ]);
@@ -153,7 +152,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -171,7 +170,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--detailed'
@@ -198,7 +197,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--detailed',
         '--format',
         'json'
@@ -228,7 +227,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--detailed',
         '--format',
         'json'
@@ -261,7 +260,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--show-files',
         '--format',
         'json'
@@ -280,7 +279,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--show-files',
         '--format',
         'json'
@@ -310,7 +309,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('clean'),
+        path.join(fixturePath, 'clean'),
         '--format',
         'json'
       ]);
@@ -327,7 +326,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const cleanResult = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('clean'),
+        path.join(fixturePath, 'clean'),
         '--format',
         'json'
       ]);
@@ -335,7 +334,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const type1Result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--format',
         'json'
       ]);
@@ -362,7 +361,7 @@ describe('CLI shit - 重複代碼檢測', () => {
       const result = await executeCLI([
         'shit',
         '--path',
-        fixture.getFilePath('type1'),
+        path.join(fixturePath, 'type1'),
         '--format',
         'json'
       ]);

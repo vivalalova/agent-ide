@@ -3,20 +3,19 @@
  * 基於 sample-project fixture 測試真實複雜程式碼分析功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI analyze - 基於 sample-project fixture', () => {
-  let fixture: FixtureProject;
+  const fixturePath = getFixturePath('sample-project');
 
   beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
+    await resetFixtures();
   });
 
-  afterEach(async () => {
-    await fixture.cleanup();
-  });
 
   // ============================================================
   // 1. 複雜度分析測試（3 個測試）
@@ -27,7 +26,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.getFilePath('src/services'),
+      path.join(fixturePath, 'src/services'),
       '--format',
       'json',
       '--all'
@@ -55,7 +54,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.getFilePath('src/models'),
+      path.join(fixturePath, 'src/models'),
       '--format',
       'json',
       '--all'
@@ -80,7 +79,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -122,7 +121,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       'analyze',
       'complexity',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -151,7 +150,7 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
       'analyze',
       'best-practices',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -175,8 +174,8 @@ describe('CLI analyze - 基於 sample-project fixture', () => {
 
   it('應該執行死代碼檢測並返回正確格式', { timeout: 150000 }, async () => {
     // 新增未使用的函式（用於測試檢測功能）
-    await fixture.writeFile(
-      'src/utils/unused.ts',
+    await fs.writeFile(
+      path.join(fixturePath, 'src/utils/unused.ts'),
       `
 export function unusedHelper() {
   return 'never used';
@@ -185,14 +184,15 @@ export function unusedHelper() {
 export function anotherUnusedHelper() {
   return 'also unused';
 }
-`.trim()
+`.trim(),
+      'utf-8'
     );
 
     const result = await executeCLI([
       'analyze',
       'dead-code',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json',
       '--all'
@@ -222,7 +222,7 @@ export function anotherUnusedHelper() {
       'analyze',
       'dead-code',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ], { timeout: 120000 }); // 增加 timeout 到 120 秒
@@ -246,7 +246,7 @@ export function anotherUnusedHelper() {
       'analyze',
       'patterns',
       '--path',
-      fixture.tempPath,
+      fixturePath,
       '--format',
       'json'
     ]);
@@ -279,7 +279,7 @@ export function anotherUnusedHelper() {
         'analyze',
         'complexity',
         '--path',
-        fixture.getFilePath('src/services/order-service.ts'),
+        path.join(fixturePath, 'src/services/order-service.ts'),
         '--format',
         'json',
         '--all'
@@ -307,7 +307,7 @@ export function anotherUnusedHelper() {
 
     it('應該正確識別巢狀複雜度', async () => {
       // 建立包含巢狀結構的測試檔案
-      await fixture.writeFile('src/test-complexity.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-complexity.ts'), `
 export function simpleFunction() {
   return 'simple'; // 複雜度 = 1
 }
@@ -334,13 +334,13 @@ export function multipleBranches(value: number): string {
   return 'large';
   // 圈複雜度 = 5
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await executeCLI([
         'analyze',
         'complexity',
         '--path',
-        fixture.getFilePath('src/test-complexity.ts'),
+        path.join(fixturePath, 'src/test-complexity.ts'),
         '--format',
         'json',
         '--all'
@@ -385,7 +385,7 @@ export function multipleBranches(value: number): string {
         'analyze',
         'complexity',
         '--path',
-        fixture.getFilePath('src/utils/string-utils.ts'),
+        path.join(fixturePath, 'src/utils/string-utils.ts'),
         '--format',
         'json',
         '--all'
@@ -406,7 +406,7 @@ export function multipleBranches(value: number): string {
           'analyze',
           'complexity',
           '--path',
-          fixture.getFilePath('src/services/order-service.ts'),
+          path.join(fixturePath, 'src/services/order-service.ts'),
           '--format',
           'json',
           '--all'
@@ -428,7 +428,7 @@ export function multipleBranches(value: number): string {
   describe('真實死代碼檢測', () => {
     it('應該檢測真實的未使用函式', async () => {
       // 在 user-service.ts 中新增一個未使用的函式
-      const originalContent = await fixture.readFile('src/services/user-service.ts');
+      const originalContent = await fs.readFile(path.join(fixturePath, 'src/services/user-service.ts'), 'utf-8');
 
       // 新增未使用的函式（未 export，純內部函式）
       const modifiedContent = originalContent + `
@@ -441,13 +441,13 @@ function anotherUnusedFunction(param: string): string {
   return param.toUpperCase();
 }
 `;
-      await fixture.writeFile('src/services/user-service.ts', modifiedContent);
+      await fs.writeFile(path.join(fixturePath, 'src/services/user-service.ts'), modifiedContent, 'utf-8');
 
       const result = await executeCLI([
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -480,7 +480,7 @@ function anotherUnusedFunction(param: string): string {
         'analyze',
         'dead-code',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json',
         '--all'
@@ -521,7 +521,7 @@ function anotherUnusedFunction(param: string): string {
         'analyze',
         'patterns',
         '--path',
-        fixture.tempPath,
+        fixturePath,
         '--format',
         'json'
       ]);
@@ -587,7 +587,7 @@ function anotherUnusedFunction(param: string): string {
         'analyze',
         'complexity',
         '--path',
-        fixture.getFilePath('src/services'),
+        path.join(fixturePath, 'src/services'),
         '--format',
         'json'
         // 不加 --all
@@ -615,7 +615,7 @@ function anotherUnusedFunction(param: string): string {
 
     it('dead-code 預設只輸出有死代碼的檔案', async () => {
       // 建立一個有死代碼的檔案
-      await fixture.writeFile('src/test-dead.ts', `
+      await fs.writeFile(path.join(fixturePath, 'src/test-dead.ts'), `
 export function usedFunction() {
   return 'used';
 }
@@ -627,13 +627,13 @@ function unusedFunction() {
 export function anotherUsed() {
   return usedFunction();
 }
-      `.trim());
+      `.trim(), 'utf-8');
 
       const result = await executeCLI([
         'analyze',
         'dead-code',
         '--path',
-        fixture.getFilePath('src'),
+        path.join(fixturePath, 'src'),
         '--format',
         'json'
         // 不加 --all
