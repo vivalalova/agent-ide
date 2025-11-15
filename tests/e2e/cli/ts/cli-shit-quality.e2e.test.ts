@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 describe('CLI shit - 品質保證維度測試', () => {
   const fixturePath = getFixturePath('sample-project');

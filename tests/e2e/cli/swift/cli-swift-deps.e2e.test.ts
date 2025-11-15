@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
+import path from 'node:path';
 
 
 describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
