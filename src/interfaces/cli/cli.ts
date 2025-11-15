@@ -230,8 +230,7 @@ export class AgentIdeCLI {
       .requiredOption('--position <number>', '目標位置行號（1-based，插入到此行之前）')
       .option('--target <file>', '目標檔案路徑（必須包含副檔名，例如：newfile.ts）')
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
-      .option('--update-references', '自動更新引用（在來源檔案中添加 import）', true)
-      .option('--no-update-references', '不更新引用')
+      .option('--no-update-references', '禁用自動更新引用')
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (json|plain)', 'plain')
       .action(async (file, options) => {

@@ -52,7 +52,7 @@ export async function handleShiftCommand(file: string, options: any, shiftServic
       position,
       preview: options.preview,
       projectRoot: options.path || process.cwd(),
-      updateReferences: options.updateReferences
+      updateReferences: options.updateReferences !== false
     };
 
     const result = await localShiftService.shift(shiftOptions);
