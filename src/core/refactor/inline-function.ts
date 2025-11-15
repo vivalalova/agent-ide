@@ -121,10 +121,31 @@ export class InlineAnalyzer {
   }
 
   /**
+   * 移除代碼中的字符串和註釋
+   */
+  private stripStringsAndComments(code: string): string {
+    let result = code;
+    // 移除單行註釋
+    result = result.replace(/\/\/.*$/gm, '');
+    // 移除多行註釋
+    result = result.replace(/\/\*[\s\S]*?\*\//g, '');
+    // 移除字符串字面量（單引號）
+    result = result.replace(/'(?:[^'\\]|\\.)*'/g, '""');
+    // 移除字符串字面量（雙引號）
+    result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    // 移除模板字符串
+    result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
+    return result;
+  }
+
+  /**
    * 計算函式複雜度（簡化版）
    */
   private calculateComplexity(code: string): number {
     let complexity = 1; // 基礎複雜度
+
+    // 先移除字符串和註釋，避免誤匹配
+    const cleanCode = this.stripStringsAndComments(code);
 
     // 計算控制結構
     const patterns = [
@@ -140,7 +161,7 @@ export class InlineAnalyzer {
     ];
 
     for (const pattern of patterns) {
-      const matches = code.match(pattern);
+      const matches = cleanCode.match(pattern);
       if (matches) {
         complexity += matches.length;
       }

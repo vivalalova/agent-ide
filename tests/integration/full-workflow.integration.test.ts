@@ -204,7 +204,7 @@ describe('Full Workflow Integration', () => {
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      if (visited.has(current)) continue;
+      if (visited.has(current)) {continue;}
 
       visited.add(current);
       impactedFiles.add(current);

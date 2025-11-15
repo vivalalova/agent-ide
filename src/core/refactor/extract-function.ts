@@ -52,7 +52,7 @@ export interface ASTNode {
   loc: { start: { line: number; column: number }; end: { line: number; column: number } };
   children?: ASTNode[];
   name?: string;
-  value?: any;
+  value?: unknown;
   code?: string; // 程式碼內容
   tsNode?: ts.Node; // TypeScript AST 節點
   tsSourceFile?: ts.SourceFile; // TypeScript 原始檔
@@ -361,7 +361,7 @@ export class ExtractionAnalyzer {
   private extractReturnType(ast: ASTNode): string {
     if (!ast.tsNode || !ast.tsSourceFile) {
       // 降級：簡單檢查是否有 return
-      return this.containsReturn(ast) ? 'any' : 'void';
+      return this.containsReturn(ast) ? 'unknown' : 'void';
     }
 
     // 收集所有 return 語句的型別
@@ -449,13 +449,13 @@ export class ExtractionAnalyzer {
         return match[1];
       }
 
-      return 'any';
+      return 'unknown';
     }
 
     // 陣列字面量
     if (ts.isArrayLiteralExpression(expr)) {
       if (expr.elements.length === 0) {
-        return 'any[]';
+        return 'unknown[]';
       }
       const elementType = this.inferTypeFromExpression(expr.elements[0], sourceFile);
       return `${elementType}[]`;
@@ -468,12 +468,12 @@ export class ExtractionAnalyzer {
 
     // 函式呼叫
     if (ts.isCallExpression(expr)) {
-      // 簡化：返回 any
-      return 'any';
+      // 簡化：返回 unknown
+      return 'unknown';
     }
 
-    // 預設返回 any
-    return 'any';
+    // 預設返回 unknown
+    return 'unknown';
   }
 
   /**
@@ -481,14 +481,14 @@ export class ExtractionAnalyzer {
    */
   private containsJumpStatement(ast: ASTNode): boolean {
     if (!ast.tsNode) {
-      // 降級到舊邏輯
-      let hasJump = false;
-      this.traverse(ast, (node) => {
-        if (node.type === 'BreakStatement' || node.type === 'ContinueStatement') {
-          hasJump = true;
-        }
-      });
-      return hasJump;
+      // 降級到基於字符串的檢測
+      if (!ast.code) {
+        return false;
+      }
+      // 使用正則表達式檢測 break 或 continue 語句
+      // 匹配獨立的 break/continue 關鍵字（不在字符串或註釋中）
+      const breakContinuePattern = /\b(break|continue)\b(?=([^"'`]*["'`][^"'`]*["'`])*[^"'`]*$)/;
+      return breakContinuePattern.test(ast.code);
     }
 
     let hasJump = false;
@@ -516,14 +516,13 @@ export class ExtractionAnalyzer {
    */
   private containsFunctionDefinition(ast: ASTNode): boolean {
     if (!ast.tsNode) {
-      // 降級到舊邏輯
-      let hasFunction = false;
-      this.traverse(ast, (node) => {
-        if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
-          hasFunction = true;
-        }
-      });
-      return hasFunction;
+      // 降級到基於字符串的檢測
+      if (!ast.code) {
+        return false;
+      }
+      // 檢測 function 關鍵字或箭頭函數語法
+      const functionPattern = /\bfunction\b|\s*=>\s*/;
+      return functionPattern.test(ast.code);
     }
 
     let hasFunction = false;
@@ -752,7 +751,7 @@ export class FunctionExtractor {
       returnType = `: ${inferredReturnType}`;
     } else {
       const hasReturn = code.includes('return') || returnVars.length > 0;
-      returnType = hasReturn ? ': any' : ': void';
+      returnType = hasReturn ? ': unknown' : ': void';
     }
 
     const comment = config.generateComments
