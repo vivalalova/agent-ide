@@ -4,8 +4,8 @@
  */
 
 import * as path from 'path';
-import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '../../../core/snapshot/index.js';
-import type { SnapshotOptions } from '../../../core/snapshot/index.js';
+import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '@core/snapshot/index.js';
+import type { SnapshotOptions } from '@core/snapshot/index.js';
 
 /**
  * 處理快照生成命令

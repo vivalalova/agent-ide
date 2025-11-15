@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { ShiftService } from '../../../core/shift/index.js';
+import { ShiftService } from '@core/shift/index.js';
 
 /**
  * 處理行移動命令

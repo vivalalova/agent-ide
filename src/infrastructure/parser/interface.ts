@@ -3,8 +3,8 @@
  * 定義所有 Parser 插件必須實作的契約
  */
 
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
-import type { CodeEdit, Definition, Usage, ValidationResult } from './types.js';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
+import type { CodeEdit, Definition, Usage, ValidationResult } from '@infrastructure/parser/types.js';
 import type {
   UnusedCode,
   ComplexityMetrics,
@@ -14,7 +14,7 @@ import type {
   ErrorHandlingIssue,
   SecurityIssue,
   NamingIssue
-} from './analysis-types.js';
+} from '@infrastructure/parser/analysis-types.js';
 
 /**
  * Parser 插件主介面

@@ -18,7 +18,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '../../infrastructure/parser/index.js';
+} from '@/infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -26,13 +26,13 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
   ReferenceType,
   SymbolType
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import type {
   UnusedCode,
   ComplexityMetrics,
@@ -42,7 +42,7 @@ import type {
   ErrorHandlingIssue,
   SecurityIssue,
   NamingIssue
-} from '../../infrastructure/parser/analysis-types.js';
+} from '@/infrastructure/parser/analysis-types.js';
 import type {
   SwiftAST,
   SwiftASTNode,

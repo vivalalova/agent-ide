@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { OutputFormatter, OutputFormat } from '../output-formatter.js';
+import { OutputFormatter, OutputFormat } from '@interfaces/cli/output-formatter.js';
 
 /**
  * 格式化檔案路徑（顯示相對路徑）

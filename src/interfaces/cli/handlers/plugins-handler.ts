@@ -3,7 +3,7 @@
  * 處理插件相關的命令操作
  */
 
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 /**
  * 處理插件列表命令

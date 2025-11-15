@@ -3,8 +3,8 @@
  * 分析 Swift 程式碼的依賴關係
  */
 
-import type { Dependency } from '../../shared/types/index.js';
-import { DependencyType } from '../../shared/types/index.js';
+import type { Dependency } from '@/shared/types/index.js';
+import { DependencyType } from '@/shared/types/index.js';
 import type { SwiftAST, SwiftASTNode } from './types.js';
 import { SwiftNodeKind } from './types.js';
 

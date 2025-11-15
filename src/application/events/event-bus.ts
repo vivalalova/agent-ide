@@ -4,7 +4,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import {
   BaseEvent,
   EventHandler,

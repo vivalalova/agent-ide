@@ -304,18 +304,4 @@ export class StateManager extends EventEmitter {
     const jsonString = JSON.stringify(this.toJSON());
     return jsonString.length * 2; // 估計每個字符佔用 2 bytes
   }
-
-  /**
-   * 添加事件監聽器（類型安全）
-   */
-  on(event: string, listener: (...args: unknown[]) => void): this {
-    return super.on(event, listener);
-  }
-
-  /**
-   * 移除事件監聽器（類型安全）
-   */
-  off(event: string, listener: (...args: unknown[]) => void): this {
-    return super.off(event, listener);
-  }
 }

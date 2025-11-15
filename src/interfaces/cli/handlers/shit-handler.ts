@@ -4,9 +4,9 @@
  */
 
 import * as fs from 'fs/promises';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
-import { ShitScoreAnalyzer } from '../../../core/shit-score/shit-score-analyzer.js';
-import { DEFAULT_VALUES, FORMAT, createSeparator } from '../constants.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { ShitScoreAnalyzer } from '@core/shit-score/shit-score-analyzer.js';
+import { DEFAULT_VALUES, FORMAT, createSeparator } from '@interfaces/cli/constants.js';
 
 /**
  * 處理 ShitScore 命令

@@ -6,11 +6,11 @@
 import * as ts from 'typescript';
 import type {
   Dependency
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   DependencyType,
   createDependency
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptASTNode,

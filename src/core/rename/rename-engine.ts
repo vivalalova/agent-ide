@@ -16,11 +16,11 @@ import {
   createRenameOperation,
   createConflictInfo
 } from './types.js';
-import { createRange, createPosition } from '../../shared/types/core.js';
-import { Symbol } from '../../shared/types/symbol.js';
+import { createRange, createPosition } from '@shared/types/core.js';
+import { Symbol } from '@shared/types/symbol.js';
 import { ScopeAnalyzer } from './scope-analyzer.js';
 import { ReferenceUpdater } from './reference-updater.js';
-import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 /**
  * 重新命名引擎類別

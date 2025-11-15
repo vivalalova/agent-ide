@@ -4,41 +4,41 @@
  */
 
 import { Command } from 'commander';
-import { IndexEngine } from '../../core/indexing/index-engine.js';
-import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
-import { RenameEngine } from '../../core/rename/rename-engine.js';
-import { ImportResolver, MoveService } from '../../core/move/index.js';
-import { SearchService } from '../../core/search/service.js';
-import { ShiftService } from '../../core/shift/index.js';
-import { createIndexConfig } from '../../core/indexing/types.js';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import { TypeScriptParser } from '../../plugins/typescript/parser.js';
-import { JavaScriptParser } from '../../plugins/javascript/parser.js';
-import { SwiftParser } from '../../plugins/swift/parser.js';
-import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js';
-import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '../../core/snapshot/index.js';
-import type { SnapshotOptions } from '../../core/snapshot/index.js';
-import { OutputFormatter, OutputFormat } from './output-formatter.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { ImportResolver, MoveService } from '@core/move/index.js';
+import { SearchService } from '@core/search/service.js';
+import { ShiftService } from '@core/shift/index.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { TypeScriptParser } from '@plugins/typescript/parser.js';
+import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { SwiftParser } from '@plugins/swift/parser.js';
+import { ShitScoreAnalyzer } from '@core/shit-score/shit-score-analyzer.js';
+import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '@core/snapshot/index.js';
+import type { SnapshotOptions } from '@core/snapshot/index.js';
+import { OutputFormatter, OutputFormat } from '@interfaces/cli/output-formatter.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import * as FormatUtils from './utils/format-utils.js';
-import * as CodeEditUtils from './utils/code-edit-utils.js';
-import * as FileUtils from './utils/file-utils.js';
-import * as SearchUtils from './utils/search-utils.js';
-import * as DependencyUtils from './utils/dependency-utils.js';
-import * as SnapshotHandler from './utils/snapshot-handler.js';
-import * as PluginsHandler from './handlers/plugins-handler.js';
-import * as DepsHandler from './handlers/deps-handler.js';
-import * as AnalyzeHandler from './handlers/analyze-handler.js';
-import * as SearchHandler from './handlers/search-handler.js';
-import * as RenameHandler from './handlers/rename-handler.js';
-import * as RefactorHandler from './handlers/refactor-handler.js';
-import * as MoveHandler from './handlers/move-handler.js';
-import * as ShiftHandler from './handlers/shift-handler.js';
-import * as ShitHandler from './handlers/shit-handler.js';
-import { DEFAULT_VALUES } from './constants.js';
+import * as FormatUtils from '@interfaces/cli/utils/format-utils.js';
+import * as CodeEditUtils from '@interfaces/cli/utils/code-edit-utils.js';
+import * as FileUtils from '@interfaces/cli/utils/file-utils.js';
+import * as SearchUtils from '@interfaces/cli/utils/search-utils.js';
+import * as DependencyUtils from '@interfaces/cli/utils/dependency-utils.js';
+import * as SnapshotHandler from '@interfaces/cli/utils/snapshot-handler.js';
+import * as PluginsHandler from '@interfaces/cli/handlers/plugins-handler.js';
+import * as DepsHandler from '@interfaces/cli/handlers/deps-handler.js';
+import * as AnalyzeHandler from '@interfaces/cli/handlers/analyze-handler.js';
+import * as SearchHandler from '@interfaces/cli/handlers/search-handler.js';
+import * as RenameHandler from '@interfaces/cli/handlers/rename-handler.js';
+import * as RefactorHandler from '@interfaces/cli/handlers/refactor-handler.js';
+import * as MoveHandler from '@interfaces/cli/handlers/move-handler.js';
+import * as ShiftHandler from '@interfaces/cli/handlers/shift-handler.js';
+import * as ShitHandler from '@interfaces/cli/handlers/shit-handler.js';
+import { DEFAULT_VALUES } from '@interfaces/cli/constants.js';
 
 // 讀取 package.json 版本
 const __filename = fileURLToPath(import.meta.url);
@@ -170,7 +170,7 @@ export class AgentIdeCLI {
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (options) => {
-        await this.handleRenameCommand(options);
+        await RenameHandler.handleRenameCommand(options, this.renameEngine, this.indexEngine);
       });
   }
 
@@ -188,7 +188,7 @@ export class AgentIdeCLI {
       .option('--preview', '預覽變更而不執行')
       .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
       .action(async (action, options) => {
-        await this.handleRefactorCommand(action, options);
+        await RefactorHandler.handleRefactorCommand(action, options);
       });
   }
 
@@ -288,11 +288,15 @@ export class AgentIdeCLI {
         if (isSubcommand) {
           // 使用子命令語法
           if (queryOrSubcommand === 'symbol') {
-            await this.handleSymbolSearchCommand(options);
+            await SearchHandler.handleSymbolSearchCommand(options);
           } else if (queryOrSubcommand === 'text') {
-            await this.handleTextSearchCommand(options);
+            // 初始化搜尋服務
+            if (!this.searchService) {
+              this.searchService = new SearchService();
+            }
+            await SearchHandler.handleTextSearchCommand(options, this.searchService);
           } else if (queryOrSubcommand === 'structural') {
-            await this.handleStructuralSearchCommand(options);
+            await SearchHandler.handleStructuralSearchCommand(options);
           }
         } else {
           // 簡化語法：直接使用查詢字串
@@ -310,7 +314,7 @@ export class AgentIdeCLI {
       .option('--format <format>', '輸出格式 (json|table|summary)', 'summary')
       .option('--all', '顯示所有掃描結果（預設只顯示有問題的項目）', false)
       .action(async (type, options) => {
-        await this.handleAnalyzeCommand(type, options);
+        await AnalyzeHandler.handleAnalyzeCommand(type, options);
       });
   }
 
@@ -323,7 +327,7 @@ export class AgentIdeCLI {
       .option('--format <format>', '輸出格式 (json|dot|summary)', 'summary')
       .option('--all', '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）', false)
       .action(async (subcommand, options) => {
-        await this.handleDepsCommand(subcommand, options);
+        await DepsHandler.handleDepsCommand(subcommand, options, this.dependencyAnalyzer);
       });
   }
 
@@ -339,7 +343,7 @@ export class AgentIdeCLI {
       .option('--show-files', '顯示問題檔案列表（detailedFiles）', false)
       .option('-o, --output <file>', '輸出到檔案')
       .action(async (options) => {
-        await this.handleShitCommand(options);
+        await ShitHandler.handleShitCommand(options);
       });
   }
 
@@ -354,14 +358,14 @@ export class AgentIdeCLI {
       .option('--disabled', '只顯示停用的插件')
       .description('列出所有插件')
       .action(async (options) => {
-        await this.handlePluginsListCommand(options);
+        await PluginsHandler.handlePluginsListCommand(options);
       });
 
     pluginsCmd
       .command('info <plugin>')
       .description('顯示插件資訊')
       .action(async (pluginName) => {
-        await this.handlePluginInfoCommand(pluginName);
+        await PluginsHandler.handlePluginInfoCommand(pluginName);
       });
   }
 
@@ -383,13 +387,6 @@ export class AgentIdeCLI {
   }
 
   // Command handlers
-  private async handleRenameCommand(options: any): Promise<void> {
-    await RenameHandler.handleRenameCommand(options, this.renameEngine, this.indexEngine);
-  }
-
-  private async handleRefactorCommand(action: string, options: any): Promise<void> {
-    await RefactorHandler.handleRefactorCommand(action, options);
-  }
 
   private async handleMoveCommand(source: string, target: string, options: any): Promise<void> {
     // 初始化移動服務（如果尚未初始化）
@@ -420,38 +417,6 @@ export class AgentIdeCLI {
     await SearchHandler.handleSearchCommand(query, options, this.searchService);
   }
 
-  /**
-   * 處理文字搜尋命令
-   */
-  private async handleTextSearchCommand(options: any): Promise<void> {
-    // 初始化搜尋服務
-    if (!this.searchService) {
-      this.searchService = new SearchService();
-    }
-    await SearchHandler.handleTextSearchCommand(options, this.searchService);
-  }
-
-  /**
-   * 處理結構化搜尋命令
-   */
-  private async handleStructuralSearchCommand(options: any): Promise<void> {
-    await SearchHandler.handleStructuralSearchCommand(options);
-  }
-
-  /**
-   * 處理符號搜尋命令
-   */
-  private async handleSymbolSearchCommand(options: any): Promise<void> {
-    await SearchHandler.handleSymbolSearchCommand(options);
-  }
-
-  private async handleAnalyzeCommand(type: string | undefined, options: any): Promise<void> {
-    await AnalyzeHandler.handleAnalyzeCommand(type, options);
-  }
-
-  private async handleShitCommand(options: any): Promise<void> {
-    await ShitHandler.handleShitCommand(options);
-  }
 
   private async handleSnapshotCommand(action: string, options: any): Promise<void> {
     const isJsonFormat = options.format === 'json';
@@ -520,16 +485,5 @@ export class AgentIdeCLI {
     }
   }
 
-  private async handleDepsCommand(subcommand: string, options: any): Promise<void> {
-    await DepsHandler.handleDepsCommand(subcommand, options, this.dependencyAnalyzer);
-  }
-
-  private async handlePluginsListCommand(options: any): Promise<void> {
-    await PluginsHandler.handlePluginsListCommand(options);
-  }
-
-  private async handlePluginInfoCommand(pluginName: string): Promise<void> {
-    await PluginsHandler.handlePluginInfoCommand(pluginName);
-  }
 
 }

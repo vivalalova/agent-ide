@@ -4,11 +4,11 @@
  */
 
 import * as path from 'path';
-import { SearchService } from '../../../core/search/service.js';
-import { IndexEngine } from '../../../core/indexing/index-engine.js';
-import { createIndexConfig } from '../../../core/indexing/types.js';
-import * as FormatUtils from '../utils/format-utils.js';
-import * as SearchUtils from '../utils/search-utils.js';
+import { SearchService } from '@core/search/service.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import * as FormatUtils from '@interfaces/cli/utils/format-utils.js';
+import * as SearchUtils from '@interfaces/cli/utils/search-utils.js';
 
 /**
  * 處理搜尋命令

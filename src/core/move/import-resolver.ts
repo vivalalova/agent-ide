@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
-import { Position, createPosition, createRange } from '../../shared/types/core.js';
+import { Position, createPosition, createRange } from '@shared/types/core.js';
 
 export class ImportResolver {
   private readonly config: ImportResolverConfig;

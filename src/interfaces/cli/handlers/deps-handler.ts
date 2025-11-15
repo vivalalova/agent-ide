@@ -4,8 +4,8 @@
  */
 
 import * as path from 'path';
-import { DependencyAnalyzer } from '../../../core/dependency/dependency-analyzer.js';
-import * as DependencyUtils from '../utils/dependency-utils.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import * as DependencyUtils from '@interfaces/cli/utils/dependency-utils.js';
 
 /**
  * 處理依賴分析命令

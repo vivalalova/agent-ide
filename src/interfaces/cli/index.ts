@@ -4,7 +4,7 @@
  * CLI 入口點
  */
 
-import { AgentIdeCLI } from './cli.js';
+import { AgentIdeCLI } from '@interfaces/cli/cli.js';
 
 // 啟動 CLI
 async function main() {

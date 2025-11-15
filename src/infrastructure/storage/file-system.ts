@@ -12,7 +12,7 @@ import {
   DirectoryNotEmptyError,
   FileSystemErrorType,
   AtomicWriteOptions,
-} from './types.js';
+} from '@infrastructure/storage/types.js';
 
 /**
  * 檔案系統操作類別

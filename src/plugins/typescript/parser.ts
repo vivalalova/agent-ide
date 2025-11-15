@@ -16,7 +16,7 @@ import {
   createCodeEdit,
   createDefinition,
   createUsage
-} from '../../infrastructure/parser/index.js';
+} from '@/infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -24,13 +24,13 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
   ReferenceType,
   SymbolType
-} from '../../shared/types/index.js';
+} from '@/shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptASTNode,
@@ -47,7 +47,7 @@ import {
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
-import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '../../shared/utils/memory-monitor.js';
+import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@/shared/utils/memory-monitor.js';
 
 /**
  * TypeScript Parser 實作
@@ -1185,7 +1185,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢測未使用的符號
    */
-  async detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<import('../../infrastructure/parser/analysis-types.js').UnusedCode[]> {
+  async detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<import('@/infrastructure/parser/analysis-types.js').UnusedCode[]> {
     const { UnusedSymbolDetector } = await import('./analyzers/unused-symbol-detector.js');
     const detector = new UnusedSymbolDetector();
     return detector.detect(
@@ -1198,7 +1198,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 分析程式碼複雜度
    */
-  async analyzeComplexity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ComplexityMetrics> {
+  async analyzeComplexity(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').ComplexityMetrics> {
     const { ComplexityAnalyzer } = await import('./analyzers/complexity-analyzer.js');
     const analyzer = new ComplexityAnalyzer();
     return analyzer.analyze(code, ast as TypeScriptAST);
@@ -1207,8 +1207,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 提取程式碼片段（用於重複代碼檢測）
    */
-  async extractCodeFragments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+  async extractCodeFragments(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
 
     // 1. 提取頂層註解
     const commentFragments = await this.extractTopLevelComments(code, filePath);
@@ -1229,9 +1229,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return fragments;
   }
 
-  private async extractTopLevelComments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractTopLevelComments(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     let commentStart = -1;
@@ -1273,9 +1273,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return fragments;
   }
 
-  private async extractMethods(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractMethods(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1308,9 +1308,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return fragments;
   }
 
-  private async extractConstants(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractConstants(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1342,9 +1342,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return fragments;
   }
 
-  private async extractConfigObjects(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
+  private async extractConfigObjects(code: string, filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').CodeFragment[]> {
     const { createHash } = await import('crypto');
-    const fragments: import('../../infrastructure/parser/analysis-types.js').CodeFragment[] = [];
+    const fragments: import('@/infrastructure/parser/analysis-types.js').CodeFragment[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1390,12 +1390,12 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢測樣板模式
    */
-  async detectPatterns(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').PatternMatch[]> {
+  async detectPatterns(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').PatternMatch[]> {
     const { PatternDetector, PatternType } = await import('./analyzers/pattern-detector.js');
     const detector = new PatternDetector();
     const groups = await detector.detectAll([ast.sourceFile]);
 
-    const patterns: import('../../infrastructure/parser/analysis-types.js').PatternMatch[] = [];
+    const patterns: import('@/infrastructure/parser/analysis-types.js').PatternMatch[] = [];
     for (const [type, group] of groups.entries()) {
       patterns.push({
         pattern: type,
@@ -1416,12 +1416,12 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢查型別安全問題
    */
-  async checkTypeSafety(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
+  async checkTypeSafety(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
     const { TypeSafetyChecker } = await import('./analyzers/type-safety-checker.js');
     const checker = new TypeSafetyChecker();
     const result = await checker.check([ast.sourceFile], process.cwd());
 
-    const issues: import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[] = [];
+    const issues: import('@/infrastructure/parser/analysis-types.js').TypeSafetyIssue[] = [];
 
     // any 型別使用
     for (let i = 0; i < result.anyTypeCount; i++) {
@@ -1459,8 +1459,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢查錯誤處理問題
    */
-  async checkErrorHandling(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[] = [];
+  async checkErrorHandling(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').ErrorHandlingIssue[] = [];
     const lines = code.split('\n');
 
     // 檢測空 catch 區塊
@@ -1492,8 +1492,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢查安全性問題
    */
-  async checkSecurity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').SecurityIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').SecurityIssue[] = [];
+  async checkSecurity(code: string, ast: AST): Promise<import('@/infrastructure/parser/analysis-types.js').SecurityIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').SecurityIssue[] = [];
     const lines = code.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -1537,8 +1537,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 檢查命名規範問題
    */
-  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').NamingIssue[]> {
-    const issues: import('../../infrastructure/parser/analysis-types.js').NamingIssue[] = [];
+  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('@/infrastructure/parser/analysis-types.js').NamingIssue[]> {
+    const issues: import('@/infrastructure/parser/analysis-types.js').NamingIssue[] = [];
 
     for (const symbol of symbols) {
       // 檢測底線開頭變數（JavaScript/TypeScript 規範不建議）

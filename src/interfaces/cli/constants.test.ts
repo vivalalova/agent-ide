@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_VALUES, FORMAT, OUTPUT_FORMATS, createSeparator } from './constants.js';
+import { DEFAULT_VALUES, FORMAT, OUTPUT_FORMATS, createSeparator } from '@interfaces/cli/constants.js';
 
 describe('constants', () => {
   describe('DEFAULT_VALUES', () => {

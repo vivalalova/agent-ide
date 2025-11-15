@@ -3,20 +3,20 @@
  * 負責協調 7 個核心模組的操作，提供統一的模組間協調介面
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
-import { EventBus } from '../events/event-bus.js';
-import { StateManager } from '../state/state-manager.js';
-import { ErrorHandlerService } from './error-handler.service.js';
-import { EventPriority } from '../events/event-types.js';
+import { BaseError } from '@shared/errors/base-error.js';
+import { EventBus } from '@application/events/event-bus.js';
+import { StateManager } from '@application/state/state-manager.js';
+import { ErrorHandlerService } from '@application/services/error-handler.service.js';
+import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
-import { FunctionExtractor } from '../../core/refactor/extract-function.js';
-import { InlineAnalyzer } from '../../core/refactor/inline-function.js';
-import { RenameEngine } from '../../core/rename/rename-engine.js';
-import { MoveService } from '../../core/move/move-service.js';
-import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
-import { SearchService } from '../../core/search/service.js';
-import { IndexEngine } from '../../core/indexing/index-engine.js';
+import { FunctionExtractor } from '@core/refactor/extract-function.js';
+import { InlineAnalyzer } from '@core/refactor/inline-function.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { MoveService } from '@core/move/move-service.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { SearchService } from '@core/search/service.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
 
 import type {
   IModuleCoordinatorService,
@@ -28,7 +28,7 @@ import type {
   MoveResult,
   CodeChange,
   ErrorContext
-} from '../types.js';
+} from '@application/types.js';
 
 /**
  * 模組協調器錯誤
@@ -113,7 +113,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
       case 'extract-function':
         if (options.selection && options.newName) {
           try {
-            const code = await this.readFileContent(filePath);
+            const code = await this.readFile(filePath);
             const extractResult = await this.functionExtractor.extract(
               code,
               options.selection,
@@ -157,7 +157,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
       case 'inline-function':
         if (options.selection) {
           try {
-            const code = await this.readFileContent(filePath);
+            const code = await this.readFile(filePath);
             // InlineAnalyzer 主要用於分析，我們需要實際的內聯邏輯
             // 這裡簡化處理，需要先找到函式定義和調用
             const functionDef = { name: 'temp', body: '', parameters: [], range: options.selection } as any;
@@ -456,13 +456,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
         console.error('Failed to emit module event:', error);
       }
     }
-  }
-
-  /**
-   * 讀取檔案內容（別名方法）
-   */
-  private async readFileContent(filePath: string): Promise<string> {
-    return this.readFile(filePath);
   }
 
   /**
