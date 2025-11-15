@@ -477,15 +477,29 @@ export class ExtractionAnalyzer {
   }
 
   /**
-   * 檢查是否包含跳躍語句
+   * 檢查是否包含跳躍語句（使用真實 TypeScript AST）
    */
   private containsJumpStatement(ast: ASTNode): boolean {
+    if (!ast.tsNode) {
+      // 降級到舊邏輯
+      let hasJump = false;
+      this.traverse(ast, (node) => {
+        if (node.type === 'BreakStatement' || node.type === 'ContinueStatement') {
+          hasJump = true;
+        }
+      });
+      return hasJump;
+    }
+
     let hasJump = false;
-    this.traverse(ast, (node) => {
-      if (node.type === 'BreakStatement' || node.type === 'ContinueStatement') {
+    const visit = (node: ts.Node) => {
+      if (ts.isBreakStatement(node) || ts.isContinueStatement(node)) {
         hasJump = true;
+        return; // 找到就可以停止
       }
-    });
+      ts.forEachChild(node, visit);
+    };
+    visit(ast.tsNode);
     return hasJump;
   }
 
@@ -498,15 +512,31 @@ export class ExtractionAnalyzer {
   }
 
   /**
-   * 檢查是否包含函式定義
+   * 檢查是否包含函式定義（使用真實 TypeScript AST）
    */
   private containsFunctionDefinition(ast: ASTNode): boolean {
+    if (!ast.tsNode) {
+      // 降級到舊邏輯
+      let hasFunction = false;
+      this.traverse(ast, (node) => {
+        if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
+          hasFunction = true;
+        }
+      });
+      return hasFunction;
+    }
+
     let hasFunction = false;
-    this.traverse(ast, (node) => {
-      if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
+    const visit = (node: ts.Node) => {
+      if (ts.isFunctionDeclaration(node) ||
+          ts.isFunctionExpression(node) ||
+          ts.isArrowFunction(node)) {
         hasFunction = true;
+        return; // 找到就可以停止
       }
-    });
+      ts.forEachChild(node, visit);
+    };
+    visit(ast.tsNode);
     return hasFunction;
   }
 

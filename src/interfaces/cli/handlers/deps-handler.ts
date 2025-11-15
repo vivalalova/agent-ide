@@ -40,7 +40,7 @@ export async function handleDepsCommand(
     const stats = dependencyAnalyzer.getStats();
 
     // 使用 CycleDetector 檢測循環依賴
-    const cycleDetector = new (await import('../../../core/dependency/cycle-detector.js')).CycleDetector();
+    const cycleDetector = new (await import('@core/dependency/cycle-detector.js')).CycleDetector();
     const graph = await DependencyUtils.buildGraphFromProjectDeps(projectDeps);
     const cycles = cycleDetector.detectCycles(graph);
 

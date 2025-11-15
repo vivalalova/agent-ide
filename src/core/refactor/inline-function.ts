@@ -134,8 +134,8 @@ export class InlineAnalyzer {
       /\bwhile\b/g,        // while 迴圈
       /\bswitch\b/g,       // switch 語句
       /\bcatch\b/g,        // catch 語句
-      /\b&&\b/g,           // 邏輯 AND
-      /\b\|\|\b/g,         // 邏輯 OR
+      /&&/g,               // 邏輯 AND
+      /\|\|/g,             // 邏輯 OR
       /\?\s*.*?\s*:/g      // 三元運算子
     ];
 

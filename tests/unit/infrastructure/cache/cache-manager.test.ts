@@ -7,6 +7,7 @@ describe('CacheManager', () => {
   let manager: CacheManager;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     manager = new CacheManager();
   });
 

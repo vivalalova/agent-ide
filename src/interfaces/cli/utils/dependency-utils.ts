@@ -7,7 +7,7 @@
  * 從專案依賴資料構建依賴圖
  */
 export async function buildGraphFromProjectDeps(projectDeps: any): Promise<any> {
-  const { DependencyGraph } = await import('../../../core/dependency/dependency-graph.js');
+  const { DependencyGraph } = await import('@core/dependency/dependency-graph.js');
   const graph = new DependencyGraph();
 
   // 新增所有檔案節點及其依賴關係

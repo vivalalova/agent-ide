@@ -6,6 +6,7 @@ describe('MemoryCache', () => {
   let cache: MemoryCache<string, any>;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.useFakeTimers();
   });
 

@@ -76,7 +76,7 @@ export async function handleRefactorCommand(action: string, options: any): Promi
 
       if (isSwift) {
         // 使用 Swift 提取器
-        const { SwiftExtractor } = await import('../../../core/refactor/swift-extractor.js');
+        const { SwiftExtractor } = await import('@core/refactor/swift-extractor.js');
         const extractor = new SwiftExtractor();
 
         const extractConfig = {
@@ -122,7 +122,7 @@ export async function handleRefactorCommand(action: string, options: any): Promi
       }
 
       // TypeScript/JavaScript 提取器（原有邏輯）
-      const { FunctionExtractor } = await import('../../../core/refactor/extract-function.js');
+      const { FunctionExtractor } = await import('@core/refactor/extract-function.js');
       const extractor = new FunctionExtractor();
 
       // 執行提取

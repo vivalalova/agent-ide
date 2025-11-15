@@ -57,8 +57,8 @@ describe('ExtractionAnalyzer', () => {
 
       const result = await analyzer.analyze(code, selection);
 
-      // 修復：實作目前不檢測 break/continue，接受當前行為
-      expect(result.canExtract).toBe(true);
+      expect(result.canExtract).toBe(false);
+      expect(result.issues).toContain('選取範圍包含 break 或 continue 語句');
     });
 
     it('應該檢測包含 continue 語句的程式碼', async () => {
@@ -70,8 +70,8 @@ describe('ExtractionAnalyzer', () => {
 
       const result = await analyzer.analyze(code, selection);
 
-      // 修復：實作目前不檢測 break/continue，接受當前行為
-      expect(result.canExtract).toBe(true);
+      expect(result.canExtract).toBe(false);
+      expect(result.issues).toContain('選取範圍包含 break 或 continue 語句');
     });
 
     it('應該分析變數使用', async () => {
@@ -175,8 +175,8 @@ describe('ExtractionAnalyzer', () => {
 
       const result = await analyzer.analyze(code, selection);
 
-      // 修復：實作目前不檢測函式定義，接受當前行為
-      expect(result.canExtract).toBe(true);
+      expect(result.canExtract).toBe(false);
+      expect(result.issues).toContain('選取範圍包含函式定義');
     });
   });
 

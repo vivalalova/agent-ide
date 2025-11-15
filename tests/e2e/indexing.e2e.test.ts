@@ -7,9 +7,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetFixtures, getFixturePath } from './helpers/fixture-manager';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { IndexEngine } from '../../src/core/indexing/index-engine';
-import { createIndexConfig } from '../../src/core/indexing/types';
-import { SymbolType } from '../../src/shared/types';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { createIndexConfig } from '@core/indexing/types.js';
+import { SymbolType } from '@shared/types';
 
 describe('Indexing E2E 測試', () => {
   const fixturePath = getFixturePath('sample-project');

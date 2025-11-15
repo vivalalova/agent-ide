@@ -291,11 +291,8 @@ console.log(result);`;
 
       const result = await extractor.extract(code, selection);
 
-      // 修復：實作目前不檢查 break/continue，接受當前行為
-      // 這些語句雖然語法上可以提取，但會產生無效的函式
-      // 測試改為驗證提取是否成功執行（即使結果可能無效）
-      expect(result).toBeDefined();
-      expect(result.functionName).toBeDefined();
+      expect(result.success).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
     });
 
     it('應該返回錯誤當包含 continue 語句', async () => {
@@ -307,9 +304,8 @@ console.log(result);`;
 
       const result = await extractor.extract(code, selection);
 
-      // 修復：同上，實作不檢查 continue
-      expect(result).toBeDefined();
-      expect(result.functionName).toBeDefined();
+      expect(result.success).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
     });
   });
 
