@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ScoreCalculator } from '@core/shit-score/score-calculator';
 import type { ComplexityData, MaintainabilityData, ArchitectureData, QualityAssuranceData } from '@core/shit-score/types';
 
