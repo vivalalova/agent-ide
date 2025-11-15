@@ -278,7 +278,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(statement)).toBe(true);
@@ -292,7 +292,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "const util = require('./utils')"
+        rawStatement: 'const util = require(\'./utils\')'
       };
 
       expect(isImportStatement(statement)).toBe(true);
@@ -306,7 +306,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "const util = import('./utils')"
+        rawStatement: 'const util = import(\'./utils\')'
       };
 
       expect(isImportStatement(statement)).toBe(true);
@@ -333,7 +333,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -346,7 +346,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -360,7 +360,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -374,7 +374,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -387,7 +387,7 @@ describe('Move Types', () => {
         pathType: PathType.RELATIVE,
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -400,7 +400,7 @@ describe('Move Types', () => {
         pathType: PathType.RELATIVE,
         position: createPosition(1, 1),
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -413,7 +413,7 @@ describe('Move Types', () => {
         pathType: PathType.RELATIVE,
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);
@@ -440,7 +440,7 @@ describe('Move Types', () => {
         position: createPosition(1, 1),
         range: createRange(createPosition(1, 1), createPosition(1, 30)),
         isRelative: 'true',
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       expect(isImportStatement(invalid)).toBe(false);

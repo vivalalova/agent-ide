@@ -21,7 +21,7 @@ describe('ImportResolver', () => {
 
   describe('parseImportStatements', () => {
     it('應該解析 ES6 import 語句', () => {
-      const code = "import { foo } from './utils';";
+      const code = 'import { foo } from \'./utils\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -43,7 +43,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該解析 CommonJS require', () => {
-      const code = "const fs = require('fs');";
+      const code = 'const fs = require(\'fs\');';
       const statements = resolver.parseImportStatements(code, '/src/index.js');
 
       expect(statements).toHaveLength(1);
@@ -52,7 +52,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該解析動態 import', () => {
-      const code = "const module = import('./module');";
+      const code = 'const module = import(\'./module\');';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -61,7 +61,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該解析 export from 語句', () => {
-      const code = "export { foo } from './utils';";
+      const code = 'export { foo } from \'./utils\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -96,7 +96,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該解析 import type 語法 (TypeScript)', () => {
-      const code = "import type { User } from './types';";
+      const code = 'import type { User } from \'./types\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -104,7 +104,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該解析使用單引號的 import', () => {
-      const code = "import { foo } from './utils';";
+      const code = 'import { foo } from \'./utils\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -128,7 +128,7 @@ describe('ImportResolver', () => {
     });
 
     it('應該識別路徑別名', () => {
-      const code = "import { foo } from '@utils/helper';";
+      const code = 'import { foo } from \'@utils/helper\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -165,7 +165,7 @@ import utils from './utils';
 
   describe('analyzeImports', () => {
     it('應該是 parseImportStatements 的別名', () => {
-      const code = "import { foo } from './utils';";
+      const code = 'import { foo } from \'./utils\';';
       const result1 = resolver.analyzeImports('/src/index.ts', code);
       const result2 = resolver.parseImportStatements(code, '/src/index.ts');
 
@@ -182,7 +182,7 @@ import utils from './utils';
         position: { line: 1, character: 1 },
         range: { start: { line: 1, character: 1 }, end: { line: 1, character: 30 } },
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       const update = resolver.updateImportPath(statement, '/src/index.ts', '/src/components/index.ts');
@@ -199,7 +199,7 @@ import utils from './utils';
         position: { line: 1, character: 1 },
         range: { start: { line: 1, character: 1 }, end: { line: 1, character: 30 } },
         isRelative: false,
-        rawStatement: "import React from 'react'"
+        rawStatement: 'import React from \'react\''
       };
 
       const update = resolver.updateImportPath(statement, '/src/index.ts', '/src/components/index.ts');
@@ -216,7 +216,7 @@ import utils from './utils';
         position: { line: 1, character: 1 },
         range: { start: { line: 1, character: 1 }, end: { line: 1, character: 30 } },
         isRelative: true,
-        rawStatement: "import { util } from './utils'"
+        rawStatement: 'import { util } from \'./utils\''
       };
 
       const update = resolver.updateImportPath(invalidStatement, '/src/index.ts', '/src/components/index.ts');
@@ -332,20 +332,20 @@ import utils from './utils';
 
   describe('findImportedSymbols', () => {
     it('應該提取預設 import 符號', () => {
-      const symbols = resolver.findImportedSymbols("import React from 'react'");
+      const symbols = resolver.findImportedSymbols('import React from \'react\'');
 
       expect(symbols).toContain('React');
     });
 
     it('應該提取具名 import 符號', () => {
-      const symbols = resolver.findImportedSymbols("import { useState, useEffect } from 'react'");
+      const symbols = resolver.findImportedSymbols('import { useState, useEffect } from \'react\'');
 
       expect(symbols).toContain('useState');
       expect(symbols).toContain('useEffect');
     });
 
     it('應該提取混合 import 符號', () => {
-      const symbols = resolver.findImportedSymbols("import React, { Component, useState } from 'react'");
+      const symbols = resolver.findImportedSymbols('import React, { Component, useState } from \'react\'');
 
       expect(symbols).toContain('React');
       expect(symbols).toContain('Component');
@@ -353,20 +353,20 @@ import utils from './utils';
     });
 
     it('應該提取 namespace import 符號', () => {
-      const symbols = resolver.findImportedSymbols("import * as React from 'react'");
+      const symbols = resolver.findImportedSymbols('import * as React from \'react\'');
 
       expect(symbols).toContain('React');
     });
 
     it('應該處理別名 import', () => {
-      const symbols = resolver.findImportedSymbols("import { Component as Comp } from 'react'");
+      const symbols = resolver.findImportedSymbols('import { Component as Comp } from \'react\'');
 
       expect(symbols).toContain('Comp');
       expect(symbols).not.toContain('Component');
     });
 
     it('應該處理混合別名 import', () => {
-      const symbols = resolver.findImportedSymbols("import React, { Component as Comp, useState as useSt } from 'react'");
+      const symbols = resolver.findImportedSymbols('import React, { Component as Comp, useState as useSt } from \'react\'');
 
       expect(symbols).toContain('React');
       expect(symbols).toContain('Comp');
@@ -376,20 +376,20 @@ import utils from './utils';
     });
 
     it('應該處理空格', () => {
-      const symbols = resolver.findImportedSymbols("import  {  useState  ,  useEffect  }  from  'react'");
+      const symbols = resolver.findImportedSymbols('import  {  useState  ,  useEffect  }  from  \'react\'');
 
       expect(symbols).toContain('useState');
       expect(symbols).toContain('useEffect');
     });
 
     it('應該處理副作用 import (無符號)', () => {
-      const symbols = resolver.findImportedSymbols("import './styles.css'");
+      const symbols = resolver.findImportedSymbols('import \'./styles.css\'');
 
       expect(symbols).toHaveLength(0);
     });
 
     it('應該回傳空陣列如果不是 import 語句', () => {
-      const symbols = resolver.findImportedSymbols("const x = 5;");
+      const symbols = resolver.findImportedSymbols('const x = 5;');
 
       expect(symbols).toHaveLength(0);
     });
@@ -463,14 +463,14 @@ import utils from './utils';
     });
 
     it('應該處理多個具名 import 在同一行', () => {
-      const code = "import {a,b,c,d,e,f} from './utils';";
+      const code = 'import {a,b,c,d,e,f} from \'./utils\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
     });
 
     it('應該處理註解在程式碼行後面', () => {
-      const code = "import { foo } from './utils'; // comment";
+      const code = 'import { foo } from \'./utils\'; // comment';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);
@@ -480,7 +480,7 @@ import utils from './utils';
 
   describe('錯誤處理', () => {
     it('應該安全處理畸形的 import 語句', () => {
-      const code = "import { from './broken'";
+      const code = 'import { from \'./broken\'';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       // 應該不會拋出錯誤，可能解析不到或部分解析
@@ -495,7 +495,7 @@ import utils from './utils';
     });
 
     it('應該處理包含特殊字元的路徑', () => {
-      const code = "import { foo } from './utils-v2.0_beta';";
+      const code = 'import { foo } from \'./utils-v2.0_beta\';';
       const statements = resolver.parseImportStatements(code, '/src/index.ts');
 
       expect(statements).toHaveLength(1);

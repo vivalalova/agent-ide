@@ -469,7 +469,7 @@ describe('SwiftExtractor', () => {
 
   describe('邊界情況', () => {
     it('應該處理單行程式碼', async () => {
-      const code = `let x = 1`;
+      const code = 'let x = 1';
 
       const range = {
         start: { line: 1, column: 0 },

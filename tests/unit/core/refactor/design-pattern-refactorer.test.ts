@@ -479,7 +479,7 @@ describe('DesignPatternRefactorer', () => {
 
   describe('錯誤處理', () => {
     it('應該處理找不到類別的情況', async () => {
-      const code = `const x = 1;`;
+      const code = 'const x = 1;';
 
       const result = await refactorer.applyPattern(code, 'singleton', 'NonExistent');
 
@@ -495,7 +495,7 @@ describe('DesignPatternRefactorer', () => {
     });
 
     it('應該處理 null 類別名稱', async () => {
-      const code = `class Test {}`;
+      const code = 'class Test {}';
 
       const result = await refactorer.applyPattern(code, 'singleton', '');
 
@@ -506,7 +506,7 @@ describe('DesignPatternRefactorer', () => {
 
   describe('邊界情況', () => {
     it('應該處理最小化的類別', async () => {
-      const code = `class A{constructor(){}}`;
+      const code = 'class A{constructor(){}}';
 
       const result = await refactorer.applyPattern(code, 'singleton', 'A');
 

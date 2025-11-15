@@ -8,36 +8,94 @@ This file provides guidance to Claude Code when working with this repository.
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：9 核心模組、3 Parser（TS/JS/Swift）、235+ 測試通過
+**現況**：10 核心模組、3 Parser（TS/JS/Swift）、1,167 Unit Tests + E2E Tests 通過
 
 ## 快速參考
 
 ```bash
 pnpm build         # 建置（含 Swift parser 複製）
 pnpm typecheck     # 型別檢查
-pnpm test          # 所有測試
+pnpm test:unit     # Unit 測試（快速）
+pnpm test:e2e      # E2E 測試（完整）
+pnpm test:all      # 所有測試
 pnpm test:single   # 單執行緒（記憶體受限）
 pnpm test:bail     # 失敗即停
 pnpm lint          # ESLint
 npm link           # 本地 CLI 安裝
 ```
 
-**架構**：`core/`（9模組+ShitScore）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
+**架構**：`core/`（10模組）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
+
+**路徑映射**：
+- `@core/*` → `src/core/*`
+- `@infrastructure/*` → `src/infrastructure/*`
+- `@shared/*` → `src/shared/*`
+- `@plugins/*` → `src/plugins/*`
+- `@application/*` → `src/application/*`
+- `@interfaces/*` → `src/interfaces/*`
 
 ## 開發規範
 
 - **TDD**：紅→綠→重構
 - **品質**：TS strict、禁 any、單一職責、SOLID
-- **測試**：只寫 E2E（CLI 測試）、使用 fixture-manager + cli-executor
+- **測試策略**：Unit Tests（模組隔離） + E2E Tests（CLI 完整流程）
 
 ## 測試規範
 
-### 核心原則
-- **只寫 E2E**：透過 CLI 測試完整流程，禁止直接 import 實作類別
-- **Fixture-Based**：使用 `loadFixture('sample-project')` 複製到臨時目錄
-- **測試輔助**：`fixture-manager.ts`（loadFixture/tempPath/getFilePath/readFile/writeFile/cleanup）、`cli-executor.ts`（executeCLI→{exitCode,stdout,stderr}）
+### 測試策略
 
-### 測試模式範例
+**雙層測試架構**：
+1. **Unit Tests** (`tests/unit/**/*.test.ts`)
+   - 模組層級的單元測試
+   - 使用 vitest + mock
+   - 快速執行、高覆蓋率（90%+）
+   - 適用於：core、infrastructure 模組
+
+2. **E2E Tests** (`tests/e2e/**/*.e2e.test.ts`)
+   - CLI 完整流程測試
+   - 使用 fixture-manager + cli-executor
+   - 驗證整合行為
+   - 適用於：CLI 指令、工作流程
+
+### Unit Test 規範
+
+**原則**：
+- 使用 vitest 框架
+- 完整的 mock 和隔離
+- 涵蓋基本功能、邊界情況、錯誤處理
+- 測試檔案位置：`tests/unit/<module>/<file>.test.ts`
+
+**範例**：
+```typescript
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { DependencyGraph } from '@core/dependency/dependency-graph';
+
+describe('DependencyGraph', () => {
+  let graph: DependencyGraph;
+
+  beforeEach(() => {
+    graph = new DependencyGraph();
+  });
+
+  it('應該新增節點', () => {
+    graph.addNode('file.ts');
+    expect(graph.hasNode('file.ts')).toBe(true);
+  });
+});
+```
+
+### E2E Test 規範
+
+**原則**：
+- 透過 CLI 測試完整流程
+- Fixture-Based 測試
+- 驗證實際輸出和行為
+
+**測試輔助**：
+- `fixture-manager.ts`：loadFixture/tempPath/getFilePath/readFile/writeFile/cleanup
+- `cli-executor.ts`：executeCLI→{exitCode,stdout,stderr}
+
+**範例**：
 ```typescript
 import { loadFixture } from '../helpers/fixture-manager';
 import { executeCLI } from '../helpers/cli-executor';
@@ -56,20 +114,33 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 ```
 
 ### 命名規範
+
+**Unit Tests**：
+- 檔案：`<module>.test.ts`
+- describe：模組/類別名稱
+- it：`應該<行為>`
+
+**E2E Tests**：
 - 檔案：`cli-<command>.e2e.test.ts`
 - describe：`CLI <command> - 基於 sample-project fixture`
-- it：具體行為+預期結果（✅ `應該輸出 JSON 格式` ❌ `測試功能`）
+- it：具體行為+預期結果
 
-### 診斷命令測試要點
-- 驗證 `--all` 參數：預設 `output.issues`（只有問題）、`--all` 時 `output.all`（完整結果）
-- 輸出結構：`{summary, issues, all?}`（all 僅 --all 時存在）
+### 測試覆蓋率要求
 
-### 測試覆蓋
-基本功能、參數組合（--format/--detailed/--all）、錯誤處理、邊界條件、輸出格式
+- **Core 模組**：90%+ 語句覆蓋率
+- **Infrastructure 模組**：90%+ 語句覆蓋率
+- **整體專案**：持續提升
 
 ### 常見陷阱
-❌ 建立自訂 helper → ✅ 用 fixture-manager
-❌ 直接測試類別 → ✅ 透過 CLI
+
+**Unit Tests**：
+- ❌ 測試實作細節 → ✅ 測試公開 API
+- ❌ 過度 mock → ✅ 適度 mock 外部依賴
+- ❌ 測試耦合 → ✅ 測試隔離
+
+**E2E Tests**：
+- ❌ 建立自訂 helper → ✅ 用 fixture-manager
+- ❌ 直接測試類別 → ✅ 透過 CLI
 
 ## 核心模組
 

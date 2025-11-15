@@ -70,7 +70,7 @@ describe('MoveService', () => {
 
       // Mock 來源存在
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -91,7 +91,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -111,7 +111,7 @@ describe('MoveService', () => {
       const target = '/src/nested/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -164,7 +164,7 @@ describe('MoveService', () => {
       const target = '/protected/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -187,7 +187,7 @@ describe('MoveService', () => {
 
       // Mock 檔案系統
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source || path === importingFile) return undefined;
+        if (path === source || path === importingFile) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -205,7 +205,7 @@ describe('MoveService', () => {
       // Mock 檔案內容
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (path === importingFile) {
-          return "import { helper } from './utils';";
+          return 'import { helper } from \'./utils\';';
         }
         if (path === source) {
           return 'export const helper = () => {};';
@@ -227,7 +227,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -246,7 +246,7 @@ describe('MoveService', () => {
       const importingFile = '/project/src/index.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source || path === importingFile) return undefined;
+        if (path === source || path === importingFile) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -259,7 +259,7 @@ describe('MoveService', () => {
         return [];
       });
 
-      vi.mocked(fs.readFile).mockResolvedValue("import { helper } from './utils';");
+      vi.mocked(fs.readFile).mockResolvedValue('import { helper } from \'./utils\';');
 
       const result = await service.moveFile(
         { source, target, updateImports: true },
@@ -278,7 +278,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -299,7 +299,7 @@ describe('MoveService', () => {
       const importingFile = '/project/src/index.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source || path === importingFile) return undefined;
+        if (path === source || path === importingFile) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -310,10 +310,10 @@ describe('MoveService', () => {
 
       vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
         if (filePath === importingFile) {
-          return "import { x } from './utils';";
+          return 'import { x } from \'./utils\';';
         }
         if (filePath === source) {
-          return "export const x = 1;";
+          return 'export const x = 1;';
         }
         return '';
       });
@@ -335,7 +335,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -357,7 +357,7 @@ describe('MoveService', () => {
       const target = '/project/src/utils/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -368,7 +368,7 @@ describe('MoveService', () => {
       // 被移動的檔案包含相對 import
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (path === source) {
-          return "import { helper } from './utils';";
+          return 'import { helper } from \'./utils\';';
         }
         return '';
       });
@@ -389,7 +389,7 @@ describe('MoveService', () => {
       const target = '/project/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -397,7 +397,7 @@ describe('MoveService', () => {
         { name: 'old.ts', isDirectory: () => false, isFile: () => true }
       ] as any);
 
-      vi.mocked(fs.readFile).mockResolvedValue("import React from 'react';");
+      vi.mocked(fs.readFile).mockResolvedValue('import React from \'react\';');
 
       const result = await service.moveFile(
         { source, target, updateImports: true },
@@ -417,7 +417,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -437,7 +437,7 @@ describe('MoveService', () => {
       const target = '/project/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (p) => {
-        if (p === source) return undefined;
+        if (p === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -445,7 +445,7 @@ describe('MoveService', () => {
         { name: 'old.ts', isDirectory: () => false, isFile: () => true }
       ] as any);
 
-      vi.mocked(fs.readFile).mockResolvedValue("import { x } from './other';");
+      vi.mocked(fs.readFile).mockResolvedValue('import { x } from \'./other\';');
 
       const result = await service.moveFile(
         { source, target, updateImports: true },
@@ -460,7 +460,7 @@ describe('MoveService', () => {
       const target = '/project/src/x/y/z/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -481,7 +481,7 @@ describe('MoveService', () => {
       const target = 'C:\\project\\src\\new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -498,7 +498,7 @@ describe('MoveService', () => {
       const target = '/src/new-file_v2.0.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -515,7 +515,7 @@ describe('MoveService', () => {
       const target = '/project/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -544,7 +544,7 @@ describe('MoveService', () => {
       const target = '/src/Makefile.new';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -561,7 +561,7 @@ describe('MoveService', () => {
       const target = '/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -580,7 +580,7 @@ describe('MoveService', () => {
       const target = '/project/src/helpers/utils.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -597,10 +597,10 @@ describe('MoveService', () => {
 
       vi.mocked(fs.readFile).mockImplementation(async (path) => {
         if (path.toString().includes('index.ts')) {
-          return "import { util } from './utils';";
+          return 'import { util } from \'./utils\';';
         }
         if (path.toString().includes('app.ts')) {
-          return "import { util } from './utils';";
+          return 'import { util } from \'./utils\';';
         }
         return '';
       });
@@ -618,7 +618,7 @@ describe('MoveService', () => {
       const target = '/project/src/b.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -627,7 +627,7 @@ describe('MoveService', () => {
       ] as any);
 
       // a.ts import 自己
-      vi.mocked(fs.readFile).mockResolvedValue("import { x } from './a';");
+      vi.mocked(fs.readFile).mockResolvedValue('import { x } from \'./a\';');
 
       const result = await service.moveFile(
         { source, target, updateImports: true },
@@ -642,7 +642,7 @@ describe('MoveService', () => {
       const target = '/src/new-empty.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
@@ -663,7 +663,7 @@ describe('MoveService', () => {
       const target = '/project/src/new.ts';
 
       vi.mocked(fs.access).mockImplementation(async (path) => {
-        if (path === source) return undefined;
+        if (path === source) {return undefined;}
         throw { code: 'ENOENT' };
       });
 
