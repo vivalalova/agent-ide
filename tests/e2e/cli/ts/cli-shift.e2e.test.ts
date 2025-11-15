@@ -99,7 +99,8 @@ describe('CLI shift - 基於 sample-project fixture', () => {
         '--from', '2',
         '--to', '4',
         '--target', targetFile,
-        '--position', '1'
+        '--position', '1',
+        '--no-update-references'
       ], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
@@ -151,7 +152,8 @@ describe('CLI shift - 基於 sample-project fixture', () => {
         '--from', '1',
         '--to', '2',
         '--target', targetBase,
-        '--position', '1'
+        '--position', '1',
+        '--no-update-references'
       ], { cwd: fixturePath });
 
       expect(result.exitCode).toBe(0);
