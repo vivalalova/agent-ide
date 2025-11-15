@@ -72,6 +72,16 @@ export default [
       'no-useless-catch': 'warn', // 無用 catch 調整為警告
       'no-redeclare': 'warn', // 重複宣告調整為警告
       'no-control-regex': 'warn', // 控制字元正則表達式調整為警告
+
+      // Import 規則 - 警告使用深層相對路徑（跨模組導入）
+      'no-restricted-imports': ['warn', {
+        patterns: [
+          {
+            group: ['../../*', '../../../*', '../../../../*'],
+            message: '跨模組導入請使用路徑別名 (@core, @infrastructure, @shared, @plugins, @application, @interfaces) 而非深層相對路徑'
+          }
+        ]
+      }],
     },
   },
   {
