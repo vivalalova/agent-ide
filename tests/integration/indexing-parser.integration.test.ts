@@ -170,43 +170,9 @@ describe('IndexEngine + ParserRegistry Integration', () => {
     expect(multiplyFunc[0].symbol.name).toBe('multiply');
   });
 
-  it.skip('應該正確處理 Swift 檔案的索引', async () => {
-    // 創建 Swift 測試檔案
-    const swiftContent = `
-      struct Person {
-        let name: String
-        let age: Int
-      }
-
-      class PersonManager {
-        func createPerson(name: String, age: Int) -> Person {
-          return Person(name: name, age: age)
-        }
-      }
-
-      func greetPerson(_ person: Person) -> String {
-        return "Hello, \\(person.name)!"
-      }
-    `;
-
-    await fs.writeFile(path.join(tempDir, 'person.swift'), swiftContent);
-
-    // 創建索引引擎
-    indexEngine = new IndexEngine(testConfig);
-
-    // 索引專案
-    await indexEngine.indexProject();
-
-    // 驗證檔案已索引
-    expect(indexEngine.isIndexed(path.join(tempDir, 'person.swift'))).toBe(true);
-
-    // 查找符號
-    const personStruct = await indexEngine.findSymbol('Person');
-    expect(personStruct.length).toBeGreaterThan(0);
-
-    const personManagerClass = await indexEngine.findSymbol('PersonManager');
-    expect(personManagerClass.length).toBeGreaterThan(0);
-  });
+  // NOTE: Swift parser 測試被移除，因為 SwiftParser 需要外部 Swift CLI 工具
+  // 在 CI 環境中通常不可用。Swift 支持應該通過單元測試（使用 mock）
+  // 和手動測試來驗證，而不是整合測試。
 
   it('應該正確處理混合語言專案的索引', async () => {
     // 創建多種語言的檔案（僅 TS 和 JS）
