@@ -77,11 +77,19 @@ export default [
       'no-restricted-imports': ['error', {
         patterns: [
           {
-            group: ['../*', '../../*', '../../../*', '../../../../*'],
+            group: ['../../*', '../../../*', '../../../../*'],
             message: '跨模組導入請使用路徑別名 (@core, @infrastructure, @shared, @plugins, @application, @interfaces) 而非相對路徑'
           }
         ]
       }],
+    },
+  },
+  {
+    // 測試檔案和 fixture 專案允許使用相對路徑
+    files: ['tests/**/*', '**/fixtures/**/*'],
+    rules: {
+      'no-restricted-imports': 'off',
+      'no-undef': 'off', // 測試檔案可能使用全域變數
     },
   },
   {
