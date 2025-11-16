@@ -30,15 +30,15 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.nodes).toBeDefined();
-      expect(output.edges).toBeDefined();
-      expect(Array.isArray(output.nodes)).toBe(true);
-      expect(Array.isArray(output.edges)).toBe(true);
+      expect(output.all).toBeDefined();
+      expect(output.all.nodes).toBeDefined();
+      expect(Array.isArray(output.all.nodes)).toBe(true);
     });
 
     it('應該識別正確數量的檔案節點', async () => {
@@ -48,13 +48,14 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       // swift-sample-project 有 42 個 Swift 檔案
-      expect(output.nodes.length).toBeGreaterThan(30);
+      expect(output.all.nodes.length).toBeGreaterThan(30);
     });
 
     it('應該識別 import Foundation 外部依賴', async () => {
@@ -64,16 +65,17 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
 
-      // 檢查是否有 Foundation 外部依賴
-      const hasFoundation = output.edges.some(
-        (edge: { source: string; target: string; type: string }) =>
-          edge.target === 'Foundation' && edge.type === 'external'
+      // 檢查節點中是否有 Foundation 外部依賴
+      const hasFoundation = output.all.nodes.some(
+        (node: { id: string; dependencies: string[] }) =>
+          node.dependencies && node.dependencies.includes('Foundation')
       );
       expect(hasFoundation).toBe(true);
     });
@@ -85,23 +87,24 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
 
       // NetworkService 節點應該存在於依賴圖中
-      const networkServiceNodes = output.nodes.filter((node: { id: string }) =>
+      const networkServiceNodes = output.all.nodes.filter((node: { id: string }) =>
         node.id.includes('NetworkService.swift')
       );
       expect(networkServiceNodes.length).toBeGreaterThan(0);
 
       // 注意：Swift 同模組檔案不需要 import，因此內部依賴需要符號級分析
       // 目前僅檢測 import 語句依賴
-      const hasFoundationDep = output.edges.some(
-        (edge: { source: string; target: string }) =>
-          edge.source.includes('NetworkService.swift') && edge.target === 'Foundation'
+      const hasFoundationDep = networkServiceNodes.some(
+        (node: { dependencies: string[] }) =>
+          node.dependencies && node.dependencies.includes('Foundation')
       );
       expect(hasFoundationDep).toBe(true);
     });
@@ -113,14 +116,15 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
         '--path',
         fixture.tempPath,
         '--format',
-        'json'
+        'json',
+        '--all'
       ]);
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
 
       // 檢查節點是否有度數資訊
-      const nodesWithDegree = output.nodes.filter(
+      const nodesWithDegree = output.all.nodes.filter(
         (node: { inDegree?: number; outDegree?: number }) =>
           typeof node.inDegree !== 'undefined' || typeof node.outDegree !== 'undefined'
       );
@@ -244,6 +248,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
 
   describe('impact', () => {
     it('應該分析修改 NetworkService 的影響範圍', async () => {
+      // 先建立依賴圖索引
+      await executeCLI(['deps', 'graph', '--path', fixture.tempPath, '--format', 'json']);
+
       const result = await executeCLI([
         'deps',
         'impact',
@@ -257,12 +264,16 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.directDependents).toBeDefined();
-      expect(output.transitiveDependents).toBeDefined();
-      expect(output.impactLevel).toBeDefined();
+      expect(output.summary).toBeDefined();
+      expect(output.summary.impactLevel).toBeDefined();
+      expect(output.summary.directCount).toBeDefined();
+      expect(output.summary.transitiveCount).toBeDefined();
     });
 
     it('NetworkService 應該有高影響等級', async () => {
+      // 先建立依賴圖索引
+      await executeCLI(['deps', 'graph', '--path', fixture.tempPath, '--format', 'json']);
+
       const result = await executeCLI([
         'deps',
         'impact',
@@ -278,11 +289,14 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       // 注意：Swift 同模組檔案不需要 import，基於 import 的影響分析無法檢測內部依賴
       // impactLevel 會是 'low' 因為沒有檔案 import NetworkService
-      expect(output.impactLevel).toBe('low');
-      expect(output.directDependents.length).toBe(0);
+      expect(output.summary.impactLevel).toBe('low');
+      expect(output.summary.directCount).toBe(0);
     });
 
     it('應該分析修改 View 的影響範圍', async () => {
+      // 先建立依賴圖索引
+      await executeCLI(['deps', 'graph', '--path', fixture.tempPath, '--format', 'json']);
+
       const result = await executeCLI([
         'deps',
         'impact',
@@ -297,10 +311,13 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       // View 影響範圍應該較小
-      expect(output.impactLevel).toMatch(/low|medium/);
+      expect(output.summary.impactLevel).toMatch(/low|medium/);
     });
 
     it('應該區分直接依賴和傳遞依賴', async () => {
+      // 先建立依賴圖索引
+      await executeCLI(['deps', 'graph', '--path', fixture.tempPath, '--format', 'json']);
+
       const result = await executeCLI([
         'deps',
         'impact',
@@ -314,16 +331,19 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(Array.isArray(output.directDependents)).toBe(true);
-      expect(Array.isArray(output.transitiveDependents)).toBe(true);
+      expect(typeof output.summary.directCount).toBe('number');
+      expect(typeof output.summary.transitiveCount).toBe('number');
 
       // 傳遞依賴數量應該 >= 直接依賴數量
-      expect(output.transitiveDependents.length).toBeGreaterThanOrEqual(
-        output.directDependents.length
+      expect(output.summary.transitiveCount).toBeGreaterThanOrEqual(
+        output.summary.directCount
       );
     });
 
     it('應該計算影響評分', async () => {
+      // 先建立依賴圖索引
+      await executeCLI(['deps', 'graph', '--path', fixture.tempPath, '--format', 'json']);
+
       const result = await executeCLI([
         'deps',
         'impact',
@@ -337,9 +357,9 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.impactScore).toBeDefined();
-      expect(output.impactScore).toBeGreaterThanOrEqual(0);
-      expect(output.impactScore).toBeLessThanOrEqual(100);
+      expect(output.summary.impactScore).toBeDefined();
+      expect(output.summary.impactScore).toBeGreaterThanOrEqual(0);
+      expect(output.summary.impactScore).toBeLessThanOrEqual(100);
     });
 
     it('應該處理不存在的檔案', async () => {
@@ -355,7 +375,7 @@ describe('CLI swift deps - 基於 swift-sample-project fixture', () => {
       ]);
 
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toBeTruthy();
+      expect(result.stdout).toContain('error');
     });
   });
 
