@@ -77,7 +77,7 @@ export default [
   {
     // 忽略特定檔案
     ignores: [
-      'dist/**',
+      '**/dist/**',
       'node_modules/**',
       'coverage/**',
       '*.config.js',
