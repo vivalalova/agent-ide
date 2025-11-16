@@ -15,7 +15,7 @@
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run",
     "test:watch": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest --watch",
     "test:coverage": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --coverage",
-    "test:single": "NODE_OPTIONS='--expose-gc --max-old-space-size=2048' npx vitest run --pool=forks --poolOptions.forks.singleFork=true",
+    "test:single": "TEST_SINGLE_FORK=true NODE_OPTIONS='--expose-gc --max-old-space-size=2048' npx vitest run",
     "test:bail": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --bail=1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
+    "@eslint/js": "^9.39.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/git": "^10.0.1",
