@@ -2314,66 +2314,82 @@ export class AgentIdeCLI {
       if (options.format === 'json') {
         // 根據子命令決定輸出格式
         if (subcommand === 'graph') {
-          // graph 子命令：輸出完整依賴圖（nodes, edges, summary）
-          const allNodes = graph.getAllNodes();
-          const allNodesSet = new Set(allNodes);
-
-          // 計算每個節點的入度和出度
-          const inDegreeMap = new Map<string, number>();
-          const outDegreeMap = new Map<string, number>();
-
-          for (const nodeId of allNodes) {
-            const deps = graph.getDependencies(nodeId);
-            outDegreeMap.set(nodeId, deps.length);
-
-            for (const depId of deps) {
-              if (allNodesSet.has(depId)) {
-                inDegreeMap.set(depId, (inDegreeMap.get(depId) || 0) + 1);
-              }
-            }
-          }
-
-          const nodes = allNodes.map((nodeId: string) => ({
-            id: nodeId,
-            dependencies: graph.getDependencies(nodeId),
-            inDegree: inDegreeMap.get(nodeId) || 0,
-            outDegree: outDegreeMap.get(nodeId) || 0
-          }));
-
-          // 判斷是否為系統框架
-          const isSystemFramework = (name: string): boolean => {
-            const systemFrameworks = [
-              'Foundation', 'UIKit', 'SwiftUI', 'Combine', 'CoreData',
-              'CoreGraphics', 'CoreLocation', 'AVFoundation', 'MapKit',
-              'WebKit', 'Security', 'PackageDescription'
-            ];
-            return systemFrameworks.includes(name);
-          };
-
-          const edges: Array<{source: string; target: string; type: string}> = [];
-          for (const nodeId of allNodes) {
-            for (const depId of graph.getDependencies(nodeId)) {
-              // 系統框架一律標記為 external
-              const isExternal = isSystemFramework(depId) || !allNodesSet.has(depId);
-              edges.push({
-                source: nodeId,
-                target: depId,
-                type: isExternal ? 'external' : 'internal'
-              });
-            }
-          }
-
-          // graph 子命令：保持原格式（nodes, edges, summary）
-          console.log(JSON.stringify({
-            nodes,
-            edges,
+          // graph 子命令：遵循診斷命令規範（預設只輸出問題，--all 輸出完整圖）
+          const outputData: any = {
+            issues: {
+              cycles: cycles.map(c => ({
+                cycle: c.cycle,
+                length: c.length,
+                severity: c.severity
+              })),
+              circularDependencies: cycles.length,
+              orphanedFiles: stats.orphanedFiles
+            },
             summary: {
               totalFiles: stats.totalFiles,
               totalDependencies: stats.totalDependencies,
               averageDependenciesPerFile: stats.averageDependenciesPerFile,
               maxDependenciesInFile: stats.maxDependenciesInFile
             }
-          }, null, 2));
+          };
+
+          // 只有在 --all 時才輸出完整依賴圖
+          if (options.all) {
+            const allNodes = graph.getAllNodes();
+            const allNodesSet = new Set(allNodes);
+
+            // 計算每個節點的入度和出度
+            const inDegreeMap = new Map<string, number>();
+            const outDegreeMap = new Map<string, number>();
+
+            for (const nodeId of allNodes) {
+              const deps = graph.getDependencies(nodeId);
+              outDegreeMap.set(nodeId, deps.length);
+
+              for (const depId of deps) {
+                if (allNodesSet.has(depId)) {
+                  inDegreeMap.set(depId, (inDegreeMap.get(depId) || 0) + 1);
+                }
+              }
+            }
+
+            const nodes = allNodes.map((nodeId: string) => ({
+              id: nodeId,
+              dependencies: graph.getDependencies(nodeId),
+              inDegree: inDegreeMap.get(nodeId) || 0,
+              outDegree: outDegreeMap.get(nodeId) || 0
+            }));
+
+            // 判斷是否為系統框架
+            const isSystemFramework = (name: string): boolean => {
+              const systemFrameworks = [
+                'Foundation', 'UIKit', 'SwiftUI', 'Combine', 'CoreData',
+                'CoreGraphics', 'CoreLocation', 'AVFoundation', 'MapKit',
+                'WebKit', 'Security', 'PackageDescription'
+              ];
+              return systemFrameworks.includes(name);
+            };
+
+            const edges: Array<{source: string; target: string; type: string}> = [];
+            for (const nodeId of allNodes) {
+              for (const depId of graph.getDependencies(nodeId)) {
+                // 系統框架一律標記為 external
+                const isExternal = isSystemFramework(depId) || !allNodesSet.has(depId);
+                edges.push({
+                  source: nodeId,
+                  target: depId,
+                  type: isExternal ? 'external' : 'internal'
+                });
+              }
+            }
+
+            outputData.all = {
+              nodes,
+              edges
+            };
+          }
+
+          console.log(JSON.stringify(outputData, null, 2));
         } else if (subcommand === 'impact' && options.file) {
           // impact 子命令：分析檔案修改的影響範圍
           const targetFile = path.resolve(options.file);
@@ -2395,7 +2411,9 @@ export class AgentIdeCLI {
               directDependents.push(...altDependents);
             } else {
               // 檔案不在專案中或未被索引
-              console.error(`❌ 錯誤：檔案不存在或未被索引: ${options.file}`);
+              console.log(JSON.stringify({
+                error: `檔案不存在或未被索引: ${options.file}`
+              }, null, 2));
               process.exit(1);
             }
           }
@@ -2431,11 +2449,11 @@ export class AgentIdeCLI {
 
           console.log(JSON.stringify({
             file: options.file,
-            impactLevel,
-            impactScore,
             directDependents,
             transitiveDependents: Array.from(transitiveDependents),
             summary: {
+              impactLevel,
+              impactScore,
               totalImpacted,
               directCount: directDependents.length,
               transitiveCount: transitiveDependents.size
