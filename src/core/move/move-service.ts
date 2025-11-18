@@ -3,15 +3,19 @@
  * 提供安全的檔案移動功能，自動更新所有相關的 import 路徑
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from './types.js';
 
 export class MoveService {
   private importResolver: ImportResolver;
 
-  constructor(config?: ImportResolverConfig, importResolver?: ImportResolver) {
+  constructor(
+    private readonly fileSystem: FileSystem,
+    config?: ImportResolverConfig,
+    importResolver?: ImportResolver
+  ) {
     if (importResolver) {
       this.importResolver = importResolver;
     } else {
@@ -86,7 +90,7 @@ export class MoveService {
           if (errorMessage.includes('更新檔案') || errorMessage.includes('Write permission') || errorMessage.includes('permission denied')) {
             // 回滾檔案移動（如果可能）
             try {
-              await fs.rename(target, source);
+              await this.fileSystem.moveFile(target, source);
               fileMoved = false;
             } catch {
               // 無法回滾，但仍然要回傳失敗
@@ -132,30 +136,23 @@ export class MoveService {
    */
   private async validatePaths(source: string, target: string): Promise<void> {
     // 檢查來源是否存在
-    try {
-      await fs.access(source);
-    } catch {
+    const sourceExists = await this.fileSystem.exists(source);
+    if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
     }
 
     // 檢查目標路徑的父目錄
     const targetDir = path.dirname(target);
-    try {
-      await fs.access(targetDir);
-    } catch {
+    const targetDirExists = await this.fileSystem.exists(targetDir);
+    if (!targetDirExists) {
       // 嘗試建立父目錄
-      await fs.mkdir(targetDir, { recursive: true });
+      await this.fileSystem.createDirectory(targetDir);
     }
 
     // 檢查目標是否已存在
-    try {
-      await fs.access(target);
+    const targetExists = await this.fileSystem.exists(target);
+    if (targetExists) {
       throw new Error(`目標路徑已存在: ${target}`);
-    } catch (error) {
-      // 如果是因為檔案不存在而拋出錯誤，這是預期的
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
     }
   }
 
@@ -165,10 +162,10 @@ export class MoveService {
   private async performMove(source: string, target: string): Promise<void> {
     // 確保目標目錄存在
     const targetDir = path.dirname(target);
-    await fs.mkdir(targetDir, { recursive: true });
+    await this.fileSystem.createDirectory(targetDir);
 
     // 移動檔案或目錄
-    await fs.rename(source, target);
+    await this.fileSystem.moveFile(source, target);
   }
 
   /**
@@ -204,35 +201,19 @@ export class MoveService {
 
     const walkDir = async (dir: string): Promise<void> => {
       try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const entries = await this.fileSystem.readDirectory(dir);
 
         for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          // 處理 mock 和真實 entry 的不同
-          let isDir = false;
-          let isFile = false;
-
-          // 處理 mock 物件
-          if (typeof entry.isDirectory === 'function') {
-            isDir = entry.isDirectory();
-            isFile = typeof entry.isFile === 'function' ? entry.isFile() : !isDir;
-          } else if (entry && typeof entry === 'object') {
-            // 處理簡單的 mock 物件
-            isDir = false;
-            isFile = true;
-          }
-
-          if (isDir) {
+          if (entry.isDirectory) {
             // 跳過排除的目錄
             if (excludePatterns.some(pattern => entry.name.includes(pattern))) {
               continue;
             }
-            await walkDir(fullPath);
-          } else if (isFile) {
+            await walkDir(entry.path);
+          } else if (entry.isFile) {
             // 只包含支援的副檔名
             if (allowedExtensions.some(ext => entry.name.endsWith(ext))) {
-              files.push(fullPath);
+              files.push(entry.path);
             }
           }
         }
@@ -251,7 +232,7 @@ export class MoveService {
    */
   private async fileReferencesPath(filePath: string, targetPath: string): Promise<boolean> {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       const imports = this.importResolver.parseImportStatements(content, filePath);
 
       for (const importStatement of imports) {
@@ -353,7 +334,7 @@ export class MoveService {
     const updates: PathUpdate[] = [];
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       const imports = this.importResolver.parseImportStatements(content, filePath);
 
       for (const importStatement of imports) {
@@ -408,7 +389,7 @@ export class MoveService {
     const updates: PathUpdate[] = [];
 
     try {
-      const content = await fs.readFile(source, 'utf-8');
+      const content = await this.fileSystem.readFile(source, 'utf-8') as string;
       const imports = this.importResolver.parseImportStatements(content, source);
 
       // 防禦性檢查：確保 imports 是陣列
@@ -547,7 +528,7 @@ export class MoveService {
    */
   private async applyFileUpdates(filePath: string, updates: PathUpdate[]): Promise<void> {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
       let newContent = content;
 
@@ -572,7 +553,7 @@ export class MoveService {
         }
       }
 
-      await fs.writeFile(filePath, newContent, 'utf-8');
+      await this.fileSystem.writeFile(filePath, newContent);
     } catch (error) {
       throw new Error(`更新檔案 ${filePath} 失敗: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

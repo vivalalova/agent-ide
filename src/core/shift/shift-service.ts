@@ -2,8 +2,8 @@
  * Shift 服務 - 協調行移動操作
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import { LineExtractor } from './line-extractor.js';
 import { FileGenerator } from './file-generator.js';
 import type { ShiftOptions, ShiftResult, ShiftValidationError } from './types.js';
@@ -15,10 +15,12 @@ import { ShiftOperationType, createShiftResult, createShiftValidationError } fro
 export class ShiftService {
   private readonly lineExtractor: LineExtractor;
   private readonly fileGenerator: FileGenerator;
+  private readonly fileSystem: FileSystem;
 
-  constructor() {
+  constructor(fileSystem: FileSystem) {
     this.lineExtractor = new LineExtractor();
-    this.fileGenerator = new FileGenerator();
+    this.fileGenerator = new FileGenerator(fileSystem);
+    this.fileSystem = fileSystem;
   }
 
   /**
@@ -29,7 +31,7 @@ export class ShiftService {
   async shift(options: ShiftOptions): Promise<ShiftResult> {
     try {
       // 驗證選項
-      const validationErrors = this.validateOptions(options);
+      const validationErrors = await this.validateOptions(options);
       if (validationErrors.length > 0) {
         const errorMessages = validationErrors.map(e => e.message).join('; ');
         return createShiftResult(
@@ -70,7 +72,7 @@ export class ShiftService {
     const { sourceFile, fromLine, toLine, position, preview } = options;
 
     // 讀取檔案內容
-    const content = this.readFile(sourceFile);
+    const content = await this.readFile(sourceFile);
 
     // 驗證行號和位置
     if (!this.lineExtractor.validateLineRange(content, fromLine, toLine)) {
@@ -106,7 +108,7 @@ export class ShiftService {
 
     // 預覽模式或實際寫入
     if (!preview) {
-      this.writeFile(sourceFile, insertionResult.content);
+      await this.writeFile(sourceFile, insertionResult.content);
     }
 
     return createShiftResult(
@@ -134,7 +136,7 @@ export class ShiftService {
     }
 
     // 讀取來源檔案內容
-    const sourceContent = this.readFile(sourceFile);
+    const sourceContent = await this.readFile(sourceFile);
 
     // 驗證來源檔案的行號範圍
     if (!this.lineExtractor.validateLineRange(sourceContent, fromLine, toLine)) {
@@ -145,7 +147,7 @@ export class ShiftService {
     const extractionResult = this.lineExtractor.extractLines(sourceContent, fromLine, toLine);
 
     // 處理目標檔案
-    const targetFileExists = this.fileExists(targetFile);
+    const targetFileExists = await this.fileExists(targetFile);
     let finalTargetPath = targetFile;
     let operationType = ShiftOperationType.BETWEEN_FILES;
 
@@ -155,7 +157,7 @@ export class ShiftService {
       const targetDir = path.dirname(targetFile);
       const targetBasePath = path.join(targetDir, path.parse(targetFile).name);
 
-      const generationResult = this.fileGenerator.generateUniqueFilename(
+      const generationResult = await this.fileGenerator.generateUniqueFilename(
         targetBasePath,
         sourceExt
       );
@@ -165,7 +167,7 @@ export class ShiftService {
     }
 
     // 讀取或初始化目標檔案內容
-    const targetContent = targetFileExists ? this.readFile(finalTargetPath) : '';
+    const targetContent = targetFileExists ? await this.readFile(finalTargetPath) : '';
 
     // 驗證目標檔案的插入位置
     if (!this.lineExtractor.validatePosition(targetContent, position)) {
@@ -181,8 +183,8 @@ export class ShiftService {
 
     // 預覽模式或實際寫入
     if (!preview) {
-      this.writeFile(sourceFile, extractionResult.remainingContent);
-      this.writeFile(finalTargetPath, insertionResult.content);
+      await this.writeFile(sourceFile, extractionResult.remainingContent);
+      await this.writeFile(finalTargetPath, insertionResult.content);
     }
 
     const message = preview
@@ -207,11 +209,11 @@ export class ShiftService {
    * @param options - 移動選項
    * @returns 驗證錯誤列表
    */
-  private validateOptions(options: ShiftOptions): ShiftValidationError[] {
+  private async validateOptions(options: ShiftOptions): Promise<ShiftValidationError[]> {
     const errors: ShiftValidationError[] = [];
 
     // 檢查來源檔案是否存在
-    if (!this.fileExists(options.sourceFile)) {
+    if (!(await this.fileExists(options.sourceFile))) {
       errors.push(
         createShiftValidationError(
           'source_not_found',
@@ -264,9 +266,9 @@ export class ShiftService {
    * @param filePath - 檔案路徑
    * @returns 檔案內容
    */
-  private readFile(filePath: string): string {
+  private async readFile(filePath: string): Promise<string> {
     try {
-      return fs.readFileSync(filePath, 'utf-8');
+      return await this.fileSystem.readFile(filePath, 'utf-8') as string;
     } catch (error) {
       throw new Error(`無法讀取檔案 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -277,11 +279,11 @@ export class ShiftService {
    * @param filePath - 檔案路徑
    * @param content - 檔案內容
    */
-  private writeFile(filePath: string, content: string): void {
+  private async writeFile(filePath: string, content: string): Promise<void> {
     try {
       const directory = path.dirname(filePath);
-      this.fileGenerator.ensureDirectoryExists(directory);
-      fs.writeFileSync(filePath, content, 'utf-8');
+      await this.fileGenerator.ensureDirectoryExists(directory);
+      await this.fileSystem.writeFile(filePath, content);
     } catch (error) {
       throw new Error(`無法寫入檔案 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -292,9 +294,9 @@ export class ShiftService {
    * @param filePath - 檔案路徑
    * @returns 是否存在
    */
-  private fileExists(filePath: string): boolean {
+  private async fileExists(filePath: string): Promise<boolean> {
     try {
-      return fs.existsSync(filePath);
+      return await this.fileSystem.exists(filePath);
     } catch {
       return false;
     }

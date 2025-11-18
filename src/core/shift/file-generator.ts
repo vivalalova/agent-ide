@@ -2,24 +2,25 @@
  * 檔案生成器 - 處理檔名衝突
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import type { FileGenerationResult } from './types.js';
 
 /**
  * 檔案生成器類別
  */
 export class FileGenerator {
+  constructor(private readonly fileSystem: FileSystem) {}
   /**
    * 生成唯一檔名
    * @param basePath - 基礎路徑（不含副檔名）
    * @param extension - 副檔名（含點號，如 '.ts'）
    * @returns 唯一的檔案路徑
    */
-  generateUniqueFilename(basePath: string, extension: string): FileGenerationResult {
+  async generateUniqueFilename(basePath: string, extension: string): Promise<FileGenerationResult> {
     const originalPath = `${basePath}${extension}`;
 
-    if (!this.fileExists(originalPath)) {
+    if (!(await this.fileExists(originalPath))) {
       return {
         filePath: originalPath,
         isNew: true,
@@ -34,7 +35,7 @@ export class FileGenerator {
       const paddedSuffix = suffix.toString().padStart(2, '0');
       candidatePath = `${basePath}${paddedSuffix}${extension}`;
       suffix++;
-    } while (this.fileExists(candidatePath) && suffix < 100);
+    } while ((await this.fileExists(candidatePath)) && suffix < 100);
 
     if (suffix >= 100) {
       throw new Error(`無法生成唯一檔名：已存在 100 個相同名稱的檔案 (${basePath})`);
@@ -55,11 +56,11 @@ export class FileGenerator {
    * @param directory - 目標目錄
    * @returns 生成結果
    */
-  generateFromTargetPath(
+  async generateFromTargetPath(
     targetPath: string,
     sourceExtension: string,
     directory: string
-  ): FileGenerationResult {
+  ): Promise<FileGenerationResult> {
     const parsedPath = path.parse(targetPath);
 
     // 如果目標路徑已經有副檔名，使用原有副檔名
@@ -77,9 +78,9 @@ export class FileGenerator {
    * @param filePath - 檔案路徑
    * @returns 是否存在
    */
-  private fileExists(filePath: string): boolean {
+  private async fileExists(filePath: string): Promise<boolean> {
     try {
-      return fs.existsSync(filePath);
+      return await this.fileSystem.exists(filePath);
     } catch {
       return false;
     }
@@ -89,9 +90,9 @@ export class FileGenerator {
    * 確保目錄存在
    * @param dirPath - 目錄路徑
    */
-  ensureDirectoryExists(dirPath: string): void {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+  async ensureDirectoryExists(dirPath: string): Promise<void> {
+    if (!(await this.fileSystem.exists(dirPath))) {
+      await this.fileSystem.createDirectory(dirPath);
     }
   }
 
@@ -100,9 +101,9 @@ export class FileGenerator {
    * @param filePath - 檔案路徑
    * @param content - 檔案內容
    */
-  createFile(filePath: string, content: string): void {
+  async createFile(filePath: string, content: string): Promise<void> {
     const directory = path.dirname(filePath);
-    this.ensureDirectoryExists(directory);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    await this.ensureDirectoryExists(directory);
+    await this.fileSystem.writeFile(filePath, content);
   }
 }
