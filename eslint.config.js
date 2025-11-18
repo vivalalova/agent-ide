@@ -2,6 +2,8 @@ import eslint from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import parser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import noFsInCore from './eslint-rules/no-fs-in-core/index.js';
+import noDefaultInstanceInConstructor from './eslint-rules/no-default-instance-in-constructor/index.js';
 
 export default [
   eslint.configs.recommended,
@@ -37,6 +39,12 @@ export default [
     plugins: {
       '@typescript-eslint': tseslint,
       'import': importPlugin,
+      'custom': {
+        rules: {
+          'no-fs-in-core': noFsInCore,
+          'no-default-instance-in-constructor': noDefaultInstanceInConstructor,
+        },
+      },
     },
     settings: {
       'import/resolver': {
@@ -72,6 +80,10 @@ export default [
       'no-useless-catch': 'warn', // 無用 catch 調整為警告
       'no-redeclare': 'warn', // 重複宣告調整為警告
       'no-control-regex': 'warn', // 控制字元正則表達式調整為警告
+
+      // 自定義規則
+      'custom/no-fs-in-core': 'error',
+      'custom/no-default-instance-in-constructor': 'error',
     },
   },
   {
