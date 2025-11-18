@@ -282,13 +282,55 @@ describe('CLI refactor - 基於 sample-project fixture', () => {
     expect(output.length).toBeGreaterThan(0);
   });
 
-  it('應該處理不支援的重構操作', async () => {
-    const filePath = fixture.getFilePath('src/services/user-service.ts');
+  it('應該能夠內聯簡單函式', async () => {
+    const filePath = fixture.getFilePath('src/utils/inline-test.ts');
+
+    // 創建測試檔案
+    const testCode = `
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+export function calculate() {
+  const result1 = add(1, 2);
+  const result2 = add(3, 4);
+  return result1 + result2;
+}
+`;
+    fixture.writeFile('src/utils/inline-test.ts', testCode);
+
+    // 執行內聯
+    const result = await executeCLI([
+      'refactor',
+      'inline-function',
+      '--file',
+      filePath,
+      '--function-name',
+      'add'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+
+    // 讀取修改後的內容
+    const modifiedCode = await fixture.readFile('src/utils/inline-test.ts');
+
+    // 驗證函式被內聯（參數被正確替換）
+    expect(modifiedCode).toContain('1 + 2');
+    expect(modifiedCode).toContain('3 + 4');
+
+    // 驗證原函式被移除
+    expect(modifiedCode).not.toContain('function add');
+  });
+
+  it('應該在缺少函式名稱時報錯', async () => {
+    const filePath = fixture.getFilePath('src/utils/string-utils.ts');
 
     const result = await executeCLI(['refactor', 'inline-function', '--file', filePath]);
 
+    expect(result.exitCode).toBe(1);
     const output = result.stdout + result.stderr;
-    expect(output).toContain('尚未實作');
+    expect(output).toContain('缺少必要參數');
+    expect(output).toContain('--function-name');
   });
 
   // ============================================================

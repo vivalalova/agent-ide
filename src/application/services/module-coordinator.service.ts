@@ -11,7 +11,7 @@ import { EventPriority } from '../events/event-types.js';
 
 // 核心模組引入
 import { FunctionExtractor } from '../../core/refactor/extract-function.js';
-import { InlineAnalyzer } from '../../core/refactor/inline-function.js';
+import { FunctionInliner, InlineAnalyzer } from '../../core/refactor/inline-function.js';
 import { RenameEngine } from '../../core/rename/rename-engine.js';
 import { MoveService } from '../../core/move/move-service.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
@@ -62,6 +62,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
   // 核心模組實例
   private readonly functionExtractor: FunctionExtractor;
+  private readonly functionInliner: FunctionInliner;
   private readonly inlineAnalyzer: InlineAnalyzer;
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
@@ -87,6 +88,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
     // 初始化核心模組實例
     this.functionExtractor = new FunctionExtractor();
+    this.functionInliner = new FunctionInliner();
     this.inlineAnalyzer = new InlineAnalyzer();
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
@@ -160,19 +162,37 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
         break;
 
       case 'inline-function':
-        if (options.selection) {
+        if (options.newName) {
           try {
             const code = await this.readFileContent(filePath);
-            // InlineAnalyzer 主要用於分析，我們需要實際的內聯邏輯
-            // 這裡簡化處理，需要先找到函式定義和調用
-            const functionDef = { name: 'temp', body: '', parameters: [], range: options.selection } as any;
-            const functionCalls: any[] = [];
-            const canInline = this.inlineAnalyzer.analyze(functionDef, functionCalls);
-            if (canInline.canInline) {
+            const functionName = options.newName;
+
+            const inlineConfig = {
+              removeFunction: true,
+              preserveComments: true,
+              validateInlining: true,
+              inlineAllCalls: true
+            };
+
+            const result = await this.functionInliner.inline(code, functionName, inlineConfig);
+
+            if (result.success) {
+              // 套用編輯（按位置順序從後往前套用，避免位置偏移）
+              let modifiedCode = code;
+              const sortedEdits = [...result.edits].sort((a, b) => {
+                const aStart = this.positionToOffset(code, a.range.start);
+                const bStart = this.positionToOffset(code, b.range.start);
+                return bStart - aStart; // 從後往前
+              });
+
+              for (const edit of sortedEdits) {
+                modifiedCode = this.applyEdit(modifiedCode, edit);
+              }
+
               changes.push({
                 filePath,
                 oldContent: code,
-                newContent: code // 簡化實作
+                newContent: modifiedCode
               });
             } else {
               success = false;
@@ -483,5 +503,37 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     );
 
     return previews.join('\n\n');
+  }
+
+  /**
+   * 將行列位置轉換為字元偏移量
+   */
+  private positionToOffset(code: string, position: { line: number; column: number }): number {
+    const lines = code.split('\n');
+    let offset = 0;
+    for (let i = 0; i < position.line - 1 && i < lines.length; i++) {
+      offset += lines[i].length + 1;
+    }
+    offset += position.column;
+    return Math.min(offset, code.length);
+  }
+
+  /**
+   * 套用編輯操作
+   */
+  private applyEdit(code: string, edit: { type: 'replace' | 'insert' | 'delete'; range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
+    const startOffset = this.positionToOffset(code, edit.range.start);
+    const endOffset = this.positionToOffset(code, edit.range.end);
+
+    switch (edit.type) {
+    case 'replace':
+      return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
+    case 'insert':
+      return code.substring(0, startOffset) + edit.newText + code.substring(startOffset);
+    case 'delete':
+      return code.substring(0, startOffset) + code.substring(endOffset);
+    default:
+      return code;
+    }
   }
 }

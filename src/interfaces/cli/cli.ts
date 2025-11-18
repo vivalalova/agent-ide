@@ -746,9 +746,95 @@ export class AgentIdeCLI {
         }
 
       } else if (action === 'inline-function') {
-        console.error('❌ inline-function 尚未實作');
-        process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        if (!functionNameOption) {
+          console.error('❌ inline-function 缺少必要參數: --function-name (或 --new-name)');
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
+        // 讀取檔案內容
+        const fs = await import('fs/promises');
+
+        // 檢查檔案是否存在
+        try {
+          await fs.access(filePath);
+        } catch {
+          console.error(`❌ 找不到檔案: ${filePath}`);
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+          return;
+        }
+
+        const code = await fs.readFile(filePath, 'utf-8');
+
+        // 使用 FunctionInliner
+        const { FunctionInliner } = await import('../../core/refactor/inline-function.js');
+        const inliner = new FunctionInliner();
+
+        // 執行內聯
+        const inlineConfig = {
+          removeFunction: true,
+          preserveComments: true,
+          validateInlining: true,
+          inlineAllCalls: true
+        };
+
+        const result = await inliner.inline(code, functionNameOption, inlineConfig);
+
+        if (result.success) {
+          // 套用編輯（按位置順序從後往前套用，避免位置偏移）
+          let modifiedCode = code;
+          const sortedEdits = [...result.edits].sort((a, b) => {
+            const aStart = this.rangeToOffset(code, a.range.start);
+            const bStart = this.rangeToOffset(code, b.range.start);
+            return bStart - aStart; // 從後往前
+          });
+
+          for (const edit of sortedEdits) {
+            modifiedCode = this.applyEditCorrectly(modifiedCode, edit);
+          }
+
+          if (isJsonFormat) {
+            console.log(JSON.stringify({
+              success: true,
+              functionName: result.functionName,
+              inlinedCallsCount: result.inlinedCallsCount,
+              removedFunction: result.removedFunction,
+              warnings: result.warnings
+            }, null, 2));
+          } else {
+            console.log('✅ 內聯完成');
+            console.log(`📝 函式名稱: ${result.functionName}`);
+            console.log(`🔄 已內聯 ${result.inlinedCallsCount} 個呼叫`);
+            if (result.removedFunction) {
+              console.log('🗑️  已移除原函式');
+            }
+            if (result.warnings.length > 0) {
+              console.log('⚠️  警告:');
+              result.warnings.forEach(w => console.log(`   - ${w}`));
+            }
+          }
+
+          if (!options.preview) {
+            await fs.writeFile(filePath, modifiedCode, 'utf-8');
+            if (!isJsonFormat) {
+              console.log(`✓ 已更新 ${filePath}`);
+            }
+          } else {
+            if (!isJsonFormat) {
+              console.log('\n🔍 預覽模式 - 未寫入檔案');
+            }
+          }
+        } else {
+          if (isJsonFormat) {
+            console.error(JSON.stringify({ success: false, errors: result.errors }));
+          } else {
+            console.error('❌ 內聯失敗:', result.errors.join(', '));
+          }
+          process.exitCode = 1;
+          if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        }
       } else {
         console.error(`❌ 未知的重構操作: ${action}`);
         process.exitCode = 1;
@@ -2699,6 +2785,11 @@ export class AgentIdeCLI {
 
     offset += position.column;
     return Math.min(offset, lines.join('\n').length);
+  }
+
+  private rangeToOffset(code: string, position: { line: number; column: number }): number {
+    const lines = code.split('\n');
+    return this.positionToOffset(lines, position);
   }
 
   /**

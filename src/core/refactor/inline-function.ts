@@ -309,13 +309,14 @@ export class FunctionInliner {
    */
   private findFunctionDefinition(code: string, functionName: string): FunctionDefinition | null {
     // 簡化實作：使用正則表達式找函式定義
+    // 使用 [\s\S] 來匹配包括換行在內的所有字元
     const patterns = [
-      // 函式宣告: function name() {...}
-      new RegExp(`function\\s+${functionName}\\s*\\(([^)]*)\\)\\s*\\{([^}]*)\\}`, 'g'),
+      // 函式宣告: function name() {...} 或 function name(): type {...}
+      new RegExp(`function\\s+${functionName}\\s*\\(([^)]*)\\)\\s*(?::[^{]*)?\\{([\\s\\S]*?)\\}`, 'g'),
       // 箭頭函式: const name = (...) => {...}
-      new RegExp(`const\\s+${functionName}\\s*=\\s*\\(([^)]*)\\)\\s*=>\\s*\\{([^}]*)\\}`, 'g'),
+      new RegExp(`const\\s+${functionName}\\s*=\\s*\\(([^)]*)\\)\\s*(?::[^{]*)?=>\\s*\\{([\\s\\S]*?)\\}`, 'g'),
       // 方法定義: name(...) {...}
-      new RegExp(`${functionName}\\s*\\(([^)]*)\\)\\s*\\{([^}]*)\\}`, 'g')
+      new RegExp(`${functionName}\\s*\\(([^)]*)\\)\\s*(?::[^{]*)?\\{([\\s\\S]*?)\\}`, 'g')
     ];
 
     for (const pattern of patterns) {
@@ -448,8 +449,12 @@ export class FunctionInliner {
       const param = functionDef.parameters[i];
       const arg = call.arguments[i] || 'undefined';
 
+      // 提取參數名稱（移除型別註解）
+      // 例如："a: number" => "a"
+      const paramName = param.split(':')[0].trim();
+
       // 簡化實作：全文替換參數名稱
-      const paramRegex = new RegExp(`\\b${param}\\b`, 'g');
+      const paramRegex = new RegExp(`\\b${paramName}\\b`, 'g');
       inlinedBody = inlinedBody.replace(paramRegex, arg);
     }
 
