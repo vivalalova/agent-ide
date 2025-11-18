@@ -3,11 +3,11 @@
  * 負責計算快照之間的差異，並應用增量更新
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { CodeCompressor } from './code-compressor.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import type {
   Snapshot,
   SnapshotDiff,
@@ -23,10 +23,12 @@ import { FileChangeType } from './types.js';
 export class SnapshotDiffer {
   private parserRegistry: ParserRegistry;
   private compressor: CodeCompressor;
+  private fileSystem: FileSystem;
 
-  constructor() {
+  constructor(fileSystem: FileSystem) {
     this.parserRegistry = ParserRegistry.getInstance();
     this.compressor = new CodeCompressor();
+    this.fileSystem = fileSystem;
   }
 
   /**
@@ -127,7 +129,7 @@ export class SnapshotDiffer {
     const parser = this.parserRegistry.getParser(ext);
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
       // 計算 hash
       const hash = crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);

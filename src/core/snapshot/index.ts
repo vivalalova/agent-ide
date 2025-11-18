@@ -38,12 +38,14 @@ export {
  * 建立快照引擎的便利函式
  */
 export function createSnapshotEngine(): SnapshotEngineClass {
-  return new SnapshotEngineClass();
+  const { FileSystem } = require('../../infrastructure/storage/index');
+  return new SnapshotEngineClass(new FileSystem());
 }
 
 /**
  * 建立配置管理器的便利函式
  */
 export function createConfigManager(): ConfigManagerClass {
-  return new ConfigManagerClass();
+  const { FileSystem } = require('../../infrastructure/storage/index');
+  return new ConfigManagerClass(new FileSystem());
 }

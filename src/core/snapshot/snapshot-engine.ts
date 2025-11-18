@@ -3,10 +3,10 @@
  * 負責生成、讀取、保存程式碼快照
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { glob } from 'glob';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import { IndexEngine } from '../indexing/index-engine.js';
 import { DependencyAnalyzer } from '../dependency/dependency-analyzer.js';
 import { ShitScoreAnalyzer } from '../shit-score/shit-score-analyzer.js';
@@ -40,11 +40,13 @@ export class SnapshotEngine {
   private compressor: CodeCompressor;
   private differ: SnapshotDiffer;
   private parserRegistry: ParserRegistry;
+  private fileSystem: FileSystem;
 
-  constructor() {
+  constructor(fileSystem: FileSystem) {
     this.compressor = new CodeCompressor();
-    this.differ = new SnapshotDiffer();
+    this.differ = new SnapshotDiffer(fileSystem);
     this.parserRegistry = ParserRegistry.getInstance();
+    this.fileSystem = fileSystem;
   }
 
   /**
@@ -90,7 +92,7 @@ export class SnapshotEngine {
    * 讀取快照
    */
   async load(snapshotPath: string): Promise<Snapshot> {
-    const content = await fs.readFile(snapshotPath, 'utf-8');
+    const content = await this.fileSystem.readFile(snapshotPath, 'utf-8') as string;
     return JSON.parse(content) as Snapshot;
   }
 
@@ -100,11 +102,11 @@ export class SnapshotEngine {
   async save(snapshot: Snapshot, outputPath: string): Promise<void> {
     // 確保輸出目錄存在
     const dir = path.dirname(outputPath);
-    await fs.mkdir(dir, { recursive: true });
+    await this.fileSystem.createDirectory(dir);
 
     // 寫入檔案
     const content = JSON.stringify(snapshot, null, 2);
-    await fs.writeFile(outputPath, content, 'utf-8');
+    await this.fileSystem.writeFile(outputPath, content);
   }
 
   /**
@@ -142,13 +144,13 @@ export class SnapshotEngine {
       includeExtensions: options.extensions,
       excludePatterns: options.exclude
     });
-    this.indexEngine = new IndexEngine(indexConfig);
+    this.indexEngine = new IndexEngine(indexConfig, this.fileSystem);
 
     // 建立依賴分析器
-    this.dependencyAnalyzer = new DependencyAnalyzer();
+    this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
 
     // 建立 ShitScore 分析器
-    this.shitScoreAnalyzer = new ShitScoreAnalyzer(this.parserRegistry);
+    this.shitScoreAnalyzer = new ShitScoreAnalyzer(this.parserRegistry, this.fileSystem);
   }
 
   /**
@@ -326,7 +328,7 @@ export class SnapshotEngine {
 
       // 分析模組
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const lines = content.split('\n').length;
 
         // 計算匯出和依賴（簡化版）
@@ -370,7 +372,7 @@ export class SnapshotEngine {
       }
 
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const ast = await parser.parse(content, file);
         const fileSymbols = await parser.extractSymbols(ast);
 
@@ -420,7 +422,7 @@ export class SnapshotEngine {
       }
 
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const ast = await parser.parse(content, file);
         const deps = await parser.extractDependencies(ast);
 
@@ -466,7 +468,7 @@ export class SnapshotEngine {
       const relativePath = path.relative(projectPath, file);
 
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const compressed = await this.compressor.compress(content, level);
 
         code[relativePath] = compressed;
@@ -518,7 +520,7 @@ export class SnapshotEngine {
 
     for (const file of files) {
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const hash = crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);
         hashes[file] = hash;
       } catch {

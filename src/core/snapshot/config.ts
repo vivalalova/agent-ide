@@ -3,10 +3,10 @@
  * 負責讀取和管理 .agent-ide.json 配置檔
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { SnapshotOptions, CompressionLevel } from './types.js';
 import { createDefaultSnapshotOptions } from './types.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 
 /**
  * 專案配置檔格式
@@ -50,6 +50,11 @@ export interface ProjectConfig {
  */
 export class ConfigManager {
   private static readonly CONFIG_FILENAME = '.agent-ide.json';
+  private readonly fileSystem: FileSystem;
+
+  constructor(fileSystem: FileSystem) {
+    this.fileSystem = fileSystem;
+  }
 
   /**
    * 讀取專案配置
@@ -58,7 +63,7 @@ export class ConfigManager {
     const configPath = path.join(projectPath, ConfigManager.CONFIG_FILENAME);
 
     try {
-      const content = await fs.readFile(configPath, 'utf-8');
+      const content = await this.fileSystem.readFile(configPath, 'utf-8') as string;
       return JSON.parse(content) as ProjectConfig;
     } catch {
       // 配置檔不存在或讀取失敗
@@ -73,7 +78,7 @@ export class ConfigManager {
     const configPath = path.join(projectPath, ConfigManager.CONFIG_FILENAME);
     const content = JSON.stringify(config, null, 2);
 
-    await fs.writeFile(configPath, content, 'utf-8');
+    await this.fileSystem.writeFile(configPath, content);
   }
 
   /**
@@ -192,12 +197,6 @@ export class ConfigManager {
    */
   async configExists(projectPath: string): Promise<boolean> {
     const configPath = path.join(projectPath, ConfigManager.CONFIG_FILENAME);
-
-    try {
-      await fs.access(configPath);
-      return true;
-    } catch {
-      return false;
-    }
+    return await this.fileSystem.exists(configPath);
   }
 }
