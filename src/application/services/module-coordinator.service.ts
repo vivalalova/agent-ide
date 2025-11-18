@@ -17,6 +17,7 @@ import { MoveService } from '../../core/move/move-service.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { SearchService } from '../../core/search/service.js';
 import { IndexEngine } from '../../core/indexing/index-engine.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 
 import type {
   IModuleCoordinatorService,
@@ -67,6 +68,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly searchService: SearchService;
   private readonly indexEngine: IndexEngine;
+  private readonly fileSystem: FileSystem;
 
   constructor(
     eventBus: EventBus,
@@ -80,14 +82,17 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     // 初始化模組狀態追蹤
     this.modules = new Map();
 
+    // 初始化 FileSystem（單一實例供所有模組共用）
+    this.fileSystem = new FileSystem();
+
     // 初始化核心模組實例
     this.functionExtractor = new FunctionExtractor();
     this.inlineAnalyzer = new InlineAnalyzer();
     this.renameEngine = new RenameEngine();
-    this.moveService = new MoveService();
-    this.dependencyAnalyzer = new DependencyAnalyzer();
-    this.searchService = new SearchService();
-    this.indexEngine = new IndexEngine({} as any);
+    this.moveService = new MoveService(this.fileSystem);
+    this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
+    this.searchService = new SearchService(this.fileSystem);
+    this.indexEngine = new IndexEngine({} as any, this.fileSystem);
 
     // 註冊所有模組
     this.registerModules();

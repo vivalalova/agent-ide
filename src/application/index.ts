@@ -88,6 +88,7 @@ export type {
 
 // ============= 應用服務工廠 =============
 import { EventBus } from './events/event-bus.js';
+import { ApplicationState } from './state/application-state.js';
 import { StateManager } from './state/state-manager.js';
 import { ErrorHandlerService } from './services/error-handler.service.js';
 import { SessionManager } from './services/session-manager.service.js';
@@ -113,7 +114,7 @@ export class ApplicationServices {
   private constructor() {
     // 初始化基礎設施
     this.eventBus = new EventBus();
-    this.stateManager = new StateManager();
+    this.stateManager = new StateManager(new ApplicationState());
 
     // 初始化核心服務
     this.errorHandler = new ErrorHandlerService(this.eventBus);

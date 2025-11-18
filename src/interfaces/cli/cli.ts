@@ -19,6 +19,7 @@ import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js'
 import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '../../core/snapshot/index.js';
 import type { SnapshotOptions } from '../../core/snapshot/index.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -46,9 +47,11 @@ export class AgentIdeCLI {
   private moveService?: MoveService;
   private searchService?: SearchService;
   private shiftService?: ShiftService;
+  private fileSystem: FileSystem;
 
   constructor() {
     this.program = new Command();
+    this.fileSystem = new FileSystem();
     this.setupCommands();
     this.initializeParsers();
   }
@@ -413,7 +416,7 @@ export class AgentIdeCLI {
         includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
         excludePatterns: ['node_modules/**', '*.test.*']
       });
-      this.indexEngine = new IndexEngine(config);
+      this.indexEngine = new IndexEngine(config, this.fileSystem);
       await this.indexEngine.indexProject(workspacePath);
 
       // 初始化重新命名引擎
@@ -807,7 +810,7 @@ export class AgentIdeCLI {
         // 讀取 tsconfig.json 路徑別名
         const pathAliases = await this.loadPathAliases(options.path || process.cwd());
 
-        this.moveService = new MoveService({
+        this.moveService = new MoveService(this.fileSystem, {
           pathAliases,
           supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue', '.swift'],
           includeNodeModules: false
@@ -924,7 +927,7 @@ export class AgentIdeCLI {
 
       // 初始化服務
       if (!this.shiftService) {
-        this.shiftService = new ShiftService();
+        this.shiftService = new ShiftService(this.fileSystem);
       }
 
       // 執行行移動操作
@@ -1003,7 +1006,7 @@ export class AgentIdeCLI {
     try {
       // 初始化搜尋服務
       if (!this.searchService) {
-        this.searchService = new SearchService();
+        this.searchService = new SearchService(this.fileSystem);
       }
 
       // 建構搜尋選項
@@ -1226,7 +1229,7 @@ export class AgentIdeCLI {
         includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
         excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
       });
-      this.indexEngine = new IndexEngine(config);
+      this.indexEngine = new IndexEngine(config, this.fileSystem);
 
       // 建立索引
       if (!isMinimalOrJson) {
@@ -1361,7 +1364,7 @@ export class AgentIdeCLI {
         includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
         excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
       });
-      this.indexEngine = new IndexEngine(config);
+      this.indexEngine = new IndexEngine(config, this.fileSystem);
 
       // 建立索引
       if (!isMinimalOrJson) {
@@ -1956,7 +1959,7 @@ export class AgentIdeCLI {
       const maxAllowed = options.maxAllowed ? parseFloat(options.maxAllowed) : undefined;
 
       const registry = ParserRegistry.getInstance();
-      const analyzer = new ShitScoreAnalyzer(registry);
+      const analyzer = new ShitScoreAnalyzer(registry, this.fileSystem);
       const result = await analyzer.analyze(analyzePath, {
         detailed: options.detailed,
         topCount,
@@ -2043,7 +2046,7 @@ export class AgentIdeCLI {
 
     try {
       const projectPath = options.path || process.cwd();
-      const configManager = new ConfigManager();
+      const configManager = new ConfigManager(this.fileSystem);
 
       // 讀取配置檔
       const projectConfig = await configManager.loadConfig(projectPath);
@@ -2067,7 +2070,7 @@ export class AgentIdeCLI {
         finalOptions.outputPath = path.join(projectPath, '.agent-ide', 'snapshot.json');
       }
 
-      const engine = new SnapshotEngine();
+      const engine = new SnapshotEngine(this.fileSystem);
 
       switch (action) {
         case 'generate':
@@ -2187,7 +2190,7 @@ export class AgentIdeCLI {
       throw new Error('請指定快照檔案路徑 (--output)');
     }
 
-    const engine = new SnapshotEngine();
+    const engine = new SnapshotEngine(this.fileSystem);
     const snapshot = await engine.load(options.outputPath);
     const stats = engine.getStats(snapshot);
 
@@ -2229,8 +2232,8 @@ export class AgentIdeCLI {
       throw new Error('請指定兩個快照檔案路徑 (--old <path> --new <path>)');
     }
 
-    const engine = new SnapshotEngine();
-    const differ = new SnapshotDiffer();
+    const engine = new SnapshotEngine(this.fileSystem);
+    const differ = new SnapshotDiffer(this.fileSystem);
 
     const oldSnapshot = await engine.load(oldPath);
     const newSnapshot = await engine.load(newPath);
@@ -2296,7 +2299,7 @@ export class AgentIdeCLI {
 
       // 初始化依賴分析器
       if (!this.dependencyAnalyzer) {
-        this.dependencyAnalyzer = new DependencyAnalyzer();
+        this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
       }
 
       // 分析專案依賴

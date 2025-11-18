@@ -52,9 +52,9 @@ export class StateManager extends EventEmitter {
   private _applicationState: ApplicationState;
   private _activeSessions: Record<string, SessionState>;
 
-  constructor(initialApplicationState?: ApplicationState) {
+  constructor(initialApplicationState: ApplicationState) {
     super();
-    this._applicationState = initialApplicationState || new ApplicationState();
+    this._applicationState = initialApplicationState;
     this._activeSessions = {};
   }
 
