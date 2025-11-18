@@ -3,8 +3,8 @@
  * 分析檔案和專案的依賴關係，提供影響分析和統計功能
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import { DependencyGraph } from './dependency-graph.js';
 import { CycleDetector } from './cycle-detector.js';
 import type {
@@ -35,11 +35,13 @@ export class DependencyAnalyzer {
   private cycleDetector: CycleDetector;
   private cache: Map<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
+  private fileSystem: FileSystem;
 
-  constructor(options?: Partial<ExtendedDependencyAnalysisOptions>) {
+  constructor(fileSystem: FileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
     this.cache = new Map();
+    this.fileSystem = fileSystem;
 
     // 使用預設選項並合併使用者選項
     const defaultOptions = this.createDefaultAnalysisOptions();
@@ -62,8 +64,8 @@ export class DependencyAnalyzer {
     const cacheEntry = this.cache.get(normalizedPath);
     if (cacheEntry) {
       try {
-        const stat = await fs.stat(normalizedPath);
-        if (stat.mtime <= cacheEntry.lastModified) {
+        const stat = await this.fileSystem.getStats(normalizedPath);
+        if (stat.modifiedTime <= cacheEntry.lastModified) {
           return cacheEntry.data;
         }
       } catch {
@@ -73,21 +75,21 @@ export class DependencyAnalyzer {
     }
 
     try {
-      const content = await fs.readFile(normalizedPath, 'utf-8');
-      const stat = await fs.stat(normalizedPath);
+      const content = await this.fileSystem.readFile(normalizedPath, 'utf-8') as string;
+      const stat = await this.fileSystem.getStats(normalizedPath);
 
       const dependencies = await this.extractDependencies(content, normalizedPath);
 
       const result: FileDependencies = {
         filePath: normalizedPath,
         dependencies,
-        lastModified: stat.mtime
+        lastModified: stat.modifiedTime
       };
 
       // 更新快取
       this.cache.set(normalizedPath, {
         data: result,
-        lastModified: stat.mtime
+        lastModified: stat.modifiedTime
       });
 
       // 更新依賴圖
@@ -349,10 +351,11 @@ export class DependencyAnalyzer {
       for (const ext of extensions) {
         const pathWithExt = resolvedPath + ext;
         try {
-          await fs.access(pathWithExt);
-          finalPath = pathWithExt;
-          exists = true;
-          break;
+          if (await this.fileSystem.exists(pathWithExt)) {
+            finalPath = pathWithExt;
+            exists = true;
+            break;
+          }
         } catch {
           // 繼續嘗試下個副檔名
         }
@@ -408,10 +411,10 @@ export class DependencyAnalyzer {
 
     // 檢查路徑是檔案還是目錄
     try {
-      const stat = await fs.stat(projectPath);
+      const stat = await this.fileSystem.getStats(projectPath);
 
       // 如果是檔案，直接返回該檔案
-      if (stat.isFile()) {
+      if (stat.isFile) {
         if (this.isIncluded(projectPath)) {
           return [projectPath];
         }
@@ -419,7 +422,7 @@ export class DependencyAnalyzer {
       }
 
       // 如果不是目錄也不是檔案，返回空陣列
-      if (!stat.isDirectory()) {
+      if (!stat.isDirectory) {
         return [];
       }
     } catch (error) {
@@ -433,20 +436,18 @@ export class DependencyAnalyzer {
       }
 
       try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const entries = await this.fileSystem.readDirectory(dir);
 
         for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
           // 檢查排除模式
-          if (this.isExcluded(fullPath)) {
+          if (this.isExcluded(entry.path)) {
             continue;
           }
 
-          if (entry.isDirectory()) {
-            await traverse(fullPath, depth + 1);
-          } else if (entry.isFile() && this.isIncluded(fullPath)) {
-            files.push(fullPath);
+          if (entry.isDirectory) {
+            await traverse(entry.path, depth + 1);
+          } else if (entry.isFile && this.isIncluded(entry.path)) {
+            files.push(entry.path);
           }
         }
       } catch (error) {

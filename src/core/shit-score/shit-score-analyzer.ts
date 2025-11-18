@@ -3,8 +3,8 @@
  * 主服務類別，整合所有分析功能（通過 ParserPlugin）
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 import { ScoreCalculator } from './score-calculator.js';
 import { Grading } from './grading.js';
 import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
@@ -52,11 +52,13 @@ export class ShitScoreAnalyzer {
   private readonly calculator: ScoreCalculator;
   private readonly grading: Grading;
   private readonly parserRegistry: ParserRegistry;
+  private readonly fileSystem: FileSystem;
 
-  constructor(parserRegistry: ParserRegistry) {
+  constructor(parserRegistry: ParserRegistry, fileSystem: FileSystem) {
     this.calculator = new ScoreCalculator();
     this.grading = new Grading();
     this.parserRegistry = parserRegistry;
+    this.fileSystem = fileSystem;
   }
 
   /**
@@ -119,28 +121,26 @@ export class ShitScoreAnalyzer {
   private async collectFiles(projectPath: string, options: ShitScoreOptions): Promise<string[]> {
     const files: string[] = [];
 
-    async function walk(dir: string): Promise<void> {
+    const walk = async (dir: string): Promise<void> => {
       try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const entries = await this.fileSystem.readDirectory(dir);
 
         for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-
-          if (entry.isDirectory()) {
-            if (!options.excludePatterns?.some((pattern) => fullPath.includes(pattern))) {
-              await walk(fullPath);
+          if (entry.isDirectory) {
+            if (!options.excludePatterns?.some((pattern) => entry.path.includes(pattern))) {
+              await walk(entry.path);
             }
-          } else if (entry.isFile()) {
+          } else if (entry.isFile) {
             const ext = path.extname(entry.name);
             if (['.ts', '.js', '.tsx', '.jsx'].includes(ext)) {
-              files.push(fullPath);
+              files.push(entry.path);
             }
           }
         }
       } catch {
         // 忽略無法讀取的目錄
       }
-    }
+    };
 
     await walk(projectPath);
     return files;
@@ -159,7 +159,7 @@ export class ShitScoreAnalyzer {
           continue;
         }
 
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const ast = await parser.parse(content, file);
         const symbols = await parser.extractSymbols(ast);
 
@@ -320,7 +320,7 @@ export class ShitScoreAnalyzer {
 
     for (const file of files) {
       try {
-        const content = await fs.readFile(file, 'utf-8');
+        const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const imports = content.match(/import\s+.*from\s+['"](.+)['"]/g) || [];
         const deps = new Set<string>();
 
@@ -413,7 +413,7 @@ export class ShitScoreAnalyzer {
   private async checkTsConfigStrict(projectPath: string): Promise<{ strictModeEnabled: boolean; strictNullChecksEnabled: boolean }> {
     try {
       const tsconfigPath = path.join(projectPath, 'tsconfig.json');
-      const content = await fs.readFile(tsconfigPath, 'utf-8');
+      const content = await this.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
       const config = JSON.parse(content);
 
       const strictModeEnabled = config.compilerOptions?.strict === true;

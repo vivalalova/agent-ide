@@ -3,9 +3,9 @@
  * 提供高效的文字搜尋功能，支援正則表達式、模糊匹配等
  */
 
-import { readFile } from 'fs/promises';
 import { glob } from 'glob';
 import path from 'path';
+import { FileSystem } from '../../../infrastructure/storage/index.js';
 
 import type {
   TextQuery,
@@ -20,6 +20,12 @@ import type {
  * 文字搜尋引擎
  */
 export class TextSearchEngine {
+  private readonly fileSystem: FileSystem;
+
+  constructor(fileSystem: FileSystem) {
+    this.fileSystem = fileSystem;
+  }
+
   private readonly defaultOptions: Required<TextSearchOptions> = {
     caseSensitive: false,
     wholeWord: false,
@@ -112,7 +118,7 @@ export class TextSearchEngine {
     query: string,
     options: Required<TextSearchOptions>
   ): Promise<Match[]> {
-    const content = await readFile(filePath, 'utf-8');
+    const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
     const lines = content.split('\n');
     const matches: Match[] = [];
 
