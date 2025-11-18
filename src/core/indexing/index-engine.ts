@@ -3,11 +3,10 @@
  * 程式碼索引系統的核心引擎，協調檔案索引和符號索引
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import { glob } from 'glob';
 import { createHash } from 'crypto';
-import type { Stats } from 'fs';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 
 import type { Symbol, SymbolType } from '../../shared/types/index.js';
 import type {
@@ -42,16 +41,18 @@ export class IndexEngine {
   private readonly fileIndex: FileIndex;
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
+  private readonly fileSystem: FileSystem;
   private _disposed = false;
   private _indexed = false;
 
-  constructor(config: IndexConfig) {
+  constructor(config: IndexConfig, fileSystem: FileSystem) {
     // 驗證配置
     this.validateConfig(config);
 
     this.config = config;
     this.fileIndex = new FileIndex(config);
     this.symbolIndex = new SymbolIndex();
+    this.fileSystem = fileSystem;
 
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
     const registry = ParserRegistry.getInstance();
@@ -141,8 +142,8 @@ export class IndexEngine {
     }
 
     try {
-      const stat = await fs.stat(workspacePath);
-      if (!stat.isDirectory()) {
+      const stat = await this.fileSystem.getStats(workspacePath);
+      if (!stat.isDirectory) {
         throw new Error('索引路徑必須是目錄');
       }
     } catch (error: any) {
@@ -191,8 +192,8 @@ export class IndexEngine {
    */
   async indexDirectory(dirPath: string): Promise<void> {
     try {
-      const stat = await fs.stat(dirPath);
-      if (!stat.isDirectory()) {
+      const stat = await this.fileSystem.getStats(dirPath);
+      if (!stat.isDirectory) {
         throw new Error(`路徑不是有效的目錄: ${dirPath}`);
       }
     } catch (error) {
@@ -270,7 +271,7 @@ export class IndexEngine {
    */
   async indexFile(filePath: string): Promise<void> {
     try {
-      const stat = await fs.stat(filePath);
+      const stat = await this.fileSystem.getStats(filePath);
 
       // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
@@ -278,7 +279,7 @@ export class IndexEngine {
         return;
       }
 
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
       const fileInfo = await this.createFileInfoFromStat(filePath, stat);
 
@@ -327,7 +328,10 @@ export class IndexEngine {
   async updateFile(filePath: string): Promise<void> {
     try {
       // 檢查檔案是否存在
-      await fs.access(filePath);
+      const exists = await this.fileSystem.exists(filePath);
+      if (!exists) {
+        throw new Error('檔案不存在');
+      }
 
       // 如果檔案已在索引中，先移除
       if (this.isIndexed(filePath)) {
@@ -523,17 +527,17 @@ export class IndexEngine {
   /**
    * 從檔案統計資訊建立 FileInfo
    */
-  private async createFileInfoFromStat(filePath: string, stat: Stats): Promise<FileInfo> {
+  private async createFileInfoFromStat(filePath: string, stat: Awaited<ReturnType<typeof this.fileSystem.getStats>>): Promise<FileInfo> {
     const extension = path.extname(filePath);
     const language = this.getLanguageFromExtension(extension);
 
     // 計算檔案 checksum
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
     const checksum = createHash('sha256').update(content).digest('hex');
 
     return createFileInfo(
       filePath,
-      stat.mtime,
+      stat.modifiedTime,
       stat.size,
       extension,
       language,
@@ -570,8 +574,8 @@ export class IndexEngine {
    */
   async needsReindexing(filePath: string): Promise<boolean> {
     try {
-      const stat = await fs.stat(filePath);
-      return this.fileIndex.needsReindexing(filePath, stat.mtime);
+      const stat = await this.fileSystem.getStats(filePath);
+      return this.fileIndex.needsReindexing(filePath, stat.modifiedTime);
     } catch (error) {
       // 檔案不存在或無法存取，但如果在索引中則需要標記為需要重新索引（用於清理）
       return this.fileIndex.hasFile(filePath);

@@ -4,9 +4,13 @@
  */
 
 import { EventEmitter } from 'events';
-import * as fs from 'fs/promises';
-import type { FSWatcher } from 'fs';
 import type { IndexEngine } from './index-engine.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
+
+// 定義 FSWatcher 型別以避免直接 import fs
+interface FSWatcher {
+  close(): void;
+}
 
 /**
  * 檔案變更類型
@@ -45,6 +49,7 @@ export interface BatchProcessOptions {
  */
 export class FileWatcher extends EventEmitter {
   private readonly indexEngine: IndexEngine;
+  private readonly fileSystem: FileSystem;
   private watcher: FSWatcher | null = null;
   private isWatching = false;
   private isPaused = false;
@@ -52,9 +57,13 @@ export class FileWatcher extends EventEmitter {
   private debounceTimer: NodeJS.Timeout | null = null;
   private readonly debounceTime: number;
 
-  constructor(indexEngine: IndexEngine, options?: { debounceTime?: number }) {
+  constructor(
+    indexEngine: IndexEngine,
+    options?: { debounceTime?: number; fileSystem?: FileSystem }
+  ) {
     super();
     this.indexEngine = indexEngine;
+    this.fileSystem = options?.fileSystem ?? new FileSystem();
     this.debounceTime = options?.debounceTime ?? 300; // 300ms debounce
   }
 
@@ -86,9 +95,9 @@ export class FileWatcher extends EventEmitter {
           let changeType: FileChangeType = 'change';
           if (eventType === 'rename') {
             // 需要進一步檢查是新增還是刪除
-            fs.access(filePath)
-              .then(() => {
-                changeType = 'add';
+            this.fileSystem.exists(filePath)
+              .then((exists) => {
+                changeType = exists ? 'add' : 'unlink';
                 this.queueChange(filePath, changeType);
               })
               .catch(() => {
@@ -246,7 +255,10 @@ export class FileWatcher extends EventEmitter {
     case 'change':
       try {
         // 檢查檔案是否存在
-        await fs.access(filePath);
+        const exists = await this.fileSystem.exists(filePath);
+        if (!exists) {
+          throw new Error(`檔案不存在: ${filePath}`);
+        }
 
         if (this.indexEngine.isIndexed(filePath)) {
           await this.indexEngine.updateFile(filePath);

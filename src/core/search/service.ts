@@ -20,6 +20,7 @@ import type {
 } from './types.js';
 
 import { TextSearchEngine } from './engines/text-engine.js';
+import { FileSystem } from '../../infrastructure/storage/index.js';
 
 /**
  * 搜尋服務
@@ -35,8 +36,8 @@ export class SearchService {
     recentSearches: []
   };
 
-  constructor() {
-    this.textEngine = new TextSearchEngine();
+  constructor(fileSystem: FileSystem) {
+    this.textEngine = new TextSearchEngine(fileSystem);
   }
 
   // ===== 核心搜尋方法 =====
