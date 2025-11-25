@@ -86,6 +86,17 @@ process.on('uncaughtException', (error) => {
   console.error('未捕獲的異常:', error);
 });
 
+// Signal handlers - 確保中斷時清理所有資源
+const cleanup = async () => {
+  cleanupTestParsers();
+  TestCleanup.clearGlobals();
+  if (global.gc) global.gc();
+  process.exit(0);
+};
+
+process.on('SIGINT', cleanup);
+process.on('SIGTERM', cleanup);
+
 // 垃圾回收靜默啟用
 // 無需輸出訊息
 
