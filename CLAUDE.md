@@ -71,6 +71,15 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 ❌ 建立自訂 helper → ✅ 用 fixture-manager
 ❌ 直接測試類別 → ✅ 透過 CLI
 
+### Worker 殭屍進程防護
+**問題**：Ctrl+C 中斷測試時 worker 未清理
+
+**防護機制**：
+1. Signal handlers（SIGINT/SIGTERM）→ `tests/setup.ts`
+2. Vitest 配置（isolate/fileParallelism: false）→ `vitest.config.ts`
+3. 自動清理（pretest hook）→ `scripts/cleanup-vitest.sh`
+4. 手動清理：`bash scripts/cleanup-vitest.sh`
+
 ## 核心模組
 
 1. **Dependency**：依賴圖、循環檢測（Tarjan）、影響分析（BFS）
