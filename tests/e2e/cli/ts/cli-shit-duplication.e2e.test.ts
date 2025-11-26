@@ -3,19 +3,15 @@
  * 基於 sample-project-duplication fixture 測試重複代碼檢測功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { loadReadOnlyFixture, FixtureProject } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI shit - 重複代碼檢測', () => {
   let fixture: FixtureProject;
 
-  beforeEach(async () => {
-    fixture = await loadFixture('sample-project-duplication');
-  });
-
-  afterEach(async () => {
-    await fixture.cleanup();
+  beforeAll(async () => {
+    fixture = await loadReadOnlyFixture('sample-project-duplication');
   });
 
   // ============================================================

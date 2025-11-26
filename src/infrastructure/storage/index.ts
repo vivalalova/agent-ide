@@ -30,9 +30,3 @@ export {
   FileSystemErrorType,
 } from './types.js';
 
-// 便利函式
-export const createFileSystem = () => new FileSystem();
-export const createFileWatcher = () => {
-  const { FileWatcher } = require('./file-watcher');
-  return new FileWatcher();
-};

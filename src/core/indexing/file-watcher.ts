@@ -59,11 +59,12 @@ export class FileWatcher extends EventEmitter {
 
   constructor(
     indexEngine: IndexEngine,
-    options?: { debounceTime?: number; fileSystem?: FileSystem }
+    fileSystem: FileSystem,
+    options?: { debounceTime?: number }
   ) {
     super();
     this.indexEngine = indexEngine;
-    this.fileSystem = options?.fileSystem ?? new FileSystem();
+    this.fileSystem = fileSystem;
     this.debounceTime = options?.debounceTime ?? 300; // 300ms debounce
   }
 

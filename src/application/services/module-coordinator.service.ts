@@ -74,17 +74,16 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   constructor(
     eventBus: EventBus,
     stateManager: StateManager,
-    errorHandler: ErrorHandlerService
+    errorHandler: ErrorHandlerService,
+    fileSystem: FileSystem
   ) {
     this.eventBus = eventBus;
     this.stateManager = stateManager;
     this.errorHandler = errorHandler;
+    this.fileSystem = fileSystem;
 
     // 初始化模組狀態追蹤
     this.modules = new Map();
-
-    // 初始化 FileSystem（單一實例供所有模組共用）
-    this.fileSystem = new FileSystem();
 
     // 初始化核心模組實例
     this.functionExtractor = new FunctionExtractor();

@@ -90,7 +90,7 @@ process.on('uncaughtException', (error) => {
 const cleanup = async () => {
   cleanupTestParsers();
   TestCleanup.clearGlobals();
-  if (global.gc) global.gc();
+  if (global.gc) {global.gc();}
   process.exit(0);
 };
 

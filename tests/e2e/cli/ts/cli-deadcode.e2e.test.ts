@@ -3,19 +3,15 @@
  * 測試各種 deadcode 檢測情況
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { loadReadOnlyFixture, FixtureProject } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI dead-code - 基於 deadcode-test fixture', () => {
   let fixture: FixtureProject;
 
-  beforeEach(async () => {
-    fixture = await loadFixture('deadcode-test');
-  });
-
-  afterEach(async () => {
-    await fixture.cleanup();
+  beforeAll(async () => {
+    fixture = await loadReadOnlyFixture('deadcode-test');
   });
 
   // ============================================================

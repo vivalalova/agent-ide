@@ -11,22 +11,36 @@ import { fileURLToPath } from 'url';
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(dirname, '../../fixtures');
 
+export interface FixtureOptions {
+  /** 唯讀模式：直接使用原始 fixture 路徑，不複製到臨時目錄 */
+  readOnly?: boolean;
+}
+
 export class FixtureProject {
   readonly fixtureName: string;
   readonly fixturePath: string;
   readonly tempPath: string;
+  private readonly isReadOnly: boolean;
   private originalFiles: Map<string, string> = new Map();
 
-  constructor(fixtureName: string) {
+  constructor(fixtureName: string, options?: FixtureOptions) {
     this.fixtureName = fixtureName;
     this.fixturePath = path.join(FIXTURES_DIR, fixtureName);
-    this.tempPath = path.join(tmpdir(), `agent-ide-fixture-${fixtureName}-${Date.now()}-${Math.random().toString(36).substring(7)}`);
+    this.isReadOnly = options?.readOnly ?? false;
+    // 唯讀模式直接用原始路徑
+    this.tempPath = this.isReadOnly
+      ? this.fixturePath
+      : path.join(tmpdir(), `agent-ide-fixture-${fixtureName}-${Date.now()}-${Math.random().toString(36).substring(7)}`);
   }
 
   /**
-   * 設定 fixture：複製到臨時目錄
+   * 設定 fixture：複製到臨時目錄（唯讀模式跳過）
    */
   async setup(): Promise<void> {
+    if (this.isReadOnly) {
+      // 唯讀模式不複製，不快照
+      return;
+    }
     await this.copyDirectory(this.fixturePath, this.tempPath);
     await this.snapshotFiles();
   }
@@ -116,9 +130,13 @@ export class FixtureProject {
   }
 
   /**
-   * 清理臨時目錄
+   * 清理臨時目錄（唯讀模式跳過）
    */
   async cleanup(): Promise<void> {
+    if (this.isReadOnly) {
+      // 唯讀模式不清理（使用原始目錄）
+      return;
+    }
     try {
       await fs.rm(this.tempPath, { recursive: true, force: true });
       this.originalFiles.clear();
@@ -198,6 +216,16 @@ export class FixtureProject {
  */
 export async function loadFixture(name: string): Promise<FixtureProject> {
   const fixture = new FixtureProject(name);
+  await fixture.setup();
+  return fixture;
+}
+
+/**
+ * 載入唯讀 fixture 專案（直接使用原始目錄，不複製）
+ * 適用於只讀取不修改的測試，大幅減少 IO
+ */
+export async function loadReadOnlyFixture(name: string): Promise<FixtureProject> {
+  const fixture = new FixtureProject(name, { readOnly: true });
   await fixture.setup();
   return fixture;
 }

@@ -5,6 +5,7 @@
 
 import { SnapshotEngine as SnapshotEngineClass } from './snapshot-engine.js';
 import { ConfigManager as ConfigManagerClass } from './config.js';
+import type { FileSystem } from '../../infrastructure/storage/index.js';
 
 // 核心類別
 export { SnapshotEngine } from './snapshot-engine.js';
@@ -37,15 +38,13 @@ export {
 /**
  * 建立快照引擎的便利函式
  */
-export function createSnapshotEngine(): SnapshotEngineClass {
-  const { FileSystem } = require('../../infrastructure/storage/index');
-  return new SnapshotEngineClass(new FileSystem());
+export function createSnapshotEngine(fileSystem: FileSystem): SnapshotEngineClass {
+  return new SnapshotEngineClass(fileSystem);
 }
 
 /**
  * 建立配置管理器的便利函式
  */
-export function createConfigManager(): ConfigManagerClass {
-  const { FileSystem } = require('../../infrastructure/storage/index');
-  return new ConfigManagerClass(new FileSystem());
+export function createConfigManager(fileSystem: FileSystem): ConfigManagerClass {
+  return new ConfigManagerClass(fileSystem);
 }

@@ -3,19 +3,15 @@
  * 基於 sample-project fixture 測試垃圾度評分功能
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, FixtureProject } from '../../helpers/fixture-manager';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { loadReadOnlyFixture, FixtureProject } from '../../helpers/fixture-manager';
 import { executeCLI } from '../../helpers/cli-executor';
 
 describe('CLI shit - 基於 sample-project fixture', () => {
   let fixture: FixtureProject;
 
-  beforeEach(async () => {
-    fixture = await loadFixture('sample-project');
-  });
-
-  afterEach(async () => {
-    await fixture.cleanup();
+  beforeAll(async () => {
+    fixture = await loadReadOnlyFixture('sample-project');
   });
 
   // ============================================================
