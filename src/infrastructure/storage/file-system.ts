@@ -1,5 +1,4 @@
 import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
 import * as path from 'path';
 import { glob as globby } from 'glob';
 import {
@@ -10,15 +9,15 @@ import {
   DirectoryNotFoundError,
   PermissionError,
   DirectoryNotEmptyError,
-  FileSystemErrorType,
   AtomicWriteOptions,
 } from './types.js';
+import type { IFileSystem } from './file-system.interface.js';
 
 /**
  * 檔案系統操作類別
  * 提供統一的檔案和目錄操作介面
  */
-export class FileSystem {
+export class FileSystem implements IFileSystem {
   private readonly tempSuffix = '.tmp';
 
   /**

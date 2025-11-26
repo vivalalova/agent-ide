@@ -17,7 +17,7 @@ import { MoveService } from '../../core/move/move-service.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { SearchService } from '../../core/search/service.js';
 import { IndexEngine } from '../../core/indexing/index-engine.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 
 import type {
   IModuleCoordinatorService,
@@ -69,13 +69,13 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly searchService: SearchService;
   private readonly indexEngine: IndexEngine;
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
   constructor(
     eventBus: EventBus,
     stateManager: StateManager,
     errorHandler: ErrorHandlerService,
-    fileSystem: FileSystem
+    fileSystem: IFileSystem
   ) {
     this.eventBus = eventBus;
     this.stateManager = stateManager;

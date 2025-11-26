@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import { DependencyGraph } from './dependency-graph.js';
 import { CycleDetector } from './cycle-detector.js';
 import type {
@@ -35,9 +35,9 @@ export class DependencyAnalyzer {
   private cycleDetector: CycleDetector;
   private cache: Map<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
-  private fileSystem: FileSystem;
+  private fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
+  constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
     this.cache = new Map();

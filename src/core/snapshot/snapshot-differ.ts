@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { ParserRegistry } from '../../infrastructure/parser/registry.js';
 import { CodeCompressor } from './code-compressor.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import type {
   Snapshot,
   SnapshotDiff,
@@ -23,9 +23,9 @@ import { FileChangeType } from './types.js';
 export class SnapshotDiffer {
   private parserRegistry: ParserRegistry;
   private compressor: CodeCompressor;
-  private fileSystem: FileSystem;
+  private fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.parserRegistry = ParserRegistry.getInstance();
     this.compressor = new CodeCompressor();
     this.fileSystem = fileSystem;

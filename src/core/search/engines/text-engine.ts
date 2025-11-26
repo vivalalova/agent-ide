@@ -5,7 +5,7 @@
 
 import { glob } from 'glob';
 import path from 'path';
-import { FileSystem } from '../../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../../infrastructure/storage/index.js';
 
 import type {
   TextQuery,
@@ -20,9 +20,9 @@ import type {
  * 文字搜尋引擎
  */
 export class TextSearchEngine {
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.fileSystem = fileSystem;
   }
 

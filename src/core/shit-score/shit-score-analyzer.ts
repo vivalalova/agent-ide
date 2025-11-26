@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import { ScoreCalculator } from './score-calculator.js';
 import { Grading } from './grading.js';
 import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
@@ -52,9 +52,9 @@ export class ShitScoreAnalyzer {
   private readonly calculator: ScoreCalculator;
   private readonly grading: Grading;
   private readonly parserRegistry: ParserRegistry;
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(parserRegistry: ParserRegistry, fileSystem: FileSystem) {
+  constructor(parserRegistry: ParserRegistry, fileSystem: IFileSystem) {
     this.calculator = new ScoreCalculator();
     this.grading = new Grading();
     this.parserRegistry = parserRegistry;

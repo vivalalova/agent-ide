@@ -6,7 +6,7 @@
 import * as path from 'path';
 import { glob } from 'glob';
 import { createHash } from 'crypto';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 
 import type { Symbol, SymbolType } from '../../shared/types/index.js';
 import type {
@@ -41,11 +41,11 @@ export class IndexEngine {
   private readonly fileIndex: FileIndex;
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
   private _disposed = false;
   private _indexed = false;
 
-  constructor(config: IndexConfig, fileSystem: FileSystem) {
+  constructor(config: IndexConfig, fileSystem: IFileSystem) {
     // 驗證配置
     this.validateConfig(config);
 

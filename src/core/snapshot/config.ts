@@ -6,7 +6,7 @@
 import * as path from 'path';
 import type { SnapshotOptions, CompressionLevel } from './types.js';
 import { createDefaultSnapshotOptions } from './types.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 
 /**
  * 專案配置檔格式
@@ -50,9 +50,9 @@ export interface ProjectConfig {
  */
 export class ConfigManager {
   private static readonly CONFIG_FILENAME = '.agent-ide.json';
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.fileSystem = fileSystem;
   }
 
