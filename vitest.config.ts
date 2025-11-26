@@ -49,7 +49,7 @@ export default defineConfig({
         isolate: true,
       },
     },
-    maxWorkers: 3,
+    maxWorkers: 2,
     fileParallelism: true,
 
     // 超時設定
@@ -58,7 +58,7 @@ export default defineConfig({
     teardownTimeout: 30000,
 
     // 並發控制 - 降低並發數減少 Worker 負載
-    maxConcurrency: 1,
+    maxConcurrency: 5,
 
     // 清理設定
     clearMocks: true,
