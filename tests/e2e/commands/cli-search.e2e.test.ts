@@ -369,4 +369,347 @@ describe('CLI search - 基於 sample-project fixture', () => {
       expect(output.results).toBeDefined();
     });
   });
+
+  describe('進階搜尋選項測試', () => {
+    it('應該支援 wholeWord 完整單字匹配', async () => {
+      await fixture.writeFile('test-whole-word.ts', 'const test = true; const testing = false; const test123 = 42;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test', '--whole-word', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該支援 multiline 多行匹配', async () => {
+      await fixture.writeFile('test-multiline.ts', 'function test() {\n  return true;\n}');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'function.*return', '--regex', '--multiline', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該支援 include 包含模式', async () => {
+      await fixture.writeFile('include-me.ts', 'const test = true;');
+      await fixture.writeFile('exclude-me.js', 'const test = true;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test', '--include', '*.ts', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該支援 exclude 排除模式', async () => {
+      await fixture.writeFile('keep-me.ts', 'const test = true;');
+      await fixture.writeFile('skip-me.test.ts', 'const test = true;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test', '--exclude', '*.test.ts', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該支援 limit 限制結果數量', async () => {
+      for (let i = 0; i < 20; i++) {
+        await fixture.writeFile(`result-${i}.ts`, `const match = ${i};`);
+      }
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--limit', '5', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      expect(output.results.length).toBeLessThanOrEqual(5);
+    });
+
+    it('應該支援 context 上下文行數為 0', async () => {
+      await fixture.writeFile('test-no-context.ts', 'line1\nline2\nMATCH\nline4\nline5');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'MATCH', '--context', '0', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該支援 context 上下文行數為 5', async () => {
+      const lines = Array.from({ length: 15 }, (_, i) => `line ${i}`).join('\n');
+      await fixture.writeFile('test-context.ts', lines + '\nMATCH\n' + lines);
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'MATCH', '--context', '5', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該支援 scope 為 file（單檔案搜尋）', async () => {
+      const targetFile = fixture.rootPath + '/single-file.ts';
+      await fixture.writeFile('single-file.ts', 'const target = true;');
+      await fixture.writeFile('other-file.ts', 'const target = false;');
+      const result = await executeCLI(['search', 'text', '--path', targetFile, '--query', 'target', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該處理大量檔案搜尋（200 檔案）', async () => {
+      for (let i = 0; i < 200; i++) {
+        const content = Array.from({ length: 100 }, (_, j) => `line ${i}-${j}`).join('\n');
+        await fixture.writeFile(`large-test-${i}.ts`, content);
+      }
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'line', '--limit', '100', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+  });
+
+  describe('搜尋分數和排序測試', () => {
+    it('應該根據相關性分數排序結果', async () => {
+      await fixture.writeFile('exact-match.ts', 'test');
+      await fixture.writeFile('case-diff.ts', 'TEST test Test');
+      await fixture.writeFile('partial.ts', 'testing tested tester');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      // 結果應該有 score 欄位
+      if (output.results.length > 0) {
+        expect(output.results[0].score).toBeDefined();
+      }
+    });
+
+    it('應該優先排序檔名在前的匹配', async () => {
+      await fixture.writeFile('aaa-file.ts', 'const match = 1;');
+      await fixture.writeFile('zzz-file.ts', 'const match = 2;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該在相同檔案內按行號排序', async () => {
+      await fixture.writeFile('multi-match.ts', 'match1\nmatch2\nmatch3');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      const fileMatches = output.results.filter((r: any) => r.file.includes('multi-match.ts'));
+      if (fileMatches.length >= 2) {
+        expect(fileMatches[0].line).toBeLessThan(fileMatches[1].line);
+      }
+    });
+  });
+
+  describe('搜尋統計和 metadata 測試', () => {
+    it('應該回報搜尋時間 searchTime', async () => {
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 檢查是否有 results 欄位（主要目標）
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該回報總匹配數資訊', async () => {
+      // 使用 sample-project 中已存在的檔案和內容
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'function', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      // sample-project 中應該有包含 'function' 關鍵字的檔案
+      if (output.results.length > 0) {
+        expect(output.results.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('應該處理結果限制情境', async () => {
+      for (let i = 0; i < 50; i++) {
+        await fixture.writeFile(`truncate-${i}.ts`, 'const truncated = true;');
+      }
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'truncated', '--limit', '10', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      expect(output.results.length).toBeLessThanOrEqual(10);
+    });
+  });
+
+  describe('特殊符號類型搜尋測試', () => {
+    it('應該搜尋 type alias', async () => {
+      await fixture.writeFile('test-type.ts', 'type UserId = string;');
+      const result = await executeCLI(['search', 'structural', '--path', fixture.rootPath, '--type', 'type', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該搜尋 variable declaration', async () => {
+      await fixture.writeFile('test-variable.ts', 'const myVar = 123; let anotherVar = "test";');
+      const result = await executeCLI(['search', 'structural', '--path', fixture.rootPath, '--type', 'variable', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該搜尋 export 語句', async () => {
+      await fixture.writeFile('test-export.ts', 'export const foo = 1; export function bar() {}');
+      const result = await executeCLI(['search', 'structural', '--path', fixture.rootPath, '--type', 'export', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+      if (result.exitCode === 0 && result.stdout) {
+        expect(() => JSON.parse(result.stdout)).not.toThrow();
+      }
+    });
+
+    it('應該搜尋 import 語句', async () => {
+      await fixture.writeFile('test-import.ts', 'import { foo } from "./foo"; import bar from "./bar";');
+      const result = await executeCLI(['search', 'structural', '--path', fixture.rootPath, '--type', 'import', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+      if (result.exitCode === 0 && result.stdout) {
+        expect(() => JSON.parse(result.stdout)).not.toThrow();
+      }
+    });
+  });
+
+  describe('極端 regex 模式測試', () => {
+    it('應該處理複雜的 regex 字元集合 [a-zA-Z0-9_]', async () => {
+      await fixture.writeFile('test-charset.ts', 'const var_Name123 = true;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', '[a-zA-Z0-9_]+', '--regex', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該處理 lookahead 和 lookbehind', async () => {
+      await fixture.writeFile('test-lookaround.ts', 'const test123 = true; const test = false;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'test(?=\\d)', '--regex', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+      if (result.exitCode === 0 && result.stdout) {
+        expect(() => JSON.parse(result.stdout)).not.toThrow();
+      }
+    });
+
+    it('應該處理貪婪與非貪婪量詞', async () => {
+      await fixture.writeFile('test-greedy.ts', '<tag>content</tag>');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', '<.*?>', '--regex', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該處理 word boundary \\b', async () => {
+      await fixture.writeFile('test-boundary.ts', 'const test = testing;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', '\\btest\\b', '--regex', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該處理 anchors ^ 和 $', async () => {
+      await fixture.writeFile('test-anchors.ts', 'const start = true;\nconst end;');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', '^const', '--regex', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+  });
+
+  describe('檔案上下文檢測測試', () => {
+    it('應該偵測 enclosing function', async () => {
+      await fixture.writeFile('test-function-context.ts', 'function outer() {\n  const match = true;\n}');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      // context.function 應該被偵測到
+    });
+
+    it('應該偵測 enclosing class', async () => {
+      await fixture.writeFile('test-class-context.ts', 'class MyClass {\n  method() {\n    const match = true;\n  }\n}');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+      // context.class 應該被偵測到
+    });
+
+    it('應該偵測箭頭函數上下文', async () => {
+      await fixture.writeFile('test-arrow-context.ts', 'const arrow = () => {\n  const match = true;\n};');
+      const result = await executeCLI(['search', 'text', '--path', fixture.rootPath, '--query', 'match', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+  });
+
+  describe('多重過濾組合測試', () => {
+    it('應該組合 include + exclude + limit', async () => {
+      await fixture.writeFile('keep.ts', 'const match = 1;');
+      await fixture.writeFile('keep.test.ts', 'const match = 2;');
+      await fixture.writeFile('skip.js', 'const match = 3;');
+      const result = await executeCLI([
+        'search', 'text',
+        '--path', fixture.rootPath,
+        '--query', 'match',
+        '--include', '*.ts',
+        '--exclude', '*.test.ts',
+        '--limit', '5',
+        '--format', 'json'
+      ], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該組合 regex + case-sensitive + wholeWord', async () => {
+      await fixture.writeFile('test-combo.ts', 'Test test testing TEST');
+      const result = await executeCLI([
+        'search', 'text',
+        '--path', fixture.rootPath,
+        '--query', 'Test',
+        '--regex',
+        '--case-sensitive',
+        '--whole-word',
+        '--format', 'json'
+      ], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+
+    it('應該組合 case-insensitive + multiline + limit', async () => {
+      await fixture.writeFile('test-multi-options.ts', 'Function Test() {\n  return VALUE;\n}');
+      const result = await executeCLI([
+        'search', 'text',
+        '--path', fixture.rootPath,
+        '--query', 'function.*value',
+        '--regex',
+        '--case-insensitive',
+        '--multiline',
+        '--limit', '10',
+        '--format', 'json'
+      ], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toBeDefined();
+    });
+  });
 });

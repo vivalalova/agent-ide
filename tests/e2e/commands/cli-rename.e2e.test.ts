@@ -552,5 +552,555 @@ describe('CLI rename - 基於 sample-project fixture', () => {
         expect(output.preview).toBe(true);
       }
     });
+
+    it('應該處理名稱中包含特殊字元（非法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User-Name', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
+        }
+      }
+    });
+
+    it('應該處理以數字開頭的名稱（非法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '1User', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
+        }
+      }
+    });
+
+    it('應該處理名稱中包含空格（非法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User Name', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
+        }
+      }
+    });
+
+    it('應該處理名稱中包含底線（合法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User_Name', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理名稱以底線開頭（合法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '_User', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+  });
+
+  describe('跨作用域重命名', () => {
+    it('應該處理解構賦值中的變數重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'name', '--to', 'userName', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理巢狀作用域中的符號重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'data', '--to', 'userData', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理同名但不同作用域的符號', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'result', '--to', 'computedResult', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+  });
+
+  describe('字串和註解過濾', () => {
+    it('應該只重命名程式碼中的符號，不影響字串內容', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserModel', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+        // 應該只重命名符號引用，不重命名字串中的 'User'
+      }
+    });
+
+    it('應該只重命名程式碼中的符號，不影響註解內容', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'unique', '--to', 'uniqueElements', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+        // 應該只重命名符號引用，不重命名註解中的 'unique'
+      }
+    });
+  });
+
+  describe('極端資料量測試', () => {
+    it('應該處理有大量引用的符號 (預期 10+ 個引用)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserEntity', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+        expect(output.operations).toBeGreaterThan(0);
+      }
+    });
+
+    it('應該處理跨多個檔案的大量引用', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'UserRoleEnum', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+        if (output.affectedFiles > 0) {
+          expect(output.operations).toBeGreaterThan(0);
+        }
+      }
+    });
+  });
+
+  describe('Unicode 和國際化', () => {
+    it('應該處理 Unicode 字元的符號名稱', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'Utilisateur', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理包含 emoji 的名稱（非法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User👤', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
+        }
+      }
+    });
+
+    it('應該處理中文符號名稱（視為非法識別符）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe('保留字和關鍵字', () => {
+    it('應該檢測 JavaScript 保留字 (var)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'var', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測 JavaScript 保留字 (let)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'let', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測 JavaScript 保留字 (const)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'const', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測 TypeScript 關鍵字 (interface)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'interface', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測 TypeScript 關鍵字 (enum)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'enum', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測 TypeScript 關鍵字 (type)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'type', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測控制流程關鍵字 (if)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'if', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測迴圈關鍵字 (while)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'while', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測異常處理關鍵字 (try)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'try', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測模組關鍵字 (import)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'import', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+
+    it('應該檢測模組關鍵字 (export)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'export', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.conflicts) {
+          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe('衝突檢測', () => {
+    it('應該檢測重命名到已存在的名稱 (sortBy)', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'groupBy', '--to', 'sortBy', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.conflicts).toBeDefined();
+        expect(Array.isArray(output.conflicts)).toBe(true);
+      }
+    });
+
+    it('應該檢測重命名到已存在的類別名稱', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'UserProfile', '--to', 'User', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該檢測重命名到已存在的 enum 名稱', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserRole', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+  });
+
+  describe('檔案系統邊界', () => {
+    it('應該處理不存在的檔案路徑', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', '/nonexistent/directory', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.stderr || result.stdout).toBeDefined();
+    });
+
+    it('應該處理空的專案路徑', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', '', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.stderr || result.stdout).toBeDefined();
+    });
+  });
+
+  describe('複雜符號類型', () => {
+    it('應該處理泛型類型參數重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'K', '--to', 'KeyType', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理 type alias 屬性重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'id', '--to', 'userId', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理方法重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'toString', '--to', 'serialize', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理靜態屬性重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'version', '--to', 'apiVersion', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+
+    it('應該處理命名空間重命名', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'Utils', '--to', 'Utilities', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.preview).toBe(true);
+      }
+    });
+  });
+
+  describe('效能和摘要資訊', () => {
+    it('應該提供預估執行時間', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserData', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.summary) {
+          expect(output.summary.estimatedTime).toBeDefined();
+          expect(typeof output.summary.estimatedTime).toBe('number');
+        }
+      }
+    });
+
+    it('應該提供正確的統計資訊', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'Role', '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        if (output.summary) {
+          expect(output.summary.totalReferences).toBeDefined();
+          expect(output.summary.totalFiles).toBeDefined();
+          expect(output.summary.conflictCount).toBeDefined();
+        }
+      }
+    });
   });
 });

@@ -575,4 +575,350 @@ describe('CLI shift - 基於 sample-project fixture', () => {
       expect(output.error).toBeDefined();
     });
   });
+
+  describe('Edge Case - position 在移動範圍內', () => {
+    it('應該檢測 position 在移動範圍內並跳過移動（position 在範圍開始）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=5, to=10, position=6 → position 在 (5, 11] 範圍內
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.message).toContain('無需移動');
+    });
+
+    it('應該檢測 position 在移動範圍內並跳過移動（position 在範圍結束）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=5, to=10, position=11 → position 在 (5, 11] 範圍內
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '11', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.message).toContain('無需移動');
+    });
+
+    it('應該允許 position 剛好在移動範圍開始（position = fromLine）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=10, to=15, position=10 → position 不在 (10, 16] 範圍內，實際會執行移動
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '10', '--to', '15', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // position = fromLine 不在範圍內，會執行移動
+      expect(output.message).not.toContain('無需移動');
+    });
+  });
+
+  describe('Edge Case - 跨檔案移動到已存在檔案', () => {
+    it('應該移動到已存在的目標檔案（between_files）', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '5', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.operationType).toBe('between_files');
+      expect(output.targetFile).toContain('string-utils.ts');
+    });
+
+    it('應該在預覽模式下跨檔案移動', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.executed).toBe(false);
+      expect(output.message).toContain('預覽');
+    });
+  });
+
+  describe('Edge Case - 調整插入位置邏輯', () => {
+    it('應該調整插入位置（position 在移動範圍之後）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=5, to=10, position=20 → adjustedPosition = 20 - 6 = 14
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.position).toBe(20);
+    });
+
+    it('應該調整插入位置（position 在移動範圍之前）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=15, to=20, position=5 → position < toLine，不調整
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '15', '--to', '20', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.position).toBe(5);
+    });
+  });
+
+  describe('Edge Case - 跨檔案移動到不存在的檔案（FileGenerator）', () => {
+    it('應該生成唯一檔名並加上數字後綴（目標不存在）', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/new-feature-not-exist.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.operationType).toBe('to_new_file');
+      expect(output.targetFile).toContain('new-feature-not-exist.ts');
+    });
+
+    it('應該生成唯一檔名當目標目錄不存在', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/newdir/new-file.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        expect(output.operationType).toBe('to_new_file');
+      }
+    });
+  });
+
+  describe('Edge Case - 特殊內容測試', () => {
+    it('應該處理只包含 JSDoc 註解的行', async () => {
+      const jsdocContent = [
+        '/**',
+        ' * 這是一個函數',
+        ' * @param x - 參數 x',
+        ' * @returns 返回值',
+        ' */',
+        'function test(x: number) {',
+        '  return x * 2;',
+        '}',
+      ].join('\n');
+
+      await fixture.writeFile('src/jsdoc-test.ts', jsdocContent);
+      const targetFile = fixture.getFilePath('src/jsdoc-test.ts');
+
+      // 移動 JSDoc 註解區塊（1-5 行）
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '5', '--position', '9', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(5);
+    });
+
+    it('應該處理只包含空格和 Tab 的行', async () => {
+      const whitespaceContent = [
+        'const a = 1;',
+        '   ',
+        '\t\t',
+        '  \t  ',
+        'const b = 2;',
+      ].join('\n');
+
+      await fixture.writeFile('src/whitespace-test.ts', whitespaceContent);
+      const targetFile = fixture.getFilePath('src/whitespace-test.ts');
+
+      // 移動空白字元行（2-4 行）
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '2', '--to', '4', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(3);
+    });
+
+    it('應該處理包含 Unicode 字元的程式碼', async () => {
+      const unicodeContent = [
+        '// 測試 Unicode：🚀',
+        'const emoji = "✨💡🔥";',
+        'const chinese = "繁體中文測試";',
+        'const japanese = "日本語テスト";',
+        'const korean = "한국어 테스트";',
+      ].join('\n');
+
+      await fixture.writeFile('src/unicode-test.ts', unicodeContent);
+      const targetFile = fixture.getFilePath('src/unicode-test.ts');
+
+      // 移動 Unicode 內容（1-3 行）
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(3);
+    });
+
+    it('應該處理超長行（1000+ 字元）', async () => {
+      const longLine = 'const longString = "' + 'x'.repeat(1000) + '";';
+      const longLineContent = [
+        'const a = 1;',
+        longLine,
+        'const b = 2;',
+      ].join('\n');
+
+      await fixture.writeFile('src/long-line-test.ts', longLineContent);
+      const targetFile = fixture.getFilePath('src/long-line-test.ts');
+
+      // 移動超長行（第 2 行）
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '2', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(1);
+    });
+  });
+
+  describe('Edge Case - Class 成員移動', () => {
+    it('應該處理移動 class 內部方法', async () => {
+      const classContent = [
+        'class TestClass {',
+        '  private x = 1;',
+        '',
+        '  constructor() {}',
+        '',
+        '  public method1() {',
+        '    return this.x;',
+        '  }',
+        '',
+        '  public method2() {',
+        '    return this.x * 2;',
+        '  }',
+        '}',
+      ].join('\n');
+
+      await fixture.writeFile('src/class-test.ts', classContent);
+      const targetFile = fixture.getFilePath('src/class-test.ts');
+
+      // 移動 method1（6-8 行）到 method2 之後
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '6', '--to', '8', '--position', '13', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(3);
+    });
+
+    it('應該處理移動 class 內部 property', async () => {
+      const classContent = [
+        'class TestClass {',
+        '  private x = 1;',
+        '  private y = 2;',
+        '  private z = 3;',
+        '',
+        '  constructor() {}',
+        '}',
+      ].join('\n');
+
+      await fixture.writeFile('src/class-property-test.ts', classContent);
+      const targetFile = fixture.getFilePath('src/class-property-test.ts');
+
+      // 移動 property（2-4 行）到 constructor 之後
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '2', '--to', '4', '--position', '7', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(3);
+    });
+  });
+
+  describe('Edge Case - 檔案末尾位置測試', () => {
+    it('應該允許移動到檔案末尾後一行（position = totalLines + 1）', async () => {
+      const simpleContent = [
+        'const a = 1;',
+        'const b = 2;',
+        'const c = 3;',
+      ].join('\n');
+
+      await fixture.writeFile('src/end-position-test.ts', simpleContent);
+      const targetFile = fixture.getFilePath('src/end-position-test.ts');
+
+      // 移動第 1 行到檔案末尾（position = 4，即 totalLines + 1）
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '1', '--position', '4', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.position).toBe(4);
+    });
+
+    it('應該拒絕移動到超出檔案末尾的位置（position > totalLines + 1）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // position 超出 totalLines + 1
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '10000', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+  });
 });

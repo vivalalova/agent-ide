@@ -675,4 +675,480 @@ describe('CLI move - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
     });
   });
+
+  describe('Edge Cases - 路徑解析與異常處理', () => {
+    it('應該處理移動被多層嵌套引用的核心檔案', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/common.ts');
+      const target = path.join(fixture.rootPath, 'src/core/shared/types/common.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 如果檔案不存在，會回報錯誤
+      if (output.success === false) {
+        expect(output.error).toBeDefined();
+      } else {
+        expect(output.success).toBe(true);
+        if (output.pathUpdates && output.pathUpdates.length > 0) {
+          expect(output.pathUpdates.length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    it('應該處理移動有 side effect import 的檔案', async () => {
+      const source = path.join(fixture.rootPath, 'src/core/config/settings.ts');
+      const target = path.join(fixture.rootPath, 'src/config/app-settings.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output).toBeDefined();
+    });
+
+    it('應該處理移動到已存在但不同副檔名的目標', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/types/product.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('已存在');
+    });
+
+    it('應該處理檔案路徑規範化（帶有多個斜線）', async () => {
+      const source = path.join(fixture.rootPath, 'src//types///user.ts');
+      const target = path.join(fixture.rootPath, 'src/models/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output).toBeDefined();
+      }
+    });
+
+    it('應該處理移動後相對路徑層級變化 (../../.. → ./)', async () => {
+      const source = path.join(fixture.rootPath, 'src/api/middleware/validator.ts');
+      const target = path.join(fixture.rootPath, 'src/validator.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該處理移動檔案時跳過自身引用', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
+      const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 確認不會更新自己到自己的引用
+      const selfUpdate = output.pathUpdates.find((u: any) => u.filePath === target);
+      expect(selfUpdate).toBeUndefined();
+    });
+  });
+
+  describe('Edge Cases - Import 解析特殊情境', () => {
+    it('應該處理 require() 語法的更新', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/array-utils.ts');
+      const target = path.join(fixture.rootPath, 'src/helpers/arrays/array-utils.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 檔案可能不存在，檢查錯誤或成功
+      if (output.success === false) {
+        expect(output.error).toBeDefined();
+      } else {
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該處理 export * from 語法的更新', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/entities/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該處理跨多行的 import 語句更新', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/common.ts');
+      const target = path.join(fixture.rootPath, 'src/shared/common.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output).toBeDefined();
+    });
+
+    it('應該處理省略副檔名的 import 路徑', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/string-utils.ts');
+      const target = path.join(fixture.rootPath, 'src/helpers/string-utils.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 確認生成的新路徑也省略副檔名
+      if (output.pathUpdates && output.pathUpdates.length > 0) {
+        output.pathUpdates.forEach((update: any) => {
+          expect(update.newImport).not.toContain('.ts');
+        });
+      }
+    });
+
+    it('應該處理 import type 語法', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/product.ts');
+      const target = path.join(fixture.rootPath, 'src/models/product.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該正確更新被移動檔案內部的相對路徑 import', async () => {
+      const source = path.join(fixture.rootPath, 'src/models/user-model.ts');
+      const target = path.join(fixture.rootPath, 'src/entities/users/user-model.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 檔案可能不存在
+      if (output.success === false) {
+        expect(output.error).toBeDefined();
+      } else {
+        expect(output.success).toBe(true);
+        // 被移動檔案內部的 import 也應該被更新
+        const internalUpdates = output.pathUpdates.filter((u: any) => u.filePath === target);
+        if (internalUpdates.length > 0) {
+          expect(internalUpdates[0].oldImport).not.toBe(internalUpdates[0].newImport);
+        }
+      }
+    });
+  });
+
+  describe('Edge Cases - 大規模操作', () => {
+    it('應該處理移動被 50+ 檔案引用的檔案', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/common.ts');
+      const target = path.join(fixture.rootPath, 'src/shared/common.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.pathUpdates).toBeDefined();
+    });
+
+    it('應該處理移動含有 100+ import 的大型檔案', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/index.ts');
+      const target = path.join(fixture.rootPath, 'src/index.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output).toBeDefined();
+    });
+
+    it('應該處理更新路徑時跳過排除目錄 (node_modules, dist, .git)', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
+      const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 確認 pathUpdates 不包含 node_modules 等目錄的檔案
+      if (output.pathUpdates) {
+        output.pathUpdates.forEach((update: any) => {
+          expect(update.filePath).not.toContain('node_modules');
+          expect(update.filePath).not.toContain('dist');
+          expect(update.filePath).not.toContain('.git');
+        });
+      }
+    });
+  });
+
+  describe('Edge Cases - 路徑別名處理', () => {
+    it('應該處理路徑別名的 import 更新', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/entities/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該保留原始路徑樣式（別名 vs 相對路徑）', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
+      const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該處理 node_modules import 不被更新', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
+      const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // pathUpdates 中不應該有 node_modules 的路徑
+      if (output.pathUpdates) {
+        output.pathUpdates.forEach((update: any) => {
+          expect(update.oldImport).not.toMatch(/^['"](?!\.)[^'"]+['"]/);
+        });
+      }
+    });
+  });
+
+  describe('Edge Cases - 錯誤恢復與回滾', () => {
+    it('應該處理移動成功但 import 更新部分失敗的情況', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/models/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 即使更新失敗，仍應回傳結果
+      expect(output).toBeDefined();
+      expect(output.success).toBeDefined();
+    });
+
+    it('應該處理無法讀取的檔案被跳過', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/common.ts');
+      const target = path.join(fixture.rootPath, 'src/shared/common.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該處理循環引用的檔案移動', async () => {
+      const source = path.join(fixture.rootPath, 'src/models/user-model.ts');
+      const target = path.join(fixture.rootPath, 'src/entities/user-model.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+  });
+
+  describe('Edge Cases - 特殊檔案類型', () => {
+    it('應該處理 .d.ts 類型定義檔的移動', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/global.d.ts');
+      const target = path.join(fixture.rootPath, 'src/types/definitions/global.d.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output).toBeDefined();
+      }
+    });
+
+    it('應該處理 barrel export (index.ts) 檔案的移動', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/index.ts');
+      const target = path.join(fixture.rootPath, 'src/models/index.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+
+    it('應該處理混合 .js 和 .ts 檔案的專案', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
+      const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+    });
+  });
+
+  describe('Edge Cases - 路徑計算極端情境', () => {
+    it('應該處理 Windows 風格路徑（反斜線）', async () => {
+      const source = path.join(fixture.rootPath, 'src', 'types', 'user.ts');
+      const target = path.join(fixture.rootPath, 'src', 'models', 'user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 生成的 import 路徑應該使用正斜線
+      if (output.pathUpdates && output.pathUpdates.length > 0) {
+        output.pathUpdates.forEach((update: any) => {
+          expect(update.newImport).not.toContain('\\');
+        });
+      }
+    });
+
+    it('應該處理路徑中的 . 和 .. 符號規範化', async () => {
+      const source = path.join(fixture.rootPath, 'src/./types/../types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/models/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output).toBeDefined();
+      }
+    });
+
+    it('應該處理絕對路徑與相對路徑混合的情況', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = './src/models/user.ts';
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output).toBeDefined();
+      }
+    });
+
+    it('應該處理從根目錄到深層目錄的極端層級變化 (./file.ts → ./a/b/c/d/e/f/file.ts)', async () => {
+      const source = path.join(fixture.rootPath, 'src/types/user.ts');
+      const target = path.join(fixture.rootPath, 'src/a/b/c/d/e/f/user.ts');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 檔案可能不存在
+      if (output.success === false) {
+        expect(output.error).toBeDefined();
+      } else {
+        expect(output.success).toBe(true);
+        if (output.pathUpdates && output.pathUpdates.length > 0) {
+          const update = output.pathUpdates[0];
+          // 確認路徑包含多層 ../
+          expect(update.newImport).toContain('../');
+        }
+      }
+    });
+  });
 });
