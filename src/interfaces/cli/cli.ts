@@ -19,7 +19,7 @@ import { ShitScoreAnalyzer } from '../../core/shit-score/shit-score-analyzer.js'
 import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '../../core/snapshot/index.js';
 import type { SnapshotOptions } from '../../core/snapshot/index.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import { FileSystem, type IFileSystem } from '../../infrastructure/storage/index.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -47,13 +47,25 @@ export class AgentIdeCLI {
   private moveService?: MoveService;
   private searchService?: SearchService;
   private shiftService?: ShiftService;
-  private fileSystem: FileSystem;
+  private fileSystem: IFileSystem;
 
-  constructor() {
+  /**
+   * 建立 CLI 實例
+   * @param fileSystem - 檔案系統實例（可選，預設使用真實檔案系統）
+   */
+  constructor(fileSystem?: IFileSystem) {
     this.program = new Command();
-    this.fileSystem = new FileSystem();
+    // eslint-disable-next-line custom/no-default-instance-in-constructor -- CLI 入口點需要預設 FileSystem
+    this.fileSystem = fileSystem ?? new FileSystem();
     this.setupCommands();
     this.initializeParsers();
+  }
+
+  /**
+   * 建立測試用 CLI 實例
+   */
+  static createForTesting(fileSystem: IFileSystem): AgentIdeCLI {
+    return new AgentIdeCLI(fileSystem);
   }
 
   /**
@@ -920,9 +932,12 @@ export class AgentIdeCLI {
       if (result.success) {
         if (isJsonFormat) {
           console.log(JSON.stringify({
+            success: true,
+            source: result.source,
+            target: result.target,
             moved: result.moved,
-            affectedFiles: result.pathUpdates.length,
-            pathUpdates: result.pathUpdates
+            pathUpdates: result.pathUpdates,
+            message: result.message
           }, null, 2));
         } else {
           if (options.preview) {
@@ -2734,12 +2749,7 @@ export class AgentIdeCLI {
    * 檢查檔案是否存在
    */
   private async fileExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
+    return await this.fileSystem.exists(filePath);
   }
 
   /**
