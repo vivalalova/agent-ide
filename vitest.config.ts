@@ -42,16 +42,15 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: ['node_modules/**', 'dist/**'],
 
-    // 記憶體優化設定
+    // Worker 設定
     pool: 'forks',
     poolOptions: {
       forks: {
-        maxWorkers: process.env.TEST_SINGLE_FORK ? 1 : 1, // 限制 Worker 數量
-        singleFork: process.env.TEST_SINGLE_FORK === 'true', // 單一 fork 模式（更節省記憶體）
-        isolate: true, // 確保測試隔離
+        isolate: true,
       },
     },
-    fileParallelism: false, // 避免檔案並行執行
+    maxWorkers: 3,
+    fileParallelism: true,
 
     // 超時設定
     testTimeout: 120000, // 增加到 120 秒（dead code detection 需要時間）
