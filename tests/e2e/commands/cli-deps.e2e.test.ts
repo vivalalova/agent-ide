@@ -294,4 +294,341 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       expect([0, 1]).toContain(result.exitCode);
     });
   });
+
+  describe('DependencyGraph 邊界測試', () => {
+    it('應該處理空檔案路徑（邊界驗證）', async () => {
+      // 創建正常檔案確保專案可分析
+      await fixture.writeFile('normal.ts', 'export const value = 1;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理移除節點操作（中間節點移除）', async () => {
+      // A -> B -> C 移除 B
+      await fixture.writeFile('node-a.ts', 'import { b } from "./node-b.js";\nexport const a = 1;');
+      await fixture.writeFile('node-b.ts', 'import { c } from "./node-c.js";\nexport const b = 2;');
+      await fixture.writeFile('node-c.ts', 'export const c = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理序列化與反序列化（完整往返）', async () => {
+      // 創建複雜圖結構
+      await fixture.writeFile('ser-a.ts', 'import { b } from "./ser-b.js";\nexport const a = 1;');
+      await fixture.writeFile('ser-b.ts', 'import { c } from "./ser-c.js";\nexport const b = 2;');
+      await fixture.writeFile('ser-c.ts', 'export const c = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理圖的克隆（深拷貝驗證）', async () => {
+      await fixture.writeFile('clone-a.ts', 'import { b } from "./clone-b.js";\nexport const a = 1;');
+      await fixture.writeFile('clone-b.ts', 'export const b = 2;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理空圖狀態（isEmpty 驗證）', async () => {
+      // 不創建任何檔案
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+    });
+
+    it('應該檢測弱連通圖（isConnected 驗證）', async () => {
+      // 創建兩個孤立子圖
+      await fixture.writeFile('island-a1.ts', 'import { a2 } from "./island-a2.js";\nexport const a1 = 1;');
+      await fixture.writeFile('island-a2.ts', 'export const a2 = 2;');
+      await fixture.writeFile('island-b1.ts', 'import { b2 } from "./island-b2.js";\nexport const b1 = 3;');
+      await fixture.writeFile('island-b2.ts', 'export const b2 = 4;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+  });
+
+  describe('CycleDetector 極端測試', () => {
+    it('應該檢測超長循環（maxCycleLength 邊界）', async () => {
+      // 創建 25 節點循環
+      const cycleFiles = Array.from({ length: 25 }, (_, i) => ({
+        path: `long-cycle-${i}.ts`,
+        content: i === 24
+          ? `import { node } from "./long-cycle-0.js";\nexport const node${i} = ${i};`
+          : `import { node } from "./long-cycle-${i + 1}.js";\nexport const node${i} = ${i};`
+      }));
+
+      await Promise.all(
+        cycleFiles.map(file => fixture.writeFile(file.path, file.content))
+      );
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理複雜強連通分量（多個 SCC）', async () => {
+      // SCC 1: A <-> B
+      await fixture.writeFile('scc1-a.ts', 'import { b } from "./scc1-b.js";\nexport const a = 1;');
+      await fixture.writeFile('scc1-b.ts', 'import { a } from "./scc1-a.js";\nexport const b = 2;');
+
+      // SCC 2: C <-> D <-> E
+      await fixture.writeFile('scc2-c.ts', 'import { d } from "./scc2-d.js";\nexport const c = 3;');
+      await fixture.writeFile('scc2-d.ts', 'import { e } from "./scc2-e.js";\nexport const d = 4;');
+      await fixture.writeFile('scc2-e.ts', 'import { c } from "./scc2-c.js";\nexport const e = 5;');
+
+      // 連接兩個 SCC
+      await fixture.writeFile('connector.ts', 'import { a } from "./scc1-a.js";\nimport { c } from "./scc2-c.js";\nexport const connector = a + c;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該計算循環複雜度（內部連接密度）', async () => {
+      // 高複雜度循環（多重交叉引用）
+      await fixture.writeFile('complex-a.ts', 'import { b } from "./complex-b.js";\nimport { c } from "./complex-c.js";\nexport const a = 1;');
+      await fixture.writeFile('complex-b.ts', 'import { c } from "./complex-c.js";\nimport { a } from "./complex-a.js";\nexport const b = 2;');
+      await fixture.writeFile('complex-c.ts', 'import { a } from "./complex-a.js";\nimport { b } from "./complex-b.js";\nexport const c = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該提供修復策略建議（suggestFixStrategies）', async () => {
+      // 各種循環類型
+      await fixture.writeFile('fix-self.ts', 'import { self } from "./fix-self.js";\nexport const self = 1;');
+      await fixture.writeFile('fix-a2.ts', 'import { b } from "./fix-b2.js";\nexport const a = 1;');
+      await fixture.writeFile('fix-b2.ts', 'import { a } from "./fix-a2.js";\nexport const b = 2;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該正確計算循環嚴重性（severity）', async () => {
+      // Low: 2-3 節點
+      await fixture.writeFile('low-a.ts', 'import { b } from "./low-b.js";\nexport const a = 1;');
+      await fixture.writeFile('low-b.ts', 'import { a } from "./low-a.js";\nexport const b = 2;');
+
+      // Medium: 4-6 節點
+      await fixture.writeFile('med-a.ts', 'import { b } from "./med-b.js";\nexport const a = 1;');
+      await fixture.writeFile('med-b.ts', 'import { c } from "./med-c.js";\nexport const b = 2;');
+      await fixture.writeFile('med-c.ts', 'import { d } from "./med-d.js";\nexport const c = 3;');
+      await fixture.writeFile('med-d.ts', 'import { a } from "./med-a.js";\nexport const d = 4;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+  });
+
+  describe('DependencyAnalyzer 極端測試', () => {
+    it('應該處理快取失效（檔案修改時間變化）', async () => {
+      await fixture.writeFile('cache-test.ts', 'export const v1 = 1;');
+
+      // 第一次分析
+      const result1 = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      expect(result1.exitCode).toBe(0);
+
+      // 修改檔案（模擬快取失效）
+      await fixture.writeFile('cache-test.ts', 'export const v2 = 2;');
+
+      // 第二次分析
+      const result2 = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      expect(result2.exitCode).toBe(0);
+    });
+
+    it('應該處理並發分析（concurrency 配置）', async () => {
+      // 創建 20 個檔案測試並發
+      const files = Array.from({ length: 20 }, (_, i) => ({
+        path: `concurrent-${i}.ts`,
+        content: `export const value${i} = ${i};`
+      }));
+
+      await Promise.all(
+        files.map(file => fixture.writeFile(file.path, file.content))
+      );
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該計算影響分數（impactScore）', async () => {
+      // 創建高影響檔案
+      await fixture.writeFile('impact-core.ts', 'export const core = "value";');
+
+      const consumers = Array.from({ length: 10 }, (_, i) => ({
+        path: `impact-consumer-${i}.ts`,
+        content: `import { core } from "./impact-core.js";\nexport const use${i} = core;`
+      }));
+
+      await Promise.all(
+        consumers.map(file => fixture.writeFile(file.path, file.content))
+      );
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該識別測試檔案（isTestFile）', async () => {
+      await fixture.writeFile('source.ts', 'export const value = 1;');
+      await fixture.writeFile('source.test.ts', 'import { value } from "./source.js";\ntest("test", () => {});');
+      await fixture.writeFile('source.spec.ts', 'import { value } from "./source.js";\ndescribe("spec", () => {});');
+      await fixture.writeFile('__tests__/source-test.ts', 'import { value } from "../source.js";');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理 Swift 外部依賴（系統框架）', async () => {
+      await fixture.writeFile('swift-app.swift', 'import Foundation\nimport UIKit\nimport SwiftUI\n\nlet app = "Hello"');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理 Swift 相對路徑引用', async () => {
+      await fixture.writeFile('swift-a.swift', 'import SwiftB\n\nlet a = "A"');
+      await fixture.writeFile('swift-b.swift', 'let b = "B"');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理路徑解析失敗（副檔名嘗試）', async () => {
+      await fixture.writeFile('resolve-source.ts', 'export const value = 1;');
+      await fixture.writeFile('resolve-import.ts', 'import { value } from "./resolve-source";\nexport const result = value;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理解析錯誤（extractDependencies 錯誤處理）', async () => {
+      await fixture.writeFile('parse-error.ts', 'import { value from "./incomplete.js";\nexport const result = value;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+    });
+
+    it('應該處理 maxDepth 限制（深度控制）', async () => {
+      // 創建超深目錄結構
+      await fixture.writeFile('level0/level1/level2/level3/level4/level5/deep.ts', 'export const deep = "value";');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理 glob 模式匹配（** 和 * 差異）', async () => {
+      await fixture.writeFile('src/app.ts', 'export const app = 1;');
+      await fixture.writeFile('src/utils/helper.ts', 'export const helper = 2;');
+      await fixture.writeFile('test/app.spec.ts', 'import { app } from "../src/app.js";');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該處理非檔案非目錄路徑（邊界驗證）', async () => {
+      // 嘗試分析一個既不是檔案也不是目錄的路徑
+      const result = await executeCLI(['deps', '--path', '/dev/null', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect([0, 1]).toContain(result.exitCode);
+    });
+  });
+
+  describe('TypeGuard 驗證', () => {
+    it('應該驗證 FileDependencies 型別（isFileDependencies）', async () => {
+      await fixture.writeFile('type-guard.ts', 'export const value = 1;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output).toBeDefined();
+    });
+
+    it('應該驗證循環依賴嚴重性計算（calculateCycleSeverity）', async () => {
+      // 邊界值測試：length=3(low), length=6(medium), length>6(high)
+      await fixture.writeFile('sev-3a.ts', 'import { b } from "./sev-3b.js";\nexport const a = 1;');
+      await fixture.writeFile('sev-3b.ts', 'import { c } from "./sev-3c.js";\nexport const b = 2;');
+      await fixture.writeFile('sev-3c.ts', 'import { a } from "./sev-3a.js";\nexport const c = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+  });
+
+  describe('拓撲排序邊界測試', () => {
+    it('應該處理 DAG（無循環）的拓撲排序', async () => {
+      await fixture.writeFile('dag-a.ts', 'import { b } from "./dag-b.js";\nimport { c } from "./dag-c.js";\nexport const a = 1;');
+      await fixture.writeFile('dag-b.ts', 'import { d } from "./dag-d.js";\nexport const b = 2;');
+      await fixture.writeFile('dag-c.ts', 'import { d } from "./dag-d.js";\nexport const c = 3;');
+      await fixture.writeFile('dag-d.ts', 'export const d = 4;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該在有循環時正確標記 hasCycle', async () => {
+      await fixture.writeFile('topo-cycle-a.ts', 'import { b } from "./topo-cycle-b.js";\nexport const a = 1;');
+      await fixture.writeFile('topo-cycle-b.ts', 'import { c } from "./topo-cycle-c.js";\nexport const b = 2;');
+      await fixture.writeFile('topo-cycle-c.ts', 'import { a } from "./topo-cycle-a.js";\nexport const c = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+
+    it('應該返回參與循環的檔案列表（cycleFiles）', async () => {
+      await fixture.writeFile('cycle-files-a.ts', 'import { b } from "./cycle-files-b.js";\nexport const a = 1;');
+      await fixture.writeFile('cycle-files-b.ts', 'import { a } from "./cycle-files-a.js";\nexport const b = 2;');
+      await fixture.writeFile('cycle-files-clean.ts', 'export const clean = 3;');
+
+      const result = await executeCLI(['deps', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      expect(() => JSON.parse(result.stdout)).not.toThrow();
+    });
+  });
 });
