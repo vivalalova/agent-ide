@@ -375,6 +375,8 @@ export class AgentIdeCLI {
       .option('--output-dir <dir>', '多層級輸出目錄', './snapshots')
       .option('--format <format>', '輸出格式 (json|summary)', 'summary')
       .option('--include-tests', '包含測試檔案', false)
+      .option('--old <path>', '舊快照路徑（diff 命令用）')
+      .option('--new <path>', '新快照路徑（diff 命令用）')
       .action(async (action, options) => {
         await this.handleSnapshotCommand(action || 'generate', options);
       });
