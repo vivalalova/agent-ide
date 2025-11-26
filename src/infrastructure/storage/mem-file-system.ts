@@ -1,34 +1,66 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { glob as globby } from 'glob';
-import {
+/**
+ * 記憶體檔案系統
+ * 基於 memfs 實作 IFileSystem 介面，用於測試
+ */
+
+import { Volume, type DirectoryJSON, type IFs } from 'memfs';
+import * as pathModule from 'path';
+import { minimatch } from 'minimatch';
+import type { IFileSystem } from './file-system.interface.js';
+import type {
   DirectoryEntry,
   FileStats,
   GlobOptions,
+  AtomicWriteOptions,
+} from './types.js';
+import {
   FileNotFoundError,
   DirectoryNotFoundError,
   PermissionError,
   DirectoryNotEmptyError,
-  AtomicWriteOptions,
 } from './types.js';
-import type { IFileSystem } from './file-system.interface.js';
 
 /**
- * 檔案系統操作類別
- * 提供統一的檔案和目錄操作介面
+ * 記憶體檔案系統
+ * 用於測試環境，完全在記憶體中運作
  */
-export class FileSystem implements IFileSystem {
-  private readonly tempSuffix = '.tmp';
+export class MemFileSystem implements IFileSystem {
+  private vol: InstanceType<typeof Volume>;
+  private fs: IFs;
+
+  constructor() {
+    this.vol = new Volume();
+    this.fs = this.vol as unknown as IFs;
+  }
 
   /**
-   * 讀取檔案內容
+   * 從 JSON 結構初始化檔案系統
    */
+  fromJSON(structure: DirectoryJSON, cwd = '/'): void {
+    this.vol.fromJSON(structure, cwd);
+  }
+
+  /**
+   * 匯出當前檔案系統為 JSON
+   */
+  toJSON(): DirectoryJSON {
+    return this.vol.toJSON() as DirectoryJSON;
+  }
+
+  /**
+   * 重設檔案系統
+   */
+  reset(): void {
+    this.vol.reset();
+  }
+
   async readFile(filePath: string, encoding?: BufferEncoding): Promise<string | Buffer> {
     try {
+      const content = this.fs.readFileSync(filePath);
       if (encoding) {
-        return await fs.readFile(filePath, encoding);
+        return content.toString(encoding);
       }
-      return await fs.readFile(filePath);
+      return Buffer.from(content);
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         throw new FileNotFoundError(filePath, error);
@@ -40,23 +72,11 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 寫入檔案內容
-   * 自動建立不存在的目錄
-   */
   async writeFile(filePath: string, content: string | Buffer, options?: AtomicWriteOptions): Promise<void> {
     try {
-      // 確保目錄存在
-      const dir = path.dirname(filePath);
+      const dir = pathModule.dirname(filePath);
       await this.createDirectory(dir, true);
-
-      if (options?.fsync) {
-        // 使用原子寫入
-        await this.atomicWrite(filePath, content, options);
-      } else {
-        // 直接寫入
-        await fs.writeFile(filePath, content, { encoding: options?.encoding });
-      }
+      this.fs.writeFileSync(filePath, content, { encoding: options?.encoding });
     } catch (error: any) {
       if (error.code === 'EACCES') {
         throw new PermissionError(filePath, error);
@@ -65,42 +85,9 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 原子寫入檔案
-   */
-  private async atomicWrite(filePath: string, content: string | Buffer, options: AtomicWriteOptions): Promise<void> {
-    const tempPath = filePath + (options.tempSuffix || this.tempSuffix);
-
-    try {
-      await fs.writeFile(tempPath, content, { encoding: options.encoding });
-
-      if (options.fsync) {
-        const fd = await fs.open(tempPath, 'r+');
-        try {
-          await fd.sync();
-        } finally {
-          await fd.close();
-        }
-      }
-
-      await fs.rename(tempPath, filePath);
-    } catch (error) {
-      // 清理暫存檔案
-      try {
-        await fs.unlink(tempPath);
-      } catch {
-        // 忽略清理錯誤
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * 追加檔案內容
-   */
   async appendFile(filePath: string, content: string | Buffer): Promise<void> {
     try {
-      await fs.appendFile(filePath, content);
+      this.fs.appendFileSync(filePath, content);
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         throw new FileNotFoundError(filePath, error);
@@ -112,12 +99,9 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 刪除檔案
-   */
   async deleteFile(filePath: string): Promise<void> {
     try {
-      await fs.unlink(filePath);
+      this.fs.unlinkSync(filePath);
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         throw new FileNotFoundError(filePath, error);
@@ -129,15 +113,11 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 建立目錄
-   */
   async createDirectory(dirPath: string, recursive = false): Promise<void> {
     try {
-      await fs.mkdir(dirPath, { recursive });
+      this.fs.mkdirSync(dirPath, { recursive });
     } catch (error: any) {
       if (error.code === 'EEXIST') {
-        // 目錄已存在，不是錯誤
         return;
       }
       if (error.code === 'EACCES') {
@@ -147,16 +127,13 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 讀取目錄內容
-   */
   async readDirectory(dirPath: string): Promise<DirectoryEntry[]> {
     try {
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      const entries = this.fs.readdirSync(dirPath, { withFileTypes: true }) as any[];
       const result: DirectoryEntry[] = [];
 
       for (const entry of entries) {
-        const entryPath = path.join(dirPath, entry.name);
+        const entryPath = pathModule.join(dirPath, entry.name);
         const stats = await this.safeGetStats(entryPath);
 
         result.push({
@@ -181,15 +158,12 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 刪除目錄
-   */
   async deleteDirectory(dirPath: string, recursive = false): Promise<void> {
     try {
       if (recursive) {
-        await fs.rm(dirPath, { recursive: true, force: false });
+        this.fs.rmSync(dirPath, { recursive: true, force: false });
       } else {
-        await fs.rmdir(dirPath);
+        this.fs.rmdirSync(dirPath);
       }
     } catch (error: any) {
       if (error.code === 'ENOENT') {
@@ -205,34 +179,28 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 檢查路徑是否存在
-   */
   async exists(targetPath: string): Promise<boolean> {
     try {
-      await fs.access(targetPath);
+      this.fs.accessSync(targetPath);
       return true;
     } catch {
       return false;
     }
   }
 
-  /**
-   * 獲取檔案統計資訊
-   */
   async getStats(targetPath: string): Promise<FileStats> {
     try {
-      const stats = await fs.stat(targetPath);
+      const stats = this.fs.statSync(targetPath);
       return {
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
-        size: stats.size,
-        createdTime: stats.birthtime,
-        modifiedTime: stats.mtime,
-        accessedTime: stats.atime,
-        mode: stats.mode,
-        uid: stats.uid,
-        gid: stats.gid,
+        size: stats.size as number,
+        createdTime: stats.birthtime as Date,
+        modifiedTime: stats.mtime as Date,
+        accessedTime: stats.atime as Date,
+        mode: stats.mode as number,
+        uid: stats.uid as number,
+        gid: stats.gid as number,
       };
     } catch (error: any) {
       if (error.code === 'ENOENT') {
@@ -245,9 +213,6 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 安全獲取檔案統計資訊（不拋出錯誤）
-   */
   private async safeGetStats(targetPath: string): Promise<FileStats | null> {
     try {
       return await this.getStats(targetPath);
@@ -256,9 +221,6 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 檢查是否為檔案
-   */
   async isFile(targetPath: string): Promise<boolean> {
     try {
       const stats = await this.getStats(targetPath);
@@ -268,9 +230,6 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 檢查是否為目錄
-   */
   async isDirectory(targetPath: string): Promise<boolean> {
     try {
       const stats = await this.getStats(targetPath);
@@ -280,44 +239,13 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * 複製檔案
-   */
   async copyFile(srcPath: string, destPath: string): Promise<void> {
     try {
-      // 確保目標目錄存在
-      const destDir = path.dirname(destPath);
+      const destDir = pathModule.dirname(destPath);
       await this.createDirectory(destDir, true);
-
-      await fs.copyFile(srcPath, destPath);
+      const content = this.fs.readFileSync(srcPath);
+      this.fs.writeFileSync(destPath, content);
     } catch (error: any) {
-      if (error.code === 'ENOENT' && error.path === srcPath) {
-        throw new FileNotFoundError(srcPath, error);
-      }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(error.path || srcPath, error);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * 移動檔案
-   */
-  async moveFile(srcPath: string, destPath: string): Promise<void> {
-    try {
-      // 確保目標目錄存在
-      const destDir = path.dirname(destPath);
-      await this.createDirectory(destDir, true);
-
-      await fs.rename(srcPath, destPath);
-    } catch (error: any) {
-      if (error.code === 'EXDEV') {
-        // 跨裝置移動，使用複製+刪除
-        await this.copyFile(srcPath, destPath);
-        await this.deleteFile(srcPath);
-        return;
-      }
       if (error.code === 'ENOENT') {
         throw new FileNotFoundError(srcPath, error);
       }
@@ -328,23 +256,56 @@ export class FileSystem implements IFileSystem {
     }
   }
 
-  /**
-   * Glob 搜尋檔案
-   */
-  async glob(pattern: string, options: GlobOptions = {}): Promise<string[]> {
-    try {
-      const results = await globby(pattern, {
-        cwd: options.cwd,
-        ignore: options.ignore,
-        dot: options.dot,
-        absolute: options.absolute,
-        // 移除不支援的選項
-        ...(options.followSymlinks && { followSymbolicLinks: options.followSymlinks }),
-      } as any);
+  async moveFile(srcPath: string, destPath: string): Promise<void> {
+    await this.copyFile(srcPath, destPath);
+    await this.deleteFile(srcPath);
+  }
 
-      return results.sort();
-    } catch (error) {
-      throw error;
+  async glob(pattern: string, options: GlobOptions = {}): Promise<string[]> {
+    const cwd = options.cwd || '/';
+    const results: string[] = [];
+
+    const walkDir = (dir: string): void => {
+      try {
+        const entries = this.fs.readdirSync(dir, { withFileTypes: true }) as any[];
+        for (const entry of entries) {
+          const fullPath = pathModule.join(dir, entry.name);
+          const relativePath = pathModule.relative(cwd, fullPath);
+
+          if (entry.isDirectory()) {
+            if (!options.onlyFiles) {
+              if (this.matchGlob(relativePath, pattern, options)) {
+                results.push(options.absolute ? fullPath : relativePath);
+              }
+            }
+            walkDir(fullPath);
+          } else if (entry.isFile()) {
+            if (!options.onlyDirectories) {
+              if (this.matchGlob(relativePath, pattern, options)) {
+                results.push(options.absolute ? fullPath : relativePath);
+              }
+            }
+          }
+        }
+      } catch {
+        // 忽略無法存取的目錄
+      }
+    };
+
+    walkDir(cwd);
+    return results
+      .filter((p) => !this.isIgnored(p, options.ignore))
+      .sort();
+  }
+
+  private matchGlob(path: string, pattern: string, options: GlobOptions): boolean {
+    return minimatch(path, pattern, { dot: options.dot });
+  }
+
+  private isIgnored(path: string, ignorePatterns?: string[]): boolean {
+    if (!ignorePatterns || ignorePatterns.length === 0) {
+      return false;
     }
+    return ignorePatterns.some((ignorePattern) => minimatch(path, ignorePattern));
   }
 }

@@ -18,18 +18,17 @@ cd agent-ide
 pnpm install && pnpm build && npm link
 ```
 
-### 可用工具
+### CLI 命令
 
-| 工具             | 功能                                   |
-| ---------------- | -------------------------------------- |
-| `code_search`    | 搜尋符號、文字                         |
-| `code_rename`    | 重新命名符號                           |
-| `code_move`      | 移動檔案並更新 import                  |
-| `code_shift`     | 移動行（單檔案內/跨檔案/新檔案生成）   |
-| `code_analyze`   | 分析程式碼品質                         |
-| `code_deps`      | 依賴關係分析                           |
-| `code_shit`      | 垃圾度評分（分數越高越糟，含修復建議） |
-| `parser_plugins` | Parser 插件管理                        |
+| 命令      | 功能                                   |
+| --------- | -------------------------------------- |
+| `search`  | 搜尋符號、文字、正則                   |
+| `rename`  | 重新命名符號並更新引用                 |
+| `move`    | 移動檔案並更新 import                  |
+| `shift`   | 移動行（單檔案內/跨檔案/新檔案生成）   |
+| `analyze` | 分析程式碼品質                         |
+| `deps`    | 依賴關係分析、循環檢測                 |
+| `shit`    | 垃圾度評分（0-100，越高越糟）          |
 
 <details>
 <summary>📖 使用指南</summary>
@@ -42,10 +41,6 @@ npx agent-ide shift src/file.ts --from 2 --to 5 --position 10
 
 # 跨檔案移動
 npx agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
-
-# 移動到新檔案（自動生成檔名）
-npx agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
-# → 生成 src/newfile.ts，若已存在則生成 newfile01.ts、newfile02.ts...
 
 # 預覽模式
 npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
@@ -77,24 +72,24 @@ npx agent-ide rename --from oldName --to newName --preview
 ### 程式碼搜尋（search）
 
 ```bash
-# 搜尋符號/文字
+# 文字搜尋
 npx agent-ide search "UserService" --format json
 
 # 正規表達式搜尋
-npx agent-ide search "function.*User" --type regex --format json
+npx agent-ide search "function.*User" -t regex --format json
+
+# 符號搜尋（function/class/variable/enum）
+npx agent-ide search "User" -t class --format json
 ```
 
 ### 品質分析（analyze）
 
 ```bash
-# 複雜度分析
-npx agent-ide analyze complexity --format json
-
-# 死代碼檢測
-npx agent-ide analyze dead-code --format json
+# 分析程式碼品質
+npx agent-ide analyze --format json
 
 # 顯示所有結果（包含無問題項目）
-npx agent-ide analyze complexity --format json --all
+npx agent-ide analyze --format json --all
 ```
 
 ### 依賴關係（deps）
@@ -113,11 +108,11 @@ npx agent-ide deps --format json --all
 # 基本評分（0-100，越高越糟）
 npx agent-ide shit --format json
 
-# 詳細分析
+# 詳細分析（含 topShit + recommendations）
 npx agent-ide shit --detailed --format json
 
-# CI/CD 門檻檢查
-npx agent-ide shit --max-allowed=70
+# CI/CD 門檻檢查（超過則 exit 1）
+npx agent-ide shit --max-allowed 70
 ```
 
 </details>
@@ -131,9 +126,9 @@ npx agent-ide shit --max-allowed=70
 
 ```
 Agent IDE
-├── 核心模組：搜尋、重構、移動、依賴分析
+├── 核心模組：搜尋、重構、移動、依賴分析、ShitScore
 ├── 基礎設施：Parser 框架、索引引擎、快取、儲存
-├── 插件系統：TypeScript、JavaScript
+├── 插件系統：TypeScript、JavaScript、Swift
 └── 介面層：CLI
 ```
 
@@ -143,7 +138,7 @@ Agent IDE
 - 並行處理
 - 記憶體優化（~100MB / 10k 檔案）
 
-**支援語言**：TypeScript、JavaScript
+**支援語言**：TypeScript、JavaScript、Swift
 
 </details>
 
@@ -155,8 +150,9 @@ Agent IDE
 ```bash
 pnpm install      # 安裝依賴
 pnpm build        # 建置
-pnpm test         # 測試
+pnpm test         # 測試（241 E2E 測試）
 pnpm typecheck    # 型別檢查
+pnpm lint         # ESLint
 ```
 
 </details>

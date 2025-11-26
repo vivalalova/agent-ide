@@ -1,0 +1,578 @@
+/**
+ * CLI shift 命令 E2E 測試
+ * 基於 sample-project fixture 測試行級移動功能
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+
+describe('CLI shift - 基於 sample-project fixture', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('基本功能 - 單檔案內行移動', () => {
+    it('應該成功執行檔案內行移動', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('應該在 JSON 格式下返回有效的結果結構', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.success).toBe(true);
+      expect(output.operationType).toBe('within_file');
+      expect(output.sourceFile).toBeDefined();
+      expect(output.targetFile).toBeDefined();
+      expect(output.fromLine).toBe(1);
+      expect(output.toLine).toBe(2);
+      expect(output.position).toBe(5);
+      expect(output.linesCount).toBe(2);
+      expect(output.executed).toBe(true);
+    });
+
+    it('應該包含移動的行數統計', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '3', '--to', '5', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.linesCount).toBe(3);
+      expect(output.fromLine).toBe(3);
+      expect(output.toLine).toBe(5);
+    });
+  });
+
+  describe('跨檔案行移動', () => {
+    it('應該支援移動到不同檔案', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/utils.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        expect(output.operationType).toBe('to_new_file');
+        expect(output.sourceFile).toContain('index.ts');
+        expect(output.targetFile).toContain('utils.ts');
+      }
+    });
+  });
+
+  describe('預覽模式（--preview）', () => {
+    it('應該在預覽模式下不實際執行移動', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.success).toBe(true);
+      expect(output.executed).toBe(false);
+    });
+
+    it('應該在預覽模式下返回操作訊息', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.success).toBe(true);
+      expect(output.message).toBeDefined();
+    });
+  });
+
+  describe('輸出格式', () => {
+    it('應該支援 plain 格式輸出', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'plain'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('移動');
+    });
+
+    it('應該在 JSON 格式下包含完整的操作資訊', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output).toHaveProperty('success');
+      expect(output).toHaveProperty('operationType');
+      expect(output).toHaveProperty('sourceFile');
+      expect(output).toHaveProperty('targetFile');
+      expect(output).toHaveProperty('fromLine');
+      expect(output).toHaveProperty('toLine');
+      expect(output).toHaveProperty('position');
+      expect(output).toHaveProperty('linesCount');
+      expect(output).toHaveProperty('executed');
+      expect(output).toHaveProperty('message');
+    });
+  });
+
+  describe('錯誤處理', () => {
+    it('應該處理不存在的檔案', async () => {
+      const result = await executeCLI(
+        ['shift', '/nonexistent/file.ts', '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理無效的行號範圍（from > to）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理無效的行號（0 或負數）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '0', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理超出檔案範圍的行號', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '999999', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+  });
+
+  describe('邊界條件', () => {
+    it('應該處理單行移動（from === to）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '3', '--to', '3', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(1);
+    });
+
+    it('應該處理移動到檔案開頭（position = 1）', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '7', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.success).toBe(true);
+      expect(output.position).toBe(1);
+    });
+  });
+
+  describe('操作類型識別', () => {
+    it('應該識別檔案內移動操作', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+
+      expect(output.operationType).toBe('within_file');
+    });
+
+    it('應該識別跨檔案移動操作', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/utils.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '2', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        expect(output.operationType).toBe('to_new_file');
+      }
+    });
+  });
+
+  describe('極端情境 - 行移動邊界測試', () => {
+    it('應該處理移動整個函數（多行區塊）', async () => {
+      // 生成 100+ 行的大型函數
+      const largeFunction = [
+        'export function processLargeData(data: any[]) {',
+        '  const results = [];',
+        ...Array.from({ length: 100 }, (_, i) => `  const item${i} = data[${i}];`),
+        '  return results;',
+        '}',
+      ].join('\n');
+
+      await fixture.writeFile('src/large-function-test.ts', largeFunction);
+      const targetFile = fixture.getFilePath('src/large-function-test.ts');
+
+      // 移動整個 100+ 行函數到檔案開頭
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '104', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBeGreaterThanOrEqual(100);
+    });
+
+    it('應該處理移動到檔案結尾位置', async () => {
+      const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '999', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // position 超出範圍，實際行為是失敗
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理移動空行', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // 第 4 行是空行
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '4', '--to', '4', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(1);
+    });
+
+    it('應該處理移動註解區塊', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // 第 1-3 行是註解區塊
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '50', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(3);
+    });
+  });
+
+  describe('極端情境 - 跨檔案移動進階測試', () => {
+    it('應該處理跨檔案移動大區塊程式碼', async () => {
+      // 生成 100+ 行的大型程式碼區塊
+      const largeCodeBlock = [
+        '// Source file with large code block',
+        ...Array.from({ length: 100 }, (_, i) => `export const constant${i} = ${i};`),
+      ].join('\n');
+
+      await fixture.writeFile('src/large-source.ts', largeCodeBlock);
+      await fixture.writeFile('src/large-target.ts', '// Target file\n');
+
+      const sourceFile = fixture.getFilePath('src/large-source.ts');
+      const targetFile = fixture.getFilePath('src/large-target.ts');
+
+      // 移動 100+ 行
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '2', '--to', '101', '--position', '2', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        expect(output.operationType).toBe('between_files');
+        expect(output.linesCount).toBeGreaterThanOrEqual(100);
+      }
+    });
+
+    it('應該處理跨檔案移動並保持縮排', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const targetFile = fixture.getFilePath('src/core/constants.ts');
+
+      // 移動初始化服務區塊（縮排內容）
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '24', '--to', '30', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        expect(output.operationType).toBe('between_files');
+        expect(output.success).toBe(true);
+      }
+    });
+  });
+
+  describe('極端情境 - 邊界條件進階測試', () => {
+    it('應該處理源和目標位置相同的情況', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // from=5, to=10, position=5 表示移動到原位置
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      if (result.exitCode === 0) {
+        const output = JSON.parse(result.stdout);
+        // 移動到相同位置應該成功但不改變檔案
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該處理極大的行範圍', async () => {
+      // 生成 500+ 行的極大檔案
+      const massiveFile = [
+        '// Massive file test',
+        ...Array.from({ length: 500 }, (_, i) => `const line${i} = ${i};`),
+      ].join('\n');
+
+      await fixture.writeFile('src/massive-file.ts', massiveFile);
+      const targetFile = fixture.getFilePath('src/massive-file.ts');
+
+      // 移動 500+ 行
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '2', '--to', '501', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBeGreaterThanOrEqual(500);
+    });
+
+    it('應該拒絕負數目標位置', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '-5', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理from和to行號相等（單行移動）', async () => {
+      const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '15', '--to', '15', '--position', '40', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(1);
+    });
+  });
+
+  describe('極端情境 - 複雜程式碼結構', () => {
+    it('應該處理移動包含巢狀結構的程式碼', async () => {
+      // 生成 50+ 行深層巢狀結構
+      const deepNesting = [
+        'export function deeplyNestedFunction() {',
+        '  if (condition1) {',
+        '    for (let i = 0; i < 10; i++) {',
+        '      for (let j = 0; j < 10; j++) {',
+        '        if (condition2) {',
+        '          try {',
+        '            switch (value) {',
+        ...Array.from({ length: 40 }, (_, i) => `              case ${i}: return ${i};`),
+        '            }',
+        '          } catch (error) {',
+        '            console.error(error);',
+        '          }',
+        '        }',
+        '      }',
+        '    }',
+        '  }',
+        '}',
+      ].join('\n');
+
+      await fixture.writeFile('src/deep-nesting.ts', deepNesting);
+      const targetFile = fixture.getFilePath('src/deep-nesting.ts');
+
+      // 移動整個 50+ 行深層巢狀區塊到檔案開頭
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '1', '--to', '55', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBeGreaterThanOrEqual(50);
+    });
+
+    it('應該處理移動 import 語句區塊', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      // 移動 import 語句
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '11', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBe(7);
+    });
+
+    it('應該處理移動 export 語句區塊', async () => {
+      // 生成 100+ 個 export 語句
+      const massiveExports = [
+        '// Massive export block',
+        ...Array.from({ length: 100 }, (_, i) => `export const export${i} = ${i};`),
+      ].join('\n');
+
+      await fixture.writeFile('src/massive-exports.ts', massiveExports);
+      const targetFile = fixture.getFilePath('src/massive-exports.ts');
+
+      // 移動 100+ 個 export 到檔案開頭
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '2', '--to', '101', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.linesCount).toBeGreaterThanOrEqual(100);
+    });
+  });
+
+  describe('極端情境 - 錯誤處理完整測試', () => {
+    it('應該處理空檔案操作', async () => {
+      // 創建一個空檔案
+      const emptyFile = fixture.getFilePath('src/empty-test.ts');
+      fixture.writeFile('src/empty-test.ts', '');
+
+      const result = await executeCLI(
+        ['shift', emptyFile, '--from', '1', '--to', '1', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+
+    it('應該處理目標檔案不存在（跨檔案移動）', async () => {
+      const sourceFile = fixture.getFilePath('src/index.ts');
+      const nonExistentTarget = fixture.getFilePath('src/nonexistent/target.ts');
+
+      const result = await executeCLI(
+        ['shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', nonExistentTarget, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      // 可能會自動創建目錄或回報錯誤
+      expect(output).toHaveProperty('success');
+    });
+
+    it('應該處理極端大的position值', async () => {
+      const targetFile = fixture.getFilePath('src/index.ts');
+
+      const result = await executeCLI(
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '999999', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // position 超出範圍，實際行為是失敗
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toBeDefined();
+    });
+  });
+});

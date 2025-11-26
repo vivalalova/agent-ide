@@ -17,7 +17,7 @@ import { MoveService } from '../../core/move/move-service.js';
 import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
 import { SearchService } from '../../core/search/service.js';
 import { IndexEngine } from '../../core/indexing/index-engine.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 
 import type {
   IModuleCoordinatorService,
@@ -69,22 +69,21 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly searchService: SearchService;
   private readonly indexEngine: IndexEngine;
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
   constructor(
     eventBus: EventBus,
     stateManager: StateManager,
-    errorHandler: ErrorHandlerService
+    errorHandler: ErrorHandlerService,
+    fileSystem: IFileSystem
   ) {
     this.eventBus = eventBus;
     this.stateManager = stateManager;
     this.errorHandler = errorHandler;
+    this.fileSystem = fileSystem;
 
     // 初始化模組狀態追蹤
     this.modules = new Map();
-
-    // 初始化 FileSystem（單一實例供所有模組共用）
-    this.fileSystem = new FileSystem();
 
     // 初始化核心模組實例
     this.functionExtractor = new FunctionExtractor();

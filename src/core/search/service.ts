@@ -20,7 +20,7 @@ import type {
 } from './types.js';
 
 import { TextSearchEngine } from './engines/text-engine.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 
 /**
  * 搜尋服務
@@ -36,7 +36,7 @@ export class SearchService {
     recentSearches: []
   };
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.textEngine = new TextSearchEngine(fileSystem);
   }
 

@@ -6,7 +6,7 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { glob } from 'glob';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import { IndexEngine } from '../indexing/index-engine.js';
 import { DependencyAnalyzer } from '../dependency/dependency-analyzer.js';
 import { ShitScoreAnalyzer } from '../shit-score/shit-score-analyzer.js';
@@ -40,9 +40,9 @@ export class SnapshotEngine {
   private compressor: CodeCompressor;
   private differ: SnapshotDiffer;
   private parserRegistry: ParserRegistry;
-  private fileSystem: FileSystem;
+  private fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.compressor = new CodeCompressor();
     this.differ = new SnapshotDiffer(fileSystem);
     this.parserRegistry = ParserRegistry.getInstance();

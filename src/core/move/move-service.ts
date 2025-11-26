@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from './types.js';
 
@@ -12,7 +12,7 @@ export class MoveService {
   private importResolver: ImportResolver;
 
   constructor(
-    private readonly fileSystem: FileSystem,
+    private readonly fileSystem: IFileSystem,
     config?: ImportResolverConfig,
     importResolver?: ImportResolver
   ) {

@@ -3,14 +3,14 @@
  */
 
 import * as path from 'node:path';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import type { FileGenerationResult } from './types.js';
 
 /**
  * 檔案生成器類別
  */
 export class FileGenerator {
-  constructor(private readonly fileSystem: FileSystem) {}
+  constructor(private readonly fileSystem: IFileSystem) {}
   /**
    * 生成唯一檔名
    * @param basePath - 基礎路徑（不含副檔名）

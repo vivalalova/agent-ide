@@ -1,54 +1,74 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
-
-# Agent IDE 專案規範
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 專案概述
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 核心模組、3 Parser（TS/JS/Swift）、235+ 測試通過
+**現況**：8 核心模組、3 Parser（TS/JS/Swift）、241 測試通過
 
-## 快速參考
+## 常用指令
 
 ```bash
-pnpm build         # 建置（含 Swift parser 複製）
-pnpm typecheck     # 型別檢查
-pnpm test          # 所有測試
-pnpm test:single   # 單執行緒（記憶體受限）
-pnpm test:bail     # 失敗即停
-pnpm lint          # ESLint
-npm link           # 本地 CLI 安裝
+pnpm build                    # 建置（含 Swift parser 複製）
+pnpm typecheck                # 型別檢查
+pnpm test                     # 所有測試（3 workers）
+pnpm test:single              # 單執行緒（記憶體受限）
+pnpm test:bail                # 失敗即停
+pnpm lint                     # ESLint
+npm link                      # 本地 CLI 安裝
+
+# 單一測試檔
+pnpm test -- --run tests/e2e/commands/cli-shit.e2e.test.ts
+
+# 匹配測試名稱
+pnpm test -- --run -t "應該分析專案"
 ```
 
-**架構**：`core/`（8模組）、`infrastructure/`（parser/cache/storage）、`plugins/`（TS/JS/Swift）、`interfaces/`（CLI）、`application/`（服務層）
+## 架構
 
-## 開發規範
-
-- **TDD**：紅→綠→重構
-- **品質**：TS strict、禁 any、單一職責、SOLID
-- **測試**：只寫 E2E（CLI 測試）、使用 fixture-manager + cli-executor
+```
+src/
+├── core/           # 8 核心模組
+│   ├── dependency/ # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
+│   ├── indexing/   # 1000檔/秒、查詢<10ms
+│   ├── move/       # 檔案移動+import更新
+│   ├── refactor/   # 提取/內聯函式
+│   ├── rename/     # 符號重命名+引用更新
+│   ├── search/     # 文字/語義/結構化
+│   ├── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
+│   └── shit-score/ # 0-100分垃圾度評分
+├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）
+├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）
+├── interfaces/     # CLI（Unix哲學/JSON輸出）
+└── application/    # 服務層、DI容器
+```
 
 ## 測試規範
 
 ### 核心原則
-- **只寫 E2E**：透過 CLI 測試完整流程，禁止直接 import 實作類別
-- **Fixture-Based**：使用 `loadFixture('sample-project')` 複製到臨時目錄
-- **測試輔助**：`fixture-manager.ts`（loadFixture/tempPath/getFilePath/readFile/writeFile/cleanup）、`cli-executor.ts`（executeCLI→{exitCode,stdout,stderr}）
+- **只寫 E2E**：透過 CLI 測試，禁止直接 import 實作類別
+- **memfs 隔離**：所有檔案操作在記憶體中，零硬碟 I/O
+- **Fixture-Based**：`loadFixture('sample-project')` 載入到 memfs
 
-### 測試模式範例
+### 測試模式
 ```typescript
-import { loadFixture } from '../helpers/fixture-manager';
-import { executeCLI } from '../helpers/cli-executor';
+import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
 describe('CLI shit - 基於 sample-project fixture', () => {
-  let fixture;
-  beforeEach(async () => { fixture = await loadFixture('sample-project'); });
-  afterEach(async () => { await fixture.cleanup(); });
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
 
   it('應該分析專案並輸出 JSON 格式評分', async () => {
-    const result = await executeCLI(['shit', '--path', fixture.tempPath, '--format', 'json']);
+    const result = await executeCLI(['shit', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout).shitScore).toBeDefined();
   });
@@ -60,56 +80,35 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 - describe：`CLI <command> - 基於 sample-project fixture`
 - it：具體行為+預期結果（✅ `應該輸出 JSON 格式` ❌ `測試功能`）
 
-### 診斷命令測試要點
-- 驗證 `--all` 參數：預設 `output.issues`（只有問題）、`--all` 時 `output.all`（完整結果）
-- 輸出結構：`{summary, issues, all?}`（all 僅 --all 時存在）
+### 極端測試標準
+- 數量極端：50+ 檔案/函數
+- 深度極端：10+ 層嵌套
+- 長度極端：500+ 行、1000+ 字元
 
-### 測試覆蓋
-基本功能、參數組合（--format/--detailed/--all）、錯誤處理、邊界條件、輸出格式
+## ShitScore 維度
 
-### 常見陷阱
-❌ 建立自訂 helper → ✅ 用 fixture-manager
-❌ 直接測試類別 → ✅ 透過 CLI
+**四維度權重**（30%/30%/20%/20%）：
+- Complexity：循環複雜度、嵌套深度
+- Maintainability：檔案大小、函數長度
+- Architecture：依賴深度、循環依賴
+- QualityAssurance：型別安全、錯誤處理、命名
 
-### Worker 殭屍進程防護
-**問題**：Ctrl+C 中斷測試時 worker 未清理
+## CLI 命令
 
-**防護機制**：
-1. Signal handlers（SIGINT/SIGTERM）→ `tests/setup.ts`
-2. Vitest 配置（isolate/fileParallelism: false）→ `vitest.config.ts`
-3. 自動清理（pretest hook）→ `scripts/cleanup-vitest.sh`
-4. 手動清理：`bash scripts/cleanup-vitest.sh`
+```bash
+agent-ide search text --path <path> --query <query>
+agent-ide search structural --path <path> --type <function|class>
+agent-ide rename --path <path> --from <old> --to <new>
+agent-ide move --path <path> --source <src> --target <dest>
+agent-ide shift --path <path> --file <file> --from <line> --to <line> --position <pos>
+agent-ide analyze --path <path> [--format json|summary]
+agent-ide deps --path <path> [--format json|summary]
+agent-ide shit --path <path> [--format json|text] [--detailed]
+```
 
-## 核心模組
+## 診斷命令輸出
 
-1. **Dependency**：依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-2. **Indexing**：1000檔/秒、查詢<10ms
-3. **Move**：檔案移動+import更新
-4. **Refactor**：提取/內聯函式
-5. **Rename**：符號重命名+引用更新
-6. **Search**：文字/語義/結構化
-7. **Shift**：行級移動（單檔案內/跨檔案/新檔案生成）
-8. **ShitScore**：0-100分垃圾度評分
-   - **四維度**（30%/30%/30%/20%）：Complexity、Maintainability、Architecture、QualityAssurance
-   - QA 子維度：Type Safety 30%、Test Coverage 25%、Error Handling 20%、Naming 15%、Security 10%
-
-## 基礎設施
-
-**Parser**（插件管理/統一AST）、**Cache**（L1/L2/L3、LRU/LFU/TTL）、**Storage**（FS抽象/事務/ACID）、**Utils**（純函式/型別安全）
-
-## Parser 插件
-
-- **TypeScript**：Compiler API、Program 重用
-- **JavaScript**：Babel、ES2023+、JSX/Flow
-- **Swift**：SwiftSyntax 509+、CLI Bridge
-
-## 介面層
-
-- **CLI**：`agent-ide [search|rename|move|shift|analyze|deps|shit]`（Unix哲學/JSON輸出）
-
-## 診斷命令輸出優化
-
-**Token效率**：預設只輸出問題（issues）、`--all` 顯示完整結果（all）、永遠包含統計（summary）
+**Token效率**：預設只輸出問題、`--all` 顯示完整結果
 
 ```json
 {
@@ -119,15 +118,8 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 }
 ```
 
-## ParserPlugin 介面
+## 開發流程
 
-**四大類方法**：
-1. **核心**：parse/extractSymbols/findReferences/extractDependencies
-2. **重構**：rename/extractFunction/findDefinition/findUsages
-3. **分析**：detectUnusedSymbols/analyzeComplexity/extractCodeFragments/detectPatterns
-4. **品質檢查**：checkTypeSafety/checkErrorHandling/checkSecurity/checkNamingConventions/isTestFile
-
-## 流程
-
-**開發**：規格→API→測試→實作→CLI→文件
-**發布**：`pnpm build && pnpm test` → `npm version patch/minor/major` → `npm publish`
+**開發**：規格→API→測試→實作→CLI
+**驗證**：`pnpm build && pnpm lint && pnpm test`
+**發布**：`npm version patch|minor|major` → `npm publish`

@@ -1,113 +1,74 @@
 import Foundation
 
-/// 資料驗證工具
+/// Validation result
+struct ValidationResult {
+    /// Is valid
+    let isValid: Bool
+    /// Error message if invalid
+    let errorMessage: String?
+
+    /// Success result
+    static let success = ValidationResult(isValid: true, errorMessage: nil)
+
+    /// Failure result with message
+    static func failure(_ message: String) -> ValidationResult {
+        ValidationResult(isValid: false, errorMessage: message)
+    }
+}
+
+/// Validator utility
 final class Validator {
-    /// 單例模式
+    /// Shared instance
     static let shared = Validator()
 
     private init() {}
 
-    /// 驗證電子郵件
+    /// Validate email
     func validateEmail(_ email: String) -> ValidationResult {
-        let trimmed = email.trimmed
-        guard !trimmed.isEmpty else {
-            return .failure(message: "電子郵件不可為空")
+        guard !email.isEmpty else {
+            return .failure("Email cannot be empty")
         }
-        guard trimmed.isValidEmail else {
-            return .failure(message: "電子郵件格式不正確")
+
+        let pattern = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        guard email.range(of: pattern, options: .regularExpression) != nil else {
+            return .failure("Invalid email format")
         }
+
         return .success
     }
 
-    /// 驗證密碼
+    /// Validate password
     func validatePassword(_ password: String) -> ValidationResult {
-        guard !password.isEmpty else {
-            return .failure(message: "密碼不可為空")
-        }
         guard password.count >= 8 else {
-            return .failure(message: "密碼長度至少需要 8 個字元")
+            return .failure("Password must be at least 8 characters")
         }
-        guard password.isValidPassword else {
-            return .failure(message: "密碼需包含大小寫字母和數字")
+
+        let hasUppercase = password.range(of: "[A-Z]", options: .regularExpression) != nil
+        let hasLowercase = password.range(of: "[a-z]", options: .regularExpression) != nil
+        let hasNumber = password.range(of: "[0-9]", options: .regularExpression) != nil
+
+        guard hasUppercase && hasLowercase && hasNumber else {
+            return .failure("Password must contain uppercase, lowercase, and number")
         }
+
         return .success
     }
 
-    /// 驗證使用者名稱
+    /// Validate username
     func validateUsername(_ username: String) -> ValidationResult {
-        let trimmed = username.trimmed
-        guard !trimmed.isEmpty else {
-            return .failure(message: "使用者名稱不可為空")
+        guard username.count >= 3 else {
+            return .failure("Username must be at least 3 characters")
         }
-        guard trimmed.count >= 3 else {
-            return .failure(message: "使用者名稱長度至少需要 3 個字元")
+
+        guard username.count <= 20 else {
+            return .failure("Username must be at most 20 characters")
         }
-        guard trimmed.count <= 20 else {
-            return .failure(message: "使用者名稱長度不可超過 20 個字元")
+
+        let pattern = "^[a-zA-Z0-9_]+$"
+        guard username.range(of: pattern, options: .regularExpression) != nil else {
+            return .failure("Username can only contain letters, numbers, and underscores")
         }
-        let usernameRegex = "^[a-zA-Z0-9_]+$"
-        let usernamePredicate = NSPredicate(format: "SELF MATCHES %@", usernameRegex)
-        guard usernamePredicate.evaluate(with: trimmed) else {
-            return .failure(message: "使用者名稱只能包含英文字母、數字和底線")
-        }
+
         return .success
-    }
-
-    /// 驗證電話號碼
-    func validatePhoneNumber(_ phoneNumber: String) -> ValidationResult {
-        let trimmed = phoneNumber.trimmed
-        guard !trimmed.isEmpty else {
-            return .failure(message: "電話號碼不可為空")
-        }
-        let phoneRegex = "^09\\d{8}$"
-        let phonePredicate = NSPredicate(format: "SELF MATCHES %@", phoneRegex)
-        guard phonePredicate.evaluate(with: trimmed) else {
-            return .failure(message: "電話號碼格式不正確（格式：09xxxxxxxx）")
-        }
-        return .success
-    }
-
-    /// 驗證金額
-    func validateAmount(_ amount: Double, min: Double = 0, max: Double = Double.infinity) -> ValidationResult {
-        guard amount >= min else {
-            return .failure(message: "金額不可小於 \(min)")
-        }
-        guard amount <= max else {
-            return .failure(message: "金額不可大於 \(max)")
-        }
-        return .success
-    }
-
-    /// 驗證數量
-    func validateQuantity(_ quantity: Int, min: Int = 1, max: Int = Int.max) -> ValidationResult {
-        guard quantity >= min else {
-            return .failure(message: "數量不可小於 \(min)")
-        }
-        guard quantity <= max else {
-            return .failure(message: "數量不可大於 \(max)")
-        }
-        return .success
-    }
-}
-
-/// 驗證結果
-enum ValidationResult {
-    case success
-    case failure(message: String)
-
-    /// 是否驗證成功
-    var isValid: Bool {
-        if case .success = self {
-            return true
-        }
-        return false
-    }
-
-    /// 取得錯誤訊息
-    var errorMessage: String? {
-        if case .failure(let message) = self {
-            return message
-        }
-        return nil
     }
 }

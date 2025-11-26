@@ -3,7 +3,7 @@
  */
 
 import * as path from 'node:path';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '../../infrastructure/storage/index.js';
 import { LineExtractor } from './line-extractor.js';
 import { FileGenerator } from './file-generator.js';
 import type { ShiftOptions, ShiftResult, ShiftValidationError } from './types.js';
@@ -15,9 +15,9 @@ import { ShiftOperationType, createShiftResult, createShiftValidationError } fro
 export class ShiftService {
   private readonly lineExtractor: LineExtractor;
   private readonly fileGenerator: FileGenerator;
-  private readonly fileSystem: FileSystem;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(fileSystem: FileSystem) {
+  constructor(fileSystem: IFileSystem) {
     this.lineExtractor = new LineExtractor();
     this.fileGenerator = new FileGenerator(fileSystem);
     this.fileSystem = fileSystem;

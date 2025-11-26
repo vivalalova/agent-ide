@@ -2,8 +2,12 @@
  * 檔案系統抽象層統一匯出
  */
 
+// 介面
+export type { IFileSystem } from './file-system.interface.js';
+
 // 核心類別
 export { FileSystem } from './file-system.js';
+export { MemFileSystem } from './mem-file-system.js';
 export { FileWatcher } from './file-watcher.js';
 export { PathUtils } from './path-utils.js';
 
@@ -30,9 +34,3 @@ export {
   FileSystemErrorType,
 } from './types.js';
 
-// 便利函式
-export const createFileSystem = () => new FileSystem();
-export const createFileWatcher = () => {
-  const { FileWatcher } = require('./file-watcher');
-  return new FileWatcher();
-};

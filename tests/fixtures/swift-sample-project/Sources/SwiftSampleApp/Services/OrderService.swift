@@ -1,56 +1,84 @@
 import Foundation
 
-actor OrderService {
-    private let networkService: NetworkService
+/// Order service errors
+enum OrderServiceError: Error {
+    case orderNotFound
+    case cannotCancel
+    case invalidStatus
+    case emptyOrder
+}
 
-    init(networkService: NetworkService) {
-        self.networkService = networkService
+/// Order service protocol
+protocol OrderServiceProtocol {
+    func getOrder(id: String) async throws -> Order
+    func getOrdersByUser(userId: String) async throws -> [Order]
+    func createOrder(userId: String, items: [OrderItem]) async throws -> Order
+    func updateOrderStatus(orderId: String, status: OrderStatus) async throws -> Order
+    func cancelOrder(id: String) async throws -> Order
+}
+
+/// Order service implementation
+final class OrderService: OrderServiceProtocol {
+    /// Simulated orders storage
+    private var orders: [String: Order] = [:]
+
+    /// Get order by ID
+    func getOrder(id: String) async throws -> Order {
+        guard let order = orders[id] else {
+            throw OrderServiceError.orderNotFound
+        }
+        return order
     }
 
-    func fetchOrders() async throws -> [Order] {
-        let endpoint = APIEndpoint.orders
-        let request = try buildRequest(for: endpoint)
-        let data = try await networkService.fetch(request)
-        return try JSONDecoder().decode([Order].self, from: data)
+    /// Get orders by user
+    func getOrdersByUser(userId: String) async throws -> [Order] {
+        orders.values.filter { $0.userId == userId }
     }
 
-    // 行 20-28：建立訂單（測試提取點）
-    func createOrder(items: [CartItem]) async throws -> Order {
+    /// Create new order
+    func createOrder(userId: String, items: [OrderItem]) async throws -> Order {
         guard !items.isEmpty else {
-            throw OrderError.emptyCart
+            throw OrderServiceError.emptyOrder
         }
 
-        let total = calculateTotal(items: items)
-        let orderData = OrderData(items: items, total: total)
-
-        let data = try await submitOrder(orderData)
-        return try JSONDecoder().decode(Order.self, from: data)
+        let now = Date()
+        let order = Order(
+            id: UUID().uuidString,
+            userId: userId,
+            items: items,
+            status: .pending,
+            createdAt: now,
+            updatedAt: now
+        )
+        orders[order.id] = order
+        return order
     }
 
-    // 行 36-40：價格計算（測試提取點）
-    private func calculateTotal(items: [CartItem]) -> Double {
-        return items.reduce(0.0) { total, item in
-            total + (item.price * Double(item.quantity))
+    /// Update order status
+    func updateOrderStatus(orderId: String, status: OrderStatus) async throws -> Order {
+        guard var order = orders[orderId] else {
+            throw OrderServiceError.orderNotFound
         }
+
+        order.status = status
+        order.updatedAt = Date()
+        orders[orderId] = order
+        return order
     }
 
-    private func buildRequest(for endpoint: APIEndpoint) throws -> URLRequest {
-        return URLRequest(url: endpoint.url)
+    /// Cancel order
+    func cancelOrder(id: String) async throws -> Order {
+        guard var order = orders[id] else {
+            throw OrderServiceError.orderNotFound
+        }
+
+        guard order.canCancel else {
+            throw OrderServiceError.cannotCancel
+        }
+
+        order.status = .cancelled
+        order.updatedAt = Date()
+        orders[id] = order
+        return order
     }
-
-    private func submitOrder(_ orderData: OrderData) async throws -> Data {
-        let endpoint = APIEndpoint.createOrder
-        let request = try buildRequest(for: endpoint)
-        return try await networkService.fetch(request)
-    }
-}
-
-struct OrderData {
-    let items: [CartItem]
-    let total: Double
-}
-
-enum OrderError: Error {
-    case emptyCart
-    case invalidTotal
 }

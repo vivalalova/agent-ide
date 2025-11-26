@@ -4,6 +4,7 @@ import parser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 import noFsInCore from './eslint-rules/no-fs-in-core/index.js';
 import noDefaultInstanceInConstructor from './eslint-rules/no-default-instance-in-constructor/index.js';
+import noNewFileSystem from './eslint-rules/no-new-filesystem/index.js';
 
 export default [
   eslint.configs.recommended,
@@ -43,6 +44,7 @@ export default [
         rules: {
           'no-fs-in-core': noFsInCore,
           'no-default-instance-in-constructor': noDefaultInstanceInConstructor,
+          'no-new-filesystem': noNewFileSystem,
         },
       },
     },
@@ -84,6 +86,7 @@ export default [
       // 自定義規則
       'custom/no-fs-in-core': 'error',
       'custom/no-default-instance-in-constructor': 'error',
+      'custom/no-new-filesystem': 'error',
     },
   },
   {

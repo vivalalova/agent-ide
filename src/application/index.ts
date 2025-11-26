@@ -96,6 +96,7 @@ import { CacheCoordinatorService } from './services/cache-coordinator.service.js
 import { ModuleCoordinatorService } from './services/module-coordinator.service.js';
 import { WorkflowEngineService } from './services/workflow-engine.service.js';
 import { CacheManager } from '../infrastructure/cache/cache-manager.js';
+import type { IFileSystem } from '../infrastructure/storage/index.js';
 
 /**
  * 應用服務容器，提供所有服務的統一存取介面
@@ -111,7 +112,7 @@ export class ApplicationServices {
   private readonly moduleCoordinator: ModuleCoordinatorService;
   private readonly workflowEngine: WorkflowEngineService;
 
-  private constructor() {
+  private constructor(fileSystem: IFileSystem) {
     // 初始化基礎設施
     this.eventBus = new EventBus();
     this.stateManager = new StateManager(new ApplicationState());
@@ -126,7 +127,8 @@ export class ApplicationServices {
     this.moduleCoordinator = new ModuleCoordinatorService(
       this.eventBus,
       this.stateManager,
-      this.errorHandler
+      this.errorHandler,
+      fileSystem
     );
 
     // 初始化工作流程引擎
@@ -139,10 +141,14 @@ export class ApplicationServices {
 
   /**
    * 取得 ApplicationServices 單例
+   * @param fileSystem 檔案系統實例（首次呼叫時必須提供）
    */
-  public static getInstance(): ApplicationServices {
+  public static getInstance(fileSystem?: IFileSystem): ApplicationServices {
     if (!ApplicationServices.instance) {
-      ApplicationServices.instance = new ApplicationServices();
+      if (!fileSystem) {
+        throw new Error('FileSystem is required for first initialization');
+      }
+      ApplicationServices.instance = new ApplicationServices(fileSystem);
     }
     return ApplicationServices.instance;
   }

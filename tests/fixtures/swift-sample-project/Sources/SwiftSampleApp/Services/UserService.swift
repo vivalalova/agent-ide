@@ -1,63 +1,78 @@
 import Foundation
 
-class UserService {
-    private let networkService: NetworkService
+/// User service errors
+enum UserServiceError: Error {
+    case userNotFound
+    case invalidEmail
+    case duplicateEmail
+    case networkError(Error)
+}
 
-    init(networkService: NetworkService) {
-        self.networkService = networkService
-    }
+/// User service protocol
+protocol UserServiceProtocol {
+    func getUser(id: String) async throws -> User
+    func getAllUsers() async throws -> [User]
+    func createUser(name: String, email: String, role: UserRole) async throws -> User
+    func updateUser(_ user: User) async throws -> User
+    func deleteUser(id: String) async throws -> Bool
+}
 
-    // 行 15-27：非同步使用者獲取（包含 async/await，測試提取點）
-    func fetchUsers() async throws -> [User] {
-        let endpoint = APIEndpoint.users
-        let request = try buildRequest(for: endpoint)
+/// User service implementation
+final class UserService: UserServiceProtocol {
+    /// Simulated users storage
+    private var users: [String: User] = [:]
 
-        // 行 20-25：回應處理（測試提取點）
-        do {
-            let data = try await networkService.fetch(request)
-            let users = try JSONDecoder().decode([User].self, from: data)
-            return users
-        } catch {
-            throw NetworkError.decodingFailed(error)
+    /// Get user by ID
+    func getUser(id: String) async throws -> User {
+        guard let user = users[id] else {
+            throw UserServiceError.userNotFound
         }
-    }
-
-    func createUser(name: String, email: String, role: UserRole = .user) async throws -> User {
-        let endpoint = APIEndpoint.createUser
-        let body = ["name": name, "email": email, "role": role.rawValue]
-        let request = try buildRequest(for: endpoint, method: .post, body: body)
-
-        let data = try await networkService.fetch(request)
-        let user = try JSONDecoder().decode(User.self, from: data)
         return user
     }
 
-    // 行 44-52：驗證邏輯（包含 throws，測試提取點）
-    func validateUser(name: String, email: String) throws {
-        guard !name.isEmpty else {
-            throw ValidationError.emptyName
-        }
-        guard email.contains("@") else {
-            throw ValidationError.invalidEmail
-        }
-        guard email.count > 5 else {
-            throw ValidationError.emailTooShort
-        }
+    /// Get all users
+    func getAllUsers() async throws -> [User] {
+        Array(users.values)
     }
 
-    private func buildRequest(for endpoint: APIEndpoint, method: HTTPMethod = .get, body: [String: Any]? = nil) throws -> URLRequest {
-        var request = URLRequest(url: endpoint.url)
-        request.httpMethod = method.rawValue
-        if let body = body {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    /// Create new user
+    func createUser(name: String, email: String, role: UserRole) async throws -> User {
+        guard isValidEmail(email) else {
+            throw UserServiceError.invalidEmail
         }
-        return request
-    }
-}
 
-enum ValidationError: Error {
-    case emptyName
-    case invalidEmail
-    case emailTooShort
+        let user = User(
+            id: UUID().uuidString,
+            name: name,
+            email: email,
+            role: role,
+            createdAt: Date()
+        )
+        users[user.id] = user
+        return user
+    }
+
+    /// Update user
+    func updateUser(_ user: User) async throws -> User {
+        guard users[user.id] != nil else {
+            throw UserServiceError.userNotFound
+        }
+        users[user.id] = user
+        return user
+    }
+
+    /// Delete user
+    func deleteUser(id: String) async throws -> Bool {
+        guard users[id] != nil else {
+            throw UserServiceError.userNotFound
+        }
+        users.removeValue(forKey: id)
+        return true
+    }
+
+    /// Validate email format
+    private func isValidEmail(_ email: String) -> Bool {
+        let pattern = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        return email.range(of: pattern, options: .regularExpression) != nil
+    }
 }
