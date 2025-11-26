@@ -48,7 +48,7 @@ export class ProductController extends BaseController {
     try {
       return await this.productService.listProducts(params);
     } catch (error) {
-      return this.handleError(error) as PaginatedResponse<Product>;
+      return this.handleError(error) as unknown as PaginatedResponse<Product>;
     }
   }
 }
