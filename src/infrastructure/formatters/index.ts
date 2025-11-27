@@ -1,8 +1,9 @@
 /**
  * Formatters 模組導出
- * 提供統一的 dry-run 預覽格式化功能
+ * 提供統一的 CLI 輸出格式化功能
  */
 
+// ========== Preview（變更類命令）==========
 export {
   PreviewCommand,
   PreviewFormat,
@@ -32,3 +33,36 @@ export {
   type RenamePreviewOptions,
   type RefactorPreviewOptions
 } from './preview-converter.js';
+
+// ========== Query（唯讀類命令）==========
+export {
+  QueryCommand,
+  IssueSeverity,
+  AnalyzeType,
+  SnapshotAction,
+  type QueryResult,
+  type QuerySummary,
+  type QueryIssue,
+  type DimensionScore,
+  type Recommendation,
+  type ShitResult,
+  type ShitItem,
+  type SearchResult,
+  type SearchMatch,
+  type DepsResult,
+  type CycleInfo,
+  type GraphNode,
+  type GraphEdge,
+  type AnalyzeResult,
+  type SnapshotResult,
+  type SnapshotStats,
+  type PluginsResult,
+  type PluginInfo
+} from './query-types.js';
+
+export {
+  QueryFormat,
+  QueryFormatter,
+  createQueryFormatter,
+  type QueryFormatterOptions
+} from './query-formatter.js';
