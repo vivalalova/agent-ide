@@ -10,7 +10,7 @@ export enum CompressionLevel {
   /** 最小化：只包含架構和符號索引 (~20K tokens) */
   Minimal = 'minimal',
 
-  /** 中等：包含符號和簡化的實作 (~35K tokens) */
+  /** 中等：包含符號簽章和依賴關係（不含函式邏輯）(~22K tokens) */
   Medium = 'medium',
 
   /** 完整：包含壓縮後的完整實作 (~50K tokens) */
@@ -110,6 +110,9 @@ export interface CompressedCode {
 
   /** 壓縮後行數 */
   cl?: number;
+
+  /** 符號依賴（Medium level：函式名 -> 依賴列表） */
+  deps?: Record<string, string[]>;
 }
 
 /**
@@ -196,6 +199,9 @@ export interface Snapshot {
 
     /** 檔案的 export 列表 */
     ex: Record<string, string[]>;
+
+    /** 符號依賴（Medium level：檔案路徑 -> {符號名 -> 依賴列表}） */
+    sd?: Record<string, Record<string, string[]>>;
   };
 
   /** 程式碼內容 */

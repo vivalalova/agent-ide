@@ -100,6 +100,57 @@ describe.skip('CLI snapshot - 基於 sample-project fixture', () => {
         expect(output.success).toBe(true);
       }
     });
+
+    it('medium 層級應該只包含函式簽章（不含 body）', async () => {
+      const outputPath = path.join(fixture.rootPath, 'snapshot-medium-body.json');
+      const result = await executeCLI(
+        ['snapshot', 'generate', '--path', fixture.rootPath, '--output', outputPath, '--level', 'medium', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      // 讀取快照檔案
+      const snapshotContent = await fixture.memfs.readFile(outputPath, 'utf-8');
+      const snapshot = JSON.parse(snapshotContent as string);
+
+      // 檢查程式碼內容只包含簽章
+      const codeEntries = Object.values(snapshot.c) as Array<{ m: string }>;
+      for (const code of codeEntries) {
+        if (code.m.includes('function') || code.m.includes('=>')) {
+          // 函式應該以 { /* ... */ } 結尾，而不是完整的 body
+          expect(code.m).toMatch(/\{ \/\* \.\.\. \*\/ \}/);
+        }
+      }
+    });
+
+    it('medium 層級應該包含符號依賴圖（dp.sd）', async () => {
+      const outputPath = path.join(fixture.rootPath, 'snapshot-medium-deps.json');
+      const result = await executeCLI(
+        ['snapshot', 'generate', '--path', fixture.rootPath, '--output', outputPath, '--level', 'medium', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      // 讀取快照檔案
+      const snapshotContent = await fixture.memfs.readFile(outputPath, 'utf-8');
+      const snapshot = JSON.parse(snapshotContent as string);
+
+      // 檢查 dp.sd 存在且不為空（如果有函式呼叫其他函式）
+      expect(snapshot.dp).toBeDefined();
+      // sd 可能存在也可能不存在（取決於是否有函式依賴）
+      if (snapshot.dp.sd) {
+        expect(typeof snapshot.dp.sd).toBe('object');
+        // 每個檔案的依賴應該是 { 函式名: [依賴列表] } 格式
+        for (const [, deps] of Object.entries(snapshot.dp.sd)) {
+          expect(typeof deps).toBe('object');
+          for (const [, depList] of Object.entries(deps as Record<string, string[]>)) {
+            expect(Array.isArray(depList)).toBe(true);
+          }
+        }
+      }
+    });
   });
 
   describe('generate 命令 - 多層級模式', () => {

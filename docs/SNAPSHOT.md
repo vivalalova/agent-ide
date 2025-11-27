@@ -56,8 +56,35 @@ agent-ide snapshot [action] [options]
 | Level | 內容 | 估計 Token |
 |-------|------|------------|
 | `minimal` | 架構 + 符號索引 | ~20K |
-| `medium` | 符號 + 簡化實作 | ~35K |
+| `medium` | 函式簽章 + 符號依賴圖 | ~22K |
 | `full` | 壓縮後完整實作 | ~50K |
+
+#### Medium 層級特點
+
+- **函式簽章**：保留函式宣告，移除函式邏輯（body 替換為 `{ /* ... */ }`）
+- **符號依賴圖**（`dp.sd`）：記錄函式呼叫關係
+  - 可追蹤 `a()` 呼叫 `b()` 的依賴
+  - 可追蹤函式引用的 class/global 變數
+  - 過濾內建函式和常見常數
+
+**範例輸出**：
+```json
+{
+  "dp": {
+    "sd": {
+      "src/utils/formatter.ts": {
+        "formatProduct": ["Product", "formatCurrency"],
+        "pascalCase": ["camelCase"]
+      }
+    }
+  },
+  "c": {
+    "src/utils/formatter.ts": {
+      "m": "export function formatCurrency(amount: number): string { /* ... */ }\nexport function formatProduct(product: Product): string { /* ... */ }"
+    }
+  }
+}
+```
 
 ### 排除模式範例
 

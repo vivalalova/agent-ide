@@ -212,7 +212,7 @@ export class SnapshotEngine {
     if (!options.silent) {
       console.log('Compressing code...');
     }
-    const code = await this.compressCode(files, options.projectPath, options.level);
+    const { code, symbolDeps } = await this.compressCode(files, options.projectPath, options.level);
 
     // 計算品質指標
     if (!options.silent) {
@@ -229,6 +229,11 @@ export class SnapshotEngine {
     // 統計資訊
     const totalLines = Object.values(code).reduce((sum, c) => sum + (c.ol || 0), 0);
     const languages = this.detectLanguages(files);
+
+    // 合併符號依賴到 dependencies
+    if (Object.keys(symbolDeps).length > 0) {
+      dependencies.sd = symbolDeps;
+    }
 
     const snapshot: Snapshot = {
       v: '1.0.0',
@@ -456,13 +461,15 @@ export class SnapshotEngine {
 
   /**
    * 壓縮程式碼
+   * 返回壓縮後的程式碼和符號依賴（Medium level）
    */
   private async compressCode(
     files: string[],
     projectPath: string,
     level: CompressionLevel = CompressionLevel.Full
-  ): Promise<Snapshot['c']> {
+  ): Promise<{ code: Snapshot['c']; symbolDeps: Record<string, Record<string, string[]>> }> {
     const code: Snapshot['c'] = {};
+    const symbolDeps: Record<string, Record<string, string[]>> = {};
 
     for (const file of files) {
       const relativePath = path.relative(projectPath, file);
@@ -471,13 +478,23 @@ export class SnapshotEngine {
         const content = await this.fileSystem.readFile(file, 'utf-8') as string;
         const compressed = await this.compressor.compress(content, level);
 
-        code[relativePath] = compressed;
+        code[relativePath] = {
+          m: compressed.m,
+          sm: compressed.sm,
+          ol: compressed.ol,
+          cl: compressed.cl
+        };
+
+        // 收集符號依賴（Medium level 時存在）
+        if (compressed.deps && Object.keys(compressed.deps).length > 0) {
+          symbolDeps[relativePath] = compressed.deps;
+        }
       } catch {
         // 忽略壓縮錯誤的檔案
       }
     }
 
-    return code;
+    return { code, symbolDeps };
   }
 
   /**

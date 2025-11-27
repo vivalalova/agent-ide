@@ -18,6 +18,7 @@ export class CodeCompressor {
 
     let compressed: string;
     let symbolMap: Record<string, string> | undefined;
+    let deps: Record<string, string[]> | undefined;
 
     switch (level) {
       case Level.Minimal: {
@@ -27,8 +28,10 @@ export class CodeCompressor {
       }
 
       case Level.Medium: {
-        // 中等：移除註解和空白，保留完整邏輯
-        compressed = this.removeCommentsAndWhitespace(code);
+        // 中等：提取簽章 + 依賴關係（不含函式邏輯）
+        const result = this.extractSignaturesWithDependencies(code);
+        compressed = result.signatures;
+        deps = result.dependencies;
         break;
       }
 
@@ -51,7 +54,8 @@ export class CodeCompressor {
       m: compressed,
       sm: symbolMap,
       ol: originalLines,
-      cl: compressedLines
+      cl: compressedLines,
+      deps
     };
   }
 
@@ -114,6 +118,299 @@ export class CodeCompressor {
     }
 
     return signatures.join('\n');
+  }
+
+  /**
+   * 提取簽章和依賴關係（Medium 層級）
+   * 保留函式/類別簽章，移除實作，但提取依賴關係
+   */
+  private extractSignaturesWithDependencies(code: string): {
+    signatures: string;
+    dependencies: Record<string, string[]>;
+  } {
+    const lines = code.split('\n');
+    const signatures: string[] = [];
+    const dependencies: Record<string, string[]> = {};
+
+    let inMultiLineComment = false;
+    let braceDepth = 0;
+    let currentFunctionName = '';
+    let currentFunctionBody = '';
+    let isCollectingBody = false;
+    let signatureLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+
+      // 處理多行註解
+      if (trimmedLine.includes('/*') && !trimmedLine.includes('*/')) {
+        inMultiLineComment = true;
+        continue;
+      }
+      if (trimmedLine.includes('*/')) {
+        inMultiLineComment = false;
+        continue;
+      }
+      if (inMultiLineComment || trimmedLine.startsWith('//')) {
+        continue;
+      }
+
+      // 檢測函式/方法宣告
+      const functionMatch =
+        trimmedLine.match(/^(export\s+)?(async\s+)?function\s+(\w+)/) ||
+        trimmedLine.match(/^(export\s+)?const\s+(\w+)\s*=\s*(async\s+)?\(/) ||
+        trimmedLine.match(/^\s*(public|private|protected)?\s*(static)?\s*(async\s+)?(\w+)\s*\([^)]*\)\s*(:\s*\S+)?\s*{/);
+
+      // 類別、介面、型別、enum 宣告
+      const typeMatch =
+        trimmedLine.match(/^(export\s+)?(abstract\s+)?class\s+(\w+)/) ||
+        trimmedLine.match(/^(export\s+)?interface\s+(\w+)/) ||
+        trimmedLine.match(/^(export\s+)?type\s+(\w+)/) ||
+        trimmedLine.match(/^(export\s+)?enum\s+(\w+)/);
+
+      if (functionMatch && !isCollectingBody) {
+        // 提取函式名稱
+        currentFunctionName = this.extractFunctionName(trimmedLine);
+        signatureLines = [line];
+        braceDepth = (trimmedLine.match(/{/g) || []).length - (trimmedLine.match(/}/g) || []).length;
+
+        if (braceDepth > 0) {
+          isCollectingBody = true;
+          currentFunctionBody = trimmedLine;
+        } else if (trimmedLine.endsWith(';')) {
+          // 函式宣告（無 body）
+          signatures.push(line);
+          currentFunctionName = '';
+        }
+      } else if (typeMatch && !isCollectingBody) {
+        // 類別/介面/型別/enum - 保留完整宣告行
+        signatures.push(line);
+
+        // 處理 class/enum 的 body（簡化處理）
+        if (trimmedLine.includes('{')) {
+          braceDepth = (trimmedLine.match(/{/g) || []).length - (trimmedLine.match(/}/g) || []).length;
+          if (braceDepth > 0) {
+            isCollectingBody = true;
+            currentFunctionName = ''; // 類別 body 不追蹤依賴
+            currentFunctionBody = '';
+          }
+        }
+      } else if (isCollectingBody) {
+        currentFunctionBody += '\n' + trimmedLine;
+        braceDepth += (trimmedLine.match(/{/g) || []).length - (trimmedLine.match(/}/g) || []).length;
+
+        if (braceDepth === 0) {
+          // 函式結束
+          if (currentFunctionName) {
+            // 提取依賴
+            const deps = this.extractDependenciesFromBody(currentFunctionBody, currentFunctionName);
+            if (deps.length > 0) {
+              dependencies[currentFunctionName] = deps;
+            }
+            // 輸出簽章（不含 body）
+            const signature = this.buildSignature(signatureLines[0]);
+            signatures.push(signature);
+          }
+
+          isCollectingBody = false;
+          currentFunctionName = '';
+          currentFunctionBody = '';
+          signatureLines = [];
+        }
+      } else if (trimmedLine && !trimmedLine.startsWith('import') && !trimmedLine.startsWith('export {')) {
+        // 保留 import/export 語句、變數宣告等
+        if (trimmedLine.startsWith('import ') || trimmedLine.startsWith('export ')) {
+          signatures.push(line);
+        }
+      }
+    }
+
+    return {
+      signatures: signatures.join('\n'),
+      dependencies
+    };
+  }
+
+  /**
+   * 從程式碼行提取函式名稱
+   */
+  private extractFunctionName(line: string): string {
+    // async function foo(
+    let match = line.match(/function\s+(\w+)/);
+    if (match) {return match[1];}
+
+    // const foo = (
+    match = line.match(/const\s+(\w+)\s*=/);
+    if (match) {return match[1];}
+
+    // public async foo( or foo(
+    match = line.match(/(?:public|private|protected|static|async|\s)*(\w+)\s*\(/);
+    if (match && !this.isControlFlowKeyword(match[1])) {return match[1];}
+
+    return '';
+  }
+
+  /**
+   * 建構函式簽章（移除 body）
+   */
+  private buildSignature(line: string): string {
+    // 移除 body，只保留簽章
+    const braceIndex = line.indexOf('{');
+    if (braceIndex > 0) {
+      return line.substring(0, braceIndex).trim() + ' { /* ... */ }';
+    }
+    return line;
+  }
+
+  /**
+   * 從函式 body 提取依賴
+   */
+  private extractDependenciesFromBody(body: string, selfName: string): string[] {
+    const deps = new Set<string>();
+
+    // 提取函式呼叫：identifier(
+    const callPattern = /\b([a-zA-Z_]\w*)\s*\(/g;
+    let match;
+    while ((match = callPattern.exec(body)) !== null) {
+      const name = match[1];
+      if (name !== selfName && !this.isControlFlowKeyword(name) && !this.isBuiltinFunction(name)) {
+        deps.add(name);
+      }
+    }
+
+    // 提取成員存取：this.xxx 或 obj.xxx（只取方法呼叫）
+    const memberCallPattern = /\b(?:this|[a-zA-Z_]\w*)\.([a-zA-Z_]\w*)\s*\(/g;
+    while ((match = memberCallPattern.exec(body)) !== null) {
+      const name = match[1];
+      if (!this.isBuiltinFunction(name)) {
+        deps.add(name);
+      }
+    }
+
+    // 提取全域變數引用（大寫開頭，2-30 字元，排除常見 false positive）
+    const globalPattern = /\b([A-Z][a-zA-Z_\d]{1,29})\b/g;
+    while ((match = globalPattern.exec(body)) !== null) {
+      const name = match[1];
+      // 排除：內建類別、型別關鍵字、常見常數、純大寫（通常是常數）
+      if (!this.isBuiltinClass(name) && !this.isTypeKeyword(name) && !this.isCommonConstant(name)) {
+        // 排除全大寫（常數）或只有 2 字元的大寫（如 XY, AB）
+        if (!/^[A-Z]{2,}$/.test(name)) {
+          deps.add(name);
+        }
+      }
+    }
+
+    return Array.from(deps).sort();
+  }
+
+  /**
+   * 是否為控制流關鍵字或內建類別（作為構造函式）
+   */
+  private isControlFlowKeyword(name: string): boolean {
+    // 控制流
+    if (['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'try', 'catch', 'finally', 'return', 'throw', 'new', 'typeof', 'instanceof', 'await', 'async', 'yield'].includes(name)) {
+      return true;
+    }
+    // 內建類別作為構造函式
+    if (this.isBuiltinClass(name)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 是否為內建函式或方法
+   */
+  private isBuiltinFunction(name: string): boolean {
+    const builtins = new Set([
+      // console 方法
+      'console', 'log', 'warn', 'error', 'info', 'debug', 'trace', 'dir', 'table', 'time', 'timeEnd', 'group', 'groupEnd', 'assert', 'count', 'clear',
+      // 定時器
+      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame',
+      // 數值轉換
+      'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'isInteger', 'isSafeInteger',
+      // URI
+      'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',
+      // 其他全域
+      'eval', 'fetch', 'require', 'import', 'export', 'alert', 'confirm', 'prompt',
+      // Array 方法
+      'push', 'pop', 'shift', 'unshift', 'slice', 'splice', 'concat', 'reverse', 'sort', 'flat', 'flatMap',
+      'map', 'filter', 'reduce', 'reduceRight', 'forEach', 'find', 'findIndex', 'findLast', 'findLastIndex',
+      'some', 'every', 'includes', 'indexOf', 'lastIndexOf', 'join', 'fill', 'copyWithin', 'at', 'with', 'toSorted', 'toReversed', 'toSpliced',
+      // String 方法
+      'split', 'trim', 'trimStart', 'trimEnd', 'replace', 'replaceAll', 'match', 'matchAll', 'search',
+      'toLowerCase', 'toUpperCase', 'toLocaleLowerCase', 'toLocaleUpperCase',
+      'charAt', 'charCodeAt', 'codePointAt', 'fromCharCode', 'fromCodePoint',
+      'substring', 'substr', 'slice', 'padStart', 'padEnd', 'repeat', 'normalize', 'localeCompare',
+      'startsWith', 'endsWith', 'anchor', 'link', 'big', 'small', 'bold', 'italics', 'strike', 'sub', 'sup',
+      // RegExp 方法
+      'test', 'exec',
+      // Object 方法
+      'toString', 'valueOf', 'hasOwnProperty', 'propertyIsEnumerable', 'isPrototypeOf', 'toLocaleString',
+      'keys', 'values', 'entries', 'assign', 'create', 'defineProperty', 'defineProperties',
+      'freeze', 'seal', 'preventExtensions', 'isFrozen', 'isSealed', 'isExtensible',
+      'getOwnPropertyNames', 'getOwnPropertySymbols', 'getOwnPropertyDescriptor', 'getOwnPropertyDescriptors',
+      'getPrototypeOf', 'setPrototypeOf', 'fromEntries', 'hasOwn', 'is',
+      // JSON 方法
+      'stringify', 'parse',
+      // Number 方法
+      'toFixed', 'toPrecision', 'toExponential',
+      // Date 方法
+      'getTime', 'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours', 'getMinutes', 'getSeconds', 'getMilliseconds',
+      'setTime', 'setFullYear', 'setMonth', 'setDate', 'setHours', 'setMinutes', 'setSeconds', 'setMilliseconds',
+      'toISOString', 'toJSON', 'toDateString', 'toTimeString', 'toUTCString', 'toLocaleDateString', 'toLocaleTimeString',
+      // Math 方法
+      'abs', 'ceil', 'floor', 'round', 'trunc', 'sign', 'sqrt', 'cbrt', 'pow', 'exp', 'expm1', 'log', 'log10', 'log2', 'log1p',
+      'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+      'min', 'max', 'random', 'hypot', 'fround', 'clz32', 'imul',
+      // Promise 方法
+      'then', 'catch', 'finally', 'resolve', 'reject', 'all', 'allSettled', 'race', 'any',
+      // Map/Set 方法
+      'get', 'set', 'has', 'delete', 'add', 'size', 'clear', 'forEach',
+      // 其他常見方法
+      'format', 'bind', 'call', 'apply', 'next', 'return', 'throw', 'done', 'value'
+    ]);
+    return builtins.has(name);
+  }
+
+  /**
+   * 是否為內建類別
+   */
+  private isBuiltinClass(name: string): boolean {
+    return ['Array', 'Boolean', 'Date', 'Error', 'Function', 'JSON', 'Math', 'Number', 'Object', 'Promise', 'RegExp', 'String', 'Symbol', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Proxy', 'Reflect', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array', 'ArrayBuffer', 'SharedArrayBuffer', 'DataView', 'Intl', 'WebAssembly', 'Atomics', 'URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder', 'AbortController', 'AbortSignal', 'Buffer', 'Event', 'EventTarget', 'FormData', 'Headers', 'Request', 'Response', 'Blob', 'File', 'FileReader', 'ReadableStream', 'WritableStream', 'TransformStream'].includes(name);
+  }
+
+  /**
+   * 是否為型別關鍵字
+   */
+  private isTypeKeyword(name: string): boolean {
+    return ['Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable', 'Parameters', 'ReturnType', 'ConstructorParameters', 'InstanceType', 'ThisParameterType', 'OmitThisParameter', 'ThisType', 'Uppercase', 'Lowercase', 'Capitalize', 'Uncapitalize'].includes(name);
+  }
+
+  /**
+   * 是否為常見常數/字串值（非真正依賴）
+   */
+  private isCommonConstant(name: string): boolean {
+    // 常見的字串常量（貨幣、國家、協定等）
+    const constants = new Set([
+      'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'TWD', 'KRW', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD',
+      'US', 'UK', 'EU', 'CN', 'TW', 'JP', 'KR', 'AU', 'CA', 'DE', 'FR',
+      'HTTP', 'HTTPS', 'FTP', 'SSH', 'TCP', 'UDP', 'IP', 'DNS', 'SSL', 'TLS',
+      'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
+      'API', 'URL', 'URI', 'XML', 'HTML', 'CSS', 'DOM', 'EOF', 'EOL', 'UTF',
+      'ID', 'OK', 'SKU', 'UUID', 'GUID',
+      'NULL', 'TRUE', 'FALSE', 'NaN', 'Infinity',
+      'TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'BUG', 'DEBUG',
+      'MIN', 'MAX', 'PI', 'INF',
+      'ASC', 'DESC', 'AND', 'OR', 'NOT', 'IN', 'IS',
+      'RGB', 'RGBA', 'HSL', 'HSLA', 'HEX',
+      'SVG', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'PDF', 'CSV', 'JSON', 'YAML', 'TOML',
+      'ISO', 'RFC', 'UTC', 'GMT', 'PST', 'EST', 'CST',
+      'AAA', 'BBB', 'CCC', 'XXX', 'YYY', 'ZZZ',
+      'NumberFormat', 'DateTimeFormat', 'Collator', 'PluralRules'
+    ]);
+    return constants.has(name);
   }
 
   /**
