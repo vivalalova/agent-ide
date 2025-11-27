@@ -7,14 +7,17 @@ description: 程式碼重構與分析 CLI 工具。符號重命名、檔案移�
 
 ## 執行方式
 
-Plugin 安裝後可直接使用本地 CLI（無需 npm install）：
+Plugin 安裝後首次需 build：
 
 ```bash
 # PLUGIN_ROOT = 此 skill 所在 repo 的根目錄（往上三層）
-node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
+cd ${PLUGIN_ROOT} && pnpm install && pnpm build
+```
 
-# 或全局安裝後
-agent-ide <command>
+之後可直接執行：
+
+```bash
+node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 ```
 
 ## 命令速查表

@@ -4,6 +4,9 @@
 
 agent-ide 是為 AI 代理設計的 CLI 工具集，提供搜尋、重構、依賴分析和品質評分功能，讓 AI 能智能地理解和操作程式碼。
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 ## 核心命令詳解
 
 ### 1. 程式碼品質分析 (shit)
