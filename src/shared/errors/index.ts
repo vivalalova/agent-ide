@@ -2,7 +2,7 @@
  * 錯誤處理系統統一匯出
  */
 
-import { Location } from '../types/core.js';
+import { Location } from '@shared/types/core.js';
 
 // 匯出所有錯誤類別
 export { BaseError, isBaseError } from './base-error.js';
@@ -25,11 +25,11 @@ export { ValidationError, isValidationError } from './validation-error.js';
 export { ConfigError, isConfigError } from './config-error.js';
 
 // 重新匯出類別以方便使用
-import { BaseError } from './base-error.js';
-import { ParserError } from './parser-error.js';
-import { FileError } from './file-error.js';
-import { ValidationError } from './validation-error.js';
-import { ConfigError } from './config-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
+import { ParserError } from '@shared/errors/parser-error.js';
+import { FileError } from '@shared/errors/file-error.js';
+import { ValidationError } from '@shared/errors/validation-error.js';
+import { ConfigError } from '@shared/errors/config-error.js';
 
 /**
  * 錯誤工廠函式選項

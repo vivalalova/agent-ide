@@ -3,9 +3,9 @@
  * 從 AST 中提取符號資訊
  */
 
-import type { Symbol, Range, Location } from '../../shared/types/index.js';
-import { SymbolType } from '../../shared/types/index.js';
-import type { SwiftAST, SwiftASTNode, SwiftSymbol } from './types.js';
+import type { Symbol, Range, Location } from '@shared/types/index.js';
+import { SymbolType } from '@shared/types/index.js';
+import type { SwiftAST, SwiftASTNode, SwiftSymbol } from '@plugins/swift/types.js';
 import {
   SwiftNodeKind,
   swiftKindToSymbolType,

@@ -3,8 +3,8 @@
  * 包含 RenameOptions、RenameResult、ValidationResult 等型別
  */
 
-import { Location, Position, Range } from '../../shared/types/core.js';
-import { Symbol, Scope } from '../../shared/types/symbol.js';
+import { Location, Position, Range } from '@shared/types/core.js';
+import { Symbol, Scope } from '@shared/types/symbol.js';
 
 /**
  * 重新命名選項

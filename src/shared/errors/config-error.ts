@@ -2,7 +2,7 @@
  * 配置相關錯誤
  */
 
-import { BaseError } from './base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 
 /**
  * 配置錯誤類別

@@ -3,11 +3,11 @@
  * 負責建立和管理 Parser 實例，提供快取和配置管理功能
  */
 
-import type { ParserPlugin } from './interface.js';
-import { getFileExtension } from './interface.js';
-import type { ParserRegistry } from './registry.js';
-import type { ParserOptions } from './types.js';
-import { ParserFactoryError } from '../../shared/errors/index.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
+import { getFileExtension } from '@infrastructure/parser/interface.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { ParserOptions } from '@infrastructure/parser/types.js';
+import { ParserFactoryError } from '@shared/errors/index.js';
 
 /**
  * 延遲載入器函式類型

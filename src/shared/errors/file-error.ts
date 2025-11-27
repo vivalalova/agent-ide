@@ -2,7 +2,7 @@
  * 檔案操作相關錯誤
  */
 
-import { BaseError } from './base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 
 /**
  * 檔案操作錯誤類別

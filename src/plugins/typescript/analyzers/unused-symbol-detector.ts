@@ -3,10 +3,10 @@
  * 檢測未使用的變數、函式、類別
  */
 
-import type { Symbol, AST } from '../../../shared/types/index.js';
-import { SymbolType, ReferenceType } from '../../../shared/types/index.js';
-import type { UnusedCode } from '../../../infrastructure/parser/analysis-types.js';
-import type { TypeScriptAST } from '../types.js';
+import type { Symbol, AST } from '@shared/types/index.js';
+import { SymbolType, ReferenceType } from '@shared/types/index.js';
+import type { UnusedCode } from '@infrastructure/parser/analysis-types.js';
+import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 /**
  * 未使用符號檢測器

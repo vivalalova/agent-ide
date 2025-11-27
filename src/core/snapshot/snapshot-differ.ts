@@ -5,9 +5,9 @@
 
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import { CodeCompressor } from './code-compressor.js';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { CodeCompressor } from '@core/snapshot/code-compressor.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type {
   Snapshot,
   SnapshotDiff,
@@ -15,7 +15,7 @@ import type {
   SnapshotOptions,
   ModuleSummary
 } from './types.js';
-import { FileChangeType } from './types.js';
+import { FileChangeType } from '@core/snapshot/types.js';
 
 /**
  * 快照差異計算器類別

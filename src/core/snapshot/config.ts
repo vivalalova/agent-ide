@@ -4,9 +4,9 @@
  */
 
 import * as path from 'path';
-import type { SnapshotOptions, CompressionLevel } from './types.js';
-import { createDefaultSnapshotOptions } from './types.js';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
+import type { SnapshotOptions, CompressionLevel } from '@core/snapshot/types.js';
+import { createDefaultSnapshotOptions } from '@core/snapshot/types.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 專案配置檔格式

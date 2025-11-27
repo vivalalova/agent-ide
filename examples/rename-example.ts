@@ -9,8 +9,8 @@ import {
   ReferenceUpdater,
   createRenameOptions 
 } from '../src/core/rename';
-import { createSymbol, SymbolType } from '../src/shared/types/symbol';
-import { createLocation, createRange, createPosition } from '../src/shared/types/core';
+import { createSymbol, SymbolType } from '@shared/types/symbol.js';
+import { createLocation, createRange, createPosition } from '@shared/types/core.js';
 
 async function demonstrateRenameEngine() {
   console.log('🔧 Agent IDE 重新命名引擎範例\n');

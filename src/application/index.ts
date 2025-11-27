@@ -87,16 +87,16 @@ export type {
 } from './types.js';
 
 // ============= 應用服務工廠 =============
-import { EventBus } from './events/event-bus.js';
-import { ApplicationState } from './state/application-state.js';
-import { StateManager } from './state/state-manager.js';
-import { ErrorHandlerService } from './services/error-handler.service.js';
-import { SessionManager } from './services/session-manager.service.js';
-import { CacheCoordinatorService } from './services/cache-coordinator.service.js';
-import { ModuleCoordinatorService } from './services/module-coordinator.service.js';
-import { WorkflowEngineService } from './services/workflow-engine.service.js';
-import { CacheManager } from '../infrastructure/cache/cache-manager.js';
-import type { IFileSystem } from '../infrastructure/storage/index.js';
+import { EventBus } from '@application/events/event-bus.js';
+import { ApplicationState } from '@application/state/application-state.js';
+import { StateManager } from '@application/state/state-manager.js';
+import { ErrorHandlerService } from '@application/services/error-handler.service.js';
+import { SessionManager } from '@application/services/session-manager.service.js';
+import { CacheCoordinatorService } from '@application/services/cache-coordinator.service.js';
+import { ModuleCoordinatorService } from '@application/services/module-coordinator.service.js';
+import { WorkflowEngineService } from '@application/services/workflow-engine.service.js';
+import { CacheManager } from '@infrastructure/cache/cache-manager.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 應用服務容器，提供所有服務的統一存取介面

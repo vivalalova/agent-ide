@@ -4,9 +4,9 @@
  */
 
 import * as path from 'path';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
-import { DependencyGraph } from './dependency-graph.js';
-import { CycleDetector } from './cycle-detector.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { DependencyGraph } from '@core/dependency/dependency-graph.js';
+import { CycleDetector } from '@core/dependency/cycle-detector.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -17,7 +17,7 @@ import type {
   PathResolutionResult,
   ExtendedDependencyAnalysisOptions
 } from './types.js';
-import { Dependency, DependencyType } from '../../shared/types/index.js';
+import { Dependency, DependencyType } from '@shared/types/index.js';
 
 /**
  * 快取項目

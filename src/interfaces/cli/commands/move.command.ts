@@ -5,10 +5,10 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveService } from '../../../core/move/index.js';
-import { convertMovePreview } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { MoveService } from '@core/move/index.js';
+import { convertMovePreview } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Move 命令選項 */
 interface MoveOptions {

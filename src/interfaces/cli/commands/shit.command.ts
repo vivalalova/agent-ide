@@ -5,12 +5,12 @@
 
 import type { Command } from 'commander';
 import * as fs from 'fs/promises';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
-import { ShitScoreAnalyzer } from '../../../core/shit-score/shit-score-analyzer.js';
-import type { ShitScoreResult } from '../../../core/shit-score/types.js';
-import { QueryCommand, type ShitResult, type ShitItem, type Recommendation } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { ShitScoreAnalyzer } from '@core/shit-score/shit-score-analyzer.js';
+import type { ShitScoreResult } from '@core/shit-score/types.js';
+import { QueryCommand, type ShitResult, type ShitItem, type Recommendation } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Shit 命令選項 */
 interface ShitOptions {

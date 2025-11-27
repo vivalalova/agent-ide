@@ -2,8 +2,8 @@
  * Swift Parser 型別定義
  */
 
-import type { AST, ASTNode, Symbol } from '../../shared/types/index.js';
-import { SymbolType } from '../../shared/types/index.js';
+import type { AST, ASTNode, Symbol } from '@shared/types/index.js';
+import { SymbolType } from '@shared/types/index.js';
 
 /**
  * Swift AST 節點

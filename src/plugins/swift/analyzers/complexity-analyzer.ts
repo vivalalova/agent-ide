@@ -3,7 +3,7 @@
  * 提供循環複雜度和認知複雜度分析功能
  */
 
-import type { ComplexityMetrics } from '../../../infrastructure/parser/analysis-types.js';
+import type { ComplexityMetrics } from '@infrastructure/parser/analysis-types.js';
 
 /**
  * 函式複雜度資訊

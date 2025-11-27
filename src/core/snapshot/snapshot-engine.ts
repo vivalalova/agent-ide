@@ -6,14 +6,14 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { glob } from 'glob';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
-import { IndexEngine } from '../indexing/index-engine.js';
-import { DependencyAnalyzer } from '../dependency/dependency-analyzer.js';
-import { ShitScoreAnalyzer } from '../shit-score/shit-score-analyzer.js';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import { CodeCompressor } from './code-compressor.js';
-import { SnapshotDiffer } from './snapshot-differ.js';
-import { createIndexConfig } from '../indexing/types.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { ShitScoreAnalyzer } from '@core/shit-score/shit-score-analyzer.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { CodeCompressor } from '@core/snapshot/code-compressor.js';
+import { SnapshotDiffer } from '@core/snapshot/snapshot-differ.js';
+import { createIndexConfig } from '@core/indexing/types.js';
 import type {
   Snapshot,
   SnapshotOptions,

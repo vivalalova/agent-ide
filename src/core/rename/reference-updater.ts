@@ -11,9 +11,9 @@ import {
   SymbolReference,
   RenameOperation
 } from './types.js';
-import { Position, Range, Location } from '../../shared/types/core.js';
-import { Symbol } from '../../shared/types/symbol.js';
-import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
+import { Position, Range, Location } from '@shared/types/core.js';
+import { Symbol } from '@shared/types/symbol.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 /**
  * 引用更新器類別

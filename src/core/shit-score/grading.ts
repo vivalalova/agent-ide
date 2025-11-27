@@ -10,7 +10,7 @@ import type {
   SeverityLevel,
   DimensionScore,
 } from './types.js';
-import { GradeLevel as GradeLevelEnum, SeverityLevel as SeverityLevelEnum } from './types.js';
+import { GradeLevel as GradeLevelEnum, SeverityLevel as SeverityLevelEnum } from '@core/shit-score/types.js';
 
 /**
  * 評級表

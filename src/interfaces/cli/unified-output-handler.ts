@@ -13,7 +13,7 @@ import {
   createQueryFormatter,
   QueryFormat
 } from '../../infrastructure/formatters/query-formatter.js';
-import type { QueryResult } from '../../infrastructure/formatters/query-types.js';
+import type { QueryResult } from '@infrastructure/formatters/query-types.js';
 
 /** 統一輸出格式 */
 export enum OutputFormat {

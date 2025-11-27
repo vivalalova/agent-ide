@@ -5,10 +5,10 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { ShiftService } from '../../../core/shift/index.js';
-import { convertShiftPreview } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { ShiftService } from '@core/shift/index.js';
+import { convertShiftPreview } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Shift 命令選項 */
 interface ShiftOptions {

@@ -2,7 +2,7 @@
  * 驗證相關錯誤
  */
 
-import { BaseError } from './base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 
 /**
  * 驗證錯誤類別

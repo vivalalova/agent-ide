@@ -4,8 +4,8 @@
  */
 
 import { EventEmitter } from 'events';
-import type { IndexEngine } from './index-engine.js';
-import { FileSystem } from '../../infrastructure/storage/index.js';
+import type { IndexEngine } from '@core/indexing/index-engine.js';
+import { FileSystem } from '@infrastructure/storage/index.js';
 
 // 定義 FSWatcher 型別以避免直接 import fs
 interface FSWatcher {

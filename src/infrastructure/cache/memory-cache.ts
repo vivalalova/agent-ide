@@ -7,7 +7,7 @@ import {
   EvictionStrategy,
   CacheEventType
 } from './types.js';
-import { StrategyFactory, type CacheStrategy } from './strategies.js';
+import { StrategyFactory, type CacheStrategy } from '@infrastructure/cache/strategies.js';
 
 /**
  * 高效能記憶體快取實作，支援多種淘汰策略

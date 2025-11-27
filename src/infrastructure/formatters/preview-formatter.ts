@@ -13,7 +13,7 @@ import {
   type ChangeLine,
   type PreviewInput
 } from './types.js';
-import { generatePreviewResult } from './diff-generator.js';
+import { generatePreviewResult } from '@infrastructure/formatters/diff-generator.js';
 
 /** ANSI 顏色碼 */
 const Colors = {

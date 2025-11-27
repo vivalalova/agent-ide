@@ -45,9 +45,9 @@ import {
   getNodeName,
   isValidIdentifier
 } from './types.js';
-import { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
-import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
-import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '../../shared/utils/memory-monitor.js';
+import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
+import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
+import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor.js';
 
 /**
  * TypeScript Parser 實作

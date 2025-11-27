@@ -10,8 +10,8 @@
  */
 
 import { EventEmitter } from 'events';
-import { SessionState, SessionStateData } from './session-state.js';
-import { ApplicationState, ApplicationStateData } from './application-state.js';
+import { SessionState, SessionStateData } from '@application/state/session-state.js';
+import { ApplicationState, ApplicationStateData } from '@application/state/application-state.js';
 
 export interface StateSnapshot {
   applicationState: ApplicationStateData;

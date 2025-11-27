@@ -3,21 +3,21 @@
  * 負責協調 7 個核心模組的操作，提供統一的模組間協調介面
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
-import { EventBus } from '../events/event-bus.js';
-import { StateManager } from '../state/state-manager.js';
-import { ErrorHandlerService } from './error-handler.service.js';
-import { EventPriority } from '../events/event-types.js';
+import { BaseError } from '@shared/errors/base-error.js';
+import { EventBus } from '@application/events/event-bus.js';
+import { StateManager } from '@application/state/state-manager.js';
+import { ErrorHandlerService } from '@application/services/error-handler.service.js';
+import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
-import { FunctionExtractor } from '../../core/refactor/extract-function.js';
-import { FunctionInliner, InlineAnalyzer } from '../../core/refactor/inline-function.js';
-import { RenameEngine } from '../../core/rename/rename-engine.js';
-import { MoveService } from '../../core/move/move-service.js';
-import { DependencyAnalyzer } from '../../core/dependency/dependency-analyzer.js';
-import { SearchService } from '../../core/search/service.js';
-import { IndexEngine } from '../../core/indexing/index-engine.js';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
+import { FunctionExtractor } from '@core/refactor/extract-function.js';
+import { FunctionInliner, InlineAnalyzer } from '@core/refactor/inline-function.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { MoveService } from '@core/move/move-service.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { SearchService } from '@core/search/service.js';
+import { IndexEngine } from '@core/indexing/index-engine.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
   IModuleCoordinatorService,

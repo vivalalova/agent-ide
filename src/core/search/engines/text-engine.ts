@@ -5,7 +5,7 @@
 
 import { glob } from 'glob';
 import path from 'path';
-import type { IFileSystem } from '../../../infrastructure/storage/index.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
   TextQuery,

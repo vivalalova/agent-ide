@@ -1,4 +1,4 @@
-import { MemoryCache } from './memory-cache.js';
+import { MemoryCache } from '@infrastructure/cache/memory-cache.js';
 import {
   type CacheOptions,
   type CacheManagerOptions,

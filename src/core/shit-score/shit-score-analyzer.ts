@@ -4,13 +4,13 @@
  */
 
 import * as path from 'path';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
-import { ScoreCalculator } from './score-calculator.js';
-import { Grading } from './grading.js';
-import type { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import type { ParserPlugin } from '../../infrastructure/parser/interface.js';
-import type { AST, Symbol } from '../../shared/types/index.js';
-import type { CodeFragment } from '../../infrastructure/parser/analysis-types.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { ScoreCalculator } from '@core/shit-score/score-calculator.js';
+import { Grading } from '@core/shit-score/grading.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
+import type { AST, Symbol } from '@shared/types/index.js';
+import type { CodeFragment } from '@infrastructure/parser/analysis-types.js';
 import type {
   ShitScoreResult,
   ShitScoreOptions,
@@ -22,8 +22,8 @@ import type {
   DetailedFiles,
   FileDetail,
 } from './types.js';
-import { createDefaultShitScoreOptions } from './types.js';
-import { ShitType, SeverityLevel } from './types.js';
+import { createDefaultShitScoreOptions } from '@core/shit-score/types.js';
+import { ShitType, SeverityLevel } from '@core/shit-score/types.js';
 
 /**
  * ShitScore 錯誤

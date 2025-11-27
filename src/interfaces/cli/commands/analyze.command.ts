@@ -5,10 +5,10 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
-import { QueryCommand, AnalyzeType, IssueSeverity, type AnalyzeResult, type QueryIssue } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { QueryCommand, AnalyzeType, IssueSeverity, type AnalyzeResult, type QueryIssue } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Analyze 命令選項 */
 interface AnalyzeOptions {

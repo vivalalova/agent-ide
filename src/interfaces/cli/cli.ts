@@ -4,12 +4,12 @@
  */
 
 import { Command } from 'commander';
-import { ParserRegistry } from '../../infrastructure/parser/registry.js';
-import { TypeScriptParser } from '../../plugins/typescript/parser.js';
-import { JavaScriptParser } from '../../plugins/javascript/parser.js';
-import { SwiftParser } from '../../plugins/swift/parser.js';
-import { FileSystem, type IFileSystem } from '../../infrastructure/storage/index.js';
-import { setupPluginsCommand, setupShitCommand, setupSnapshotCommand, setupShiftCommand, setupMoveCommand, setupRenameCommand, setupRefactorCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, type CommandContext } from './commands/index.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { TypeScriptParser } from '@plugins/typescript/parser.js';
+import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { SwiftParser } from '@plugins/swift/parser.js';
+import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
+import { setupPluginsCommand, setupShitCommand, setupSnapshotCommand, setupShiftCommand, setupMoveCommand, setupRenameCommand, setupRefactorCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';

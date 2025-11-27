@@ -6,7 +6,7 @@
 import { Volume, type DirectoryJSON, type IFs } from 'memfs';
 import * as pathModule from 'path';
 import { minimatch } from 'minimatch';
-import type { IFileSystem } from './file-system.interface.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
   DirectoryEntry,
   FileStats,

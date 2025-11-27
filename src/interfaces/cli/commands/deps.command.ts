@@ -5,10 +5,10 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { DependencyAnalyzer } from '../../../core/dependency/dependency-analyzer.js';
-import { QueryCommand, type DepsResult, type CycleInfo, type GraphNode, type GraphEdge } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { QueryCommand, type DepsResult, type CycleInfo, type GraphNode, type GraphEdge } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Deps 命令選項 */
 interface DepsOptions {

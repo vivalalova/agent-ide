@@ -4,8 +4,8 @@
  */
 
 import * as ts from 'typescript';
-import type { ComplexityMetrics } from '../../../infrastructure/parser/analysis-types.js';
-import type { TypeScriptAST } from '../types.js';
+import type { ComplexityMetrics } from '@infrastructure/parser/analysis-types.js';
+import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 /**
  * 函式複雜度資訊

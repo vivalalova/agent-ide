@@ -90,11 +90,11 @@ export {
  * ```
  */
 
-import * as StringUtils from './string.js';
-import * as ArrayUtils from './array.js';
-import * as PathUtils from './path.js';
-import * as ObjectUtils from './object.js';
-import * as AsyncUtils from './async.js';
+import * as StringUtils from '@shared/utils/string.js';
+import * as ArrayUtils from '@shared/utils/array.js';
+import * as PathUtils from '@shared/utils/path.js';
+import * as ObjectUtils from '@shared/utils/object.js';
+import * as AsyncUtils from '@shared/utils/async.js';
 
 export {
   StringUtils,

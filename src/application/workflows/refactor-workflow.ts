@@ -3,8 +3,8 @@
  * 實作重構操作的完整工作流程：分析 → 驗證 → 執行重構 → 驗證結果
  */
 
-import { BaseWorkflow, WorkflowError, type StepContext } from './base-workflow.js';
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseWorkflow, WorkflowError, type StepContext } from '@application/workflows/base-workflow.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import type {
   IModuleCoordinatorService,
   RefactorOptions,

@@ -56,8 +56,8 @@ import {
   getNodeName,
   isValidIdentifier
 } from './types.js';
-import { SwiftSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
-import { SwiftDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
+import { SwiftSymbolExtractor, createSymbolExtractor } from '@plugins/swift/symbol-extractor.js';
+import { SwiftDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/swift/dependency-analyzer.js';
 
 const execAsync = promisify(exec);
 

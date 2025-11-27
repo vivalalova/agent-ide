@@ -6,9 +6,9 @@
 import * as path from 'path';
 import { glob } from 'glob';
 import { createHash } from 'crypto';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
-import type { Symbol, SymbolType } from '../../shared/types/index.js';
+import type { Symbol, SymbolType } from '@shared/types/index.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -25,12 +25,12 @@ import {
   calculateProgress
 } from './types.js';
 
-import { FileIndex } from './file-index.js';
-import { SymbolIndex } from './symbol-index.js';
-import { ParserRegistry } from '../../infrastructure/parser/index.js';
-import { TypeScriptParser } from '../../plugins/typescript/parser.js';
-import { JavaScriptParser } from '../../plugins/javascript/parser.js';
-import { SwiftParser } from '../../plugins/swift/parser.js';
+import { FileIndex } from '@core/indexing/file-index.js';
+import { SymbolIndex } from '@core/indexing/symbol-index.js';
+import { ParserRegistry } from '@infrastructure/parser/index.js';
+import { TypeScriptParser } from '@plugins/typescript/parser.js';
+import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { SwiftParser } from '@plugins/swift/parser.js';
 
 /**
  * 索引引擎類別

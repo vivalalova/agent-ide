@@ -3,8 +3,8 @@
  * 負責管理所有 Parser 插件的註冊、查詢和生命週期
  */
 
-import type { ParserPlugin } from './interface.js';
-import { isParserPlugin } from './interface.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
+import { isParserPlugin } from '@infrastructure/parser/interface.js';
 import {
   DuplicateParserError,
   ParserNotFoundError,

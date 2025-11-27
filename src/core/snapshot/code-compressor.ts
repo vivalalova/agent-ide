@@ -3,8 +3,8 @@
  * 負責將程式碼壓縮到最小 token 數，同時保留關鍵資訊
  */
 
-import type { CompressedCode, CompressionLevel } from './types.js';
-import { CompressionLevel as Level } from './types.js';
+import type { CompressedCode, CompressionLevel } from '@core/snapshot/types.js';
+import { CompressionLevel as Level } from '@core/snapshot/types.js';
 
 /**
  * 程式碼壓縮器類別

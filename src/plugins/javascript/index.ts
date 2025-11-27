@@ -34,8 +34,8 @@ export {
 } from './types.js';
 
 // 主要 Parser 類別
-import { JavaScriptParser } from './parser.js';
-import type { JavaScriptParseOptions } from './types.js';
+import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import type { JavaScriptParseOptions } from '@plugins/javascript/types.js';
 export { JavaScriptParser };
 
 // 建立 Parser 實例的工廠函式

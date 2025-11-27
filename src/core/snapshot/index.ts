@@ -3,9 +3,9 @@
  * 提供程式碼快照生成、壓縮、增量更新等功能
  */
 
-import { SnapshotEngine as SnapshotEngineClass } from './snapshot-engine.js';
-import { ConfigManager as ConfigManagerClass } from './config.js';
-import type { FileSystem } from '../../infrastructure/storage/index.js';
+import { SnapshotEngine as SnapshotEngineClass } from '@core/snapshot/snapshot-engine.js';
+import { ConfigManager as ConfigManagerClass } from '@core/snapshot/config.js';
+import type { FileSystem } from '@infrastructure/storage/index.js';
 
 // 核心類別
 export { SnapshotEngine } from './snapshot-engine.js';

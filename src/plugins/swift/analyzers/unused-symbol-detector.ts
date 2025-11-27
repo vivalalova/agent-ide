@@ -3,7 +3,7 @@
  * 檢測未使用的 class、struct、protocol、function、variable
  */
 
-import type { UnusedCode } from '../../../infrastructure/parser/analysis-types.js';
+import type { UnusedCode } from '@infrastructure/parser/analysis-types.js';
 
 /**
  * Swift 符號類型

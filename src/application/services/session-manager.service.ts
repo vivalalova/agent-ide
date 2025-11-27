@@ -17,10 +17,10 @@ import type {
   SessionState,
   OperationHistory
 } from '../types.js';
-import type { StateManager } from '../state/state-manager.js';
-import type { EventBus } from '../events/event-bus.js';
-import { BaseError } from '../../shared/errors/base-error.js';
-import { SessionState as SessionStateClass } from '../state/session-state.js';
+import type { StateManager } from '@application/state/state-manager.js';
+import type { EventBus } from '@application/events/event-bus.js';
+import { BaseError } from '@shared/errors/base-error.js';
+import { SessionState as SessionStateClass } from '@application/state/session-state.js';
 
 /**
  * 會話管理相關錯誤

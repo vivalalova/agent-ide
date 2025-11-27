@@ -4,9 +4,9 @@
  */
 
 import { minimatch } from 'minimatch';
-import type { AST, Symbol, Reference, Dependency, Position, Range } from '../../shared/types/index.js';
-import { isPosition, SymbolType } from '../../shared/types/index.js';
-import type { ParserPlugin } from './interface.js';
+import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
+import { isPosition, SymbolType } from '@shared/types/index.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
 import type {
   CodeEdit,
   Definition,
@@ -15,7 +15,7 @@ import type {
   ParserOptions,
   ParserCapabilities
 } from './types.js';
-import { createValidationSuccess as createSuccessResult } from './types.js';
+import { createValidationSuccess as createSuccessResult } from '@infrastructure/parser/types.js';
 
 /**
  * 日誌等級

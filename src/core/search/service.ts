@@ -19,8 +19,8 @@ import type {
   SearchOptions
 } from './types.js';
 
-import { TextSearchEngine } from './engines/text-engine.js';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
+import { TextSearchEngine } from '@core/search/engines/text-engine.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 搜尋服務

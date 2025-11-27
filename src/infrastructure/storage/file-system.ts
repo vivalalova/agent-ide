@@ -11,7 +11,7 @@ import {
   DirectoryNotEmptyError,
   AtomicWriteOptions,
 } from './types.js';
-import type { IFileSystem } from './file-system.interface.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 /**
  * 檔案系統操作類別

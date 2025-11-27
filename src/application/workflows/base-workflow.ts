@@ -3,7 +3,7 @@
  * 提供工作流程基礎架構和共用功能
  */
 
-import { BaseError } from '../../shared/errors/base-error.js';
+import { BaseError } from '@shared/errors/base-error.js';
 import type {
   Workflow,
   WorkflowStep,
@@ -11,7 +11,7 @@ import type {
   WorkflowResult,
   IModuleCoordinatorService
 } from '../types.js';
-import { WorkflowStatus } from '../types.js';
+import { WorkflowStatus } from '@application/types.js';
 
 /**
  * 工作流程基礎錯誤

@@ -4,10 +4,10 @@
  */
 
 import type { Command } from 'commander';
-import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
-import { QueryCommand, type PluginsResult, type PluginInfo } from '../../../infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
-import type { CommandContext } from './types.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { QueryCommand, type PluginsResult, type PluginInfo } from '@infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Plugins list 選項 */
 interface PluginsListOptions {

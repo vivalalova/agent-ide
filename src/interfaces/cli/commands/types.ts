@@ -3,7 +3,7 @@
  */
 
 import type { Command } from 'commander';
-import type { IFileSystem } from '../../../infrastructure/storage/index.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 命令共用 Context

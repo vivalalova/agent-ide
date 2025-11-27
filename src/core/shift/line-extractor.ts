@@ -2,7 +2,7 @@
  * 行提取器 - 負責行的提取、刪除和插入
  */
 
-import type { LineExtractionResult, LineInsertionResult } from './types.js';
+import type { LineExtractionResult, LineInsertionResult } from '@core/shift/types.js';
 
 /**
  * 行提取器類別

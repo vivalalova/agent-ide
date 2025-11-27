@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { DirectoryJSON } from 'memfs';
-import { MemFileSystem } from '../../src/infrastructure/storage/mem-file-system.js';
+import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 
 /** Fixture 上下文，提供測試所需的所有操作 */
 export interface FixtureContext {

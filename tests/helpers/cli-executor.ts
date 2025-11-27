@@ -3,8 +3,8 @@
  * 執行 AgentIdeCLI 並捕獲輸出
  */
 
-import { AgentIdeCLI } from '../../src/interfaces/cli/cli.js';
-import type { MemFileSystem } from '../../src/infrastructure/storage/mem-file-system.js';
+import { AgentIdeCLI } from '@interfaces/cli/cli.js';
+import type { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 
 /** CLI 執行結果 */
 export interface CLIResult {

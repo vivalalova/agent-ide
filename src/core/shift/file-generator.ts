@@ -3,8 +3,8 @@
  */
 
 import * as path from 'node:path';
-import type { IFileSystem } from '../../infrastructure/storage/index.js';
-import type { FileGenerationResult } from './types.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import type { FileGenerationResult } from '@core/shift/types.js';
 
 /**
  * 檔案生成器類別
