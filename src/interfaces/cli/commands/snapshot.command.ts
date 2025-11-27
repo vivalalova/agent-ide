@@ -7,6 +7,8 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from '../../../core/snapshot/index.js';
 import type { SnapshotOptions } from '../../../core/snapshot/index.js';
+import { QueryCommand, SnapshotAction, type SnapshotResult, type SnapshotStats } from '../../../infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Snapshot 命令選項 */
@@ -53,7 +55,18 @@ async function handleSnapshotCommand(
   options: SnapshotCommandOptions,
   context: CommandContext
 ): Promise<void> {
-  const isJsonFormat = options.format === 'json';
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, false);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  const isJsonFormat = format === OutputFormat.Json;
 
   try {
     const projectPath = options.path || process.cwd();
@@ -85,23 +98,23 @@ async function handleSnapshotCommand(
 
     switch (action) {
       case 'generate':
-        await handleGenerate(engine, finalOptions, isJsonFormat);
+        await handleGenerate(engine, finalOptions, format, outputHandler);
         break;
       case 'info':
-        await handleInfo(engine, finalOptions, isJsonFormat);
+        await handleInfo(engine, finalOptions, format, outputHandler);
         break;
       case 'diff':
-        await handleDiff(engine, options, context, isJsonFormat);
+        await handleDiff(engine, options, context, format, outputHandler);
         break;
       case 'init':
-        await handleInit(configManager, projectPath, isJsonFormat);
+        await handleInit(configManager, projectPath, format, outputHandler);
         break;
       default:
-        await handleGenerate(engine, finalOptions, isJsonFormat);
+        await handleGenerate(engine, finalOptions, format, outputHandler);
         break;
     }
   } catch (error) {
-    handleError(error, isJsonFormat);
+    handleError(error, format);
   }
 }
 
@@ -111,8 +124,11 @@ async function handleSnapshotCommand(
 async function handleGenerate(
   engine: SnapshotEngine,
   options: SnapshotOptions,
-  isJsonFormat: boolean
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
+  const isJsonFormat = format === OutputFormat.Json;
+
   if (!isJsonFormat) {
     console.log('📸 生成程式碼快照...');
     console.log(options.incremental ? '  模式: 增量更新' : '  模式: 完整生成');
@@ -121,9 +137,9 @@ async function handleGenerate(
 
   const startTime = Date.now();
   const snapshot = await engine.generate(options);
-  const stats = engine.getStats(snapshot);
+  const coreStats = engine.getStats(snapshot);
   const duration = Date.now() - startTime;
-  stats.generationTime = duration;
+  coreStats.generationTime = duration;
 
   // 保存快照
   if (options.outputPath) {
@@ -135,11 +151,8 @@ async function handleGenerate(
     await generateMultiLevel(engine, options, isJsonFormat);
   }
 
-  if (isJsonFormat) {
-    console.log(JSON.stringify({ success: true, snapshot: options.outputPath, stats }, null, 2));
-  } else {
-    printGenerateSuccess(options, stats);
-  }
+  const result = convertToSnapshotResult(SnapshotAction.Generate, options.outputPath, coreStats);
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -174,61 +187,23 @@ async function generateMultiLevel(
 }
 
 /**
- * 印出生成成功訊息
- */
-function printGenerateSuccess(options: SnapshotOptions, stats: any): void {
-  console.log('\n✅ 快照生成完成');
-  console.log(`  輸出位置: ${options.outputPath}`);
-  console.log('\n統計資訊:');
-  console.log(`  檔案數量: ${stats.fileCount}`);
-  console.log(`  程式碼行數: ${stats.totalLines}`);
-  console.log(`  符號數量: ${stats.symbolCount}`);
-  console.log(`  依賴關係: ${stats.dependencyCount}`);
-  console.log(`  估計 token 數: ${stats.estimatedTokens}`);
-  console.log(`  壓縮率: ${stats.compressionRatio.toFixed(1)}%`);
-  console.log(`  生成耗時: ${stats.generationTime}ms`);
-}
-
-/**
  * 處理 info 子命令
  */
 async function handleInfo(
   engine: SnapshotEngine,
   options: SnapshotOptions,
-  isJsonFormat: boolean
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   if (!options.outputPath) {
     throw new Error('請指定快照檔案路徑 (--output)');
   }
 
   const snapshot = await engine.load(options.outputPath);
-  const stats = engine.getStats(snapshot);
+  const coreStats = engine.getStats(snapshot);
 
-  if (isJsonFormat) {
-    console.log(JSON.stringify({
-      snapshot: {
-        version: snapshot.v,
-        project: snapshot.p,
-        timestamp: snapshot.t,
-        level: snapshot.l
-      },
-      stats
-    }, null, 2));
-  } else {
-    console.log('\n📊 快照資訊');
-    console.log('='.repeat(50));
-    console.log(`  專案: ${snapshot.p}`);
-    console.log(`  版本: ${snapshot.v}`);
-    console.log(`  時間: ${new Date(snapshot.t).toLocaleString()}`);
-    console.log(`  壓縮層級: ${snapshot.l}`);
-    console.log('\n統計資訊:');
-    console.log(`  檔案數量: ${stats.fileCount}`);
-    console.log(`  程式碼行數: ${stats.totalLines}`);
-    console.log(`  符號數量: ${stats.symbolCount}`);
-    console.log(`  估計 token 數: ${stats.estimatedTokens}`);
-    console.log(`  語言: ${snapshot.md.lg.join(', ')}`);
-    console.log('='.repeat(50));
-  }
+  const result = convertToSnapshotResult(SnapshotAction.Info, options.outputPath, coreStats);
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -238,7 +213,8 @@ async function handleDiff(
   engine: SnapshotEngine,
   options: SnapshotCommandOptions,
   context: CommandContext,
-  isJsonFormat: boolean
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const oldPath = options.old;
   const newPath = options.new;
@@ -252,7 +228,8 @@ async function handleDiff(
   const newSnapshot = await engine.load(newPath);
   const diff = differ.diff(oldSnapshot, newSnapshot);
 
-  if (isJsonFormat) {
+  // Diff 結果較特殊，直接使用 JSON 或自訂輸出
+  if (format === OutputFormat.Json) {
     console.log(JSON.stringify(diff, null, 2));
   } else {
     printDiffResult(diff);
@@ -262,7 +239,7 @@ async function handleDiff(
 /**
  * 印出 diff 結果
  */
-function printDiffResult(diff: any): void {
+function printDiffResult(diff: { added: string[]; modified: string[]; deleted: string[]; summary: { totalChanges: number; linesChanged: number } }): void {
   console.log('\n📊 快照差異');
   console.log('='.repeat(50));
   console.log(`  新增檔案: ${diff.added.length}`);
@@ -294,24 +271,61 @@ function printDiffResult(diff: any): void {
 async function handleInit(
   configManager: ConfigManager,
   projectPath: string,
-  isJsonFormat: boolean
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   await configManager.createExampleConfig(projectPath);
 
-  if (isJsonFormat) {
-    console.log(JSON.stringify({ success: true, config: '.agent-ide.json' }));
-  } else {
-    console.log('✅ 已建立配置檔: .agent-ide.json');
-  }
+  const result: SnapshotResult = {
+    command: QueryCommand.Snapshot,
+    success: true,
+    action: SnapshotAction.Init,
+    snapshotPath: '.agent-ide.json',
+    summary: { totalScanned: 1 }
+  };
+
+  outputHandler.outputQuery(result, format);
+}
+
+/**
+ * 將 core stats 轉換為 SnapshotResult
+ */
+function convertToSnapshotResult(
+  action: SnapshotAction,
+  snapshotPath: string | undefined,
+  coreStats: { fileCount: number; totalLines: number; symbolCount: number; dependencyCount: number; estimatedTokens: number; compressionRatio: number; generationTime?: number }
+): SnapshotResult {
+  const stats: SnapshotStats = {
+    files: coreStats.fileCount,
+    lines: coreStats.totalLines,
+    size: 0, // 未使用
+    symbolCount: coreStats.symbolCount,
+    dependencyCount: coreStats.dependencyCount,
+    estimatedTokens: coreStats.estimatedTokens,
+    compressionRatio: coreStats.compressionRatio,
+    generationTime: coreStats.generationTime
+  };
+
+  return {
+    command: QueryCommand.Snapshot,
+    success: true,
+    action,
+    snapshotPath,
+    stats,
+    summary: {
+      totalScanned: coreStats.fileCount,
+      issuesFound: 0
+    }
+  };
 }
 
 /**
  * 處理錯誤
  */
-function handleError(error: unknown, isJsonFormat: boolean): void {
+function handleError(error: unknown, format: OutputFormat): void {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
-  if (isJsonFormat) {
+  if (format === OutputFormat.Json) {
     console.error(JSON.stringify({ error: errorMessage }));
   } else {
     console.error('\n❌ 快照操作失敗:', errorMessage);

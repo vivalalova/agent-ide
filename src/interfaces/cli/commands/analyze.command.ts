@@ -6,6 +6,8 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
+import { QueryCommand, AnalyzeType, IssueSeverity, type AnalyzeResult, type QueryIssue } from '../../../infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Analyze 命令選項 */
@@ -25,7 +27,7 @@ export function setupAnalyzeCommand(program: Command, context: CommandContext): 
     .description('分析程式碼品質')
     .option('-p, --path <path>', '分析路徑', '.')
     .option('--pattern <pattern>', '分析模式')
-    .option('--format <format>', '輸出格式 (json|table|summary)', 'summary')
+    .option('--format <format>', '輸出格式 (json|summary)', 'summary')
     .option('--all', '顯示所有掃描結果（預設只顯示有問題的項目）', false)
     .action(async (type: string | undefined, options: AnalyzeOptions) => {
       await handleAnalyzeCommand(type, options, context);
@@ -40,39 +42,41 @@ async function handleAnalyzeCommand(
   options: AnalyzeOptions,
   context: CommandContext
 ): Promise<void> {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, false);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
   const analyzeType = type || 'complexity';
 
-  if (options.format !== 'json') {
-    console.log('   分析程式碼品質...');
+  if (format !== OutputFormat.Json) {
+    console.log('🔍 分析程式碼品質...');
   }
 
   try {
     const analyzePath = options.path || process.cwd();
 
     if (analyzeType === 'complexity') {
-      await analyzeComplexity(analyzePath, options, context);
+      await analyzeComplexity(analyzePath, options, context, format, outputHandler);
     } else if (analyzeType === 'dead-code') {
-      await analyzeDeadCode(analyzePath, options, context);
+      await analyzeDeadCode(analyzePath, options, context, format, outputHandler);
     } else if (analyzeType === 'best-practices') {
-      await analyzeBestPractices(analyzePath, options, context);
+      await analyzeBestPractices(analyzePath, options, context, format, outputHandler);
     } else if (analyzeType === 'patterns') {
-      await analyzePatterns(analyzePath, options, context);
+      await analyzePatterns(analyzePath, options, context, format, outputHandler);
     } else if (analyzeType === 'quality') {
-      await analyzeQuality(analyzePath, options, context);
+      await analyzeQuality(analyzePath, options, context, format, outputHandler);
     } else {
       throw new Error(`不支援的分析類型: ${analyzeType}`);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (options.format === 'json') {
-      console.error(JSON.stringify({ error: errorMessage }));
-    } else {
-      console.error('   分析失敗:', errorMessage);
-    }
-    process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') {
-      process.exit(1);
-    }
+    handleError(error, format);
   }
 }
 
@@ -82,11 +86,13 @@ async function handleAnalyzeCommand(
 async function analyzeComplexity(
   analyzePath: string,
   options: AnalyzeOptions,
-  context: CommandContext
+  context: CommandContext,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const registry = ParserRegistry.getInstance();
   const files = await getAllProjectFiles(analyzePath, context);
-  const results: Array<{ file: string; complexity: any }> = [];
+  const results: Array<{ file: string; complexity: { cyclomaticComplexity: number; cognitiveComplexity: number; evaluation: string } }> = [];
 
   for (const file of files) {
     try {
@@ -115,44 +121,37 @@ async function analyzeComplexity(
     ? Math.max(...complexities)
     : 0;
 
-  if (options.format === 'json') {
-    const outputData: any = {
-      summary: {
-        totalScanned: results.length,
-        issuesFound: highComplexityFiles.length,
-        averageComplexity,
-        maxComplexity
-      },
-      issues: highComplexityFiles.map(r => ({
+  // 建立 AnalyzeResult
+  const issues: QueryIssue[] = highComplexityFiles.map(r => ({
+    type: 'complexity',
+    severity: r.complexity.cyclomaticComplexity > 20 ? IssueSeverity.High : IssueSeverity.Medium,
+    message: `複雜度 ${r.complexity.cyclomaticComplexity}，認知複雜度 ${r.complexity.cognitiveComplexity}`,
+    filePath: r.file,
+    score: r.complexity.cyclomaticComplexity
+  }));
+
+  const result: AnalyzeResult = {
+    command: QueryCommand.Analyze,
+    success: true,
+    analyzeType: AnalyzeType.Complexity,
+    summary: {
+      totalScanned: results.length,
+      issuesFound: highComplexityFiles.length,
+      averageComplexity,
+      maxComplexity
+    },
+    issues,
+    metrics: options.all ? {
+      all: results.map(r => ({
         path: r.file,
         complexity: r.complexity.cyclomaticComplexity,
         cognitiveComplexity: r.complexity.cognitiveComplexity,
         evaluation: r.complexity.evaluation
       }))
-    };
+    } : undefined
+  };
 
-    if (options.all) {
-      outputData.all = results.map(r => ({
-        path: r.file,
-        complexity: r.complexity.cyclomaticComplexity,
-        cognitiveComplexity: r.complexity.cognitiveComplexity,
-        evaluation: r.complexity.evaluation
-      }));
-    }
-
-    console.log(JSON.stringify(outputData, null, 2));
-  } else {
-    console.log('   複雜度分析完成!');
-    console.log(`   統計: ${results.length} 個檔案，${highComplexityFiles.length} 個高複雜度檔案`);
-    console.log(`   平均複雜度: ${averageComplexity.toFixed(2)}`);
-    console.log(`   最高複雜度: ${maxComplexity}`);
-    if (!options.all && highComplexityFiles.length > 0) {
-      console.log('\n   高複雜度檔案:');
-      highComplexityFiles.forEach(r => {
-        console.log(`   - ${r.file}: ${r.complexity.cyclomaticComplexity}`);
-      });
-    }
-  }
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -161,11 +160,13 @@ async function analyzeComplexity(
 async function analyzeDeadCode(
   analyzePath: string,
   options: AnalyzeOptions,
-  context: CommandContext
+  context: CommandContext,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const registry = ParserRegistry.getInstance();
   const files = await getAllProjectFiles(analyzePath, context);
-  const results: Array<{ file: string; deadCode: any[] }> = [];
+  const results: Array<{ file: string; deadCode: Array<{ type: string; name?: string; line?: number }> }> = [];
 
   for (const file of files) {
     try {
@@ -184,49 +185,37 @@ async function analyzeDeadCode(
   }
 
   const filesWithDeadCode = results.filter(r => r.deadCode.length > 0);
-  const allDeadCode = results.flatMap(r => r.deadCode);
+  const allDeadCode = results.flatMap(r => r.deadCode.map(d => ({ ...d, file: r.file })));
   const deadFunctions = allDeadCode.filter(d => d.type === 'function');
   const deadVariables = allDeadCode.filter(d => d.type === 'variable');
 
-  if (options.format === 'json') {
-    const outputData: any = {
-      summary: {
-        totalScanned: results.length,
-        filesWithIssues: filesWithDeadCode.length,
-        totalDeadFunctions: deadFunctions.length,
-        totalDeadVariables: deadVariables.length,
-        totalDeadCode: allDeadCode.length
-      },
-      issues: filesWithDeadCode.map(r => ({
-        path: r.file,
-        deadCode: r.deadCode
-      }))
-    };
+  // 建立 AnalyzeResult
+  const issues: QueryIssue[] = allDeadCode.map(d => ({
+    type: 'dead-code',
+    severity: d.type === 'function' ? IssueSeverity.Medium : IssueSeverity.Low,
+    message: `未使用的${d.type === 'function' ? '函式' : '變數'}: ${d.name ?? 'unknown'}`,
+    filePath: d.file,
+    line: d.line
+  }));
 
-    if (options.all) {
-      outputData.all = results.map(r => ({
-        path: r.file,
-        deadCode: r.deadCode
-      }));
-    }
+  const result: AnalyzeResult = {
+    command: QueryCommand.Analyze,
+    success: true,
+    analyzeType: AnalyzeType.DeadCode,
+    summary: {
+      totalScanned: results.length,
+      issuesFound: allDeadCode.length,
+      filesWithIssues: filesWithDeadCode.length,
+      totalDeadFunctions: deadFunctions.length,
+      totalDeadVariables: deadVariables.length
+    },
+    issues,
+    metrics: options.all ? {
+      all: results.map(r => ({ path: r.file, deadCode: r.deadCode }))
+    } : undefined
+  };
 
-    outputData.deadFunctions = deadFunctions;
-    outputData.deadVariables = deadVariables;
-
-    console.log(JSON.stringify(outputData, null, 2));
-  } else {
-    console.log('   死代碼檢測完成!');
-    console.log(`   統計: ${results.length} 個檔案，${filesWithDeadCode.length} 個有死代碼`);
-    console.log('   發現:');
-    console.log(`   未使用函式: ${deadFunctions.length} 個`);
-    console.log(`   未使用變數: ${deadVariables.length} 個`);
-    if (!options.all && filesWithDeadCode.length > 0) {
-      console.log('\n   有死代碼的檔案:');
-      filesWithDeadCode.forEach(r => {
-        console.log(`   - ${r.file}: ${r.deadCode.length} 項`);
-      });
-    }
-  }
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -235,11 +224,12 @@ async function analyzeDeadCode(
 async function analyzeBestPractices(
   analyzePath: string,
   options: AnalyzeOptions,
-  context: CommandContext
+  context: CommandContext,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const files = await getAllProjectFiles(analyzePath, context);
-  const issues: any[] = [];
-  const recommendations: any[] = [];
+  const recommendations: Array<{ type: string; status: string; message: string }> = [];
 
   const hasEsmImports = files.some(async (file) => {
     const content = await context.fileSystem.readFile(file, 'utf-8') as string;
@@ -254,15 +244,20 @@ async function analyzeBestPractices(
     });
   }
 
-  if (options.format === 'json') {
-    console.log(JSON.stringify({
-      issues,
-      recommendations
-    }, null, 2));
-  } else {
-    console.log('   最佳實踐檢查完成!');
-    console.log(`   建議數: ${recommendations.length}`);
-  }
+  const result: AnalyzeResult = {
+    command: QueryCommand.Analyze,
+    success: true,
+    analyzeType: AnalyzeType.BestPractices,
+    summary: {
+      totalScanned: files.length,
+      issuesFound: 0,
+      recommendations: recommendations.length
+    },
+    issues: [],
+    metrics: { recommendations }
+  };
+
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -271,7 +266,9 @@ async function analyzeBestPractices(
 async function analyzePatterns(
   analyzePath: string,
   options: AnalyzeOptions,
-  context: CommandContext
+  context: CommandContext,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const files = await getAllProjectFiles(analyzePath, context);
   const patterns: string[] = [];
@@ -308,17 +305,23 @@ async function analyzePatterns(
     }
   }
 
-  if (options.format === 'json') {
-    console.log(JSON.stringify({
+  const result: AnalyzeResult = {
+    command: QueryCommand.Analyze,
+    success: true,
+    analyzeType: AnalyzeType.Patterns,
+    summary: {
+      totalScanned: files.length,
+      issuesFound: 0,
+      patternsFound: patterns.length
+    },
+    issues: [],
+    metrics: {
       patterns,
-      statistics: {
-        asyncFunctions: asyncFunctionCount
-      }
-    }, null, 2));
-  } else {
-    console.log('   模式檢測完成!');
-    console.log(`   發現模式: ${patterns.join(', ')}`);
-  }
+      statistics: { asyncFunctions: asyncFunctionCount }
+    }
+  };
+
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -327,7 +330,9 @@ async function analyzePatterns(
 async function analyzeQuality(
   analyzePath: string,
   options: AnalyzeOptions,
-  context: CommandContext
+  context: CommandContext,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const registry = ParserRegistry.getInstance();
   const files = await getAllProjectFiles(analyzePath, context);
@@ -340,13 +345,7 @@ async function analyzeQuality(
     throw new Error(`在路徑 ${analyzePath} 中找不到支援的檔案`);
   }
 
-  const summary = {
-    totalScanned: files.length,
-    totalIssues: 0,
-    qualityScore: 0
-  };
-
-  const allIssues: any[] = [];
+  const allIssues: QueryIssue[] = [];
   const recommendations: string[] = [];
 
   let typeSafetyScore = 100;
@@ -371,10 +370,10 @@ async function analyzeQuality(
 
       if (parser.checkTypeSafety) {
         const typeSafetyIssues = await parser.checkTypeSafety(content, ast);
-        typeSafetyIssues.forEach((issue) => {
+        typeSafetyIssues.forEach((issue: { severity: string; message: string; location: { filePath: string; line: number } }) => {
           allIssues.push({
             type: 'type-safety',
-            severity: issue.severity === 'error' ? 'high' : 'medium',
+            severity: issue.severity === 'error' ? IssueSeverity.High : IssueSeverity.Medium,
             message: issue.message,
             filePath: issue.location.filePath,
             line: issue.location.line
@@ -385,10 +384,10 @@ async function analyzeQuality(
 
       if (parser.checkErrorHandling) {
         const errorHandlingIssues = await parser.checkErrorHandling(content, ast);
-        errorHandlingIssues.forEach((issue) => {
+        errorHandlingIssues.forEach((issue: { severity: string; message: string; location: { filePath: string; line: number } }) => {
           allIssues.push({
             type: 'error-handling',
-            severity: issue.severity === 'error' ? 'high' : 'medium',
+            severity: issue.severity === 'error' ? IssueSeverity.High : IssueSeverity.Medium,
             message: issue.message,
             filePath: issue.location.filePath,
             line: issue.location.line
@@ -399,10 +398,10 @@ async function analyzeQuality(
 
       if (parser.checkSecurity) {
         const securityIssues = await parser.checkSecurity(content, ast);
-        securityIssues.forEach((issue) => {
+        securityIssues.forEach((issue: { severity: string; message: string; location: { filePath: string; line: number } }) => {
           allIssues.push({
             type: 'security',
-            severity: issue.severity === 'critical' ? 'high' : 'medium',
+            severity: issue.severity === 'critical' ? IssueSeverity.Critical : IssueSeverity.High,
             message: issue.message,
             filePath: issue.location.filePath,
             line: issue.location.line
@@ -414,10 +413,10 @@ async function analyzeQuality(
       if (parser.checkNamingConventions) {
         const symbols = await parser.extractSymbols(ast);
         const namingIssues = await parser.checkNamingConventions(symbols, file);
-        namingIssues.forEach((issue) => {
+        namingIssues.forEach((issue: { message: string; location: { filePath: string; line: number } }) => {
           allIssues.push({
             type: 'naming',
-            severity: 'low',
+            severity: IssueSeverity.Low,
             message: issue.message,
             filePath: issue.location.filePath,
             line: issue.location.line
@@ -446,9 +445,6 @@ async function analyzeQuality(
     securityScore * 0.10
   );
 
-  summary.totalIssues = allIssues.length;
-  summary.qualityScore = overallScore;
-
   if (typeSafetyScore < 80) {
     recommendations.push('型別安全：建議使用可選綁定（if let, guard let）代替強制解包');
   }
@@ -465,55 +461,28 @@ async function analyzeQuality(
     recommendations.push('測試覆蓋率：建議提升測試覆蓋率至 50% 以上');
   }
 
-  if (options.format === 'json') {
-    console.log(JSON.stringify({
-      summary,
-      issues: allIssues,
-      complexity: { score: 100 },
-      maintainability: { score: 100 },
-      typeSafety: {
-        score: typeSafetyScore,
-        issues: allIssues.filter((i) => i.type === 'type-safety')
-      },
-      errorHandling: {
-        score: errorHandlingScore,
-        issues: allIssues.filter((i) => i.type === 'error-handling')
-      },
-      security: {
-        score: securityScore,
-        issues: allIssues.filter((i) => i.type === 'security')
-      },
-      namingConventions: {
-        score: namingScore,
-        issues: allIssues.filter((i) => i.type === 'naming')
-      },
-      testCoverage: {
-        score: testCoverageScore,
-        testFileRatio,
-        testFiles: testFileCount,
-        totalFiles: files.length
-      },
+  const result: AnalyzeResult = {
+    command: QueryCommand.Analyze,
+    success: true,
+    analyzeType: AnalyzeType.Quality,
+    summary: {
+      totalScanned: files.length,
+      issuesFound: allIssues.length,
+      qualityScore: overallScore
+    },
+    issues: allIssues,
+    metrics: {
+      typeSafety: { score: typeSafetyScore },
+      errorHandling: { score: errorHandlingScore },
+      security: { score: securityScore },
+      namingConventions: { score: namingScore },
+      testCoverage: { score: testCoverageScore, testFileRatio, testFiles: testFileCount, totalFiles: files.length },
       overallScore,
       recommendations
-    }, null, 2));
-  } else {
-    console.log('   品質分析完成!');
-    console.log(`   整體評分: ${overallScore}/100`);
-    console.log(`   總問題數: ${summary.totalIssues}`);
-    console.log('\n維度評分:');
-    console.log(`   型別安全:     ${typeSafetyScore.toFixed(1)}/100`);
-    console.log(`   錯誤處理:     ${errorHandlingScore.toFixed(1)}/100`);
-    console.log(`   安全性:       ${securityScore.toFixed(1)}/100`);
-    console.log(`   命名規範:     ${namingScore.toFixed(1)}/100`);
-    console.log(`   測試覆蓋率:   ${testCoverageScore.toFixed(1)}/100 (${(testFileRatio * 100).toFixed(1)}%)`);
-
-    if (recommendations.length > 0) {
-      console.log('\n改善建議:');
-      recommendations.forEach((rec, index) => {
-        console.log(`   ${index + 1}. ${rec}`);
-      });
     }
-  }
+  };
+
+  outputHandler.outputQuery(result, format);
 }
 
 /**
@@ -562,4 +531,20 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
 
   await walkDir(projectPath);
   return files;
+}
+
+/**
+ * 處理錯誤
+ */
+function handleError(error: unknown, format: OutputFormat): void {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  if (format === OutputFormat.Json) {
+    console.error(JSON.stringify({ error: errorMessage }));
+  } else {
+    console.error('\n❌ 分析失敗:', errorMessage);
+  }
+
+  process.exitCode = 1;
+  if (process.env.NODE_ENV !== 'test') { process.exit(1); }
 }

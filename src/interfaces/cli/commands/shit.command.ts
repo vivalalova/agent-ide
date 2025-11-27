@@ -7,6 +7,9 @@ import type { Command } from 'commander';
 import * as fs from 'fs/promises';
 import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
 import { ShitScoreAnalyzer } from '../../../core/shit-score/shit-score-analyzer.js';
+import type { ShitScoreResult } from '../../../core/shit-score/types.js';
+import { QueryCommand, type ShitResult, type ShitItem, type Recommendation } from '../../../infrastructure/formatters/index.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Shit 命令選項 */
@@ -43,7 +46,18 @@ export function setupShitCommand(program: Command, context: CommandContext): voi
  * 處理 shit 命令
  */
 async function handleShitCommand(options: ShitOptions, context: CommandContext): Promise<void> {
-  if (options.format !== 'json') {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, false);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (format !== OutputFormat.Json) {
     console.log('💩 分析程式碼垃圾度...');
   }
 
@@ -54,15 +68,18 @@ async function handleShitCommand(options: ShitOptions, context: CommandContext):
 
     const registry = ParserRegistry.getInstance();
     const analyzer = new ShitScoreAnalyzer(registry, context.fileSystem);
-    const result = await analyzer.analyze(analyzePath, {
+    const coreResult = await analyzer.analyze(analyzePath, {
       detailed: options.detailed,
       topCount,
       maxAllowed,
       showFiles: options.showFiles
     });
 
-    if (options.format === 'json') {
-      const output = JSON.stringify(result, null, 2);
+    // 轉換為統一的 ShitResult
+    const shitResult = convertToShitResult(coreResult);
+
+    if (format === OutputFormat.Json) {
+      const output = JSON.stringify(shitResult, null, 2);
       if (options.output) {
         await fs.writeFile(options.output, output, 'utf-8');
         console.log(`✅ 結果已儲存至 ${options.output}`);
@@ -70,7 +87,12 @@ async function handleShitCommand(options: ShitOptions, context: CommandContext):
         console.log(output);
       }
     } else {
-      printSummaryReport(result, options);
+      outputHandler.outputQuery(shitResult, format);
+
+      // 詳細報告（topShit + recommendations）
+      if (options.detailed && coreResult.topShit && coreResult.topShit.length > 0) {
+        printDetailedReport(coreResult);
+      }
     }
   } catch (error) {
     handleError(error, options.format);
@@ -78,62 +100,81 @@ async function handleShitCommand(options: ShitOptions, context: CommandContext):
 }
 
 /**
- * 印出 summary 報告
+ * 將 ShitScoreResult 轉換為統一的 ShitResult
  */
-function printSummaryReport(result: any, options: ShitOptions): void {
-  console.log('\n' + '='.repeat(50));
-  console.log(`垃圾度評分報告 ${result.gradeInfo.emoji}`);
-  console.log('='.repeat(50));
-  console.log(`\n總分: ${result.shitScore} / 100  [${result.gradeInfo.emoji} ${result.grade}級]`);
-  console.log(`評語: ${result.gradeInfo.message}\n`);
+function convertToShitResult(coreResult: ShitScoreResult): ShitResult {
+  // 轉換 topShit
+  const topShit: ShitItem[] | undefined = coreResult.topShit?.map(item => ({
+    type: item.type,
+    severity: item.severity,
+    score: item.score,
+    filePath: item.filePath,
+    description: item.description,
+    location: item.location
+      ? { line: item.location.line, column: item.location.column }
+      : undefined
+  }));
 
-  console.log('維度分析:');
-  console.log(`  複雜度垃圾:   ${result.dimensions.complexity.score.toFixed(1)} (${(result.dimensions.complexity.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.complexity.weightedScore.toFixed(1)} 分`);
-  console.log(`  維護性垃圾:   ${result.dimensions.maintainability.score.toFixed(1)} (${(result.dimensions.maintainability.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.maintainability.weightedScore.toFixed(1)} 分`);
-  console.log(`  架構垃圾:     ${result.dimensions.architecture.score.toFixed(1)} (${(result.dimensions.architecture.weight * 100).toFixed(0)}%) → 貢獻 ${result.dimensions.architecture.weightedScore.toFixed(1)} 分\n`);
+  // 轉換 recommendations
+  const recommendations: Recommendation[] | undefined = coreResult.recommendations?.map(rec => ({
+    priority: typeof rec.priority === 'number' ? rec.priority : 0,
+    category: rec.category,
+    suggestion: rec.suggestion,
+    estimatedImpact: rec.estimatedImpact,
+    affectedFiles: [...rec.affectedFiles]
+  }));
 
-  const criticalCount = result.topShit?.filter((s: any) => s.severity === 'critical').length ?? 0;
-  const highCount = result.topShit?.filter((s: any) => s.severity === 'high').length ?? 0;
-  const mediumCount = result.topShit?.filter((s: any) => s.severity === 'medium').length ?? 0;
-  const lowCount = result.topShit?.filter((s: any) => s.severity === 'low').length ?? 0;
-
-  console.log('問題統計:');
-  console.log(`  🔴 嚴重問題:   ${criticalCount} 個`);
-  console.log(`  🟠 高優先級:  ${highCount} 個`);
-  console.log(`  🟡 中優先級:  ${mediumCount} 個`);
-  console.log(`  🟢 低優先級:  ${lowCount} 個\n`);
-
-  console.log(`掃描檔案: ${result.summary.analyzedFiles} 個（共 ${result.summary.totalFiles} 個）`);
-  console.log(`總問題數: ${result.summary.totalShit} 個`);
-
-  if (options.detailed && result.topShit?.length > 0) {
-    printDetailedReport(result);
-  }
-
-  console.log('\n' + '='.repeat(50));
+  return {
+    command: QueryCommand.Shit,
+    success: true,
+    shitScore: coreResult.shitScore,
+    grade: coreResult.grade,
+    gradeInfo: {
+      emoji: coreResult.gradeInfo.emoji,
+      message: coreResult.gradeInfo.message
+    },
+    dimensions: {
+      complexity: { ...coreResult.dimensions.complexity },
+      maintainability: { ...coreResult.dimensions.maintainability },
+      architecture: { ...coreResult.dimensions.architecture },
+      qualityAssurance: coreResult.dimensions.qualityAssurance
+        ? { ...coreResult.dimensions.qualityAssurance }
+        : undefined
+    },
+    summary: {
+      totalScanned: coreResult.summary.analyzedFiles,
+      issuesFound: coreResult.summary.totalShit,
+      totalFiles: coreResult.summary.totalFiles
+    },
+    topShit,
+    recommendations,
+    analyzedAt: coreResult.analyzedAt
+  };
 }
 
 /**
  * 印出詳細報告
  */
-function printDetailedReport(result: any): void {
+function printDetailedReport(result: ShitScoreResult): void {
+  if (!result.topShit || result.topShit.length === 0) {return;}
+
   console.log('\n' + '='.repeat(50));
   console.log(`最糟的 ${result.topShit.length} 個項目:`);
   console.log('='.repeat(50));
 
-  result.topShit.forEach((item: any, index: number) => {
+  result.topShit.forEach((item, index) => {
     console.log(`\n${index + 1}. [${item.severity.toUpperCase()}] ${item.type}`);
     console.log(`   檔案: ${item.filePath}${item.location ? `:${item.location.line}` : ''}`);
     console.log(`   分數: ${item.score.toFixed(1)}`);
     console.log(`   描述: ${item.description}`);
   });
 
-  if (result.recommendations?.length > 0) {
+  if (result.recommendations && result.recommendations.length > 0) {
     console.log('\n' + '='.repeat(50));
     console.log('修復建議:');
     console.log('='.repeat(50));
 
-    result.recommendations.forEach((rec: any, index: number) => {
+    result.recommendations.forEach((rec, index) => {
       console.log(`\n${index + 1}. [優先級 ${rec.priority}] ${rec.category}`);
       console.log(`   建議: ${rec.suggestion}`);
       console.log(`   預期改善: ${rec.estimatedImpact.toFixed(1)} 分`);

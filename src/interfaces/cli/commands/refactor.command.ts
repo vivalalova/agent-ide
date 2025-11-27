@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { convertRefactorPreview } from '../../../infrastructure/formatters/index.js';
-import { createOutputHandler, type OutputFormatOption } from '../preview-output-handler.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Refactor 命令選項 */
@@ -51,6 +51,17 @@ async function handleRefactorCommand(
   options: RefactorOptions,
   context: CommandContext
 ): Promise<void> {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
   // 支援 --path 作為 --file 的別名
   const fileOption = options.file || options.path;
 
@@ -64,7 +75,7 @@ async function handleRefactorCommand(
   // 支援 --new-name 作為 --function-name 的別名
   const functionNameOption = options.functionName || options.newName;
 
-  const isJsonFormat = options.format === 'json';
+  const isJsonFormat = format === OutputFormat.Json;
 
   if (!isJsonFormat) {
     console.log(`   重構: ${action}`);
@@ -74,9 +85,9 @@ async function handleRefactorCommand(
     const filePath = path.resolve(fileOption);
 
     if (action === 'extract-function' || action === 'extract-closure') {
-      await handleExtractAction(action, filePath, functionNameOption, options, context, isJsonFormat);
+      await handleExtractAction(action, filePath, functionNameOption, options, context, isJsonFormat, format, outputHandler);
     } else if (action === 'inline-function') {
-      await handleInlineAction(filePath, functionNameOption, options, context, isJsonFormat);
+      await handleInlineAction(filePath, functionNameOption, options, context, isJsonFormat, format, outputHandler);
     } else {
       console.error(`   未知的重構操作: ${action}`);
       process.exitCode = 1;
@@ -98,7 +109,9 @@ async function handleExtractAction(
   functionNameOption: string | undefined,
   options: RefactorOptions,
   context: CommandContext,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   if (!options.startLine || !options.endLine || !functionNameOption) {
     console.error(`   ${action} 缺少必要參數: --start-line, --end-line 和 --function-name (或 --new-name)`);
@@ -138,9 +151,9 @@ async function handleExtractAction(
   const isSwift = filePath.endsWith('.swift');
 
   if (isSwift) {
-    await handleSwiftExtract(action, filePath, code, range, functionNameOption, options, context, isJsonFormat);
+    await handleSwiftExtract(action, filePath, code, range, functionNameOption, options, context, isJsonFormat, format, outputHandler);
   } else {
-    await handleTsJsExtract(action, filePath, code, range, functionNameOption, options, context, isJsonFormat);
+    await handleTsJsExtract(action, filePath, code, range, functionNameOption, options, context, isJsonFormat, format, outputHandler);
   }
 }
 
@@ -155,7 +168,9 @@ async function handleSwiftExtract(
   functionNameOption: string,
   options: RefactorOptions,
   context: CommandContext,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const { SwiftExtractor } = await import('../../../core/refactor/swift-extractor.js');
   const extractor = new SwiftExtractor();
@@ -197,8 +212,7 @@ async function handleSwiftExtract(
         { action: 'Swift code refactored' }
       );
 
-      const outputHandler = createOutputHandler();
-      outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+      outputHandler.outputMutation(previewInput, format);
     }
   } else {
     if (isJsonFormat) {
@@ -222,7 +236,9 @@ async function handleTsJsExtract(
   functionNameOption: string,
   options: RefactorOptions,
   context: CommandContext,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   const { FunctionExtractor } = await import('../../../core/refactor/extract-function.js');
   const extractor = new FunctionExtractor();
@@ -299,8 +315,7 @@ async function handleTsJsExtract(
         { functionName: functionNameOption }
       );
 
-      const outputHandler = createOutputHandler();
-      outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+      outputHandler.outputMutation(previewInput, format);
     }
   } else {
     console.error('   重構失敗:', result.errors.join(', '));
@@ -317,7 +332,9 @@ async function handleInlineAction(
   functionNameOption: string | undefined,
   options: RefactorOptions,
   context: CommandContext,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
   if (!functionNameOption) {
     console.error('   inline-function 缺少必要參數: --function-name (或 --new-name)');
@@ -408,8 +425,7 @@ async function handleInlineAction(
         }
       );
 
-      const outputHandler = createOutputHandler();
-      outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+      outputHandler.outputMutation(previewInput, format);
     }
   } else {
     if (isJsonFormat) {

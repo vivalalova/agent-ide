@@ -7,7 +7,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { ShiftService } from '../../../core/shift/index.js';
 import { convertShiftPreview } from '../../../infrastructure/formatters/index.js';
-import { createOutputHandler, type OutputFormatOption } from '../preview-output-handler.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Shift 命令選項 */
@@ -48,7 +48,18 @@ async function handleShiftCommand(
   options: ShiftOptions,
   context: CommandContext
 ): Promise<void> {
-  const isJsonFormat = options.format === 'json';
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  const isJsonFormat = format === OutputFormat.Json;
 
   try {
     // 解析參數
@@ -89,7 +100,7 @@ async function handleShiftCommand(
 
     if (result.success) {
       if (options.dryRun) {
-        await handleDryRunOutput(sourceFile, targetFile, result, fromLine, toLine, position, options, context);
+        await handleDryRunOutput(sourceFile, targetFile, result, fromLine, toLine, position, format, outputHandler, context);
       } else {
         printSuccess(result, isJsonFormat);
       }
@@ -112,7 +123,8 @@ async function handleDryRunOutput(
   fromLine: number,
   toLine: number,
   position: number,
-  options: ShiftOptions,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>,
   context: CommandContext
 ): Promise<void> {
   // 讀取原始檔案內容
@@ -134,8 +146,7 @@ async function handleDryRunOutput(
   );
 
   // 使用統一輸出處理器
-  const outputHandler = createOutputHandler();
-  outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+  outputHandler.outputMutation(previewInput, format);
 }
 
 /**

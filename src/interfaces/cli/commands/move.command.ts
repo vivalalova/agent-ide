@@ -7,7 +7,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '../../../core/move/index.js';
 import { convertMovePreview } from '../../../infrastructure/formatters/index.js';
-import { createOutputHandler, type OutputFormatOption } from '../preview-output-handler.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Move 命令選項 */
@@ -62,7 +62,18 @@ async function handleMoveCommand(
   options: MoveOptions,
   context: CommandContext
 ): Promise<void> {
-  const isJsonFormat = options.format === 'json';
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  const isJsonFormat = format === OutputFormat.Json;
 
   if (!isJsonFormat) {
     console.log(`   ${source}   ${target}`);
@@ -121,7 +132,7 @@ async function handleMoveCommand(
     if (result.success) {
       // Dry-run 模式：使用 PreviewFormatter 輸出
       if (options.dryRun) {
-        await handleDryRunOutput(normalizedSource, normalizedTarget, result, options, context);
+        await handleDryRunOutput(normalizedSource, normalizedTarget, result, format, outputHandler, context);
         return;
       }
 
@@ -143,7 +154,8 @@ async function handleDryRunOutput(
   source: string,
   target: string,
   result: any,
-  options: MoveOptions,
+  format: OutputFormat,
+  outputHandler: ReturnType<typeof createUnifiedOutputHandler>,
   context: CommandContext
 ): Promise<void> {
   // 讀取受影響檔案的原始內容
@@ -163,8 +175,7 @@ async function handleDryRunOutput(
   const previewInput = convertMovePreview(source, target, result.pathUpdates, originalContents);
 
   // 使用統一輸出處理器
-  const outputHandler = createOutputHandler();
-  outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+  outputHandler.outputMutation(previewInput, format);
 }
 
 /**

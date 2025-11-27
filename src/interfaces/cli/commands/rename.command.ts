@@ -10,7 +10,7 @@ import { createIndexConfig } from '../../../core/indexing/types.js';
 import { RenameEngine } from '../../../core/rename/rename-engine.js';
 import { ParserRegistry } from '../../../infrastructure/parser/registry.js';
 import { convertRenamePreview } from '../../../infrastructure/formatters/index.js';
-import { createOutputHandler, type OutputFormatOption } from '../preview-output-handler.js';
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
 import type { CommandContext } from './types.js';
 
 /** Rename 命令選項 */
@@ -49,10 +49,21 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
  * 處理 rename 命令
  */
 async function handleRenameCommand(options: RenameOptions, context: CommandContext): Promise<void> {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
   // 支援多種參數名稱
   const from = options.symbol || options.from;
   const to = options.newName || options.to;
-  const isJsonFormat = options.format === 'json';
+  const isJsonFormat = format === OutputFormat.Json;
 
   if (!from || !to) {
     if (isJsonFormat) {
@@ -159,12 +170,11 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         );
 
         // 使用統一輸出處理器
-        const outputHandler = createOutputHandler();
-        outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
+        outputHandler.outputMutation(previewInput, format);
         return;
       } catch (previewError) {
         const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
-        if (options.format === 'json') {
+        if (isJsonFormat) {
           console.error(JSON.stringify({ error: errorMsg }));
         } else {
           console.error('   預覽失敗:', errorMsg);
