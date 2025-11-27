@@ -121,8 +121,8 @@ agent-ide move old.ts new.ts
 npm run typecheck
 npm test
 
-# 檢查依賴
-agent-ide deps --check-cycles
+# 檢查循環依賴
+agent-ide deps cycles
 ```
 
 ### 3. 檢查影響範圍

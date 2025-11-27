@@ -97,8 +97,8 @@ describe('CLI search - 基於 sample-project fixture', () => {
 agent-ide search <query> --path <path>              # 文字搜尋
 agent-ide search symbol --query <name>              # 符號搜尋
 agent-ide search structural --type <function|class> # 結構化搜尋
-agent-ide analyze --path <path> [--format json|summary]
-agent-ide deps --path <path> [--format json|summary]
+agent-ide analyze [complexity|dead-code|best-practices|patterns|quality] --path <path>
+agent-ide deps [graph|cycles|impact|orphans] --path <path> [--all]
 ```
 
 ### 變更類命令（支援 --dry-run）

@@ -35,7 +35,15 @@ agent-ide move src/api/user.ts src/services/user.service.ts --path .
 
 ### 3. 程式碼搜尋 (search)
 
-搜尋文字、正規表達式或結構化元素：
+支援多種搜尋類型：
+
+| 類型 | 說明 |
+|------|------|
+| `text` | 文字搜尋（預設） |
+| `regex` | 正規表達式搜尋 |
+| `fuzzy` | 模糊搜尋（容錯匹配） |
+| `symbol` | 符號名稱搜尋 |
+| `function/class/variable/enum` | 特定類型符號搜尋 |
 
 ```bash
 # 文字搜尋
@@ -44,31 +52,73 @@ agent-ide search "UserService" --path . --format json
 # 正規表達式搜尋
 agent-ide search "function.*User" --path . -t regex --format json
 
-# 符號搜尋（function、class、variable、enum）
-agent-ide search "User" --path . -t class --format json
+# 模糊搜尋
+agent-ide search "usrSvc" --path . -t fuzzy --format json
+
+# 符號搜尋（支援萬用字元）
+agent-ide search symbol --query "User*" --path . --format json
+
+# 結構化搜尋（按類型過濾）
+agent-ide search structural -t class --pattern "Service" --path . --format json
+```
+
+**進階過濾選項**：
+```bash
+# 過濾帶有特定屬性的符號
+agent-ide search structural -t class --with-attribute "@Observable" --path .
+
+# 過濾實作特定協定的類別
+agent-ide search structural -t class --implements "Codable" --path .
+
+# 過濾繼承特定類別的子類別
+agent-ide search structural -t class --extends "BaseService" --path .
 ```
 
 ### 4. 依賴分析 (deps)
 
-分析依賴關係與檢測循環依賴：
+分析依賴關係，支援子命令：
+
+| 子命令 | 說明 |
+|--------|------|
+| `graph` | 完整依賴圖 |
+| `cycles` | 循環依賴分析 |
+| `impact` | 影響分析 |
+| `orphans` | 孤立檔案分析 |
 
 ```bash
+# 基本分析（預設顯示循環依賴和孤立檔案）
+agent-ide deps --path . --format json
+
 # 完整依賴圖
 agent-ide deps --path . --format json --all
 
-# 只檢查循環依賴
-agent-ide deps --path . --check-cycles --format json
+# 使用子命令
+agent-ide deps graph --path . --format json
+agent-ide deps cycles --path . --format json
+agent-ide deps orphans --path . --format json
 ```
 
 ### 5. 品質分析 (analyze)
 
-分析程式碼品質：
+分析程式碼品質，支援 5 種分析類型：
+
+| 類型 | 說明 |
+|------|------|
+| `complexity` | 循環/認知複雜度（預設） |
+| `dead-code` | 未使用的函式/變數 |
+| `best-practices` | ES Module 等實踐檢查 |
+| `patterns` | async/Promise/interface/enum 使用模式 |
+| `quality` | 綜合評分（型別安全、錯誤處理、安全性、命名、測試覆蓋率） |
 
 ```bash
-# 品質分析
+# 複雜度分析（預設）
 agent-ide analyze --path . --format json
 
-# 顯示所有結果
+# 指定分析類型
+agent-ide analyze dead-code --path . --format json
+agent-ide analyze quality --path . --format json
+
+# 顯示所有結果（不只問題項目）
 agent-ide analyze --path . --format json --all
 ```
 
@@ -84,13 +134,25 @@ agent-ide shift src/file.ts --from 2 --to 5 --position 10 --dry-run
 agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 ```
 
-### 7. 函數提取 (refactor)
+### 7. 重構 (refactor)
 
-提取或內聯函數：
+支援的動作：
+
+| 動作 | 說明 |
+|------|------|
+| `extract-function` | 提取程式碼為函數（TS/JS） |
+| `extract-closure` | 提取程式碼為閉包（Swift） |
+| `inline-function` | 內聯函數呼叫 |
 
 ```bash
 # 提取函數
-agent-ide refactor extract-function --file src/file.ts --start-line 10 --end-line 20 --dry-run
+agent-ide refactor extract-function --file src/file.ts --start-line 10 --end-line 20 --function-name newFn --dry-run
+
+# 提取閉包（Swift）
+agent-ide refactor extract-closure --file src/file.swift --start-line 10 --end-line 20 --function-name newClosure --dry-run
+
+# 跨檔案提取（提取到新檔案並自動加入 import）
+agent-ide refactor extract-function --file src/file.ts -s 10 -e 20 -n helper --target-file src/utils.ts --dry-run
 
 # 內聯函數
 agent-ide refactor inline-function --file src/file.ts --function-name helperFn --dry-run
@@ -111,7 +173,7 @@ agent-ide rename --path . --from oldName --to newName --dry-run
 agent-ide rename --path . --from oldName --to newName
 
 # 4. 檢查循環依賴
-agent-ide deps --path . --check-cycles
+agent-ide deps cycles --path .
 ```
 
 ### 模組重組
@@ -127,7 +189,7 @@ agent-ide move src/old.ts src/new-location.ts --path . --dry-run
 agent-ide move src/old.ts src/new-location.ts --path .
 
 # 4. 檢查新循環依賴
-agent-ide deps --path . --check-cycles
+agent-ide deps cycles --path .
 ```
 
 ## 支援語言

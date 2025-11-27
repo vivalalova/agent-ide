@@ -18,8 +18,7 @@ agent-ide deps
 agent-ide deps -t graph
 
 # 循環依賴檢測
-agent-ide deps -t cycles
-agent-ide deps --check-cycles
+agent-ide deps cycles
 
 # 影響範圍分析
 agent-ide deps -t impact -f src/services/user.ts
@@ -110,7 +109,7 @@ agent-ide deps -t graph --format dot > deps.dot
 ### 1. 檢測循環依賴
 
 ```bash
-agent-ide deps --check-cycles --format json
+agent-ide deps cycles --format json
 ```
 
 ### 2. 評估重構影響
@@ -135,7 +134,7 @@ dot -Tpng deps.dot -o deps.png
 ```yaml
 - name: Check Circular Dependencies
   run: |
-    result=$(agent-ide deps --check-cycles --format json)
+    result=$(agent-ide deps cycles --format json)
     cycles=$(echo "$result" | jq '.cycles | length')
     if [ "$cycles" -gt 0 ]; then
       echo "Found $cycles circular dependencies"
@@ -151,7 +150,7 @@ dot -Tpng deps.dot -o deps.png
 
 ```bash
 # 每週檢查循環依賴
-agent-ide deps --check-cycles > cycles-report.txt
+agent-ide deps cycles > cycles-report.txt
 ```
 
 ### 2. 重構前評估
