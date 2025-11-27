@@ -110,7 +110,6 @@ agent-ide analyze --path <path> [--format json|summary]
 agent-ide deps --path <path> [--format json|summary]
 agent-ide shit --path <path> [--format json|summary]
 agent-ide snapshot --path <path> [-e <glob>...] [-l minimal|medium|full] [--format json|summary]
-agent-ide plugins [--format json|summary]
 ```
 
 ### 變更類命令（支援 --dry-run）

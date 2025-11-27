@@ -40,7 +40,6 @@ pnpm install && pnpm build && npm link
 | `deps`     | 依賴關係分析、循環檢測               | json, summary       |
 | `shit`     | 垃圾度評分（0-100，越高越糟）        | json, summary       |
 | `snapshot` | 程式碼快照生成                       | json, summary       |
-| `plugins`  | 列出已載入插件                       | json, summary       |
 
 <details>
 <summary>📖 使用指南</summary>
