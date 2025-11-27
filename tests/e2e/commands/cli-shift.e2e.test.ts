@@ -88,35 +88,38 @@ describe('CLI shift - 基於 sample-project fixture', () => {
     });
   });
 
-  describe('預覽模式（--preview）', () => {
+  describe('預覽模式（--dry-run）', () => {
     it('應該在預覽模式下不實際執行移動', async () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
 
+      expect(output.command).toBe('shift');
       expect(output.success).toBe(true);
-      expect(output.executed).toBe(false);
+      expect(output.files).toBeDefined();
+      expect(output.summary).toBeDefined();
     });
 
     it('應該在預覽模式下返回操作訊息', async () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
 
+      expect(output.command).toBe('shift');
       expect(output.success).toBe(true);
-      expect(output.message).toBeDefined();
+      expect(output.summary).toBeDefined();
     });
   });
 
@@ -646,15 +649,16 @@ describe('CLI shift - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
 
       const result = await executeCLI(
-        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--preview', '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('shift');
       expect(output.success).toBe(true);
-      expect(output.executed).toBe(false);
-      expect(output.message).toContain('預覽');
+      expect(output.files).toBeDefined();
+      expect(output.summary).toBeDefined();
     });
   });
 

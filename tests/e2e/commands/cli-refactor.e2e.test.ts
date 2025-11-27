@@ -536,14 +536,15 @@ function main() {
       await fixture.memfs.writeFile(testFile, originalContent);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--preview', '--format', 'json'],
+        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
-        expect(output.preview).toBe(true);
+        expect(output.command).toBe('refactor');
+        expect(output.success).toBe(true);
         const fileContent = await fixture.memfs.readFile(testFile, 'utf-8');
         expect(fileContent).toBe(originalContent);
       }
@@ -560,14 +561,15 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, originalContent);
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'add', '--preview', '--format', 'json'],
+        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'add', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
-        expect(output.preview).toBe(true);
+        expect(output.command).toBe('refactor');
+        expect(output.success).toBe(true);
         const fileContent = await fixture.memfs.readFile(testFile, 'utf-8');
         expect(fileContent).toBe(originalContent);
       }
