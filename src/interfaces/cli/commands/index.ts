@@ -3,8 +3,6 @@
  */
 
 export type { CommandContext, CommandSetup } from './types.js';
-export { setupShitCommand } from './shit.command.js';
-export { setupSnapshotCommand } from './snapshot.command.js';
 export { setupShiftCommand } from './shift.command.js';
 export { setupMoveCommand } from './move.command.js';
 export { setupRenameCommand } from './rename.command.js';

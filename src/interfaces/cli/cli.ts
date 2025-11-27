@@ -9,7 +9,7 @@ import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { SwiftParser } from '@plugins/swift/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
-import { setupShitCommand, setupSnapshotCommand, setupShiftCommand, setupMoveCommand, setupRenameCommand, setupRefactorCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
+import { setupShiftCommand, setupMoveCommand, setupRenameCommand, setupRefactorCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -133,8 +133,6 @@ export class AgentIdeCLI {
     setupRenameCommand(this.program, context);
     setupMoveCommand(this.program, context);
     setupShiftCommand(this.program, context);
-    setupShitCommand(this.program, context);
-    setupSnapshotCommand(this.program, context);
     setupAnalyzeCommand(this.program, context);
     setupDepsCommand(this.program, context);
   }
