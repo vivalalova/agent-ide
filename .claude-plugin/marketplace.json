@@ -12,7 +12,7 @@
     {
       "name": "agent-ide",
       "description": "Code refactoring and analysis toolkit using agent-ide CLI. Supports symbol renaming, file moving with import updates, dependency analysis, circular dependency detection, ShitScore quality scoring, and code snapshots. Works with TypeScript, JavaScript, and Swift projects.",
-      "source": "./plugins/agent-ide",
+      "source": "./plugins/skills/agent-ide",
       "strict": false,
       "skills": [
         "agent-ide"

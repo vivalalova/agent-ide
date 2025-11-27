@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 使用 agent-ide CLI 的程式碼重構與分析工具集。適用於：(1) 透過快照分析專案結構與品質，(2) 跨檔案重命名符號（類別、函數、變數），(3) 移動檔案並自動更新所有 import，(4) 檢測循環依賴與分析依賴關係，(5) 計算 ShitScore 識別程式碼品質問題，(6) 重構複雜程式碼（提取函數、降低複雜度）。支援 TypeScript 和 JavaScript 專案。關鍵字：重構、重命名、移動、分析、品質、依賴、快照、重組、程式碼異味、技術債。
+description: 程式碼重構與分析 CLI 工具。符號重命名、檔案移動（自動更新 import）、循環依賴檢測、ShitScore 品質評分、專案快照。支援 TS/JS/Swift。
 ---
 
 # Agent IDE 快速參考

@@ -18,6 +18,13 @@ cd agent-ide
 pnpm install && pnpm build && npm link
 ```
 
+### Claude Code Skill 安裝
+
+```bash
+# 從 marketplace 安裝
+/plugin add vivalalova/agent-ide
+```
+
 ### CLI 命令
 
 | 命令       | 功能                                   | 格式選項 |
@@ -167,7 +174,7 @@ pnpm lint         # ESLint
 
 ### 功能說明
 
-- [**實戰指南**](./plugins/agent-ide/references/guide.md) - **綜合使用各功能完成新增/刪除/重構的完整案例**
+- [**實戰指南**](./plugins/skills/agent-ide/references/guide.md) - **綜合使用各功能完成新增/刪除/重構的完整案例**
 - [CLI 使用指南](./docs/cli-guide.md) - 完整 CLI 命令參考與選項說明
 - [Snapshot](./docs/SNAPSHOT.md) - 快照功能實戰指南，TypeScript 專案型別安全重構案例
 - [Indexing](./docs/INDEXING.md) - 高效能程式碼索引引擎，增量索引與多層快取
