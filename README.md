@@ -168,13 +168,16 @@ pnpm lint         # ESLint
 ### 功能說明
 
 - [**實戰指南**](./docs/GUIDE.md) - **綜合使用各功能完成新增/刪除/重構的完整案例**
+- [CLI 使用指南](./docs/cli-guide.md) - 完整 CLI 命令參考與選項說明
 - [Snapshot](./docs/SNAPSHOT.md) - 快照功能實戰指南，TypeScript 專案型別安全重構案例
 - [Indexing](./docs/INDEXING.md) - 高效能程式碼索引引擎，增量索引與多層快取
 - [Search](./docs/SEARCH.md) - 文字/符號/語義三種搜尋模式，支援正規表達式
 - [Rename](./docs/RENAME.md) - 安全的符號重命名，自動更新所有引用
 - [Move](./docs/MOVE.md) - 智能檔案移動，自動更新 import 路徑
+- [Shift](./docs/SHIFT.md) - 行級程式碼移動，支援跨檔案與新檔案生成
 - [Dependencies](./docs/DEPENDENCIES.md) - 依賴關係分析，循環依賴檢測與影響範圍
 - [Quality](./docs/QUALITY.md) - 程式碼品質分析，ShitScore 評分與診斷
+- [使用範例](./docs/examples.md) - 各功能實用範例集
 
 ### 開發指南
 

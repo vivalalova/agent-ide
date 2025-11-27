@@ -367,3 +367,58 @@ agent-ide 提供完整工具鏈支援程式碼重構：
 - **驗證**：quality、test 確保改善
 
 **核心理念**：分析驅動、預覽優先、小步迭代、數據追蹤
+
+---
+
+## CI/CD 整合
+
+### GitHub Actions
+
+```yaml
+name: Code Quality Check
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - name: Install Agent IDE
+        run: npm install -g agent-ide
+      - name: Check Complexity
+        run: |
+          agent-ide analyze complexity --format json > complexity.json
+          HIGH_COMPLEXITY=$(jq '[.data.files[] | select(.complexity.cyclomaticComplexity > 15)] | length' complexity.json)
+          if [ "$HIGH_COMPLEXITY" -gt 0 ]; then
+            echo "⚠️ 發現高複雜度檔案"
+            exit 1
+          fi
+      - name: Check Circular Dependencies
+        run: |
+          agent-ide deps --format json > deps.json
+          CYCLES=$(jq '.circularDependencies | length' deps.json)
+          if [ "$CYCLES" -gt 0 ]; then
+            echo "⚠️ 發現循環依賴"
+            exit 1
+          fi
+      - name: Quality Gate
+        run: |
+          agent-ide shit --max-allowed=70
+```
+
+### 門檻檢查
+
+```bash
+# 複雜度門檻
+agent-ide analyze complexity --format json | jq -e '[.issues[] | select(.complexity > 15)] | length == 0'
+
+# ShitScore 門檻
+agent-ide shit --max-allowed=70
+```

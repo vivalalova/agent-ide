@@ -23,7 +23,6 @@ agent-ide --version
 
 | 命令 | 功能 | 常用選項 |
 |------|------|---------|
-| `index` | 建立程式碼索引 | `-p <path>`, `-u` |
 | `search` | 搜尋程式碼 | `-t <type>`, `--format json` |
 | `rename` | 重命名符號 | `--from <old>`, `--to <new>`, `--dry-run` |
 | `move` | 移動檔案 | `<source> <target>`, `--dry-run` |
@@ -41,24 +40,6 @@ agent-ide --version
 - **json**：機器可讀 JSON 格式
 - **summary**：人類可讀摘要格式
 - **diff**：程式碼差異（僅變更類命令：rename/move/shift/refactor）
-
----
-
-## index - 程式碼索引
-
-```bash
-# 索引當前目錄
-agent-ide index
-
-# 索引指定專案
-agent-ide index -p /path/to/project
-
-# 增量更新
-agent-ide index -u
-
-# 自訂副檔名
-agent-ide index -e ".ts,.tsx" -x "node_modules/**,dist/**"
-```
 
 ---
 
@@ -368,6 +349,5 @@ agent-ide plugins list -f enabled
 
 ## 相關文件
 
-- [使用範例](examples.md)
 - [實戰指南](GUIDE.md)
 - [返回首頁](index.md)

@@ -155,3 +155,6 @@ review.md
 # Claude Code local settings
 .claude/settings.local.json
 .build
+
+# Agent IDE local cache and snapshots
+.agent-ide/

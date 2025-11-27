@@ -35,7 +35,6 @@ pnpm install && pnpm build && npm link
 
 | 功能 | CLI 命令 | 說明 |
 |------|---------|------|
-| 程式碼索引 | `index` | 建立和管理程式碼索引 |
 | 程式碼搜尋 | `search` | 搜尋符號、文字、正則表達式 |
 | 符號重命名 | `rename` | 安全重命名，自動更新引用 |
 | 檔案移動 | `move` | 移動檔案，自動更新 import |
@@ -56,7 +55,7 @@ pnpm install && pnpm build && npm link
 ## 文件導航
 
 - [CLI 使用指南](cli-guide.md) - 完整的 CLI 命令參考
-- [使用範例](examples.md) - 實際使用場景與最佳實踐
+- [實戰指南](GUIDE.md) - 實際使用場景與最佳實踐
 - [GitHub Repository](https://github.com/vivalalova/agent-ide) - 原始碼與問題回報
 
 ## 架構概覽
