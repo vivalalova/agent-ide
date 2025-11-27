@@ -29,6 +29,12 @@ export default defineConfig({
     outputFile: {
       json: './test-results.json'
     },
+
+    // Diff 輸出精簡化
+    diff: {
+      expand: false,           // 不展開上下文
+      truncateThreshold: 200,  // 超過 200 字元截斷
+    },
     onConsoleLog(log) {
       // 過濾垃圾回收訊息
       if (log.includes('垃圾回收已啟用')) return false;
