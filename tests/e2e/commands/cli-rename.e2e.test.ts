@@ -740,6 +740,88 @@ describe('CLI rename - 基於 sample-project fixture', () => {
     });
   });
 
+  describe('極端情境 - 大規模引用（50+ 檔案）', () => {
+    it('應該處理被 60+ 檔案引用的符號重命名', async () => {
+      // 生成 60 個檔案，每個都引用 SharedUtil
+      for (let i = 0; i < 60; i++) {
+        await fixture.writeFile(`src/modules/module${i}.ts`,
+          `import { SharedUtil } from '../shared';\nexport const use${i} = SharedUtil.process();`
+        );
+      }
+      await fixture.writeFile('src/shared.ts', 'export class SharedUtil { static process() { return 1; } }');
+
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'SharedUtil', '--to', 'CommonUtil', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        // 至少應該影響 60 個引用檔案 + 1 個定義檔案
+        expect(output.summary.totalFiles).toBeGreaterThanOrEqual(60);
+      }
+    });
+  });
+
+  describe('極端情境 - 深層巢狀（10+ 層）', () => {
+    it('應該處理 12 層巢狀 namespace 中的符號重命名', async () => {
+      // 生成 12 層巢狀 namespace
+      const deepNamespace = Array.from({ length: 12 }, (_, i) =>
+        `${'  '.repeat(i)}namespace Level${i} {`
+      ).join('\n') +
+      '\n' + '  '.repeat(12) + 'export const deepSymbol = 1;\n' +
+      Array.from({ length: 12 }, (_, i) =>
+        `${'  '.repeat(11 - i)}}`
+      ).join('\n');
+
+      await fixture.writeFile('src/deep-namespace.ts', deepNamespace);
+
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'deepSymbol', '--to', 'renamedDeepSymbol', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該處理 10+ 層巢狀 class 內部的符號重命名', async () => {
+      // 生成 10 層巢狀 class
+      const deepClass = [
+        'export class Level0 {',
+        ...Array.from({ length: 10 }, (_, i) =>
+          `${'  '.repeat(i + 1)}static Level${i + 1} = class {`
+        ),
+        '  '.repeat(11) + 'static deepMethod() { return 42; }',
+        ...Array.from({ length: 10 }, (_, i) =>
+          `${'  '.repeat(10 - i)}};`
+        ),
+        '}'
+      ].join('\n');
+
+      await fixture.writeFile('src/deep-class.ts', deepClass);
+
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'deepMethod', '--to', 'renamedDeepMethod', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+      }
+    });
+  });
+
   describe('Unicode 和國際化', () => {
     it('應該處理 Unicode 字元的符號名稱', async () => {
       const result = await executeCLI(

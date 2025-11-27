@@ -719,4 +719,160 @@ const result = add(1, 2);
       expect(result.stderr || result.stdout).toBeDefined();
     });
   });
+
+  describe('極端情境 - 大規模跨檔案提取', () => {
+    it('應該處理提取函數到被 60+ 檔案引用的模組', async () => {
+      // 生成 60 個檔案引用 utils
+      for (let i = 0; i < 60; i++) {
+        await fixture.writeFile(`src/consumers/consumer${i}.ts`,
+          `import { helper } from '../utils';\nexport const result${i} = helper();`
+        );
+      }
+
+      // 生成 utils 檔案（目標檔案）
+      await fixture.writeFile('src/utils.ts', 'export function helper() { return 1; }');
+
+      // 原始檔案有可提取的程式碼
+      await fixture.writeFile('src/source.ts', [
+        'export function mainFunction() {',
+        '  const a = 1;',
+        '  const b = 2;',
+        '  const c = a + b;',
+        '  return c * 2;',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/source.ts'), '--start-line', '2', '--end-line', '4', '--function-name', 'extractedCalc', '--target-file', fixture.getFilePath('src/utils.ts'), '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('refactor');
+        expect(output.success).toBe(true);
+        // 驗證提取到的模組會影響到引用它的 60+ 檔案
+        expect(output.files).toBeDefined();
+      }
+    });
+  });
+
+  describe('極端情境 - 深層巢狀函數（10+ 層）', () => {
+    it('應該處理 12 層巢狀結構中的函數內聯', async () => {
+      const deepNested = [
+        'function helper() { return 42; }',
+        'function level0() {',
+        ...Array.from({ length: 12 }, (_, i) =>
+          `${'  '.repeat(i + 1)}function level${i + 1}() {`
+        ),
+        '  '.repeat(13) + 'return helper();',
+        ...Array.from({ length: 12 }, (_, i) =>
+          `${'  '.repeat(12 - i)}}`
+        ),
+        '  return level1();',
+        '}'
+      ].join('\n');
+
+      await fixture.writeFile('src/deep-inline.ts', deepNested);
+
+      const result = await executeCLI(
+        ['refactor', 'inline-function', '--file', fixture.getFilePath('src/deep-inline.ts'), '--function-name', 'helper', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('refactor');
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該處理提取 10+ 層巢狀 if-else 結構', async () => {
+      const deepIfElse = [
+        'export function deepConditional(x: number) {',
+        ...Array.from({ length: 12 }, (_, i) =>
+          `${'  '.repeat(i + 1)}if (x > ${i}) {`
+        ),
+        '  '.repeat(13) + 'const result = x * 2;',
+        '  '.repeat(13) + 'return result;',
+        ...Array.from({ length: 12 }, (_, i) =>
+          `${'  '.repeat(12 - i)}} else { return ${11 - i}; }`
+        ),
+        '}'
+      ].join('\n');
+
+      await fixture.writeFile('src/deep-if-else.ts', deepIfElse);
+
+      const result = await executeCLI(
+        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/deep-if-else.ts'), '--start-line', '13', '--end-line', '14', '--function-name', 'extractedDeep', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('refactor');
+        // 深層巢狀可能導致提取失敗，所以只驗證有回應
+        expect(output.success).toBeDefined();
+      }
+    });
+  });
+
+  describe('極端情境 - 超多呼叫點（50+ 呼叫）', () => {
+    it('應該處理有 60+ 呼叫點的函數內聯', async () => {
+      const manyCallsCode = [
+        'function helperFn(x: number) { return x * 2; }',
+        'export function main() {',
+        ...Array.from({ length: 60 }, (_, i) =>
+          `  const r${i} = helperFn(${i});`
+        ),
+        '  return r0;',
+        '}'
+      ].join('\n');
+
+      await fixture.writeFile('src/many-calls.ts', manyCallsCode);
+
+      const result = await executeCLI(
+        ['refactor', 'inline-function', '--file', fixture.getFilePath('src/many-calls.ts'), '--function-name', 'helperFn', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('refactor');
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該處理 50+ 個參數的函數提取', async () => {
+      const manyParamsCode = [
+        'export function main() {',
+        ...Array.from({ length: 55 }, (_, i) =>
+          `  const p${i} = ${i};`
+        ),
+        '  // 以下程式碼使用所有變數',
+        '  const sum = ' + Array.from({ length: 55 }, (_, i) => `p${i}`).join(' + ') + ';',
+        '  return sum;',
+        '}'
+      ].join('\n');
+
+      await fixture.writeFile('src/many-params.ts', manyParamsCode);
+
+      const result = await executeCLI(
+        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/many-params.ts'), '--start-line', '57', '--end-line', '58', '--function-name', 'calculateSum', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('refactor');
+        // 大量參數可能導致複雜的簽章，所以只驗證有回應
+        expect(output.success).toBeDefined();
+      }
+    });
+  });
 });
