@@ -25,7 +25,7 @@ export default defineConfig({
     environment: 'node',
 
     // 報告器設定
-    reporters: ['default'],
+    reporters: ['dot'],
     outputFile: {
       json: './test-results.json'
     },
