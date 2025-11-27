@@ -15,7 +15,7 @@
       "source": "./plugins/skills/agent-ide",
       "strict": false,
       "skills": [
-        "agent-ide"
+        "./"
       ]
     }
   ]
