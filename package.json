@@ -10,7 +10,7 @@
   },
   "scripts": {
     "prepare": "husky",
-    "build": "tsc && npm run postbuild",
+    "build": "tsc && tsc-alias && npm run postbuild",
     "postbuild": "mkdir -p dist/plugins/swift/swift-bridge && cp src/plugins/swift/swift-bridge/swift-parser dist/plugins/swift/swift-bridge/ 2>/dev/null || true",
     "pretest": "bash scripts/cleanup-vitest.sh",
     "test": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run",
@@ -63,6 +63,7 @@
     "husky": "^9.1.7",
     "memfs": "^4.38.2",
     "semantic-release": "^25.0.1",
+    "tsc-alias": "^1.8.16",
     "tsx": "^4.20.5",
     "vitest": "^4.0.0"
   },

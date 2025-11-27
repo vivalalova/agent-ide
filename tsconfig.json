@@ -13,6 +13,16 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@core/*": ["src/core/*"],
+      "@infrastructure/*": ["src/infrastructure/*"],
+      "@application/*": ["src/application/*"],
+      "@interfaces/*": ["src/interfaces/*"],
+      "@plugins/*": ["src/plugins/*"],
+      "@shared/*": ["src/shared/*"]
+    },
     "allowSyntheticDefaultImports": true,
     "downlevelIteration": true,
     "noImplicitAny": true,
