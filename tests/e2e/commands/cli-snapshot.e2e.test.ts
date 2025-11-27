@@ -213,6 +213,51 @@ describe.skip('CLI snapshot - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
     });
+
+    it('應該支援 --exclude 排除特定 glob 模式', async () => {
+      const outputPath = path.join(fixture.rootPath, 'snapshot-exclude.json');
+
+      const result = await executeCLI(
+        ['snapshot', 'generate', '--path', fixture.rootPath, '--output', outputPath, '--exclude', '**/utils/**', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該支援多個 --exclude 參數', async () => {
+      const outputPath = path.join(fixture.rootPath, 'snapshot-multi-exclude.json');
+
+      const result = await executeCLI(
+        ['snapshot', 'generate', '--path', fixture.rootPath, '--output', outputPath, '-e', '**/utils/**', '-e', '**/services/**', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+      }
+    });
+
+    it('應該支援 -e 短選項排除檔案', async () => {
+      const outputPath = path.join(fixture.rootPath, 'snapshot-short-exclude.json');
+
+      const result = await executeCLI(
+        ['snapshot', 'generate', '--path', fixture.rootPath, '--output', outputPath, '-e', '*.spec.ts', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+      }
+    });
   });
 
   describe('info 命令 - 快照資訊查詢', () => {

@@ -1,7 +1,6 @@
- */
-
 /**
  * Main Entry Point
+ */
 import { UserService } from './services/user-service';
 import { AuthService } from './services/auth-service';
 import { ProductService } from './services/product-service';

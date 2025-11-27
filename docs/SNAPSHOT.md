@@ -20,6 +20,77 @@ agent-ide shit --path /path/to/project --format json
 
 ---
 
+## 命令參數
+
+```bash
+agent-ide snapshot [action] [options]
+```
+
+### Actions
+
+| Action | 說明 |
+|--------|------|
+| `generate` | 生成快照（預設） |
+| `info` | 查看快照資訊 |
+| `diff` | 比較兩個快照 |
+| `init` | 建立配置檔 |
+
+### Options
+
+| 選項 | 縮寫 | 說明 | 預設值 |
+|------|------|------|--------|
+| `--path <path>` | `-p` | 專案路徑 | `process.cwd()` |
+| `--output <path>` | `-o` | 輸出檔案路徑 | `.agent-ide/snapshot.json` |
+| `--level <level>` | `-l` | 壓縮層級 (`minimal`/`medium`/`full`) | `full` |
+| `--exclude <patterns...>` | `-e` | 排除的 glob 模式（可多次指定） | - |
+| `--incremental` | `-i` | 增量更新模式 | `false` |
+| `--include-tests` | | 包含測試檔案 | `false` |
+| `--multi-level` | | 生成多層級快照 | `false` |
+| `--output-dir <dir>` | | 多層級輸出目錄 | `./snapshots` |
+| `--format <format>` | | 輸出格式 (`json`/`summary`) | `summary` |
+| `--old <path>` | | 舊快照路徑（diff 用） | - |
+| `--new <path>` | | 新快照路徑（diff 用） | - |
+
+### 壓縮層級說明
+
+| Level | 內容 | 估計 Token |
+|-------|------|------------|
+| `minimal` | 架構 + 符號索引 | ~20K |
+| `medium` | 符號 + 簡化實作 | ~35K |
+| `full` | 壓縮後完整實作 | ~50K |
+
+### 排除模式範例
+
+```bash
+# 排除單一模式
+agent-ide snapshot -e "docs/**"
+
+# 排除多個模式
+agent-ide snapshot -e "**/test/**" -e "**/*.spec.ts" -e "coverage/**"
+
+# 結合其他選項
+agent-ide snapshot --path ./src -o snapshot.json -e "**/__mocks__/**" -l medium
+```
+
+### 預設排除
+
+以下模式預設被排除（可透過 `--exclude` 覆蓋）：
+
+```
+node_modules/**
+dist/**
+build/**
+*.test.*
+*.spec.*
+**/fixtures/**
+**/__tests__/**
+**/__mocks__/**
+.git/**
+coverage/**
+```
+
+---
+
 ## 實戰案例
 
 ### TypeScript 型別安全重構

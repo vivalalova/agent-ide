@@ -21,6 +21,7 @@ interface SnapshotCommandOptions {
   outputDir: string;
   format: string;
   includeTests: boolean;
+  exclude?: string[];
   old?: string;
   new?: string;
 }
@@ -40,6 +41,7 @@ export function setupSnapshotCommand(program: Command, context: CommandContext):
     .option('--output-dir <dir>', '多層級輸出目錄', './snapshots')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
     .option('--include-tests', '包含測試檔案', false)
+    .option('-e, --exclude <patterns...>', '排除的 glob 模式（可多次指定）')
     .option('--old <path>', '舊快照路徑（diff 命令用）')
     .option('--new <path>', '新快照路徑（diff 命令用）')
     .action(async (action: string | undefined, options: SnapshotCommandOptions) => {
@@ -82,6 +84,7 @@ async function handleSnapshotCommand(
       incremental: options.incremental,
       level: options.level as CompressionLevel,
       includeTests: options.includeTests,
+      exclude: options.exclude,
       multiLevel: options.multiLevel,
       outputDir: options.outputDir,
       silent: isJsonFormat

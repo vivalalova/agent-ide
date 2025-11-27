@@ -109,7 +109,7 @@ agent-ide search structural --type <function|class> # 結構化搜尋
 agent-ide analyze --path <path> [--format json|summary]
 agent-ide deps --path <path> [--format json|summary]
 agent-ide shit --path <path> [--format json|summary]
-agent-ide snapshot --path <path> [--format json|summary]
+agent-ide snapshot --path <path> [-e <glob>...] [-l minimal|medium|full] [--format json|summary]
 agent-ide plugins [--format json|summary]
 ```
 
@@ -150,3 +150,24 @@ outputHandler.outputMutation(previewInput, format);
 **開發**：規格→API→測試→實作→CLI
 **驗證**：`pnpm build && pnpm lint && pnpm test`
 **發布**：`npm version patch|minor|major` → `npm publish`
+
+## 功能改動檢查清單
+
+**🚨 任何功能改動必須同步更新以下項目：**
+
+| 改動類型 | 必須更新 |
+|---------|---------|
+| CLI 新增選項 | `tests/e2e/commands/cli-*.e2e.test.ts`、`docs/*.md`、`CLAUDE.md` |
+| CLI 新增命令 | 同上 + `src/interfaces/cli/commands/` |
+| Core 模組改動 | 對應 E2E 測試、相關文件 |
+| 輸出格式改動 | `infrastructure/formatters/`、E2E 測試 |
+| 型別定義改動 | 所有引用處、測試、文件 |
+
+**文件位置**：
+- `README.md` - 專案介紹、安裝、快速開始
+- `docs/SNAPSHOT.md` - snapshot 命令說明
+- `docs/GUIDE.md` - 實戰案例指南
+- `CLAUDE.md` - CLI 命令快速參考（開發用）
+
+**測試位置**：
+- `tests/e2e/commands/cli-<command>.e2e.test.ts`
