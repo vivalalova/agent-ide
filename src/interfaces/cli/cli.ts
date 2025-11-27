@@ -20,6 +20,14 @@ import { SnapshotEngine, SnapshotDiffer, ConfigManager, CompressionLevel } from 
 import type { SnapshotOptions } from '../../core/snapshot/index.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import { FileSystem, type IFileSystem } from '../../infrastructure/storage/index.js';
+import {
+  createPreviewFormatter,
+  PreviewFormat,
+  convertRenamePreview,
+  convertMovePreview,
+  convertShiftPreview,
+  convertRefactorPreview
+} from '../../infrastructure/formatters/index.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -166,8 +174,8 @@ export class AgentIdeCLI {
       .option('-n, --new-name <name>', '新名稱')
       .option('-o, --to <name>', '新名稱（--new-name 的別名）')
       .option('-p, --path <path>', '檔案或目錄路徑', '.')
-      .option('--preview', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
+      .option('--dry-run', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
       .action(async (options) => {
         await this.handleRenameCommand(options);
       });
@@ -184,8 +192,8 @@ export class AgentIdeCLI {
       .option('-n, --function-name <name>', '函式名稱')
       .option('--new-name <name>', '新名稱（--function-name 的別名）')
       .option('-t, --target-file <file>', '目標檔案路徑（跨檔案提取）')
-      .option('--preview', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
+      .option('--dry-run', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
       .action(async (action, options) => {
         await this.handleRefactorCommand(action, options);
       });
@@ -199,8 +207,8 @@ export class AgentIdeCLI {
       .option('-t, --target <path>', '目標路徑')
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
       .option('--update-imports', '自動更新 import 路徑', true)
-      .option('--preview', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (markdown|plain|json|minimal)', 'plain')
+      .option('--dry-run', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
       .action(async (sourceArg, targetArg, options) => {
         // 支援兩種語法：
         // 1. move <source> <target> (位置參數)
@@ -229,8 +237,8 @@ export class AgentIdeCLI {
       .requiredOption('--position <number>', '目標位置行號（1-based，插入到此行之前）')
       .option('--target <file>', '目標檔案路徑（選填，預設為來源檔案）')
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
-      .option('--preview', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (json|plain)', 'plain')
+      .option('--dry-run', '預覽變更而不執行')
+      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
       .action(async (file, options) => {
         await this.handleShiftCommand(file, options);
       });
@@ -462,14 +470,9 @@ export class AgentIdeCLI {
 
       const targetSymbol = searchResults[0].symbol;
 
-      // 2. 預覽變更
-      if (options.preview) {
-        if (!isJsonFormat) {
-          console.log('🔍 預覽變更...');
-        }
+      // 2. Dry-run 預覽變更
+      if (options.dryRun) {
         try {
-          // 取得所有專案檔案以進行跨檔案引用查找
-          // 使用 workspacePath（已解析為目錄）而不是 options.path（可能是檔案）
           const allProjectFiles = await this.getAllProjectFiles(workspacePath);
 
           const preview = await this.renameEngine.previewRename({
@@ -478,37 +481,40 @@ export class AgentIdeCLI {
             filePaths: allProjectFiles
           });
 
-          if (isJsonFormat) {
-            console.log(JSON.stringify({
-              preview: true,
-              affectedFiles: preview.affectedFiles.length,
-              operations: preview.operations.length,
-              conflicts: preview.conflicts
-            }, null, 2));
-          } else {
-            console.log('📝 預計變更:');
-            console.log(`   檔案數: ${preview.affectedFiles.length}`);
-            console.log(`   操作數: ${preview.operations.length}`);
-
-            if (preview.conflicts.length > 0) {
-              console.log('⚠️  發現衝突:');
-              preview.conflicts.forEach(conflict => {
-                console.log(`   - ${conflict.message}`);
-              });
+          // 讀取受影響檔案的原始內容
+          const originalContents = new Map<string, string>();
+          for (const filePath of preview.affectedFiles) {
+            try {
+              const content = await fs.readFile(filePath, 'utf-8');
+              originalContents.set(filePath, content);
+            } catch {
+              // 忽略無法讀取的檔案
             }
-
-            preview.operations.forEach(op => {
-              console.log(`   ${op.filePath}: "${op.oldText}" → "${op.newText}"`);
-            });
-
-            console.log('✅ 預覽完成');
           }
+
+          // 轉換為統一的 PreviewInput 格式
+          const previewInput = convertRenamePreview(
+            preview.operations,
+            preview.conflicts,
+            originalContents
+          );
+
+          // 使用 PreviewFormatter 輸出
+          const isDiffFormat = options.format === 'diff' || (!options.format || options.format === 'plain');
+          const formatter = createPreviewFormatter({
+            contextLines: 3,
+            color: process.stdout.isTTY ?? false
+          });
+          const result = formatter.createPreview(previewInput);
+          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+          console.log(formatter.format(result, outputFormat));
           return;
         } catch (previewError) {
-          if (isJsonFormat) {
-            console.error(JSON.stringify({ error: previewError instanceof Error ? previewError.message : String(previewError) }));
+          const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
+          if (options.format === 'json') {
+            console.error(JSON.stringify({ error: errorMsg }));
           } else {
-            console.error('❌ 預覽失敗:', previewError instanceof Error ? previewError.message : previewError);
+            console.error('❌ 預覽失敗:', errorMsg);
           }
           if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         }
@@ -662,15 +668,26 @@ export class AgentIdeCLI {
               console.log(`📝 提取的函式: ${result.extractedFunction.signature}`);
             }
 
-            if (!options.preview) {
+            if (!options.dryRun) {
               await fs.writeFile(filePath, result.modifiedCode, 'utf-8');
               if (!isJsonFormat) {
                 console.log(`✓ 已更新 ${filePath}`);
               }
             } else {
-              if (!isJsonFormat) {
-                console.log('預覽模式 - 未寫入檔案');
-              }
+              // Dry-run 模式：使用 PreviewFormatter 輸出
+              const previewInput = convertRefactorPreview(
+                [{ range: { start: { line: 1 }, end: { line: code.split('\n').length } }, newText: result.modifiedCode }],
+                filePath,
+                code
+              );
+
+              const formatter = createPreviewFormatter({
+                contextLines: 3,
+                color: process.stdout.isTTY ?? false
+              });
+              const previewResult = formatter.createPreview(previewInput);
+              const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+              console.log(formatter.format(previewResult, outputFormat));
             }
           } else {
             if (isJsonFormat) {
@@ -727,7 +744,7 @@ export class AgentIdeCLI {
           console.log(`📝 提取的函式: ${functionSignature}`);
           console.log(functionSignature);
 
-          if (!options.preview) {
+          if (!options.dryRun) {
             // 寫入原始檔案
             await fs.writeFile(filePath, modifiedCode, 'utf-8');
             console.log(`✓ 已更新 ${filePath}`);
@@ -746,12 +763,25 @@ export class AgentIdeCLI {
               }
             }
           } else {
-            console.log('\n🔍 預覽模式 - 未寫入檔案');
-            console.log(`📊 參數: ${result.parameters.map(p => p.name).join(', ')}`);
-            if (result.targetFileContent && options.targetFile) {
-              console.log(`📁 目標檔案: ${options.targetFile}`);
-              console.log(`📥 Import: ${result.importStatement || '(無)'}`);
-            }
+            // Dry-run 模式：使用 PreviewFormatter 輸出
+            const previewInput = convertRefactorPreview(
+              result.edits.map(e => ({
+                range: e.range,
+                newText: e.newText
+              })),
+              filePath,
+              code,
+              result.targetFileContent,
+              options.targetFile ? path.resolve(options.targetFile) : undefined
+            );
+
+            const formatter = createPreviewFormatter({
+              contextLines: 3,
+              color: process.stdout.isTTY ?? false
+            });
+            const previewResult = formatter.createPreview(previewInput);
+            const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+            console.log(formatter.format(previewResult, outputFormat));
           }
         } else {
           console.error('❌ 重構失敗:', result.errors.join(', '));
@@ -830,15 +860,29 @@ export class AgentIdeCLI {
             }
           }
 
-          if (!options.preview) {
+          if (!options.dryRun) {
             await fs.writeFile(filePath, modifiedCode, 'utf-8');
             if (!isJsonFormat) {
               console.log(`✓ 已更新 ${filePath}`);
             }
           } else {
-            if (!isJsonFormat) {
-              console.log('\n🔍 預覽模式 - 未寫入檔案');
-            }
+            // Dry-run 模式：使用 PreviewFormatter 輸出
+            const previewInput = convertRefactorPreview(
+              result.edits.map(e => ({
+                range: e.range,
+                newText: e.newText
+              })),
+              filePath,
+              code
+            );
+
+            const formatter = createPreviewFormatter({
+              contextLines: 3,
+              color: process.stdout.isTTY ?? false
+            });
+            const previewResult = formatter.createPreview(previewInput);
+            const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+            console.log(formatter.format(previewResult, outputFormat));
           }
         } else {
           if (isJsonFormat) {
@@ -924,7 +968,7 @@ export class AgentIdeCLI {
       };
 
       const moveOptions = {
-        preview: options.preview,
+        preview: options.dryRun,
         projectRoot: options.path || process.cwd()
       };
 
@@ -932,6 +976,40 @@ export class AgentIdeCLI {
       const result = await this.moveService.moveFile(moveOperation, moveOptions);
 
       if (result.success) {
+        // Dry-run 模式：使用 PreviewFormatter 輸出
+        if (options.dryRun) {
+          // 讀取受影響檔案的原始內容
+          const originalContents = new Map<string, string>();
+          const affectedFiles = new Set(result.pathUpdates.map(u => u.filePath));
+          for (const filePath of affectedFiles) {
+            try {
+              const content = await fs.readFile(filePath, 'utf-8');
+              originalContents.set(filePath, content);
+            } catch {
+              // 忽略無法讀取的檔案
+            }
+          }
+
+          // 轉換為統一的 PreviewInput 格式
+          const previewInput = convertMovePreview(
+            normalizedSource,
+            normalizedTarget,
+            result.pathUpdates,
+            originalContents
+          );
+
+          // 使用 PreviewFormatter 輸出
+          const formatter = createPreviewFormatter({
+            contextLines: 3,
+            color: process.stdout.isTTY ?? false
+          });
+          const previewResult = formatter.createPreview(previewInput);
+          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+          console.log(formatter.format(previewResult, outputFormat));
+          return;
+        }
+
+        // 實際執行模式
         if (isJsonFormat) {
           console.log(JSON.stringify({
             success: true,
@@ -942,12 +1020,7 @@ export class AgentIdeCLI {
             message: result.message
           }, null, 2));
         } else {
-          if (options.preview) {
-            console.log('🔍 預覽移動操作:');
-          } else {
-            console.log('✅ 移動成功!');
-          }
-
+          console.log('✅ 移動成功!');
           console.log(`📊 統計: ${result.pathUpdates.length} 個 import 需要更新`);
 
           if (result.pathUpdates.length > 0) {
@@ -1040,13 +1113,45 @@ export class AgentIdeCLI {
         toLine,
         targetFile,
         position,
-        preview: options.preview,
+        preview: options.dryRun,
         projectRoot: options.path || process.cwd()
       };
 
       const result = await this.shiftService.shift(shiftOptions);
 
       if (result.success) {
+        // Dry-run 模式：使用 PreviewFormatter 輸出
+        if (options.dryRun && result.movedLines) {
+          // 讀取原始檔案內容
+          const sourceOriginalContent = await fs.readFile(sourceFile, 'utf-8');
+          const targetOriginalContent = targetFile && targetFile !== sourceFile
+            ? await fs.readFile(targetFile, 'utf-8').catch(() => null)
+            : null;
+
+          // 轉換為統一的 PreviewInput 格式
+          const previewInput = convertShiftPreview(
+            sourceFile,
+            result.targetFile,
+            fromLine,
+            toLine,
+            position,
+            sourceOriginalContent,
+            targetOriginalContent,
+            result.movedLines
+          );
+
+          // 使用 PreviewFormatter 輸出
+          const formatter = createPreviewFormatter({
+            contextLines: 3,
+            color: process.stdout.isTTY ?? false
+          });
+          const previewResult = formatter.createPreview(previewInput);
+          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
+          console.log(formatter.format(previewResult, outputFormat));
+          return;
+        }
+
+        // 實際執行模式
         if (isJsonFormat) {
           console.log(JSON.stringify({
             success: true,
@@ -1061,22 +1166,10 @@ export class AgentIdeCLI {
             message: result.message
           }, null, 2));
         } else {
-          if (options.preview) {
-            console.log('🔍 預覽行移動操作:');
-          } else {
-            console.log('✅ 行移動成功!');
-          }
-
+          console.log('✅ 行移動成功!');
           console.log(`📊 統計: 移動了 ${result.linesCount} 行`);
           console.log(`📝 來源檔案: ${path.relative(process.cwd(), result.sourceFile)}`);
           console.log(`📝 目標檔案: ${path.relative(process.cwd(), result.targetFile)}`);
-
-          if (options.preview && result.movedLines) {
-            console.log('\n移動的內容:');
-            result.movedLines.forEach((line, index) => {
-              console.log(`  ${result.fromLine + index}: ${line}`);
-            });
-          }
         }
       } else {
         if (isJsonFormat) {
