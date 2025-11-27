@@ -344,31 +344,44 @@ export class FunctionInliner {
    */
   private findFunctionCalls(code: string, functionName: string): FunctionCall[] {
     const calls: FunctionCall[] = [];
+    const seenRanges = new Set<string>();
 
-    // 簡化實作：使用正則表達式找函式呼叫
-    const patterns = [
-      // 一般呼叫: functionName(...)
-      new RegExp(`${functionName}\\s*\\(([^)]*)\\)`, 'g'),
-      // 賦值呼叫: var = functionName(...)
-      new RegExp(`(\\w+)\\s*=\\s*${functionName}\\s*\\(([^)]*)\\)`, 'g'),
-      // await 呼叫: await functionName(...)
-      new RegExp(`await\\s+${functionName}\\s*\\(([^)]*)\\)`, 'g')
-    ];
+    // 使用單一正則模式捕獲所有呼叫情況
+    // 匹配: [await] [var =] functionName(...)
+    // 排除: function functionName(...) - 函式定義
+    const pattern = new RegExp(
+      `(?<!function\\s+)(?:(await)\\s+)?(?:(\\w+)\\s*=\\s*)?${functionName}\\s*\\(([^)]*)\\)`,
+      'g'
+    );
 
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(code)) !== null) {
-        const args = match[match.length - 1] ?
-          match[match.length - 1].split(',').map(arg => arg.trim()) : [];
+    let match;
+    while ((match = pattern.exec(code)) !== null) {
+      // 計算函式名稱在匹配中的實際起始位置
+      const matchText = match[0];
+      const functionNameIndex = matchText.lastIndexOf(functionName);
+      const functionCallStart = match.index + functionNameIndex;
 
-        calls.push({
-          name: functionName,
-          arguments: args,
-          location: this.getMatchLocation(code, match),
-          assignTo: match.length > 2 && !match[0].includes('await') ? match[1] : undefined,
-          isAwait: match[0].includes('await')
-        });
+      // 使用函式呼叫的起始位置作為唯一標識（避免 `a = double(5)` 和 `double(5)` 被視為兩個不同的呼叫）
+      const rangeKey = `${functionCallStart}`;
+
+      if (seenRanges.has(rangeKey)) {
+        continue;
       }
+      seenRanges.add(rangeKey);
+
+      const location = this.getMatchLocation(code, match);
+      const isAwait = Boolean(match[1]);
+      const assignTo = match[2];
+      const argsString = match[3];
+      const args = argsString ? argsString.split(',').map(arg => arg.trim()) : [];
+
+      calls.push({
+        name: functionName,
+        arguments: args,
+        location,
+        assignTo,
+        isAwait
+      });
     }
 
     return calls;
