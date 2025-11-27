@@ -2,6 +2,8 @@
 
 > 📝 本文件由 AI Agent 生成
 
+**🎯 本專案致力於減少 AI Agent 的 token 使用量**
+
 為 AI 代理設計的程式碼智能工具集，提供搜尋、重構、依賴分析等功能。
 
 ## 🚀 快速開始
@@ -153,6 +155,7 @@ npx agent-ide snapshot -l full --format json
 - [Rename](./docs/RENAME.md) - 安全的符號重命名，自動更新所有引用
 - [Move](./docs/MOVE.md) - 智能檔案移動，自動更新 import 路徑
 - [Shift](./docs/SHIFT.md) - 行級程式碼移動，支援跨檔案與新檔案生成
+- [Analyze](./docs/ANALYZE.md) - 程式碼品質分析，複雜度評估與死代碼檢測
 - [Dependencies](./docs/DEPS.md) - 依賴關係分析，循環依賴檢測與影響範圍
 - [ShitScore](./docs/SHIT-SCORE.md) - 程式碼品質分析，ShitScore 評分與診斷
 
