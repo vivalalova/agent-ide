@@ -38,20 +38,36 @@ interface ConflictLike {
   };
 }
 
+/** Rename 操作選項 */
+export interface RenamePreviewOptions {
+  /** 原始符號名稱 */
+  oldName?: string;
+  /** 新符號名稱 */
+  newName?: string;
+}
+
 /**
  * 從 Rename 模組的 preview 結果轉換為 PreviewInput
  */
 export function convertRenamePreview(
   operations: readonly OperationLike[],
   conflicts: readonly ConflictLike[],
-  originalContents: Map<string, string>
+  originalContents: Map<string, string>,
+  options?: RenamePreviewOptions
 ): PreviewInput {
-  return convertOperationsToPreviewInput(
+  const baseInput = convertOperationsToPreviewInput(
     PreviewCommand.Rename,
     operations,
     originalContents,
     convertRenameConflicts(conflicts)
   );
+
+  return {
+    ...baseInput,
+    operationDescription: options?.oldName && options?.newName
+      ? `Renamed '${options.oldName}' to '${options.newName}'`
+      : undefined
+  };
 }
 
 /**
@@ -85,10 +101,15 @@ export function convertMovePreview(
     fileChanges.push({ filePath, originalContent, changes });
   }
 
+  // 從路徑提取檔名
+  const sourceFileName = sourceFile.split('/').pop() ?? sourceFile;
+  const targetFileName = targetFile.split('/').pop() ?? targetFile;
+
   return {
     command: PreviewCommand.Move,
     success: true,
-    fileChanges
+    fileChanges,
+    operationDescription: `Moved '${sourceFileName}' to '${targetFileName}'`
   };
 }
 
@@ -168,11 +189,26 @@ export function convertShiftPreview(
     });
   }
 
+  // 生成操作描述
+  const linesCount = toLine - fromLine + 1;
+  const operationDescription = isSameFile
+    ? `Moved ${linesCount} line${linesCount > 1 ? 's' : ''} within file (${fromLine}-${toLine} → ${position})`
+    : `Moved ${linesCount} line${linesCount > 1 ? 's' : ''} to '${targetFile.split('/').pop()}'`;
+
   return {
     command: PreviewCommand.Shift,
     success: true,
-    fileChanges
+    fileChanges,
+    operationDescription
   };
+}
+
+/** Refactor 操作選項 */
+export interface RefactorPreviewOptions {
+  /** 提取的函數名稱 */
+  functionName?: string;
+  /** 操作類型 */
+  action?: string;
 }
 
 /**
@@ -183,7 +219,8 @@ export function convertRefactorPreview(
   filePath: string,
   originalContent: string,
   targetFileContent?: string,
-  targetFilePath?: string
+  targetFilePath?: string,
+  options?: RefactorPreviewOptions
 ): PreviewInput {
   const fileChanges: FileChangeInput[] = [];
   const originalLines = originalContent.split('\n');
@@ -218,10 +255,19 @@ export function convertRefactorPreview(
     });
   }
 
+  // 生成操作描述
+  let operationDescription: string | undefined;
+  if (options?.functionName) {
+    operationDescription = `Extracted function '${options.functionName}'`;
+  } else if (options?.action) {
+    operationDescription = options.action;
+  }
+
   return {
     command: PreviewCommand.Refactor,
     success: true,
-    fileChanges
+    fileChanges,
+    operationDescription
   };
 }
 

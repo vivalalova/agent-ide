@@ -10,6 +10,7 @@ export {
   type ChangeLine,
   type DiffHunk,
   type FileChange,
+  type FileChangeSummary,
   type PreviewSummary,
   type ConflictInfo,
   type PreviewResult,
@@ -27,5 +28,7 @@ export {
   convertRenamePreview,
   convertMovePreview,
   convertShiftPreview,
-  convertRefactorPreview
+  convertRefactorPreview,
+  type RenamePreviewOptions,
+  type RefactorPreviewOptions
 } from './preview-converter.js';

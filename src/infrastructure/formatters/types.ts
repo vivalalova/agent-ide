@@ -14,7 +14,8 @@ export enum PreviewCommand {
 /** 輸出格式類型 */
 export enum PreviewFormat {
   Diff = 'diff',
-  Json = 'json'
+  Json = 'json',
+  Summary = 'summary'
 }
 
 /** 變更行類型 */
@@ -70,6 +71,18 @@ export interface PreviewSummary {
   deletions: number;
 }
 
+/** 單一檔案的變更摘要（用於 summary 格式） */
+export interface FileChangeSummary {
+  /** 檔案路徑 */
+  filePath: string;
+  /** 變更類型描述（如 "renamed X → Y", "import updated"） */
+  changeType: string;
+  /** 新增行數 */
+  additions: number;
+  /** 刪除行數 */
+  deletions: number;
+}
+
 /** 衝突資訊 */
 export interface ConflictInfo {
   /** 衝突類型 */
@@ -95,6 +108,10 @@ export interface PreviewResult {
   files: FileChange[];
   /** 統計摘要 */
   summary: PreviewSummary;
+  /** 檔案變更摘要列表（用於 summary 格式） */
+  fileSummaries?: FileChangeSummary[];
+  /** 操作描述（如 "Renamed 'foo' to 'bar'"） */
+  operationDescription?: string;
   /** 衝突列表（可選） */
   conflicts?: ConflictInfo[];
   /** 錯誤訊息列表（可選） */
@@ -120,6 +137,8 @@ export interface PreviewInput {
   success: boolean;
   /** 檔案變更資料 */
   fileChanges: FileChangeInput[];
+  /** 操作描述（如 "Renamed 'foo' to 'bar'"） */
+  operationDescription?: string;
   /** 衝突列表 */
   conflicts?: ConflictInfo[];
   /** 錯誤訊息 */

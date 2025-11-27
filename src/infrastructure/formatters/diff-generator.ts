@@ -5,10 +5,12 @@
 
 import {
   ChangeLineType,
+  PreviewCommand,
   type ChangeLine,
   type DiffHunk,
   type FileChange,
   type FileChangeInput,
+  type FileChangeSummary,
   type LineChange,
   type PreviewInput,
   type PreviewResult,
@@ -22,12 +24,15 @@ import {
 export function generatePreviewResult(input: PreviewInput, contextLines: number = 3): PreviewResult {
   const files: FileChange[] = input.fileChanges.map(fc => generateFileChange(fc, contextLines));
   const summary = calculateSummary(files);
+  const fileSummaries = generateFileSummaries(files, getDefaultChangeType(input.command));
 
   return {
     command: input.command,
     success: input.success,
     files,
     summary,
+    fileSummaries,
+    operationDescription: input.operationDescription,
     conflicts: input.conflicts,
     errors: input.errors
   };
@@ -201,4 +206,46 @@ function calculateSummary(files: FileChange[]): PreviewSummary {
     additions,
     deletions
   };
+}
+
+/**
+ * 從 FileChange 生成檔案變更摘要列表
+ */
+function generateFileSummaries(files: FileChange[], defaultChangeType: string): FileChangeSummary[] {
+  return files.map(file => {
+    let additions = 0;
+    let deletions = 0;
+
+    file.hunks.forEach(hunk => {
+      hunk.lines.forEach(line => {
+        if (line.type === ChangeLineType.Add) {additions++;}
+        if (line.type === ChangeLineType.Delete) {deletions++;}
+      });
+    });
+
+    return {
+      filePath: file.filePath,
+      changeType: defaultChangeType,
+      additions,
+      deletions
+    };
+  });
+}
+
+/**
+ * 根據命令類型取得預設變更描述
+ */
+function getDefaultChangeType(command: PreviewCommand): string {
+  switch (command) {
+    case PreviewCommand.Rename:
+      return 'symbol renamed';
+    case PreviewCommand.Move:
+      return 'import updated';
+    case PreviewCommand.Shift:
+      return 'lines moved';
+    case PreviewCommand.Refactor:
+      return 'code refactored';
+    default:
+      return 'modified';
+  }
 }

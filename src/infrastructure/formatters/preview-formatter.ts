@@ -53,6 +53,8 @@ export class PreviewFormatter {
         return this.toDiff(result);
       case PreviewFormat.Json:
         return this.toJson(result);
+      case PreviewFormat.Summary:
+        return this.toSummary(result);
       default:
         return this.toDiff(result);
     }
@@ -99,6 +101,59 @@ export class PreviewFormatter {
    */
   toJson(result: PreviewResult): string {
     return JSON.stringify(result, null, 2);
+  }
+
+  /**
+   * 轉換為 summary 格式
+   * 統計 + 每個檔案的簡短變更描述
+   */
+  toSummary(result: PreviewResult): string {
+    const lines: string[] = [];
+
+    // 操作描述
+    if (result.operationDescription) {
+      lines.push(result.operationDescription);
+      lines.push('');
+    }
+
+    // 統計摘要
+    const { summary } = result;
+    const addPart = this.colorize(`+${summary.additions}`, Colors.green);
+    const delPart = this.colorize(`-${summary.deletions}`, Colors.red);
+    lines.push(`Files: ${summary.totalFiles}`);
+    lines.push(`Changes: ${summary.totalChanges} (${addPart} ${delPart})`);
+
+    // 檔案變更列表
+    if (result.fileSummaries && result.fileSummaries.length > 0) {
+      lines.push('');
+      lines.push('Files:');
+      result.fileSummaries.forEach(fs => {
+        const stats = this.colorize(`+${fs.additions}`, Colors.green)
+          + ' '
+          + this.colorize(`-${fs.deletions}`, Colors.red);
+        lines.push(`  ${fs.filePath}: ${fs.changeType} (${stats})`);
+      });
+    }
+
+    // 衝突警告
+    if (result.conflicts && result.conflicts.length > 0) {
+      lines.push('');
+      lines.push(this.colorize('Conflicts:', Colors.red));
+      result.conflicts.forEach(conflict => {
+        lines.push(this.colorize(`  - ${conflict.message}`, Colors.red));
+      });
+    }
+
+    // 錯誤訊息
+    if (result.errors && result.errors.length > 0) {
+      lines.push('');
+      lines.push(this.colorize('Errors:', Colors.red));
+      result.errors.forEach(error => {
+        lines.push(this.colorize(`  - ${error}`, Colors.red));
+      });
+    }
+
+    return lines.join('\n');
   }
 
   /**
