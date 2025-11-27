@@ -55,9 +55,7 @@ export {
   type GraphEdge,
   type AnalyzeResult,
   type SnapshotResult,
-  type SnapshotStats,
-  type PluginsResult,
-  type PluginInfo
+  type SnapshotStats
 } from './query-types.js';
 
 export {

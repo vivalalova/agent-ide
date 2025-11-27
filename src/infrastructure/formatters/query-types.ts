@@ -1,6 +1,6 @@
 /**
  * 唯讀命令結果型別定義
- * 所有唯讀命令（search, shit, analyze, deps, snapshot, plugins）共用此結構
+ * 所有唯讀命令（search, shit, analyze, deps, snapshot）共用此結構
  */
 
 /** 唯讀命令類型 */
@@ -9,8 +9,7 @@ export enum QueryCommand {
   Shit = 'shit',
   Analyze = 'analyze',
   Deps = 'deps',
-  Snapshot = 'snapshot',
-  Plugins = 'plugins'
+  Snapshot = 'snapshot'
 }
 
 /** 問題嚴重度 */
@@ -259,23 +258,3 @@ export interface SnapshotResult extends QueryResult {
   stats?: SnapshotStats;
 }
 
-/** Plugin 資訊 */
-export interface PluginInfo {
-  /** 插件名稱 */
-  name: string;
-  /** 版本 */
-  version: string;
-  /** 支援的副檔名 */
-  supportedExtensions: string[];
-  /** 支援的語言 */
-  supportedLanguages: string[];
-  /** 註冊時間 */
-  registeredAt: Date;
-}
-
-/** Plugins 結果 */
-export interface PluginsResult extends QueryResult {
-  command: QueryCommand.Plugins;
-  /** 插件列表 */
-  plugins: PluginInfo[];
-}

@@ -12,8 +12,7 @@ import {
   type SearchResult,
   type DepsResult,
   type AnalyzeResult,
-  type SnapshotResult,
-  type PluginsResult
+  type SnapshotResult
 } from './query-types.js';
 
 /** ANSI 顏色碼 */
@@ -89,8 +88,6 @@ export class QueryFormatter {
         return this.formatAnalyzeSummary(result as AnalyzeResult);
       case QueryCommand.Snapshot:
         return this.formatSnapshotSummary(result as SnapshotResult);
-      case QueryCommand.Plugins:
-        return this.formatPluginsSummary(result as PluginsResult);
       default:
         return this.formatDefaultSummary(result);
     }
@@ -264,29 +261,6 @@ export class QueryFormatter {
       lines.push(`  總行數: ${result.stats.lines}`);
       lines.push(`  總大小: ${this.formatSize(result.stats.size)}`);
     }
-
-    return lines.join('\n');
-  }
-
-  /**
-   * 格式化 Plugins 摘要
-   */
-  private formatPluginsSummary(result: PluginsResult): string {
-    const lines: string[] = [];
-
-    lines.push(`🔌 插件列表 (${result.plugins.length} 個)`);
-    lines.push('');
-
-    if (result.plugins.length === 0) {
-      lines.push('未找到已註冊的插件');
-      return lines.join('\n');
-    }
-
-    result.plugins.forEach(plugin => {
-      lines.push(this.colorize(`${plugin.name} v${plugin.version}`, Colors.bold));
-      lines.push(`  副檔名: ${plugin.supportedExtensions.join(', ')}`);
-      lines.push(`  語言: ${plugin.supportedLanguages.join(', ')}`);
-    });
 
     return lines.join('\n');
   }
