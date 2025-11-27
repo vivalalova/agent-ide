@@ -156,9 +156,9 @@ outputHandler.outputMutation(previewInput, format);
 
 | 改動類型 | 必須更新 |
 |---------|---------|
-| CLI 新增選項 | `tests/e2e/commands/cli-*.e2e.test.ts`、`docs/*.md`、`CLAUDE.md` |
+| CLI 新增選項 | `tests/e2e/commands/cli-*.e2e.test.ts`、`docs/*.md`、`CLAUDE.md`、`plugins/skills/agent-ide/` |
 | CLI 新增命令 | 同上 + `src/interfaces/cli/commands/` |
-| Core 模組改動 | 對應 E2E 測試、相關文件 |
+| Core 模組改動 | 對應 E2E 測試、相關文件、`plugins/skills/agent-ide/` |
 | 輸出格式改動 | `infrastructure/formatters/`、E2E 測試 |
 | 型別定義改動 | 所有引用處、測試、文件 |
 
