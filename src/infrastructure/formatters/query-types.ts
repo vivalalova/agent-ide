@@ -1,15 +1,13 @@
 /**
  * 唯讀命令結果型別定義
- * 所有唯讀命令（search, shit, analyze, deps, snapshot）共用此結構
+ * 所有唯讀命令（search, analyze, deps）共用此結構
  */
 
 /** 唯讀命令類型 */
 export enum QueryCommand {
   Search = 'search',
-  Shit = 'shit',
   Analyze = 'analyze',
-  Deps = 'deps',
-  Snapshot = 'snapshot'
+  Deps = 'deps'
 }
 
 /** 問題嚴重度 */
@@ -32,7 +30,7 @@ export interface QueryIssue {
   filePath?: string;
   /** 行號 */
   line?: number;
-  /** 分數（如 shit score） */
+  /** 分數 */
   score?: number;
 }
 
@@ -66,76 +64,6 @@ export interface QueryResult {
 }
 
 // ========== 各命令特化結果 ==========
-
-/** 維度分數 */
-export interface DimensionScore {
-  /** 原始分數 */
-  score: number;
-  /** 權重 */
-  weight: number;
-  /** 加權後分數 */
-  weightedScore: number;
-}
-
-/** 修復建議 */
-export interface Recommendation {
-  /** 建議類別 */
-  category: string;
-  /** 優先級 */
-  priority: number;
-  /** 建議內容 */
-  suggestion: string;
-  /** 預期改善分數 */
-  estimatedImpact: number;
-  /** 影響檔案數 */
-  affectedFiles: string[];
-}
-
-/** ShitScore 結果 */
-export interface ShitResult extends QueryResult {
-  command: QueryCommand.Shit;
-  /** 總分（0-100，越高越糟） */
-  shitScore: number;
-  /** 評級（S/A/B/C/D/E/F） */
-  grade: string;
-  /** 評級資訊 */
-  gradeInfo: {
-    emoji: string;
-    message: string;
-  };
-  /** 維度分數 */
-  dimensions: {
-    complexity: DimensionScore;
-    maintainability: DimensionScore;
-    architecture: DimensionScore;
-    qualityAssurance?: DimensionScore;
-  };
-  /** 最糟項目列表 */
-  topShit?: ShitItem[];
-  /** 修復建議 */
-  recommendations?: Recommendation[];
-  /** 分析時間 */
-  analyzedAt?: Date;
-}
-
-/** Shit 項目（對應 core 的 ShitItem） */
-export interface ShitItem {
-  /** 類型 */
-  type: string;
-  /** 嚴重度 */
-  severity: string;
-  /** 分數 */
-  score: number;
-  /** 檔案路徑 */
-  filePath: string;
-  /** 描述 */
-  description: string;
-  /** 位置 */
-  location?: {
-    line: number;
-    column?: number;
-  };
-}
 
 /** 搜尋結果項目 */
 export interface SearchMatch {
@@ -216,45 +144,5 @@ export interface AnalyzeResult extends QueryResult {
   analyzeType: AnalyzeType;
   /** 分析指標 */
   metrics?: Record<string, unknown>;
-}
-
-/** Snapshot 操作類型 */
-export enum SnapshotAction {
-  Generate = 'generate',
-  Info = 'info',
-  Diff = 'diff',
-  Init = 'init',
-  List = 'list'
-}
-
-/** Snapshot 統計 */
-export interface SnapshotStats {
-  /** 檔案數 */
-  files: number;
-  /** 總行數 */
-  lines: number;
-  /** 總大小（bytes） */
-  size: number;
-  /** 符號數量 */
-  symbolCount?: number;
-  /** 依賴關係數 */
-  dependencyCount?: number;
-  /** 估計 token 數 */
-  estimatedTokens?: number;
-  /** 壓縮率 */
-  compressionRatio?: number;
-  /** 生成耗時（ms） */
-  generationTime?: number;
-}
-
-/** Snapshot 結果 */
-export interface SnapshotResult extends QueryResult {
-  command: QueryCommand.Snapshot;
-  /** 操作類型 */
-  action: SnapshotAction;
-  /** Snapshot 路徑 */
-  snapshotPath?: string;
-  /** 統計資訊 */
-  stats?: SnapshotStats;
 }
 

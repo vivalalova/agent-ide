@@ -39,23 +39,16 @@ export {
   QueryCommand,
   IssueSeverity,
   AnalyzeType,
-  SnapshotAction,
   type QueryResult,
   type QuerySummary,
   type QueryIssue,
-  type DimensionScore,
-  type Recommendation,
-  type ShitResult,
-  type ShitItem,
   type SearchResult,
   type SearchMatch,
   type DepsResult,
   type CycleInfo,
   type GraphNode,
   type GraphEdge,
-  type AnalyzeResult,
-  type SnapshotResult,
-  type SnapshotStats
+  type AnalyzeResult
 } from './query-types.js';
 
 export {
