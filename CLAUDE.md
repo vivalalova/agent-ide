@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 核心模組、3 Parser（TS/JS/Swift）、404 測試通過
+**現況**：6 核心模組、3 Parser（TS/JS/Swift）
 
 ## 常用指令
 
@@ -20,7 +20,7 @@ pnpm lint                     # ESLint
 npm link                      # 本地 CLI 安裝
 
 # 單一測試檔
-pnpm test -- --run tests/e2e/commands/cli-shit.e2e.test.ts
+pnpm test -- --run tests/e2e/commands/cli-search.e2e.test.ts
 
 # 匹配測試名稱
 pnpm test -- --run -t "應該分析專案"
@@ -30,15 +30,14 @@ pnpm test -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/           # 8 核心模組
+├── core/           # 6 核心模組
 │   ├── dependency/ # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
 │   ├── indexing/   # 1000檔/秒、查詢<10ms
 │   ├── move/       # 檔案移動+import更新
 │   ├── refactor/   # 提取/內聯函式
 │   ├── rename/     # 符號重命名+引用更新
 │   ├── search/     # 文字/語義/結構化
-│   ├── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
-│   └── shit-score/ # 0-100分垃圾度評分
+│   └── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
 ├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）
 ├── interfaces/     # CLI（Unix哲學/JSON輸出）
@@ -56,7 +55,7 @@ src/
 ```typescript
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
-describe('CLI shit - 基於 sample-project fixture', () => {
+describe('CLI search - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -67,10 +66,10 @@ describe('CLI shit - 基於 sample-project fixture', () => {
     fixture.cleanup();
   });
 
-  it('應該分析專案並輸出 JSON 格式評分', async () => {
-    const result = await executeCLI(['shit', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+  it('應該搜尋並輸出 JSON 格式結果', async () => {
+    const result = await executeCLI(['search', 'function', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
     expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout).shitScore).toBeDefined();
+    expect(JSON.parse(result.stdout).results).toBeDefined();
   });
 });
 ```
@@ -84,14 +83,6 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 - 數量極端：50+ 檔案/函數
 - 深度極端：10+ 層嵌套
 - 長度極端：500+ 行、1000+ 字元
-
-## ShitScore 維度
-
-**四維度權重**（30%/30%/20%/20%）：
-- Complexity：循環複雜度、嵌套深度
-- Maintainability：檔案大小、函數長度
-- Architecture：依賴深度、循環依賴
-- QualityAssurance：型別安全、錯誤處理、命名
 
 ## CLI 命令
 
@@ -108,8 +99,6 @@ agent-ide search symbol --query <name>              # 符號搜尋
 agent-ide search structural --type <function|class> # 結構化搜尋
 agent-ide analyze --path <path> [--format json|summary]
 agent-ide deps --path <path> [--format json|summary]
-agent-ide shit --path <path> [--format json|summary]
-agent-ide snapshot --path <path> [-e <glob>...] [-l minimal|medium|full] [--format json|summary]
 ```
 
 ### 變更類命令（支援 --dry-run）
@@ -140,7 +129,7 @@ outputHandler.outputMutation(previewInput, format);
 ```
 
 ### Formatters 層
-- **QueryFormatter**：處理查詢類結果（ShitResult, SearchResult, DepsResult 等）
+- **QueryFormatter**：處理查詢類結果（SearchResult, DepsResult, AnalyzeResult）
 - **PreviewFormatter**：處理變更類預覽（diff, summary, json）
 - **QueryTypes**：統一的結果型別定義（QueryResult, QueryCommand enum）
 
@@ -164,7 +153,6 @@ outputHandler.outputMutation(previewInput, format);
 
 **文件位置**：
 - `README.md` - 專案介紹、安裝、快速開始
-- `docs/SNAPSHOT.md` - snapshot 命令說明
 - `docs/GUIDE.md` - 實戰案例指南
 - `CLAUDE.md` - CLI 命令快速參考（開發用）
 

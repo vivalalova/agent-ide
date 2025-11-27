@@ -40,8 +40,6 @@ pnpm install && pnpm build && npm link
 | `refactor` | 提取/內聯函式                        | json, summary, diff |
 | `analyze`  | 分析程式碼品質                       | json, summary       |
 | `deps`     | 依賴關係分析、循環檢測               | json, summary       |
-| `shit`     | 垃圾度評分（0-100，越高越糟）        | json, summary       |
-| `snapshot` | 程式碼快照生成                       | json, summary       |
 
 <details>
 <summary>📖 使用指南</summary>
@@ -115,32 +113,6 @@ npx agent-ide deps --format json
 npx agent-ide deps --format json --all
 ```
 
-### 垃圾度評分（shit）
-
-```bash
-# 基本評分（0-100，越高越糟）
-npx agent-ide shit --format json
-
-# 詳細分析（含 topShit + recommendations）
-npx agent-ide shit --detailed --format json
-
-# CI/CD 門檻檢查（超過則 exit 1）
-npx agent-ide shit --max-allowed 70
-```
-
-### 程式碼快照（snapshot）
-
-```bash
-# 生成專案快照
-npx agent-ide snapshot --format json
-
-# 排除特定目錄
-npx agent-ide snapshot -e "node_modules/**" -e "dist/**" --format json
-
-# 設定詳細程度
-npx agent-ide snapshot -l full --format json
-```
-
 </details>
 
 ---
@@ -150,14 +122,12 @@ npx agent-ide snapshot -l full --format json
 
 - [**實戰指南**](./plugins/skills/agent-ide/references/guide.md) - 綜合使用各功能完成新增/刪除/重構的完整案例
 - [CLI 使用指南](./docs/cli-guide.md) - 完整 CLI 命令參考與選項說明
-- [Snapshot](./docs/SNAPSHOT.md) - 快照功能實戰指南，TypeScript 專案型別安全重構案例
 - [Search](./docs/SEARCH.md) - 文字/符號/語義三種搜尋模式，支援正規表達式
 - [Rename](./docs/RENAME.md) - 安全的符號重命名，自動更新所有引用
 - [Move](./docs/MOVE.md) - 智能檔案移動，自動更新 import 路徑
 - [Shift](./docs/SHIFT.md) - 行級程式碼移動，支援跨檔案與新檔案生成
 - [Analyze](./docs/ANALYZE.md) - 程式碼品質分析，複雜度評估與死代碼檢測
 - [Dependencies](./docs/DEPS.md) - 依賴關係分析，循環依賴檢測與影響範圍
-- [ShitScore](./docs/SHIT-SCORE.md) - 程式碼品質分析，ShitScore 評分與診斷
 
 </details>
 

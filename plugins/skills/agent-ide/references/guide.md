@@ -2,51 +2,14 @@
 
 ## 概述
 
-agent-ide 是為 AI 代理設計的 CLI 工具集，提供搜尋、重構、依賴分析和品質評分功能，讓 AI 能智能地理解和操作程式碼。
+agent-ide 是為 AI 代理設計的 CLI 工具集，提供搜尋、重構、依賴分析功能，讓 AI 能智能地理解和操作程式碼。
 
 > **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
 > （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
 
 ## 核心命令詳解
 
-### 1. 程式碼品質分析 (shit)
-
-評估程式碼品質，ShitScore 0-100 分（越高越糟）：
-
-```bash
-# 基本評分
-agent-ide shit --path . --format json
-
-# 詳細分析（含建議）
-agent-ide shit --path . --detailed --format json
-
-# CI/CD 門檻（超過則 exit 1）
-agent-ide shit --path . --max-allowed 70
-```
-
-**輸出內容：**
-- 整體 ShitScore（0-100）
-- 等級（A-F）
-- 四維度：複雜度、可維護性、架構、品質保證
-- 最糟檔案清單（topShit）
-- 改善建議
-
-### 2. 專案快照 (snapshot)
-
-生成壓縮的專案概覽供 AI 理解：
-
-```bash
-# 基本快照
-agent-ide snapshot --path . --format json
-
-# 排除特定檔案
-agent-ide snapshot --path . -e "**/*.test.ts" -e "**/node_modules/**"
-
-# 壓縮層級：minimal、medium、full
-agent-ide snapshot --path . -l medium --format json
-```
-
-### 3. 符號重命名 (rename)
+### 1. 符號重命名 (rename)
 
 安全地跨專案重命名符號：
 
@@ -58,7 +21,7 @@ agent-ide rename --path . --from getUserData --to fetchUserProfile --dry-run
 agent-ide rename --path . --from getUserData --to fetchUserProfile
 ```
 
-### 4. 檔案移動 (move)
+### 2. 檔案移動 (move)
 
 移動檔案並自動更新所有 import：
 
@@ -70,7 +33,7 @@ agent-ide move src/api/user.ts src/services/user.service.ts --path . --dry-run
 agent-ide move src/api/user.ts src/services/user.service.ts --path .
 ```
 
-### 5. 程式碼搜尋 (search)
+### 3. 程式碼搜尋 (search)
 
 搜尋文字、正規表達式或結構化元素：
 
@@ -85,7 +48,7 @@ agent-ide search "function.*User" --path . -t regex --format json
 agent-ide search "User" --path . -t class --format json
 ```
 
-### 6. 依賴分析 (deps)
+### 4. 依賴分析 (deps)
 
 分析依賴關係與檢測循環依賴：
 
@@ -97,7 +60,19 @@ agent-ide deps --path . --format json --all
 agent-ide deps --path . --check-cycles --format json
 ```
 
-### 7. 程式碼移動 (shift)
+### 5. 品質分析 (analyze)
+
+分析程式碼品質：
+
+```bash
+# 品質分析
+agent-ide analyze --path . --format json
+
+# 顯示所有結果
+agent-ide analyze --path . --format json --all
+```
+
+### 6. 程式碼移動 (shift)
 
 在檔案內或跨檔案移動程式碼行：
 
@@ -109,7 +84,7 @@ agent-ide shift src/file.ts --from 2 --to 5 --position 10 --dry-run
 agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 ```
 
-### 8. 函數提取 (refactor)
+### 7. 函數提取 (refactor)
 
 提取或內聯函數：
 
@@ -126,38 +101,32 @@ agent-ide refactor inline-function --file src/file.ts --function-name helperFn -
 ### 重構流程
 
 ```bash
-# 1. 評估現況
-agent-ide shit --path . --detailed --format json
-
-# 2. 找出問題區域
+# 1. 分析品質
 agent-ide analyze --path . --format json
 
-# 3. 預覽重命名影響
+# 2. 預覽重命名影響
 agent-ide rename --path . --from oldName --to newName --dry-run
 
-# 4. 執行重命名
+# 3. 執行重命名
 agent-ide rename --path . --from oldName --to newName
 
-# 5. 驗證改善
-agent-ide shit --path . --format json
+# 4. 檢查循環依賴
+agent-ide deps --path . --check-cycles
 ```
 
 ### 模組重組
 
 ```bash
-# 1. 變更前快照
-agent-ide snapshot --path . --format json > before.json
-
-# 2. 分析依賴
+# 1. 分析依賴
 agent-ide deps --path . --format json
 
-# 3. 預覽檔案移動
+# 2. 預覽檔案移動
 agent-ide move src/old.ts src/new-location.ts --path . --dry-run
 
-# 4. 執行移動
+# 3. 執行移動
 agent-ide move src/old.ts src/new-location.ts --path .
 
-# 5. 檢查新循環依賴
+# 4. 檢查新循環依賴
 agent-ide deps --path . --check-cycles
 ```
 

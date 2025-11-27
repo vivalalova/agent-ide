@@ -42,7 +42,6 @@ pnpm install && pnpm build && npm link
 | 程式碼重構 | `refactor` | 提取/內聯函式 |
 | 品質分析 | `analyze` | 複雜度、品質指標分析 |
 | 依賴分析 | `deps` | 依賴圖、循環依賴、影響分析 |
-| 插件管理 | `plugins` | Parser 插件管理 |
 
 ## 效能指標
 

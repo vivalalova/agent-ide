@@ -30,9 +30,6 @@ agent-ide --version
 | `refactor` | 程式碼重構 | `extract-function`, `--dry-run` |
 | `analyze` | 品質分析 | `complexity`, `dead-code`, `--format json` |
 | `deps` | 依賴分析 | `--format json` |
-| `shit` | 垃圾度評分 | `--detailed`, `--max-allowed=70` |
-| `snapshot` | 程式碼快照 | `generate`, `info`, `diff` |
-| `plugins` | 插件管理 | `list`, `--format json` |
 
 ### 統一輸出格式
 
@@ -244,56 +241,6 @@ agent-ide deps --format json --all
 
 ---
 
-## shit - 垃圾度評分
-
-```bash
-# 基本評分（0-100，越高越糟）
-agent-ide shit
-
-# 詳細分析
-agent-ide shit --detailed
-
-# JSON 輸出
-agent-ide shit --format json
-agent-ide shit --detailed --format json
-
-# 顯示前 20 個最糟項目
-agent-ide shit --detailed --top=20 --format json
-
-# CI/CD 門檻檢查
-agent-ide shit --max-allowed=70
-```
-
-**評分維度**（CLAUDE.md 中有詳細說明）：
-- Complexity (30%): 循環複雜度、函式長度
-- Maintainability (30%): 死代碼、超大檔案
-- Architecture (30%): 循環依賴、孤立檔案
-- QA (20%): 型別安全、錯誤處理、命名
-
-**評級系統**：
-- A (0-29): 優秀
-- B (30-49): 良好
-- C (50-69): 需重構
-- D (70-84): 強烈建議重構
-- F (85-100): 建議重寫
-
----
-
-## plugins - 插件管理
-
-```bash
-# 列出所有插件
-agent-ide plugins list
-
-# 查看插件資訊
-agent-ide plugins info typescript
-
-# 列出啟用的插件
-agent-ide plugins list -f enabled
-```
-
----
-
 ## 輸出格式
 
 所有命令支援統一的輸出格式：
@@ -304,10 +251,9 @@ agent-ide plugins list -f enabled
 
 ```json
 {
-  "command": "shit",
+  "command": "search",
   "success": true,
-  "shitScore": 45,
-  "grade": "B",
+  "results": [...],
   "summary": { ... }
 }
 ```

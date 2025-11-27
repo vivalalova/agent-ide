@@ -44,11 +44,6 @@ export default defineConfig({
 
     // Worker 設定
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        isolate: true,
-      },
-    },
     maxWorkers: 2,
     fileParallelism: true,
 
@@ -58,7 +53,7 @@ export default defineConfig({
     teardownTimeout: 30000,
 
     // 並發控制 - 降低並發數減少 Worker 負載
-    maxConcurrency: 5,
+    maxConcurrency: 20,
 
     // 清理設定
     clearMocks: true,
