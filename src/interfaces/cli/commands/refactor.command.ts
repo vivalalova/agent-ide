@@ -279,30 +279,8 @@ async function handleTsJsExtract(
     const functionSignatureMatch = modifiedCode.match(new RegExp(`(async\\s+)?function\\s+${result.functionName}\\s*\\([^)]*\\)`));
     const functionSignature = functionSignatureMatch ? functionSignatureMatch[0] : `function ${result.functionName}`;
 
-    console.log('   重構完成');
-    console.log(`   提取的函式: ${functionSignature}`);
-    console.log(functionSignature);
-
-    if (!options.dryRun) {
-      // 寫入原始檔案
-      await context.fileSystem.writeFile(filePath, modifiedCode);
-      console.log(`   已更新 ${filePath}`);
-
-      // 如果是跨檔案提取，寫入目標檔案
-      if (result.targetFileContent && options.targetFile) {
-        const targetPath = path.resolve(options.targetFile);
-        // 確保目標目錄存在
-        const targetDir = path.dirname(targetPath);
-        await context.fileSystem.createDirectory(targetDir, true);
-        // 寫入目標檔案
-        await context.fileSystem.writeFile(targetPath, result.targetFileContent);
-        console.log(`   已建立/更新目標檔案 ${targetPath}`);
-        if (result.importStatement) {
-          console.log(`   已加入 import: ${result.importStatement}`);
-        }
-      }
-    } else {
-      // Dry-run 模式：使用統一輸出處理器
+    // Dry-run 模式：使用統一輸出處理器，不輸出額外訊息
+    if (options.dryRun) {
       const previewInput = convertRefactorPreview(
         result.edits.map(e => ({
           range: e.range,
@@ -316,9 +294,53 @@ async function handleTsJsExtract(
       );
 
       outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 非 dry-run 模式：執行實際變更並輸出結果
+    if (!isJsonFormat) {
+      console.log('   重構完成');
+      console.log(`   提取的函式: ${functionSignature}`);
+    }
+
+    // 寫入原始檔案
+    await context.fileSystem.writeFile(filePath, modifiedCode);
+    if (!isJsonFormat) {
+      console.log(`   已更新 ${filePath}`);
+    }
+
+    // 如果是跨檔案提取，寫入目標檔案
+    if (result.targetFileContent && options.targetFile) {
+      const targetPath = path.resolve(options.targetFile);
+      // 確保目標目錄存在
+      const targetDir = path.dirname(targetPath);
+      await context.fileSystem.createDirectory(targetDir, true);
+      // 寫入目標檔案
+      await context.fileSystem.writeFile(targetPath, result.targetFileContent);
+      if (!isJsonFormat) {
+        console.log(`   已建立/更新目標檔案 ${targetPath}`);
+        if (result.importStatement) {
+          console.log(`   已加入 import: ${result.importStatement}`);
+        }
+      }
+    }
+
+    // JSON 格式輸出結果
+    if (isJsonFormat) {
+      console.log(JSON.stringify({
+        success: true,
+        functionName: result.functionName,
+        signature: functionSignature,
+        affectedFiles: options.targetFile ? 2 : 1,
+        targetFile: options.targetFile ? path.resolve(options.targetFile) : undefined
+      }, null, 2));
     }
   } else {
-    console.error('   重構失敗:', result.errors.join(', '));
+    if (isJsonFormat) {
+      console.log(JSON.stringify({ success: false, errors: result.errors }, null, 2));
+    } else {
+      console.error('   重構失敗:', result.errors.join(', '));
+    }
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
