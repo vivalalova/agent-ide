@@ -144,7 +144,9 @@ function convertToShitResult(coreResult: ShitScoreResult): ShitResult {
     summary: {
       totalScanned: coreResult.summary.analyzedFiles,
       issuesFound: coreResult.summary.totalShit,
-      totalFiles: coreResult.summary.totalFiles
+      totalFiles: coreResult.summary.totalFiles,
+      analyzedFiles: coreResult.summary.analyzedFiles,
+      totalShit: coreResult.summary.totalShit
     },
     topShit,
     recommendations,

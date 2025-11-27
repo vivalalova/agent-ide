@@ -114,15 +114,15 @@ describe.skip('CLI shit - 基於 sample-project fixture', () => {
   });
 
   describe('輸出格式', () => {
-    it('應該在 text 格式下輸出可讀文字', async () => {
-      const result = await executeCLI(['shit', '--path', fixture.rootPath, '--format', 'text'], { memfs: fixture.memfs });
+    it('應該在 summary 格式下輸出可讀文字', async () => {
+      const result = await executeCLI(['shit', '--path', fixture.rootPath, '--format', 'summary'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('垃圾度評分報告');
       expect(result.stdout).toContain('總分');
     });
 
-    it('應該預設使用 text 格式', async () => {
+    it('應該預設使用 summary 格式', async () => {
       const result = await executeCLI(['shit', '--path', fixture.rootPath], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
