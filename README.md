@@ -23,6 +23,8 @@ pnpm install && pnpm build && npm link
 ```bash
 # 從 marketplace 安裝
 /plugin marketplace add vivalalova/agent-ide
+# 安裝 plugin
+/plugin install agent-ide@vivalalova/agent-ide
 ```
 
 ### CLI 命令
