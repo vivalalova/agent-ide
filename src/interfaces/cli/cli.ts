@@ -21,13 +21,12 @@ import type { SnapshotOptions } from '../../core/snapshot/index.js';
 import { OutputFormatter, OutputFormat } from './output-formatter.js';
 import { FileSystem, type IFileSystem } from '../../infrastructure/storage/index.js';
 import {
-  createPreviewFormatter,
-  PreviewFormat,
   convertRenamePreview,
   convertMovePreview,
   convertShiftPreview,
   convertRefactorPreview
 } from '../../infrastructure/formatters/index.js';
+import { createOutputHandler, type OutputFormatOption } from './preview-output-handler.js';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'fs';
 import * as path from 'path';
@@ -175,7 +174,7 @@ export class AgentIdeCLI {
       .option('-o, --to <name>', '新名稱（--new-name 的別名）')
       .option('-p, --path <path>', '檔案或目錄路徑', '.')
       .option('--dry-run', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
+      .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
       .action(async (options) => {
         await this.handleRenameCommand(options);
       });
@@ -193,7 +192,7 @@ export class AgentIdeCLI {
       .option('--new-name <name>', '新名稱（--function-name 的別名）')
       .option('-t, --target-file <file>', '目標檔案路徑（跨檔案提取）')
       .option('--dry-run', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
+      .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
       .action(async (action, options) => {
         await this.handleRefactorCommand(action, options);
       });
@@ -208,7 +207,7 @@ export class AgentIdeCLI {
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
       .option('--update-imports', '自動更新 import 路徑', true)
       .option('--dry-run', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
+      .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
       .action(async (sourceArg, targetArg, options) => {
         // 支援兩種語法：
         // 1. move <source> <target> (位置參數)
@@ -238,7 +237,7 @@ export class AgentIdeCLI {
       .option('--target <file>', '目標檔案路徑（選填，預設為來源檔案）')
       .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
       .option('--dry-run', '預覽變更而不執行')
-      .option('--format <format>', '輸出格式 (diff|json|plain)', 'plain')
+      .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
       .action(async (file, options) => {
         await this.handleShiftCommand(file, options);
       });
@@ -496,18 +495,13 @@ export class AgentIdeCLI {
           const previewInput = convertRenamePreview(
             preview.operations,
             preview.conflicts,
-            originalContents
+            originalContents,
+            { oldName: from, newName: to }
           );
 
-          // 使用 PreviewFormatter 輸出
-          const isDiffFormat = options.format === 'diff' || (!options.format || options.format === 'plain');
-          const formatter = createPreviewFormatter({
-            contextLines: 3,
-            color: process.stdout.isTTY ?? false
-          });
-          const result = formatter.createPreview(previewInput);
-          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-          console.log(formatter.format(result, outputFormat));
+          // 使用統一輸出處理器
+          const outputHandler = createOutputHandler();
+          outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
           return;
         } catch (previewError) {
           const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
@@ -674,20 +668,18 @@ export class AgentIdeCLI {
                 console.log(`✓ 已更新 ${filePath}`);
               }
             } else {
-              // Dry-run 模式：使用 PreviewFormatter 輸出
+              // Dry-run 模式：使用統一輸出處理器
               const previewInput = convertRefactorPreview(
                 [{ range: { start: { line: 1 }, end: { line: code.split('\n').length } }, newText: result.modifiedCode }],
                 filePath,
-                code
+                code,
+                undefined,
+                undefined,
+                { action: 'Swift code refactored' }
               );
 
-              const formatter = createPreviewFormatter({
-                contextLines: 3,
-                color: process.stdout.isTTY ?? false
-              });
-              const previewResult = formatter.createPreview(previewInput);
-              const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-              console.log(formatter.format(previewResult, outputFormat));
+              const outputHandler = createOutputHandler();
+              outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
             }
           } else {
             if (isJsonFormat) {
@@ -763,7 +755,7 @@ export class AgentIdeCLI {
               }
             }
           } else {
-            // Dry-run 模式：使用 PreviewFormatter 輸出
+            // Dry-run 模式：使用統一輸出處理器
             const previewInput = convertRefactorPreview(
               result.edits.map(e => ({
                 range: e.range,
@@ -772,16 +764,12 @@ export class AgentIdeCLI {
               filePath,
               code,
               result.targetFileContent,
-              options.targetFile ? path.resolve(options.targetFile) : undefined
+              options.targetFile ? path.resolve(options.targetFile) : undefined,
+              { functionName: functionNameOption }
             );
 
-            const formatter = createPreviewFormatter({
-              contextLines: 3,
-              color: process.stdout.isTTY ?? false
-            });
-            const previewResult = formatter.createPreview(previewInput);
-            const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-            console.log(formatter.format(previewResult, outputFormat));
+            const outputHandler = createOutputHandler();
+            outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
           }
         } else {
           console.error('❌ 重構失敗:', result.errors.join(', '));
@@ -866,23 +854,21 @@ export class AgentIdeCLI {
               console.log(`✓ 已更新 ${filePath}`);
             }
           } else {
-            // Dry-run 模式：使用 PreviewFormatter 輸出
+            // Dry-run 模式：使用統一輸出處理器
             const previewInput = convertRefactorPreview(
               result.edits.map(e => ({
                 range: e.range,
                 newText: e.newText
               })),
               filePath,
-              code
+              code,
+              undefined,
+              undefined,
+              { functionName: functionNameOption, action: 'Inlined function' }
             );
 
-            const formatter = createPreviewFormatter({
-              contextLines: 3,
-              color: process.stdout.isTTY ?? false
-            });
-            const previewResult = formatter.createPreview(previewInput);
-            const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-            console.log(formatter.format(previewResult, outputFormat));
+            const outputHandler = createOutputHandler();
+            outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
           }
         } else {
           if (isJsonFormat) {
@@ -998,14 +984,9 @@ export class AgentIdeCLI {
             originalContents
           );
 
-          // 使用 PreviewFormatter 輸出
-          const formatter = createPreviewFormatter({
-            contextLines: 3,
-            color: process.stdout.isTTY ?? false
-          });
-          const previewResult = formatter.createPreview(previewInput);
-          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-          console.log(formatter.format(previewResult, outputFormat));
+          // 使用統一輸出處理器
+          const outputHandler = createOutputHandler();
+          outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
           return;
         }
 
@@ -1120,12 +1101,12 @@ export class AgentIdeCLI {
       const result = await this.shiftService.shift(shiftOptions);
 
       if (result.success) {
-        // Dry-run 模式：使用 PreviewFormatter 輸出
-        if (options.dryRun && result.movedLines) {
+        // Dry-run 模式：使用統一輸出處理器
+        if (options.dryRun) {
           // 讀取原始檔案內容
-          const sourceOriginalContent = await fs.readFile(sourceFile, 'utf-8');
+          const sourceOriginalContent = await this.fileSystem.readFile(sourceFile, 'utf-8') as string;
           const targetOriginalContent = targetFile && targetFile !== sourceFile
-            ? await fs.readFile(targetFile, 'utf-8').catch(() => null)
+            ? await this.fileSystem.readFile(targetFile, 'utf-8').catch(() => null) as string | null
             : null;
 
           // 轉換為統一的 PreviewInput 格式
@@ -1137,17 +1118,12 @@ export class AgentIdeCLI {
             position,
             sourceOriginalContent,
             targetOriginalContent,
-            result.movedLines
+            result.movedLines || []  // 無移動時使用空陣列
           );
 
-          // 使用 PreviewFormatter 輸出
-          const formatter = createPreviewFormatter({
-            contextLines: 3,
-            color: process.stdout.isTTY ?? false
-          });
-          const previewResult = formatter.createPreview(previewInput);
-          const outputFormat = options.format === 'json' ? PreviewFormat.Json : PreviewFormat.Diff;
-          console.log(formatter.format(previewResult, outputFormat));
+          // 使用統一輸出處理器
+          const outputHandler = createOutputHandler();
+          outputHandler.output(previewInput, (options.format || 'diff') as OutputFormatOption);
           return;
         }
 
