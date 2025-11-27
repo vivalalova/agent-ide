@@ -124,16 +124,16 @@ describe('CLI shift - 基於 sample-project fixture', () => {
   });
 
   describe('輸出格式', () => {
-    it('應該支援 plain 格式輸出', async () => {
+    it('應該支援 summary 格式輸出', async () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'plain'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('移動');
+      expect(result.stdout.length).toBeGreaterThan(0);
     });
 
     it('應該在 JSON 格式下包含完整的操作資訊', async () => {

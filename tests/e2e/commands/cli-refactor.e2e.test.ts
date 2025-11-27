@@ -506,8 +506,8 @@ function test() {
       }
     });
 
-    it('應該支援 plain 格式輸出', async () => {
-      const testFile = `${fixture.rootPath}/test-format-plain.ts`;
+    it('應該支援 summary 格式輸出', async () => {
+      const testFile = `${fixture.rootPath}/test-format-summary.ts`;
       await fixture.memfs.writeFile(testFile, `
 function test() {
   const x = 1;
@@ -515,7 +515,7 @@ function test() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'plain'],
+        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 

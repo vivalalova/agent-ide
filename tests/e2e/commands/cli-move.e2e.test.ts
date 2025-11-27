@@ -213,12 +213,12 @@ describe('CLI move - 基於 sample-project fixture', () => {
       expect(output).toHaveProperty('pathUpdates');
     });
 
-    it('應該支援 plain 格式輸出', async () => {
+    it('應該支援 summary 格式輸出', async () => {
       const source = path.join(fixture.rootPath, 'src/utils/inline-test.ts');
       const target = path.join(fixture.rootPath, 'src/tests/inline-test.ts');
 
       const result = await executeCLI(
-        ['move', source, target, '--path', fixture.rootPath, '--format', 'plain'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
@@ -227,12 +227,12 @@ describe('CLI move - 基於 sample-project fixture', () => {
       expect(result.stdout.length).toBeGreaterThan(0);
     });
 
-    it('應該支援 minimal 格式輸出', async () => {
+    it('應該支援 diff 格式輸出', async () => {
       const source = path.join(fixture.rootPath, 'src/core/config/settings.ts');
       const target = path.join(fixture.rootPath, 'src/config/settings.ts');
 
       const result = await executeCLI(
-        ['move', source, target, '--path', fixture.rootPath, '--format', 'minimal'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'diff'],
         { memfs: fixture.memfs }
       );
 
@@ -240,7 +240,7 @@ describe('CLI move - 基於 sample-project fixture', () => {
       expect(typeof result.stdout).toBe('string');
     });
 
-    it('應該預設使用 plain 格式', async () => {
+    it('應該預設使用 diff 格式', async () => {
       const source = path.join(fixture.rootPath, 'src/types/api.ts');
       const target = path.join(fixture.rootPath, 'src/types/interfaces/api.ts');
 

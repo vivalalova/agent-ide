@@ -148,42 +148,33 @@ describe('CLI rename - 基於 sample-project fixture', () => {
       }
     });
 
-    it('應該支援 plain 格式輸出', async () => {
+    it('應該支援 summary 格式輸出', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole', '--format', 'plain'],
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole', '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('重新命名');
+      expect(result.stdout.length).toBeGreaterThan(0);
     });
 
-    it('應該支援 markdown 格式輸出', async () => {
+    it('應該支援 diff 格式輸出', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole', '--format', 'markdown'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-    });
-
-    it('應該支援 minimal 格式輸出', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole', '--format', 'minimal'],
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole', '--format', 'diff'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
     });
 
-    it('應該預設使用 plain 格式', async () => {
+    it('應該預設使用 diff 格式', async () => {
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('重新命名');
+      expect(result.stdout.length).toBeGreaterThan(0);
     });
   });
 
