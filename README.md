@@ -145,44 +145,6 @@ npx agent-ide snapshot -l full --format json
 ---
 
 <details>
-<summary>🏗️ 架構</summary>
-
-```
-Agent IDE
-├── 核心模組：搜尋、重構、移動、依賴分析、ShitScore
-├── 基礎設施：Parser 框架、索引引擎、快取、儲存
-├── 插件系統：TypeScript、JavaScript、Swift
-└── 介面層：CLI
-```
-
-**效能特色**：
-- 增量索引（~1000 檔案/秒）
-- 多層快取（查詢 <50ms）
-- 並行處理
-- 記憶體優化（~100MB / 10k 檔案）
-
-**支援語言**：TypeScript、JavaScript、Swift
-
-</details>
-
----
-
-<details>
-<summary>🧪 開發</summary>
-
-```bash
-pnpm install      # 安裝依賴
-pnpm build        # 建置
-pnpm test         # 測試（404 E2E 測試）
-pnpm typecheck    # 型別檢查
-pnpm lint         # ESLint
-```
-
-</details>
-
----
-
-<details>
 <summary>📖 文件</summary>
 
 - [**實戰指南**](./plugins/skills/agent-ide/references/guide.md) - 綜合使用各功能完成新增/刪除/重構的完整案例
