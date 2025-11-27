@@ -25,14 +25,22 @@ agent-ide --version
 |------|------|---------|
 | `index` | 建立程式碼索引 | `-p <path>`, `-u` |
 | `search` | 搜尋程式碼 | `-t <type>`, `--format json` |
-| `rename` | 重命名符號 | `--from <old>`, `--to <new>`, `--preview` |
-| `move` | 移動檔案 | `<source> <target>`, `--preview` |
-| `shift` | 移動程式碼行 | `--from X`, `--to Y`, `--position Z` |
-| `refactor` | 程式碼重構 | `extract-function`, `--preview` |
+| `rename` | 重命名符號 | `--from <old>`, `--to <new>`, `--dry-run` |
+| `move` | 移動檔案 | `<source> <target>`, `--dry-run` |
+| `shift` | 移動程式碼行 | `--from X`, `--to Y`, `--position Z`, `--dry-run` |
+| `refactor` | 程式碼重構 | `extract-function`, `--dry-run` |
 | `analyze` | 品質分析 | `complexity`, `dead-code`, `--format json` |
-| `deps` | 依賴分析 | `--check-cycles`, `--format json` |
+| `deps` | 依賴分析 | `--format json` |
 | `shit` | 垃圾度評分 | `--detailed`, `--max-allowed=70` |
-| `plugins` | 插件管理 | `list`, `info <name>` |
+| `snapshot` | 程式碼快照 | `generate`, `info`, `diff` |
+| `plugins` | 插件管理 | `list`, `--format json` |
+
+### 統一輸出格式
+
+所有命令支援 `--format` 參數：
+- **json**：機器可讀 JSON 格式
+- **summary**：人類可讀摘要格式
+- **diff**：程式碼差異（僅變更類命令：rename/move/shift/refactor）
 
 ---
 
@@ -78,15 +86,18 @@ agent-ide search "UserService" --format json
 - `-l, --limit`: 結果數量限制
 - `-c, --context`: 上下文行數
 - `--case-sensitive`: 大小寫敏感
-- `--format`: 輸出格式（list|json|minimal）
+- `--format`: 輸出格式（json|summary）
 
 ---
 
 ## rename - 符號重命名
 
 ```bash
-# 預覽變更
-agent-ide rename --from oldName --to newName --preview
+# 預覽變更（預設 diff 格式）
+agent-ide rename --from oldName --to newName --dry-run
+
+# 預覽變更（JSON 格式）
+agent-ide rename --from oldName --to newName --dry-run --format json
 
 # 執行重命名
 agent-ide rename --from oldName --to newName
@@ -106,7 +117,8 @@ agent-ide rename -t class --from UserService --to UserManager
 - `-f, --from`: 原始名稱
 - `-o, --to`: 新名稱
 - `-p, --path`: 檔案或目錄路徑
-- `--preview`: 預覽變更
+- `--dry-run`: 預覽變更而不執行
+- `--format`: 輸出格式（diff|json|summary）
 
 ---
 
@@ -119,8 +131,11 @@ agent-ide move src/old.ts src/new.ts
 # 移動目錄
 agent-ide move src/services src/core/services
 
-# 預覽變更
-agent-ide move src/old.ts src/new.ts --preview
+# 預覽變更（預設 diff 格式）
+agent-ide move src/old.ts src/new.ts --dry-run
+
+# 預覽變更（JSON 格式）
+agent-ide move src/old.ts src/new.ts --dry-run --format json
 
 # 移動但不更新 import
 agent-ide move src/old.ts src/new.ts --update-imports=false
@@ -128,7 +143,8 @@ agent-ide move src/old.ts src/new.ts --update-imports=false
 
 **選項**：
 - `--update-imports`: 自動更新 import 路徑（預設 true）
-- `--preview`: 預覽變更
+- `--dry-run`: 預覽變更而不執行
+- `--format`: 輸出格式（diff|json|summary）
 
 ---
 
@@ -144,11 +160,11 @@ agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 # 移動到新檔案
 agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
 
-# 預覽模式
-agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+# 預覽模式（預設 diff 格式）
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run
 
 # JSON 輸出
-agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run --format json
 ```
 
 **選項**：
@@ -156,8 +172,8 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 - `--to <number>`: 結束行號（1-based，包含）
 - `--position <number>`: 目標位置（插入到此行之前）
 - `--target <file>`: 目標檔案路徑（選填）
-- `--preview`: 預覽變更
-- `--format`: 輸出格式（plain|json）
+- `--dry-run`: 預覽變更而不執行
+- `--format`: 輸出格式（diff|json|summary）
 
 ---
 
@@ -171,13 +187,18 @@ agent-ide refactor extract-function \
   -e 20 \
   -n handleUserData
 
-# 預覽重構
+# 預覽重構（預設 diff 格式）
 agent-ide refactor extract-function \
   -f src/app.ts \
   -s 10 \
   -e 20 \
   -n handleUserData \
-  --preview
+  --dry-run
+
+# 內聯函式
+agent-ide refactor inline-function \
+  -f src/app.ts \
+  -n helperFunction
 ```
 
 **選項**：
@@ -185,7 +206,8 @@ agent-ide refactor extract-function \
 - `-s, --start-line`: 起始行號
 - `-e, --end-line`: 結束行號
 - `-n, --function-name`: 函式名稱
-- `--preview`: 預覽變更
+- `--dry-run`: 預覽變更而不執行
+- `--format`: 輸出格式（diff|json|summary）
 
 ---
 
@@ -226,31 +248,18 @@ agent-ide analyze -p src/services/user.ts
 # 完整依賴分析
 agent-ide deps
 
-# 依賴圖分析
-agent-ide deps -t graph
-
-# 循環依賴檢測
-agent-ide deps -t cycles
-agent-ide deps --check-cycles
-
-# 影響範圍分析
-agent-ide deps -t impact -f src/services/user.ts
-
 # JSON 輸出
 agent-ide deps --format json
 
 # 顯示完整依賴圖（包含 nodes 和 edges）
 agent-ide deps --format json --all
-
-# DOT 格式（可視化）
-agent-ide deps -t graph --format dot > deps.dot
 ```
 
 **選項**：
-- `-t, --type`: 分析類型（graph|cycles|impact|all）
+- `-p, --path`: 分析路徑
 - `-f, --file`: 特定檔案分析
-- `--format`: 輸出格式（json|dot|summary）
-- `--all`: 顯示完整結果
+- `--format`: 輸出格式（json|summary）
+- `--all`: 顯示完整結果（包含依賴圖）
 
 ---
 
@@ -306,31 +315,29 @@ agent-ide plugins list -f enabled
 
 ## 輸出格式
 
-大多數命令支援多種輸出格式：
-
-### list（列表）
-
-人類可讀，包含檔案路徑、行號、上下文。
+所有命令支援統一的輸出格式：
 
 ### json
 
-結構化 JSON，便於程式解析：
+結構化 JSON，便於程式解析和自動化處理：
 
 ```json
 {
+  "command": "shit",
   "success": true,
-  "data": { ... },
-  "elapsed": "123ms"
+  "shitScore": 45,
+  "grade": "B",
+  "summary": { ... }
 }
 ```
 
 ### summary
 
-精簡摘要，快速查看結果。
+精簡摘要，人類可讀格式，快速查看結果。
 
-### table
+### diff（僅變更類命令）
 
-表格格式，適合展示多筆資料。
+顯示程式碼差異，適用於 rename/move/shift/refactor 命令的 `--dry-run` 模式。
 
 ---
 

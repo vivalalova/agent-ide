@@ -17,15 +17,20 @@ agent-ide move src/old.ts src/new.ts
 # 移動目錄
 agent-ide move src/api src/services/api
 
-# 預覽影響範圍
-agent-ide move src/old.ts src/new.ts --preview
+# 預覽影響範圍（預設 diff 格式）
+agent-ide move src/old.ts src/new.ts --dry-run
+
+# 預覽影響範圍（JSON 格式）
+agent-ide move src/old.ts src/new.ts --dry-run --format json
 
 # 移動但不更新 import
 agent-ide move src/old.ts src/new.ts --update-imports=false
-
-# 批量移動
-agent-ide move --batch move-list.json
 ```
+
+**選項**：
+- `--dry-run`: 預覽變更而不執行
+- `--format`: 輸出格式（diff|json|summary）
+- `--update-imports`: 自動更新 import 路徑（預設 true）
 
 ---
 
@@ -103,7 +108,7 @@ agent-ide move --batch move-list.json
 
 ```bash
 # ✅ 先預覽
-agent-ide move old.ts new.ts --preview
+agent-ide move old.ts new.ts --dry-run
 
 # ❌ 直接執行
 agent-ide move old.ts new.ts

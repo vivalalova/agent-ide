@@ -11,8 +11,11 @@ Rename 功能提供安全的程式碼元素重命名，自動找出並更新所�
 ## 基本用法
 
 ```bash
-# 預覽變更
-agent-ide rename --from oldName --to newName --preview
+# 預覽變更（預設 diff 格式）
+agent-ide rename --from oldName --to newName --dry-run
+
+# 預覽變更（JSON 格式）
+agent-ide rename --from oldName --to newName --dry-run --format json
 
 # 執行重命名
 agent-ide rename --from oldName --to newName
@@ -37,7 +40,8 @@ agent-ide rename -t class --from UserService --to UserManager
 | `-o, --to` | 新名稱 | 是 |
 | `-t, --type` | 符號類型（variable\|function\|class\|interface） | 否 |
 | `-p, --path` | 檔案或目錄路徑 | 否 |
-| `--preview` | 預覽變更而不執行 | 否 |
+| `--dry-run` | 預覽變更而不執行 | 否 |
+| `--format` | 輸出格式（diff\|json\|summary） | 否 |
 
 ---
 
@@ -116,7 +120,7 @@ done
 
 ```bash
 # ✅ 先預覽
-agent-ide rename --from old --to new --preview
+agent-ide rename --from old --to new --dry-run
 
 # ❌ 直接執行
 agent-ide rename --from old --to new

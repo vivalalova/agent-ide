@@ -39,7 +39,7 @@ npm test && npx agent-ide shit --format json
 
 ```bash
 # 1. 預覽影響範圍
-npx agent-ide rename --from getUserData --to fetchUserProfile --preview
+npx agent-ide rename --from getUserData --to fetchUserProfile --dry-run
 
 # 2. 檢查依賴
 npx agent-ide deps --file src/api/user.ts
@@ -64,7 +64,7 @@ npm run typecheck && npm test
 npx agent-ide snapshot --path . --output snapshot.json
 
 # 2. 預覽移動
-npx agent-ide move src/api/user.ts src/services/user.service.ts --preview
+npx agent-ide move src/api/user.ts src/services/user.service.ts --dry-run
 
 # 3. 批量移動
 cat > move-list.json << 'EOF'
@@ -284,8 +284,8 @@ npx agent-ide analyze complexity
 
 ```bash
 # ✅ 預覽影響
-npx agent-ide rename --from old --to new --preview
-npx agent-ide move old.ts new.ts --preview
+npx agent-ide rename --from old --to new --dry-run
+npx agent-ide move old.ts new.ts --dry-run
 
 # ❌ 直接執行
 ```
@@ -341,8 +341,8 @@ jq -n --slurpfile before before.json --slurpfile after after.json \
 
 | 任務 | 命令 |
 |------|------|
-| 重命名符號 | `rename --from old --to new --preview` |
-| 移動檔案 | `move old.ts new.ts --preview` |
+| 重命名符號 | `rename --from old --to new --dry-run` |
+| 移動檔案 | `move old.ts new.ts --dry-run` |
 | 移動程式碼行 | `shift file.ts --from X --to Y --position Z` |
 | 查看影響 | `deps --file target.ts` |
 

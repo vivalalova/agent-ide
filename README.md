@@ -20,15 +20,18 @@ pnpm install && pnpm build && npm link
 
 ### CLI 命令
 
-| 命令      | 功能                                   |
-| --------- | -------------------------------------- |
-| `search`  | 搜尋符號、文字、正則                   |
-| `rename`  | 重新命名符號並更新引用                 |
-| `move`    | 移動檔案並更新 import                  |
-| `shift`   | 移動行（單檔案內/跨檔案/新檔案生成）   |
-| `analyze` | 分析程式碼品質                         |
-| `deps`    | 依賴關係分析、循環檢測                 |
-| `shit`    | 垃圾度評分（0-100，越高越糟）          |
+| 命令       | 功能                                   | 格式選項 |
+| ---------- | -------------------------------------- | -------- |
+| `search`   | 搜尋符號、文字、正則                   | json, summary |
+| `rename`   | 重新命名符號並更新引用                 | json, summary, diff |
+| `move`     | 移動檔案並更新 import                  | json, summary, diff |
+| `shift`    | 移動行（單檔案內/跨檔案/新檔案生成）   | json, summary, diff |
+| `refactor` | 提取/內聯函式                          | json, summary, diff |
+| `analyze`  | 分析程式碼品質                         | json, summary |
+| `deps`     | 依賴關係分析、循環檢測                 | json, summary |
+| `shit`     | 垃圾度評分（0-100，越高越糟）          | json, summary |
+| `snapshot` | 程式碼快照生成                         | json, summary |
+| `plugins`  | 列出已載入插件                         | json, summary |
 
 <details>
 <summary>📖 使用指南</summary>
@@ -42,11 +45,11 @@ npx agent-ide shift src/file.ts --from 2 --to 5 --position 10
 # 跨檔案移動
 npx agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 
-# 預覽模式
-npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+# 預覽模式（--dry-run 預設輸出 diff 格式）
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run
 
 # JSON 輸出
-npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run --format json
 ```
 
 ### 檔案移動（move）
@@ -56,7 +59,7 @@ npx agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 npx agent-ide move src/old.ts src/new.ts
 
 # 預覽影響範圍
-npx agent-ide move src/old.ts src/new.ts --preview
+npx agent-ide move src/old.ts src/new.ts --dry-run
 ```
 
 ### 符號重命名（rename）
@@ -66,7 +69,7 @@ npx agent-ide move src/old.ts src/new.ts --preview
 npx agent-ide rename --from oldName --to newName
 
 # 預覽變更
-npx agent-ide rename --from oldName --to newName --preview
+npx agent-ide rename --from oldName --to newName --dry-run
 ```
 
 ### 程式碼搜尋（search）
@@ -150,7 +153,7 @@ Agent IDE
 ```bash
 pnpm install      # 安裝依賴
 pnpm build        # 建置
-pnpm test         # 測試（241 E2E 測試）
+pnpm test         # 測試（404 E2E 測試）
 pnpm typecheck    # 型別檢查
 pnpm lint         # ESLint
 ```

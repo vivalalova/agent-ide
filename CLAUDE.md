@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 核心模組、3 Parser（TS/JS/Swift）、241 測試通過
+**現況**：8 核心模組、3 Parser（TS/JS/Swift）、404 測試通過
 
 ## 常用指令
 
@@ -39,7 +39,7 @@ src/
 │   ├── search/     # 文字/語義/結構化
 │   ├── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
 │   └── shit-score/ # 0-100分垃圾度評分
-├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）
+├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）
 ├── interfaces/     # CLI（Unix哲學/JSON輸出）
 └── application/    # 服務層、DI容器
@@ -95,28 +95,55 @@ describe('CLI shit - 基於 sample-project fixture', () => {
 
 ## CLI 命令
 
+### 統一輸出格式
+所有命令支援 `--format` 參數：
+- **json**：機器可讀 JSON 格式
+- **summary**：人類可讀摘要格式
+- **diff**：變更類命令預設，顯示程式碼差異（僅 rename/move/shift/refactor）
+
+### 查詢類命令（唯讀）
 ```bash
-agent-ide search text --path <path> --query <query>
-agent-ide search structural --path <path> --type <function|class>
-agent-ide rename --path <path> --from <old> --to <new>
-agent-ide move --path <path> --source <src> --target <dest>
-agent-ide shift --path <path> --file <file> --from <line> --to <line> --position <pos>
+agent-ide search <query> --path <path>              # 文字搜尋
+agent-ide search symbol --query <name>              # 符號搜尋
+agent-ide search structural --type <function|class> # 結構化搜尋
 agent-ide analyze --path <path> [--format json|summary]
 agent-ide deps --path <path> [--format json|summary]
-agent-ide shit --path <path> [--format json|text] [--detailed]
+agent-ide shit --path <path> [--format json|summary]
+agent-ide snapshot --path <path> [--format json|summary]
+agent-ide plugins [--format json|summary]
 ```
 
-## 診斷命令輸出
-
-**Token效率**：預設只輸出問題、`--all` 顯示完整結果
-
-```json
-{
-  "issues": [...],      // 預設：問題項目
-  "all": [...],         // --all：完整結果
-  "summary": {...}      // 統計資訊
-}
+### 變更類命令（支援 --dry-run）
+```bash
+agent-ide rename --path <path> --from <old> --to <new> [--dry-run] [--format diff|json|summary]
+agent-ide move <source> <target> --path <path> [--dry-run] [--format diff|json|summary]
+agent-ide shift <file> --from <line> --to <line> --position <pos> [--dry-run] [--format diff|json|summary]
+agent-ide refactor extract-function --file <file> --start-line <n> --end-line <n> [--dry-run] [--format diff|json|summary]
+agent-ide refactor inline-function --file <file> --function-name <name> [--dry-run] [--format diff|json|summary]
 ```
+
+## 輸出處理架構
+
+### UnifiedOutputHandler
+統一處理所有 CLI 命令的輸出，位於 `src/interfaces/cli/unified-output-handler.ts`：
+
+```typescript
+import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '../unified-output-handler.js';
+
+const outputHandler = createUnifiedOutputHandler();
+const format = parseOutputFormat(options.format, allowDiff);
+
+// 查詢類命令
+outputHandler.outputQuery(result, format);
+
+// 變更類命令（dry-run 模式）
+outputHandler.outputMutation(previewInput, format);
+```
+
+### Formatters 層
+- **QueryFormatter**：處理查詢類結果（ShitResult, SearchResult, DepsResult 等）
+- **PreviewFormatter**：處理變更類預覽（diff, summary, json）
+- **QueryTypes**：統一的結果型別定義（QueryResult, QueryCommand enum）
 
 ## 開發流程
 

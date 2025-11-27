@@ -27,11 +27,11 @@ agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 # 移動到新檔案（自動生成檔名）
 agent-ide shift src/file.ts --from 1 --to 5 --target src/newfile --position 1
 
-# 預覽模式
-agent-ide shift src/file.ts --from 1 --to 5 --position 10 --preview
+# 預覽模式（預設 diff 格式）
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run
 
-# JSON 輸出
-agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
+# 預覽模式（JSON 格式）
+agent-ide shift src/file.ts --from 1 --to 5 --position 10 --dry-run --format json
 ```
 
 ### 參數
@@ -43,14 +43,14 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 | `--to <number>` | 結束行號（1-based，包含） | 是 |
 | `--position <number>` | 目標位置行號（1-based，插入到此行之前） | 是 |
 | `--target <file>` | 目標檔案路徑（選填） | 否 |
-| `--preview` | 預覽變更而不執行 | 否 |
-| `--format <format>` | 輸出格式（plain\|json） | 否 |
+| `--dry-run` | 預覽變更而不執行 | 否 |
+| `--format <format>` | 輸出格式（diff\|json\|summary） | 否 |
 
 ---
 
 ## 輸出格式
 
-**Plain 格式（預設）：**
+**Summary 格式：**
 
 ```
 ✓ 行移動成功
@@ -65,6 +65,10 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
   移動行數: 4 行
   操作耗時: 12ms
 ```
+
+**Diff 格式（--dry-run 預設）：**
+
+顯示程式碼差異，適用於預覽變更。
 
 **JSON 格式：**
 
@@ -110,7 +114,7 @@ agent-ide shift src/file.ts --from 1 --to 5 --position 10 --format json
 ### 1. 使用預覽模式
 
 ```bash
-agent-ide shift src/file.ts --from 1 --to 10 --position 50 --preview
+agent-ide shift src/file.ts --from 1 --to 10 --position 50 --dry-run
 ```
 
 ### 2. JSON 輸出用於自動化
