@@ -145,7 +145,7 @@ outputHandler.outputMutation(previewInput, format);
 
 | 改動類型 | 必須更新 |
 |---------|---------|
-| CLI 新增選項 | `tests/e2e/commands/cli-*.e2e.test.ts`、`docs/*.md`、`CLAUDE.md`、`plugins/skills/agent-ide/` |
+| CLI 新增選項 | `tests/e2e/commands/cli-*.e2e.test.ts`、`CLAUDE.md`、`plugins/skills/agent-ide/` |
 | CLI 新增命令 | 同上 + `src/interfaces/cli/commands/` |
 | Core 模組改動 | 對應 E2E 測試、相關文件、`plugins/skills/agent-ide/` |
 | 輸出格式改動 | `infrastructure/formatters/`、E2E 測試 |
@@ -153,8 +153,9 @@ outputHandler.outputMutation(previewInput, format);
 
 **文件位置**：
 - `README.md` - 專案介紹、安裝、快速開始
-- `docs/GUIDE.md` - 實戰案例指南
-- `CLAUDE.md` - CLI 命令快速參考（開發用）
+- `plugins/skills/agent-ide/SKILL.md` - 命令速查表
+- `plugins/skills/agent-ide/references/guide.md` - 完整指南
+- `CLAUDE.md` - 開發規範（開發用）
 
 **測試位置**：
 - `tests/e2e/commands/cli-<command>.e2e.test.ts`

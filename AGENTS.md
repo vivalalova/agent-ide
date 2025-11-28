@@ -14,7 +14,7 @@ src/
 tests/              # 鏡像 src/ 結構，包含 unit/, integration/, e2e/
 bin/                # 可執行檔
 dist/               # 建置輸出
-docs/               # 文件
+plugins/            # Claude Code skills 文件
 ```
 
 ## 開發指令
