@@ -145,6 +145,7 @@ agent-ide deps cycles --path .
 - TypeScript
 - JavaScript
 - Swift
+- Python
 
 ## 效能
 

@@ -104,7 +104,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     // 初始化索引引擎（每次都重新索引以確保資料是最新的）
     const config = createIndexConfig(workspacePath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
       excludePatterns: ['node_modules/**', '*.test.*']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);

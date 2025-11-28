@@ -46,7 +46,7 @@ export function setupSearchCommand(program: Command, context: CommandContext): v
     .argument('[query]', '搜尋查詢字串（簡化語法，等同於 text 搜尋）')
     .option('-t, --type <type>', '搜尋類型 (text|regex|fuzzy|symbol|function|class|protocol|variable|enum)', 'text')
     .option('-p, --path <path>', '搜尋路徑', '.')
-    .option('-e, --extensions <exts>', '檔案副檔名', '.ts,.js,.tsx,.jsx,.swift')
+    .option('-e, --extensions <exts>', '檔案副檔名', '.ts,.js,.tsx,.jsx,.swift,.py')
     .option('-l, --limit <num>', '結果數量限制', '50')
     .option('-c, --context <lines>', '上下文行數', '2')
     .option('--case-sensitive', '大小寫敏感')
@@ -194,6 +194,12 @@ function buildSearchOptions(options: SearchOptions) {
     includeFiles = [options.filePattern];
   }
 
+  // --extensions 參數轉換為 includeFiles（副檔名過濾）
+  if (options.extensions && !includeFiles) {
+    const extensions = options.extensions.split(',').map(ext => ext.trim());
+    includeFiles = extensions.map(ext => `**/*${ext}`);
+  }
+
   return {
     scope: {
       type: 'directory' as const,
@@ -287,7 +293,7 @@ async function handleStructuralSearchCommand(
 
     // 初始化索引引擎
     const config = createIndexConfig(searchPath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
       excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);
@@ -407,7 +413,7 @@ async function handleSymbolSearchCommand(
 
     // 初始化索引引擎
     const config = createIndexConfig(searchPath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
       excludePatterns: ['node_modules/**', '*.test.*', 'dist/**']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);
