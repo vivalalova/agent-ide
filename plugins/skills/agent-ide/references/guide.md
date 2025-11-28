@@ -158,6 +158,58 @@ agent-ide refactor extract-function --file src/file.ts -s 10 -e 20 -n helper --t
 agent-ide refactor inline-function --file src/file.ts --function-name helperFn --dry-run
 ```
 
+### 8. 模組快照 (snapshot)
+
+產生模組/專案快照供 AI 快速理解程式碼結構，大幅減少 token 使用量（~91% 節省）：
+
+```bash
+# 模組快照（指定模組目錄）
+agent-ide snapshot --path src/core/indexing --format json
+
+# 專案快照（自動偵測所有模組）
+agent-ide snapshot --path . --format json
+
+# 人類可讀摘要
+agent-ide snapshot --path src/core/indexing --format summary
+```
+
+**輸出結構**：
+
+| 欄位 | 說明 |
+|------|------|
+| `module` | 模組名稱 |
+| `api` | Class 的 public 方法及簽章 |
+| `factories` | `createXxx` 工廠函數及簽章 |
+| `types` | Interface 和 Type 定義 |
+| `private` | Class 私有欄位（供理解內部狀態） |
+
+**範例輸出**：
+```json
+{
+  "module": "indexing",
+  "api": {
+    "IndexEngine": {
+      "findSymbol": "(name: string, options?: SearchOptions) → Promise<SymbolSearchResult[]>",
+      "indexProject": "() → Promise<void>"
+    }
+  },
+  "factories": {
+    "createIndexConfig": "(workspacePath: string, options?: Partial<IndexConfig>) → IndexConfig"
+  },
+  "types": {
+    "FileChangeType": "'add' | 'change' | 'unlink'"
+  },
+  "private": {
+    "IndexEngine": { "fields": ["config", "fileIndex"] }
+  }
+}
+```
+
+**自動偵測規則**：
+- 有 `package.json` + `src/` 目錄 → 專案快照（掃描所有模組）
+- 有 `index.ts` → 模組快照
+- 其他 → 視為模組
+
 ## 工作流程範例
 
 ### 重構流程

@@ -10,3 +10,4 @@ export { setupRefactorCommand } from './refactor.command.js';
 export { setupSearchCommand } from './search.command.js';
 export { setupAnalyzeCommand } from './analyze.command.js';
 export { setupDepsCommand } from './deps.command.js';
+export { setupSnapshotCommand } from './snapshot.command.js';

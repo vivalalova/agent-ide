@@ -44,6 +44,8 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 提取閉包   | `agent-ide refactor extract-closure --file f.swift --start-line 1 --end-line 5` |
 | 跨檔案提取 | `agent-ide refactor extract-function --file f.ts -s 1 -e 5 -t target.ts`        |
 | 內聯函數   | `agent-ide refactor inline-function --file f.ts --function-name fn`             |
+| 模組快照   | `agent-ide snapshot --path src/core/indexing --format json`                     |
+| 專案快照   | `agent-ide snapshot --path . --format json`                                     |
 
 ## 輸出格式
 

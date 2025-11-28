@@ -9,7 +9,10 @@ import {
   type QueryResult,
   type SearchResult,
   type DepsResult,
-  type AnalyzeResult
+  type AnalyzeResult,
+  type SnapshotResult,
+  type ModuleSnapshotData,
+  type ProjectSnapshotData
 } from './query-types.js';
 
 /** ANSI 顏色碼 */
@@ -81,6 +84,8 @@ export class QueryFormatter {
         return this.formatDepsSummary(result as DepsResult);
       case QueryCommand.Analyze:
         return this.formatAnalyzeSummary(result as AnalyzeResult);
+      case QueryCommand.Snapshot:
+        return this.formatSnapshotSummary(result as SnapshotResult);
       default:
         return this.formatDefaultSummary(result);
     }
@@ -177,6 +182,36 @@ export class QueryFormatter {
       if (result.issues.length > 10) {
         lines.push(`... 還有 ${result.issues.length - 10} 個問題`);
       }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 格式化 Snapshot 摘要
+   */
+  private formatSnapshotSummary(result: SnapshotResult): string {
+    const lines: string[] = [];
+
+    if (result.snapshotType === 'project') {
+      const snapshot = result.snapshot as ProjectSnapshotData;
+      lines.push(`📦 專案: ${snapshot.project}`);
+      lines.push(`📁 模組數: ${Object.keys(snapshot.modules).length}`);
+
+      for (const [modulePath, moduleSnapshot] of Object.entries(snapshot.modules)) {
+        lines.push('');
+        lines.push(`  📂 ${modulePath}`);
+        lines.push(`     API: ${Object.keys(moduleSnapshot.api).length} classes`);
+        lines.push(`     Factories: ${Object.keys(moduleSnapshot.factories).length}`);
+        lines.push(`     Types: ${Object.keys(moduleSnapshot.types).length}`);
+      }
+    } else {
+      const snapshot = result.snapshot as ModuleSnapshotData;
+      lines.push(`📦 模組: ${snapshot.module}`);
+      lines.push(`📊 API: ${Object.keys(snapshot.api).length} classes`);
+      lines.push(`🏭 Factories: ${Object.keys(snapshot.factories).length}`);
+      lines.push(`📝 Types: ${Object.keys(snapshot.types).length}`);
+      lines.push(`🔒 Private: ${Object.keys(snapshot.private).length} classes`);
     }
 
     return lines.join('\n');

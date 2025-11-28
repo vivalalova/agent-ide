@@ -7,7 +7,8 @@
 export enum QueryCommand {
   Search = 'search',
   Analyze = 'analyze',
-  Deps = 'deps'
+  Deps = 'deps',
+  Snapshot = 'snapshot'
 }
 
 /** 問題嚴重度 */
@@ -144,5 +145,38 @@ export interface AnalyzeResult extends QueryResult {
   analyzeType: AnalyzeType;
   /** 分析指標 */
   metrics?: Record<string, unknown>;
+}
+
+// ========== Snapshot 結果 ==========
+
+/** 模組快照資料 */
+export interface ModuleSnapshotData {
+  /** 模組名稱 */
+  module: string;
+  /** API（class 的 public 方法） */
+  api: Record<string, Record<string, string>>;
+  /** 工廠函數 */
+  factories: Record<string, string>;
+  /** 型別定義 */
+  types: Record<string, string>;
+  /** 私有資訊 */
+  private: Record<string, { fields: string[]; imports: string }>;
+}
+
+/** 專案快照資料 */
+export interface ProjectSnapshotData {
+  /** 專案名稱 */
+  project: string;
+  /** 模組快照 */
+  modules: Record<string, ModuleSnapshotData>;
+}
+
+/** Snapshot 結果 */
+export interface SnapshotResult extends QueryResult {
+  command: QueryCommand.Snapshot;
+  /** 快照類型 */
+  snapshotType: 'module' | 'project';
+  /** 快照資料 */
+  snapshot: ModuleSnapshotData | ProjectSnapshotData;
 }
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：6 核心模組、3 Parser（TS/JS/Swift）
+**現況**：7 核心模組、3 Parser（TS/JS/Swift）
 
 ## 常用指令
 
@@ -30,14 +30,15 @@ pnpm test -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/           # 6 核心模組
+├── core/           # 7 核心模組
 │   ├── dependency/ # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
 │   ├── indexing/   # 1000檔/秒、查詢<10ms
 │   ├── move/       # 檔案移動+import更新
 │   ├── refactor/   # 提取/內聯函式
 │   ├── rename/     # 符號重命名+引用更新
 │   ├── search/     # 文字/語義/結構化
-│   └── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
+│   ├── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
+│   └── snapshot/   # 模組快照（AI 理解用，~91% token 節省）
 ├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）
 ├── interfaces/     # CLI（Unix哲學/JSON輸出）
@@ -99,6 +100,7 @@ agent-ide search symbol --query <name>              # 符號搜尋
 agent-ide search structural --type <function|class> # 結構化搜尋
 agent-ide analyze [complexity|dead-code|best-practices|patterns|quality] --path <path>
 agent-ide deps [graph|cycles|impact|orphans] --path <path> [--all]
+agent-ide snapshot --path <path> [--format json|summary]  # 模組/專案快照
 ```
 
 ### 變更類命令（支援 --dry-run）
@@ -111,6 +113,38 @@ agent-ide refactor inline-function --file <file> --function-name <name> [--dry-r
 ```
 
 ## 輸出處理架構
+
+### 🚨 強制規範
+
+**所有 CLI 命令的輸出必須透過統一輸出層處理，禁止直接使用 `console.log(JSON.stringify())`**
+
+| 命令類型 | 輸出方法 | 結果型別 |
+|---------|---------|---------|
+| 查詢類（search, deps, analyze, snapshot） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
+| 變更類（rename, move, shift, refactor） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
+
+### 新增命令的輸出整合步驟
+
+1. **QueryTypes 定義結果型別**（`infrastructure/formatters/query-types.ts`）
+   - 在 `QueryCommand` enum 加入新命令
+   - 定義 `XxxResult extends QueryResult` 介面
+
+2. **QueryFormatter 加入格式化方法**（`infrastructure/formatters/query-formatter.ts`）
+   - 在 `toSummary()` 的 switch 加入新 case
+   - 實作 `formatXxxSummary()` 私有方法
+
+3. **命令使用 outputHandler**（`interfaces/cli/commands/xxx.command.ts`）
+   ```typescript
+   import { QueryCommand, type XxxResult } from '@infrastructure/formatters/query-types.js';
+
+   const result: XxxResult = {
+     command: QueryCommand.Xxx,
+     success: true,
+     summary: { ... },
+     // 命令特定欄位
+   };
+   outputHandler.outputQuery(result, format);
+   ```
 
 ### UnifiedOutputHandler
 統一處理所有 CLI 命令的輸出，位於 `src/interfaces/cli/unified-output-handler.ts`：
@@ -129,7 +163,7 @@ outputHandler.outputMutation(previewInput, format);
 ```
 
 ### Formatters 層
-- **QueryFormatter**：處理查詢類結果（SearchResult, DepsResult, AnalyzeResult）
+- **QueryFormatter**：處理查詢類結果（SearchResult, DepsResult, AnalyzeResult, SnapshotResult）
 - **PreviewFormatter**：處理變更類預覽（diff, summary, json）
 - **QueryTypes**：統一的結果型別定義（QueryResult, QueryCommand enum）
 

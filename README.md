@@ -40,6 +40,7 @@ pnpm install && pnpm build && npm link
 | `refactor` | 提取/內聯函式                        | json, summary, diff |
 | `analyze`  | 分析程式碼品質                       | json, summary       |
 | `deps`     | 依賴關係分析、循環檢測               | json, summary       |
+| `snapshot` | 產生模組/專案快照供 AI 理解結構      | json, summary       |
 
 ## 📖 文件
 
