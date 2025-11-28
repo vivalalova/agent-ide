@@ -5,8 +5,8 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { ImportResolver } from '@core/move/import-resolver.js';
-import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from '@core/move/types.js';
+import { ImportResolver } from '@core/transform/location/move-file/import-resolver.js';
+import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from '@core/transform/location/move-file/types.js';
 
 export class MoveService {
   private importResolver: ImportResolver;

@@ -9,10 +9,10 @@
 
 ```bash
 # 預覽影響
-agent-ide move src/api/user.ts src/services/user.service.ts --path . --dry-run
+agent-ide transform move src/api/user.ts src/services/user.service.ts --path . --dry-run
 
 # 執行移動
-agent-ide move src/api/user.ts src/services/user.service.ts --path .
+agent-ide transform move src/api/user.ts src/services/user.service.ts --path .
 ```
 
 ## 參數

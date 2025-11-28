@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from '@core/move/types.js';
+import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from '@core/transform/location/move-file/types.js';
 import { Position, createPosition, createRange } from '@shared/types/core.js';
 
 export class ImportResolver {
@@ -62,7 +62,7 @@ export class ImportResolver {
         const exportStatement = this.collectMultilineExportStatement(lines, i);
         if (exportStatement) {
           const { statement: fullStatement, endLineIndex, startLineIndex } = exportStatement;
-          // 在完整語句中查找 from '...'
+          // 在完整語句中查找 from '../../../move/...'
           const fromMatch = fullStatement.match(/from\s+['"`]([^'"`]+)['"`]/);
           if (fromMatch) {
             const importPath = fromMatch[1];
