@@ -21,6 +21,34 @@ agent-ide rename --path . --from getUserData --to fetchUserProfile --dry-run
 agent-ide rename --path . --from getUserData --to fetchUserProfile
 ```
 
+**輸出結構**（變更類命令）：
+```json
+{
+  "command": "rename",
+  "success": true,
+  "files": [
+    {
+      "filePath": "src/services/user.ts",
+      "hunks": [
+        {
+          "header": "@@ -10,7 +10,7 @@",
+          "oldStart": 10,
+          "oldCount": 7,
+          "newStart": 10,
+          "newCount": 7,
+          "lines": [
+            { "type": "context", "lineNumber": 10, "content": "export class UserService {" },
+            { "type": "delete", "lineNumber": 11, "content": "  getUserData() {" },
+            { "type": "add", "lineNumber": 11, "content": "  fetchUserProfile() {" }
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": { "totalFiles": 3, "totalChanges": 5 }
+}
+```
+
 ### 2. 檔案移動 (move)
 
 移動檔案並自動更新所有 import：
@@ -31,6 +59,21 @@ agent-ide move src/api/user.ts src/services/user.service.ts --path . --dry-run
 
 # 執行移動
 agent-ide move src/api/user.ts src/services/user.service.ts --path .
+```
+
+**輸出結構**（變更類命令，同 rename）：
+```json
+{
+  "command": "move",
+  "success": true,
+  "files": [
+    {
+      "filePath": "src/index.ts",
+      "hunks": [{ "header": "@@ ...", "lines": [...] }]
+    }
+  ],
+  "summary": { "totalFiles": 2, "totalChanges": 3 }
+}
 ```
 
 ### 3. 程式碼搜尋 (search)
@@ -74,6 +117,26 @@ agent-ide search structural -t class --implements "Codable" --path .
 agent-ide search structural -t class --extends "BaseService" --path .
 ```
 
+**輸出結構**（查詢類命令）：
+```json
+{
+  "command": "search",
+  "success": true,
+  "results": [
+    {
+      "filePath": "src/services/user.ts",
+      "line": 15,
+      "column": 10,
+      "content": "UserService",
+      "context": ["import { Injectable } from '@nestjs/common';", ""]
+    }
+  ],
+  "summary": { "totalScanned": 50, "issuesFound": 3 },
+  "truncated": false,
+  "searchTime": 45
+}
+```
+
 ### 4. 依賴分析 (deps)
 
 分析依賴關係，支援子命令：
@@ -96,6 +159,29 @@ agent-ide deps --path . --format json --all
 agent-ide deps graph --path . --format json
 agent-ide deps cycles --path . --format json
 agent-ide deps orphans --path . --format json
+```
+
+**輸出結構**（查詢類命令）：
+```json
+{
+  "command": "deps",
+  "success": true,
+  "cycles": [
+    { "cycle": ["a.ts", "b.ts", "c.ts"], "length": 3 }
+  ],
+  "orphans": ["src/utils/unused.ts"],
+  "graph": {
+    "nodes": [{ "id": "src/index.ts", "label": "index" }],
+    "edges": [{ "from": "src/index.ts", "to": "src/app.ts" }]
+  },
+  "summary": {
+    "totalScanned": 50,
+    "totalFiles": 50,
+    "totalDependencies": 120,
+    "cyclesFound": 1,
+    "orphanedFiles": 3
+  }
+}
 ```
 
 ### 5. 品質分析 (analyze)
@@ -122,6 +208,30 @@ agent-ide analyze quality --path . --format json
 agent-ide analyze --path . --format json --all
 ```
 
+**輸出結構**（查詢類命令）：
+```json
+{
+  "command": "analyze",
+  "success": true,
+  "analyzeType": "complexity",
+  "summary": {
+    "totalScanned": 25,
+    "issuesFound": 3,
+    "averageComplexity": 12.5,
+    "maxComplexity": 45
+  },
+  "issues": [
+    {
+      "type": "complexity",
+      "severity": "high",
+      "message": "複雜度 45，認知複雜度 32",
+      "filePath": "src/services/parser.ts",
+      "score": 45
+    }
+  ]
+}
+```
+
 ### 6. 程式碼移動 (shift)
 
 在檔案內或跨檔案移動程式碼行：
@@ -132,6 +242,16 @@ agent-ide shift src/file.ts --from 2 --to 5 --position 10 --dry-run
 
 # 移到新檔案
 agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
+```
+
+**輸出結構**（變更類命令，同 rename/move）：
+```json
+{
+  "command": "shift",
+  "success": true,
+  "files": [{ "filePath": "...", "hunks": [...] }],
+  "summary": { "totalFiles": 1, "totalChanges": 2 }
+}
 ```
 
 ### 7. 重構 (refactor)
@@ -156,6 +276,16 @@ agent-ide refactor extract-function --file src/file.ts -s 10 -e 20 -n helper --t
 
 # 內聯函數
 agent-ide refactor inline-function --file src/file.ts --function-name helperFn --dry-run
+```
+
+**輸出結構**（變更類命令，同 rename/move/shift）：
+```json
+{
+  "command": "refactor",
+  "success": true,
+  "files": [{ "filePath": "...", "hunks": [...] }],
+  "summary": { "totalFiles": 1, "totalChanges": 2 }
+}
 ```
 
 ### 8. 模組快照 (snapshot)
