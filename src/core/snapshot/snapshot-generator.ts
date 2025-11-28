@@ -73,8 +73,8 @@ export class SnapshotGenerator {
    */
   private async generateModuleSnapshot(modulePath: string): Promise<ModuleSnapshot> {
     const config = createIndexConfig(modulePath, {
-      includeExtensions: ['.ts', '.js', '.tsx', '.jsx'],
-      excludePatterns: ['node_modules/**', '**/*.test.ts', '**/*.spec.ts']
+      includeExtensions: ['.ts', '.js', '.tsx', '.jsx', '.swift', '.py'],
+      excludePatterns: ['node_modules/**', '**/*.test.ts', '**/*.spec.ts', '**/test_*.py', '**/*_test.py']
     });
 
     const indexEngine = new IndexEngine(config, this.fileSystem);
