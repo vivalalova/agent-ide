@@ -7,350 +7,28 @@ agent-ide 是為 AI 代理設計的 CLI 工具集，提供搜尋、重構、依�
 > **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
 > （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
 
-## 核心命令詳解
+## 命令索引
 
-### 1. 符號重命名 (rename)
+| 命令 | 說明 | 類型 | 文件 |
+|------|------|------|------|
+| [rename](commands/rename.md) | 符號重命名 | 變更類 | `--dry-run` `--format diff` |
+| [move](commands/move.md) | 檔案移動 + import 更新 | 變更類 | `--dry-run` `--format diff` |
+| [search](commands/search.md) | 文字/正則/模糊/符號搜尋 | 查詢類 | `--format json` |
+| [deps](commands/deps.md) | 依賴分析、循環檢測 | 查詢類 | `--format json` |
+| [analyze](commands/analyze.md) | 程式碼品質分析 | 查詢類 | `--format json` |
+| [shift](commands/shift.md) | 程式碼行移動 | 變更類 | `--dry-run` `--format diff` |
+| [refactor](commands/refactor.md) | 提取/內聯函數 | 變更類 | `--dry-run` `--format diff` |
+| [snapshot](commands/snapshot.md) | 模組/專案快照 | 查詢類 | `--format json` |
 
-安全地跨專案重命名符號：
+## 輸出格式
 
-```bash
-# 預覽變更
-agent-ide rename --path . --from getUserData --to fetchUserProfile --dry-run
+所有命令支援 `--format` 參數：
 
-# 執行重命名
-agent-ide rename --path . --from getUserData --to fetchUserProfile
-```
-
-**輸出結構**（變更類命令）：
-```json
-{
-  "command": "rename",
-  "success": true,
-  "files": [
-    {
-      "filePath": "src/services/user.ts",
-      "hunks": [
-        {
-          "header": "@@ -10,7 +10,7 @@",
-          "oldStart": 10,
-          "oldCount": 7,
-          "newStart": 10,
-          "newCount": 7,
-          "lines": [
-            { "type": "context", "lineNumber": 10, "content": "export class UserService {" },
-            { "type": "delete", "lineNumber": 11, "content": "  getUserData() {" },
-            { "type": "add", "lineNumber": 11, "content": "  fetchUserProfile() {" }
-          ]
-        }
-      ]
-    }
-  ],
-  "summary": { "totalFiles": 3, "totalChanges": 5 }
-}
-```
-
-### 2. 檔案移動 (move)
-
-移動檔案並自動更新所有 import：
-
-```bash
-# 預覽影響
-agent-ide move src/api/user.ts src/services/user.service.ts --path . --dry-run
-
-# 執行移動
-agent-ide move src/api/user.ts src/services/user.service.ts --path .
-```
-
-**輸出結構**（變更類命令，同 rename）：
-```json
-{
-  "command": "move",
-  "success": true,
-  "files": [
-    {
-      "filePath": "src/index.ts",
-      "hunks": [{ "header": "@@ ...", "lines": [...] }]
-    }
-  ],
-  "summary": { "totalFiles": 2, "totalChanges": 3 }
-}
-```
-
-### 3. 程式碼搜尋 (search)
-
-支援多種搜尋類型：
-
-| 類型 | 說明 |
-|------|------|
-| `text` | 文字搜尋（預設） |
-| `regex` | 正規表達式搜尋 |
-| `fuzzy` | 模糊搜尋（容錯匹配） |
-| `symbol` | 符號名稱搜尋 |
-| `function/class/variable/enum` | 特定類型符號搜尋 |
-
-```bash
-# 文字搜尋
-agent-ide search "UserService" --path . --format json
-
-# 正規表達式搜尋
-agent-ide search "function.*User" --path . -t regex --format json
-
-# 模糊搜尋
-agent-ide search "usrSvc" --path . -t fuzzy --format json
-
-# 符號搜尋（支援萬用字元）
-agent-ide search symbol --query "User*" --path . --format json
-
-# 結構化搜尋（按類型過濾）
-agent-ide search structural -t class --pattern "Service" --path . --format json
-```
-
-**進階過濾選項**：
-```bash
-# 過濾帶有特定屬性的符號
-agent-ide search structural -t class --with-attribute "@Observable" --path .
-
-# 過濾實作特定協定的類別
-agent-ide search structural -t class --implements "Codable" --path .
-
-# 過濾繼承特定類別的子類別
-agent-ide search structural -t class --extends "BaseService" --path .
-```
-
-**輸出結構**（查詢類命令）：
-```json
-{
-  "command": "search",
-  "success": true,
-  "results": [
-    {
-      "filePath": "src/services/user.ts",
-      "line": 15,
-      "column": 10,
-      "content": "UserService",
-      "context": ["import { Injectable } from '@nestjs/common';", ""]
-    }
-  ],
-  "summary": { "totalScanned": 50, "issuesFound": 3 },
-  "truncated": false,
-  "searchTime": 45
-}
-```
-
-### 4. 依賴分析 (deps)
-
-分析依賴關係，支援子命令：
-
-| 子命令 | 說明 |
-|--------|------|
-| `graph` | 完整依賴圖 |
-| `cycles` | 循環依賴分析 |
-| `impact` | 影響分析 |
-| `orphans` | 孤立檔案分析 |
-
-```bash
-# 基本分析（預設顯示循環依賴和孤立檔案）
-agent-ide deps --path . --format json
-
-# 完整依賴圖
-agent-ide deps --path . --format json --all
-
-# 使用子命令
-agent-ide deps graph --path . --format json
-agent-ide deps cycles --path . --format json
-agent-ide deps orphans --path . --format json
-```
-
-**輸出結構**（查詢類命令）：
-```json
-{
-  "command": "deps",
-  "success": true,
-  "cycles": [
-    { "cycle": ["a.ts", "b.ts", "c.ts"], "length": 3 }
-  ],
-  "orphans": ["src/utils/unused.ts"],
-  "graph": {
-    "nodes": [{ "id": "src/index.ts", "label": "index" }],
-    "edges": [{ "from": "src/index.ts", "to": "src/app.ts" }]
-  },
-  "summary": {
-    "totalScanned": 50,
-    "totalFiles": 50,
-    "totalDependencies": 120,
-    "cyclesFound": 1,
-    "orphanedFiles": 3
-  }
-}
-```
-
-### 5. 品質分析 (analyze)
-
-分析程式碼品質，支援 5 種分析類型：
-
-| 類型 | 說明 |
-|------|------|
-| `complexity` | 循環/認知複雜度（預設） |
-| `dead-code` | 未使用的函式/變數 |
-| `best-practices` | ES Module 等實踐檢查 |
-| `patterns` | async/Promise/interface/enum 使用模式 |
-| `quality` | 綜合評分（型別安全、錯誤處理、安全性、命名、測試覆蓋率） |
-
-```bash
-# 複雜度分析（預設）
-agent-ide analyze --path . --format json
-
-# 指定分析類型
-agent-ide analyze dead-code --path . --format json
-agent-ide analyze quality --path . --format json
-
-# 顯示所有結果（不只問題項目）
-agent-ide analyze --path . --format json --all
-```
-
-**輸出結構**（查詢類命令）：
-```json
-{
-  "command": "analyze",
-  "success": true,
-  "analyzeType": "complexity",
-  "summary": {
-    "totalScanned": 25,
-    "issuesFound": 3,
-    "averageComplexity": 12.5,
-    "maxComplexity": 45
-  },
-  "issues": [
-    {
-      "type": "complexity",
-      "severity": "high",
-      "message": "複雜度 45，認知複雜度 32",
-      "filePath": "src/services/parser.ts",
-      "score": 45
-    }
-  ]
-}
-```
-
-### 6. 程式碼移動 (shift)
-
-在檔案內或跨檔案移動程式碼行：
-
-```bash
-# 同檔案內移動
-agent-ide shift src/file.ts --from 2 --to 5 --position 10 --dry-run
-
-# 移到新檔案
-agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
-```
-
-**輸出結構**（變更類命令，同 rename/move）：
-```json
-{
-  "command": "shift",
-  "success": true,
-  "files": [{ "filePath": "...", "hunks": [...] }],
-  "summary": { "totalFiles": 1, "totalChanges": 2 }
-}
-```
-
-### 7. 重構 (refactor)
-
-支援的動作：
-
-| 動作 | 說明 |
-|------|------|
-| `extract-function` | 提取程式碼為函數（TS/JS） |
-| `extract-closure` | 提取程式碼為閉包（Swift） |
-| `inline-function` | 內聯函數呼叫 |
-
-```bash
-# 提取函數
-agent-ide refactor extract-function --file src/file.ts --start-line 10 --end-line 20 --function-name newFn --dry-run
-
-# 提取閉包（Swift）
-agent-ide refactor extract-closure --file src/file.swift --start-line 10 --end-line 20 --function-name newClosure --dry-run
-
-# 跨檔案提取（提取到新檔案並自動加入 import）
-agent-ide refactor extract-function --file src/file.ts -s 10 -e 20 -n helper --target-file src/utils.ts --dry-run
-
-# 內聯函數
-agent-ide refactor inline-function --file src/file.ts --function-name helperFn --dry-run
-```
-
-**輸出結構**（變更類命令，同 rename/move/shift）：
-```json
-{
-  "command": "refactor",
-  "success": true,
-  "files": [{ "filePath": "...", "hunks": [...] }],
-  "summary": { "totalFiles": 1, "totalChanges": 2 }
-}
-```
-
-### 8. 模組快照 (snapshot)
-
-產生模組/專案快照供 AI 快速理解程式碼結構，大幅減少 token 使用量（~91% 節省）：
-
-```bash
-# 模組快照（指定模組目錄）
-agent-ide snapshot --path src/core/indexing --format json
-
-# 專案快照（自動偵測所有模組）
-agent-ide snapshot --path . --format json
-
-# 人類可讀摘要
-agent-ide snapshot --path src/core/indexing --format summary
-```
-
-**輸出結構**：
-
-| 欄位 | 說明 |
-|------|------|
-| `command` | 命令類型（`snapshot`） |
-| `success` | 執行是否成功 |
-| `summary` | 統計摘要（掃描數量等） |
-| `snapshotType` | 快照類型（`module` 或 `project`） |
-| `snapshot.module` | 模組名稱（module 類型） |
-| `snapshot.project` | 專案名稱（project 類型） |
-| `snapshot.modules` | 各模組快照（project 類型） |
-| `snapshot.api` | Class 的 public 方法及簽章 |
-| `snapshot.factories` | `createXxx` 工廠函數及簽章 |
-| `snapshot.types` | Interface 和 Type 定義 |
-| `snapshot.private` | Class 私有欄位（供理解內部狀態） |
-
-**範例輸出**：
-```json
-{
-  "command": "snapshot",
-  "success": true,
-  "summary": { "totalScanned": 1 },
-  "snapshotType": "module",
-  "snapshot": {
-    "module": "indexing",
-    "api": {
-      "IndexEngine": {
-        "findSymbol": "(name: string, options?: SearchOptions) → Promise<SymbolSearchResult[]>",
-        "indexProject": "() → Promise<void>"
-      }
-    },
-    "factories": {
-      "createIndexConfig": "(workspacePath: string, options?: Partial<IndexConfig>) → IndexConfig"
-    },
-    "types": {
-      "FileChangeType": "'add' | 'change' | 'unlink'"
-    },
-    "private": {
-      "IndexEngine": { "fields": ["config", "fileIndex"] }
-    }
-  }
-}
-```
-
-**自動偵測規則**：
-- 有 `package.json` + `src/` 目錄 → 專案快照（掃描所有模組）
-- 有 `index.ts` → 模組快照
-- 其他 → 視為模組
+| 格式 | 說明 | 適用命令 |
+|------|------|---------|
+| `json` | 機器可讀 JSON | 所有命令 |
+| `summary` | 人類可讀摘要 | 所有命令 |
+| `diff` | 程式碼差異 | 變更類命令 |
 
 ## 工作流程範例
 
@@ -384,6 +62,13 @@ agent-ide move src/old.ts src/new-location.ts --path .
 
 # 4. 檢查新循環依賴
 agent-ide deps cycles --path .
+```
+
+### 快速理解模組
+
+```bash
+# 產生模組快照
+agent-ide snapshot --path src/core/indexing --format json
 ```
 
 ## 支援語言
