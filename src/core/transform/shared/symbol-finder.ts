@@ -1,0 +1,548 @@
+/**
+ * 統一的符號查找器
+ * 整合 AST 分析和文字匹配，提供跨檔案符號查找能力
+ */
+
+import type { Range, Location } from '@shared/types/core.js';
+import type { Symbol, SymbolType } from '@shared/types/symbol.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+
+/**
+ * 符號引用
+ */
+export interface SymbolReference {
+  readonly symbolName: string;
+  readonly location: Location;
+  readonly type: SymbolReferenceType;
+  readonly context?: string;
+}
+
+/**
+ * 符號引用類型
+ */
+export enum SymbolReferenceType {
+  Definition = 'definition',
+  Usage = 'usage',
+  Import = 'import',
+  Export = 'export'
+}
+
+/**
+ * 函式呼叫點
+ */
+export interface CallSite {
+  readonly functionName: string;
+  readonly location: Location;
+  readonly arguments: readonly CallSiteArgument[];
+  readonly isMethodCall: boolean;
+  readonly receiver?: string;
+}
+
+/**
+ * 呼叫點參數
+ */
+export interface CallSiteArgument {
+  readonly index: number;
+  readonly name?: string;
+  readonly value: string;
+  readonly range: Range;
+}
+
+/**
+ * 類別成員
+ */
+export interface ClassMember {
+  readonly name: string;
+  readonly type: ClassMemberType;
+  readonly location: Location;
+  readonly modifiers: readonly string[];
+  readonly valueType?: string;
+}
+
+/**
+ * 類別成員類型
+ */
+export enum ClassMemberType {
+  Method = 'method',
+  Property = 'property',
+  Getter = 'getter',
+  Setter = 'setter',
+  Constructor = 'constructor'
+}
+
+/**
+ * 符號定義
+ */
+export interface SymbolDefinition {
+  readonly symbol: Symbol;
+  readonly signature?: string;
+  readonly documentation?: string;
+}
+
+/**
+ * 符號查找器
+ */
+export class SymbolFinder {
+  constructor(
+    private readonly parserRegistry: ParserRegistry,
+    private readonly fileSystem: IFileSystem
+  ) {}
+
+  /**
+   * 查找符號定義
+   */
+  async findDefinition(filePath: string, symbolName: string): Promise<SymbolDefinition | null> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return null;
+    }
+
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      return null;
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+      const symbols = await parser.extractSymbols(ast);
+
+      const symbol = symbols.find(s => s.name === symbolName);
+      if (!symbol) {
+        return null;
+      }
+
+      return {
+        symbol,
+        signature: this.extractSignature(content, symbol),
+        documentation: this.extractDocumentation(content, symbol)
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 查找所有引用
+   */
+  async findReferences(symbolName: string, projectFiles: readonly string[]): Promise<SymbolReference[]> {
+    const results: SymbolReference[] = [];
+
+    for (const filePath of projectFiles) {
+      const refs = await this.findReferencesInFile(filePath, symbolName);
+      results.push(...refs);
+    }
+
+    return results;
+  }
+
+  /**
+   * 查找檔案中的符號引用
+   */
+  async findReferencesInFile(filePath: string, symbolName: string): Promise<SymbolReference[]> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      // 降級到文字匹配
+      return this.findReferencesByText(filePath, content, symbolName);
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+
+      // 建立虛擬符號用於查找
+      const dummySymbol: Symbol = {
+        name: symbolName,
+        type: 'variable' as SymbolType,
+        location: {
+          filePath,
+          range: {
+            start: { line: 1, column: 1, offset: 0 },
+            end: { line: 1, column: 1, offset: 0 }
+          }
+        },
+        scope: undefined,
+        modifiers: []
+      };
+
+      const references = await parser.findReferences(ast, dummySymbol);
+
+      return references.map(ref => ({
+        symbolName,
+        location: ref.location,
+        type: ref.type === 'definition'
+          ? SymbolReferenceType.Definition
+          : SymbolReferenceType.Usage
+      }));
+    } catch {
+      // Parser 失敗，降級到文字匹配
+      return this.findReferencesByText(filePath, content, symbolName);
+    }
+  }
+
+  /**
+   * 查找函式的所有呼叫點
+   */
+  async findCallSites(functionName: string, projectFiles: readonly string[]): Promise<CallSite[]> {
+    const results: CallSite[] = [];
+
+    for (const filePath of projectFiles) {
+      const callSites = await this.findCallSitesInFile(filePath, functionName);
+      results.push(...callSites);
+    }
+
+    return results;
+  }
+
+  /**
+   * 查找檔案中的函式呼叫點
+   */
+  async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      return [];
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+      const symbols = await parser.extractSymbols(ast);
+
+      // 查找所有函式呼叫
+      const callSites: CallSite[] = [];
+      const lines = content.split('\n');
+
+      // 使用正則表達式查找呼叫點
+      const callPattern = new RegExp(
+        `(?:(\\w+)\\.)?${this.escapeRegex(functionName)}\\s*\\(`,
+        'g'
+      );
+
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        let match;
+
+        while ((match = callPattern.exec(line)) !== null) {
+          const receiver = match[1];
+          const startColumn = match.index + 1;
+
+          // 解析參數
+          const argsStart = match.index + match[0].length - 1;
+          const argsString = this.extractArgumentsString(line, argsStart);
+          const args = this.parseArguments(argsString, lineIndex + 1, argsStart);
+
+          callSites.push({
+            functionName,
+            location: {
+              filePath,
+              range: {
+                start: { line: lineIndex + 1, column: startColumn, offset: undefined },
+                end: { line: lineIndex + 1, column: startColumn + match[0].length, offset: undefined }
+              }
+            },
+            arguments: args,
+            isMethodCall: !!receiver,
+            receiver
+          });
+        }
+      }
+
+      return callSites;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 查找類別成員
+   */
+  async findClassMembers(filePath: string, className: string): Promise<ClassMember[]> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      return [];
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+      const symbols = await parser.extractSymbols(ast);
+
+      // 查找類別
+      const classSymbol = symbols.find(s => s.name === className && s.type === 'class');
+      if (!classSymbol) {
+        return [];
+      }
+
+      // 查找類別成員
+      return symbols
+        .filter(s => {
+          // 檢查是否在類別範圍內
+          const classRange = classSymbol.location.range;
+          const symbolRange = s.location.range;
+
+          return s.location.filePath === filePath
+            && symbolRange.start.line >= classRange.start.line
+            && symbolRange.end.line <= classRange.end.line
+            && s.name !== className;
+        })
+        .map(s => ({
+          name: s.name,
+          type: this.symbolTypeToMemberType(s.type),
+          location: s.location,
+          modifiers: [...s.modifiers],
+          valueType: undefined
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 讀取檔案內容
+   */
+  private async readFile(filePath: string): Promise<string | null> {
+    try {
+      const content = await this.fileSystem.readFile(filePath, 'utf-8');
+      return typeof content === 'string' ? content : content.toString('utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 取得對應的 Parser
+   */
+  private getParser(filePath: string) {
+    const extension = this.getFileExtension(filePath);
+    return this.parserRegistry.getParser(extension);
+  }
+
+  /**
+   * 取得檔案副檔名
+   */
+  private getFileExtension(filePath: string): string {
+    const lastDot = filePath.lastIndexOf('.');
+    return lastDot >= 0 ? filePath.substring(lastDot) : '';
+  }
+
+  /**
+   * 使用文字匹配查找引用（降級方法）
+   */
+  private findReferencesByText(filePath: string, content: string, symbolName: string): SymbolReference[] {
+    const references: SymbolReference[] = [];
+    const lines = content.split('\n');
+    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      let match;
+
+      while ((match = regex.exec(line)) !== null) {
+        const startColumn = match.index + 1;
+
+        references.push({
+          symbolName,
+          location: {
+            filePath,
+            range: {
+              start: { line: lineIndex + 1, column: startColumn, offset: undefined },
+              end: { line: lineIndex + 1, column: startColumn + symbolName.length, offset: undefined }
+            }
+          },
+          type: SymbolReferenceType.Usage,
+          context: line.trim()
+        });
+      }
+    }
+
+    return references;
+  }
+
+  /**
+   * 提取函式簽名
+   */
+  private extractSignature(content: string, symbol: Symbol): string | undefined {
+    const lines = content.split('\n');
+    const line = lines[symbol.location.range.start.line - 1];
+    return line?.trim();
+  }
+
+  /**
+   * 提取文件註解
+   */
+  private extractDocumentation(content: string, symbol: Symbol): string | undefined {
+    const lines = content.split('\n');
+    const lineIndex = symbol.location.range.start.line - 2; // 前一行
+
+    if (lineIndex < 0) {
+      return undefined;
+    }
+
+    // 查找 JSDoc 或區塊註解
+    const docLines: string[] = [];
+    let i = lineIndex;
+
+    while (i >= 0) {
+      const line = lines[i].trim();
+
+      if (line.endsWith('*/')) {
+        // 找到註解結尾，開始收集
+        docLines.unshift(line);
+        i--;
+
+        while (i >= 0 && !lines[i].trim().startsWith('/**') && !lines[i].trim().startsWith('/*')) {
+          docLines.unshift(lines[i].trim());
+          i--;
+        }
+
+        if (i >= 0) {
+          docLines.unshift(lines[i].trim());
+        }
+        break;
+      } else if (line.startsWith('//')) {
+        // 單行註解
+        docLines.unshift(line.substring(2).trim());
+        i--;
+      } else if (line === '') {
+        i--;
+      } else {
+        break;
+      }
+    }
+
+    return docLines.length > 0 ? docLines.join('\n') : undefined;
+  }
+
+  /**
+   * 提取參數字串
+   */
+  private extractArgumentsString(line: string, startIndex: number): string {
+    let depth = 1;
+    let i = startIndex + 1;
+    let result = '';
+
+    while (i < line.length && depth > 0) {
+      const char = line[i];
+
+      if (char === '(') {
+        depth++;
+      } else if (char === ')') {
+        depth--;
+      }
+
+      if (depth > 0) {
+        result += char;
+      }
+      i++;
+    }
+
+    return result;
+  }
+
+  /**
+   * 解析參數
+   */
+  private parseArguments(argsString: string, line: number, baseColumn: number): CallSiteArgument[] {
+    if (!argsString.trim()) {
+      return [];
+    }
+
+    const args: CallSiteArgument[] = [];
+    const parts = this.splitArguments(argsString);
+
+    let column = baseColumn + 1;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const trimmed = part.trim();
+
+      // 檢查是否是具名參數
+      const namedMatch = trimmed.match(/^(\w+)\s*[:=]\s*(.+)$/);
+
+      args.push({
+        index: i,
+        name: namedMatch ? namedMatch[1] : undefined,
+        value: namedMatch ? namedMatch[2] : trimmed,
+        range: {
+          start: { line, column, offset: undefined },
+          end: { line, column: column + part.length, offset: undefined }
+        }
+      });
+
+      column += part.length + 1; // +1 for comma
+    }
+
+    return args;
+  }
+
+  /**
+   * 分割參數（考慮巢狀括號）
+   */
+  private splitArguments(argsString: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let depth = 0;
+
+    for (const char of argsString) {
+      if (char === '(' || char === '[' || char === '{') {
+        depth++;
+        current += char;
+      } else if (char === ')' || char === ']' || char === '}') {
+        depth--;
+        current += char;
+      } else if (char === ',' && depth === 0) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    if (current.trim()) {
+      result.push(current);
+    }
+
+    return result;
+  }
+
+  /**
+   * 符號類型轉換為成員類型
+   */
+  private symbolTypeToMemberType(type: SymbolType): ClassMemberType {
+    switch (type) {
+      case 'function':
+        return ClassMemberType.Method;
+      case 'variable':
+      case 'property':
+        return ClassMemberType.Property;
+      default:
+        return ClassMemberType.Property;
+    }
+  }
+
+  /**
+   * 跳脫正則表達式特殊字元
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+}
+
+/**
+ * 建立 SymbolFinder 實例
+ */
+export function createSymbolFinder(parserRegistry: ParserRegistry, fileSystem: IFileSystem): SymbolFinder {
+  return new SymbolFinder(parserRegistry, fileSystem);
+}
