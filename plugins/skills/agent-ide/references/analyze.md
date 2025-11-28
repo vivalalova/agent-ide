@@ -38,7 +38,9 @@ agent-ide analyze --path . --format json --all
 | `--all` | 顯示所有結果 |
 | `--format` | 輸出格式：`json`、`summary` |
 
-## 輸出結構
+## 輸出格式
+
+### json（預設）
 
 ```json
 {
@@ -61,6 +63,25 @@ agent-ide analyze --path . --format json --all
     }
   ]
 }
+```
+
+### summary
+
+```
+🔍 分析程式碼品質...
+分析類型: complexity
+成功: 是
+發現 16 個問題
+
+🟡 複雜度 11，認知複雜度 9
+  src/api/middleware/validator.ts
+🟡 複雜度 14，認知複雜度 7
+  src/controllers/order-controller.ts
+🟠 複雜度 22，認知複雜度 7
+  src/models/order-model.ts
+🟠 複雜度 32，認知複雜度 24
+  src/services/order-service.ts
+... 還有 12 個問題
 ```
 
 ## 欄位說明

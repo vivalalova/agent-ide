@@ -49,7 +49,9 @@ agent-ide snapshot --path src/core/indexing --format summary
 | `snapshot.types` | Interface 和 Type 定義 |
 | `snapshot.private` | Class 私有欄位（供理解內部狀態） |
 
-## 範例輸出
+## 輸出格式
+
+### json（預設）
 
 ```json
 {
@@ -76,6 +78,23 @@ agent-ide snapshot --path src/core/indexing --format summary
     }
   }
 }
+```
+
+### summary
+
+```
+📦 專案: sample-project
+📁 模組數: 2
+
+  📂 src
+     API: 20 classes
+     Factories: 4
+     Types: 54
+
+  📂 src/types
+     API: 0 classes
+     Factories: 0
+     Types: 43
 ```
 
 ## 快照內容說明

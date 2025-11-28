@@ -25,7 +25,33 @@ agent-ide move src/api/user.ts src/services/user.service.ts --path .
 | `--dry-run` | 預覽模式，不實際執行 |
 | `--format` | 輸出格式：`json`、`summary`、`diff` |
 
-## 輸出結構
+## 輸出格式
+
+### diff（預設）
+
+```diff
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,5 @@
+-import { User } from './api/user';
++import { User } from './services/user.service';
+
+Summary: 2 files, 3 changes, (+1 -1)
+```
+
+### summary
+
+```
+Moved 'user.ts' to 'user.service.ts'
+
+Files: 2
+Changes: 3 (+1 -1)
+
+Files:
+  src/index.ts: import updated (+1 -1)
+```
+
+### json
 
 ```json
 {

@@ -58,7 +58,9 @@ agent-ide search structural -t class --extends "BaseService" --path .
 | `--pattern` | 結構化搜尋的模式 |
 | `--format` | 輸出格式：`json`、`summary` |
 
-## 輸出結構
+## 輸出格式
+
+### json（預設）
 
 ```json
 {
@@ -77,6 +79,22 @@ agent-ide search structural -t class --extends "BaseService" --path .
   "truncated": false,
   "searchTime": 45
 }
+```
+
+### summary
+
+```
+🔍 搜尋: "function"
+找到 50 個結果
+搜尋耗時: 25ms
+(結果已截斷)
+
+src/quality-test/error-handling-bad.ts:8:1
+  function
+src/quality-test/naming-violations.ts:29:1
+  function
+src/services/user-service.ts:15:1
+  function
 ```
 
 ## 欄位說明

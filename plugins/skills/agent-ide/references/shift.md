@@ -27,7 +27,44 @@ agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 | `--dry-run` | 預覽模式，不實際執行 |
 | `--format` | 輸出格式：`json`、`summary`、`diff` |
 
-## 輸出結構
+## 輸出格式
+
+### diff（預設）
+
+```diff
+--- a/src/utils/string-utils.ts
++++ b/src/utils/string-utils.ts
+@@ -2,10 +2,12 @@
+ * String Utils
+ */
+
+-export function capitalize(str: string): string {
+-  if (!str) {
+-    return str;
+-  }
++export function capitalize(str: string): string {
++  if (!str) {
++    return str;
++  }
++  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
++}
+
+Summary: 1 file, 10 changes, (+6 -4)
+```
+
+### summary
+
+```
+Moved 6 lines within file (5-10 → 15)
+
+Files: 1
+Changes: 10 (+6 -4)
+
+Files:
+  src/utils/string-utils.ts: lines moved (+6 -4)
+```
+
+### json
 
 ```json
 {

@@ -52,7 +52,41 @@ agent-ide refactor inline-function --file src/file.ts --function-name helperFn -
 | `--dry-run` | 預覽模式 |
 | `--format` | 輸出格式 |
 
-## 輸出結構
+## 輸出格式
+
+### diff（預設）
+
+```diff
+--- a/src/services/order-service.ts
++++ b/src/services/order-service.ts
+@@ -1,4 +1,4 @@
++function extractedFn(order: Order) {
++  // extracted code
++}
++
+ export class OrderService {
+   processOrder(order: Order) {
+-    // original code here
++    extractedFn(order);
+   }
+ }
+
+Summary: 1 file, 4 changes, (+2 -2)
+```
+
+### summary
+
+```
+Extracted function 'extractedFn'
+
+Files: 1
+Changes: 4 (+2 -2)
+
+Files:
+  src/services/order-service.ts: code refactored (+2 -2)
+```
+
+### json
 
 ```json
 {

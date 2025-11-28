@@ -37,7 +37,9 @@ agent-ide deps orphans --path . --format json
 | `--all` | 顯示完整依賴圖 |
 | `--format` | 輸出格式：`json`、`summary` |
 
-## 輸出結構
+## 輸出格式
+
+### json（預設）
 
 ```json
 {
@@ -59,6 +61,21 @@ agent-ide deps orphans --path . --format json
     "orphanedFiles": 3
   }
 }
+```
+
+### summary
+
+```
+🔍 分析依賴關係...
+未發現循環依賴
+
+孤立檔案: 12 個
+  - src/index.ts
+  - src/quality-test/error-handling-bad.ts
+  - src/quality-test/naming-violations.ts
+  - src/utils/array-utils.ts
+  - src/utils/date-utils.ts
+  ... 還有 7 個
 ```
 
 ## 欄位說明

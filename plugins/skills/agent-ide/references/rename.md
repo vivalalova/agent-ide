@@ -25,7 +25,43 @@ agent-ide rename --path . --from getUserData --to fetchUserProfile
 | `--dry-run` | 預覽模式，不實際執行 |
 | `--format` | 輸出格式：`json`、`summary`、`diff` |
 
-## 輸出結構
+## 輸出格式
+
+### diff（預設）
+
+```diff
+--- a/src/models/user-model.ts
++++ b/src/models/user-model.ts
+@@ -6,7 +6,7 @@
+ import { BaseModel } from './base-model';
+
+-UserModel
++UserEntity
+   constructor(user: User) {
+
+--- a/src/services/user-service.ts
++++ b/src/services/user-service.ts
+@@ -5,10 +5,10 @@
+-UserModel
++UserEntity
+
+Summary: 2 files, 8 changes, (+4 -4)
+```
+
+### summary
+
+```
+Renamed 'UserModel' to 'UserEntity'
+
+Files: 2
+Changes: 8 (+4 -4)
+
+Files:
+  src/models/user-model.ts: symbol renamed (+1 -1)
+  src/services/user-service.ts: symbol renamed (+3 -3)
+```
+
+### json
 
 ```json
 {
