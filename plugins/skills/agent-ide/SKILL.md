@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。符號重命名、檔案移動（自動更新 import）、循環依賴檢測、品質分析。支援 TS/JS/Swift。極大減少 AI 的 Token使用量
+description: 🚨 重構/重命名/移動/搜尋/依賴分析必用 - 當用戶要求 rename/refactor/move/搜尋程式碼/分析依賴/檢查循環/了解專案結構時，必須使用此工具。自動更新所有引用，節省 ~91% token。支援 TS/JS/Swift/Python
 ---
 
 # Agent IDE
