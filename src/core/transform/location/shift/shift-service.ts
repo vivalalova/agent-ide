@@ -4,10 +4,10 @@
 
 import * as path from 'node:path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { LineExtractor } from '@core/shift/line-extractor.js';
-import { FileGenerator } from '@core/shift/file-generator.js';
-import type { ShiftOptions, ShiftResult, ShiftValidationError } from '@core/shift/types.js';
-import { ShiftOperationType, createShiftResult, createShiftValidationError } from '@core/shift/types.js';
+import { LineExtractor } from '@core/transform/location/shift/line-extractor.js';
+import { FileGenerator } from '@core/transform/location/shift/file-generator.js';
+import type { ShiftOptions, ShiftResult, ShiftValidationError } from '@core/transform/location/shift/types.js';
+import { ShiftOperationType, createShiftResult, createShiftValidationError } from '@core/transform/location/shift/types.js';
 
 /**
  * Shift 服務類別
