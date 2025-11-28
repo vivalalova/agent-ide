@@ -1,0 +1,485 @@
+/**
+ * Move Member Service
+ * 成員移動核心服務
+ */
+
+import * as path from 'path';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { MemberExtractor } from './member-extractor.js';
+import {
+  type MoveMemberOptions,
+  type MoveMemberResult,
+  type MemberDefinition,
+  type ReferenceUpdate,
+  MoveTargetType,
+  MoveMemberErrorCode
+} from './types.js';
+import { SymbolFinder, SymbolReferenceType } from '../../shared/symbol-finder.js';
+
+/**
+ * Move Member Service
+ */
+export class MoveMemberService {
+  private readonly memberExtractor: MemberExtractor;
+  private readonly symbolFinder: SymbolFinder;
+
+  constructor(
+    private readonly parserRegistry: ParserRegistry,
+    private readonly fileSystem: IFileSystem
+  ) {
+    this.memberExtractor = new MemberExtractor(parserRegistry, fileSystem);
+    this.symbolFinder = new SymbolFinder(parserRegistry, fileSystem);
+  }
+
+  /**
+   * 執行 Move Member
+   */
+  async moveMember(options: MoveMemberOptions): Promise<MoveMemberResult> {
+    // 1. 提取成員
+    const member = await this.memberExtractor.extractMember(
+      options.sourceFile,
+      options.memberName,
+      options.memberType,
+      options.sourceClassName
+    );
+
+    if (!member) {
+      return this.createErrorResult(
+        MoveMemberErrorCode.MemberNotFound,
+        `找不到成員: ${options.memberName}`
+      );
+    }
+
+    // 2. 驗證目標
+    const validationError = await this.validateTarget(options, member);
+    if (validationError) {
+      return this.createErrorResult(validationError.code, validationError.message);
+    }
+
+    // 3. 準備來源檔案變更
+    const sourceFileChange = await this.prepareSourceFileChange(options, member);
+
+    // 4. 準備目標檔案變更
+    const targetFileChange = await this.prepareTargetFileChange(options, member);
+
+    // 5. 查找並準備引用更新
+    const referenceUpdates = options.updateReferences !== false
+      ? await this.prepareReferenceUpdates(options, member)
+      : [];
+
+    // 6. 執行或預覽
+    if (!options.preview) {
+      await this.applyChanges(sourceFileChange, targetFileChange, referenceUpdates);
+    }
+
+    // 7. 計算統計
+    const affectedFiles = new Set<string>();
+    affectedFiles.add(sourceFileChange.filePath);
+    affectedFiles.add(targetFileChange.filePath);
+    for (const update of referenceUpdates) {
+      affectedFiles.add(update.filePath);
+    }
+
+    return {
+      success: true,
+      member,
+      target: options.target,
+      sourceFileChange,
+      targetFileChange,
+      referenceUpdates,
+      executed: !options.preview,
+      stats: {
+        referencesUpdated: referenceUpdates.length,
+        filesAffected: affectedFiles.size
+      }
+    };
+  }
+
+  /**
+   * 驗證目標
+   */
+  private async validateTarget(
+    options: MoveMemberOptions,
+    member: MemberDefinition
+  ): Promise<{ code: MoveMemberErrorCode; message: string } | null> {
+    const { target } = options;
+
+    // 檢查目標檔案
+    if (target.type === MoveTargetType.ExistingFile || target.type === MoveTargetType.ExistingClass) {
+      const exists = await this.fileSystem.exists(target.filePath);
+      if (!exists) {
+        return {
+          code: MoveMemberErrorCode.TargetFileNotFound,
+          message: `目標檔案不存在: ${target.filePath}`
+        };
+      }
+
+      // 檢查是否已有同名成員
+      const existingMember = await this.memberExtractor.extractMember(
+        target.filePath,
+        member.name,
+        member.type,
+        target.className
+      );
+
+      if (existingMember) {
+        return {
+          code: MoveMemberErrorCode.DuplicateMemberInTarget,
+          message: `目標位置已存在同名成員: ${member.name}`
+        };
+      }
+    }
+
+    // 檢查目標類別
+    if (target.type === MoveTargetType.ExistingClass && target.className) {
+      const members = await this.memberExtractor.listMembers(target.filePath);
+      const targetClass = members.find(m => m.name === target.className);
+      if (!targetClass) {
+        return {
+          code: MoveMemberErrorCode.TargetClassNotFound,
+          message: `找不到目標類別: ${target.className}`
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 準備來源檔案變更
+   */
+  private async prepareSourceFileChange(
+    options: MoveMemberOptions,
+    member: MemberDefinition
+  ): Promise<{ filePath: string; originalCode: string; newCode: string }> {
+    const content = await this.readFile(options.sourceFile);
+    if (!content) {
+      throw new Error(`無法讀取來源檔案: ${options.sourceFile}`);
+    }
+
+    const lines = content.split('\n');
+    const startLine = member.location.range.start.line - 1;
+    const endLine = member.location.range.end.line - 1;
+
+    // 移除成員（包含前面的文件註解）
+    let removeStartLine = startLine;
+    if (member.documentation) {
+      const docLines = member.documentation.split('\n').length;
+      removeStartLine = Math.max(0, startLine - docLines);
+    }
+
+    // 處理 re-export
+    let reexportStatement = '';
+    if (options.keepReexport) {
+      const relativePath = this.calculateRelativePath(options.sourceFile, options.target.filePath);
+      reexportStatement = `export { ${member.name} } from '${relativePath}';\n`;
+    }
+
+    const newLines = [
+      ...lines.slice(0, removeStartLine),
+      ...(options.keepReexport ? [reexportStatement] : []),
+      ...lines.slice(endLine + 1)
+    ];
+
+    return {
+      filePath: options.sourceFile,
+      originalCode: content,
+      newCode: newLines.join('\n')
+    };
+  }
+
+  /**
+   * 準備目標檔案變更
+   */
+  private async prepareTargetFileChange(
+    options: MoveMemberOptions,
+    member: MemberDefinition
+  ): Promise<{ filePath: string; originalCode: string | null; newCode: string; isNewFile: boolean }> {
+    const { target } = options;
+    const isNewFile = target.type === MoveTargetType.NewFile;
+
+    // 準備要插入的程式碼
+    let memberCode = member.sourceCode;
+    if (member.documentation) {
+      memberCode = member.documentation + '\n' + memberCode;
+    }
+
+    // 確保有 export（如果原本有）
+    if (!memberCode.includes('export') && member.modifiers.includes('export')) {
+      memberCode = 'export ' + memberCode;
+    }
+
+    if (isNewFile) {
+      // 新檔案：生成完整的檔案內容
+      const imports = this.generateImports(member, options);
+      const newCode = imports + (imports ? '\n\n' : '') + memberCode + '\n';
+
+      return {
+        filePath: target.filePath,
+        originalCode: null,
+        newCode,
+        isNewFile: true
+      };
+    }
+
+    // 現有檔案
+    const content = await this.readFile(target.filePath);
+    if (!content) {
+      throw new Error(`無法讀取目標檔案: ${target.filePath}`);
+    }
+
+    const lines = content.split('\n');
+    let insertLine = target.insertPosition ?? -1;
+
+    if (target.type === MoveTargetType.ExistingClass && target.className) {
+      // 插入到類別內
+      insertLine = await this.findClassInsertPosition(content, target.className);
+    }
+
+    if (insertLine < 0) {
+      // 預設插入到檔案結尾
+      insertLine = lines.length;
+    }
+
+    const newLines = [
+      ...lines.slice(0, insertLine),
+      '',
+      memberCode,
+      ...lines.slice(insertLine)
+    ];
+
+    return {
+      filePath: target.filePath,
+      originalCode: content,
+      newCode: newLines.join('\n'),
+      isNewFile: false
+    };
+  }
+
+  /**
+   * 準備引用更新
+   */
+  private async prepareReferenceUpdates(
+    options: MoveMemberOptions,
+    member: MemberDefinition
+  ): Promise<ReferenceUpdate[]> {
+    const updates: ReferenceUpdate[] = [];
+
+    // 查找所有引用
+    const projectFiles = await this.getProjectFiles(options.projectRoot);
+    const references = await this.symbolFinder.findReferences(member.name, projectFiles);
+
+    // 過濾出 import 引用
+    const importRefs = references.filter(ref => ref.type === SymbolReferenceType.Import);
+
+    for (const ref of importRefs) {
+      // 跳過來源檔案和目標檔案
+      if (ref.location.filePath === options.sourceFile || ref.location.filePath === options.target.filePath) {
+        continue;
+      }
+
+      const content = await this.readFile(ref.location.filePath);
+      if (!content) {continue;}
+
+      const lines = content.split('\n');
+      const line = lines[ref.location.range.start.line - 1];
+
+      // 檢查是否是從原檔案 import
+      const oldRelativePath = this.calculateRelativePath(ref.location.filePath, options.sourceFile);
+      if (!line.includes(oldRelativePath)) {continue;}
+
+      // 計算新的 import 路徑
+      const newRelativePath = this.calculateRelativePath(ref.location.filePath, options.target.filePath);
+      const newLine = line.replace(oldRelativePath, newRelativePath);
+
+      if (newLine !== line) {
+        updates.push({
+          filePath: ref.location.filePath,
+          originalImport: line,
+          newImport: newLine,
+          location: ref.location
+        });
+      }
+    }
+
+    return updates;
+  }
+
+  /**
+   * 執行變更
+   */
+  private async applyChanges(
+    sourceFileChange: { filePath: string; originalCode: string; newCode: string },
+    targetFileChange: { filePath: string; originalCode: string | null; newCode: string; isNewFile: boolean },
+    referenceUpdates: readonly ReferenceUpdate[]
+  ): Promise<void> {
+    // 確保目標目錄存在
+    if (targetFileChange.isNewFile) {
+      const targetDir = path.dirname(targetFileChange.filePath);
+      await this.fileSystem.createDirectory(targetDir, true);
+    }
+
+    // 寫入來源檔案
+    await this.fileSystem.writeFile(sourceFileChange.filePath, sourceFileChange.newCode);
+
+    // 寫入目標檔案
+    await this.fileSystem.writeFile(targetFileChange.filePath, targetFileChange.newCode);
+
+    // 更新引用
+    for (const update of referenceUpdates) {
+      const content = await this.readFile(update.filePath);
+      if (!content) {continue;}
+
+      const newContent = content.replace(update.originalImport, update.newImport);
+      await this.fileSystem.writeFile(update.filePath, newContent);
+    }
+  }
+
+  /**
+   * 生成 import 陳述
+   */
+  private generateImports(member: MemberDefinition, options: MoveMemberOptions): string {
+    // 分析依賴並生成必要的 import
+    const imports: string[] = [];
+
+    for (const dep of member.dependencies) {
+      // 檢查依賴是否在來源檔案中
+      // 這裡簡化處理，實際應該更精確地分析
+      const relativePath = this.calculateRelativePath(options.target.filePath, options.sourceFile);
+      imports.push(`import { ${dep} } from '${relativePath}';`);
+    }
+
+    return imports.join('\n');
+  }
+
+  /**
+   * 找到類別內的插入位置
+   */
+  private async findClassInsertPosition(content: string, className: string): Promise<number> {
+    const lines = content.split('\n');
+    let inClass = false;
+    let depth = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (line.includes(`class ${className}`)) {
+        inClass = true;
+      }
+
+      if (inClass) {
+        for (const char of line) {
+          if (char === '{') {depth++;}
+          else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              // 找到類別結尾，在結尾括號前插入
+              return i;
+            }
+          }
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * 計算相對路徑
+   */
+  private calculateRelativePath(from: string, to: string): string {
+    const fromDir = path.dirname(from);
+    let relativePath = path.relative(fromDir, to);
+
+    // 移除副檔名
+    relativePath = relativePath.replace(/\.(ts|tsx|js|jsx)$/, '');
+
+    // 確保以 ./ 開頭
+    if (!relativePath.startsWith('.')) {
+      relativePath = './' + relativePath;
+    }
+
+    return relativePath;
+  }
+
+  /**
+   * 取得專案檔案
+   */
+  private async getProjectFiles(projectRoot: string): Promise<string[]> {
+    const files: string[] = [];
+    await this.collectFiles(projectRoot, files);
+    return files;
+  }
+
+  /**
+   * 遞迴收集檔案
+   */
+  private async collectFiles(dirPath: string, files: string[]): Promise<void> {
+    const entries = await this.fileSystem.readDirectory(dirPath);
+
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+        continue;
+      }
+
+      if (entry.isDirectory) {
+        await this.collectFiles(fullPath, files);
+      } else if (entry.isFile && this.isSupportedFile(entry.name)) {
+        files.push(fullPath);
+      }
+    }
+  }
+
+  /**
+   * 檢查是否為支援的檔案類型
+   */
+  private isSupportedFile(filename: string): boolean {
+    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.swift'];
+    return supportedExtensions.some(ext => filename.endsWith(ext));
+  }
+
+  /**
+   * 讀取檔案內容
+   */
+  private async readFile(filePath: string): Promise<string | null> {
+    try {
+      const content = await this.fileSystem.readFile(filePath, 'utf-8');
+      return typeof content === 'string' ? content : content.toString('utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 建立錯誤結果
+   */
+  private createErrorResult(code: MoveMemberErrorCode, message: string): MoveMemberResult {
+    return {
+      success: false,
+      error: message,
+      member: null as any,
+      target: null as any,
+      sourceFileChange: null as any,
+      targetFileChange: null as any,
+      referenceUpdates: [],
+      executed: false,
+      stats: {
+        referencesUpdated: 0,
+        filesAffected: 0
+      }
+    };
+  }
+}
+
+/**
+ * 建立 MoveMemberService 實例
+ */
+export function createMoveMemberService(
+  parserRegistry: ParserRegistry,
+  fileSystem: IFileSystem
+): MoveMemberService {
+  return new MoveMemberService(parserRegistry, fileSystem);
+}
