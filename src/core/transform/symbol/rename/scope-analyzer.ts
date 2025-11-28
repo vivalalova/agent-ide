@@ -6,7 +6,7 @@
 import { AST, ASTNode } from '@shared/types/ast.js';
 import { Position, Range } from '@shared/types/core.js';
 import { Symbol, SymbolType, createSymbol } from '@shared/types/symbol.js';
-import { ScopeAnalysisResult, ShadowedVariable, ShadowInfo } from '@core/rename/types.js';
+import { ScopeAnalysisResult, ShadowedVariable, ShadowInfo } from '@core/transform/symbol/rename/types.js';
 import { createLocation, isPositionInRange } from '@shared/types/core.js';
 
 /**
