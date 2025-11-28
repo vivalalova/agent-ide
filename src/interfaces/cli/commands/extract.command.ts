@@ -1,6 +1,6 @@
 /**
- * Refactor 命令
- * 重構程式碼 (extract-function | extract-closure | inline-function)
+ * Extract 命令
+ * 提取函式 (extract-function | extract-closure)
  */
 
 import type { Command } from 'commander';
@@ -9,8 +9,8 @@ import { convertRefactorPreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
-/** Refactor 命令選項 */
-interface RefactorOptions {
+/** Extract 命令選項 */
+interface ExtractOptions {
   file?: string;
   path?: string;
   startLine?: string;
@@ -23,12 +23,13 @@ interface RefactorOptions {
 }
 
 /**
- * 設定 refactor 命令
+ * 設定 extract 命令（包含 extract-function 和 extract-closure）
  */
-export function setupRefactorCommand(program: Command, context: CommandContext): void {
+export function setupExtractCommand(program: Command, context: CommandContext): void {
+  // extract-function 命令
   program
-    .command('refactor <action>')
-    .description('重構程式碼 (extract-function | extract-closure | inline-function)')
+    .command('extract-function')
+    .description('提取程式碼為函式')
     .option('-f, --file <file>', '檔案路徑')
     .option('--path <path>', '檔案路徑（--file 的別名）')
     .option('-s, --start-line <line>', '起始行號')
@@ -38,17 +39,33 @@ export function setupRefactorCommand(program: Command, context: CommandContext):
     .option('-t, --target-file <file>', '目標檔案路徑（跨檔案提取）')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
-    .action(async (action: string, options: RefactorOptions) => {
-      await handleRefactorCommand(action, options, context);
+    .action(async (options: ExtractOptions) => {
+      await handleExtractCommand('extract-function', options, context);
+    });
+
+  // extract-closure 命令（Swift 專用）
+  program
+    .command('extract-closure')
+    .description('提取程式碼為閉包（Swift）')
+    .option('-f, --file <file>', '檔案路徑')
+    .option('--path <path>', '檔案路徑（--file 的別名）')
+    .option('-s, --start-line <line>', '起始行號')
+    .option('-e, --end-line <line>', '結束行號')
+    .option('-n, --function-name <name>', '閉包名稱')
+    .option('--new-name <name>', '新名稱（--function-name 的別名）')
+    .option('--dry-run', '預覽變更而不執行')
+    .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
+    .action(async (options: ExtractOptions) => {
+      await handleExtractCommand('extract-closure', options, context);
     });
 }
 
 /**
- * 處理 refactor 命令
+ * 處理 extract 命令
  */
-async function handleRefactorCommand(
+async function handleExtractCommand(
   action: string,
-  options: RefactorOptions,
+  options: ExtractOptions,
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
@@ -83,16 +100,7 @@ async function handleRefactorCommand(
 
   try {
     const filePath = path.resolve(fileOption);
-
-    if (action === 'extract-function' || action === 'extract-closure') {
-      await handleExtractAction(action, filePath, functionNameOption, options, context, isJsonFormat, format, outputHandler);
-    } else if (action === 'inline-function') {
-      await handleInlineAction(filePath, functionNameOption, options, context, isJsonFormat, format, outputHandler);
-    } else {
-      console.error(`   未知的重構操作: ${action}`);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    }
+    await handleExtractAction(action, filePath, functionNameOption, options, context, isJsonFormat, format, outputHandler);
   } catch (error) {
     console.error('   重構失敗:', error instanceof Error ? error.message : error);
     process.exitCode = 1;
@@ -107,7 +115,7 @@ async function handleExtractAction(
   action: string,
   filePath: string,
   functionNameOption: string | undefined,
-  options: RefactorOptions,
+  options: ExtractOptions,
   context: CommandContext,
   isJsonFormat: boolean,
   format: OutputFormat,
@@ -166,7 +174,7 @@ async function handleSwiftExtract(
   code: string,
   range: { start: { line: number; column: number }; end: { line: number; column: number } },
   functionNameOption: string,
-  options: RefactorOptions,
+  options: ExtractOptions,
   context: CommandContext,
   isJsonFormat: boolean,
   format: OutputFormat,
@@ -234,12 +242,15 @@ async function handleTsJsExtract(
   code: string,
   range: { start: { line: number; column: number }; end: { line: number; column: number } },
   functionNameOption: string,
-  options: RefactorOptions,
+  options: ExtractOptions,
   context: CommandContext,
   isJsonFormat: boolean,
   format: OutputFormat,
   outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
+
+  void action; // 目前 TS/JS 只支援 extract-function
+
   const { FunctionExtractor } = await import('../../../core/transform/structure/extract/extract-function');
   const extractor = new FunctionExtractor();
 
@@ -346,120 +357,6 @@ async function handleTsJsExtract(
   }
 }
 
-/**
- * 處理 inline-function 動作
- */
-async function handleInlineAction(
-  filePath: string,
-  functionNameOption: string | undefined,
-  options: RefactorOptions,
-  context: CommandContext,
-  isJsonFormat: boolean,
-  format: OutputFormat,
-  outputHandler: ReturnType<typeof createUnifiedOutputHandler>
-): Promise<void> {
-  if (!functionNameOption) {
-    console.error('   inline-function 缺少必要參數: --function-name (或 --new-name)');
-    process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    return;
-  }
-
-  // 檢查檔案是否存在
-  const fileExists = await context.fileSystem.exists(filePath);
-  if (!fileExists) {
-    console.error(`   找不到檔案: ${filePath}`);
-    process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    return;
-  }
-
-  const code = await context.fileSystem.readFile(filePath, 'utf-8') as string;
-
-  // 使用 FunctionInliner
-  const { FunctionInliner } = await import('../../../core/transform/structure/inline/inline-function');
-  const inliner = new FunctionInliner();
-
-  // 執行內聯
-  const inlineConfig = {
-    removeFunction: true,
-    preserveComments: true,
-    validateInlining: true,
-    inlineAllCalls: true
-  };
-
-  const result = await inliner.inline(code, functionNameOption, inlineConfig);
-
-  if (result.success) {
-    // 套用編輯（按位置順序從後往前套用，避免位置偏移）
-    let modifiedCode = code;
-    const sortedEdits = [...result.edits].sort((a, b) => {
-      const aStart = rangeToOffset(code, a.range.start);
-      const bStart = rangeToOffset(code, b.range.start);
-      return bStart - aStart; // 從後往前
-    });
-
-    for (const edit of sortedEdits) {
-      modifiedCode = applyEditCorrectly(modifiedCode, edit);
-    }
-
-    if (!options.dryRun) {
-      // 實際執行模式：輸出結果並寫入檔案
-      if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          functionName: result.functionName,
-          inlinedCallsCount: result.inlinedCallsCount,
-          removedFunction: result.removedFunction,
-          warnings: result.warnings
-        }, null, 2));
-      } else {
-        console.log('   內聯完成');
-        console.log(`   函式名稱: ${result.functionName}`);
-        console.log(`   已內聯 ${result.inlinedCallsCount} 個呼叫`);
-        if (result.removedFunction) {
-          console.log('   已移除原函式');
-        }
-        if (result.warnings.length > 0) {
-          console.log('   警告:');
-          result.warnings.forEach(w => console.log(`   - ${w}`));
-        }
-      }
-
-      await context.fileSystem.writeFile(filePath, modifiedCode);
-      if (!isJsonFormat) {
-        console.log(`   已更新 ${filePath}`);
-      }
-    } else {
-      // Dry-run 模式：使用統一輸出處理器
-      const previewInput = convertRefactorPreview(
-        result.edits.map(e => ({
-          range: e.range,
-          newText: e.newText
-        })),
-        filePath,
-        code,
-        undefined,
-        undefined,
-        {
-          functionName: functionNameOption,
-          action: `Inlined function (${result.inlinedCallsCount} calls, ${result.removedFunction ? 'function removed' : 'function kept'})`
-        }
-      );
-
-      outputHandler.outputMutation(previewInput, format);
-    }
-  } else {
-    if (isJsonFormat) {
-      console.log(JSON.stringify({ success: false, errors: result.errors }, null, 2));
-    } else {
-      console.error('   內聯失敗:', result.errors.join(', '));
-    }
-    process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-  }
-}
-
 // Helper functions
 
 /**
@@ -510,12 +407,4 @@ function positionToOffset(lines: string[], position: { line: number; column: num
 
   offset += position.column;
   return Math.min(offset, lines.join('\n').length);
-}
-
-/**
- * 將範圍位置轉換為偏移量
- */
-function rangeToOffset(code: string, position: { line: number; column: number }): number {
-  const lines = code.split('\n');
-  return positionToOffset(lines, position);
 }
