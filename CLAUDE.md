@@ -30,15 +30,24 @@ pnpm test -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/           # 7 核心模組
-│   ├── dependency/ # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-│   ├── indexing/   # 1000檔/秒、查詢<10ms
-│   ├── move/       # 檔案移動+import更新
-│   ├── refactor/   # 提取/內聯函式
-│   ├── rename/     # 符號重命名+引用更新
-│   ├── search/     # 文字/語義/結構化
-│   ├── shift/      # 行級移動（單檔案內/跨檔案/新檔案生成）
-│   └── snapshot/   # 模組快照（AI 理解用，~91% token 節省）
+├── core/
+│   ├── dependency/   # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
+│   ├── indexing/     # 1000檔/秒、查詢<10ms
+│   ├── search/       # 文字/語義/結構化搜尋
+│   ├── snapshot/     # 模組快照（AI 理解用，~91% token 節省）
+│   └── transform/    # 統一程式碼變換框架
+│       ├── shared/       # 共享元件（CodeEditor, SymbolFinder）
+│       ├── symbol/       # 符號變換
+│       │   ├── rename/           # 符號重命名+引用更新
+│       │   └── change-signature/ # 參數重構+呼叫點更新
+│       ├── structure/    # 結構變換
+│       │   ├── extract/  # 提取函式
+│       │   ├── inline/   # 內聯函式
+│       │   └── patterns/ # 設計模式
+│       └── location/     # 位置變換
+│           ├── move-file/   # 檔案移動+import更新
+│           ├── move-member/ # 成員移動（方法/類別/函式）
+│           └── shift/       # 行級移動
 ├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
 ├── interfaces/     # CLI（Unix哲學/JSON輸出）
@@ -105,11 +114,14 @@ agent-ide snapshot --path <path> [--format json|summary]  # 模組/專案快照
 
 ### 變更類命令（支援 --dry-run）
 ```bash
-agent-ide rename --path <path> --from <old> --to <new> [--dry-run] [--format diff|json|summary]
-agent-ide move <source> <target> --path <path> [--dry-run] [--format diff|json|summary]
-agent-ide shift <file> --from <line> --to <line> --position <pos> [--dry-run] [--format diff|json|summary]
-agent-ide refactor extract-function --file <file> --start-line <n> --end-line <n> [--dry-run] [--format diff|json|summary]
-agent-ide refactor inline-function --file <file> --function-name <name> [--dry-run] [--format diff|json|summary]
+# Transform 命令群組
+agent-ide transform rename --path <path> --from <old> --to <new> [--dry-run]
+agent-ide transform change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
+agent-ide transform move <source> <target> --path <path> [--dry-run]
+agent-ide transform move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
+agent-ide transform shift <file> --from <line> --to <line> --position <pos> [--dry-run]
+agent-ide transform extract-function --file <file> --start-line <n> --end-line <n> [--dry-run]
+agent-ide transform inline-function --file <file> --function-name <name> [--dry-run]
 ```
 
 ## 輸出處理架構

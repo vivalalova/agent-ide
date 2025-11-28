@@ -15,7 +15,9 @@ description: 程式碼重構與分析 CLI 工具。符號重命名、檔案移�
 |----------|----------|----------|
 | 了解專案/模組結構 | `snapshot` | 節省 ~91% token，無需逐檔讀取 |
 | 重命名變數/函數/類別 | `rename` | 自動更新所有引用，零遺漏 |
+| 修改函式參數 | `change-signature` | 自動更新所有呼叫點 |
 | 移動/重組檔案 | `move` | 自動更新 import 路徑 |
+| 移動方法/函式/類別 | `move-member` | 語義級移動，自動更新引用 |
 | 搜尋程式碼 | `search` | 支援符號/結構化搜尋，比 grep 精準 |
 | 檢查依賴關係 | `deps` | 循環檢測、影響分析、孤立檔案 |
 | 程式碼品質分析 | `analyze` | 複雜度、死代碼、最佳實踐 |
@@ -56,7 +58,9 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 命令 | 說明 | 類型 | 詳細文件 |
 |------|------|------|---------|
 | rename | 符號重命名 | 變更類 | [rename.md](references/rename.md) |
+| change-signature | 函式簽章修改 | 變更類 | [change-signature.md](references/change-signature.md) |
 | move | 檔案移動 + import 更新 | 變更類 | [move.md](references/move.md) |
+| move-member | 成員移動（方法/類別等） | 變更類 | [move-member.md](references/move-member.md) |
 | search | 文字/正則/模糊/符號搜尋 | 查詢類 | [search.md](references/search.md) |
 | deps | 依賴分析、循環檢測 | 查詢類 | [deps.md](references/deps.md) |
 | analyze | 程式碼品質分析 | 查詢類 | [analyze.md](references/analyze.md) |
@@ -66,30 +70,40 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 ## 命令速查表
 
-| 任務       | 命令                                                                            |
-| ---------- | ------------------------------------------------------------------------------- |
-| 重命名符號 | `agent-ide rename --path . --from X --to Y --dry-run`                           |
-| 移動檔案   | `agent-ide move src/old.ts src/new.ts --path . --dry-run`                       |
-| 文字搜尋   | `agent-ide search "pattern" --path .`                                           |
-| 正規搜尋   | `agent-ide search "func.*" --path . -t regex`                                   |
-| 模糊搜尋   | `agent-ide search "usr" --path . -t fuzzy`                                      |
-| 符號搜尋   | `agent-ide search symbol --query "User*" --path .`                              |
-| 結構化搜尋 | `agent-ide search structural -t class --pattern "Service"`                      |
-| 複雜度分析 | `agent-ide analyze complexity --path .`                                         |
-| 死代碼檢測 | `agent-ide analyze dead-code --path .`                                          |
-| 最佳實踐   | `agent-ide analyze best-practices --path .`                                     |
-| 模式分析   | `agent-ide analyze patterns --path .`                                           |
-| 綜合品質   | `agent-ide analyze quality --path .`                                            |
-| 依賴分析   | `agent-ide deps --path . --format json`                                         |
-| 完整依賴圖 | `agent-ide deps --path . --all`                                                 |
-| 依賴子命令 | `agent-ide deps graph\|cycles\|impact\|orphans --path .`                        |
-| 行移動     | `agent-ide shift file.ts --from 1 --to 5 --position 10`                         |
-| 提取函數   | `agent-ide refactor extract-function --file f.ts --start-line 1 --end-line 5`   |
-| 提取閉包   | `agent-ide refactor extract-closure --file f.swift --start-line 1 --end-line 5` |
-| 跨檔案提取 | `agent-ide refactor extract-function --file f.ts -s 1 -e 5 -t target.ts`        |
-| 內聯函數   | `agent-ide refactor inline-function --file f.ts --function-name fn`             |
-| 模組快照   | `agent-ide snapshot --path src/core/indexing --format json`                     |
-| 專案快照   | `agent-ide snapshot --path . --format json`                                     |
+### Transform 命令
+
+| 任務       | 命令                                                                              |
+| ---------- | --------------------------------------------------------------------------------- |
+| 重命名符號 | `agent-ide transform rename --path . --from X --to Y --dry-run`                   |
+| 改參數順序 | `agent-ide transform change-signature --file f.ts --function fn --reorder "b,a"`  |
+| 加刪參數   | `agent-ide transform change-signature --file f.ts --function fn --add "c:string"` |
+| 移動檔案   | `agent-ide transform move src/old.ts src/new.ts --path . --dry-run`               |
+| 移動成員   | `agent-ide transform move-member src/a.ts fn --target-file src/b.ts --dry-run`    |
+| 行移動     | `agent-ide transform shift file.ts --from 1 --to 5 --position 10`                 |
+| 提取函數   | `agent-ide transform extract-function --file f.ts --start-line 1 --end-line 5`    |
+| 提取閉包   | `agent-ide transform extract-closure --file f.swift --start-line 1 --end-line 5`  |
+| 跨檔案提取 | `agent-ide transform extract-function --file f.ts -s 1 -e 5 -t target.ts`         |
+| 內聯函數   | `agent-ide transform inline-function --file f.ts --function-name fn`              |
+
+### Query 命令（扁平式）
+
+| 任務       | 命令                                                 |
+| ---------- | ---------------------------------------------------- |
+| 文字搜尋   | `agent-ide search "pattern" --path .`                |
+| 正規搜尋   | `agent-ide search "func.*" --path . -t regex`        |
+| 模糊搜尋   | `agent-ide search "usr" --path . -t fuzzy`           |
+| 符號搜尋   | `agent-ide search symbol --query "User*" --path .`   |
+| 結構化搜尋 | `agent-ide search structural -t class --pattern "Service"` |
+| 複雜度分析 | `agent-ide analyze complexity --path .`              |
+| 死代碼檢測 | `agent-ide analyze dead-code --path .`               |
+| 最佳實踐   | `agent-ide analyze best-practices --path .`          |
+| 模式分析   | `agent-ide analyze patterns --path .`                |
+| 綜合品質   | `agent-ide analyze quality --path .`                 |
+| 依賴分析   | `agent-ide deps --path . --format json`              |
+| 完整依賴圖 | `agent-ide deps --path . --all`                      |
+| 依賴子命令 | `agent-ide deps graph\|cycles\|impact\|orphans --path .` |
+| 模組快照   | `agent-ide snapshot --path src/core/indexing --format json` |
+| 專案快照   | `agent-ide snapshot --path . --format json`          |
 
 ## 輸出格式
 
@@ -115,10 +129,10 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 agent-ide analyze --path . --format json
 
 # 2. 預覽重命名影響
-agent-ide rename --path . --from oldName --to newName --dry-run
+agent-ide transform rename --path . --from oldName --to newName --dry-run
 
 # 3. 執行重命名
-agent-ide rename --path . --from oldName --to newName
+agent-ide transform rename --path . --from oldName --to newName
 
 # 4. 檢查循環依賴
 agent-ide deps cycles --path .
@@ -131,10 +145,10 @@ agent-ide deps cycles --path .
 agent-ide deps --path . --format json
 
 # 2. 預覽檔案移動
-agent-ide move src/old.ts src/new-location.ts --path . --dry-run
+agent-ide transform move src/old.ts src/new-location.ts --path . --dry-run
 
 # 3. 執行移動
-agent-ide move src/old.ts src/new-location.ts --path .
+agent-ide transform move src/old.ts src/new-location.ts --path .
 
 # 4. 檢查新循環依賴
 agent-ide deps cycles --path .
