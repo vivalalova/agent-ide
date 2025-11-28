@@ -177,30 +177,42 @@ agent-ide snapshot --path src/core/indexing --format summary
 
 | 欄位 | 說明 |
 |------|------|
-| `module` | 模組名稱 |
-| `api` | Class 的 public 方法及簽章 |
-| `factories` | `createXxx` 工廠函數及簽章 |
-| `types` | Interface 和 Type 定義 |
-| `private` | Class 私有欄位（供理解內部狀態） |
+| `command` | 命令類型（`snapshot`） |
+| `success` | 執行是否成功 |
+| `summary` | 統計摘要（掃描數量等） |
+| `snapshotType` | 快照類型（`module` 或 `project`） |
+| `snapshot.module` | 模組名稱（module 類型） |
+| `snapshot.project` | 專案名稱（project 類型） |
+| `snapshot.modules` | 各模組快照（project 類型） |
+| `snapshot.api` | Class 的 public 方法及簽章 |
+| `snapshot.factories` | `createXxx` 工廠函數及簽章 |
+| `snapshot.types` | Interface 和 Type 定義 |
+| `snapshot.private` | Class 私有欄位（供理解內部狀態） |
 
 **範例輸出**：
 ```json
 {
-  "module": "indexing",
-  "api": {
-    "IndexEngine": {
-      "findSymbol": "(name: string, options?: SearchOptions) → Promise<SymbolSearchResult[]>",
-      "indexProject": "() → Promise<void>"
+  "command": "snapshot",
+  "success": true,
+  "summary": { "totalScanned": 1 },
+  "snapshotType": "module",
+  "snapshot": {
+    "module": "indexing",
+    "api": {
+      "IndexEngine": {
+        "findSymbol": "(name: string, options?: SearchOptions) → Promise<SymbolSearchResult[]>",
+        "indexProject": "() → Promise<void>"
+      }
+    },
+    "factories": {
+      "createIndexConfig": "(workspacePath: string, options?: Partial<IndexConfig>) → IndexConfig"
+    },
+    "types": {
+      "FileChangeType": "'add' | 'change' | 'unlink'"
+    },
+    "private": {
+      "IndexEngine": { "fields": ["config", "fileIndex"] }
     }
-  },
-  "factories": {
-    "createIndexConfig": "(workspacePath: string, options?: Partial<IndexConfig>) → IndexConfig"
-  },
-  "types": {
-    "FileChangeType": "'add' | 'change' | 'unlink'"
-  },
-  "private": {
-    "IndexEngine": { "fields": ["config", "fileIndex"] }
   }
 }
 ```
