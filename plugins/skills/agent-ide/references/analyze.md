@@ -1,5 +1,8 @@
 # 品質分析 (analyze)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 分析程式碼品質，支援多種分析類型。
 
 ## 分析類型

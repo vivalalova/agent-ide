@@ -1,5 +1,8 @@
 # 檔案移動 (move)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 移動檔案並自動更新所有 import。
 
 ## 用法

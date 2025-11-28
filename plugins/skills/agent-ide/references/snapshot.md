@@ -1,5 +1,8 @@
 # 模組快照 (snapshot)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 產生模組/專案快照供 AI 快速理解程式碼結構，大幅減少 token 使用量（~91% 節省）。
 
 ## 用法

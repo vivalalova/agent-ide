@@ -1,5 +1,8 @@
 # 程式碼搜尋 (search)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 支援多種搜尋類型的強大搜尋功能。
 
 ## 搜尋類型

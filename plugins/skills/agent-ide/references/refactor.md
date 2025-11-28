@@ -1,5 +1,8 @@
 # 重構 (refactor)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 提取函數、內聯函數等重構操作。
 
 ## 支援的動作

@@ -1,5 +1,8 @@
 # 依賴分析 (deps)
 
+> **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
+> （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
+
 分析專案依賴關係，檢測循環依賴和孤立檔案。
 
 ## 子命令

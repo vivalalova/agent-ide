@@ -3,7 +3,9 @@ name: agent-ide
 description: 程式碼重構與分析 CLI 工具。符號重命名、檔案移動（自動更新 import）、循環依賴檢測、品質分析。支援 TS/JS/Swift。極大減少 AI 的 Token使用量
 ---
 
-# Agent IDE 快速參考
+# Agent IDE
+
+為 AI 代理設計的 CLI 工具集，提供搜尋、重構、依賴分析功能，讓 AI 能智能地理解和操作程式碼。
 
 ## 執行方式
 
@@ -19,6 +21,19 @@ cd ${PLUGIN_ROOT} && pnpm install && pnpm build
 ```bash
 node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 ```
+
+## 命令索引
+
+| 命令 | 說明 | 類型 | 詳細文件 |
+|------|------|------|---------|
+| rename | 符號重命名 | 變更類 | [rename.md](references/rename.md) |
+| move | 檔案移動 + import 更新 | 變更類 | [move.md](references/move.md) |
+| search | 文字/正則/模糊/符號搜尋 | 查詢類 | [search.md](references/search.md) |
+| deps | 依賴分析、循環檢測 | 查詢類 | [deps.md](references/deps.md) |
+| analyze | 程式碼品質分析 | 查詢類 | [analyze.md](references/analyze.md) |
+| shift | 程式碼行移動 | 變更類 | [shift.md](references/shift.md) |
+| refactor | 提取/內聯函數 | 變更類 | [refactor.md](references/refactor.md) |
+| snapshot | 模組/專案快照 | 查詢類 | [snapshot.md](references/snapshot.md) |
 
 ## 命令速查表
 
@@ -49,19 +64,61 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 ## 輸出格式
 
-- `--format json` - 機器可讀（AI 建議使用）
-- `--format summary` - 人類可讀
-- `--format diff` - 程式碼差異（變更類命令）
+所有命令支援 `--format` 參數：
+
+| 格式 | 說明 | 適用命令 |
+|------|------|---------|
+| `json` | 機器可讀 JSON（AI 建議使用） | 所有命令 |
+| `summary` | 人類可讀摘要 | 所有命令 |
+| `diff` | 程式碼差異 | 變更類命令 |
 
 ## 常用參數
 
 - `--dry-run` - 預覽變更，不執行
 - `--all` - 顯示所有結果（不只問題）
 
-## 最佳實踐
+## 工作流程範例
 
-1. 執行前先用 `--dry-run` 預覽變更
-2. 移動或重命名前檢查依賴
-3. 重構後用測試驗證
+### 重構流程
 
-詳細說明請參考 `references/guide.md`
+```bash
+# 1. 分析品質
+agent-ide analyze --path . --format json
+
+# 2. 預覽重命名影響
+agent-ide rename --path . --from oldName --to newName --dry-run
+
+# 3. 執行重命名
+agent-ide rename --path . --from oldName --to newName
+
+# 4. 檢查循環依賴
+agent-ide deps cycles --path .
+```
+
+### 模組重組
+
+```bash
+# 1. 分析依賴
+agent-ide deps --path . --format json
+
+# 2. 預覽檔案移動
+agent-ide move src/old.ts src/new-location.ts --path . --dry-run
+
+# 3. 執行移動
+agent-ide move src/old.ts src/new-location.ts --path .
+
+# 4. 檢查新循環依賴
+agent-ide deps cycles --path .
+```
+
+## 支援語言
+
+- TypeScript
+- JavaScript
+- Swift
+
+## 效能
+
+- 增量索引（~1000 檔案/秒）
+- 多層快取（查詢 <50ms）
+- 記憶體優化（~100MB / 10k 檔案）
