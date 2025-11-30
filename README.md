@@ -44,8 +44,8 @@ pnpm install && pnpm build && npm link
 
 ## 📖 文件
 
-- [**快速參考**](./plugins/skills/agent-ide/SKILL.md) - 命令速查表
-- [**完整指南**](./plugins/skills/agent-ide/references/guide.md) - 詳細使用說明與範例
+- [**命令速查表**](./plugins/skills/agent-ide/SKILL.md) - 所有命令快速參考
+- [**命令詳細文件**](./plugins/skills/agent-ide/references/) - 各命令使用說明與範例
 
 ## 📄 授權
 
