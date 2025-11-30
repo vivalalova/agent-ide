@@ -1,3 +1,7 @@
+## <small>0.3.1 (2025-11-30)</small>
+
+* docs(README): translate to English ([4e29224](https://github.com/vivalalova/agent-ide/commit/4e29224))
+
 ## 0.3.0 (2025-11-30)
 
 * fix: [deadcode 檢測] 修復 export 變數誤判為 deadcode ([3f30aea](https://github.com/vivalalova/agent-ide/commit/3f30aea))
