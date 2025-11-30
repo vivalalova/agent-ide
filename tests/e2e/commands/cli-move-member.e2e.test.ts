@@ -72,8 +72,7 @@ export function stay(): number {
       }
     });
 
-    // TODO: 引用更新功能尚未實作完成
-    it.skip('應該自動更新引用', async () => {
+    it('應該自動更新引用', async () => {
       await fixture.writeFile('src/utils.ts', `
 export function utility(): string {
   return 'utility';
@@ -415,8 +414,7 @@ export function myFunction(): void {}
     });
   });
 
-  // TODO: 引用更新功能尚未實作完成
-  describe.skip('極端測試標準 - 大量引用（60+ 檔案）', () => {
+  describe('極端測試標準 - 大量引用（60+ 檔案）', () => {
     it('應該處理被 60+ 檔案引用的成員移動', async () => {
       await fixture.writeFile('src/shared.ts', `
 export function sharedHelper(): number {
@@ -502,8 +500,7 @@ export class TargetClass {}
     });
   });
 
-  // TODO: 服務目前無法處理超大函式，需要增強
-  describe.skip('極端測試標準 - 超長函式（500+ 行）', () => {
+  describe('極端測試標準 - 超長函式（500+ 行）', () => {
     it('應該處理 500+ 行的函式移動', async () => {
       const longBody = Array.from({ length: 500 }, (_, i) => `  const v${i} = ${i};`).join('\n');
 
@@ -529,8 +526,7 @@ ${longBody}
     });
   });
 
-  // TODO: 服務目前無法處理超長成員名稱，需要增強
-  describe.skip('極端測試標準 - 超長名稱（100+ 字元）', () => {
+  describe('極端測試標準 - 超長名稱（100+ 字元）', () => {
     it('應該處理超長成員名稱', async () => {
       const longName = 'a'.repeat(120);
 

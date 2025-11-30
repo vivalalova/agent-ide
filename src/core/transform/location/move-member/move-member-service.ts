@@ -15,7 +15,7 @@ import {
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
-import { SymbolFinder, SymbolReferenceType } from '../../shared/symbol-finder.js';
+import { SymbolFinder } from '../../shared/symbol-finder.js';
 
 /**
  * Move Member Service
@@ -225,7 +225,7 @@ export class MoveMemberService {
 
     // 現有檔案
     const content = await this.readFile(target.filePath);
-    if (!content) {
+    if (content === null) {
       throw new Error(`無法讀取目標檔案: ${target.filePath}`);
     }
 
@@ -259,51 +259,83 @@ export class MoveMemberService {
 
   /**
    * 準備引用更新
+   * 直接掃描 import 語句，不依賴 SymbolFinder 的引用類型
    */
   private async prepareReferenceUpdates(
     options: MoveMemberOptions,
     member: MemberDefinition
   ): Promise<ReferenceUpdate[]> {
     const updates: ReferenceUpdate[] = [];
-
-    // 查找所有引用
     const projectFiles = await this.getProjectFiles(options.projectRoot);
-    const references = await this.symbolFinder.findReferences(member.name, projectFiles);
 
-    // 過濾出 import 引用
-    const importRefs = references.filter(ref => ref.type === SymbolReferenceType.Import);
-
-    for (const ref of importRefs) {
+    for (const filePath of projectFiles) {
       // 跳過來源檔案和目標檔案
-      if (ref.location.filePath === options.sourceFile || ref.location.filePath === options.target.filePath) {
+      if (filePath === options.sourceFile || filePath === options.target.filePath) {
         continue;
       }
 
-      const content = await this.readFile(ref.location.filePath);
+      const content = await this.readFile(filePath);
       if (!content) {continue;}
 
       const lines = content.split('\n');
-      const line = lines[ref.location.range.start.line - 1];
+      const oldRelativePath = this.calculateRelativePath(filePath, options.sourceFile);
 
-      // 檢查是否是從原檔案 import
-      const oldRelativePath = this.calculateRelativePath(ref.location.filePath, options.sourceFile);
-      if (!line.includes(oldRelativePath)) {continue;}
+      // 掃描每一行找 import 語句
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
 
-      // 計算新的 import 路徑
-      const newRelativePath = this.calculateRelativePath(ref.location.filePath, options.target.filePath);
-      const newLine = line.replace(oldRelativePath, newRelativePath);
+        // 檢查是否是 import 語句且包含成員名稱和來源路徑
+        if (this.isImportFromSource(line, member.name, oldRelativePath)) {
+          const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
+          const newLine = line.replace(oldRelativePath, newRelativePath);
 
-      if (newLine !== line) {
-        updates.push({
-          filePath: ref.location.filePath,
-          originalImport: line,
-          newImport: newLine,
-          location: ref.location
-        });
+          if (newLine !== line) {
+            updates.push({
+              filePath,
+              originalImport: line,
+              newImport: newLine,
+              location: {
+                filePath,
+                range: {
+                  start: { line: i + 1, column: 1, offset: undefined },
+                  end: { line: i + 1, column: line.length + 1, offset: undefined }
+                }
+              }
+            });
+          }
+        }
       }
     }
 
     return updates;
+  }
+
+  /**
+   * 檢查是否是從指定來源 import 指定成員的語句
+   */
+  private isImportFromSource(line: string, memberName: string, sourcePath: string): boolean {
+    const trimmed = line.trim();
+
+    // 檢查是否是 import 語句
+    if (!trimmed.startsWith('import ') && !(trimmed.startsWith('export ') && trimmed.includes('from'))) {
+      return false;
+    }
+
+    // 檢查是否包含成員名稱（用 word boundary）
+    const memberPattern = new RegExp(`\\b${this.escapeRegex(memberName)}\\b`);
+    if (!memberPattern.test(line)) {
+      return false;
+    }
+
+    // 檢查是否從指定來源 import
+    return line.includes(sourcePath);
+  }
+
+  /**
+   * 跳脫正則表達式特殊字元
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
