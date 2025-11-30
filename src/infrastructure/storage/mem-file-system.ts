@@ -3,7 +3,7 @@
  * 基於 mem-vfs 實作 IFileSystem 介面，用於測試
  */
 
-import { createVFS, type VirtualFileSystem, type DirectoryJSON } from 'mem-vfs';
+import { createVFS, type VirtualFileSystem, type DirectoryJSON } from '@lova/mem-vfs';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
   DirectoryEntry,

@@ -48,6 +48,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.1
         version: 9.39.1
+      '@lova/mem-vfs':
+        specifier: ^0.1.0
+        version: 0.1.0
       '@semantic-release/changelog':
         specifier: ^6.0.3
         version: 6.0.3(semantic-release@25.0.1(typescript@5.9.2))
@@ -102,9 +105,6 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
-      mem-vfs:
-        specifier: file:../mem-vfs
-        version: file:../mem-vfs
       semantic-release:
         specifier: ^25.0.1
         version: 25.0.1(typescript@5.9.2)
@@ -497,6 +497,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lova/mem-vfs@0.1.0':
+    resolution: {integrity: sha512-nYl/Z8shkoIwdfbaC/RBMUMSQwjBz4FYflDzUocRYAIfHiYLpe24k3RZg55p9Uzp8Fm21z8bIRH20TH1iEHRnw==}
+    engines: {node: '>=18.0.0'}
 
   '@napi-rs/wasm-runtime@0.2.12':
     resolution: {integrity: sha512-ZVWUcfwY4E/yPitQJl481FjFo3K22D6qF0DuFH6Y/nbnE11GY5uguDxZMGXPQ8WQ0128MXQD7TnfHyK4oWoIJQ==}
@@ -2205,10 +2209,6 @@ packages:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
 
-  mem-vfs@file:../mem-vfs:
-    resolution: {directory: ../mem-vfs, type: directory}
-    engines: {node: '>=18.0.0'}
-
   meow@12.1.1:
     resolution: {integrity: sha512-BhXM0Au22RwUneMPwSCnyhTOizdWoIEPU9sp0Aqa1PnDMR5Wv2FGXYDjuzJEIX+Eo2Rb8xuYe5jrnm5QowQFkw==}
     engines: {node: '>=16.10'}
@@ -3618,6 +3618,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@lova/mem-vfs@0.1.0': {}
 
   '@napi-rs/wasm-runtime@0.2.12':
     dependencies:
@@ -5490,8 +5492,6 @@ snapshots:
   marked@15.0.12: {}
 
   math-intrinsics@1.1.0: {}
-
-  mem-vfs@file:../mem-vfs: {}
 
   meow@12.1.1: {}
 

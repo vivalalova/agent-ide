@@ -61,7 +61,7 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
-    "mem-vfs": "file:../mem-vfs",
+    "@lova/mem-vfs": "^0.1.0",
     "semantic-release": "^25.0.1",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.20.5",
