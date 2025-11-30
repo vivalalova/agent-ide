@@ -1,3 +1,8 @@
+## <small>0.3.3 (2025-11-30)</small>
+
+* fix(ci): upgrade npm for OIDC trusted publishing support ([c896b89](https://github.com/vivalalova/agent-ide/commit/c896b89))
+* chore: remove husky and fix npm auth ([7bb311f](https://github.com/vivalalova/agent-ide/commit/7bb311f))
+
 ## <small>0.3.2 (2025-11-30)</small>
 
 * fix: allow husky to fail gracefully in CI ([9ddc225](https://github.com/vivalalova/agent-ide/commit/9ddc225))
