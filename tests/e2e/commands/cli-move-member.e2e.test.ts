@@ -72,7 +72,7 @@ export function stay(): number {
       }
     });
 
-    // TODO: 引用更新功能在 memfs 環境下無法正確掃描依賴
+    // TODO: 引用更新功能尚未實作完成
     it.skip('應該自動更新引用', async () => {
       await fixture.writeFile('src/utils.ts', `
 export function utility(): string {
@@ -415,7 +415,7 @@ export function myFunction(): void {}
     });
   });
 
-  // TODO: 引用更新功能在 memfs 環境下無法正確掃描大量依賴
+  // TODO: 引用更新功能尚未實作完成
   describe.skip('極端測試標準 - 大量引用（60+ 檔案）', () => {
     it('應該處理被 60+ 檔案引用的成員移動', async () => {
       await fixture.writeFile('src/shared.ts', `
