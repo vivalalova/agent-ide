@@ -17,16 +17,16 @@
 
 ```bash
 # 提取函數
-agent-ide refactor extract-function --file src/file.ts --start-line 10 --end-line 20 --function-name newFn --dry-run
+agent-ide transform extract-function --file src/file.ts --start-line 10 --end-line 20 --function-name newFn --dry-run
 
 # 提取閉包（Swift）
-agent-ide refactor extract-closure --file src/file.swift --start-line 10 --end-line 20 --function-name newClosure --dry-run
+agent-ide transform extract-closure --file src/file.swift --start-line 10 --end-line 20 --function-name newClosure --dry-run
 
 # 跨檔案提取（提取到新檔案並自動加入 import）
-agent-ide refactor extract-function --file src/file.ts -s 10 -e 20 -n helper --target-file src/utils.ts --dry-run
+agent-ide transform extract-function --file src/file.ts -s 10 -e 20 -n helper --target-file src/utils.ts --dry-run
 
 # 內聯函數
-agent-ide refactor inline-function --file src/file.ts --function-name helperFn --dry-run
+agent-ide transform inline-function --file src/file.ts --function-name helperFn --dry-run
 ```
 
 ## 參數

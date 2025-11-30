@@ -7,7 +7,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { IndexEngine } from '@core/indexing/index-engine.js';
 import { createIndexConfig } from '@core/indexing/types.js';
-import { RenameEngine } from '@core/rename/rename-engine.js';
+import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { convertRenamePreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
@@ -104,7 +104,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     // 初始化索引引擎（每次都重新索引以確保資料是最新的）
     const config = createIndexConfig(workspacePath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift'],
+      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
       excludePatterns: ['node_modules/**', '*.test.*']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);

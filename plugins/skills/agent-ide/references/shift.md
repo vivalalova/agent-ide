@@ -9,10 +9,10 @@
 
 ```bash
 # 同檔案內移動
-agent-ide shift src/file.ts --from 2 --to 5 --position 10 --dry-run
+agent-ide transform shift src/file.ts --from 2 --to 5 --position 10 --dry-run
 
 # 移到新檔案
-agent-ide shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
+agent-ide transform shift src/old.ts --from 1 --to 3 --target src/new.ts --position 1
 ```
 
 ## 參數

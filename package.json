@@ -61,7 +61,7 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
-    "memfs": "^4.38.2",
+    "@lova/mem-vfs": "^0.1.0",
     "semantic-release": "^25.0.1",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.20.5",
@@ -83,6 +83,7 @@
     "commander": "^12.1.0",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3",
+    "tree-sitter-python": "^0.25.0",
     "typescript": "^5.0.0",
     "web-tree-sitter": "^0.25.10"
   }

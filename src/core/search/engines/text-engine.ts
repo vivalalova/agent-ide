@@ -3,7 +3,6 @@
  * 提供高效的文字搜尋功能，支援正則表達式、模糊匹配等
  */
 
-import { glob } from 'glob';
 import path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
@@ -388,9 +387,9 @@ export class TextSearchEngine {
       throw new Error(`不支援的搜尋範圍類型: ${scope.type}`);
     }
 
-    // 使用 glob 找出檔案
+    // 使用 fileSystem.glob 找出檔案（支援 memfs）
     const globPattern = path.join(searchPath, pattern);
-    let files = await glob(globPattern, {
+    let files = await this.fileSystem.glob(globPattern, {
       ignore: [
         '**/node_modules/**',
         '**/dist/**',
@@ -400,7 +399,6 @@ export class TextSearchEngine {
         '**/*.min.js',
         '**/*.min.css'
       ],
-      nodir: true,
       absolute: true
     });
 

@@ -9,10 +9,10 @@
 
 ```bash
 # 預覽變更
-agent-ide rename --path . --from getUserData --to fetchUserProfile --dry-run
+agent-ide transform rename --path . --from getUserData --to fetchUserProfile --dry-run
 
 # 執行重命名
-agent-ide rename --path . --from getUserData --to fetchUserProfile
+agent-ide transform rename --path . --from getUserData --to fetchUserProfile
 ```
 
 ## 參數

@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { DirectoryJSON } from 'memfs';
+import type { DirectoryJSON } from '@lova/mem-vfs';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 
 /** Fixture 上下文，提供測試所需的所有操作 */
@@ -105,7 +105,7 @@ export async function loadFixture(name: string): Promise<FixtureContext> {
     convertedJSON[virtualPath] = content;
   }
 
-  memfs.fromJSON(convertedJSON);
+  await memfs.fromJSON(convertedJSON);
 
   return {
     memfs,

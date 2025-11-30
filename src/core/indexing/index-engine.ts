@@ -31,6 +31,7 @@ import { ParserRegistry } from '@infrastructure/parser/index.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { SwiftParser } from '@plugins/swift/parser.js';
+import { PythonParser } from '@plugins/python/parser.js';
 
 /**
  * 索引引擎類別
@@ -77,6 +78,11 @@ export class IndexEngine {
     if (!this.parserRegistry.getParser('.swift')) {
       const swiftParser = new SwiftParser();
       this.parserRegistry.register(swiftParser);
+    }
+
+    if (!this.parserRegistry.getParser('.py')) {
+      const pythonParser = new PythonParser();
+      this.parserRegistry.register(pythonParser);
     }
   }
 

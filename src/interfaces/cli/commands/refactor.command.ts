@@ -172,7 +172,7 @@ async function handleSwiftExtract(
   format: OutputFormat,
   outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
-  const { SwiftExtractor } = await import('../../../core/refactor/swift-extractor.js');
+  const { SwiftExtractor } = await import('../../../core/transform/structure/extract/swift-extractor');
   const extractor = new SwiftExtractor();
 
   const extractConfig = {
@@ -240,7 +240,7 @@ async function handleTsJsExtract(
   format: OutputFormat,
   outputHandler: ReturnType<typeof createUnifiedOutputHandler>
 ): Promise<void> {
-  const { FunctionExtractor } = await import('../../../core/refactor/extract-function.js');
+  const { FunctionExtractor } = await import('../../../core/transform/structure/extract/extract-function');
   const extractor = new FunctionExtractor();
 
   // 執行提取
@@ -377,7 +377,7 @@ async function handleInlineAction(
   const code = await context.fileSystem.readFile(filePath, 'utf-8') as string;
 
   // 使用 FunctionInliner
-  const { FunctionInliner } = await import('../../../core/refactor/inline-function.js');
+  const { FunctionInliner } = await import('../../../core/transform/structure/inline/inline-function');
   const inliner = new FunctionInliner();
 
   // 執行內聯

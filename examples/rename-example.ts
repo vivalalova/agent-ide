@@ -3,12 +3,12 @@
  * 展示如何使用重新命名引擎進行程式碼符號重新命名
  */
 
-import { 
-  RenameEngine, 
-  ScopeAnalyzer, 
+import {
+  RenameEngine,
+  ScopeAnalyzer,
   ReferenceUpdater,
-  createRenameOptions 
-} from '../src/core/rename';
+  createRenameOptions
+} from '../src/core/transform/symbol/rename/index.js';
 import { createSymbol, SymbolType } from '@shared/types/symbol.js';
 import { createLocation, createRange, createPosition } from '@shared/types/core.js';
 

@@ -10,10 +10,10 @@ import { ErrorHandlerService } from '@application/services/error-handler.service
 import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
-import { FunctionExtractor } from '@core/refactor/extract-function.js';
-import { FunctionInliner, InlineAnalyzer } from '@core/refactor/inline-function.js';
-import { RenameEngine } from '@core/rename/rename-engine.js';
-import { MoveService } from '@core/move/move-service.js';
+import { FunctionExtractor } from '@core/transform/structure/extract/extract-function.js';
+import { FunctionInliner, InlineAnalyzer } from '@core/transform/structure/inline/inline-function.js';
+import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
+import { MoveService } from '@core/transform/location/move-file/move-service.js';
 import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
 import { SearchService } from '@core/search/service.js';
 import { IndexEngine } from '@core/indexing/index-engine.js';

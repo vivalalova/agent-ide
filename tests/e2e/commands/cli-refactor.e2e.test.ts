@@ -28,7 +28,7 @@ function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -52,7 +52,7 @@ function process() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '4', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '4', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -75,7 +75,7 @@ function calculate(x: number, y: number) {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '3', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '3', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -97,7 +97,7 @@ function compute() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '3', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '3', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -119,7 +119,7 @@ function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--function-name', 'customFunction', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--function-name', 'customFunction', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -143,7 +143,7 @@ async function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -167,7 +167,7 @@ class Calculator {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '5', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '5', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -191,7 +191,7 @@ function outer() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '3', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '3', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -213,7 +213,7 @@ function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '3', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -229,7 +229,7 @@ function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -238,7 +238,7 @@ function main() {
 
     it('應該處理不存在的檔案路徑', async () => {
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', '/nonexistent/file.ts', '--start-line', '1', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', '/nonexistent/file.ts', '--start-line', '1', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -250,7 +250,7 @@ function main() {
       await fixture.memfs.writeFile(testFile, 'plain text');
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -266,7 +266,7 @@ function broken() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -287,7 +287,7 @@ function main() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', sourceFile, '--start-line', '2', '--end-line', '4', '--target-file', targetFile, '--format', 'json'],
+        ['transform', 'extract-function', '--file', sourceFile, '--start-line', '2', '--end-line', '4', '--target-file', targetFile, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -311,7 +311,7 @@ function process() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', sourceFile, '--start-line', '2', '--end-line', '2', '--target-file', targetFile, '--format', 'json'],
+        ['transform', 'extract-function', '--file', sourceFile, '--start-line', '2', '--end-line', '2', '--target-file', targetFile, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -336,7 +336,7 @@ const result = add(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'add', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'add', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -361,7 +361,7 @@ const c = double(15);
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'double', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'double', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -384,7 +384,7 @@ const product = multiply(3, 4);
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'multiply', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'multiply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -406,7 +406,7 @@ const value = square(5);
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'square', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'square', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -432,7 +432,7 @@ const result = factorial(5);
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'factorial', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'factorial', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -452,7 +452,7 @@ const x = 1;
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'nonExistentFunction', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'nonExistentFunction', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -473,7 +473,7 @@ function unused(): void {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'unused', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'unused', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -496,7 +496,7 @@ function test() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -515,7 +515,7 @@ function test() {
 `.trim());
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'summary'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
@@ -536,7 +536,7 @@ function main() {
       await fixture.memfs.writeFile(testFile, originalContent);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--dry-run', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -561,7 +561,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, originalContent);
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'add', '--dry-run', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'add', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -583,7 +583,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, longCode);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '50', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '50', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -596,7 +596,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, deepNested);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '11', '--end-line', '11', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '11', '--end-line', '11', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -609,7 +609,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, longLine);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -623,7 +623,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, `function test(${params}) {\n  return ${usage};\n}`);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '2', '--end-line', '2', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -634,7 +634,7 @@ const result = add(1, 2);
   describe('缺少參數處理', () => {
     it('應該處理缺少 --file 參數', async () => {
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--start-line', '1', '--end-line', '2'],
+        ['transform', 'extract-function', '--start-line', '1', '--end-line', '2'],
         { memfs: fixture.memfs }
       );
 
@@ -646,7 +646,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, 'const x = 1;');
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--end-line', '2'],
+        ['transform', 'extract-function', '--file', testFile, '--end-line', '2'],
         { memfs: fixture.memfs }
       );
 
@@ -658,7 +658,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, 'const x = 1;');
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '1'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '1'],
         { memfs: fixture.memfs }
       );
 
@@ -670,7 +670,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, 'function test() {}');
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile],
+        ['transform', 'inline-function', '--file', testFile],
         { memfs: fixture.memfs }
       );
 
@@ -684,7 +684,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, '');
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -696,7 +696,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, '');
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', testFile, '--function-name', 'test', '--format', 'json'],
+        ['transform', 'inline-function', '--file', testFile, '--function-name', 'test', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -712,7 +712,7 @@ const result = add(1, 2);
       await fixture.memfs.writeFile(testFile, '   \n\n   ');
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
+        ['transform', 'extract-function', '--file', testFile, '--start-line', '1', '--end-line', '1', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -743,7 +743,7 @@ const result = add(1, 2);
       ].join('\n'));
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/source.ts'), '--start-line', '2', '--end-line', '4', '--function-name', 'extractedCalc', '--target-file', fixture.getFilePath('src/utils.ts'), '--dry-run', '--format', 'json'],
+        ['transform', 'extract-function', '--file', fixture.getFilePath('src/source.ts'), '--start-line', '2', '--end-line', '4', '--function-name', 'extractedCalc', '--target-file', fixture.getFilePath('src/utils.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -777,7 +777,7 @@ const result = add(1, 2);
       await fixture.writeFile('src/deep-inline.ts', deepNested);
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', fixture.getFilePath('src/deep-inline.ts'), '--function-name', 'helper', '--dry-run', '--format', 'json'],
+        ['transform', 'inline-function', '--file', fixture.getFilePath('src/deep-inline.ts'), '--function-name', 'helper', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -806,7 +806,7 @@ const result = add(1, 2);
       await fixture.writeFile('src/deep-if-else.ts', deepIfElse);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/deep-if-else.ts'), '--start-line', '13', '--end-line', '14', '--function-name', 'extractedDeep', '--dry-run', '--format', 'json'],
+        ['transform', 'extract-function', '--file', fixture.getFilePath('src/deep-if-else.ts'), '--start-line', '13', '--end-line', '14', '--function-name', 'extractedDeep', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -835,7 +835,7 @@ const result = add(1, 2);
       await fixture.writeFile('src/many-calls.ts', manyCallsCode);
 
       const result = await executeCLI(
-        ['refactor', 'inline-function', '--file', fixture.getFilePath('src/many-calls.ts'), '--function-name', 'helperFn', '--dry-run', '--format', 'json'],
+        ['transform', 'inline-function', '--file', fixture.getFilePath('src/many-calls.ts'), '--function-name', 'helperFn', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -862,7 +862,7 @@ const result = add(1, 2);
       await fixture.writeFile('src/many-params.ts', manyParamsCode);
 
       const result = await executeCLI(
-        ['refactor', 'extract-function', '--file', fixture.getFilePath('src/many-params.ts'), '--start-line', '57', '--end-line', '58', '--function-name', 'calculateSum', '--dry-run', '--format', 'json'],
+        ['transform', 'extract-function', '--file', fixture.getFilePath('src/many-params.ts'), '--start-line', '57', '--end-line', '58', '--function-name', 'calculateSum', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

@@ -36,8 +36,9 @@ export default defineConfig({
       truncateThreshold: 200,  // 超過 200 字元截斷
     },
     onConsoleLog(log) {
-      // 過濾垃圾回收訊息
+      // 過濾不需要的訊息
       if (log.includes('垃圾回收已啟用')) return false;
+      if (log.includes('[DEBUG]')) return false;
       return true;
     },
 

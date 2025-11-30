@@ -8,8 +8,9 @@ import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { SwiftParser } from '@plugins/swift/parser.js';
+import { PythonParser } from '@plugins/python/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
-import { setupShiftCommand, setupMoveCommand, setupRenameCommand, setupRefactorCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, setupSnapshotCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
+import { setupShiftCommand, setupMoveCommand, setupMoveMemberCommand, setupRenameCommand, setupChangeSignatureCommand, setupExtractCommand, setupInlineCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, setupSnapshotCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -114,6 +115,18 @@ export class AgentIdeCLI {
         console.debug('Swift parser loading failed:', swiftError);
         console.debug('Swift Parser initialization warning:', swiftError);
       }
+
+      // 嘗試註冊內建的 Python Parser
+      try {
+        const pythonParser = new PythonParser();
+        if (!registry.getParserByName('python')) {
+          registry.register(pythonParser);
+        }
+      } catch (pythonError) {
+        // 如果 Python Parser 載入失敗，記錄錯誤
+        console.debug('Python parser loading failed:', pythonError);
+        console.debug('Python Parser initialization warning:', pythonError);
+      }
     } catch (error) {
       // 靜默處理初始化錯誤，避免影響 CLI 啟動
       console.debug('Parser initialization warning:', error);
@@ -126,13 +139,24 @@ export class AgentIdeCLI {
       .description('程式碼智能工具集 for AI Agents')
       .version(packageVersion);
 
-    // 使用模組化命令
     const context = this.createCommandContext();
+
+    // Transform 群組
+    const transformCmd = this.program
+      .command('transform')
+      .description('程式碼變換工具');
+
+    // 直接掛載到 transform（無中間層）
+    setupRenameCommand(transformCmd, context);
+    setupChangeSignatureCommand(transformCmd, context);
+    setupMoveCommand(transformCmd, context);
+    setupMoveMemberCommand(transformCmd, context);
+    setupShiftCommand(transformCmd, context);
+    setupExtractCommand(transformCmd, context);
+    setupInlineCommand(transformCmd, context);
+
+    // Query 命令（扁平式）
     setupSearchCommand(this.program, context);
-    setupRefactorCommand(this.program, context);
-    setupRenameCommand(this.program, context);
-    setupMoveCommand(this.program, context);
-    setupShiftCommand(this.program, context);
     setupAnalyzeCommand(this.program, context);
     setupDepsCommand(this.program, context);
     setupSnapshotCommand(this.program, context);
