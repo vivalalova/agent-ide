@@ -846,8 +846,27 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       return ReferenceType.Declaration;
     }
 
+    // 檢查是否在 import 語句內
+    if (this.isInImportStatement(node)) {
+      return ReferenceType.Import;
+    }
+
     // 否則為使用
     return ReferenceType.Usage;
+  }
+
+  /**
+   * 檢查節點是否位於 import 語句內
+   */
+  private isInImportStatement(node: ts.Node): boolean {
+    let current = node.parent;
+    while (current) {
+      if (ts.isImportDeclaration(current) || ts.isImportEqualsDeclaration(current)) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 
   private isRenameableNode(node: ts.Node): boolean {
