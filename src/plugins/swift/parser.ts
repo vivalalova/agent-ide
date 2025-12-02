@@ -720,8 +720,12 @@ export class SwiftParser implements ParserPlugin {
     symbolName: string,
     filePath: string,
     references: Reference[],
-    symbol: Symbol
+    symbol: Symbol,
+    isInImport: boolean = false
   ): void {
+    // 檢查是否進入 import 節點
+    const currentIsInImport = isInImport || node.swiftKind === SwiftNodeKind.Import;
+
     // 檢查當前節點名稱
     const nodeName = getNodeName(node);
     if (nodeName === symbolName) {
@@ -737,7 +741,7 @@ export class SwiftParser implements ParserPlugin {
           filePath,
           range
         },
-        type: ReferenceType.Usage
+        type: this.getReferenceType(node, symbol, currentIsInImport)
       });
     }
 
@@ -760,7 +764,7 @@ export class SwiftParser implements ParserPlugin {
               filePath,
               range
             },
-            type: ReferenceType.Usage
+            type: this.getReferenceType(node, symbol, currentIsInImport)
           });
         }
       }
@@ -774,10 +778,32 @@ export class SwiftParser implements ParserPlugin {
           symbolName,
           filePath,
           references,
-          symbol
+          symbol,
+          currentIsInImport
         );
       }
     }
+  }
+
+  /**
+   * 判斷引用類型
+   */
+  private getReferenceType(node: SwiftASTNode, symbol: Symbol, isInImport: boolean): ReferenceType {
+    // 檢查是否為符號定義位置
+    if (
+      node.range
+      && node.range.start.line === symbol.location.range.start.line
+      && node.range.start.column === symbol.location.range.start.column
+    ) {
+      return ReferenceType.Definition;
+    }
+
+    // 檢查是否在 import 語句內
+    if (isInImport) {
+      return ReferenceType.Import;
+    }
+
+    return ReferenceType.Usage;
   }
 
   /**
