@@ -26,7 +26,7 @@ import type {
   NamingIssue
 } from '@infrastructure/parser/analysis-types.js';
 
-import { type PythonAST, PythonNodeKind, isPythonTestFile } from './types.js';
+import { type PythonAST, type PythonASTNode, PythonNodeKind, isPythonTestFile } from './types.js';
 import {
   initializeParser,
   parseCode,
@@ -122,13 +122,50 @@ export class PythonParser extends BaseParserPlugin {
           references.push(createReference(
             symbol,
             { filePath: ast.sourceFile, range: node.range },
-            ReferenceType.Usage
+            this.getReferenceType(node, symbol)
           ));
         }
       }
     });
 
     return references;
+  }
+
+  /**
+   * 判斷引用類型
+   */
+  private getReferenceType(node: PythonASTNode, symbol: Symbol): ReferenceType {
+    // 檢查是否為符號定義位置
+    if (
+      node.range.start.line === symbol.location.range.start.line
+      && node.range.start.column === symbol.location.range.start.column
+    ) {
+      return ReferenceType.Definition;
+    }
+
+    // 檢查是否在 import 語句內
+    if (this.isInImportStatement(node)) {
+      return ReferenceType.Import;
+    }
+
+    return ReferenceType.Usage;
+  }
+
+  /**
+   * 檢查節點是否位於 import 語句內
+   */
+  private isInImportStatement(node: PythonASTNode): boolean {
+    let current = node.treeSitterNode.parent;
+    while (current) {
+      if (
+        current.type === PythonNodeKind.ImportStatement
+        || current.type === PythonNodeKind.ImportFromStatement
+      ) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 
   /**
