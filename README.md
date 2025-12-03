@@ -31,13 +31,12 @@ pnpm install && pnpm build && npm link
 
 | Command    | Description                              | Output Formats      |
 | ---------- | ---------------------------------------- | ------------------- |
-| `search`   | Search symbols, text, regex              | json, summary       |
+| `search`   | Symbol and structural search             | json, summary       |
 | `rename`   | Rename symbols and update references     | json, summary, diff |
 | `move`     | Move files and update imports            | json, summary, diff |
 | `shift`    | Move lines within/across files           | json, summary, diff |
-| `refactor` | Extract/inline functions                 | json, summary, diff |
-| `analyze`  | Analyze code quality                     | json, summary       |
-| `deps`     | Dependency analysis, cycle detection     | json, summary       |
+| `analyze`  | Complexity and dead-code analysis        | json, summary       |
+| `deps`     | Cycle detection and impact analysis      | json, summary       |
 | `snapshot` | Generate module/project snapshots for AI | json, summary       |
 
 ## 📖 Documentation

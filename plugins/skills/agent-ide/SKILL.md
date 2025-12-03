@@ -19,9 +19,8 @@ description: 🚨 重構/重命名/移動/搜尋/依賴分析必用 - 當用戶�
 | 移動/重組檔案 | `move` | 自動更新 import 路徑 |
 | 移動方法/函式/類別 | `move-member` | 語義級移動，自動更新引用 |
 | 搜尋程式碼 | `search` | 支援符號/結構化搜尋，比 grep 精準 |
-| 檢查依賴關係 | `deps` | 循環檢測、影響分析、孤立檔案 |
-| 程式碼品質分析 | `analyze` | 複雜度、死代碼、最佳實踐 |
-| 提取/內聯函數 | `refactor` | 自動處理參數、import、export |
+| 檢查依賴關係 | `deps` | 循環檢測、影響分析 |
+| 程式碼品質分析 | `analyze` | 複雜度、死代碼分析 |
 | 移動程式碼區塊 | `shift` | 保持語法正確性 |
 
 ## 🚀 為什麼使用 Agent IDE？
@@ -61,11 +60,10 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | change-signature | 函式簽章修改 | 變更類 | [change-signature.md](references/change-signature.md) |
 | move | 檔案移動 + import 更新 | 變更類 | [move.md](references/move.md) |
 | move-member | 成員移動（方法/類別等） | 變更類 | [move-member.md](references/move-member.md) |
-| search | 文字/正則/模糊/符號搜尋 | 查詢類 | [search.md](references/search.md) |
+| search | 符號/結構化搜尋 | 查詢類 | [search.md](references/search.md) |
 | deps | 依賴分析、循環檢測 | 查詢類 | [deps.md](references/deps.md) |
-| analyze | 程式碼品質分析 | 查詢類 | [analyze.md](references/analyze.md) |
+| analyze | 複雜度、死代碼分析 | 查詢類 | [analyze.md](references/analyze.md) |
 | shift | 程式碼行移動 | 變更類 | [shift.md](references/shift.md) |
-| refactor | 提取/內聯函數 | 變更類 | [refactor.md](references/refactor.md) |
 | snapshot | 模組/專案快照 | 查詢類 | [snapshot.md](references/snapshot.md) |
 
 ## 命令速查表
@@ -80,30 +78,19 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 移動檔案   | `agent-ide transform move src/old.ts src/new.ts --path . --dry-run`               |
 | 移動成員   | `agent-ide transform move-member src/a.ts fn --target-file src/b.ts --dry-run`    |
 | 行移動     | `agent-ide transform shift file.ts --from 1 --to 5 --position 10`                 |
-| 提取函數   | `agent-ide transform extract-function --file f.ts --start-line 1 --end-line 5`    |
-| 提取閉包   | `agent-ide transform extract-closure --file f.swift --start-line 1 --end-line 5`  |
-| 跨檔案提取 | `agent-ide transform extract-function --file f.ts -s 1 -e 5 -t target.ts`         |
-| 內聯函數   | `agent-ide transform inline-function --file f.ts --function-name fn`              |
 
 ### Query 命令（扁平式）
 
-| 任務       | 命令                                                 |
-| ---------- | ---------------------------------------------------- |
-| 文字搜尋   | `agent-ide search "pattern" --path .`                |
-| 正規搜尋   | `agent-ide search "func.*" --path . -t regex`        |
-| 模糊搜尋   | `agent-ide search "usr" --path . -t fuzzy`           |
-| 符號搜尋   | `agent-ide search symbol --query "User*" --path .`   |
-| 結構化搜尋 | `agent-ide search structural -t class --pattern "Service"` |
-| 複雜度分析 | `agent-ide analyze complexity --path .`              |
-| 死代碼檢測 | `agent-ide analyze dead-code --path .`               |
-| 最佳實踐   | `agent-ide analyze best-practices --path .`          |
-| 模式分析   | `agent-ide analyze patterns --path .`                |
-| 綜合品質   | `agent-ide analyze quality --path .`                 |
-| 依賴分析   | `agent-ide deps --path . --format json`              |
-| 完整依賴圖 | `agent-ide deps --path . --all`                      |
-| 依賴子命令 | `agent-ide deps graph\|cycles\|impact\|orphans --path .` |
+| 任務       | 命令                                                        |
+| ---------- | ----------------------------------------------------------- |
+| 符號搜尋   | `agent-ide search symbol --query "User*" --path .`          |
+| 結構化搜尋 | `agent-ide search structural --type class --path .`         |
+| 複雜度分析 | `agent-ide analyze complexity --path .`                     |
+| 死代碼檢測 | `agent-ide analyze dead-code --path .`                      |
+| 循環依賴   | `agent-ide deps cycles --path . --format json`              |
+| 影響分析   | `agent-ide deps impact --path . --file src/core.ts`         |
 | 模組快照   | `agent-ide snapshot --path src/core/indexing --format json` |
-| 專案快照   | `agent-ide snapshot --path . --format json`          |
+| 專案快照   | `agent-ide snapshot --path . --format json`                 |
 
 ## 輸出格式
 
@@ -141,8 +128,8 @@ agent-ide deps cycles --path .
 ### 模組重組
 
 ```bash
-# 1. 分析依賴
-agent-ide deps --path . --format json
+# 1. 分析循環依賴
+agent-ide deps cycles --path . --format json
 
 # 2. 預覽檔案移動
 agent-ide transform move src/old.ts src/new-location.ts --path . --dry-run
