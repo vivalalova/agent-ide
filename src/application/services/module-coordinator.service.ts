@@ -13,7 +13,6 @@ import { EventPriority } from '@application/events/event-types.js';
 import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
 import { MoveService } from '@core/transform/location/move-file/move-service.js';
 import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
-import { SearchService } from '@core/search/service.js';
 import { IndexEngine } from '@core/indexing/index-engine.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
@@ -62,7 +61,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
   private readonly dependencyAnalyzer: DependencyAnalyzer;
-  private readonly searchService: SearchService;
   private readonly indexEngine: IndexEngine;
   private readonly fileSystem: IFileSystem;
 
@@ -84,7 +82,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
     this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
-    this.searchService = new SearchService(this.fileSystem);
     this.indexEngine = new IndexEngine({} as any, this.fileSystem);
 
     // 註冊所有模組
@@ -337,8 +334,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
       { id: 'dependency', name: 'dependency', instance: this.dependencyAnalyzer },
       { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
-      { id: 'rename', name: 'rename', instance: this.renameEngine },
-      { id: 'search', name: 'search', instance: this.searchService }
+      { id: 'rename', name: 'rename', instance: this.renameEngine }
     ];
 
     for (const config of moduleConfigs) {
