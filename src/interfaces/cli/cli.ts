@@ -10,7 +10,7 @@ import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { SwiftParser } from '@plugins/swift/parser.js';
 import { PythonParser } from '@plugins/python/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
-import { setupShiftCommand, setupMoveCommand, setupMoveMemberCommand, setupRenameCommand, setupChangeSignatureCommand, setupExtractCommand, setupInlineCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, setupSnapshotCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
+import { setupShiftCommand, setupMoveCommand, setupMoveMemberCommand, setupRenameCommand, setupChangeSignatureCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, setupSnapshotCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -152,8 +152,6 @@ export class AgentIdeCLI {
     setupMoveCommand(transformCmd, context);
     setupMoveMemberCommand(transformCmd, context);
     setupShiftCommand(transformCmd, context);
-    setupExtractCommand(transformCmd, context);
-    setupInlineCommand(transformCmd, context);
 
     // Query 命令（扁平式）
     setupSearchCommand(this.program, context);
