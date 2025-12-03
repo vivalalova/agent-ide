@@ -46,8 +46,7 @@ export {
   type SearchMatch,
   type DepsResult,
   type CycleInfo,
-  type GraphNode,
-  type GraphEdge,
+  type ImpactInfo,
   type AnalyzeResult
 } from './query-types.js';
 

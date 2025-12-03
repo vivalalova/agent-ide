@@ -1,6 +1,6 @@
 /**
  * ModuleCoordinatorService 模組協調服務實作
- * 負責協調 7 個核心模組的操作，提供統一的模組間協調介面
+ * 負責協調核心模組的操作，提供統一的模組間協調介面
  */
 
 import { BaseError } from '@shared/errors/base-error.js';
@@ -10,8 +10,6 @@ import { ErrorHandlerService } from '@application/services/error-handler.service
 import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
-import { FunctionExtractor } from '@core/transform/structure/extract/extract-function.js';
-import { FunctionInliner, InlineAnalyzer } from '@core/transform/structure/inline/inline-function.js';
 import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
 import { MoveService } from '@core/transform/location/move-file/move-service.js';
 import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
@@ -61,9 +59,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly modules: Map<string, CoreModule>;
 
   // 核心模組實例
-  private readonly functionExtractor: FunctionExtractor;
-  private readonly functionInliner: FunctionInliner;
-  private readonly inlineAnalyzer: InlineAnalyzer;
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
   private readonly dependencyAnalyzer: DependencyAnalyzer;
@@ -86,9 +81,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.modules = new Map();
 
     // 初始化核心模組實例
-    this.functionExtractor = new FunctionExtractor();
-    this.functionInliner = new FunctionInliner();
-    this.inlineAnalyzer = new InlineAnalyzer();
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
     this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
@@ -111,99 +103,11 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     };
 
     try {
-      // 1. 執行重構操作
+      // 執行重構操作
       const changes: CodeChange[] = [];
       let success = true;
 
       switch (options.type) {
-      case 'extract-function':
-        if (options.selection && options.newName) {
-          try {
-            const code = await this.readFileContent(filePath);
-            const extractResult = await this.functionExtractor.extract(
-              code,
-              options.selection,
-              {
-                functionName: options.newName,
-                generateComments: true,
-                preserveFormatting: true,
-                validateExtraction: true
-              }
-            );
-            if (extractResult.success && extractResult.edits) {
-              // 轉換 edits 為 CodeChange 格式
-              changes.push(...extractResult.edits.map(edit => ({
-                filePath,
-                oldContent: code,
-                newContent: edit.newText,
-                range: {
-                  start: {
-                    line: edit.range.start.line,
-                    column: edit.range.start.column,
-                    offset: 0
-                  },
-                  end: {
-                    line: edit.range.end.line,
-                    column: edit.range.end.column,
-                    offset: 0
-                  }
-                }
-              })));
-            } else {
-              success = false;
-            }
-          } catch (extractError) {
-            success = false;
-          }
-        } else {
-          success = false;
-        }
-        break;
-
-      case 'inline-function':
-        if (options.newName) {
-          try {
-            const code = await this.readFileContent(filePath);
-            const functionName = options.newName;
-
-            const inlineConfig = {
-              removeFunction: true,
-              preserveComments: true,
-              validateInlining: true,
-              inlineAllCalls: true
-            };
-
-            const result = await this.functionInliner.inline(code, functionName, inlineConfig);
-
-            if (result.success) {
-              // 套用編輯（按位置順序從後往前套用，避免位置偏移）
-              let modifiedCode = code;
-              const sortedEdits = [...result.edits].sort((a, b) => {
-                const aStart = this.positionToOffset(code, a.range.start);
-                const bStart = this.positionToOffset(code, b.range.start);
-                return bStart - aStart; // 從後往前
-              });
-
-              for (const edit of sortedEdits) {
-                modifiedCode = this.applyEdit(modifiedCode, edit);
-              }
-
-              changes.push({
-                filePath,
-                oldContent: code,
-                newContent: modifiedCode
-              });
-            } else {
-              success = false;
-            }
-          } catch (inlineError) {
-            success = false;
-          }
-        } else {
-          success = false;
-        }
-        break;
-
       case 'rename':
         if (options.selection && options.newName) {
           try {
@@ -218,7 +122,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
               }
             });
             if (renameResult.success && renameResult.operations) {
-              changes.push(...renameResult.operations.map(op => ({
+              changes.push(...renameResult.operations.map((op) => ({
                 filePath: op.filePath,
                 oldContent: op.oldText,
                 newContent: op.newText,
@@ -227,7 +131,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
             } else {
               success = false;
             }
-          } catch (renameError) {
+          } catch {
             success = false;
           }
         } else {
@@ -242,7 +146,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
         );
       }
 
-      // 3. 發送模組協調事件
+      // 發送模組協調事件
       await this.emitModuleEvent('refactor-completed', {
         filePath,
         refactorType: options.type,
@@ -294,7 +198,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
           results.push({
             success: renameResult.success,
             filesChanged: renameResult.affectedFiles.length,
-            changes: renameResult.operations.map(op => ({
+            changes: renameResult.operations.map((op) => ({
               filePath: op.filePath,
               oldContent: op.oldText,
               newContent: op.newText,
@@ -365,7 +269,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
           from: source,
           to: target,
           filesUpdated: moveResult.pathUpdates?.length || 0,
-          importUpdates: moveResult.pathUpdates?.map(update => ({
+          importUpdates: moveResult.pathUpdates?.map((update: { filePath: string; oldImport: string; newImport: string }) => ({
             filePath: update.filePath,
             oldContent: update.oldImport,
             newContent: update.newImport
@@ -430,11 +334,9 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
    */
   private registerModules(): void {
     const moduleConfigs = [
-      // analysis module is now handled through ParserPlugin
       { id: 'dependency', name: 'dependency', instance: this.dependencyAnalyzer },
       { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
-      { id: 'refactor', name: 'refactor', instance: this.functionExtractor },
       { id: 'rename', name: 'rename', instance: this.renameEngine },
       { id: 'search', name: 'search', instance: this.searchService }
     ];
@@ -449,15 +351,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
       });
     }
   }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string> {
-    const fs = await import('fs/promises');
-    return await fs.readFile(filePath, 'utf-8');
-  }
-
 
   /**
    * 發送模組事件
@@ -483,13 +376,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   }
 
   /**
-   * 讀取檔案內容（別名方法）
-   */
-  private async readFileContent(filePath: string): Promise<string> {
-    return this.readFile(filePath);
-  }
-
-  /**
    * 生成預覽內容
    */
   private generatePreview(changes: CodeChange[]): string {
@@ -502,37 +388,5 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     );
 
     return previews.join('\n\n');
-  }
-
-  /**
-   * 將行列位置轉換為字元偏移量
-   */
-  private positionToOffset(code: string, position: { line: number; column: number }): number {
-    const lines = code.split('\n');
-    let offset = 0;
-    for (let i = 0; i < position.line - 1 && i < lines.length; i++) {
-      offset += lines[i].length + 1;
-    }
-    offset += position.column;
-    return Math.min(offset, code.length);
-  }
-
-  /**
-   * 套用編輯操作
-   */
-  private applyEdit(code: string, edit: { type: 'replace' | 'insert' | 'delete'; range: { start: { line: number; column: number }; end: { line: number; column: number } }; newText: string }): string {
-    const startOffset = this.positionToOffset(code, edit.range.start);
-    const endOffset = this.positionToOffset(code, edit.range.end);
-
-    switch (edit.type) {
-    case 'replace':
-      return code.substring(0, startOffset) + edit.newText + code.substring(endOffset);
-    case 'insert':
-      return code.substring(0, startOffset) + edit.newText + code.substring(startOffset);
-    case 'delete':
-      return code.substring(0, startOffset) + code.substring(endOffset);
-    default:
-      return code;
-    }
   }
 }

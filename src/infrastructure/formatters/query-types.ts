@@ -99,43 +99,31 @@ export interface CycleInfo {
   length: number;
 }
 
-/** 依賴圖節點 */
-export interface GraphNode {
-  /** 節點 ID（檔案路徑） */
-  id: string;
-  /** 節點標籤 */
-  label?: string;
-}
-
-/** 依賴圖邊 */
-export interface GraphEdge {
-  /** 來源節點 */
-  from: string;
-  /** 目標節點 */
-  to: string;
+/** 影響分析結果 */
+export interface ImpactInfo {
+  /** 目標檔案 */
+  targetFile: string;
+  /** 依賴此檔案的檔案 */
+  dependents: string[];
+  /** 此檔案依賴的檔案 */
+  dependencies: string[];
+  /** 總影響數 */
+  totalAffected: number;
 }
 
 /** Deps 結果 */
 export interface DepsResult extends QueryResult {
   command: QueryCommand.Deps;
   /** 循環依賴 */
-  cycles?: CycleInfo[];
-  /** 依賴圖 */
-  graph?: {
-    nodes: GraphNode[];
-    edges: GraphEdge[];
-  };
-  /** 孤立檔案 */
-  orphans?: string[];
+  cycles: CycleInfo[];
+  /** 影響分析 */
+  impact?: ImpactInfo;
 }
 
 /** Analyze 分析類型 */
 export enum AnalyzeType {
   Complexity = 'complexity',
-  DeadCode = 'dead-code',
-  BestPractices = 'best-practices',
-  Patterns = 'patterns',
-  Quality = 'quality'
+  DeadCode = 'dead-code'
 }
 
 /** Analyze 結果 */

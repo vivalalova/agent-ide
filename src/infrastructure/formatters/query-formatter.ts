@@ -136,23 +136,21 @@ export class QueryFormatter {
       lines.push(this.colorize('未發現循環依賴', Colors.green));
     }
 
-    // 孤立檔案
-    if (result.orphans && result.orphans.length > 0) {
+    // 影響分析
+    if (result.impact) {
       lines.push('');
-      lines.push(`孤立檔案: ${result.orphans.length} 個`);
-      result.orphans.slice(0, 10).forEach(orphan => {
-        lines.push(`  - ${orphan}`);
-      });
-      if (result.orphans.length > 10) {
-        lines.push(`  ... 還有 ${result.orphans.length - 10} 個`);
+      lines.push(`📊 影響分析: ${result.impact.targetFile}`);
+      lines.push(`   依賴此檔案: ${result.impact.dependents.length} 個`);
+      lines.push(`   被此檔案依賴: ${result.impact.dependencies.length} 個`);
+      if (result.impact.dependents.length > 0) {
+        lines.push('   依賴者:');
+        result.impact.dependents.slice(0, 5).forEach(dep => {
+          lines.push(`     - ${dep}`);
+        });
+        if (result.impact.dependents.length > 5) {
+          lines.push(`     ... 還有 ${result.impact.dependents.length - 5} 個`);
+        }
       }
-    }
-
-    // 依賴圖統計
-    if (result.graph) {
-      lines.push('');
-      lines.push(`節點數: ${result.graph.nodes.length}`);
-      lines.push(`邊數: ${result.graph.edges.length}`);
     }
 
     return lines.join('\n');
