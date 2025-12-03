@@ -1,12 +1,11 @@
 /**
  * Deps 命令
- * 分析依賴關係
+ * 分析依賴關係（循環依賴、影響分析）
  */
 
 import type { Command } from 'commander';
-import * as path from 'path';
 import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
-import { QueryCommand, type DepsResult, type CycleInfo, type GraphNode, type GraphEdge } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -15,7 +14,6 @@ interface DepsOptions {
   path: string;
   file?: string;
   format: string;
-  all: boolean;
 }
 
 /**
@@ -24,11 +22,10 @@ interface DepsOptions {
 export function setupDepsCommand(program: Command, context: CommandContext): void {
   program
     .command('deps [subcommand]')
-    .description('分析依賴關係 (subcommand: graph|cycles|impact|orphans)')
+    .description('分析依賴關係 (subcommand: cycles|impact)')
     .option('-p, --path <path>', '分析路徑', '.')
-    .option('-f, --file <file>', '特定檔案分析')
+    .option('-f, --file <file>', '特定檔案分析（用於 impact）')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
-    .option('--all', '顯示完整依賴圖（預設只顯示循環依賴和孤立檔案）', false)
     .action(async (subcommand: string, options: DepsOptions) => {
       await handleDepsCommand(subcommand, options, context);
     });
@@ -53,12 +50,26 @@ async function handleDepsCommand(
     return;
   }
 
+  // 驗證子命令
+  const validSubcommands = ['cycles', 'impact'];
+  if (!subcommand || !validSubcommands.includes(subcommand)) {
+    const errorResult: DepsResult = {
+      command: QueryCommand.Deps,
+      success: false,
+      cycles: [],
+      summary: { totalScanned: 0, issuesFound: 0, totalFiles: 0, totalDependencies: 0, cyclesFound: 0 },
+      errors: ['請指定子命令: cycles 或 impact']
+    };
+    outputHandler.outputQuery(errorResult, format);
+    process.exitCode = 1;
+    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    return;
+  }
+
   if (format !== OutputFormat.Json) {
     const titles: Record<string, string> = {
-      'graph': '🔗 依賴圖分析...',
       'cycles': '🔄 循環依賴分析...',
-      'impact': '💥 影響分析...',
-      'orphans': '🏝️ 孤立檔案分析...'
+      'impact': '💥 影響分析...'
     };
     console.log(titles[subcommand] || '🔍 分析依賴關係...');
   }
@@ -81,7 +92,7 @@ async function handleDepsCommand(
     const cycles = cycleDetector.detectCycles(graph);
 
     // 建立 DepsResult
-    const result = buildDepsResult(graph, cycles, stats, options.all);
+    const result = buildDepsResult(subcommand, graph, cycles, stats, options.file);
 
     // 輸出結果
     outputHandler.outputQuery(result, format);
@@ -94,10 +105,11 @@ async function handleDepsCommand(
  * 建立 DepsResult
  */
 function buildDepsResult(
+  subcommand: string,
   graph: { getAllNodes: () => string[]; getDependencies: (id: string) => string[]; getDependents: (id: string) => string[] },
   cycles: Array<{ cycle: readonly string[]; length: number; severity: string }>,
   stats: { totalFiles: number; totalDependencies: number; orphanedFiles: number },
-  includeGraph: boolean
+  targetFile?: string
 ): DepsResult {
   // 轉換 cycles 為 CycleInfo
   const cycleInfos: CycleInfo[] = cycles.map(c => ({
@@ -105,44 +117,30 @@ function buildDepsResult(
     length: c.length
   }));
 
-  // 建立孤立檔案列表
-  const allNodes = graph.getAllNodes();
-  const orphans: string[] = [];
-  for (const node of allNodes) {
-    const dependents = graph.getDependents(node);
-    if (dependents.length === 0) {
-      orphans.push(node);
-    }
-  }
-
   // 基本結果
   const result: DepsResult = {
     command: QueryCommand.Deps,
     success: true,
     cycles: cycleInfos,
-    orphans,
     summary: {
       totalScanned: stats.totalFiles,
-      issuesFound: cycles.length + orphans.length,
+      issuesFound: cycles.length,
       totalFiles: stats.totalFiles,
       totalDependencies: stats.totalDependencies,
-      cyclesFound: cycles.length,
-      orphanedFiles: orphans.length
+      cyclesFound: cycles.length
     }
   };
 
-  // 如果需要完整圖
-  if (includeGraph) {
-    const nodes: GraphNode[] = allNodes.map(id => ({ id }));
-    const edges: GraphEdge[] = [];
-
-    for (const nodeId of allNodes) {
-      for (const depId of graph.getDependencies(nodeId)) {
-        edges.push({ from: nodeId, to: depId });
-      }
-    }
-
-    result.graph = { nodes, edges };
+  // 如果是 impact 分析且有指定檔案
+  if (subcommand === 'impact' && targetFile) {
+    const dependents = graph.getDependents(targetFile);
+    const dependencies = graph.getDependencies(targetFile);
+    result.impact = {
+      targetFile,
+      dependents,
+      dependencies,
+      totalAffected: dependents.length
+    };
   }
 
   return result;
