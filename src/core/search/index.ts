@@ -5,8 +5,6 @@
 
 export * from './types.js';
 export * from './service.js';
-export * from './engines/text-engine.js';
 
 // 便捷導出
 export { SearchService } from './service.js';
-export { TextSearchEngine } from './engines/text-engine.js';
