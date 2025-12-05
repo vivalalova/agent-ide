@@ -30,26 +30,22 @@ pnpm test -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/
-│   ├── dependency/   # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-│   ├── indexing/     # 1000檔/秒、查詢<10ms
-│   ├── search/       # 符號/結構化搜尋
-│   ├── snapshot/     # 模組快照（AI 理解用，~91% token 節省）
-│   └── transform/    # 統一程式碼變換框架
-│       ├── shared/       # 共享元件（CodeEditor, SymbolFinder）
-│       ├── symbol/       # 符號變換
-│       │   ├── rename/           # 符號重命名+引用更新
-│       │   └── change-signature/ # 參數重構+呼叫點更新
-│       ├── structure/    # 結構變換
-│       │   └── patterns/ # 設計模式
-│       └── location/     # 位置變換
-│           ├── move-file/   # 檔案移動+import更新
-│           ├── move-member/ # 成員移動（方法/類別/函式）
-│           └── shift/       # 行級移動
-├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
-├── interfaces/     # CLI（Unix哲學/JSON輸出）
-└── application/    # 服務層、DI容器
+├── core/                 # 核心模組（扁平化結構）
+│   ├── dependency/       # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
+│   ├── indexing/         # 1000檔/秒、查詢<10ms
+│   ├── search/           # 符號/結構化搜尋
+│   ├── snapshot/         # 模組快照（AI 理解用，~91% token 節省）
+│   ├── shared/           # 共享元件（CodeEditor, SymbolFinder）
+│   ├── rename/           # 符號重命名+引用更新
+│   ├── change-signature/ # 參數重構+呼叫點更新
+│   ├── move-file/        # 檔案移動+import更新
+│   ├── move-member/      # 成員移動（方法/類別/函式）
+│   ├── shift/            # 行級移動
+│   └── patterns/         # 設計模式
+├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
+├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
+├── interfaces/           # CLI（Unix哲學/JSON輸出）
+└── application/          # 服務層、DI容器
 ```
 
 ## 測試規範
@@ -102,21 +98,22 @@ describe('CLI search - 基於 sample-project fixture', () => {
 
 ### 查詢類命令（唯讀）
 ```bash
-agent-ide search symbol --query <name> --path <path>       # 符號搜尋
-agent-ide search structural --type <function|class> --path <path> # 結構化搜尋
-agent-ide analyze [complexity|dead-code] --path <path>
-agent-ide deps [cycles|impact] --path <path>
+agent-ide symbol --query <name> --path <path>              # 符號搜尋
+agent-ide structural --type <function|class> --path <path> # 結構化搜尋
+agent-ide complexity --path <path>                         # 複雜度分析
+agent-ide deadcode --path <path>                           # 死代碼分析
+agent-ide cycles --path <path>                             # 循環依賴檢測
+agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
 ```
 
 ### 變更類命令（支援 --dry-run）
 ```bash
-# Transform 命令群組
-agent-ide transform rename --path <path> --from <old> --to <new> [--dry-run]
-agent-ide transform change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
-agent-ide transform move <source> <target> --path <path> [--dry-run]
-agent-ide transform move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
-agent-ide transform shift <file> --from <line> --to <line> --position <pos> [--dry-run]
+agent-ide rename --path <path> --from <old> --to <new> [--dry-run]
+agent-ide change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
+agent-ide move <source> <target> --path <path> [--dry-run]
+agent-ide move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
+agent-ide shift <file> --from <line> --to <line> --position <pos> [--dry-run]
 ```
 
 ## 輸出處理架構
