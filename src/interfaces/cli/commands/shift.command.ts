@@ -5,7 +5,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { ShiftService } from '@core/transform/location/shift/shift-service.js';
+import { ShiftService } from '@core/shift/shift-service.js';
 import { convertShiftPreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';

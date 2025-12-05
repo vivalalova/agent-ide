@@ -5,7 +5,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { ChangeSignatureService, SignatureChangeType, type SignatureChange } from '@core/transform/symbol/change-signature/index.js';
+import { ChangeSignatureService, SignatureChangeType, type SignatureChange } from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';

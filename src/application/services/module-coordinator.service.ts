@@ -10,8 +10,8 @@ import { ErrorHandlerService } from '@application/services/error-handler.service
 import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
-import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
-import { MoveService } from '@core/transform/location/move-file/move-service.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { MoveService } from '@core/move-file/move-service.js';
 import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
 import { IndexEngine } from '@core/indexing/index-engine.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
