@@ -10,7 +10,21 @@ import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { SwiftParser } from '@plugins/swift/parser.js';
 import { PythonParser } from '@plugins/python/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
-import { setupShiftCommand, setupMoveCommand, setupMoveMemberCommand, setupRenameCommand, setupChangeSignatureCommand, setupSearchCommand, setupAnalyzeCommand, setupDepsCommand, setupSnapshotCommand, type CommandContext } from '@interfaces/cli/commands/index.js';
+import {
+  setupShiftCommand,
+  setupMoveCommand,
+  setupMoveMemberCommand,
+  setupRenameCommand,
+  setupChangeSignatureCommand,
+  setupSymbolCommand,
+  setupStructuralCommand,
+  setupComplexityCommand,
+  setupDeadcodeCommand,
+  setupCyclesCommand,
+  setupImpactCommand,
+  setupSnapshotCommand,
+  type CommandContext
+} from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -141,22 +155,20 @@ export class AgentIdeCLI {
 
     const context = this.createCommandContext();
 
-    // Transform 群組
-    const transformCmd = this.program
-      .command('transform')
-      .description('程式碼變換工具');
+    // Transform 命令（直接掛根層）
+    setupRenameCommand(this.program, context);
+    setupChangeSignatureCommand(this.program, context);
+    setupMoveCommand(this.program, context);
+    setupMoveMemberCommand(this.program, context);
+    setupShiftCommand(this.program, context);
 
-    // 直接掛載到 transform（無中間層）
-    setupRenameCommand(transformCmd, context);
-    setupChangeSignatureCommand(transformCmd, context);
-    setupMoveCommand(transformCmd, context);
-    setupMoveMemberCommand(transformCmd, context);
-    setupShiftCommand(transformCmd, context);
-
-    // Query 命令（扁平式）
-    setupSearchCommand(this.program, context);
-    setupAnalyzeCommand(this.program, context);
-    setupDepsCommand(this.program, context);
+    // Query 命令（扁平化）
+    setupSymbolCommand(this.program, context);
+    setupStructuralCommand(this.program, context);
+    setupComplexityCommand(this.program, context);
+    setupDeadcodeCommand(this.program, context);
+    setupCyclesCommand(this.program, context);
+    setupImpactCommand(this.program, context);
     setupSnapshotCommand(this.program, context);
   }
 
