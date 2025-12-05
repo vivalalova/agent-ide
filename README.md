@@ -29,15 +29,15 @@ pnpm install && pnpm build && npm link
 
 ### CLI Commands
 
-| Command    | Description                              | Output Formats      |
-| ---------- | ---------------------------------------- | ------------------- |
-| `search`   | Symbol and structural search             | json, summary       |
-| `rename`   | Rename symbols and update references     | json, summary, diff |
-| `move`     | Move files and update imports            | json, summary, diff |
-| `shift`    | Move lines within/across files           | json, summary, diff |
-| `analyze`  | Complexity and dead-code analysis        | json, summary       |
-| `deps`     | Cycle detection and impact analysis      | json, summary       |
-| `snapshot` | Generate module/project snapshots for AI | json, summary       |
+| Command            | Description                              | Output Formats      |
+| ------------------ | ---------------------------------------- | ------------------- |
+| `rename`           | Rename symbols and update references     | json, summary, diff |
+| `change-signature` | Modify function signatures               | json, summary, diff |
+| `move`             | Move files and update imports            | json, summary, diff |
+| `move-member`      | Move members between files               | json, summary, diff |
+| `cycles`           | Detect circular dependencies             | json, summary       |
+| `impact`           | Analyze file impact range                | json, summary       |
+| `snapshot`         | Generate module/project snapshots for AI | json, summary       |
 
 ## 📖 Documentation
 

@@ -20,7 +20,7 @@ pnpm lint                     # ESLint
 npm link                      # 本地 CLI 安裝
 
 # 單一測試檔
-pnpm test -- --run tests/e2e/commands/cli-symbol-structural.e2e.test.ts
+pnpm test -- --run tests/e2e/commands/cli-rename-basic.e2e.test.ts
 
 # 匹配測試名稱
 pnpm test -- --run -t "應該分析專案"
@@ -33,14 +33,12 @@ src/
 ├── core/                 # 核心模組（扁平化結構）
 │   ├── dependency/       # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
 │   ├── indexing/         # 1000檔/秒、查詢<10ms
-│   ├── search/           # 符號/結構化搜尋
 │   ├── snapshot/         # 模組快照（AI 理解用，~91% token 節省）
 │   ├── shared/           # 共享元件（CodeEditor, SymbolFinder）
 │   ├── rename/           # 符號重命名+引用更新
 │   ├── change-signature/ # 參數重構+呼叫點更新
 │   ├── move-file/        # 檔案移動+import更新
 │   ├── move-member/      # 成員移動（方法/類別/函式）
-│   ├── shift/            # 行級移動
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
@@ -98,14 +96,10 @@ describe('CLI search - 基於 sample-project fixture', () => {
 所有命令支援 `--format` 參數：
 - **json**：機器可讀 JSON 格式
 - **summary**：人類可讀摘要格式
-- **diff**：變更類命令預設，顯示程式碼差異（僅 rename/move/shift）
+- **diff**：變更類命令預設，顯示程式碼差異（僅 rename/move）
 
 ### 查詢類命令（唯讀）
 ```bash
-agent-ide symbol --query <name> --path <path>              # 符號搜尋
-agent-ide structural --type <function|class> --path <path> # 結構化搜尋
-agent-ide complexity --path <path>                         # 複雜度分析
-agent-ide deadcode --path <path>                           # 死代碼分析
 agent-ide cycles --path <path>                             # 循環依賴檢測
 agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
@@ -117,7 +111,6 @@ agent-ide rename --path <path> --from <old> --to <new> [--dry-run]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
 agent-ide move <source> <target> --path <path> [--dry-run]
 agent-ide move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
-agent-ide shift <file> --from <line> --to <line> --position <pos> [--dry-run]
 ```
 
 ## 輸出處理架構
@@ -128,8 +121,8 @@ agent-ide shift <file> --from <line> --to <line> --position <pos> [--dry-run]
 
 | 命令類型 | 輸出方法 | 結果型別 |
 |---------|---------|---------|
-| 查詢類（search, deps, analyze, snapshot） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
-| 變更類（rename, move, shift） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
+| 查詢類（cycles, impact, snapshot） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
+| 變更類（rename, move, change-signature, move-member） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
 
 ### 新增命令的輸出整合步驟
 
@@ -171,7 +164,7 @@ outputHandler.outputMutation(previewInput, format);
 ```
 
 ### Formatters 層
-- **QueryFormatter**：處理查詢類結果（SearchResult, DepsResult, AnalyzeResult, SnapshotResult）
+- **QueryFormatter**：處理查詢類結果（DepsResult, SnapshotResult）
 - **PreviewFormatter**：處理變更類預覽（diff, summary, json）
 - **QueryTypes**：統一的結果型別定義（QueryResult, QueryCommand enum）
 
@@ -198,6 +191,14 @@ outputHandler.outputMutation(previewInput, format);
 - `plugins/skills/agent-ide/SKILL.md` - 命令速查表
 - `plugins/skills/agent-ide/references/guide.md` - 完整指南
 - `CLAUDE.md` - 開發規範（開發用）
+
+**🚨 SKILL.md 更新規範**：
+- 更新 SKILL.md 內容時，**必須同步更新 frontmatter 的 description**
+- description 目標是**最大化 AI 使用率**，需包含：觸發關鍵詞、強制語氣（🚨）、價值主張（如節省 token）
+
+**🚨 測試覆蓋率門檻**：
+- `vitest.config.ts` 的 `thresholds` 設定禁止隨意調降
+- 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
 - `tests/e2e/commands/cli-<command>.e2e.test.ts`

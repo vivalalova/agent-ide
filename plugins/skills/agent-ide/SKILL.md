@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 🚨 重構/重命名/移動/搜尋/依賴分析必用 - 當用戶要求 rename/refactor/move/搜尋程式碼/分析依賴/檢查循環/了解專案結構時，必須使用此工具。自動更新所有引用，節省 ~91% token。支援 TS/JS/Swift/Python
+description: 🚨 以下任務強制使用 agent-ide，禁止手動操作：【重命名】rename/改名/重新命名/變數改名/函數改名 →用 rename 命令【移動檔案】move/搬檔案/調整目錄/重組結構 →用 move 命令【移動成員】移動函數/移動方法/移動類別/搬到另一個檔案 →用 move-member 命令【改參數】加參數/刪參數/改參數順序/change signature →用 change-signature 命令【循環依賴】circular/依賴循環/循環引用 →用 cycles 命令【影響分析】影響範圍/誰用了這個/改這會影響哪裡 →用 impact 命令【了解專案】看結構/專案架構/熟悉 codebase/模組快照 →用 snapshot 命令。⚠️ 禁止用 grep/sed/手動搜尋替換，手動必遺漏引用。snapshot 節省 ~91% token，禁止逐檔讀取了解專案
 ---
 
 # Agent IDE
@@ -18,13 +18,8 @@ description: 🚨 重構/重命名/移動/搜尋/依賴分析必用 - 當用戶�
 | 修改函式參數 | `change-signature` | 自動更新所有呼叫點 |
 | 移動/重組檔案 | `move` | 自動更新 import 路徑 |
 | 移動方法/函式/類別 | `move-member` | 語義級移動，自動更新引用 |
-| 符號搜尋 | `symbol` | 精準符號定位，比 grep 精準 |
-| 結構化搜尋 | `structural` | 按類型搜尋（class/function 等） |
 | 循環依賴檢測 | `cycles` | 即時檢測循環依賴 |
 | 影響分析 | `impact` | 分析修改影響範圍 |
-| 複雜度分析 | `complexity` | 程式碼品質評估 |
-| 死代碼檢測 | `deadcode` | 找出未使用的代碼 |
-| 移動程式碼區塊 | `shift` | 保持語法正確性 |
 
 ## 🚀 為什麼使用 Agent IDE？
 
@@ -63,11 +58,6 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | change-signature | 函式簽章修改 | 變更類 |
 | move | 檔案移動 + import 更新 | 變更類 |
 | move-member | 成員移動（方法/類別等） | 變更類 |
-| shift | 程式碼行移動 | 變更類 |
-| symbol | 符號搜尋 | 查詢類 |
-| structural | 結構化搜尋（按類型） | 查詢類 |
-| complexity | 複雜度分析 | 查詢類 |
-| deadcode | 死代碼分析 | 查詢類 |
 | cycles | 循環依賴檢測 | 查詢類 |
 | impact | 影響分析 | 查詢類 |
 | snapshot | 模組/專案快照 | 查詢類 |
@@ -83,16 +73,11 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 加刪參數   | `agent-ide change-signature --file f.ts --function fn --add "c:string"`   |
 | 移動檔案   | `agent-ide move src/old.ts src/new.ts --path . --dry-run`                 |
 | 移動成員   | `agent-ide move-member src/a.ts fn --target-file src/b.ts --dry-run`      |
-| 行移動     | `agent-ide shift file.ts --from 1 --to 5 --position 10`                   |
 
 ### 查詢類命令
 
 | 任務       | 命令                                                        |
 | ---------- | ----------------------------------------------------------- |
-| 符號搜尋   | `agent-ide symbol --query "User*" --path .`                 |
-| 結構化搜尋 | `agent-ide structural --type class --path .`                |
-| 複雜度分析 | `agent-ide complexity --path .`                             |
-| 死代碼檢測 | `agent-ide deadcode --path .`                               |
 | 循環依賴   | `agent-ide cycles --path . --format json`                   |
 | 影響分析   | `agent-ide impact --file src/core.ts --path .`              |
 | 模組快照   | `agent-ide snapshot --path src/core/indexing --format json` |
@@ -118,16 +103,13 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 ### 重構流程
 
 ```bash
-# 1. 分析品質
-agent-ide complexity --path . --format json
-
-# 2. 預覽重命名影響
+# 1. 預覽重命名影響
 agent-ide rename --path . --from oldName --to newName --dry-run
 
-# 3. 執行重命名
+# 2. 執行重命名
 agent-ide rename --path . --from oldName --to newName
 
-# 4. 檢查循環依賴
+# 3. 檢查循環依賴
 agent-ide cycles --path .
 ```
 
