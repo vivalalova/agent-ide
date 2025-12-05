@@ -21,6 +21,8 @@ import { Symbol } from '@shared/types/symbol.js';
 import { ScopeAnalyzer } from './scope-analyzer.js';
 import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { FileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 重新命名引擎類別
@@ -37,10 +39,13 @@ export class RenameEngine {
 
   private readonly scopeAnalyzer: ScopeAnalyzer;
   private readonly referenceUpdater: ReferenceUpdater;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(parserRegistry?: ParserRegistry) {
+  constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
+    // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
+    this.fileSystem = fileSystem ?? new FileSystem();
     this.scopeAnalyzer = new ScopeAnalyzer();
-    this.referenceUpdater = new ReferenceUpdater(parserRegistry);
+    this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem);
   }
 
   /**
@@ -57,9 +62,8 @@ export class RenameEngine {
     try {
       for (const filePath of filePaths) {
         try {
-          // 使用 fs 模組讀取檔案內容
-          const fs = await import('fs/promises');
-          const content = await fs.readFile(filePath, 'utf-8');
+          // 使用注入的 fileSystem 讀取檔案內容
+          const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
           const lines = content.split('\n');
 
           // 查找所有包含符號名稱的行

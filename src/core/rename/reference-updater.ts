@@ -14,6 +14,8 @@ import {
 import { Position, Range, Location } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { FileSystem } from '@infrastructure/storage/index.js';
 
 /**
  * 引用更新器類別
@@ -22,9 +24,12 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 export class ReferenceUpdater {
   private readonly fileCache = new Map<string, string>();
   private readonly parserRegistry?: ParserRegistry;
+  private readonly fileSystem: IFileSystem;
 
-  constructor(parserRegistry?: ParserRegistry) {
+  constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
     this.parserRegistry = parserRegistry;
+    // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
+    this.fileSystem = fileSystem ?? new FileSystem();
   }
 
   /**
@@ -472,9 +477,8 @@ export class ReferenceUpdater {
     }
 
     try {
-      // 讀取真實檔案
-      const fs = await import('fs/promises');
-      const content = await fs.readFile(filePath, 'utf-8');
+      // 使用注入的 fileSystem 讀取檔案
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       this.fileCache.set(filePath, content);
       return content;
     } catch (error) {
@@ -487,8 +491,8 @@ export class ReferenceUpdater {
    */
   private async writeFileContent(filePath: string, content: string): Promise<void> {
     try {
-      const fs = await import('fs/promises');
-      await fs.writeFile(filePath, content, 'utf-8');
+      // 使用注入的 fileSystem 寫入檔案
+      await this.fileSystem.writeFile(filePath, content);
       // 更新快取
       this.fileCache.set(filePath, content);
     } catch (error) {

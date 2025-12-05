@@ -77,6 +77,25 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     return;
   }
 
+  // 如果 from 和 to 相同，直接返回成功但無操作
+  if (from === to) {
+    const emptyResult = {
+      command: 'rename',
+      success: true,
+      files: [],
+      summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0, totalReferences: 0, estimatedTime: 0, conflictCount: 0 },
+      operations: 0,
+      affectedFiles: 0,
+      operationDescription: `No changes needed: '${from}' is already named '${to}'`
+    };
+    if (isJsonFormat) {
+      console.log(JSON.stringify(emptyResult, null, 2));
+    } else {
+      console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
+    }
+    return;
+  }
+
   if (!isJsonFormat) {
     console.log(`   重新命名 ${from}   ${to}`);
   }
@@ -110,8 +129,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const indexEngine = new IndexEngine(config, context.fileSystem);
     await indexEngine.indexProject(workspacePath);
 
-    // 初始化重新命名引擎
-    const renameEngine = new RenameEngine();
+    // 初始化重新命名引擎（傳入 fileSystem）
+    const renameEngine = new RenameEngine(undefined, context.fileSystem);
 
     // 1. 查找符號
     if (!isJsonFormat) {
@@ -193,7 +212,25 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 取得所有專案檔案（使用與 preview 相同的邏輯）
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
-    // 使用 renameEngine 執行重新命名（與 preview 使用相同的引擎）
+    // 先預覽變更
+    const preview = await renameEngine.previewRename({
+      symbol: targetSymbol,
+      newName: to,
+      filePaths: allProjectFiles
+    });
+
+    // 讀取受影響檔案的原始內容（用於輸出）
+    const originalContents = new Map<string, string>();
+    for (const filePath of preview.affectedFiles) {
+      try {
+        const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
+        originalContents.set(filePath, content);
+      } catch {
+        // 忽略無法讀取的檔案
+      }
+    }
+
+    // 使用 renameEngine 執行重新命名
     const renameResult = await renameEngine.rename({
       symbol: targetSymbol,
       newName: to,
@@ -201,21 +238,14 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     });
 
     if (renameResult.success) {
-      if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          affectedFiles: renameResult.affectedFiles.length,
-          operations: renameResult.operations.length,
-          files: renameResult.affectedFiles
-        }, null, 2));
-      } else {
-        console.log('   重新命名成功!');
-        console.log(`   統計: ${renameResult.affectedFiles.length} 檔案, ${renameResult.operations.length} 變更`);
-
-        renameResult.operations.forEach(operation => {
-          console.log(`      ${operation.filePath}: "${operation.oldText}"   "${operation.newText}"`);
-        });
-      }
+      // 轉換為統一的 PreviewInput 格式並輸出
+      const previewInput = convertRenamePreview(
+        preview.operations,
+        preview.conflicts,
+        originalContents,
+        { oldName: from, newName: to }
+      );
+      outputHandler.outputMutation(previewInput, format);
     } else {
       if (isJsonFormat) {
         console.error(JSON.stringify({
