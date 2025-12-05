@@ -47,7 +47,11 @@ export {
   type DepsResult,
   type CycleInfo,
   type ImpactInfo,
-  type AnalyzeResult
+  type AnalyzeResult,
+  type FindReferencesResult,
+  type ReferenceItem,
+  type ReferenceType,
+  type DefinitionLocation
 } from './query-types.js';
 
 export {

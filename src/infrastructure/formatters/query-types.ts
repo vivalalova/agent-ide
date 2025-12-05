@@ -8,7 +8,8 @@ export enum QueryCommand {
   Search = 'search',
   Analyze = 'analyze',
   Deps = 'deps',
-  Snapshot = 'snapshot'
+  Snapshot = 'snapshot',
+  FindReferences = 'find-references'
 }
 
 /** 問題嚴重度 */
@@ -168,3 +169,44 @@ export interface SnapshotResult extends QueryResult {
   snapshot: ModuleSnapshotData | ProjectSnapshotData;
 }
 
+// ========== FindReferences 結果 ==========
+
+/** 引用類型 */
+export type ReferenceType = 'definition' | 'usage' | 'import' | 'export';
+
+/** 引用項目 */
+export interface ReferenceItem {
+  /** 檔案路徑 */
+  file: string;
+  /** 行號 */
+  line: number;
+  /** 欄位 */
+  column?: number;
+  /** 引用類型 */
+  type: ReferenceType;
+  /** 上下文程式碼片段 */
+  context: string;
+}
+
+/** 符號定義位置 */
+export interface DefinitionLocation {
+  /** 檔案路徑 */
+  file: string;
+  /** 行號 */
+  line: number;
+  /** 欄位 */
+  column: number;
+}
+
+/** FindReferences 結果 */
+export interface FindReferencesResult extends QueryResult {
+  command: QueryCommand.FindReferences;
+  /** 符號名稱 */
+  symbol: string;
+  /** 符號類型 */
+  type: string;
+  /** 定義位置（找不到時為 null） */
+  definition: DefinitionLocation | null;
+  /** 所有引用 */
+  references: ReferenceItem[];
+}

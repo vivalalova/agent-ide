@@ -14,3 +14,4 @@ export { setupChangeSignatureCommand } from './change-signature.command.js';
 export { setupCyclesCommand } from './cycles.command.js';
 export { setupImpactCommand } from './impact.command.js';
 export { setupSnapshotCommand } from './snapshot.command.js';
+export { setupFindReferencesCommand } from './find-references.command.js';
