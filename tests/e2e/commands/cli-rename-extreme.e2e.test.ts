@@ -20,7 +20,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('極端資料量測試', () => {
     it('應該處理有大量引用的符號 (預期 10+ 個引用)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserEntity', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserEntity', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -35,7 +35,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理跨多個檔案的大量引用', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'UserRoleEnum', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'UserRoleEnum', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -61,7 +61,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       await fixture.writeFile('src/shared.ts', 'export class SharedUtil { static process() { return 1; } }');
 
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'SharedUtil', '--to', 'CommonUtil', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'SharedUtil', '--to', 'CommonUtil', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -88,7 +88,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       await fixture.writeFile('src/deep-namespace.ts', deepNamespace);
 
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'deepSymbol', '--to', 'renamedDeepSymbol', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'deepSymbol', '--to', 'renamedDeepSymbol', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -116,7 +116,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       await fixture.writeFile('src/deep-class.ts', deepClass);
 
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'deepMethod', '--to', 'renamedDeepMethod', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'deepMethod', '--to', 'renamedDeepMethod', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -132,7 +132,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('Unicode 和國際化', () => {
     it('應該處理 Unicode 字元的符號名稱', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'Utilisateur', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'Utilisateur', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -146,7 +146,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理包含 emoji 的名稱（非法識別符）', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User👤', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User👤', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -161,7 +161,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理中文符號名稱（視為非法識別符）', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -178,7 +178,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('保留字和關鍵字', () => {
     it('應該檢測 JavaScript 保留字 (var)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'var', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'var', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -193,7 +193,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測 JavaScript 保留字 (let)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'let', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'let', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -208,7 +208,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測 JavaScript 保留字 (const)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'const', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'const', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -223,7 +223,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測 TypeScript 關鍵字 (interface)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'interface', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'interface', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -238,7 +238,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測 TypeScript 關鍵字 (enum)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'enum', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'enum', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -253,7 +253,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測 TypeScript 關鍵字 (type)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'type', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'type', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -268,7 +268,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測控制流程關鍵字 (if)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'if', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'if', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -283,7 +283,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測迴圈關鍵字 (while)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'while', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'while', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -298,7 +298,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測異常處理關鍵字 (try)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'try', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'try', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -313,7 +313,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測模組關鍵字 (import)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'import', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'import', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -328,7 +328,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測模組關鍵字 (export)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'export', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'export', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -345,7 +345,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('非法識別符檢測', () => {
     it('應該檢測與 TypeScript 關鍵字衝突', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'class', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'class', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -360,7 +360,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測與保留字衝突', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'function', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'function', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -374,7 +374,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理名稱中包含特殊字元（非法識別符）', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User-Name', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User-Name', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -389,7 +389,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理以數字開頭的名稱（非法識別符）', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', '1User', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '1User', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -404,7 +404,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理名稱中包含空格（非法識別符）', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User Name', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'User Name', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -421,7 +421,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('衝突檢測', () => {
     it('應該檢測重命名到已存在的名稱 (sortBy)', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'groupBy', '--to', 'sortBy', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'groupBy', '--to', 'sortBy', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -435,7 +435,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測重命名到已存在的類別名稱', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'UserProfile', '--to', 'User', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'UserProfile', '--to', 'User', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -449,7 +449,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該檢測重命名到已存在的 enum 名稱', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserRole', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserRole', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -465,7 +465,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('檔案系統邊界', () => {
     it('應該處理不存在的檔案路徑', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', '/nonexistent/directory', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
+        ['rename', '--path', '/nonexistent/directory', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -474,7 +474,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理空的專案路徑', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', '', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
+        ['rename', '--path', '', '--from', 'User', '--to', 'UserModel', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -485,7 +485,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('複雜符號類型', () => {
     it('應該處理泛型類型參數重命名', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'K', '--to', 'KeyType', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'K', '--to', 'KeyType', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -499,7 +499,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理 type alias 屬性重命名', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'id', '--to', 'userId', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'id', '--to', 'userId', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -513,7 +513,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理方法重命名', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'toString', '--to', 'serialize', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'toString', '--to', 'serialize', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -527,7 +527,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理靜態屬性重命名', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'version', '--to', 'apiVersion', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'version', '--to', 'apiVersion', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -541,7 +541,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該處理命名空間重命名', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'Utils', '--to', 'Utilities', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'Utils', '--to', 'Utilities', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -557,7 +557,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
   describe('效能和摘要資訊', () => {
     it('應該提供預估執行時間', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserData', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'UserData', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -573,7 +573,7 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
 
     it('應該提供正確的統計資訊', async () => {
       const result = await executeCLI(
-        ['transform', 'rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'Role', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'Role', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

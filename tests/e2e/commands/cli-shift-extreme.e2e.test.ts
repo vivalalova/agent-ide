@@ -33,7 +33,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動整個 100+ 行函數到檔案開頭
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '104', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '104', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -47,7 +47,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '999', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '999', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -62,7 +62,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 第 4 行是空行
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '4', '--to', '4', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '4', '--to', '4', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -77,7 +77,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 第 1-3 行是註解區塊
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '3', '--position', '50', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '50', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -104,7 +104,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 100+ 行
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '2', '--to', '101', '--position', '2', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '2', '--to', '101', '--position', '2', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -121,7 +121,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動初始化服務區塊（縮排內容）
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '24', '--to', '30', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '24', '--to', '30', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -139,7 +139,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=5, to=10, position=5 表示移動到原位置
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -162,7 +162,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 500+ 行
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '2', '--to', '501', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '2', '--to', '501', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -176,7 +176,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '-5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '-5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -189,7 +189,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '15', '--to', '15', '--position', '40', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '15', '--to', '15', '--position', '40', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -228,7 +228,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動整個 50+ 行深層巢狀區塊到檔案開頭
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '55', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '55', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -243,7 +243,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 import 語句
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '11', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '11', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -265,7 +265,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 100+ 個 export 到檔案開頭
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '2', '--to', '101', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '2', '--to', '101', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -283,7 +283,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       fixture.writeFile('src/empty-test.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'shift', emptyFile, '--from', '1', '--to', '1', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', emptyFile, '--from', '1', '--to', '1', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -297,7 +297,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const nonExistentTarget = fixture.getFilePath('src/nonexistent/target.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', nonExistentTarget, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', nonExistentTarget, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -310,7 +310,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '999999', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '999999', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -327,7 +327,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=5, to=10, position=6 → position 在 (5, 11] 範圍內
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -342,7 +342,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=5, to=10, position=11 → position 在 (5, 11] 範圍內
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '11', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '11', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -357,7 +357,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=10, to=15, position=10 → position 不在 (10, 16] 範圍內，實際會執行移動
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '10', '--to', '15', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '10', '--to', '15', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -375,7 +375,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '3', '--position', '5', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '5', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -391,7 +391,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils/string-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -410,7 +410,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=5, to=10, position=20 → adjustedPosition = 20 - 6 = 14
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '10', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '10', '--position', '20', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -425,7 +425,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // from=15, to=20, position=5 → position < toLine，不調整
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '15', '--to', '20', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '15', '--to', '20', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -442,7 +442,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/new-feature-not-exist.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '5', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -458,7 +458,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/newdir/new-file.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -488,7 +488,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 JSDoc 註解區塊（1-5 行）
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '5', '--position', '9', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '5', '--position', '9', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -512,7 +512,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動空白字元行（2-4 行）
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '2', '--to', '4', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '2', '--to', '4', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -536,7 +536,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 Unicode 內容（1-3 行）
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -559,7 +559,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動超長行（第 2 行）
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '2', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '2', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -593,7 +593,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 method1（6-8 行）到 method2 之後
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '6', '--to', '8', '--position', '13', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '6', '--to', '8', '--position', '13', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -619,7 +619,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動 property（2-4 行）到 constructor 之後
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '2', '--to', '4', '--position', '7', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '2', '--to', '4', '--position', '7', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -643,7 +643,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // 移動第 1 行到檔案末尾（position = 4，即 totalLines + 1）
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '1', '--position', '4', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '1', '--position', '4', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -658,7 +658,7 @@ describe('CLI shift extreme - 基於 sample-project fixture', () => {
 
       // position 超出 totalLines + 1
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '10000', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '10000', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

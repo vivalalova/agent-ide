@@ -1,12 +1,12 @@
 /**
- * CLI analyze 命令 E2E 測試 - 索引功能
+ * CLI complexity 命令 E2E 測試 - 索引功能
  * 測試符號索引、依賴分析、效能、併發等底層功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
-describe('CLI analyze indexing - 基於 sample-project fixture', () => {
+describe('CLI complexity indexing - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -31,7 +31,7 @@ export class DuplicateClass {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -55,7 +55,7 @@ export class Outer {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -79,7 +79,7 @@ export default class {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -97,7 +97,7 @@ export class ${longName} {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -112,7 +112,7 @@ export const __doubleUnderscore = 3;
 export const $$ = 4;
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -128,7 +128,7 @@ export class Initial {
 }
       `.trim());
 
-      const result1 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result1 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -141,7 +141,7 @@ export class Updated {
 }
       `.trim());
 
-      const result2 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result2 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -153,7 +153,7 @@ export class Updated {
 export class TempClass {}
       `.trim());
 
-      const result1 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result1 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -161,7 +161,7 @@ export class TempClass {}
 
       await fixture.memfs.deleteFile(`${fixture.rootPath}/temp.ts`);
 
-      const result2 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result2 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -169,7 +169,7 @@ export class TempClass {}
     });
 
     it('應該處理新增檔案後的重新分析', async () => {
-      const result1 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result1 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -181,7 +181,7 @@ export class NewClass {
 }
       `.trim());
 
-      const result2 = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result2 = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -202,7 +202,7 @@ export class Class${i} {
         `.trim());
       }
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -229,7 +229,7 @@ export class MultiDeps {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -257,7 +257,7 @@ export class App {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -277,7 +277,7 @@ export class ExternalDeps {
 }
       `.trim());
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -297,7 +297,7 @@ export class Class${i}_${j} {
         await fixture.writeFile(`query-test/file${i}.ts`, symbols.trim());
       }
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 
@@ -320,7 +320,7 @@ export class Concurrent${i} {
         `.trim());
       }
 
-      const result = await executeCLI(['analyze', '--path', fixture.rootPath, '--format', 'json'], {
+      const result = await executeCLI(['complexity', '--path', fixture.rootPath, '--format', 'json'], {
         memfs: fixture.memfs,
       });
 

@@ -22,7 +22,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath],
         { memfs: fixture.memfs }
       );
 
@@ -33,7 +33,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -55,7 +55,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '3', '--to', '5', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '3', '--to', '5', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -74,7 +74,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '3', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -93,7 +93,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -110,7 +110,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -128,7 +128,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'summary'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
@@ -140,7 +140,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '3', '--position', '6', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -163,7 +163,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
   describe('錯誤處理', () => {
     it('應該處理不存在的檔案', async () => {
       const result = await executeCLI(
-        ['transform', 'shift', '/nonexistent/file.ts', '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', '/nonexistent/file.ts', '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -176,7 +176,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '2', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -189,7 +189,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '0', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '0', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -202,7 +202,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '999999', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '999999', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -217,7 +217,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '3', '--to', '3', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '3', '--to', '3', '--position', '10', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -232,7 +232,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '5', '--to', '7', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '5', '--to', '7', '--position', '1', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -249,7 +249,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', targetFile, '--from', '1', '--to', '2', '--position', '5', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -264,7 +264,7 @@ describe('CLI shift basic - 基於 sample-project fixture', () => {
       const targetFile = fixture.getFilePath('src/utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'shift', sourceFile, '--from', '1', '--to', '2', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
+        ['shift', sourceFile, '--from', '1', '--to', '2', '--position', '1', '--target', targetFile, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

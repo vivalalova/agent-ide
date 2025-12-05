@@ -21,7 +21,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
   describe('邊界條件', () => {
     it('應該處理空路徑', async () => {
       const result = await executeCLI(
-        ['transform', 'move', '', '', '--path', fixture.rootPath, '--format', 'json'],
+        ['move', '', '', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -30,7 +30,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
 
     it('應該處理相對路徑輸入', async () => {
       const result = await executeCLI(
-        ['transform', 'move', './src/types/user.ts', './src/models/user.ts', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', './src/types/user.ts', './src/models/user.ts', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -51,7 +51,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/nonexistent/folder/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -70,7 +70,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/types/user-entity.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -88,7 +88,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/core/shared/types/common.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -109,7 +109,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/config/app-settings.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -124,7 +124,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/types/product.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -138,7 +138,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/models/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -155,7 +155,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/validator.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -171,7 +171,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -190,7 +190,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/helpers/arrays/array-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -211,7 +211,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/entities/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -227,7 +227,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/shared/common.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -242,7 +242,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/helpers/string-utils.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -258,7 +258,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/models/product.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -274,7 +274,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/entities/users/user-model.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -297,7 +297,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/shared/common.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -313,7 +313,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -332,7 +332,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -357,7 +357,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/entities/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -373,7 +373,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -389,7 +389,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -406,7 +406,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/models/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -422,7 +422,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/shared/common.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -438,7 +438,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/entities/user-model.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -456,7 +456,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/types/definitions/global.d.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -477,7 +477,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/models/index.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -493,7 +493,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/lib/formatter.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -511,7 +511,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src', 'models', 'user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -526,7 +526,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/models/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -547,7 +547,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = './src/models/user.ts';
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -568,7 +568,7 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
       const target = path.join(fixture.rootPath, 'src/a/b/c/d/e/f/user.ts');
 
       const result = await executeCLI(
-        ['transform', 'move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

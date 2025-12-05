@@ -1,12 +1,12 @@
 /**
- * CLI analyze dead-code 命令 E2E 測試
+ * CLI deadcode 命令 E2E 測試
  * 基於 sample-project fixture 測試死碼分析功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
-describe('CLI analyze dead-code - 基於 sample-project fixture', () => {
+describe('CLI deadcode - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -42,7 +42,7 @@ usedLocalFunction();
       `.trim());
 
       const result = await executeCLI(
-        ['analyze', 'dead-code', '--path', `${fixture.rootPath}/dead-code-local`, '--format', 'json'],
+        ['deadcode', '--path', `${fixture.rootPath}/dead-code-local`, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -88,7 +88,7 @@ console.log(obj, child);
       `.trim());
 
       const result = await executeCLI(
-        ['analyze', 'dead-code', '--path', `${fixture.rootPath}/dead-code-interface`, '--format', 'json'],
+        ['deadcode', '--path', `${fixture.rootPath}/dead-code-interface`, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -119,7 +119,7 @@ console.log(value);
       `.trim());
 
       const result = await executeCLI(
-        ['analyze', 'dead-code', '--path', `${fixture.rootPath}/dead-code-type`, '--format', 'json'],
+        ['deadcode', '--path', `${fixture.rootPath}/dead-code-type`, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -152,7 +152,7 @@ console.log(value);
       `.trim());
 
       const result = await executeCLI(
-        ['analyze', 'dead-code', '--path', `${fixture.rootPath}/dead-code-enum`, '--format', 'json'],
+        ['deadcode', '--path', `${fixture.rootPath}/dead-code-enum`, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -186,7 +186,7 @@ export enum ExportedEnum {
       `.trim());
 
       const result = await executeCLI(
-        ['analyze', 'dead-code', '--path', `${fixture.rootPath}/dead-code-export`, '--format', 'json'],
+        ['deadcode', '--path', `${fixture.rootPath}/dead-code-export`, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

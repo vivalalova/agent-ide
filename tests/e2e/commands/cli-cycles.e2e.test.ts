@@ -1,12 +1,12 @@
 /**
- * CLI deps 命令 E2E 測試
+ * CLI cycles 命令 E2E 測試
  * 基於 sample-project fixture 測試依賴分析功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
-describe('CLI deps - 基於 sample-project fixture', () => {
+describe('CLI cycles - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -19,37 +19,24 @@ describe('CLI deps - 基於 sample-project fixture', () => {
 
   describe('基本功能', () => {
     it('應該成功分析專案依賴（cycles 子命令）', async () => {
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
     });
 
     it('應該支援 JSON 格式輸出', async () => {
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
 
     it('應該支援 summary 格式輸出', async () => {
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'summary'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'summary'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
     });
 
-    it('應該在無子命令時返回錯誤或預設行為', async () => {
-      const result = await executeCLI(['deps', '--path', fixture.rootPath], { memfs: fixture.memfs });
-
-      // 可能返回錯誤或使用預設行為
-      expect([0, 1]).toContain(result.exitCode);
-    });
-
-    it('應該在無效子命令時返回錯誤或預設行為', async () => {
-      const result = await executeCLI(['deps', 'invalid', '--path', fixture.rootPath], { memfs: fixture.memfs });
-
-      // 可能返回錯誤或使用預設行為
-      expect([0, 1]).toContain(result.exitCode);
-    });
   });
 
   describe('依賴結構極端情境', () => {
@@ -65,7 +52,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         chainFiles.map(file => fixture.writeFile(file.path, file.content))
       );
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -87,7 +74,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         fixture.writeFile('fan-out.ts', fanOutFile)
       ]);
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -105,7 +92,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         consumerFiles.map(file => fixture.writeFile(file.path, file.content))
       );
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -132,7 +119,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('top-2.ts', 'import { upper2 } from "./upper-2.js";\nimport { upper3 } from "./upper-3.js";\nimport { mid1 } from "./mid-1.js";\nexport const top2 = upper2 + upper3 + mid1;');
       await fixture.writeFile('top-3.ts', 'import { upper1 } from "./upper-1.js";\nimport { upper3 } from "./upper-3.js";\nimport { mid2 } from "./mid-2.js";\nexport const top3 = upper1 + upper3 + mid2;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -144,7 +131,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('a-cycle.ts', 'import { b } from "./b-cycle.js";\nexport const a = 1;');
       await fixture.writeFile('b-cycle.ts', 'import { a } from "./a-cycle.js";\nexport const b = 2;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -155,7 +142,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('b-indirect.ts', 'import { a } from "./a-indirect.js";\nexport const b = 2;');
       await fixture.writeFile('c-indirect.ts', 'import { b } from "./b-indirect.js";\nexport const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -167,7 +154,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('m3.ts', 'import { m4 } from "./m4.js";\nexport const m3 = 3;');
       await fixture.writeFile('m4.ts', 'import { m3 } from "./m3.js";\nexport const m4 = 4;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -176,14 +163,14 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該檢測自我引用', async () => {
       await fixture.writeFile('self-ref.ts', 'import { self } from "./self-ref.js";\nexport const self = 1;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
 
     it('應該支援循環依賴檢測', async () => {
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       // 主要驗證命令能正常執行
       expect(result.exitCode).toBe(0);
@@ -195,7 +182,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('dynamic-target.ts', 'export const value = "dynamic";');
       await fixture.writeFile('dynamic-import.ts', 'const module = await import("./dynamic-target.js");\nexport const result = module.value;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -205,7 +192,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('re-source.ts', 'export const a = 1;\nexport const b = 2;');
       await fixture.writeFile('re-export.ts', 'export * from "./re-source.js";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -215,7 +202,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('namespace-source.ts', 'export const a = 1;\nexport const b = 2;');
       await fixture.writeFile('namespace-import.ts', 'import * as NS from "./namespace-source.js";\nexport const result = NS.a + NS.b;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -225,7 +212,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('side-effect.ts', 'console.log("side effect");');
       await fixture.writeFile('side-effect-import.ts', 'import "./side-effect.js";\nexport const done = true;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -235,7 +222,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('types-source.ts', 'export interface User { id: string; }');
       await fixture.writeFile('types-import.ts', 'import type { User } from "./types-source.js";\nexport const user: User = { id: "1" };');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -246,7 +233,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該處理孤島檔案 (無任何依賴)', async () => {
       await fixture.writeFile('island.ts', 'export const island = "isolated";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -255,7 +242,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該處理外部套件依賴', async () => {
       await fixture.writeFile('external.ts', 'import { describe } from "vitest";\nexport const test = describe;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -265,7 +252,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('alias-target.ts', 'export const value = "alias";');
       await fixture.writeFile('alias-import.ts', 'import { value } from "@/alias-target.js";\nexport const result = value;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -275,7 +262,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('deep/nested/very/deep/path/file.ts', 'import { value } from "../../../../../root.js";\nexport const result = value;');
       await fixture.writeFile('root.ts', 'export const value = "root";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -286,7 +273,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該處理引用不存在的模組', async () => {
       await fixture.writeFile('missing-import.ts', 'import { value } from "./nonexistent.js";\nexport const result = value;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect([0, 1]).toContain(result.exitCode);
     });
@@ -295,14 +282,14 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('cycle-a.ts', 'import { b } from "./cycle-b.js";\nexport const a = 1;');
       await fixture.writeFile('cycle-b.ts', 'import { a } from "./cycle-a.js";\nexport const b = 2;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
 
     it('應該處理空專案', async () => {
-      const result = await executeCLI(['deps', 'cycles', '--path', '/nonexistent'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', '/nonexistent'], { memfs: fixture.memfs });
 
       // 確保不會崩潰
       expect([0, 1]).toContain(result.exitCode);
@@ -314,7 +301,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       // 創建正常檔案確保專案可分析
       await fixture.writeFile('normal.ts', 'export const value = 1;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -326,7 +313,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('node-b.ts', 'import { c } from "./node-c.js";\nexport const b = 2;');
       await fixture.writeFile('node-c.ts', 'export const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -338,7 +325,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('ser-b.ts', 'import { c } from "./ser-c.js";\nexport const b = 2;');
       await fixture.writeFile('ser-c.ts', 'export const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -348,7 +335,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('clone-a.ts', 'import { b } from "./clone-b.js";\nexport const a = 1;');
       await fixture.writeFile('clone-b.ts', 'export const b = 2;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -356,7 +343,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
 
     it('應該處理空圖狀態（isEmpty 驗證）', async () => {
       // 不創建任何檔案
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect([0, 1]).toContain(result.exitCode);
     });
@@ -368,7 +355,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('island-b1.ts', 'import { b2 } from "./island-b2.js";\nexport const b1 = 3;');
       await fixture.writeFile('island-b2.ts', 'export const b2 = 4;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -389,7 +376,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         cycleFiles.map(file => fixture.writeFile(file.path, file.content))
       );
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -408,7 +395,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       // 連接兩個 SCC
       await fixture.writeFile('connector.ts', 'import { a } from "./scc1-a.js";\nimport { c } from "./scc2-c.js";\nexport const connector = a + c;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -420,7 +407,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('complex-b.ts', 'import { c } from "./complex-c.js";\nimport { a } from "./complex-a.js";\nexport const b = 2;');
       await fixture.writeFile('complex-c.ts', 'import { a } from "./complex-a.js";\nimport { b } from "./complex-b.js";\nexport const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -432,7 +419,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('fix-a2.ts', 'import { b } from "./fix-b2.js";\nexport const a = 1;');
       await fixture.writeFile('fix-b2.ts', 'import { a } from "./fix-a2.js";\nexport const b = 2;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -449,7 +436,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('med-c.ts', 'import { d } from "./med-d.js";\nexport const c = 3;');
       await fixture.writeFile('med-d.ts', 'import { a } from "./med-a.js";\nexport const d = 4;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -461,14 +448,14 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('cache-test.ts', 'export const v1 = 1;');
 
       // 第一次分析
-      const result1 = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result1 = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
       expect(result1.exitCode).toBe(0);
 
       // 修改檔案（模擬快取失效）
       await fixture.writeFile('cache-test.ts', 'export const v2 = 2;');
 
       // 第二次分析
-      const result2 = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result2 = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
       expect(result2.exitCode).toBe(0);
     });
 
@@ -483,7 +470,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         files.map(file => fixture.writeFile(file.path, file.content))
       );
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -502,7 +489,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
         consumers.map(file => fixture.writeFile(file.path, file.content))
       );
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -514,7 +501,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('source.spec.ts', 'import { value } from "./source.js";\ndescribe("spec", () => {});');
       await fixture.writeFile('__tests__/source-test.ts', 'import { value } from "../source.js";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -523,7 +510,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該處理 Swift 外部依賴（系統框架）', async () => {
       await fixture.writeFile('swift-app.swift', 'import Foundation\nimport UIKit\nimport SwiftUI\n\nlet app = "Hello"');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -533,7 +520,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('swift-a.swift', 'import SwiftB\n\nlet a = "A"');
       await fixture.writeFile('swift-b.swift', 'let b = "B"');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -543,7 +530,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('resolve-source.ts', 'export const value = 1;');
       await fixture.writeFile('resolve-import.ts', 'import { value } from "./resolve-source";\nexport const result = value;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -552,7 +539,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該處理解析錯誤（extractDependencies 錯誤處理）', async () => {
       await fixture.writeFile('parse-error.ts', 'import { value from "./incomplete.js";\nexport const result = value;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect([0, 1]).toContain(result.exitCode);
     });
@@ -561,7 +548,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       // 創建超深目錄結構
       await fixture.writeFile('level0/level1/level2/level3/level4/level5/deep.ts', 'export const deep = "value";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -572,7 +559,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('src/utils/helper.ts', 'export const helper = 2;');
       await fixture.writeFile('test/app.spec.ts', 'import { app } from "../src/app.js";');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -580,7 +567,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
 
     it('應該處理非檔案非目錄路徑（邊界驗證）', async () => {
       // 嘗試分析一個既不是檔案也不是目錄的路徑
-      const result = await executeCLI(['deps', 'cycles', '--path', '/dev/null', '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', '/dev/null', '--format', 'json'], { memfs: fixture.memfs });
 
       expect([0, 1]).toContain(result.exitCode);
     });
@@ -590,7 +577,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
     it('應該驗證 FileDependencies 型別（isFileDependencies）', async () => {
       await fixture.writeFile('type-guard.ts', 'export const value = 1;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
@@ -603,7 +590,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('sev-3b.ts', 'import { c } from "./sev-3c.js";\nexport const b = 2;');
       await fixture.writeFile('sev-3c.ts', 'import { a } from "./sev-3a.js";\nexport const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -617,7 +604,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('dag-c.ts', 'import { d } from "./dag-d.js";\nexport const c = 3;');
       await fixture.writeFile('dag-d.ts', 'export const d = 4;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -628,7 +615,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('topo-cycle-b.ts', 'import { c } from "./topo-cycle-c.js";\nexport const b = 2;');
       await fixture.writeFile('topo-cycle-c.ts', 'import { a } from "./topo-cycle-a.js";\nexport const c = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
@@ -639,7 +626,7 @@ describe('CLI deps - 基於 sample-project fixture', () => {
       await fixture.writeFile('cycle-files-b.ts', 'import { a } from "./cycle-files-a.js";\nexport const b = 2;');
       await fixture.writeFile('cycle-files-clean.ts', 'export const clean = 3;');
 
-      const result = await executeCLI(['deps', 'cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
