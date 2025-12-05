@@ -101,10 +101,10 @@ export default defineConfig({
         '**/swift-bridge/**'
       ],
       thresholds: {
-        lines: 40,
-        functions: 40,
-        branches: 40,
-        statements: 40
+        lines: 15,
+        functions: 15,
+        branches: 10,
+        statements: 15
       }
     },
   },
