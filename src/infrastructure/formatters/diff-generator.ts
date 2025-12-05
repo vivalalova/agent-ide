@@ -23,14 +23,25 @@ import {
  */
 export function generatePreviewResult(input: PreviewInput, contextLines: number = 3): PreviewResult {
   const files: FileChange[] = input.fileChanges.map(fc => generateFileChange(fc, contextLines));
-  const summary = calculateSummary(files);
+  const baseSummary = calculateSummary(files);
   const fileSummaries = generateFileSummaries(files, getDefaultChangeType(input.command));
+
+  // 擴展 summary 以包含 rename 專用欄位
+  const conflictCount = input.conflicts?.length ?? 0;
+  const summary = {
+    ...baseSummary,
+    totalReferences: baseSummary.totalChanges,
+    estimatedTime: baseSummary.totalChanges * 10, // 預估每個操作 10ms
+    conflictCount
+  };
 
   return {
     command: input.command,
     success: input.success,
     files,
     summary,
+    operations: summary.totalChanges,
+    affectedFiles: summary.totalFiles,
     fileSummaries,
     operationDescription: input.operationDescription,
     conflicts: input.conflicts,
