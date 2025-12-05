@@ -11,15 +11,10 @@ import { SwiftParser } from '@plugins/swift/parser.js';
 import { PythonParser } from '@plugins/python/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import {
-  setupShiftCommand,
   setupMoveCommand,
   setupMoveMemberCommand,
   setupRenameCommand,
   setupChangeSignatureCommand,
-  setupSymbolCommand,
-  setupStructuralCommand,
-  setupComplexityCommand,
-  setupDeadcodeCommand,
   setupCyclesCommand,
   setupImpactCommand,
   setupSnapshotCommand,
@@ -155,18 +150,13 @@ export class AgentIdeCLI {
 
     const context = this.createCommandContext();
 
-    // Transform 命令（直接掛根層）
+    // Transform 命令
     setupRenameCommand(this.program, context);
     setupChangeSignatureCommand(this.program, context);
     setupMoveCommand(this.program, context);
     setupMoveMemberCommand(this.program, context);
-    setupShiftCommand(this.program, context);
 
-    // Query 命令（扁平化）
-    setupSymbolCommand(this.program, context);
-    setupStructuralCommand(this.program, context);
-    setupComplexityCommand(this.program, context);
-    setupDeadcodeCommand(this.program, context);
+    // Query 命令
     setupCyclesCommand(this.program, context);
     setupImpactCommand(this.program, context);
     setupSnapshotCommand(this.program, context);
