@@ -4,7 +4,7 @@
  */
 
 import type { Range, Position } from '@shared/types/core.js';
-import type { TextChange, FileChange } from '../types.js';
+import type { TextChange, FileChange } from './transform-types.js';
 
 /**
  * 程式碼編輯器

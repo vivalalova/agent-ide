@@ -18,8 +18,8 @@ import {
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
-import { ScopeAnalyzer } from '@core/transform/symbol/rename/scope-analyzer.js';
-import { ReferenceUpdater } from '@core/transform/symbol/rename/reference-updater.js';
+import { ScopeAnalyzer } from './scope-analyzer.js';
+import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 
 /**
