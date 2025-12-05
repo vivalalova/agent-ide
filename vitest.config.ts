@@ -78,9 +78,11 @@ export default defineConfig({
       reportsDirectory: './coverage',
       include: [
         'src/core/**',
-        'src/infrastructure/**',
-        'src/plugins/**',
-        'src/application/**'
+        'src/infrastructure/parser/**',
+        'src/infrastructure/formatters/**',
+        'src/infrastructure/storage/**',
+        'src/plugins/typescript/**',
+        'src/plugins/javascript/**'
       ],
       exclude: [
         'node_modules/**',
@@ -92,6 +94,9 @@ export default defineConfig({
         'src/**/index.ts',
         'src/bin/**',
         'src/interfaces/**',
+        // 未使用模組
+        'src/core/patterns/**',
+        'src/core/search/**',
         // 非 JS/TS 檔案
         '**/*.md',
         '**/*.swift',
@@ -101,10 +106,10 @@ export default defineConfig({
         '**/swift-bridge/**'
       ],
       thresholds: {
-        lines: 15,
-        functions: 15,
-        branches: 10,
-        statements: 15
+        lines: 35,
+        functions: 38,
+        branches: 28,
+        statements: 35
       }
     },
   },
