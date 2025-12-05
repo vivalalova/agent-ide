@@ -13,14 +13,14 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 ```bash
 pnpm build                    # 建置（含 Swift parser 複製）
 pnpm typecheck                # 型別檢查
-pnpm test                     # 所有測試（3 workers）
+pnpm test                     # 測試（自動含 coverage）
 pnpm test:single              # 單執行緒（記憶體受限）
 pnpm test:bail                # 失敗即停
 pnpm lint                     # ESLint
 npm link                      # 本地 CLI 安裝
 
 # 單一測試檔
-pnpm test -- --run tests/e2e/commands/cli-search.e2e.test.ts
+pnpm test -- --run tests/e2e/commands/cli-symbol-structural.e2e.test.ts
 
 # 匹配測試名稱
 pnpm test -- --run -t "應該分析專案"
@@ -54,6 +54,10 @@ src/
 - **只寫 E2E**：透過 CLI 測試，禁止直接 import 實作類別
 - **memfs 隔離**：所有檔案操作在記憶體中，零硬碟 I/O
 - **Fixture-Based**：`loadFixture('sample-project')` 載入到 memfs
+
+### 🚨 覆蓋率要求
+- `pnpm test` 自動產生覆蓋率報告
+- **覆蓋率不足必須補測試**：確保新增/修改的程式碼有對應測試覆蓋
 
 ### 測試模式
 ```typescript
