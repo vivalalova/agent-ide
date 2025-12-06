@@ -519,12 +519,12 @@ describe('EventBus', () => {
     });
 
     it('should handle unsubscribe during emit', async () => {
-      let unsubscribe: () => void;
-      const handler = vi.fn(() => {
+      // 使用閉包捕獲 unsubscribe 引用，執行時已完成賦值
+      const handler = vi.fn();
+      const unsubscribe = eventBus.subscribe('test.event', () => {
+        handler();
         unsubscribe();
       });
-
-      unsubscribe = eventBus.subscribe('test.event', handler);
 
       await eventBus.emit(createEvent('test.event'));
       await new Promise(resolve => setTimeout(resolve, 10));
