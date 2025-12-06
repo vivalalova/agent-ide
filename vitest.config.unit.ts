@@ -52,12 +52,14 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.resolved',
         '**/swift-bridge/**'
       ],
-      // Unit 測試覆蓋率門檻（覆蓋整個 src/ 後，門檻需逐步提升）
+      // Unit 測試覆蓋率門檻
+      // 註：plugins/, interfaces/cli/commands/ 等模組需要 E2E 測試
+      // 現有 unit 測試已覆蓋 shared/, infrastructure/cache, core/dependency 等
       thresholds: {
-        lines: 10,
-        functions: 10,
-        branches: 5,
-        statements: 10
+        lines: 25,
+        functions: 30,
+        branches: 20,
+        statements: 25
       }
     },
   },

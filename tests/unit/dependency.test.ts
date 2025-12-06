@@ -1,7 +1,244 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DependencyGraph } from '@core/dependency/dependency-graph.js';
 import { CycleDetector } from '@core/dependency/cycle-detector.js';
-import { calculateCycleSeverity } from '@core/dependency/types.js';
+import {
+  calculateCycleSeverity,
+  createDefaultAnalysisOptions,
+  createDefaultQueryOptions,
+  createDefaultCycleDetectionOptions,
+  createDefaultAnalyzerConfig,
+  isFileDependencies,
+  isProjectDependencies,
+  isCircularDependency,
+  type FileDependencies,
+  type ProjectDependencies,
+  type CircularDependency,
+} from '@core/dependency/types.js';
+
+// ============================================================================
+// Types and Factory Functions Tests
+// ============================================================================
+
+describe('Dependency Types Factory Functions', () => {
+  describe('createDefaultAnalysisOptions', () => {
+    it('should return default analysis options', () => {
+      const options = createDefaultAnalysisOptions();
+
+      expect(options.includeNodeModules).toBe(false);
+      expect(options.followSymlinks).toBe(true);
+      expect(options.maxDepth).toBe(100);
+      expect(options.excludePatterns).toContain('node_modules');
+      expect(options.excludePatterns).toContain('.git');
+      expect(options.excludePatterns).toContain('dist');
+      expect(options.excludePatterns).toContain('build');
+      expect(options.includePatterns).toContain('**/*.ts');
+      expect(options.includePatterns).toContain('**/*.js');
+      expect(options.includePatterns).toContain('**/*.tsx');
+      expect(options.includePatterns).toContain('**/*.jsx');
+    });
+  });
+
+  describe('createDefaultQueryOptions', () => {
+    it('should return default query options', () => {
+      const options = createDefaultQueryOptions();
+
+      expect(options.includeTransitive).toBe(false);
+      expect(options.maxDepth).toBe(10);
+      expect(options.direction).toBe('dependencies');
+    });
+  });
+
+  describe('createDefaultCycleDetectionOptions', () => {
+    it('should return default cycle detection options', () => {
+      const options = createDefaultCycleDetectionOptions();
+
+      expect(options.maxCycleLength).toBe(20);
+      expect(options.reportAllCycles).toBe(false);
+      expect(options.ignoreSelfLoops).toBe(true);
+    });
+  });
+
+  describe('createDefaultAnalyzerConfig', () => {
+    it('should return default analyzer config with all nested options', () => {
+      const config = createDefaultAnalyzerConfig();
+
+      expect(config.analysisOptions).toBeDefined();
+      expect(config.analysisOptions.includeNodeModules).toBe(false);
+      expect(config.queryOptions).toBeDefined();
+      expect(config.queryOptions.includeTransitive).toBe(false);
+      expect(config.cycleDetectionOptions).toBeDefined();
+      expect(config.cycleDetectionOptions.maxCycleLength).toBe(20);
+      expect(config.cacheEnabled).toBe(true);
+      expect(config.concurrency).toBe(4);
+    });
+  });
+});
+
+describe('Dependency Type Guards', () => {
+  describe('isFileDependencies', () => {
+    it('should return true for valid file dependencies', () => {
+      const valid: FileDependencies = {
+        filePath: '/path/to/file.ts',
+        dependencies: [],
+        lastModified: new Date(),
+      };
+      expect(isFileDependencies(valid)).toBe(true);
+    });
+
+    it('should return true with non-empty dependencies array', () => {
+      const valid: FileDependencies = {
+        filePath: '/path/to/file.ts',
+        dependencies: [
+          { path: './utils', type: 'import' as const, isRelative: true, importedSymbols: ['foo'] },
+        ],
+        lastModified: new Date(),
+      };
+      expect(isFileDependencies(valid)).toBe(true);
+    });
+
+    it('should return false for null or undefined', () => {
+      expect(isFileDependencies(null)).toBe(false);
+      expect(isFileDependencies(undefined)).toBe(false);
+    });
+
+    it('should return false for empty object', () => {
+      expect(isFileDependencies({})).toBe(false);
+    });
+
+    it('should return false for empty file path', () => {
+      expect(isFileDependencies({ filePath: '', dependencies: [], lastModified: new Date() })).toBe(false);
+      expect(isFileDependencies({ filePath: '  ', dependencies: [], lastModified: new Date() })).toBe(false);
+    });
+
+    it('should return false when dependencies is not an array', () => {
+      expect(isFileDependencies({ filePath: '/test', dependencies: 'not-array', lastModified: new Date() })).toBe(false);
+    });
+
+    it('should return false when lastModified is not a Date', () => {
+      expect(isFileDependencies({ filePath: '/test', dependencies: [], lastModified: 'not-a-date' })).toBe(false);
+      expect(isFileDependencies({ filePath: '/test', dependencies: [], lastModified: 12345 })).toBe(false);
+    });
+  });
+
+  describe('isProjectDependencies', () => {
+    it('should return true for valid project dependencies', () => {
+      const valid: ProjectDependencies = {
+        projectPath: '/path/to/project',
+        fileDependencies: [],
+        analyzedAt: new Date(),
+      };
+      expect(isProjectDependencies(valid)).toBe(true);
+    });
+
+    it('should return true with file dependencies', () => {
+      const valid: ProjectDependencies = {
+        projectPath: '/path/to/project',
+        fileDependencies: [
+          {
+            filePath: '/path/to/file.ts',
+            dependencies: [],
+            lastModified: new Date(),
+          },
+        ],
+        analyzedAt: new Date(),
+      };
+      expect(isProjectDependencies(valid)).toBe(true);
+    });
+
+    it('should return false for null or undefined', () => {
+      expect(isProjectDependencies(null)).toBe(false);
+      expect(isProjectDependencies(undefined)).toBe(false);
+    });
+
+    it('should return false for empty object', () => {
+      expect(isProjectDependencies({})).toBe(false);
+    });
+
+    it('should return false for empty project path', () => {
+      expect(isProjectDependencies({ projectPath: '', fileDependencies: [], analyzedAt: new Date() })).toBe(false);
+      expect(isProjectDependencies({ projectPath: '  ', fileDependencies: [], analyzedAt: new Date() })).toBe(false);
+    });
+
+    it('should return false when fileDependencies contains invalid items', () => {
+      const invalid = {
+        projectPath: '/project',
+        fileDependencies: [{ filePath: '', dependencies: [], lastModified: new Date() }],
+        analyzedAt: new Date(),
+      };
+      expect(isProjectDependencies(invalid)).toBe(false);
+    });
+
+    it('should return false when analyzedAt is not a Date', () => {
+      expect(isProjectDependencies({ projectPath: '/project', fileDependencies: [], analyzedAt: 'not-a-date' })).toBe(false);
+    });
+  });
+
+  describe('isCircularDependency', () => {
+    it('should return true for valid circular dependency', () => {
+      const valid: CircularDependency = {
+        cycle: ['a.ts', 'b.ts'],
+        length: 2,
+        severity: 'low',
+      };
+      expect(isCircularDependency(valid)).toBe(true);
+    });
+
+    it('should return true for all severity levels', () => {
+      const severities: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high'];
+      severities.forEach(severity => {
+        expect(isCircularDependency({
+          cycle: ['a.ts', 'b.ts'],
+          length: 2,
+          severity,
+        })).toBe(true);
+      });
+    });
+
+    it('should return true for longer cycles', () => {
+      expect(isCircularDependency({
+        cycle: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'],
+        length: 5,
+        severity: 'medium',
+      })).toBe(true);
+    });
+
+    it('should return false for null or undefined', () => {
+      expect(isCircularDependency(null)).toBe(false);
+      expect(isCircularDependency(undefined)).toBe(false);
+    });
+
+    it('should return false for empty object', () => {
+      expect(isCircularDependency({})).toBe(false);
+    });
+
+    it('should return false when cycle has less than 2 items', () => {
+      expect(isCircularDependency({ cycle: ['a.ts'], length: 1, severity: 'low' })).toBe(false);
+      expect(isCircularDependency({ cycle: [], length: 0, severity: 'low' })).toBe(false);
+    });
+
+    it('should return false for invalid severity', () => {
+      expect(isCircularDependency({ cycle: ['a.ts', 'b.ts'], length: 2, severity: 'invalid' })).toBe(false);
+      expect(isCircularDependency({ cycle: ['a.ts', 'b.ts'], length: 2, severity: '' })).toBe(false);
+    });
+
+    it('should return false when length is not a number', () => {
+      expect(isCircularDependency({ cycle: ['a.ts', 'b.ts'], length: 'two', severity: 'low' })).toBe(false);
+    });
+
+    it('should return false when length is less than 2', () => {
+      expect(isCircularDependency({ cycle: ['a.ts', 'b.ts'], length: 1, severity: 'low' })).toBe(false);
+    });
+
+    it('should return false when cycle contains non-string items', () => {
+      expect(isCircularDependency({ cycle: [1, 2], length: 2, severity: 'low' })).toBe(false);
+      expect(isCircularDependency({ cycle: ['a.ts', 123], length: 2, severity: 'low' })).toBe(false);
+    });
+  });
+});
+
+// ============================================================================
+// DependencyGraph Tests
+// ============================================================================
 
 describe('DependencyGraph', () => {
   let graph: DependencyGraph;
