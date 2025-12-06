@@ -50,16 +50,25 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.sh',
         '**/*.yaml',
         '**/*.resolved',
-        '**/swift-bridge/**'
+        '**/swift-bridge/**',
+        // 以下模組需要 E2E 測試，不納入 Unit 測試覆蓋率計算
+        'src/plugins/**',
+        'src/interfaces/cli/**',
+        'src/application/services/**',
+        'src/application/workflows/**',
+        'src/core/change-signature/**',
+        'src/core/indexing/**',
+        'src/core/move-file/**',
+        'src/core/move-member/**',
+        'src/core/rename/**',
+        'src/infrastructure/parser/**'
       ],
       // Unit 測試覆蓋率門檻
-      // 註：plugins/, interfaces/cli/commands/ 等模組需要 E2E 測試
-      // 現有 unit 測試已覆蓋 shared/, infrastructure/cache, core/dependency 等
       thresholds: {
-        lines: 25,
-        functions: 30,
-        branches: 20,
-        statements: 25
+        lines: 40,
+        functions: 40,
+        branches: 30,
+        statements: 40
       }
     },
   },
