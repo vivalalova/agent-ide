@@ -104,6 +104,7 @@ agent-ide cycles --path <path>                             # 循環依賴檢測
 agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
 agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
+agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
 ```
 
 ### 變更類命令（支援 --dry-run）
@@ -122,7 +123,7 @@ agent-ide move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
 
 | 命令類型 | 輸出方法 | 結果型別 |
 |---------|---------|---------|
-| 查詢類（cycles, impact, snapshot, find-references） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
+| 查詢類（cycles, impact, snapshot, find-references, call-hierarchy） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
 | 變更類（rename, move, change-signature, move-member） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
 
 ### 新增命令的輸出整合步驟
