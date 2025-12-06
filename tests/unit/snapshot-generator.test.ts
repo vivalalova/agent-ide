@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { SnapshotGenerator } from '@core/snapshot/snapshot-generator.js';
-import { SnapshotScope, type ModuleSnapshot, type ProjectSnapshot } from '@core/snapshot/types.js';
+import {
+  SnapshotScope,
+  type ModuleSnapshot,
+  type ProjectSnapshot,
+  isProjectSnapshot,
+  isModuleSnapshot
+} from '@core/snapshot/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { DirectoryEntry } from '@infrastructure/storage/types.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
@@ -645,6 +651,88 @@ describe('SnapshotGenerator', () => {
       const result = (gen as any).buildModuleSnapshot('test', symbols, '/test');
 
       expect(result.api.MyClass).toBeUndefined();
+    });
+  });
+});
+
+// ===== 型別守衛測試 =====
+
+describe('Snapshot Type Guards', () => {
+  describe('isProjectSnapshot', () => {
+    it('應該回傳 true 對 ProjectSnapshot', () => {
+      const projectSnapshot: ProjectSnapshot = {
+        project: 'test-project',
+        modules: {
+          'src/core': {
+            module: 'src/core',
+            api: {},
+            factories: {},
+            types: {},
+            private: {}
+          }
+        }
+      };
+
+      expect(isProjectSnapshot(projectSnapshot)).toBe(true);
+    });
+
+    it('應該回傳 false 對 ModuleSnapshot', () => {
+      const moduleSnapshot: ModuleSnapshot = {
+        module: 'src/core',
+        api: {},
+        factories: {},
+        types: {},
+        private: {}
+      };
+
+      expect(isProjectSnapshot(moduleSnapshot)).toBe(false);
+    });
+  });
+
+  describe('isModuleSnapshot', () => {
+    it('應該回傳 true 對 ModuleSnapshot', () => {
+      const moduleSnapshot: ModuleSnapshot = {
+        module: 'src/core',
+        api: {},
+        factories: {},
+        types: {},
+        private: {}
+      };
+
+      expect(isModuleSnapshot(moduleSnapshot)).toBe(true);
+    });
+
+    it('應該回傳 false 對 ProjectSnapshot', () => {
+      const projectSnapshot: ProjectSnapshot = {
+        project: 'test-project',
+        modules: {}
+      };
+
+      expect(isModuleSnapshot(projectSnapshot)).toBe(false);
+    });
+
+    it('應該正確區分相似結構', () => {
+      // ModuleSnapshot 有 module 屬性，沒有 modules 屬性
+      const moduleSnapshot: ModuleSnapshot = {
+        module: 'test',
+        api: {},
+        factories: {},
+        types: {},
+        private: {}
+      };
+
+      // ProjectSnapshot 有 modules 屬性
+      const projectSnapshot: ProjectSnapshot = {
+        project: 'test',
+        modules: {
+          'test': moduleSnapshot
+        }
+      };
+
+      expect(isModuleSnapshot(moduleSnapshot)).toBe(true);
+      expect(isModuleSnapshot(projectSnapshot)).toBe(false);
+      expect(isProjectSnapshot(moduleSnapshot)).toBe(false);
+      expect(isProjectSnapshot(projectSnapshot)).toBe(true);
     });
   });
 });

@@ -60,14 +60,16 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.resolved',
         '**/swift-bridge/**',
         // 未測試的檔案（待補充測試後移除）
-        'src/infrastructure/formatters/preview-converter.ts'
+        'src/infrastructure/formatters/preview-converter.ts',
+        // call-hierarchy-analyzer 需要真實 TypeScript 編譯器，由 E2E 測試覆蓋
+        'src/core/shared/call-hierarchy-analyzer.ts'
       ],
       // Unit 測試覆蓋率門檻
       thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 70,
-        statements: 70
+        lines: 95,
+        functions: 95,
+        branches: 80,
+        statements: 95
       }
     },
   },

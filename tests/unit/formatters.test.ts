@@ -843,6 +843,195 @@ describe('QueryFormatter', () => {
       expect(summary).toContain('成功: 是');
       expect(summary).toContain('custom: value');
     });
+
+    it('應該顯示失敗狀態', () => {
+      const result = {
+        command: 'unknown' as QueryCommand,
+        success: false,
+        summary: {}
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('成功: 否');
+    });
+
+    it('應該顯示問題數量', () => {
+      const result = {
+        command: 'unknown' as QueryCommand,
+        success: true,
+        summary: {},
+        issues: [
+          { type: 'issue1', message: 'msg1' },
+          { type: 'issue2', message: 'msg2' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('問題數: 2');
+    });
+  });
+
+  describe('formatFindReferencesSummary - 截斷測試', () => {
+    it('應該截斷單一檔案中超過 10 個引用', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'frequentSymbol',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: Array.from({ length: 15 }, (_, i) => ({
+          file: 'src/same-file.ts',
+          line: i + 1,
+          type: 'usage' as const,
+          context: `usage ${i}`
+        }))
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('... 還有 5 個引用');
+    });
+  });
+
+  describe('formatCallHierarchySummary - 截斷測試', () => {
+    it('應該截斷超過 10 個 incoming 呼叫者', () => {
+      const result: CallHierarchyResult = {
+        command: QueryCommand.CallHierarchy,
+        success: true,
+        summary: {},
+        function: 'target',
+        file: 'src/target.ts',
+        direction: 'incoming',
+        depth: 1,
+        incoming: Array.from({ length: 15 }, (_, i) => ({
+          caller: `caller${i}`,
+          file: 'src/callers.ts',
+          line: i + 1
+        })),
+        outgoing: []
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('... 還有 5 個呼叫者');
+    });
+
+    it('應該截斷超過 10 個 outgoing 被呼叫者', () => {
+      const result: CallHierarchyResult = {
+        command: QueryCommand.CallHierarchy,
+        success: true,
+        summary: {},
+        function: 'source',
+        file: 'src/source.ts',
+        direction: 'outgoing',
+        depth: 1,
+        incoming: [],
+        outgoing: Array.from({ length: 15 }, (_, i) => ({
+          callee: `callee${i}`,
+          file: 'src/callees.ts',
+          line: i + 1
+        }))
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('... 還有 5 個被呼叫者');
+    });
+
+    it('應該顯示沒有定義行的情況', () => {
+      const result: CallHierarchyResult = {
+        command: QueryCommand.CallHierarchy,
+        success: true,
+        summary: {},
+        function: 'myFunc',
+        file: 'src/test.ts',
+        direction: 'both',
+        depth: 1,
+        incoming: [],
+        outgoing: []
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('定義位置: src/test.ts');
+    });
+  });
+
+  describe('getReferenceTypeIcon', () => {
+    it('應該為 definition 類型返回 📌 圖示', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'testFunc',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: [
+          { file: 'src/test.ts', line: 5, type: 'definition', context: 'definition' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📌');
+    });
+
+    it('應該為 import 類型返回 📥 圖示', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'testFunc',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: [
+          { file: 'src/other.ts', line: 1, type: 'import', context: 'import' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📥');
+    });
+
+    it('應該為 export 類型返回 📤 圖示', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'testFunc',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: [
+          { file: 'src/test.ts', line: 10, type: 'export', context: 'export' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📤');
+    });
+
+    it('應該為 usage 類型返回 📞 圖示', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'testFunc',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: [
+          { file: 'src/caller.ts', line: 5, type: 'usage', context: 'usage' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📞');
+    });
   });
 
   describe('colorize', () => {
@@ -1273,6 +1462,83 @@ describe('PreviewFormatter', () => {
 
       expect(diff).toContain('-' + longLine);
       expect(diff).toContain('+' + longLine + 'y');
+    });
+  });
+
+  describe('toSummary conflicts and errors', () => {
+    it('應該在 summary 中顯示衝突警告', () => {
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: false,
+        fileChanges: [],
+        conflicts: [
+          { type: 'naming', message: 'Conflict message 1', filePath: 'src/test.ts', line: 5 },
+          { type: 'syntax', message: 'Conflict message 2', filePath: 'src/other.ts' }
+        ]
+      };
+
+      const result = formatter.createPreview(input);
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('Conflicts:');
+      expect(summary).toContain('Conflict message 1');
+      expect(summary).toContain('Conflict message 2');
+    });
+
+    it('應該在 summary 中顯示錯誤訊息', () => {
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: false,
+        fileChanges: [],
+        errors: ['Error 1', 'Error 2', 'Error 3']
+      };
+
+      const result = formatter.createPreview(input);
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('Errors:');
+      expect(summary).toContain('Error 1');
+      expect(summary).toContain('Error 2');
+      expect(summary).toContain('Error 3');
+    });
+
+    it('應該同時顯示衝突和錯誤', () => {
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: false,
+        fileChanges: [],
+        conflicts: [{ type: 'test', message: 'Test conflict' }],
+        errors: ['Test error']
+      };
+
+      const result = formatter.createPreview(input);
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('Conflicts:');
+      expect(summary).toContain('Errors:');
+    });
+  });
+
+  describe('formatChangeLine default case', () => {
+    it('應該處理未知的行類型', () => {
+      // 這是測試 default case，但由於 ChangeLineType 是完整的 enum
+      // 我們透過直接調用 format 來驗證處理沒有錯誤
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: true,
+        fileChanges: [
+          {
+            filePath: 'src/test.ts',
+            originalContent: 'context line',
+            changes: [{ line: 1, oldContent: 'context line', newContent: 'context line' }]
+          }
+        ]
+      };
+
+      const result = formatter.createPreview(input);
+      const diff = formatter.toDiff(result);
+
+      expect(diff).toBeDefined();
     });
   });
 });

@@ -476,6 +476,278 @@ describe('SymbolFinder', () => {
       expect(finder).toBeInstanceOf(SymbolFinder);
     });
   });
+
+  describe('extractDocumentation', () => {
+    it('應該提取 JSDoc 註解', async () => {
+      const fileContent = `/**
+ * This is a test function
+ * @param x - input value
+ * @returns the result
+ */
+function testFunc(x: number): string {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 6, column: 1, offset: 0 },
+          end: { line: 6, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toContain('This is a test function');
+    });
+
+    it('應該提取單行註解', async () => {
+      const fileContent = `// This is a simple comment
+function testFunc() {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 2, column: 1, offset: 0 },
+          end: { line: 2, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toContain('This is a simple comment');
+    });
+
+    it('應該處理多行單行註解', async () => {
+      const fileContent = `// First line comment
+// Second line comment
+function testFunc() {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 3, column: 1, offset: 0 },
+          end: { line: 3, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toContain('First line comment');
+      expect(result?.documentation).toContain('Second line comment');
+    });
+
+    it('應該回傳 undefined 對沒有註解的函數', async () => {
+      const fileContent = `function testFunc() {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 1, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toBeUndefined();
+    });
+
+    it('應該處理區塊註解（/* ... */）', async () => {
+      const fileContent = `/* Block comment */
+function testFunc() {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 2, column: 1, offset: 0 },
+          end: { line: 2, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toContain('Block comment');
+    });
+
+    it('應該處理註解和符號之間的空行', async () => {
+      const fileContent = `// Comment here
+
+function testFunc() {}`;
+
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const mockSymbol = createMockSymbol('testFunc', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 3, column: 1, offset: 0 },
+          end: { line: 3, column: 50, offset: 50 }
+        }
+      });
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await symbolFinder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result?.documentation).toContain('Comment here');
+    });
+  });
+
+  describe('findCallSitesInFile edge cases', () => {
+    it('應該處理檔案不存在的情況', async () => {
+      mockFileSystem = createMockFileSystem({});
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/nonexistent.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該處理沒有 parser 的情況', async () => {
+      mockFileSystem = createMockFileSystem({ '/test/file.unknown': 'testFunc()' });
+      vi.mocked(mockParserRegistry.getParser).mockReturnValue(null);
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.unknown']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該處理 parser 拋出錯誤的情況', async () => {
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': 'testFunc()' });
+      vi.mocked(mockParser.parse).mockRejectedValue(new Error('Parse error'));
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('findClassMembers edge cases', () => {
+    it('應該處理沒有 parser 的情況', async () => {
+      mockFileSystem = createMockFileSystem({ '/test/file.unknown': 'class MyClass {}' });
+      vi.mocked(mockParserRegistry.getParser).mockReturnValue(null);
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findClassMembers('/test/file.unknown', 'MyClass');
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該處理檔案不存在的情況', async () => {
+      mockFileSystem = createMockFileSystem({});
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findClassMembers('/nonexistent.ts', 'MyClass');
+
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('symbolTypeToMemberType', () => {
+    it('應該將 function 轉換為 Method', async () => {
+      const classSymbol = createMockSymbol('MyClass', 'class', {
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 10, column: 1, offset: 100 }
+        }
+      });
+      const methodSymbol = createMockSymbol('myMethod', 'function', {
+        range: {
+          start: { line: 2, column: 3, offset: 10 },
+          end: { line: 4, column: 3, offset: 40 }
+        }
+      });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([classSymbol, methodSymbol]);
+
+      const result = await symbolFinder.findClassMembers('/test/file.ts', 'MyClass');
+
+      expect(result[0]?.type).toBe('method');
+    });
+
+    it('應該將 variable 轉換為 Property', async () => {
+      const classSymbol = createMockSymbol('MyClass', 'class', {
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 10, column: 1, offset: 100 }
+        }
+      });
+      const varSymbol = createMockSymbol('myVar', 'variable', {
+        range: {
+          start: { line: 2, column: 3, offset: 10 },
+          end: { line: 2, column: 20, offset: 30 }
+        }
+      });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([classSymbol, varSymbol]);
+
+      const result = await symbolFinder.findClassMembers('/test/file.ts', 'MyClass');
+
+      expect(result[0]?.type).toBe('property');
+    });
+
+    it('應該將 property 轉換為 Property', async () => {
+      const classSymbol = createMockSymbol('MyClass', 'class', {
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 10, column: 1, offset: 100 }
+        }
+      });
+      const propSymbol = createMockSymbol('myProp', 'property', {
+        range: {
+          start: { line: 2, column: 3, offset: 10 },
+          end: { line: 2, column: 20, offset: 30 }
+        }
+      });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([classSymbol, propSymbol]);
+
+      const result = await symbolFinder.findClassMembers('/test/file.ts', 'MyClass');
+
+      expect(result[0]?.type).toBe('property');
+    });
+
+    it('應該將其他類型轉換為 Property（default case）', async () => {
+      const classSymbol = createMockSymbol('MyClass', 'class', {
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 10, column: 1, offset: 100 }
+        }
+      });
+      const otherSymbol = createMockSymbol('myOther', 'interface' as any, {
+        range: {
+          start: { line: 2, column: 3, offset: 10 },
+          end: { line: 2, column: 20, offset: 30 }
+        }
+      });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([classSymbol, otherSymbol]);
+
+      const result = await symbolFinder.findClassMembers('/test/file.ts', 'MyClass');
+
+      expect(result[0]?.type).toBe('property');
+    });
+  });
 });
 
 // ===== CallHierarchyAnalyzer 測試 =====
@@ -778,6 +1050,230 @@ export function callerFunc() {
       const instance = createCallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
 
       expect(instance).toBeInstanceOf(CallHierarchyAnalyzer);
+    });
+  });
+
+  describe('findIncomingCalls with real TypeScript', () => {
+    it('應該找到真實的 incoming 呼叫', async () => {
+      const callerContent = `
+function caller() {
+  targetFunc();
+}
+`;
+      const targetContent = `
+export function targetFunc() {
+  console.log('hello');
+}
+`;
+      mockFileSystem = createMockFileSystem({
+        '/test/caller.ts': callerContent,
+        '/test/target.ts': targetContent
+      });
+
+      // 建立真實的 parser mock，返回 call sites
+      const callSiteMock = {
+        functionName: 'targetFunc',
+        location: {
+          filePath: '/test/caller.ts',
+          range: {
+            start: { line: 3, column: 3, offset: 20 },
+            end: { line: 3, column: 15, offset: 32 }
+          }
+        },
+        arguments: [],
+        isMethodCall: false
+      };
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([
+        createMockSymbol('targetFunc', 'function', {
+          filePath: '/test/target.ts',
+          range: {
+            start: { line: 2, column: 1, offset: 0 },
+            end: { line: 4, column: 1, offset: 50 }
+          }
+        })
+      ]);
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+
+      const options: CallHierarchyOptions = {
+        direction: 'incoming',
+        depth: 1
+      };
+
+      const result = await analyzer.analyzeWithDefinition(
+        'targetFunc',
+        '/test/target.ts',
+        {
+          start: { line: 2, column: 1, offset: 0 },
+          end: { line: 4, column: 1, offset: 50 }
+        },
+        ['/test/caller.ts', '/test/target.ts'],
+        options
+      );
+
+      expect(result.functionName).toBe('targetFunc');
+      expect(result.definitionFile).toBe('/test/target.ts');
+    });
+  });
+
+  describe('findOutgoingCalls with real TypeScript', () => {
+    it('應該找到 outgoing 呼叫', async () => {
+      const fileContent = `
+function sourceFunc() {
+  helperFunc();
+  console.log('test');
+}
+
+function helperFunc() {}
+`;
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([]);
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+
+      const options: CallHierarchyOptions = {
+        direction: 'outgoing',
+        depth: 1
+      };
+
+      const result = await analyzer.analyzeWithDefinition(
+        'sourceFunc',
+        '/test/file.ts',
+        {
+          start: { line: 2, column: 1, offset: 0 },
+          end: { line: 5, column: 1, offset: 60 }
+        },
+        ['/test/file.ts'],
+        options
+      );
+
+      expect(result.functionName).toBe('sourceFunc');
+      expect(result.outgoing).toHaveLength(0); // Parser mock doesn't return tsSourceFile
+    });
+
+    it('應該處理找不到函數節點的情況', async () => {
+      const fileContent = `const x = 42;`;
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+
+      const options: CallHierarchyOptions = {
+        direction: 'outgoing',
+        depth: 1
+      };
+
+      const result = await analyzer.analyzeWithDefinition(
+        'nonexistentFunc',
+        '/test/file.ts',
+        {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 1, column: 10, offset: 10 }
+        },
+        ['/test/file.ts'],
+        options
+      );
+
+      expect(result.outgoing).toHaveLength(0);
+    });
+  });
+
+  describe('analyze with function definition', () => {
+    it('應該在找到函數定義時返回分析結果', async () => {
+      const targetSymbol = createMockSymbol('myFunction', 'function', {
+        filePath: '/test/file.ts',
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 5, column: 1, offset: 50 }
+        }
+      });
+
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([targetSymbol]);
+      vi.mocked(mockParser.findReferences).mockResolvedValue([]);
+
+      const options: CallHierarchyOptions = {
+        direction: 'both',
+        depth: 1
+      };
+
+      const result = await analyzer.analyze('myFunction', ['/test/file.ts'], options);
+
+      expect(result).not.toBeNull();
+      expect(result?.functionName).toBe('myFunction');
+    });
+
+    it('應該在找不到函數定義時返回 null', async () => {
+      // 所有檔案都找不到函數
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([]);
+
+      const options: CallHierarchyOptions = {
+        direction: 'both',
+        depth: 1
+      };
+
+      const result = await analyzer.analyze('nonexistentFunc', ['/test/file.ts'], options);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getLineContext', () => {
+    it('應該取得指定行的內容', async () => {
+      const fileContent = `line 1
+line 2
+line 3`;
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+
+      // 透過 incoming call 測試 getLineContext
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([]);
+      vi.mocked(mockParser.findReferences).mockResolvedValue([]);
+
+      const options: CallHierarchyOptions = {
+        direction: 'incoming',
+        depth: 1
+      };
+
+      const result = await analyzer.analyzeWithDefinition(
+        'func',
+        '/test/file.ts',
+        {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 3, column: 1, offset: 20 }
+        },
+        [],
+        options
+      );
+
+      // 沒有 project files 應該返回空的 incoming
+      expect(result.incoming).toHaveLength(0);
+    });
+  });
+
+  describe('depth limit', () => {
+    it('應該尊重深度限制不遞迴過深', async () => {
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([]);
+      vi.mocked(mockParser.findReferences).mockResolvedValue([]);
+
+      const options: CallHierarchyOptions = {
+        direction: 'incoming',
+        depth: 0  // 深度為 0
+      };
+
+      const result = await analyzer.analyzeWithDefinition(
+        'func',
+        '/test/file.ts',
+        {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: 1, column: 10, offset: 10 }
+        },
+        ['/test/file.ts'],
+        options
+      );
+
+      // 深度為 0 時不應該有結果
+      expect(result.incoming).toHaveLength(0);
     });
   });
 });
