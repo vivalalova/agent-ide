@@ -59,8 +59,10 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.summary).toBeDefined();
-      expect(output.summary.totalReferences).toBeGreaterThan(0);
-      expect(output.summary.filesAffected).toBeGreaterThan(0);
+      // lib.ts 定義 + a.ts/b.ts 各有 import 和使用 = 至少 5 個引用
+      expect(output.summary.totalReferences).toBeGreaterThanOrEqual(5);
+      // 至少 3 個檔案（lib.ts, a.ts, b.ts）會受影響
+      expect(output.summary.filesAffected).toBeGreaterThanOrEqual(3);
     });
   });
 
@@ -78,7 +80,9 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(output.definition).toBeDefined();
       if (output.definition) {
         expect(output.definition.file).toContain('def.ts');
-        expect(output.definition.line).toBeGreaterThan(0);
+        // 定義應在合理行號範圍內
+        expect(output.definition.line).toBeGreaterThanOrEqual(1);
+        expect(output.definition.line).toBeLessThanOrEqual(5);
       }
     });
 

@@ -30,6 +30,9 @@ export type {
 // 列舉
 export { UpdateOperation } from './types.js';
 
+// 常數
+export { CLI_INDEX_DEFAULTS } from './types.js';
+
 // 工廠函式
 export {
   createFileInfo,

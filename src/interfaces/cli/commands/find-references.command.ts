@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
 import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
@@ -67,11 +67,7 @@ async function handleFindReferencesCommand(
   const projectPath = options.path || process.cwd();
 
   // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, {
-    includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
-    excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'],
-    enablePersistence: false
-  });
+  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
 
   const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
 
@@ -141,9 +137,6 @@ async function handleFindReferencesCommand(
 
     outputHandler.outputError(`${errorPrefix}: ${errorMessage}`, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') {
-      process.exit(1);
-    }
   } finally {
     indexEngine.dispose();
   }

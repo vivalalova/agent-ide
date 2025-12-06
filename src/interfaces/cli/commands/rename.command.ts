@@ -137,7 +137,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     if (searchResults.length === 0) {
       outputHandler.outputError(`找不到符號 "${from}"`, format, 'rename');
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -187,7 +186,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
         outputHandler.outputError(`預覽失敗: ${errorMsg}`, format, 'rename');
         process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
       }
     }
@@ -238,7 +236,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       const errorMsg = renameResult.errors?.join(', ') || '重新命名失敗';
       outputHandler.outputError(errorMsg, format, 'rename');
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
     } finally {
       indexEngine.dispose();
@@ -247,7 +244,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const errorMsg = error instanceof Error ? error.message : String(error);
     outputHandler.outputError(`重新命名失敗: ${errorMsg}`, format, 'rename');
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
 

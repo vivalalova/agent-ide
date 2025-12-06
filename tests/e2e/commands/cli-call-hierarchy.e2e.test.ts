@@ -462,7 +462,9 @@ export const arrowFn = () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
       expect(output.file).toContain('array-utils.ts');
-      expect(output.definitionLine).toBeGreaterThan(0);
+      // unique 函數定義在 array-utils.ts 前 10 行內
+      expect(output.definitionLine).toBeGreaterThanOrEqual(1);
+      expect(output.definitionLine).toBeLessThanOrEqual(10);
     });
 
     it('應該返回正確的定義行號', async () => {
@@ -474,7 +476,9 @@ export const arrowFn = () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
       expect(output.file).toContain('formatter.ts');
-      expect(typeof output.definitionLine).toBe('number');
+      // formatCurrency 函數定義在 formatter.ts 中（前 30 行內）
+      expect(output.definitionLine).toBeGreaterThanOrEqual(1);
+      expect(output.definitionLine).toBeLessThanOrEqual(30);
     });
   });
 

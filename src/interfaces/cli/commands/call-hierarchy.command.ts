@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   createCallHierarchyAnalyzer,
@@ -90,11 +90,7 @@ async function handleCallHierarchyCommand(
   const projectPath = options.path || process.cwd();
 
   // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, {
-    includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
-    excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'],
-    enablePersistence: false
-  });
+  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
 
   const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
 
@@ -202,9 +198,6 @@ async function handleCallHierarchyCommand(
     const errorMessage = error instanceof Error ? error.message : String(error);
     outputHandler.outputError(`呼叫層次分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') {
-      process.exit(1);
-    }
   } finally {
     indexEngine.dispose();
   }
