@@ -59,8 +59,8 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.summary).toBeDefined();
-      expect(output.summary.totalReferences).toBeGreaterThanOrEqual(0);
-      expect(output.summary.filesAffected).toBeGreaterThanOrEqual(0);
+      expect(output.summary.totalReferences).toBeGreaterThan(0);
+      expect(output.summary.filesAffected).toBeGreaterThan(0);
     });
   });
 
@@ -122,7 +122,8 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.references.length).toBeGreaterThanOrEqual(0);
+      expect(output.references).toBeDefined();
+      expect(Array.isArray(output.references)).toBe(true);
     });
 
     it('應該查找函數呼叫引用', async () => {
@@ -136,7 +137,8 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.references.length).toBeGreaterThanOrEqual(0);
+      expect(output.references).toBeDefined();
+      expect(Array.isArray(output.references)).toBe(true);
     });
   });
 
@@ -155,7 +157,7 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
-      expect(output.summary.filesAffected).toBeGreaterThanOrEqual(0);
+      expect(typeof output.summary.filesAffected).toBe('number');
     });
 
     it('應該處理 re-export 的引用', async () => {
@@ -236,7 +238,7 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
-      expect(output.summary.filesAffected).toBeGreaterThanOrEqual(0);
+      expect(typeof output.summary.filesAffected).toBe('number');
     });
 
     it('應該處理深層嵌套的符號引用', async () => {
