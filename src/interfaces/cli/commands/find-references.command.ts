@@ -79,62 +79,64 @@ async function handleFindReferencesCommand(
     };
 
     const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
-    await indexEngine.indexProject(projectPath);
 
-    // 取得所有已索引檔案路徑
-    const indexedFiles = indexEngine.getAllIndexedFiles();
-    const filePaths = indexedFiles.map(f => f.filePath);
+    try {
+      await indexEngine.indexProject(projectPath);
 
-    // 查找符號定義
-    const symbolResults = await indexEngine.findSymbol(symbolName);
-    let definition: DefinitionLocation | null = null;
-    let symbolType = 'unknown';
+      // 取得所有已索引檔案路徑
+      const indexedFiles = indexEngine.getAllIndexedFiles();
+      const filePaths = indexedFiles.map(f => f.filePath);
 
-    if (symbolResults.length > 0) {
-      const firstResult = symbolResults[0];
-      definition = {
-        file: firstResult.symbol.location.filePath,
-        line: firstResult.symbol.location.range.start.line,
-        column: firstResult.symbol.location.range.start.column
-      };
-      symbolType = firstResult.symbol.type;
-    }
+      // 查找符號定義
+      const symbolResults = await indexEngine.findSymbol(symbolName);
+      let definition: DefinitionLocation | null = null;
+      let symbolType = 'unknown';
 
-    // 建立 SymbolFinder 查找所有引用
-    const parserRegistry = ParserRegistry.getInstance();
-    const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
-    const refs = await symbolFinder.findReferences(symbolName, filePaths);
-
-    // 轉換為輸出格式
-    const references: ReferenceItem[] = refs.map(ref => ({
-      file: ref.location.filePath,
-      line: ref.location.range.start.line,
-      column: ref.location.range.start.column,
-      type: mapReferenceType(ref.type),
-      context: ref.context || ''
-    }));
-
-    // 計算影響檔案數
-    const filesAffected = new Set(references.map(r => r.file)).size;
-
-    // 組裝結果
-    const result: FindReferencesResult = {
-      command: QueryCommand.FindReferences,
-      success: true,
-      symbol: symbolName,
-      type: symbolType,
-      definition,
-      references,
-      summary: {
-        totalReferences: references.length,
-        filesAffected
+      if (symbolResults.length > 0) {
+        const firstResult = symbolResults[0];
+        definition = {
+          file: firstResult.symbol.location.filePath,
+          line: firstResult.symbol.location.range.start.line,
+          column: firstResult.symbol.location.range.start.column
+        };
+        symbolType = firstResult.symbol.type;
       }
-    };
 
-    outputHandler.outputQuery(result, format);
+      // 建立 SymbolFinder 查找所有引用
+      const parserRegistry = ParserRegistry.getInstance();
+      const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
+      const refs = await symbolFinder.findReferences(symbolName, filePaths);
 
-    // 釋放資源
-    indexEngine.dispose();
+      // 轉換為輸出格式
+      const references: ReferenceItem[] = refs.map(ref => ({
+        file: ref.location.filePath,
+        line: ref.location.range.start.line,
+        column: ref.location.range.start.column,
+        type: mapReferenceType(ref.type),
+        context: ref.context || ''
+      }));
+
+      // 計算影響檔案數
+      const filesAffected = new Set(references.map(r => r.file)).size;
+
+      // 組裝結果
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        symbol: symbolName,
+        type: symbolType,
+        definition,
+        references,
+        summary: {
+          totalReferences: references.length,
+          filesAffected
+        }
+      };
+
+      outputHandler.outputQuery(result, format);
+    } finally {
+      indexEngine.dispose();
+    }
   } catch (error) {
     handleError(error, format);
   }

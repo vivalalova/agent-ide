@@ -102,109 +102,110 @@ async function handleCallHierarchyCommand(
     };
 
     const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
-    await indexEngine.indexProject(projectPath);
 
-    const indexedFiles = indexEngine.getAllIndexedFiles();
-    const filePaths = indexedFiles.map(f => f.filePath);
+    try {
+      await indexEngine.indexProject(projectPath);
 
-    // 使用 IndexEngine 查找函數定義（與 find-references 相同的方式）
-    const symbolResults = await indexEngine.findSymbol(functionName);
+      const indexedFiles = indexEngine.getAllIndexedFiles();
+      const filePaths = indexedFiles.map(f => f.filePath);
 
-    // 優先找 function，但也接受其他類型（如 variable 用於 arrow function）
-    const functionSymbol = symbolResults.find(r => r.symbol.type === 'function')
-      || symbolResults.find(r => r.symbol.type === 'variable')
-      || symbolResults[0];
+      // 使用 IndexEngine 查找函數定義（與 find-references 相同的方式）
+      const symbolResults = await indexEngine.findSymbol(functionName);
 
-    // 函數找不到的情況
-    if (!functionSymbol) {
-      const errorResult: CallHierarchyResult = {
+      // 優先找 function，但也接受其他類型（如 variable 用於 arrow function）
+      const functionSymbol = symbolResults.find(r => r.symbol.type === 'function')
+        || symbolResults.find(r => r.symbol.type === 'variable')
+        || symbolResults[0];
+
+      // 函數找不到的情況
+      if (!functionSymbol) {
+        const errorResult: CallHierarchyResult = {
+          command: QueryCommand.CallHierarchy,
+          success: false,
+          function: functionName,
+          file: '',
+          direction,
+          depth,
+          incoming: [],
+          outgoing: [],
+          summary: {
+            incomingCount: 0,
+            outgoingCount: 0,
+            uniqueFiles: 0
+          },
+          errors: [`找不到函數 "${functionName}"`]
+        };
+        outputHandler.outputQuery(errorResult, format);
+        process.exitCode = 1;
+        return;
+      }
+
+      // 取得函數定義位置
+      const definitionFile = functionSymbol.symbol.location.filePath;
+      const definitionLine = functionSymbol.symbol.location.range.start.line;
+      const definitionRange = functionSymbol.symbol.location.range;
+
+      // 建立分析器並執行分析
+      const parserRegistry = ParserRegistry.getInstance();
+      const analyzer = createCallHierarchyAnalyzer(parserRegistry, context.fileSystem);
+
+      const analysisOptions: CallHierarchyOptions = {
+        direction,
+        depth
+      };
+
+      const analysisResult = await analyzer.analyzeWithDefinition(
+        functionName,
+        definitionFile,
+        definitionRange,
+        filePaths,
+        analysisOptions
+      );
+
+      // 轉換為輸出格式
+      const incoming: IncomingCallItem[] = analysisResult.incoming.map(call => ({
+        caller: call.caller,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      }));
+
+      const outgoing: OutgoingCallItem[] = analysisResult.outgoing.map(call => ({
+        callee: call.callee,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      }));
+
+      // 計算涉及的檔案數
+      const uniqueFiles = new Set([
+        ...incoming.map(i => i.file),
+        ...outgoing.map(o => o.file)
+      ]).size;
+
+      const result: CallHierarchyResult = {
         command: QueryCommand.CallHierarchy,
-        success: false,
+        success: true,
         function: functionName,
-        file: '',
+        file: definitionFile,
+        definitionLine,
         direction,
         depth,
-        incoming: [],
-        outgoing: [],
+        incoming,
+        outgoing,
         summary: {
-          incomingCount: 0,
-          outgoingCount: 0,
-          uniqueFiles: 0
-        },
-        errors: [`找不到函數 "${functionName}"`]
+          incomingCount: incoming.length,
+          outgoingCount: outgoing.length,
+          uniqueFiles
+        }
       };
-      outputHandler.outputQuery(errorResult, format);
-      process.exitCode = 1;
+
+      outputHandler.outputQuery(result, format);
+    } finally {
       indexEngine.dispose();
-      return;
     }
-
-    // 取得函數定義位置
-    const definitionFile = functionSymbol.symbol.location.filePath;
-    const definitionLine = functionSymbol.symbol.location.range.start.line;
-    const definitionRange = functionSymbol.symbol.location.range;
-
-    // 建立分析器並執行分析
-    const parserRegistry = ParserRegistry.getInstance();
-    const analyzer = createCallHierarchyAnalyzer(parserRegistry, context.fileSystem);
-
-    const analysisOptions: CallHierarchyOptions = {
-      direction,
-      depth
-    };
-
-    const analysisResult = await analyzer.analyzeWithDefinition(
-      functionName,
-      definitionFile,
-      definitionRange,
-      filePaths,
-      analysisOptions
-    );
-
-    // 轉換為輸出格式
-    const incoming: IncomingCallItem[] = analysisResult.incoming.map(call => ({
-      caller: call.caller,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
-
-    const outgoing: OutgoingCallItem[] = analysisResult.outgoing.map(call => ({
-      callee: call.callee,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
-
-    // 計算涉及的檔案數
-    const uniqueFiles = new Set([
-      ...incoming.map(i => i.file),
-      ...outgoing.map(o => o.file)
-    ]).size;
-
-    const result: CallHierarchyResult = {
-      command: QueryCommand.CallHierarchy,
-      success: true,
-      function: functionName,
-      file: definitionFile,
-      definitionLine,
-      direction,
-      depth,
-      incoming,
-      outgoing,
-      summary: {
-        incomingCount: incoming.length,
-        outgoingCount: outgoing.length,
-        uniqueFiles
-      }
-    };
-
-    outputHandler.outputQuery(result, format);
-
-    // 釋放資源
-    indexEngine.dispose();
   } catch (error) {
     handleError(error, format);
   }

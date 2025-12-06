@@ -127,10 +127,12 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       excludePatterns: ['node_modules/**', '*.test.*']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);
-    await indexEngine.indexProject(workspacePath);
 
-    // 初始化重新命名引擎（傳入 fileSystem）
-    const renameEngine = new RenameEngine(undefined, context.fileSystem);
+    try {
+      await indexEngine.indexProject(workspacePath);
+
+      // 初始化重新命名引擎（傳入 fileSystem）
+      const renameEngine = new RenameEngine(undefined, context.fileSystem);
 
     // 1. 查找符號
     if (!isJsonFormat) {
@@ -261,7 +263,9 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
-
+    } finally {
+      indexEngine.dispose();
+    }
   } catch (error) {
     if (isJsonFormat) {
       console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));

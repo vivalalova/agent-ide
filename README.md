@@ -38,6 +38,8 @@ pnpm install && pnpm build && npm link
 | `cycles`           | Detect circular dependencies             | json, summary       |
 | `impact`           | Analyze file impact range                | json, summary       |
 | `snapshot`         | Generate module/project snapshots for AI | json, summary       |
+| `find-references`  | Find symbol definitions and references   | json, summary       |
+| `call-hierarchy`   | Analyze function call hierarchy          | json, summary       |
 
 ## 📖 Documentation
 
