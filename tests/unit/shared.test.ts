@@ -548,7 +548,7 @@ function testFunc() {}`;
     });
 
     it('應該回傳 undefined 對沒有註解的函數', async () => {
-      const fileContent = `function testFunc() {}`;
+      const fileContent = 'function testFunc() {}';
 
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
@@ -1154,7 +1154,7 @@ function helperFunc() {}
     });
 
     it('應該處理找不到函數節點的情況', async () => {
-      const fileContent = `const x = 42;`;
+      const fileContent = 'const x = 42;';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
 
       analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);

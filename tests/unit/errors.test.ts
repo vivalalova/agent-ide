@@ -305,7 +305,7 @@ describe('ParserError', () => {
 describe('DuplicateParserError', () => {
   it('should create error with parser name', () => {
     const error = new DuplicateParserError('TypeScript');
-    expect(error.message).toContain("Parser 'TypeScript' 已經註冊");
+    expect(error.message).toContain('Parser \'TypeScript\' 已經註冊');
     expect(error.code).toBe('DUPLICATE_PARSER_ERROR');
   });
 
@@ -319,25 +319,25 @@ describe('DuplicateParserError', () => {
 describe('ParserNotFoundError', () => {
   it('should create error for parser name', () => {
     const error = new ParserNotFoundError('TypeScript', 'name');
-    expect(error.message).toContain("找不到 Parser 'TypeScript' 的 Parser");
+    expect(error.message).toContain('找不到 Parser \'TypeScript\' 的 Parser');
     expect(error.code).toBe('PARSER_NOT_FOUND_ERROR');
   });
 
   it('should create error for extension', () => {
     const error = new ParserNotFoundError('.ts', 'extension');
-    expect(error.message).toContain("支援副檔名 '.ts'");
+    expect(error.message).toContain('支援副檔名 \'.ts\'');
   });
 
   it('should create error for language', () => {
     const error = new ParserNotFoundError('typescript', 'language');
-    expect(error.message).toContain("支援語言 'typescript'");
+    expect(error.message).toContain('支援語言 \'typescript\'');
   });
 });
 
 describe('IncompatibleVersionError', () => {
   it('should create error with version info', () => {
     const error = new IncompatibleVersionError('TypeScript', '5.0', '4.0');
-    expect(error.message).toContain("Parser 'TypeScript' 版本不相容");
+    expect(error.message).toContain('Parser \'TypeScript\' 版本不相容');
     expect(error.message).toContain('期望 5.0');
     expect(error.message).toContain('實際 4.0');
     expect(error.code).toBe('INCOMPATIBLE_VERSION_ERROR');
@@ -347,7 +347,7 @@ describe('IncompatibleVersionError', () => {
 describe('ParserInitializationError', () => {
   it('should create error with reason', () => {
     const error = new ParserInitializationError('TypeScript', 'Missing dependency');
-    expect(error.message).toContain("Parser 'TypeScript' 初始化失敗");
+    expect(error.message).toContain('Parser \'TypeScript\' 初始化失敗');
     expect(error.message).toContain('Missing dependency');
     expect(error.code).toBe('PARSER_INITIALIZATION_ERROR');
   });
