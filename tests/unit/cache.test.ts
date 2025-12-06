@@ -20,6 +20,14 @@ import {
   type CacheEvent
 } from '@infrastructure/cache/types.js';
 
+// === 測試常數 ===
+const DEFAULT_CACHE_SIZE = 5;
+const SMALL_CACHE_SIZE = 3;
+const LARGE_ITERATION_COUNT = 10;
+const DEFAULT_TTL_MS = 1000;
+const SHORT_TTL_MS = 100;
+const LONG_TIMEOUT_MS = 100000;
+
 // ============================================
 // MemoryCache Tests
 // ============================================
@@ -29,7 +37,7 @@ describe('MemoryCache', () => {
 
   beforeEach(() => {
     cache = new MemoryCache<string, any>({
-      maxSize: 5,
+      maxSize: DEFAULT_CACHE_SIZE,
       enableStats: true
     });
   });
@@ -77,6 +85,41 @@ describe('MemoryCache', () => {
     });
   });
 
+  describe('edge cases', () => {
+    it('should handle maxSize of 1', () => {
+      const smallCache = new MemoryCache<string, string>({ maxSize: 1 });
+      smallCache.set('key1', 'value1');
+      smallCache.set('key2', 'value2');
+      expect(smallCache.size()).toBe(1);
+      expect(smallCache.has('key2')).toBe(true);
+      smallCache.dispose();
+    });
+
+    it('should handle very large maxSize', () => {
+      const largeCache = new MemoryCache<string, string>({ maxSize: 1000000 });
+      largeCache.set('key1', 'value1');
+      expect(largeCache.get('key1')).toBe('value1');
+      largeCache.dispose();
+    });
+
+    it('should handle empty string keys', () => {
+      cache.set('', 'empty-key-value');
+      expect(cache.get('')).toBe('empty-key-value');
+    });
+
+    it('should handle undefined values', () => {
+      cache.set('key1', undefined);
+      expect(cache.has('key1')).toBe(true);
+      expect(cache.get('key1')).toBeUndefined();
+    });
+
+    it('should handle null values', () => {
+      cache.set('key1', null);
+      expect(cache.has('key1')).toBe(true);
+      expect(cache.get('key1')).toBeNull();
+    });
+  });
+
   describe('TTL expiration', () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -87,22 +130,22 @@ describe('MemoryCache', () => {
     });
 
     it('should expire items after TTL', () => {
-      cache.set('key1', 'value1', 1000); // 1 second TTL
+      cache.set('key1', 'value1', DEFAULT_TTL_MS);
       expect(cache.get('key1')).toBe('value1');
 
-      vi.advanceTimersByTime(1001);
+      vi.advanceTimersByTime(DEFAULT_TTL_MS + 1);
       expect(cache.get('key1')).toBeUndefined();
     });
 
     it('should not expire items without TTL', () => {
       cache.set('key1', 'value1');
-      vi.advanceTimersByTime(100000);
+      vi.advanceTimersByTime(LONG_TIMEOUT_MS);
       expect(cache.get('key1')).toBe('value1');
     });
 
     it('should update expiration stats', () => {
-      cache.set('key1', 'value1', 100);
-      vi.advanceTimersByTime(101);
+      cache.set('key1', 'value1', SHORT_TTL_MS);
+      vi.advanceTimersByTime(SHORT_TTL_MS + 1);
       cache.get('key1');
       const stats = cache.getStats();
       expect(stats.expirations).toBe(1);
@@ -111,14 +154,14 @@ describe('MemoryCache', () => {
 
   describe('eviction', () => {
     it('should evict items when maxSize is reached', () => {
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < LARGE_ITERATION_COUNT; i++) {
         cache.set(`key${i}`, `value${i}`);
       }
-      expect(cache.size()).toBeLessThanOrEqual(5);
+      expect(cache.size()).toBeLessThanOrEqual(DEFAULT_CACHE_SIZE);
     });
 
     it('should track evictions in stats', () => {
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < LARGE_ITERATION_COUNT; i++) {
         cache.set(`key${i}`, `value${i}`);
       }
       const stats = cache.getStats();
@@ -289,7 +332,7 @@ describe('MemoryCache with TTL strategy', () => {
 describe('MemoryCache with different strategies', () => {
   it('should work with LFU strategy', () => {
     const cache = new MemoryCache<string, any>({
-      maxSize: 3,
+      maxSize: SMALL_CACHE_SIZE,
       evictionStrategy: EvictionStrategy.LFU
     });
 
@@ -311,7 +354,7 @@ describe('MemoryCache with different strategies', () => {
 
   it('should work with FIFO strategy', () => {
     const cache = new MemoryCache<string, any>({
-      maxSize: 3,
+      maxSize: SMALL_CACHE_SIZE,
       evictionStrategy: EvictionStrategy.FIFO
     });
 
@@ -327,7 +370,7 @@ describe('MemoryCache with different strategies', () => {
 
   it('should work with RANDOM strategy', () => {
     const cache = new MemoryCache<string, any>({
-      maxSize: 3,
+      maxSize: SMALL_CACHE_SIZE,
       evictionStrategy: EvictionStrategy.RANDOM
     });
 
