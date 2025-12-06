@@ -1,6 +1,9 @@
 /**
  * Infrastructure Storage 單元測試
+ *
+ * 此測試需要直接實例化 FileSystem 以驗證其功能
  */
+/* eslint-disable custom/no-new-filesystem */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -14,8 +17,7 @@ import {
   DirectoryNotFoundError,
   PermissionError,
   DirectoryNotEmptyError,
-  type DirectoryEntry,
-  type FileStats
+  type DirectoryEntry
 } from '@infrastructure/storage/types.js';
 
 // ============================================
