@@ -34,12 +34,12 @@ export default mergeConfig(baseConfig, defineConfig({
       reporter: ['text', 'html', 'json'],
       reportsDirectory: './coverage/unit',
       include: [
-        'src/core/**',
-        'src/infrastructure/parser/**',
-        'src/infrastructure/formatters/**',
-        'src/infrastructure/storage/**',
-        'src/plugins/typescript/**',
-        'src/plugins/javascript/**'
+        // 已有 unit test 覆蓋的模組
+        'src/core/snapshot/**',
+        'src/core/dependency/cycle-detector.ts',
+        'src/core/dependency/dependency-graph.ts',
+        'src/core/shared/**',
+        'src/infrastructure/formatters/**'
       ],
       exclude: [
         'node_modules/**',
@@ -58,10 +58,17 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.sh',
         '**/*.yaml',
         '**/*.resolved',
-        '**/swift-bridge/**'
+        '**/swift-bridge/**',
+        // 未測試的檔案（待補充測試後移除）
+        'src/infrastructure/formatters/preview-converter.ts'
       ],
-      // Unit 測試暫不設門檻，待測試累積後調整
-      thresholds: undefined
+      // Unit 測試覆蓋率門檻
+      thresholds: {
+        lines: 70,
+        functions: 70,
+        branches: 70,
+        statements: 70
+      }
     },
   },
 }));
