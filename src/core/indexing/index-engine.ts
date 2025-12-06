@@ -4,7 +4,6 @@
  */
 
 import * as path from 'path';
-import { glob } from 'glob';
 import { createHash } from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
@@ -216,7 +215,7 @@ export class IndexEngine {
 
     const allFiles: string[] = [];
     for (const pattern of includePatterns) {
-      const files = await glob(pattern, {
+      const files = await this.fileSystem.glob(pattern, {
         cwd: dirPath,
         ignore: effectiveExcludePatterns,
         absolute: true

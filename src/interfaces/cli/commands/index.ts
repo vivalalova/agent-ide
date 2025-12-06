@@ -3,14 +3,16 @@
  */
 
 export type { CommandContext, CommandSetup } from './types.js';
-export { setupShiftCommand } from './shift.command.js';
+
+// Transform 命令
 export { setupMoveCommand } from './move.command.js';
 export { setupMoveMemberCommand } from './move-member.command.js';
 export { setupRenameCommand } from './rename.command.js';
 export { setupChangeSignatureCommand } from './change-signature.command.js';
-export { setupExtractCommand } from './extract.command.js';
-export { setupInlineCommand } from './inline.command.js';
-export { setupSearchCommand } from './search.command.js';
-export { setupAnalyzeCommand } from './analyze.command.js';
-export { setupDepsCommand } from './deps.command.js';
+
+// Query 命令
+export { setupCyclesCommand } from './cycles.command.js';
+export { setupImpactCommand } from './impact.command.js';
 export { setupSnapshotCommand } from './snapshot.command.js';
+export { setupFindReferencesCommand } from './find-references.command.js';
+export { setupCallHierarchyCommand } from './call-hierarchy.command.js';

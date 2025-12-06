@@ -8,7 +8,9 @@ export enum QueryCommand {
   Search = 'search',
   Analyze = 'analyze',
   Deps = 'deps',
-  Snapshot = 'snapshot'
+  Snapshot = 'snapshot',
+  FindReferences = 'find-references',
+  CallHierarchy = 'call-hierarchy'
 }
 
 /** 問題嚴重度 */
@@ -99,43 +101,31 @@ export interface CycleInfo {
   length: number;
 }
 
-/** 依賴圖節點 */
-export interface GraphNode {
-  /** 節點 ID（檔案路徑） */
-  id: string;
-  /** 節點標籤 */
-  label?: string;
-}
-
-/** 依賴圖邊 */
-export interface GraphEdge {
-  /** 來源節點 */
-  from: string;
-  /** 目標節點 */
-  to: string;
+/** 影響分析結果 */
+export interface ImpactInfo {
+  /** 目標檔案 */
+  targetFile: string;
+  /** 依賴此檔案的檔案 */
+  dependents: string[];
+  /** 此檔案依賴的檔案 */
+  dependencies: string[];
+  /** 總影響數 */
+  totalAffected: number;
 }
 
 /** Deps 結果 */
 export interface DepsResult extends QueryResult {
   command: QueryCommand.Deps;
   /** 循環依賴 */
-  cycles?: CycleInfo[];
-  /** 依賴圖 */
-  graph?: {
-    nodes: GraphNode[];
-    edges: GraphEdge[];
-  };
-  /** 孤立檔案 */
-  orphans?: string[];
+  cycles: CycleInfo[];
+  /** 影響分析 */
+  impact?: ImpactInfo;
 }
 
 /** Analyze 分析類型 */
 export enum AnalyzeType {
   Complexity = 'complexity',
-  DeadCode = 'dead-code',
-  BestPractices = 'best-practices',
-  Patterns = 'patterns',
-  Quality = 'quality'
+  DeadCode = 'dead-code'
 }
 
 /** Analyze 結果 */
@@ -180,3 +170,96 @@ export interface SnapshotResult extends QueryResult {
   snapshot: ModuleSnapshotData | ProjectSnapshotData;
 }
 
+// ========== FindReferences 結果 ==========
+
+/** 引用類型 */
+export type ReferenceType = 'definition' | 'usage' | 'import' | 'export';
+
+/** 引用項目 */
+export interface ReferenceItem {
+  /** 檔案路徑 */
+  file: string;
+  /** 行號 */
+  line: number;
+  /** 欄位 */
+  column?: number;
+  /** 引用類型 */
+  type: ReferenceType;
+  /** 上下文程式碼片段 */
+  context: string;
+}
+
+/** 符號定義位置 */
+export interface DefinitionLocation {
+  /** 檔案路徑 */
+  file: string;
+  /** 行號 */
+  line: number;
+  /** 欄位 */
+  column: number;
+}
+
+/** FindReferences 結果 */
+export interface FindReferencesResult extends QueryResult {
+  command: QueryCommand.FindReferences;
+  /** 符號名稱 */
+  symbol: string;
+  /** 符號類型 */
+  type: string;
+  /** 定義位置（找不到時為 null） */
+  definition: DefinitionLocation | null;
+  /** 所有引用 */
+  references: ReferenceItem[];
+}
+
+// ========== CallHierarchy 結果 ==========
+
+/** 呼叫層次分析方向 */
+export type CallHierarchyDirection = 'incoming' | 'outgoing' | 'both';
+
+/** 呼叫者項目（誰呼叫了目標函數） */
+export interface IncomingCallItem {
+  /** 呼叫者函數名稱 */
+  caller: string;
+  /** 呼叫點所在檔案 */
+  file: string;
+  /** 呼叫點行號 */
+  line: number;
+  /** 呼叫點欄位 */
+  column?: number;
+  /** 程式碼上下文 */
+  context?: string;
+}
+
+/** 被呼叫者項目（目標函數呼叫了誰） */
+export interface OutgoingCallItem {
+  /** 被呼叫的函數名稱 */
+  callee: string;
+  /** 被呼叫函數所在檔案 */
+  file: string;
+  /** 呼叫點行號 */
+  line: number;
+  /** 呼叫點欄位 */
+  column?: number;
+  /** 程式碼上下文 */
+  context?: string;
+}
+
+/** CallHierarchy 結果 */
+export interface CallHierarchyResult extends QueryResult {
+  command: QueryCommand.CallHierarchy;
+  /** 目標函數名稱 */
+  function: string;
+  /** 目標函數定義所在檔案 */
+  file: string;
+  /** 目標函數定義行號 */
+  definitionLine?: number;
+  /** 分析方向 */
+  direction: CallHierarchyDirection;
+  /** 分析深度 */
+  depth: number;
+  /** 呼叫者列表（誰呼叫了此函數） */
+  incoming: IncomingCallItem[];
+  /** 被呼叫者列表（此函數呼叫了誰） */
+  outgoing: OutgoingCallItem[];
+}

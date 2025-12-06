@@ -11,6 +11,11 @@ import {
   type DepsResult,
   type AnalyzeResult,
   type SnapshotResult,
+  type FindReferencesResult,
+  type CallHierarchyResult,
+  type ReferenceItem,
+  type IncomingCallItem,
+  type OutgoingCallItem,
   type ModuleSnapshotData,
   type ProjectSnapshotData
 } from './query-types.js';
@@ -86,6 +91,10 @@ export class QueryFormatter {
         return this.formatAnalyzeSummary(result as AnalyzeResult);
       case QueryCommand.Snapshot:
         return this.formatSnapshotSummary(result as SnapshotResult);
+      case QueryCommand.FindReferences:
+        return this.formatFindReferencesSummary(result as FindReferencesResult);
+      case QueryCommand.CallHierarchy:
+        return this.formatCallHierarchySummary(result as CallHierarchyResult);
       default:
         return this.formatDefaultSummary(result);
     }
@@ -136,23 +145,21 @@ export class QueryFormatter {
       lines.push(this.colorize('未發現循環依賴', Colors.green));
     }
 
-    // 孤立檔案
-    if (result.orphans && result.orphans.length > 0) {
+    // 影響分析
+    if (result.impact) {
       lines.push('');
-      lines.push(`孤立檔案: ${result.orphans.length} 個`);
-      result.orphans.slice(0, 10).forEach(orphan => {
-        lines.push(`  - ${orphan}`);
-      });
-      if (result.orphans.length > 10) {
-        lines.push(`  ... 還有 ${result.orphans.length - 10} 個`);
+      lines.push(`📊 影響分析: ${result.impact.targetFile}`);
+      lines.push(`   依賴此檔案: ${result.impact.dependents.length} 個`);
+      lines.push(`   被此檔案依賴: ${result.impact.dependencies.length} 個`);
+      if (result.impact.dependents.length > 0) {
+        lines.push('   依賴者:');
+        result.impact.dependents.slice(0, 5).forEach(dep => {
+          lines.push(`     - ${dep}`);
+        });
+        if (result.impact.dependents.length > 5) {
+          lines.push(`     ... 還有 ${result.impact.dependents.length - 5} 個`);
+        }
       }
-    }
-
-    // 依賴圖統計
-    if (result.graph) {
-      lines.push('');
-      lines.push(`節點數: ${result.graph.nodes.length}`);
-      lines.push(`邊數: ${result.graph.edges.length}`);
     }
 
     return lines.join('\n');
@@ -215,6 +222,150 @@ export class QueryFormatter {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * 格式化 FindReferences 摘要
+   */
+  private formatFindReferencesSummary(result: FindReferencesResult): string {
+    const lines: string[] = [];
+
+    // 標題
+    lines.push(`🔍 符號: ${result.symbol} (${result.type})`);
+
+    // 定義位置
+    if (result.definition) {
+      const defLoc = `${result.definition.file}:${result.definition.line}:${result.definition.column}`;
+      lines.push(`📍 定義: ${this.colorize(defLoc, Colors.cyan)}`);
+    } else {
+      lines.push(this.colorize('⚠️  找不到定義位置', Colors.yellow));
+    }
+
+    // 統計
+    const filesAffected = new Set(result.references.map(r => r.file)).size;
+    lines.push('');
+    lines.push(`📊 找到 ${result.references.length} 個引用（${filesAffected} 個檔案）`);
+
+    // 引用列表（按檔案分組）
+    if (result.references.length > 0) {
+      lines.push('');
+      lines.push('引用列表:');
+
+      const byFile = this.groupReferencesByFile(result.references);
+
+      for (const [file, refs] of byFile) {
+        lines.push(`  ${this.colorize(file, Colors.cyan)}`);
+        refs.slice(0, 10).forEach(ref => {
+          const typeIcon = this.getReferenceTypeIcon(ref.type);
+          lines.push(`    ${typeIcon} L${ref.line}: ${ref.context.trim()}`);
+        });
+        if (refs.length > 10) {
+          lines.push(`    ... 還有 ${refs.length - 10} 個引用`);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 按檔案分組引用
+   */
+  private groupReferencesByFile(references: ReferenceItem[]): Map<string, ReferenceItem[]> {
+    const byFile = new Map<string, ReferenceItem[]>();
+    references.forEach(ref => {
+      const list = byFile.get(ref.file) || [];
+      list.push(ref);
+      byFile.set(ref.file, list);
+    });
+    return byFile;
+  }
+
+  /**
+   * 取得引用類型圖示
+   */
+  private getReferenceTypeIcon(type: string): string {
+    switch (type) {
+      case 'definition': return '📌';
+      case 'import': return '📥';
+      case 'export': return '📤';
+      case 'usage':
+      default: return '📞';
+    }
+  }
+
+  /**
+   * 格式化 CallHierarchy 摘要
+   */
+  private formatCallHierarchySummary(result: CallHierarchyResult): string {
+    const lines: string[] = [];
+
+    // 標題與定義位置
+    lines.push(`📞 函數呼叫層次: ${result.function}`);
+    const defLoc = result.definitionLine
+      ? `${result.file}:${result.definitionLine}`
+      : result.file;
+    lines.push(`📍 定義位置: ${this.colorize(defLoc, Colors.cyan)}`);
+    lines.push(`🔍 分析方向: ${result.direction}, 深度: ${result.depth}`);
+    lines.push('');
+
+    // Incoming（誰呼叫我）
+    if (result.direction === 'incoming' || result.direction === 'both') {
+      lines.push(`📥 呼叫者 (Incoming): ${result.incoming.length} 個`);
+      if (result.incoming.length > 0) {
+        const grouped = this.groupCallsByFile(result.incoming, 'caller');
+        for (const [file, items] of grouped) {
+          lines.push(`  ${this.colorize(file, Colors.cyan)}`);
+          (items as IncomingCallItem[]).slice(0, 10).forEach(item => {
+            lines.push(`    ⬅️  ${item.caller} (L${item.line})`);
+          });
+          if (items.length > 10) {
+            lines.push(`    ... 還有 ${items.length - 10} 個呼叫者`);
+          }
+        }
+      }
+      lines.push('');
+    }
+
+    // Outgoing（我呼叫誰）
+    if (result.direction === 'outgoing' || result.direction === 'both') {
+      lines.push(`📤 被呼叫者 (Outgoing): ${result.outgoing.length} 個`);
+      if (result.outgoing.length > 0) {
+        const grouped = this.groupCallsByFile(result.outgoing, 'callee');
+        for (const [file, items] of grouped) {
+          lines.push(`  ${this.colorize(file, Colors.cyan)}`);
+          (items as OutgoingCallItem[]).slice(0, 10).forEach(item => {
+            lines.push(`    ➡️  ${item.callee} (L${item.line})`);
+          });
+          if (items.length > 10) {
+            lines.push(`    ... 還有 ${items.length - 10} 個被呼叫者`);
+          }
+        }
+      }
+      lines.push('');
+    }
+
+    // 統計
+    const uniqueFiles = new Set([
+      ...result.incoming.map(i => i.file),
+      ...result.outgoing.map(o => o.file)
+    ]).size;
+    lines.push(`📊 統計: ${result.incoming.length} incoming, ${result.outgoing.length} outgoing, ${uniqueFiles} 個檔案`);
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 按檔案分組呼叫項目
+   */
+  private groupCallsByFile<T extends { file: string }>(items: T[], _nameKey: string): Map<string, T[]> {
+    const byFile = new Map<string, T[]>();
+    items.forEach(item => {
+      const list = byFile.get(item.file) || [];
+      list.push(item);
+      byFile.set(item.file, list);
+    });
+    return byFile;
   }
 
   /**

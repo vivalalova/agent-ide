@@ -29,7 +29,7 @@ const result = calculate(10, 5);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'calculate', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'json'],
+        ['change-signature', testFile, 'calculate', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -52,7 +52,7 @@ const text = format('[', 42, ']');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'format', '-p', fixture.rootPath, '--reorder', 'value,prefix,suffix', '--format', 'json'],
+        ['change-signature', testFile, 'format', '-p', fixture.rootPath, '--reorder', 'value,prefix,suffix', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -76,7 +76,7 @@ const c = add(5, 6);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'y,x', '--format', 'json'],
+        ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'y,x', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -101,7 +101,7 @@ const msg = greet('World');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'greet', '-p', fixture.rootPath, '--add', 'greeting:string=Hello', '--format', 'json'],
+        ['change-signature', testFile, 'greet', '-p', fixture.rootPath, '--add', 'greeting:string=Hello', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -123,7 +123,7 @@ log('test');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'log', '-p', fixture.rootPath, '--add', 'level:string=info', '--add', 'timestamp:boolean=true', '--format', 'json'],
+        ['change-signature', testFile, 'log', '-p', fixture.rootPath, '--add', 'level:string=info', '--add', 'timestamp:boolean=true', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -147,7 +147,7 @@ const result = process('test', 123);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'process', '-p', fixture.rootPath, '--remove', 'unused', '--format', 'json'],
+        ['change-signature', testFile, 'process', '-p', fixture.rootPath, '--remove', 'unused', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -171,7 +171,7 @@ const n = count(42);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'count', '-p', fixture.rootPath, '--change-type', 'value:bigint', '--format', 'json'],
+        ['change-signature', testFile, 'count', '-p', fixture.rootPath, '--change-type', 'value:bigint', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -189,7 +189,7 @@ const n = count(42);
       await fixture.memfs.writeFile(testFile, 'const x = 1;');
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'nonExistent', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
+        ['change-signature', testFile, 'nonExistent', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -209,7 +209,7 @@ function test(a: number): number {
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'test', '-p', fixture.rootPath, '--reorder', 'x,y', '--format', 'json'],
+        ['change-signature', testFile, 'test', '-p', fixture.rootPath, '--reorder', 'x,y', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -222,7 +222,7 @@ function test(a: number): number {
 
     it('應該處理不存在的檔案', async () => {
       const result = await executeCLI(
-        ['transform', 'change-signature', '/nonexistent/file.ts', 'test', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
+        ['change-signature', '/nonexistent/file.ts', 'test', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -234,7 +234,7 @@ function test(a: number): number {
       await fixture.memfs.writeFile(testFile, 'function broken( { return; }');
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'broken', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
+        ['change-signature', testFile, 'broken', '-p', fixture.rootPath, '--reorder', 'a,b', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -251,7 +251,7 @@ const x = fn(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'json'],
+        ['change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -267,7 +267,7 @@ const x = fn(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'summary'],
+        ['change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
@@ -283,7 +283,7 @@ const x = fn(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'diff'],
+        ['change-signature', testFile, 'fn', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'diff'],
         { memfs: fixture.memfs }
       );
 
@@ -304,7 +304,7 @@ const result = calc(10, 5);
       await fixture.memfs.writeFile(testFile, originalContent);
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'calc', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'calc', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -333,7 +333,7 @@ const result = manyParams(${args});
       const reordered = [...paramNames.slice(1), paramNames[0]].join(',');
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'manyParams', '-p', fixture.rootPath, '--reorder', reordered, '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'manyParams', '-p', fixture.rootPath, '--reorder', reordered, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -359,7 +359,7 @@ ${calls}
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'y,x', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'y,x', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -389,7 +389,7 @@ ${nestClose}
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'target', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'target', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -416,7 +416,7 @@ const result = longFunction(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'longFunction', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'longFunction', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -446,7 +446,7 @@ export const result${i} = sharedFn(${i}, 'value');
       }
 
       const result = await executeCLI(
-        ['transform', 'change-signature', fixture.getFilePath('src/utils.ts'), 'sharedFn', '--reorder', 'y,x', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['change-signature', fixture.getFilePath('src/utils.ts'), 'sharedFn', '--reorder', 'y,x', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -473,7 +473,7 @@ const r = test(1, 'x');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'test', '-p', fixture.rootPath, '--reorder', `${longName2},${longName1}`, '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'test', '-p', fixture.rootPath, '--reorder', `${longName2},${longName1}`, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -497,7 +497,7 @@ const r = combo(1, 'x');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'combo', '-p', fixture.rootPath, '--reorder', 'b,a', '--add', 'c:boolean=true', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'combo', '-p', fixture.rootPath, '--reorder', 'b,a', '--add', 'c:boolean=true', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -524,7 +524,7 @@ const result = calc.add(1, 2);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -546,7 +546,7 @@ const result = multiply(3, 4);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'multiply', '-p', fixture.rootPath, '--reorder', 'y,x', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'multiply', '-p', fixture.rootPath, '--reorder', 'y,x', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -570,7 +570,7 @@ const data = await fetchData('/api', 5000);
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'fetchData', '-p', fixture.rootPath, '--reorder', 'timeout,url', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'fetchData', '-p', fixture.rootPath, '--reorder', 'timeout,url', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -596,7 +596,7 @@ const str = identity('hello', 'string');
 `.trim());
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'identity', '-p', fixture.rootPath, '--reorder', 'label,value', '--dry-run', '--format', 'json'],
+        ['change-signature', testFile, 'identity', '-p', fixture.rootPath, '--reorder', 'label,value', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -611,7 +611,7 @@ const str = identity('hello', 'string');
   describe('缺少參數處理', () => {
     it('應該處理缺少檔案參數', async () => {
       const result = await executeCLI(
-        ['transform', 'change-signature'],
+        ['change-signature'],
         { memfs: fixture.memfs }
       );
 
@@ -623,7 +623,7 @@ const str = identity('hello', 'string');
       await fixture.memfs.writeFile(testFile, 'const x = 1;');
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile],
+        ['change-signature', testFile],
         { memfs: fixture.memfs }
       );
 
@@ -635,7 +635,7 @@ const str = identity('hello', 'string');
       await fixture.memfs.writeFile(testFile, 'function test(a: number) { return a; }');
 
       const result = await executeCLI(
-        ['transform', 'change-signature', testFile, 'test', '-p', fixture.rootPath],
+        ['change-signature', testFile, 'test', '-p', fixture.rootPath],
         { memfs: fixture.memfs }
       );
 

@@ -7,7 +7,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { IndexEngine } from '@core/indexing/index-engine.js';
 import { createIndexConfig } from '@core/indexing/types.js';
-import { RenameEngine } from '@core/transform/symbol/rename/rename-engine.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { convertRenamePreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
@@ -66,14 +66,27 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   const isJsonFormat = format === OutputFormat.Json;
 
   if (!from || !to) {
-    if (isJsonFormat) {
-      console.error(JSON.stringify({ error: '必須指定符號名稱和新名稱' }));
-    } else {
-      console.error('必須指定符號名稱和新名稱');
-      console.error('   使用方式: agent-ide rename --symbol <name> --new-name <name>');
-    }
+    outputHandler.outputError('必須指定符號名稱和新名稱。使用方式: agent-ide rename --symbol <name> --new-name <name>', format, 'rename');
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    return;
+  }
+
+  // 如果 from 和 to 相同，直接返回成功但無操作
+  if (from === to) {
+    if (isJsonFormat) {
+      console.log(JSON.stringify({
+        command: 'rename',
+        success: true,
+        files: [],
+        summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0 },
+        operations: 0,
+        affectedFiles: 0,
+        operationDescription: `No changes needed: '${from}' is already named '${to}'`
+      }));
+    } else {
+      console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
+    }
     return;
   }
 
@@ -108,10 +121,12 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       excludePatterns: ['node_modules/**', '*.test.*']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);
-    await indexEngine.indexProject(workspacePath);
 
-    // 初始化重新命名引擎
-    const renameEngine = new RenameEngine();
+    try {
+      await indexEngine.indexProject(workspacePath);
+
+      // 初始化重新命名引擎（傳入 fileSystem）
+      const renameEngine = new RenameEngine(undefined, context.fileSystem);
 
     // 1. 查找符號
     if (!isJsonFormat) {
@@ -120,13 +135,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const searchResults = await indexEngine.findSymbol(from);
 
     if (searchResults.length === 0) {
-      if (isJsonFormat) {
-        console.error(JSON.stringify({ error: `找不到符號 "${from}"` }));
-      } else {
-        console.log(`   找不到符號 "${from}"`);
-      }
+      outputHandler.outputError(`找不到符號 "${from}"`, format, 'rename');
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -174,13 +184,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         return;
       } catch (previewError) {
         const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
-        if (isJsonFormat) {
-          console.error(JSON.stringify({ error: errorMsg }));
-        } else {
-          console.error('   預覽失敗:', errorMsg);
-        }
+        outputHandler.outputError(`預覽失敗: ${errorMsg}`, format, 'rename');
         process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
       }
     }
@@ -193,7 +198,25 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 取得所有專案檔案（使用與 preview 相同的邏輯）
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
-    // 使用 renameEngine 執行重新命名（與 preview 使用相同的引擎）
+    // 先預覽變更
+    const preview = await renameEngine.previewRename({
+      symbol: targetSymbol,
+      newName: to,
+      filePaths: allProjectFiles
+    });
+
+    // 讀取受影響檔案的原始內容（用於輸出）
+    const originalContents = new Map<string, string>();
+    for (const filePath of preview.affectedFiles) {
+      try {
+        const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
+        originalContents.set(filePath, content);
+      } catch {
+        // 忽略無法讀取的檔案
+      }
+    }
+
+    // 使用 renameEngine 執行重新命名
     const renameResult = await renameEngine.rename({
       symbol: targetSymbol,
       newName: to,
@@ -201,45 +224,26 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     });
 
     if (renameResult.success) {
-      if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          affectedFiles: renameResult.affectedFiles.length,
-          operations: renameResult.operations.length,
-          files: renameResult.affectedFiles
-        }, null, 2));
-      } else {
-        console.log('   重新命名成功!');
-        console.log(`   統計: ${renameResult.affectedFiles.length} 檔案, ${renameResult.operations.length} 變更`);
-
-        renameResult.operations.forEach(operation => {
-          console.log(`      ${operation.filePath}: "${operation.oldText}"   "${operation.newText}"`);
-        });
-      }
+      // 轉換為統一的 PreviewInput 格式並輸出
+      const previewInput = convertRenamePreview(
+        preview.operations,
+        preview.conflicts,
+        originalContents,
+        { oldName: from, newName: to }
+      );
+      outputHandler.outputMutation(previewInput, format);
     } else {
-      if (isJsonFormat) {
-        console.error(JSON.stringify({
-          success: false,
-          errors: renameResult.errors || ['重新命名失敗']
-        }));
-      } else {
-        console.error('   重新命名失敗:');
-        renameResult.errors?.forEach(error => {
-          console.error(`   - ${error}`);
-        });
-      }
+      const errorMsg = renameResult.errors?.join(', ') || '重新命名失敗';
+      outputHandler.outputError(errorMsg, format, 'rename');
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
-
+    } finally {
+      indexEngine.dispose();
+    }
   } catch (error) {
-    if (isJsonFormat) {
-      console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
-    } else {
-      console.error('   重新命名失敗:', error instanceof Error ? error.message : error);
-    }
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputHandler.outputError(`重新命名失敗: ${errorMsg}`, format, 'rename');
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
 

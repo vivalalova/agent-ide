@@ -13,14 +13,14 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 ```bash
 pnpm build                    # 建置（含 Swift parser 複製）
 pnpm typecheck                # 型別檢查
-pnpm test                     # 所有測試（3 workers）
+pnpm test                     # 測試（自動含 coverage）
 pnpm test:single              # 單執行緒（記憶體受限）
 pnpm test:bail                # 失敗即停
 pnpm lint                     # ESLint
 npm link                      # 本地 CLI 安裝
 
 # 單一測試檔
-pnpm test -- --run tests/e2e/commands/cli-search.e2e.test.ts
+pnpm test -- --run tests/e2e/commands/cli-rename-basic.e2e.test.ts
 
 # 匹配測試名稱
 pnpm test -- --run -t "應該分析專案"
@@ -30,28 +30,20 @@ pnpm test -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/
-│   ├── dependency/   # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-│   ├── indexing/     # 1000檔/秒、查詢<10ms
-│   ├── search/       # 文字/語義/結構化搜尋
-│   ├── snapshot/     # 模組快照（AI 理解用，~91% token 節省）
-│   └── transform/    # 統一程式碼變換框架
-│       ├── shared/       # 共享元件（CodeEditor, SymbolFinder）
-│       ├── symbol/       # 符號變換
-│       │   ├── rename/           # 符號重命名+引用更新
-│       │   └── change-signature/ # 參數重構+呼叫點更新
-│       ├── structure/    # 結構變換
-│       │   ├── extract/  # 提取函式
-│       │   ├── inline/   # 內聯函式
-│       │   └── patterns/ # 設計模式
-│       └── location/     # 位置變換
-│           ├── move-file/   # 檔案移動+import更新
-│           ├── move-member/ # 成員移動（方法/類別/函式）
-│           └── shift/       # 行級移動
-├── infrastructure/ # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/        # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
-├── interfaces/     # CLI（Unix哲學/JSON輸出）
-└── application/    # 服務層、DI容器
+├── core/                 # 核心模組（扁平化結構）
+│   ├── dependency/       # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
+│   ├── indexing/         # 1000檔/秒、查詢<10ms
+│   ├── snapshot/         # 模組快照（AI 理解用，~91% token 節省）
+│   ├── shared/           # 共享元件（CodeEditor, SymbolFinder）
+│   ├── rename/           # 符號重命名+引用更新
+│   ├── change-signature/ # 參數重構+呼叫點更新
+│   ├── move-file/        # 檔案移動+import更新
+│   ├── move-member/      # 成員移動（方法/類別/函式）
+│   └── patterns/         # 設計模式
+├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
+├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
+├── interfaces/           # CLI（Unix哲學/JSON輸出）
+└── application/          # 服務層、DI容器
 ```
 
 ## 測試規範
@@ -60,6 +52,10 @@ src/
 - **只寫 E2E**：透過 CLI 測試，禁止直接 import 實作類別
 - **memfs 隔離**：所有檔案操作在記憶體中，零硬碟 I/O
 - **Fixture-Based**：`loadFixture('sample-project')` 載入到 memfs
+
+### 🚨 覆蓋率要求
+- `pnpm test` 自動產生覆蓋率報告
+- **覆蓋率不足必須補測試**：確保新增/修改的程式碼有對應測試覆蓋
 
 ### 測試模式
 ```typescript
@@ -100,28 +96,23 @@ describe('CLI search - 基於 sample-project fixture', () => {
 所有命令支援 `--format` 參數：
 - **json**：機器可讀 JSON 格式
 - **summary**：人類可讀摘要格式
-- **diff**：變更類命令預設，顯示程式碼差異（僅 rename/move/shift/refactor）
+- **diff**：變更類命令預設，顯示程式碼差異（僅 rename/move）
 
 ### 查詢類命令（唯讀）
 ```bash
-agent-ide search <query> --path <path>              # 文字搜尋
-agent-ide search symbol --query <name>              # 符號搜尋
-agent-ide search structural --type <function|class> # 結構化搜尋
-agent-ide analyze [complexity|dead-code|best-practices|patterns|quality] --path <path>
-agent-ide deps [graph|cycles|impact|orphans] --path <path> [--all]
-agent-ide snapshot --path <path> [--format json|summary]  # 模組/專案快照
+agent-ide cycles --path <path>                             # 循環依賴檢測
+agent-ide impact --file <file> --path <path>               # 影響分析
+agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
+agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
+agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
 ```
 
 ### 變更類命令（支援 --dry-run）
 ```bash
-# Transform 命令群組
-agent-ide transform rename --path <path> --from <old> --to <new> [--dry-run]
-agent-ide transform change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
-agent-ide transform move <source> <target> --path <path> [--dry-run]
-agent-ide transform move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
-agent-ide transform shift <file> --from <line> --to <line> --position <pos> [--dry-run]
-agent-ide transform extract-function --file <file> --start-line <n> --end-line <n> [--dry-run]
-agent-ide transform inline-function --file <file> --function-name <name> [--dry-run]
+agent-ide rename --path <path> --from <old> --to <new> [--dry-run]
+agent-ide change-signature --file <file> --function <name> --reorder "b,a" [--dry-run]
+agent-ide move <source> <target> --path <path> [--dry-run]
+agent-ide move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
 ```
 
 ## 輸出處理架構
@@ -132,8 +123,8 @@ agent-ide transform inline-function --file <file> --function-name <name> [--dry-
 
 | 命令類型 | 輸出方法 | 結果型別 |
 |---------|---------|---------|
-| 查詢類（search, deps, analyze, snapshot） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
-| 變更類（rename, move, shift, refactor） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
+| 查詢類（cycles, impact, snapshot, find-references, call-hierarchy） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
+| 變更類（rename, move, change-signature, move-member） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
 
 ### 新增命令的輸出整合步驟
 
@@ -175,7 +166,7 @@ outputHandler.outputMutation(previewInput, format);
 ```
 
 ### Formatters 層
-- **QueryFormatter**：處理查詢類結果（SearchResult, DepsResult, AnalyzeResult, SnapshotResult）
+- **QueryFormatter**：處理查詢類結果（DepsResult, SnapshotResult）
 - **PreviewFormatter**：處理變更類預覽（diff, summary, json）
 - **QueryTypes**：統一的結果型別定義（QueryResult, QueryCommand enum）
 
@@ -202,6 +193,14 @@ outputHandler.outputMutation(previewInput, format);
 - `plugins/skills/agent-ide/SKILL.md` - 命令速查表
 - `plugins/skills/agent-ide/references/guide.md` - 完整指南
 - `CLAUDE.md` - 開發規範（開發用）
+
+**🚨 SKILL.md 更新規範**：
+- 更新 SKILL.md 內容時，**必須同步更新 frontmatter 的 description**
+- description 目標是**最大化 AI 使用率**，需包含：觸發關鍵詞、強制語氣（🚨）、價值主張（如節省 token）
+
+**🚨 測試覆蓋率門檻**：
+- `vitest.config.ts` 的 `thresholds` 設定禁止隨意調降
+- 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
 - `tests/e2e/commands/cli-<command>.e2e.test.ts`

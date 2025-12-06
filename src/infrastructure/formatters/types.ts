@@ -69,6 +69,12 @@ export interface PreviewSummary {
   additions: number;
   /** 刪除行數 */
   deletions: number;
+  /** 總引用數（rename 專用） */
+  totalReferences?: number;
+  /** 預估執行時間（毫秒，rename 專用） */
+  estimatedTime?: number;
+  /** 衝突數量 */
+  conflictCount?: number;
 }
 
 /** 單一檔案的變更摘要（用於 summary 格式） */
@@ -108,6 +114,10 @@ export interface PreviewResult {
   files: FileChange[];
   /** 統計摘要 */
   summary: PreviewSummary;
+  /** 操作數量（summary.totalChanges 的別名，方便存取） */
+  operations: number;
+  /** 影響的檔案數（summary.totalFiles 的別名，方便存取） */
+  affectedFiles: number;
   /** 檔案變更摘要列表（用於 summary 格式） */
   fileSummaries?: FileChangeSummary[];
   /** 操作描述（如 "Renamed 'foo' to 'bar'"） */

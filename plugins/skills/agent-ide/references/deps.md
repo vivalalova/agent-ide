@@ -1,81 +1,93 @@
-# 依賴分析 (deps)
+# 依賴分析
 
 > **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
 > （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
 
-分析專案依賴關係，檢測循環依賴和孤立檔案。
+分析專案依賴關係，提供循環依賴檢測和影響分析。
 
-## 子命令
+## 命令
 
-| 子命令 | 說明 |
-|--------|------|
-| `graph` | 完整依賴圖 |
-| `cycles` | 循環依賴分析 |
+| 命令 | 說明 |
+|------|------|
+| `cycles` | 循環依賴檢測 |
 | `impact` | 影響分析 |
-| `orphans` | 孤立檔案分析 |
 
-## 用法
+## cycles - 循環依賴檢測
+
+檢測專案中的循環依賴，使用 Tarjan 強連通分量算法。
+
+### 用法
 
 ```bash
-# 基本分析（預設顯示循環依賴和孤立檔案）
-agent-ide deps --path . --format json
+# 檢測循環依賴
+agent-ide cycles --path . --format json
 
-# 完整依賴圖
-agent-ide deps --path . --format json --all
-
-# 使用子命令
-agent-ide deps graph --path . --format json
-agent-ide deps cycles --path . --format json
-agent-ide deps orphans --path . --format json
+# 人類可讀格式
+agent-ide cycles --path . --format summary
 ```
 
-## 參數
+### 參數
 
 | 參數 | 說明 |
 |------|------|
 | `--path` | 專案路徑 |
-| `--all` | 顯示完整依賴圖 |
 | `--format` | 輸出格式：`json`、`summary` |
 
-## 輸出格式
-
-### json（預設）
+### 輸出範例
 
 ```json
 {
-  "command": "deps",
+  "command": "cycles",
   "success": true,
   "cycles": [
-    { "cycle": ["a.ts", "b.ts", "c.ts"], "length": 3 }
+    {
+      "nodes": ["src/a.ts", "src/b.ts", "src/c.ts"],
+      "length": 3
+    }
   ],
-  "orphans": ["src/utils/unused.ts"],
-  "graph": {
-    "nodes": [{ "id": "src/index.ts", "label": "index" }],
-    "edges": [{ "from": "src/index.ts", "to": "src/app.ts" }]
-  },
   "summary": {
-    "totalScanned": 50,
     "totalFiles": 50,
-    "totalDependencies": 120,
-    "cyclesFound": 1,
-    "orphanedFiles": 3
+    "cyclesFound": 1
   }
 }
 ```
 
-### summary
+## impact - 影響分析
 
+分析檔案的上下游依賴關係，了解修改的影響範圍。
+
+### 用法
+
+```bash
+# 分析檔案影響範圍
+agent-ide impact --file src/core.ts --path . --format json
+
+# 人類可讀格式
+agent-ide impact --file src/core.ts --path . --format summary
 ```
-🔍 分析依賴關係...
-未發現循環依賴
 
-孤立檔案: 12 個
-  - src/index.ts
-  - src/quality-test/error-handling-bad.ts
-  - src/quality-test/naming-violations.ts
-  - src/utils/array-utils.ts
-  - src/utils/date-utils.ts
-  ... 還有 7 個
+### 參數
+
+| 參數 | 說明 |
+|------|------|
+| `--file` | 要分析的檔案 |
+| `--path` | 專案路徑 |
+| `--format` | 輸出格式：`json`、`summary` |
+
+### 輸出範例
+
+```json
+{
+  "command": "impact",
+  "success": true,
+  "file": "src/core.ts",
+  "upstream": ["src/utils.ts", "src/types.ts"],
+  "downstream": ["src/app.ts", "src/main.ts"],
+  "summary": {
+    "upstreamCount": 2,
+    "downstreamCount": 2
+  }
+}
 ```
 
 ## 欄位說明
@@ -83,10 +95,7 @@ agent-ide deps orphans --path . --format json
 | 欄位 | 說明 |
 |------|------|
 | `cycles` | 循環依賴列表 |
-| `cycles[].cycle` | 循環路徑 |
+| `cycles[].nodes` | 循環路徑中的檔案 |
 | `cycles[].length` | 循環長度 |
-| `orphans` | 孤立檔案列表（無被引用） |
-| `graph.nodes` | 依賴圖節點 |
-| `graph.edges` | 依賴圖邊 |
-| `summary.cyclesFound` | 發現的循環數 |
-| `summary.orphanedFiles` | 孤立檔案數 |
+| `upstream` | 此檔案依賴的檔案 |
+| `downstream` | 依賴此檔案的檔案 |

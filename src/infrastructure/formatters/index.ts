@@ -46,9 +46,16 @@ export {
   type SearchMatch,
   type DepsResult,
   type CycleInfo,
-  type GraphNode,
-  type GraphEdge,
-  type AnalyzeResult
+  type ImpactInfo,
+  type AnalyzeResult,
+  type FindReferencesResult,
+  type ReferenceItem,
+  type ReferenceType,
+  type DefinitionLocation,
+  type CallHierarchyResult,
+  type CallHierarchyDirection,
+  type IncomingCallItem,
+  type OutgoingCallItem
 } from './query-types.js';
 
 export {

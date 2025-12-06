@@ -36,7 +36,7 @@ export function existing(): string {
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'helper', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'helper', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -60,7 +60,7 @@ export function stay(): number {
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/new-file.ts'), '--new-file', '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/new-file.ts'), '--new-file', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -94,7 +94,7 @@ export function other(): void {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/utils.ts'), 'utility', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/utils.ts'), 'utility', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -127,7 +127,7 @@ export class Entity {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/models.ts'), 'User', '-p', fixture.rootPath, '--type', 'class', '--target-file', fixture.getFilePath('src/entities.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/models.ts'), 'User', '-p', fixture.rootPath, '--type', 'class', '--target-file', fixture.getFilePath('src/entities.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -158,7 +158,7 @@ export interface BaseDTO {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/types.ts'), 'UserDTO', '-p', fixture.rootPath, '--type', 'interface', '--target-file', fixture.getFilePath('src/dtos.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/types.ts'), 'UserDTO', '-p', fixture.rootPath, '--type', 'interface', '--target-file', fixture.getFilePath('src/dtos.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -183,7 +183,7 @@ export type Base = object;
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/types.ts'), 'ID', '-p', fixture.rootPath, '--type', 'type', '--target-file', fixture.getFilePath('src/common.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/types.ts'), 'ID', '-p', fixture.rootPath, '--type', 'type', '--target-file', fixture.getFilePath('src/common.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -208,7 +208,7 @@ export const VERSION = '1.0.0';
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/config.ts'), 'API_URL', '-p', fixture.rootPath, '--type', 'constant', '--target-file', fixture.getFilePath('src/constants.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/config.ts'), 'API_URL', '-p', fixture.rootPath, '--type', 'constant', '--target-file', fixture.getFilePath('src/constants.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -240,7 +240,7 @@ export type ID = number;
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/enums.ts'), 'Status', '-p', fixture.rootPath, '--type', 'enum', '--target-file', fixture.getFilePath('src/types.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/enums.ts'), 'Status', '-p', fixture.rootPath, '--type', 'enum', '--target-file', fixture.getFilePath('src/types.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -274,7 +274,7 @@ export class Validator {
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/user.ts'), 'validateEmail', '-p', fixture.rootPath, '--type', 'method', '--class', 'User', '--target-file', fixture.getFilePath('src/validator.ts'), '--target-class', 'Validator', '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/user.ts'), 'validateEmail', '-p', fixture.rootPath, '--type', 'method', '--class', 'User', '--target-file', fixture.getFilePath('src/validator.ts'), '--target-class', 'Validator', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -301,7 +301,7 @@ export function other(): void {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/utils.ts'), 'helper', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/helpers.ts'), '--keep-reexport', '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/utils.ts'), 'helper', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/helpers.ts'), '--keep-reexport', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -320,7 +320,7 @@ export function existing(): void {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'nonExistent', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'nonExistent', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -333,7 +333,7 @@ export function existing(): void {}
 
     it('應該處理不存在的來源檔案', async () => {
       const result = await executeCLI(
-        ['transform', 'move-member', '/nonexistent/source.ts', 'member', '--target-file', '/target.ts', '--format', 'json'],
+        ['move-member', '/nonexistent/source.ts', 'member', '--target-file', '/target.ts', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -344,7 +344,7 @@ export function existing(): void {}
       await fixture.writeFile('src/broken.ts', 'export function broken( {}');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/broken.ts'), 'broken', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/broken.ts'), 'broken', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -357,7 +357,7 @@ export function myFunction(): void {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'myFunction', '-p', fixture.rootPath, '--type', 'class', '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'myFunction', '-p', fixture.rootPath, '--type', 'class', '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -375,7 +375,7 @@ export function myFunction(): void {}
       await fixture.writeFile('src/target.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -388,7 +388,7 @@ export function myFunction(): void {}
       await fixture.writeFile('src/target.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'summary'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'summary'],
         { memfs: fixture.memfs }
       );
 
@@ -404,7 +404,7 @@ export function myFunction(): void {}
       await fixture.writeFile('src/target.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -433,7 +433,7 @@ export const result${i} = sharedHelper();
       await fixture.writeFile('src/target.ts', 'export function other(): void {}');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/shared.ts'), 'sharedHelper', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/shared.ts'), 'sharedHelper', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -458,7 +458,7 @@ export function deepFunction(): number {
       await fixture.writeFile('src/target.ts', 'export function other(): void {}');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath(`${deepPath}/deep.ts`), 'deepFunction', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath(`${deepPath}/deep.ts`), 'deepFunction', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -488,7 +488,7 @@ export class TargetClass {}
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/big-class.ts'), 'method0', '-p', fixture.rootPath, '--type', 'method', '--class', 'BigClass', '--target-file', fixture.getFilePath('src/target.ts'), '--target-class', 'TargetClass', '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/big-class.ts'), 'method0', '-p', fixture.rootPath, '--type', 'method', '--class', 'BigClass', '--target-file', fixture.getFilePath('src/target.ts'), '--target-class', 'TargetClass', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -514,7 +514,7 @@ ${longBody}
       await fixture.writeFile('src/target.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'longFunction', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'longFunction', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -539,7 +539,7 @@ export function ${longName}(): number {
       await fixture.writeFile('src/target.ts', '');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), longName, '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), longName, '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/target.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -586,7 +586,7 @@ import { Config } from './types';
 `);
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/utils.ts'), 'createConfig', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/utils.ts'), 'createConfig', '--target-file', fixture.getFilePath('src/target.ts'), '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -601,7 +601,7 @@ import { Config } from './types';
   describe('缺少參數處理', () => {
     it('應該處理缺少來源檔案參數', async () => {
       const result = await executeCLI(
-        ['transform', 'move-member', '--target-file', '/target.ts'],
+        ['move-member', '--target-file', '/target.ts'],
         { memfs: fixture.memfs }
       );
 
@@ -612,7 +612,7 @@ import { Config } from './types';
       await fixture.writeFile('src/source.ts', 'export function fn(): void {}');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), '--target-file', '/target.ts'],
+        ['move-member', fixture.getFilePath('src/source.ts'), '--target-file', '/target.ts'],
         { memfs: fixture.memfs }
       );
 
@@ -623,7 +623,7 @@ import { Config } from './types';
       await fixture.writeFile('src/source.ts', 'export function fn(): void {}');
 
       const result = await executeCLI(
-        ['transform', 'move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'fn', '-p', fixture.rootPath],
         { memfs: fixture.memfs }
       );
 

@@ -57,7 +57,8 @@ export interface Symbol {
 export enum ReferenceType {
   Definition = 'definition',
   Usage = 'usage',
-  Declaration = 'declaration'
+  Declaration = 'declaration',
+  Import = 'import'
 }
 
 /**

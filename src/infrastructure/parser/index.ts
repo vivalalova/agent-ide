@@ -25,8 +25,6 @@ export type {
 // 匯出基礎實作
 export { BaseParserPlugin } from './base.js';
 
-// 匯出註冊中心和工廠
+// 匯出註冊中心
 export { ParserRegistry } from './registry.js';
 export type { ParserInfo, ParserRegistrationOptions } from './registry.js';
-export { ParserFactory } from './factory.js';
-export type { LazyLoaderFunction } from './factory.js';

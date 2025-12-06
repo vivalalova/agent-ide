@@ -8,8 +8,6 @@ export type { IFileSystem } from './file-system.interface.js';
 // 核心類別
 export { FileSystem } from './file-system.js';
 export { MemFileSystem } from './mem-file-system.js';
-export { FileWatcher } from './file-watcher.js';
-export { PathUtils } from './path-utils.js';
 
 // 型別定義
 export type {
