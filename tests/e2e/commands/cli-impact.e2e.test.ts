@@ -381,4 +381,78 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
     });
   });
+
+  describe('Impact 結構詳細驗證', () => {
+    it('應該返回 impact 物件包含 targetFile', async () => {
+      await fixture.writeFile('target-file.ts', 'export const target = 1;');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'target-file.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.impact).toBeDefined();
+      expect(output.impact.targetFile).toContain('target-file.ts');
+    });
+
+    it('應該返回 dependents 陣列', async () => {
+      await fixture.writeFile('dep-base.ts', 'export const base = 1;');
+      await fixture.writeFile('dep-consumer.ts', 'import { base } from "./dep-base.js";\nexport const use = base;');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'dep-base.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.impact).toBeDefined();
+      expect(Array.isArray(output.impact.dependents)).toBe(true);
+    });
+
+    it('應該返回 dependencies 陣列', async () => {
+      await fixture.writeFile('lib.ts', 'export const lib = 1;');
+      await fixture.writeFile('app.ts', 'import { lib } from "./lib.js";\nexport const app = lib;');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'app.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.impact).toBeDefined();
+      expect(Array.isArray(output.impact.dependencies)).toBe(true);
+    });
+
+    it('應該在 summary 格式顯示影響資訊', async () => {
+      await fixture.writeFile('sum-base.ts', 'export const sum = 1;');
+      await fixture.writeFile('sum-user.ts', 'import { sum } from "./sum-base.js";\nexport const use = sum;');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'sum-base.ts', '--path', fixture.rootPath, '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('影響分析');
+    });
+
+    it('應該分析現有 fixture 的 dependents', async () => {
+      // 使用 fixture 中現有的 types/user.ts（被多個 service 引用）
+      const result = await executeCLI(
+        ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // user.ts 被 services 引用，應該有 dependents
+      expect(output.impact).toBeDefined();
+      expect(Array.isArray(output.impact.dependents)).toBe(true);
+    });
+  });
 });
