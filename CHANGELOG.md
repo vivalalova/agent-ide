@@ -1,3 +1,17 @@
+## <small>0.4.2 (2025-12-06)</small>
+
+* Merge pull request #16 from vivalalova/claude/increase-test-coverage-01H8QXhvGqfyzSSdEANF6YnQ ([3ba8a7c](https://github.com/vivalalova/agent-ide/commit/3ba8a7c)), closes [#16](https://github.com/vivalalova/agent-ide/issues/16)
+* refactor: 擴大 Unit 測試覆蓋範圍至整個 src/ ([b9902ba](https://github.com/vivalalova/agent-ide/commit/b9902ba))
+* refactor: 擴展 Unit 測試覆蓋率排除清單 ([bacc593](https://github.com/vivalalova/agent-ide/commit/bacc593))
+* refactor: 改善 cache.test.ts 程式碼品質 ([0f7500c](https://github.com/vivalalova/agent-ide/commit/0f7500c))
+* refactor: 改善 vitest.config.unit.ts 程式碼品質 ([ba0ae70](https://github.com/vivalalova/agent-ide/commit/ba0ae70))
+* fix: 修正 event-bus.test.ts prefer-const lint 錯誤 ([f4045bb](https://github.com/vivalalova/agent-ide/commit/f4045bb))
+* fix: 修正 storage.test.ts lint 錯誤 ([f0a26ec](https://github.com/vivalalova/agent-ide/commit/f0a26ec))
+* style: lint 自動修正引號風格 ([0ec9ae3](https://github.com/vivalalova/agent-ide/commit/0ec9ae3))
+* test: 提升 Unit 測試覆蓋率至 98.89% ([b738b53](https://github.com/vivalalova/agent-ide/commit/b738b53))
+* test: 新增 unit 測試覆蓋 shared/utils、errors、cache、storage ([4f0ed4e](https://github.com/vivalalova/agent-ide/commit/4f0ed4e))
+* test: 新增 Unit 測試達成 25% 覆蓋率門檻 ([f2fe9c1](https://github.com/vivalalova/agent-ide/commit/f2fe9c1))
+
 ## <small>0.4.1 (2025-12-06)</small>
 
 * Merge pull request #15 from vivalalova/claude/separate-test-configs-01R3DXf7NzaoCGs5ZfS4Jnm5 ([447a94e](https://github.com/vivalalova/agent-ide/commit/447a94e)), closes [#15](https://github.com/vivalalova/agent-ide/issues/15)
