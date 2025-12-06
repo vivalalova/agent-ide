@@ -34,13 +34,3 @@ export {
   type ImportInfo,
   type ClassifiedDependencies
 } from './dependency-analyzer.js';
-
-// 分析器
-export { PythonComplexityAnalyzer } from './analyzers/complexity-analyzer.js';
-export { PythonUnusedSymbolDetector } from './analyzers/unused-symbol-detector.js';
-export { PythonTypeSafetyChecker } from './analyzers/type-safety-checker.js';
-export { PythonErrorHandlingChecker } from './analyzers/error-handling-checker.js';
-export { PythonSecurityChecker } from './analyzers/security-checker.js';
-export { PythonNamingChecker } from './analyzers/naming-checker.js';
-export { PythonPatternDetector } from './analyzers/pattern-detector.js';
-export { PythonDuplicationDetector } from './analyzers/duplication-detector.js';

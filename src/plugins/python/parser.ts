@@ -15,16 +15,6 @@ import type {
   ParserCapabilities
 } from '@infrastructure/parser/types.js';
 import { createValidationSuccess, createValidationFailure, createDefinition, createUsage } from '@infrastructure/parser/types.js';
-import type {
-  UnusedCode,
-  ComplexityMetrics,
-  CodeFragment,
-  PatternMatch,
-  TypeSafetyIssue,
-  ErrorHandlingIssue,
-  SecurityIssue,
-  NamingIssue
-} from '@infrastructure/parser/analysis-types.js';
 
 import { type PythonAST, type PythonASTNode, PythonNodeKind, isPythonTestFile } from './types.js';
 import {
@@ -40,15 +30,6 @@ import {
 import { PythonSymbolExtractor } from './symbol-extractor.js';
 import { PythonDependencyAnalyzer } from './dependency-analyzer.js';
 
-// 分析器導入（延遲載入）
-import { PythonComplexityAnalyzer } from './analyzers/complexity-analyzer.js';
-import { PythonUnusedSymbolDetector } from './analyzers/unused-symbol-detector.js';
-import { PythonTypeSafetyChecker } from './analyzers/type-safety-checker.js';
-import { PythonErrorHandlingChecker } from './analyzers/error-handling-checker.js';
-import { PythonSecurityChecker } from './analyzers/security-checker.js';
-import { PythonNamingChecker } from './analyzers/naming-checker.js';
-import { PythonPatternDetector } from './analyzers/pattern-detector.js';
-import { PythonDuplicationDetector } from './analyzers/duplication-detector.js';
 
 /**
  * Python Parser 類別
@@ -61,16 +42,6 @@ export class PythonParser extends BaseParserPlugin {
 
   private symbolExtractor: PythonSymbolExtractor;
   private dependencyAnalyzer: PythonDependencyAnalyzer;
-
-  // 分析器（延遲初始化）
-  private complexityAnalyzer?: PythonComplexityAnalyzer;
-  private unusedSymbolDetector?: PythonUnusedSymbolDetector;
-  private typeSafetyChecker?: PythonTypeSafetyChecker;
-  private errorHandlingChecker?: PythonErrorHandlingChecker;
-  private securityChecker?: PythonSecurityChecker;
-  private namingChecker?: PythonNamingChecker;
-  private patternDetector?: PythonPatternDetector;
-  private duplicationDetector?: PythonDuplicationDetector;
 
   constructor() {
     super();
@@ -556,87 +527,6 @@ export class PythonParser extends BaseParserPlugin {
     return abstractTypes.includes(symbol.type);
   }
 
-  // ===== 程式碼分析方法 =====
-
-  /**
-   * 檢測未使用的符號
-   */
-  override async detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<UnusedCode[]> {
-    if (!this.unusedSymbolDetector) {
-      this.unusedSymbolDetector = new PythonUnusedSymbolDetector();
-    }
-    return this.unusedSymbolDetector.detect(ast as PythonAST, allSymbols);
-  }
-
-  /**
-   * 分析程式碼複雜度
-   */
-  override async analyzeComplexity(code: string, ast: AST): Promise<ComplexityMetrics> {
-    if (!this.complexityAnalyzer) {
-      this.complexityAnalyzer = new PythonComplexityAnalyzer();
-    }
-    return this.complexityAnalyzer.analyze(code, ast as PythonAST);
-  }
-
-  /**
-   * 提取程式碼片段（用於重複代碼檢測）
-   */
-  override async extractCodeFragments(code: string, filePath: string): Promise<CodeFragment[]> {
-    if (!this.duplicationDetector) {
-      this.duplicationDetector = new PythonDuplicationDetector();
-    }
-    return this.duplicationDetector.extractFragments(code, filePath);
-  }
-
-  /**
-   * 檢測設計模式
-   */
-  override async detectPatterns(code: string, ast: AST): Promise<PatternMatch[]> {
-    if (!this.patternDetector) {
-      this.patternDetector = new PythonPatternDetector();
-    }
-    return this.patternDetector.detect(code, ast as PythonAST);
-  }
-
-  /**
-   * 檢查型別安全問題
-   */
-  override async checkTypeSafety(code: string, ast: AST): Promise<TypeSafetyIssue[]> {
-    if (!this.typeSafetyChecker) {
-      this.typeSafetyChecker = new PythonTypeSafetyChecker();
-    }
-    return this.typeSafetyChecker.check(code, ast as PythonAST);
-  }
-
-  /**
-   * 檢查錯誤處理問題
-   */
-  override async checkErrorHandling(code: string, ast: AST): Promise<ErrorHandlingIssue[]> {
-    if (!this.errorHandlingChecker) {
-      this.errorHandlingChecker = new PythonErrorHandlingChecker();
-    }
-    return this.errorHandlingChecker.check(code, ast as PythonAST);
-  }
-
-  /**
-   * 檢查安全性問題
-   */
-  override async checkSecurity(code: string, ast: AST): Promise<SecurityIssue[]> {
-    if (!this.securityChecker) {
-      this.securityChecker = new PythonSecurityChecker();
-    }
-    return this.securityChecker.check(code, ast as PythonAST);
-  }
-
-  /**
-   * 檢查命名規範問題
-   */
-  override async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<NamingIssue[]> {
-    if (!this.namingChecker) {
-      this.namingChecker = new PythonNamingChecker();
-    }
-    return this.namingChecker.check(symbols, filePath);
-  }
 }
 
 /**
