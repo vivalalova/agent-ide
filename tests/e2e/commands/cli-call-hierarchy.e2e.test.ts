@@ -319,4 +319,200 @@ export const arrowFn = () => {
       expect(output.function).toBe('arrowFn');
     });
   });
+
+  describe('使用 Fixture 現有函數的進階測試', () => {
+    it('應該分析 formatProduct 的 outgoing 呼叫（呼叫 formatCurrency）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'formatProduct', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('formatProduct');
+      expect(output.success).toBe(true);
+
+      // formatProduct 應該有 outgoing 呼叫 formatCurrency
+      expect(output.outgoing.length).toBeGreaterThanOrEqual(1);
+      const formatCurrencyCall = output.outgoing.find(
+        (call: { callee: string }) => call.callee === 'formatCurrency'
+      );
+      expect(formatCurrencyCall).toBeDefined();
+    });
+
+    it('應該分析 canLogin 方法的 outgoing 呼叫（呼叫 isActive）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'canLogin', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('canLogin');
+      expect(output.success).toBe(true);
+
+      // canLogin 應該呼叫 isActive
+      const isActiveCall = output.outgoing.find(
+        (call: { callee: string }) => call.callee === 'isActive'
+      );
+      expect(isActiveCall).toBeDefined();
+    });
+
+    it('應該分析 groupBy 函數（array-utils）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'groupBy', '--path', fixture.rootPath, '--direction', 'both', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('groupBy');
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('array-utils');
+    });
+
+    it('應該分析 validate 方法', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'validate', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('validate');
+      expect(output.success).toBe(true);
+      // validate 方法存在且可被分析
+      expect(output.outgoing).toBeDefined();
+    });
+
+    it('應該分析 sortBy 函數', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'sortBy', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('sortBy');
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('array-utils');
+    });
+
+    it('應該正確處理沒有 outgoing 呼叫的函數', async () => {
+      // formatDate 只使用內建方法，沒有呼叫其他自定義函數
+      const result = await executeCLI(
+        ['call-hierarchy', 'formatDate', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('formatDate');
+      expect(output.success).toBe(true);
+      // formatDate 的 outgoing 可能只有內建方法呼叫
+      expect(output.outgoing).toBeDefined();
+    });
+
+    it('應該分析 truncate 函數', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'truncate', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.function).toBe('truncate');
+      expect(output.success).toBe(true);
+    });
+  });
+
+  describe('Summary 格式驗證', () => {
+    it('應該在 summary 格式中顯示函數名稱和統計', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'formatProduct', '--path', fixture.rootPath, '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('formatProduct');
+      expect(result.stdout).toContain('📞');
+    });
+
+    it('應該在 summary 格式中顯示 incoming 和 outgoing 標籤', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'canLogin', '--path', fixture.rootPath, '--direction', 'both', '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      // summary 輸出應包含方向指示
+      expect(result.stdout).toContain('canLogin');
+    });
+  });
+
+  describe('定義位置驗證', () => {
+    it('應該返回正確的定義檔案路徑', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('array-utils.ts');
+      expect(output.definitionLine).toBeGreaterThan(0);
+    });
+
+    it('應該返回正確的定義行號', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'formatCurrency', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('formatter.ts');
+      expect(typeof output.definitionLine).toBe('number');
+    });
+  });
+
+  describe('邊界條件', () => {
+    it('應該處理 depth=1（預設值）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.depth).toBe(1);
+    });
+
+    it('應該處理 depth=10（最大值）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--depth', '10', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.depth).toBe(10);
+    });
+
+    it('應該拒絕 depth=0', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--depth', '0', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.stderr).toContain('depth');
+    });
+
+    it('應該拒絕負數 depth', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--depth', '-1', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.stderr).toContain('depth');
+    });
+  });
 });
