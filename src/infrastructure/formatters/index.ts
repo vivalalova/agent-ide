@@ -51,7 +51,11 @@ export {
   type FindReferencesResult,
   type ReferenceItem,
   type ReferenceType,
-  type DefinitionLocation
+  type DefinitionLocation,
+  type CallHierarchyResult,
+  type CallHierarchyDirection,
+  type IncomingCallItem,
+  type OutgoingCallItem
 } from './query-types.js';
 
 export {

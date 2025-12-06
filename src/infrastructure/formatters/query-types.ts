@@ -9,7 +9,8 @@ export enum QueryCommand {
   Analyze = 'analyze',
   Deps = 'deps',
   Snapshot = 'snapshot',
-  FindReferences = 'find-references'
+  FindReferences = 'find-references',
+  CallHierarchy = 'call-hierarchy'
 }
 
 /** 問題嚴重度 */
@@ -209,4 +210,56 @@ export interface FindReferencesResult extends QueryResult {
   definition: DefinitionLocation | null;
   /** 所有引用 */
   references: ReferenceItem[];
+}
+
+// ========== CallHierarchy 結果 ==========
+
+/** 呼叫層次分析方向 */
+export type CallHierarchyDirection = 'incoming' | 'outgoing' | 'both';
+
+/** 呼叫者項目（誰呼叫了目標函數） */
+export interface IncomingCallItem {
+  /** 呼叫者函數名稱 */
+  caller: string;
+  /** 呼叫點所在檔案 */
+  file: string;
+  /** 呼叫點行號 */
+  line: number;
+  /** 呼叫點欄位 */
+  column?: number;
+  /** 程式碼上下文 */
+  context?: string;
+}
+
+/** 被呼叫者項目（目標函數呼叫了誰） */
+export interface OutgoingCallItem {
+  /** 被呼叫的函數名稱 */
+  callee: string;
+  /** 被呼叫函數所在檔案 */
+  file: string;
+  /** 呼叫點行號 */
+  line: number;
+  /** 呼叫點欄位 */
+  column?: number;
+  /** 程式碼上下文 */
+  context?: string;
+}
+
+/** CallHierarchy 結果 */
+export interface CallHierarchyResult extends QueryResult {
+  command: QueryCommand.CallHierarchy;
+  /** 目標函數名稱 */
+  function: string;
+  /** 目標函數定義所在檔案 */
+  file: string;
+  /** 目標函數定義行號 */
+  definitionLine?: number;
+  /** 分析方向 */
+  direction: CallHierarchyDirection;
+  /** 分析深度 */
+  depth: number;
+  /** 呼叫者列表（誰呼叫了此函數） */
+  incoming: IncomingCallItem[];
+  /** 被呼叫者列表（此函數呼叫了誰） */
+  outgoing: OutgoingCallItem[];
 }

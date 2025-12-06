@@ -15,3 +15,4 @@ export { setupCyclesCommand } from './cycles.command.js';
 export { setupImpactCommand } from './impact.command.js';
 export { setupSnapshotCommand } from './snapshot.command.js';
 export { setupFindReferencesCommand } from './find-references.command.js';
+export { setupCallHierarchyCommand } from './call-hierarchy.command.js';
