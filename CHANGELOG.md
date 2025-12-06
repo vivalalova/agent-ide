@@ -1,3 +1,10 @@
+## <small>0.4.1 (2025-12-06)</small>
+
+* Merge pull request #15 from vivalalova/claude/separate-test-configs-01R3DXf7NzaoCGs5ZfS4Jnm5 ([447a94e](https://github.com/vivalalova/agent-ide/commit/447a94e)), closes [#15](https://github.com/vivalalova/agent-ide/issues/15)
+* chore: 移除不再需要的 .gitkeep ([e5b051e](https://github.com/vivalalova/agent-ide/commit/e5b051e))
+* test: 新增 Unit 測試達成 70% 覆蓋率門檻 ([352674c](https://github.com/vivalalova/agent-ide/commit/352674c))
+* refactor: 分離 E2E 和 Unit 測試配置 ([867dcd5](https://github.com/vivalalova/agent-ide/commit/867dcd5))
+
 ## 0.4.0 (2025-12-06)
 
 * Merge pull request #14 from vivalalova/feat/remove-low-value-features ([69647cf](https://github.com/vivalalova/agent-ide/commit/69647cf)), closes [#14](https://github.com/vivalalova/agent-ide/issues/14)
