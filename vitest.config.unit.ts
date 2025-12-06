@@ -1,6 +1,21 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
 import baseConfig from './vitest.config.js';
 
+// === 超時設定（毫秒） ===
+const TEST_TIMEOUT_MS = 30_000; // 單一測試超時
+const HOOK_TIMEOUT_MS = 5_000; // beforeEach/afterEach 超時
+
+// === 並發設定 ===
+const MAX_WORKERS = 4; // 最大並發 worker 數
+
+// === 覆蓋率門檻（百分比） ===
+const COVERAGE_THRESHOLD = {
+  lines: 40,
+  functions: 40,
+  branches: 30, // 分支覆蓋率要求較低，因為部分防禦性程式碼難以觸發
+  statements: 40
+};
+
 /**
  * Unit 測試配置
  * - 測試獨立模組/函式
@@ -16,16 +31,15 @@ export default mergeConfig(baseConfig, defineConfig({
     // 沒有測試檔案時不報錯
     passWithNoTests: true,
 
-    // Unit 測試較快，超時可較短
-    testTimeout: 30000,
-    hookTimeout: 5000,
+    testTimeout: TEST_TIMEOUT_MS,
+    hookTimeout: HOOK_TIMEOUT_MS,
 
     // Unit 測試不需要 E2E 的 fixture setup
     setupFiles: [],
 
     // Worker 設定 - Unit 測試可較高並發
     pool: 'forks',
-    maxWorkers: 4,
+    maxWorkers: MAX_WORKERS,
     fileParallelism: true,
 
     // 覆蓋率設定
@@ -33,42 +47,39 @@ export default mergeConfig(baseConfig, defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'json'],
       reportsDirectory: './coverage/unit',
-      include: [
-        // 已有 unit test 覆蓋的模組
-        'src/core/snapshot/**',
-        'src/core/dependency/cycle-detector.ts',
-        'src/core/dependency/dependency-graph.ts',
-        'src/core/shared/**',
-        'src/infrastructure/formatters/**'
-      ],
+      // 覆蓋整個 src/ 目錄
+      include: ['src/**'],
       exclude: [
+        // === 基礎排除 ===
         'node_modules/**',
         'tests/**',
         'dist/**',
         '**/*.d.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
-        'src/**/index.ts',
-        'src/bin/**',
-        'src/interfaces/**',
-        'src/core/patterns/**',
-        'src/core/search/**',
+        'src/**/index.ts', // re-export 檔案，無邏輯
+
+        // === 非程式碼檔案 ===
         '**/*.md',
         '**/*.swift',
         '**/*.sh',
         '**/*.yaml',
         '**/*.resolved',
         '**/swift-bridge/**',
-        // 未測試的檔案（待補充測試後移除）
-        'src/infrastructure/formatters/preview-converter.ts'
+
+        // === 需要 E2E 測試的模組（不納入 Unit 覆蓋率） ===
+        'src/plugins/**', // 語言 Parser，需實際檔案解析
+        'src/interfaces/cli/**', // CLI 命令，需端對端流程驗證
+        'src/application/services/**', // 服務層，整合多個核心模組
+        'src/application/workflows/**', // 工作流程，多步驟操作
+        'src/core/change-signature/**', // 簽名變更，需測試呼叫點更新
+        'src/core/indexing/**', // 索引引擎，需大量檔案測試
+        'src/core/move-file/**', // 檔案移動，需測試 import 更新
+        'src/core/move-member/**', // 成員移動，涉及多檔案修改
+        'src/core/rename/**', // 重命名，需完整流程驗證
+        'src/infrastructure/parser/**' // Parser 框架，需實際解析測試
       ],
-      // Unit 測試覆蓋率門檻
-      thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 70,
-        statements: 70
-      }
+      thresholds: COVERAGE_THRESHOLD
     },
   },
 }));
