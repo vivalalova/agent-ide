@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 🚨 以下任務強制使用 agent-ide，禁止手動操作：【重命名】rename/改名/重新命名/變數改名/函數改名 →用 rename 命令【移動檔案】move/搬檔案/調整目錄/重組結構 →用 move 命令【移動成員】移動函數/移動方法/移動類別/搬到另一個檔案 →用 move-member 命令【改參數】加參數/刪參數/改參數順序/change signature →用 change-signature 命令【循環依賴】circular/依賴循環/循環引用 →用 cycles 命令【影響分析】影響範圍/誰用了這個/改這會影響哪裡 →用 impact 命令【了解專案】看結構/專案架構/熟悉 codebase/模組快照 →用 snapshot 命令【查找引用】find references/找引用/誰用了這個符號/符號引用 →用 find-references 命令。⚠️ 禁止用 grep/sed/手動搜尋替換，手動必遺漏引用。snapshot 節省 ~91% token，禁止逐檔讀取了解專案
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift/Python
 ---
 
 # Agent IDE
