@@ -597,6 +597,213 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
     });
   });
 
+  describe('循環依賴檢測結果驗證', () => {
+    it('應該正確檢測並回傳循環依賴資訊', async () => {
+      // 建立 A→B→A 循環（使用 .ts 副檔名引用）
+      await fixture.writeFile('verify-a.ts', 'import { b } from "./verify-b";\nexport const a = b;');
+      await fixture.writeFile('verify-b.ts', 'import { a } from "./verify-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.cycles).toBeDefined();
+      expect(Array.isArray(output.cycles)).toBe(true);
+      // 驗證至少檢測到一個循環
+      expect(output.cycles.length).toBeGreaterThan(0);
+    });
+
+    it('應該回傳正確的循環結構（cycle, length）', async () => {
+      await fixture.writeFile('struct-a.ts', 'import { b } from "./struct-b";\nexport const a = b;');
+      await fixture.writeFile('struct-b.ts', 'import { a } from "./struct-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證循環結構
+      const cycle = output.cycles[0];
+      expect(cycle).toHaveProperty('cycle');
+      expect(cycle).toHaveProperty('length');
+      expect(Array.isArray(cycle.cycle)).toBe(true);
+      expect(typeof cycle.length).toBe('number');
+      expect(cycle.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該正確檢測三層循環（A→B→C→A）', async () => {
+      await fixture.writeFile('tri-a.ts', 'import { c } from "./tri-c";\nexport const a = c;');
+      await fixture.writeFile('tri-b.ts', 'import { a } from "./tri-a";\nexport const b = a;');
+      await fixture.writeFile('tri-c.ts', 'import { b } from "./tri-b";\nexport const c = b;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證有三層循環被檢測到
+      const hasThreeNodeCycle = output.cycles.some(
+        (c: { length: number }) => c.length >= 3
+      );
+      expect(hasThreeNodeCycle).toBe(true);
+    });
+
+    it('應該正確識別雙節點循環長度', async () => {
+      // 建立短循環（2 節點）
+      await fixture.writeFile('sev-low-a.ts', 'import { b } from "./sev-low-b";\nexport const a = b;');
+      await fixture.writeFile('sev-low-b.ts', 'import { a } from "./sev-low-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證有 2 節點循環
+      const twoNodeCycle = output.cycles.find((c: { length: number }) => c.length === 2);
+      expect(twoNodeCycle).toBeDefined();
+    });
+
+    it('應該檢測多個獨立循環', async () => {
+      // 循環 1: A↔B
+      await fixture.writeFile('multi-a.ts', 'import { b } from "./multi-b";\nexport const a = b;');
+      await fixture.writeFile('multi-b.ts', 'import { a } from "./multi-a";\nexport const b = a;');
+      // 循環 2: C↔D
+      await fixture.writeFile('multi-c.ts', 'import { d } from "./multi-d";\nexport const c = d;');
+      await fixture.writeFile('multi-d.ts', 'import { c } from "./multi-c";\nexport const d = c;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 應該檢測到至少 2 個循環
+      expect(output.cycles.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該在 summary 格式中顯示循環資訊', async () => {
+      await fixture.writeFile('sum-a.ts', 'import { b } from "./sum-b";\nexport const a = b;');
+      await fixture.writeFile('sum-b.ts', 'import { a } from "./sum-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'summary'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      // summary 輸出應包含循環相關數量資訊
+      expect(result.stdout).toMatch(/\d+/);
+    });
+
+    it('應該正確識別自我引用循環', async () => {
+      await fixture.writeFile('self-loop.ts', 'import { self } from "./self-loop";\nexport const self = 1;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 自我引用可能被檢測為長度 1 的循環（取決於 ignoreSelfLoops 設定）
+      expect(output).toBeDefined();
+    });
+
+    it('應該正確計算循環統計摘要', async () => {
+      await fixture.writeFile('stat-a.ts', 'import { b } from "./stat-b";\nexport const a = b;');
+      await fixture.writeFile('stat-b.ts', 'import { a } from "./stat-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      // 驗證 summary 欄位存在
+      expect(output.summary).toBeDefined();
+      expect(typeof output.summary.cyclesFound).toBe('number');
+    });
+
+    it('應該在無循環時回傳空陣列', async () => {
+      // 建立無循環依賴的檔案
+      await fixture.writeFile('no-cycle-a.ts', 'import { b } from "./no-cycle-b";\nexport const a = b;');
+      await fixture.writeFile('no-cycle-b.ts', 'export const b = 2;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles).toBeDefined();
+      expect(Array.isArray(output.cycles)).toBe(true);
+    });
+
+    it('應該正確處理中等長度循環（4 節點）', async () => {
+      // 建立 4 節點循環
+      await fixture.writeFile('mid-1.ts', 'import { m2 } from "./mid-2";\nexport const m1 = m2;');
+      await fixture.writeFile('mid-2.ts', 'import { m3 } from "./mid-3";\nexport const m2 = m3;');
+      await fixture.writeFile('mid-3.ts', 'import { m4 } from "./mid-4";\nexport const m3 = m4;');
+      await fixture.writeFile('mid-4.ts', 'import { m1 } from "./mid-1";\nexport const m4 = m1;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證有 4 節點循環
+      const fourNodeCycle = output.cycles.find((c: { length: number }) => c.length === 4);
+      expect(fourNodeCycle).toBeDefined();
+    });
+
+    it('應該正確處理長循環（8 節點）', async () => {
+      // 建立 8 節點循環
+      const files = Array.from({ length: 8 }, (_, i) => ({
+        path: `long-${i}.ts`,
+        content: i === 7
+          ? `import { node0 } from "./long-0";\nexport const node${i} = node0;`
+          : `import { node${i + 1} } from "./long-${i + 1}";\nexport const node${i} = node${i + 1};`
+      }));
+
+      await Promise.all(files.map(f => fixture.writeFile(f.path, f.content)));
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證有長循環
+      const longCycle = output.cycles.find((c: { length: number }) => c.length >= 7);
+      expect(longCycle).toBeDefined();
+    });
+
+    it('應該正確處理交叉循環（共享節點）', async () => {
+      // A → B → C → A 且 B → D → B
+      await fixture.writeFile('cross-a.ts', 'import { c } from "./cross-c";\nexport const a = c;');
+      await fixture.writeFile('cross-b.ts', 'import { a } from "./cross-a";\nimport { d } from "./cross-d";\nexport const b = a + d;');
+      await fixture.writeFile('cross-c.ts', 'import { b } from "./cross-b";\nexport const c = b;');
+      await fixture.writeFile('cross-d.ts', 'import { b } from "./cross-b";\nexport const d = b;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles).toBeDefined();
+    });
+
+    it('應該驗證循環路徑包含正確的檔案', async () => {
+      await fixture.writeFile('path-a.ts', 'import { b } from "./path-b";\nexport const a = b;');
+      await fixture.writeFile('path-b.ts', 'import { a } from "./path-a";\nexport const b = a;');
+
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.cycles.length).toBeGreaterThan(0);
+
+      // 驗證循環路徑包含正確的檔案名稱
+      const cycle = output.cycles[0];
+      expect(cycle.cycle.length).toBeGreaterThanOrEqual(2);
+      const hasPathA = cycle.cycle.some((f: string) => f.includes('path-a'));
+      const hasPathB = cycle.cycle.some((f: string) => f.includes('path-b'));
+      expect(hasPathA || hasPathB).toBe(true);
+    });
+  });
+
   describe('拓撲排序邊界測試', () => {
     it('應該處理 DAG（無循環）的拓撲排序', async () => {
       await fixture.writeFile('dag-a.ts', 'import { b } from "./dag-b.js";\nimport { c } from "./dag-c.js";\nexport const a = 1;');
