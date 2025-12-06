@@ -13,17 +13,22 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 ```bash
 pnpm build                    # 建置（含 Swift parser 複製）
 pnpm typecheck                # 型別檢查
-pnpm test                     # 測試（自動含 coverage）
-pnpm test:single              # 單執行緒（記憶體受限）
-pnpm test:bail                # 失敗即停
+pnpm test                     # 執行所有測試（E2E + Unit）
+pnpm test:e2e                 # 僅 E2E 測試（CLI 端對端）
+pnpm test:unit                # 僅 Unit 測試（獨立模組）
+pnpm test:e2e:bail            # E2E 失敗即停
+pnpm test:unit:bail           # Unit 失敗即停
 pnpm lint                     # ESLint
 npm link                      # 本地 CLI 安裝
 
-# 單一測試檔
-pnpm test -- --run tests/e2e/commands/cli-rename-basic.e2e.test.ts
+# 單一 E2E 測試檔
+pnpm test:e2e -- --run tests/e2e/commands/cli-rename-basic.e2e.test.ts
+
+# 單一 Unit 測試檔
+pnpm test:unit -- --run tests/unit/example.test.ts
 
 # 匹配測試名稱
-pnpm test -- --run -t "應該分析專案"
+pnpm test:e2e -- --run -t "應該分析專案"
 ```
 
 ## 架構
@@ -48,16 +53,26 @@ src/
 
 ## 測試規範
 
-### 核心原則
-- **只寫 E2E**：透過 CLI 測試，禁止直接 import 實作類別
+### 測試類型
+
+| 類型 | 目錄 | 配置檔 | 命令 | 用途 |
+|-----|------|-------|------|------|
+| **E2E** | `tests/e2e/` | `vitest.config.e2e.ts` | `pnpm test:e2e` | CLI 端對端測試 |
+| **Unit** | `tests/unit/` | `vitest.config.unit.ts` | `pnpm test:unit` | 獨立模組/函式測試 |
+
+### E2E 測試規範
+
+**核心原則**：
+- 透過 CLI 測試完整功能流程
 - **memfs 隔離**：所有檔案操作在記憶體中，零硬碟 I/O
 - **Fixture-Based**：`loadFixture('sample-project')` 載入到 memfs
 
-### 🚨 覆蓋率要求
-- `pnpm test` 自動產生覆蓋率報告
-- **覆蓋率不足必須補測試**：確保新增/修改的程式碼有對應測試覆蓋
+**命名規範**：
+- 檔案：`cli-<command>.e2e.test.ts`
+- describe：`CLI <command> - 基於 sample-project fixture`
+- it：具體行為+預期結果（✅ `應該輸出 JSON 格式` ❌ `測試功能`）
 
-### 測試模式
+**測試模式**：
 ```typescript
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
@@ -80,12 +95,36 @@ describe('CLI search - 基於 sample-project fixture', () => {
 });
 ```
 
-### 命名規範
-- 檔案：`cli-<command>.e2e.test.ts`
-- describe：`CLI <command> - 基於 sample-project fixture`
-- it：具體行為+預期結果（✅ `應該輸出 JSON 格式` ❌ `測試功能`）
+### Unit 測試規範
 
-### 極端測試標準
+**核心原則**：
+- 測試獨立模組/函式，可直接 import 實作類別
+- 快速執行、無外部依賴
+- 專注於邊界條件和邏輯分支
+
+**命名規範**：
+- 檔案：`<module-name>.test.ts`
+- describe：模組或類別名稱
+- it：函式行為+預期結果
+
+**測試模式**：
+```typescript
+import { MyModule } from '@core/my-module/index.js';
+
+describe('MyModule', () => {
+  it('should handle edge case correctly', () => {
+    const result = MyModule.process(edgeCaseInput);
+    expect(result).toBe(expectedOutput);
+  });
+});
+```
+
+### 🚨 覆蓋率要求
+- `pnpm test` 自動產生覆蓋率報告（分別存於 `coverage/e2e/` 和 `coverage/unit/`）
+- **覆蓋率不足必須補測試**：確保新增/修改的程式碼有對應測試覆蓋
+- E2E 覆蓋率門檻設定於 `vitest.config.e2e.ts`
+
+### 極端測試標準（E2E）
 - 數量極端：50+ 檔案/函數
 - 深度極端：10+ 層嵌套
 - 長度極端：500+ 行、1000+ 字元
@@ -199,8 +238,9 @@ outputHandler.outputMutation(previewInput, format);
 - description 目標是**最大化 AI 使用率**，需包含：觸發關鍵詞、強制語氣（🚨）、價值主張（如節省 token）
 
 **🚨 測試覆蓋率門檻**：
-- `vitest.config.ts` 的 `thresholds` 設定禁止隨意調降
+- `vitest.config.e2e.ts` 的 `thresholds` 設定禁止隨意調降
 - 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
-- `tests/e2e/commands/cli-<command>.e2e.test.ts`
+- E2E 測試：`tests/e2e/commands/cli-<command>.e2e.test.ts`
+- Unit 測試：`tests/unit/<module-name>.test.ts`

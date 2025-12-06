@@ -6,6 +6,16 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+/**
+ * Vitest 基礎配置
+ * 此配置作為所有測試配置的基底，包含：
+ * - 路徑別名
+ * - 通用測試設定
+ *
+ * 專用配置：
+ * - vitest.config.e2e.ts - E2E 測試（CLI 端對端測試）
+ * - vitest.config.unit.ts - Unit 測試（獨立模組測試）
+ */
 export default defineConfig({
   resolve: {
     alias: {
@@ -32,34 +42,16 @@ export default defineConfig({
 
     // Diff 輸出精簡化
     diff: {
-      expand: false,           // 不展開上下文
-      truncateThreshold: 200,  // 超過 200 字元截斷
+      expand: false,
+      truncateThreshold: 200,
     },
     onConsoleLog(log) {
-      // 過濾不需要的訊息
       if (log.includes('垃圾回收已啟用')) return false;
       if (log.includes('[DEBUG]')) return false;
       return true;
     },
 
-    // 測試設定檔案
-    setupFiles: ['./tests/setup.ts'],
-
-    // 測試包含/排除
-    include: ['tests/**/*.test.ts'],
-    exclude: ['node_modules/**', 'dist/**'],
-
-    // Worker 設定
-    pool: 'forks',
-    maxWorkers: 2,
-    fileParallelism: true,
-
-    // 超時設定
-    testTimeout: 120000, // 增加到 120 秒（dead code detection 需要時間）
-    hookTimeout: 10000,
-    teardownTimeout: 30000,
-
-    // 並發控制 - 降低並發數減少 Worker 負載
+    // 並發控制
     maxConcurrency: 20,
 
     // 清理設定
@@ -70,55 +62,5 @@ export default defineConfig({
 
     // 記憶體報告
     logHeapUsage: false,
-
-    // 覆蓋率設定
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html', 'json'],
-      reportsDirectory: './coverage',
-      include: [
-        'src/core/**',
-        'src/infrastructure/parser/**',
-        'src/infrastructure/formatters/**',
-        'src/infrastructure/storage/**',
-        'src/plugins/typescript/**',
-        'src/plugins/javascript/**'
-      ],
-      exclude: [
-        'node_modules/**',
-        'tests/**',
-        'dist/**',
-        '**/*.d.ts',
-        '**/*.test.ts',
-        '**/*.spec.ts',
-        'src/**/index.ts',
-        'src/bin/**',
-        'src/interfaces/**',
-        // 未使用模組
-        'src/core/patterns/**',
-        'src/core/search/**',
-        // 非 JS/TS 檔案
-        '**/*.md',
-        '**/*.swift',
-        '**/*.sh',
-        '**/*.yaml',
-        '**/*.resolved',
-        '**/swift-bridge/**'
-      ],
-      /**
-       * 覆蓋率門檻說明：
-       * PR #14 移除 5 個低價值命令（analyze, search 等），刪除約 9,000 行程式碼。
-       * 門檻從 40% 調整至 28-38%，原因：
-       * 1. 移除的模組原本有部分測試覆蓋，刪除後影響整體比例
-       * 2. 新增的 find-references/call-hierarchy 為核心 AST 分析，複雜度高
-       * 3. 實際測試案例從 ~400 增至 785，品質提升但分支覆蓋率計算方式不同
-       */
-      thresholds: {
-        lines: 35,
-        functions: 38,
-        branches: 28,
-        statements: 35
-      }
-    },
   },
 });
