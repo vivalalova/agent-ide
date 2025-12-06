@@ -33,14 +33,8 @@ export default mergeConfig(baseConfig, defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'json'],
       reportsDirectory: './coverage/unit',
-      include: [
-        // 已有 unit test 覆蓋的模組
-        'src/core/snapshot/**',
-        'src/core/dependency/cycle-detector.ts',
-        'src/core/dependency/dependency-graph.ts',
-        'src/core/shared/**',
-        'src/infrastructure/formatters/**'
-      ],
+      // 覆蓋整個 src/ 目錄
+      include: ['src/**'],
       exclude: [
         'node_modules/**',
         'tests/**',
@@ -48,28 +42,22 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.d.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
+        // index.ts 通常只是 re-export
         'src/**/index.ts',
-        'src/bin/**',
-        'src/interfaces/**',
-        'src/core/patterns/**',
-        'src/core/search/**',
+        // 非程式碼檔案
         '**/*.md',
         '**/*.swift',
         '**/*.sh',
         '**/*.yaml',
         '**/*.resolved',
-        '**/swift-bridge/**',
-        // 未測試的檔案（待補充測試後移除）
-        'src/infrastructure/formatters/preview-converter.ts',
-        // call-hierarchy-analyzer 需要真實 TypeScript 編譯器，由 E2E 測試覆蓋
-        'src/core/shared/call-hierarchy-analyzer.ts'
+        '**/swift-bridge/**'
       ],
-      // Unit 測試覆蓋率門檻
+      // Unit 測試覆蓋率門檻（覆蓋整個 src/ 後，門檻需逐步提升）
       thresholds: {
-        lines: 95,
-        functions: 95,
-        branches: 80,
-        statements: 95
+        lines: 10,
+        functions: 10,
+        branches: 5,
+        statements: 10
       }
     },
   },
