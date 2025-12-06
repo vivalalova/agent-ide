@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine } from '@core/indexing/index-engine.js';
+import { IndexEngine, createIndexConfig } from '@core/indexing/index.js';
 import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
@@ -64,86 +64,88 @@ async function handleFindReferencesCommand(
     console.log(`🔍 查找符號引用: ${symbolName}...`);
   }
 
-  try {
-    const projectPath = options.path || process.cwd();
+  const projectPath = options.path || process.cwd();
 
-    // 建立索引引擎並索引專案
-    const indexConfig = {
-      workspacePath: projectPath,
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
-      excludePatterns: ['node_modules', 'dist', '.git', 'build', 'coverage'],
-      maxFileSize: 1024 * 1024, // 1MB
-      enablePersistence: false,
-      persistencePath: undefined,
-      maxConcurrency: 4
+  // 建立索引引擎
+  const indexConfig = createIndexConfig(projectPath, {
+    includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
+    excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'],
+    enablePersistence: false
+  });
+
+  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+
+  try {
+    // 索引專案
+    await indexEngine.indexProject(projectPath);
+
+    // 取得所有已索引檔案路徑
+    const indexedFiles = indexEngine.getAllIndexedFiles();
+    const filePaths = indexedFiles.map(f => f.filePath);
+
+    // 查找符號定義
+    const symbolResults = await indexEngine.findSymbol(symbolName);
+    let definition: DefinitionLocation | null = null;
+    let symbolType = 'unknown';
+
+    if (symbolResults.length > 0) {
+      const firstResult = symbolResults[0];
+      definition = {
+        file: firstResult.symbol.location.filePath,
+        line: firstResult.symbol.location.range.start.line,
+        column: firstResult.symbol.location.range.start.column
+      };
+      symbolType = firstResult.symbol.type;
+    }
+
+    // 建立 SymbolFinder 查找所有引用
+    const parserRegistry = ParserRegistry.getInstance();
+    const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
+    const refs = await symbolFinder.findReferences(symbolName, filePaths);
+
+    // 轉換為輸出格式
+    const references: ReferenceItem[] = refs.map(ref => ({
+      file: ref.location.filePath,
+      line: ref.location.range.start.line,
+      column: ref.location.range.start.column,
+      type: mapReferenceType(ref.type),
+      context: ref.context || ''
+    }));
+
+    // 計算影響檔案數
+    const filesAffected = new Set(references.map(r => r.file)).size;
+
+    // 組裝結果
+    const result: FindReferencesResult = {
+      command: QueryCommand.FindReferences,
+      success: true,
+      symbol: symbolName,
+      type: symbolType,
+      definition,
+      references,
+      summary: {
+        totalReferences: references.length,
+        filesAffected
+      }
     };
 
-    const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
-
-    try {
-      await indexEngine.indexProject(projectPath);
-
-      // 取得所有已索引檔案路徑
-      const indexedFiles = indexEngine.getAllIndexedFiles();
-      const filePaths = indexedFiles.map(f => f.filePath);
-
-      // 查找符號定義
-      const symbolResults = await indexEngine.findSymbol(symbolName);
-      let definition: DefinitionLocation | null = null;
-      let symbolType = 'unknown';
-
-      if (symbolResults.length > 0) {
-        const firstResult = symbolResults[0];
-        definition = {
-          file: firstResult.symbol.location.filePath,
-          line: firstResult.symbol.location.range.start.line,
-          column: firstResult.symbol.location.range.start.column
-        };
-        symbolType = firstResult.symbol.type;
-      }
-
-      // 建立 SymbolFinder 查找所有引用
-      const parserRegistry = ParserRegistry.getInstance();
-      const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
-      const refs = await symbolFinder.findReferences(symbolName, filePaths);
-
-      // 轉換為輸出格式
-      const references: ReferenceItem[] = refs.map(ref => ({
-        file: ref.location.filePath,
-        line: ref.location.range.start.line,
-        column: ref.location.range.start.column,
-        type: mapReferenceType(ref.type),
-        context: ref.context || ''
-      }));
-
-      // 計算影響檔案數
-      const filesAffected = new Set(references.map(r => r.file)).size;
-
-      // 組裝結果
-      const result: FindReferencesResult = {
-        command: QueryCommand.FindReferences,
-        success: true,
-        symbol: symbolName,
-        type: symbolType,
-        definition,
-        references,
-        summary: {
-          totalReferences: references.length,
-          filesAffected
-        }
-      };
-
-      outputHandler.outputQuery(result, format);
-    } finally {
-      indexEngine.dispose();
-    }
+    outputHandler.outputQuery(result, format);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    outputHandler.outputError(`查找引用失敗: ${errorMessage}`, format);
+
+    // 區分索引錯誤和查找錯誤
+    const isIndexError = errorMessage.includes('索引')
+      || errorMessage.includes('index')
+      || errorMessage.includes('ENOENT');
+    const errorPrefix = isIndexError ? '索引專案失敗' : '查找引用失敗';
+
+    outputHandler.outputError(`${errorPrefix}: ${errorMessage}`, format);
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') {
       process.exit(1);
     }
+  } finally {
+    indexEngine.dispose();
   }
 }
 

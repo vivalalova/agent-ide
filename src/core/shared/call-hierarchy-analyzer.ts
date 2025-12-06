@@ -210,12 +210,13 @@ export class CallHierarchyAnalyzer {
 
   /**
    * 找出 outgoing 呼叫（目標函數呼叫了誰）
+   * @param depth 預留參數：未來可用於遞迴深度控制或效能優化
    */
   private async findOutgoingCalls(
     filePath: string,
     functionName: string,
     functionRange: Range,
-    _depth: number
+    _depth: number // Reserved: 未來可實作遞迴分析或深度限制優化
   ): Promise<OutgoingCall[]> {
     const outgoing: OutgoingCall[] = [];
     const visited = new Set<string>();
@@ -284,11 +285,12 @@ export class CallHierarchyAnalyzer {
 
   /**
    * 在 AST 中找到目標函數節點
+   * @param range 預留參數：未來可用於精確定位同名函數
    */
   private findFunctionNode(
     sourceFile: ts.SourceFile,
     functionName: string,
-    _range: Range
+    _range: Range // Reserved: 未來可用於區分同名但不同位置的函數
   ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null {
     let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
 
