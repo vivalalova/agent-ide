@@ -7,7 +7,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 import type { SnapshotResult, ModuleSnapshotData, ProjectSnapshotData } from '@infrastructure/formatters/query-types.js';
 
-describe('CLI snapshot - 基於 swift-sample-project fixture', () => {
+// Swift parser 只在 macOS 可用
+const isNotMacOS = process.platform !== 'darwin';
+
+describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture', () => {
   let fixture: FixtureContext;
   let modelsPath: string;
 

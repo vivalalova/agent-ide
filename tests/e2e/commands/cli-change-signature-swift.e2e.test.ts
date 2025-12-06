@@ -6,7 +6,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
 
-describe('CLI change-signature - 基於 swift-sample-project fixture', () => {
+// Swift parser 只在 macOS 可用
+const isNotMacOS = process.platform !== 'darwin';
+
+describe.skipIf(isNotMacOS)('CLI change-signature - 基於 swift-sample-project fixture', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
