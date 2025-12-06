@@ -551,9 +551,11 @@ describe.skipIf(isNotMacOS)('CLI rename - 基於 swift-sample-project fixture', 
         { memfs: fixture.memfs }
       );
 
-      const hasError = result.stderr.includes('找不到符號')
-        || result.stderr.includes('error')
-        || result.stderr.includes('ENOENT');
+      // JSON 格式錯誤輸出到 stdout
+      const output = result.stdout || result.stderr;
+      const hasError = output.includes('找不到符號')
+        || output.includes('error')
+        || output.includes('ENOENT');
       expect(hasError).toBe(true);
     });
 

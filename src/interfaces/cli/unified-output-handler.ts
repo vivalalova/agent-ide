@@ -105,12 +105,21 @@ export class UnifiedOutputHandler {
 
   /**
    * 輸出錯誤
+   * JSON 格式輸出到 stdout（機器可讀），其他格式輸出到 stderr
+   * @param command 可選的命令名稱，JSON 輸出時會包含此欄位
    */
-  outputError(error: Error | string, format: OutputFormat): void {
+  outputError(error: Error | string, format: OutputFormat, command?: string): void {
     const message = error instanceof Error ? error.message : error;
 
     if (format === OutputFormat.Json) {
-      console.error(JSON.stringify({ success: false, error: message }));
+      const output: { success: false; error: string; command?: string } = {
+        success: false,
+        error: message
+      };
+      if (command) {
+        output.command = command;
+      }
+      console.log(JSON.stringify(output));
     } else {
       console.error(`\n❌ 錯誤: ${message}`);
     }

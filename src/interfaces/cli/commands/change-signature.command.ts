@@ -73,7 +73,8 @@ async function handleChangeSignatureCommand(
     const changes = parseChanges(options);
 
     if (changes.length === 0) {
-      outputError('請指定至少一個變更操作 (--add, --remove, --reorder, --rename, --change-type)', isJsonFormat);
+      outputHandler.outputError('請指定至少一個變更操作 (--add, --remove, --reorder, --rename, --change-type)', format);
+      process.exitCode = 1;
       return;
     }
 
@@ -119,18 +120,20 @@ async function handleChangeSignatureCommand(
           })),
           executed: result.executed,
           stats: result.stats
-        }, null, 2));
+        }));
       } else if (format === OutputFormat.Diff) {
         printDiffOutput(result, projectRoot);
       } else {
         printSummaryOutput(result, projectRoot);
       }
     } else {
-      outputError(result.error || '未知錯誤', isJsonFormat);
+      outputHandler.outputError(result.error || '未知錯誤', format);
+      process.exitCode = 1;
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputError(errorMsg, isJsonFormat);
+    outputHandler.outputError(errorMsg, format);
+    process.exitCode = 1;
   }
 }
 
@@ -325,14 +328,3 @@ function formatSignatureString(signature: any): string {
   return result;
 }
 
-/**
- * 輸出錯誤
- */
-function outputError(message: string, isJsonFormat: boolean): void {
-  if (isJsonFormat) {
-    console.log(JSON.stringify({ success: false, error: message }, null, 2));
-  } else {
-    console.error(`❌ ${message}`);
-  }
-  process.exitCode = 1;
-}

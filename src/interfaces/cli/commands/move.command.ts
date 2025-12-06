@@ -41,9 +41,9 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
       const target = targetArg || options.target;
 
       if (!source || !target) {
-        console.error('必須指定來源和目標路徑');
-        console.error('   使用方式: agent-ide move <source> <target>');
-        console.error('   或: agent-ide move --source <source> --target <target>');
+        const outputHandler = createUnifiedOutputHandler();
+        const format = options.format === 'json' ? OutputFormat.Json : OutputFormat.Summary;
+        outputHandler.outputError('必須指定來源和目標路徑。使用方式: agent-ide move <source> <target> 或 --source <source> --target <target>', format);
         process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
@@ -83,7 +83,9 @@ async function handleMoveCommand(
     // 檢查源檔案是否存在
     const sourceExists = await context.fileSystem.exists(source);
     if (!sourceExists) {
-      outputError(`源檔案找不到: ${source}`, isJsonFormat);
+      outputHandler.outputError(`源檔案找不到: ${source}`, format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -92,15 +94,10 @@ async function handleMoveCommand(
     const normalizedTarget = path.resolve(target);
     if (normalizedSource === normalizedTarget) {
       // 源和目標相同時，視為 no-op，成功返回
-      const message = 'Source and target are identical. No changes made.';
       if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          message,
-          changes: []
-        }, null, 2));
+        console.log(JSON.stringify({ success: true, message: 'Source and target are identical. No changes made.', changes: [] }));
       } else {
-        console.log(`   ${message}`);
+        console.log('   Source and target are identical. No changes made.');
       }
       return;
     }
@@ -139,11 +136,15 @@ async function handleMoveCommand(
       // 實際執行模式
       printSuccess(source, target, result, isJsonFormat);
     } else {
-      outputError(result.error || '移動失敗', isJsonFormat);
+      outputHandler.outputError(result.error || '移動失敗', format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputError(errorMsg, isJsonFormat);
+    outputHandler.outputError(errorMsg, format);
+    process.exitCode = 1;
+    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
 
@@ -216,18 +217,6 @@ function printSuccess(source: string, target: string, result: any, isJsonFormat:
   }
 }
 
-/**
- * 輸出錯誤
- */
-function outputError(message: string, isJsonFormat: boolean): void {
-  if (isJsonFormat) {
-    console.log(JSON.stringify({ success: false, error: message }, null, 2));
-  } else {
-    console.error(`   ${message}`);
-  }
-  process.exitCode = 1;
-  if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-}
 
 /**
  * 讀取 tsconfig.json 路徑別名

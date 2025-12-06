@@ -99,22 +99,9 @@ async function handleCyclesCommand(
 
     outputHandler.outputQuery(result, format);
   } catch (error) {
-    handleError(error, format);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    outputHandler.outputError(`依賴分析失敗: ${errorMessage}`, format);
+    process.exitCode = 1;
+    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
-}
-
-/**
- * 處理錯誤
- */
-function handleError(error: unknown, format: OutputFormat): void {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-
-  if (format === OutputFormat.Json) {
-    console.error(JSON.stringify({ error: errorMessage }));
-  } else {
-    console.error('\n❌ 依賴分析失敗:', errorMessage);
-  }
-
-  process.exitCode = 1;
-  if (process.env.NODE_ENV !== 'test') { process.exit(1); }
 }

@@ -212,8 +212,9 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // 檢查 stderr 有錯誤訊息
-      expect(result.stderr).toContain('direction');
+      // JSON 格式錯誤輸出到 stdout
+      const hasError = result.stdout.includes('direction') || result.stderr.includes('direction');
+      expect(hasError).toBe(true);
     });
 
     it('應該拒絕超出範圍的 depth 並輸出錯誤', async () => {
@@ -224,8 +225,9 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // 檢查 stderr 有錯誤訊息
-      expect(result.stderr).toContain('depth');
+      // JSON 格式錯誤輸出到 stdout
+      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
+      expect(hasError).toBe(true);
     });
 
     it('應該拒絕無效的格式並輸出錯誤', async () => {
@@ -503,7 +505,9 @@ export const arrowFn = () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr).toContain('depth');
+      // JSON 格式錯誤輸出到 stdout
+      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
+      expect(hasError).toBe(true);
     });
 
     it('應該拒絕負數 depth', async () => {
@@ -512,7 +516,9 @@ export const arrowFn = () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr).toContain('depth');
+      // JSON 格式錯誤輸出到 stdout
+      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
+      expect(hasError).toBe(true);
     });
   });
 });

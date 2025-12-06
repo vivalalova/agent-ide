@@ -66,12 +66,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   const isJsonFormat = format === OutputFormat.Json;
 
   if (!from || !to) {
-    if (isJsonFormat) {
-      console.error(JSON.stringify({ error: '必須指定符號名稱和新名稱' }));
-    } else {
-      console.error('必須指定符號名稱和新名稱');
-      console.error('   使用方式: agent-ide rename --symbol <name> --new-name <name>');
-    }
+    outputHandler.outputError('必須指定符號名稱和新名稱。使用方式: agent-ide rename --symbol <name> --new-name <name>', format, 'rename');
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     return;
@@ -79,17 +74,16 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
   // 如果 from 和 to 相同，直接返回成功但無操作
   if (from === to) {
-    const emptyResult = {
-      command: 'rename',
-      success: true,
-      files: [],
-      summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0, totalReferences: 0, estimatedTime: 0, conflictCount: 0 },
-      operations: 0,
-      affectedFiles: 0,
-      operationDescription: `No changes needed: '${from}' is already named '${to}'`
-    };
     if (isJsonFormat) {
-      console.log(JSON.stringify(emptyResult, null, 2));
+      console.log(JSON.stringify({
+        command: 'rename',
+        success: true,
+        files: [],
+        summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0 },
+        operations: 0,
+        affectedFiles: 0,
+        operationDescription: `No changes needed: '${from}' is already named '${to}'`
+      }));
     } else {
       console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
     }
@@ -141,11 +135,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const searchResults = await indexEngine.findSymbol(from);
 
     if (searchResults.length === 0) {
-      if (isJsonFormat) {
-        console.error(JSON.stringify({ error: `找不到符號 "${from}"` }));
-      } else {
-        console.log(`   找不到符號 "${from}"`);
-      }
+      outputHandler.outputError(`找不到符號 "${from}"`, format, 'rename');
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
@@ -195,11 +185,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         return;
       } catch (previewError) {
         const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
-        if (isJsonFormat) {
-          console.error(JSON.stringify({ error: errorMsg }));
-        } else {
-          console.error('   預覽失敗:', errorMsg);
-        }
+        outputHandler.outputError(`預覽失敗: ${errorMsg}`, format, 'rename');
         process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
@@ -249,17 +235,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       );
       outputHandler.outputMutation(previewInput, format);
     } else {
-      if (isJsonFormat) {
-        console.error(JSON.stringify({
-          success: false,
-          errors: renameResult.errors || ['重新命名失敗']
-        }));
-      } else {
-        console.error('   重新命名失敗:');
-        renameResult.errors?.forEach(error => {
-          console.error(`   - ${error}`);
-        });
-      }
+      const errorMsg = renameResult.errors?.join(', ') || '重新命名失敗';
+      outputHandler.outputError(errorMsg, format, 'rename');
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
@@ -267,11 +244,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       indexEngine.dispose();
     }
   } catch (error) {
-    if (isJsonFormat) {
-      console.error(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
-    } else {
-      console.error('   重新命名失敗:', error instanceof Error ? error.message : error);
-    }
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputHandler.outputError(`重新命名失敗: ${errorMsg}`, format, 'rename');
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }

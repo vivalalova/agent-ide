@@ -72,7 +72,8 @@ async function handleMoveMemberCommand(
   try {
     // 驗證必要參數
     if (!options.targetFile) {
-      outputError('必須指定目標檔案 (--target-file)', isJsonFormat);
+      outputHandler.outputError('必須指定目標檔案 (--target-file)', format);
+      process.exitCode = 1;
       return;
     }
 
@@ -150,11 +151,13 @@ async function handleMoveMemberCommand(
         printSummaryOutput(result, projectRoot);
       }
     } else {
-      outputError(result.error || '未知錯誤', isJsonFormat);
+      outputHandler.outputError(result.error || '未知錯誤', format);
+      process.exitCode = 1;
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputError(errorMsg, isJsonFormat);
+    outputHandler.outputError(errorMsg, format);
+    process.exitCode = 1;
   }
 }
 
@@ -219,14 +222,3 @@ function printSummaryOutput(result: any, projectRoot: string): void {
   }
 }
 
-/**
- * 輸出錯誤
- */
-function outputError(message: string, isJsonFormat: boolean): void {
-  if (isJsonFormat) {
-    console.log(JSON.stringify({ success: false, error: message }, null, 2));
-  } else {
-    console.error(`❌ ${message}`);
-  }
-  process.exitCode = 1;
-}
