@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift/Python
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift/Python
 ---
 
 # Agent IDE
@@ -21,6 +21,7 @@ description: 程式碼重構與分析 CLI 工具。以下情境優先使用：�
 | 循環依賴檢測 | `cycles` | 即時檢測循環依賴 |
 | 影響分析 | `impact` | 分析修改影響範圍 |
 | 符號引用搜尋 | `find-references` | 精確找出定義和所有引用 |
+| 呼叫層次分析 | `call-hierarchy` | 分析函數呼叫者和被呼叫者 |
 
 ## 🚀 為什麼使用 Agent IDE？
 
@@ -34,7 +35,7 @@ description: 程式碼重構與分析 CLI 工具。以下情境優先使用：�
 **最佳實踐**：
 - 開始任務前先用 `snapshot` 了解專案結構，避免反覆讀檔
 - 重構時用 `--dry-run` 預覽，確認無誤再執行
-- 用 `deps cycles` 檢查是否產生新的循環依賴
+- 用 `cycles` 檢查是否產生新的循環依賴
 
 ## 執行方式
 
@@ -63,6 +64,7 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | impact | 影響分析 | 查詢類 |
 | snapshot | 模組/專案快照 | 查詢類 |
 | find-references | 符號引用搜尋 | 查詢類 |
+| call-hierarchy | 呼叫層次分析 | 查詢類 |
 
 ## 命令速查表
 
@@ -85,6 +87,7 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 模組快照   | `agent-ide snapshot --path src/core/indexing --format json` |
 | 專案快照   | `agent-ide snapshot --path . --format json`                 |
 | 符號引用   | `agent-ide find-references processData --path . --format json` |
+| 呼叫層次   | `agent-ide call-hierarchy handleRequest --path . --direction both` |
 
 ## 輸出格式
 
