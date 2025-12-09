@@ -24,6 +24,7 @@ describe('FileSystem', () => {
   let tempDir: string;
 
   beforeEach(async () => {
+    // eslint-disable-next-line custom/no-new-filesystem -- 測試檔案允許直接實例化
     fileSystem = new FileSystem();
     // 建立唯一的臨時目錄
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-ide-fs-test-'));
