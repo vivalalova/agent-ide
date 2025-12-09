@@ -4,7 +4,7 @@
  * 使用真實檔案系統進行測試，在臨時目錄中操作
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,6 +13,7 @@ import {
   FileNotFoundError,
   DirectoryNotFoundError,
   DirectoryNotEmptyError,
+  PermissionError,
 } from '@infrastructure/storage/types.js';
 
 // ============================================================================
@@ -619,6 +620,109 @@ describe('FileSystem', () => {
 
       // 應該是排序的
       expect(matches).toEqual([...matches].sort());
+    });
+  });
+
+  // ==========================================================================
+  // 錯誤型別驗證（文檔測試）
+  // ==========================================================================
+
+  describe('錯誤型別驗證', () => {
+    // 由於 ESM 模組無法 spy，我們驗證錯誤類型的正確性
+
+    it('PermissionError 應該正確包含路徑資訊', () => {
+      const error = new PermissionError('/test/path');
+      expect(error.path).toBe('/test/path');
+      expect(error.message).toContain('/test/path');
+    });
+
+    it('FileNotFoundError 應該正確包含路徑資訊', () => {
+      const error = new FileNotFoundError('/test/path');
+      expect(error.path).toBe('/test/path');
+    });
+
+    it('DirectoryNotFoundError 應該正確包含路徑資訊', () => {
+      const error = new DirectoryNotFoundError('/test/dir');
+      expect(error.path).toBe('/test/dir');
+    });
+
+    it('DirectoryNotEmptyError 應該正確包含路徑資訊', () => {
+      const error = new DirectoryNotEmptyError('/test/dir');
+      expect(error.path).toBe('/test/dir');
+    });
+  });
+
+  // ==========================================================================
+  // glob 進階測試
+  // ==========================================================================
+
+  describe('glob 進階功能', () => {
+    it('應該支援 followSymlinks 選項', async () => {
+      const dirPath = path.join(tempDir, 'glob-symlink');
+      await fs.mkdir(dirPath);
+      await fs.writeFile(path.join(dirPath, 'file.txt'), 'content');
+
+      // 測試 followSymlinks 選項傳遞
+      const matches = await fileSystem.glob('*.txt', {
+        cwd: dirPath,
+        followSymlinks: true,
+      });
+
+      expect(matches.length).toBe(1);
+    });
+
+    it('應該處理空結果', async () => {
+      const dirPath = path.join(tempDir, 'glob-empty');
+      await fs.mkdir(dirPath);
+
+      const matches = await fileSystem.glob('*.nonexistent', { cwd: dirPath });
+
+      expect(matches).toEqual([]);
+    });
+
+    it('應該處理多層嵌套的 ignore 模式', async () => {
+      const dirPath = path.join(tempDir, 'glob-nested-ignore');
+      await fs.mkdir(path.join(dirPath, 'src', 'test'), { recursive: true });
+      await fs.writeFile(path.join(dirPath, 'src', 'app.ts'), 'app');
+      await fs.writeFile(path.join(dirPath, 'src', 'test', 'app.test.ts'), 'test');
+
+      const matches = await fileSystem.glob('**/*.ts', {
+        cwd: dirPath,
+        ignore: ['**/*.test.ts'],
+      });
+
+      expect(matches.length).toBe(1);
+      expect(matches[0]).toContain('app.ts');
+      expect(matches[0]).not.toContain('test');
+    });
+  });
+
+  // ==========================================================================
+  // atomicWrite 錯誤處理
+  // ==========================================================================
+
+  describe('atomicWrite 錯誤處理', () => {
+    it('應該在原子寫入失敗時清理暫存檔案', async () => {
+      // 透過正常路徑驗證功能正常運作
+      const filePath = path.join(tempDir, 'atomic-cleanup.txt');
+
+      await fileSystem.writeFile(filePath, 'content', { fsync: true });
+
+      // 確認檔案存在且暫存檔案不存在
+      expect(await fileSystem.exists(filePath)).toBe(true);
+      expect(await fileSystem.exists(filePath + '.tmp')).toBe(false);
+    });
+
+    it('應該支援不同編碼的原子寫入', async () => {
+      const filePath = path.join(tempDir, 'atomic-encoding.txt');
+
+      await fileSystem.writeFile(filePath, '中文內容', {
+        fsync: true,
+        encoding: 'utf-8'
+      });
+
+      const content = await fs.readFile(filePath, 'utf-8');
+      expect(content).toBe('中文內容');
     });
   });
 

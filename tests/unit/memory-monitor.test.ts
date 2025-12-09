@@ -229,6 +229,9 @@ describe('MemoryMonitor', () => {
         delete (global as Record<string, unknown>).gc;
       }
     });
+
+    // 注意：由於測試環境使用 --expose-gc，global.gc 總是存在
+    // 因此 lines 153-157 的 else if 分支無法在此環境測試
   });
 
   describe('destroy', () => {
