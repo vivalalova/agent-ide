@@ -1,3 +1,13 @@
+## 0.5.0 (2025-12-11)
+
+* Merge pull request #18 from vivalalova/feature/unicode ([d299fad](https://github.com/vivalalova/agent-ide/commit/d299fad)), closes [#18](https://github.com/vivalalova/agent-ide/issues/18)
+* docs: [Unicode 識別符] 更新 CLAUDE.md 文檔 ([e2aafe6](https://github.com/vivalalova/agent-ide/commit/e2aafe6))
+* fix: [Unicode 識別符] 補充 review 修正 ([90e1eab](https://github.com/vivalalova/agent-ide/commit/90e1eab))
+* test: [Unicode 識別符] 新增 E2E 測試案例 ([34b0026](https://github.com/vivalalova/agent-ide/commit/34b0026))
+* test: [Unicode 識別符] 新增 Python fixture 測試檔案 ([7ec4c9e](https://github.com/vivalalova/agent-ide/commit/7ec4c9e))
+* test: [Unicode 識別符] 新增 RenameEngine 單元測試 ([5a8865e](https://github.com/vivalalova/agent-ide/commit/5a8865e))
+* feat: [Unicode 識別符] 支援多國語言變數命名 ([d46aa34](https://github.com/vivalalova/agent-ide/commit/d46aa34))
+
 ## <small>0.4.3 (2025-12-11)</small>
 
 * Merge pull request #17 from vivalalova/feature/test ([525d03c](https://github.com/vivalalova/agent-ide/commit/525d03c)), closes [#17](https://github.com/vivalalova/agent-ide/issues/17)
