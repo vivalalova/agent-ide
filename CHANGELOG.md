@@ -1,3 +1,14 @@
+## <small>0.4.3 (2025-12-11)</small>
+
+* Merge pull request #17 from vivalalova/feature/test ([525d03c](https://github.com/vivalalova/agent-ide/commit/525d03c)), closes [#17](https://github.com/vivalalova/agent-ide/issues/17)
+* refactor: 按語言分類 E2E 測試目錄結構 ([1612cbe](https://github.com/vivalalova/agent-ide/commit/1612cbe))
+* test: 增強 call-hierarchy-analyzer 測試覆蓋率 ([8ce3a47](https://github.com/vivalalova/agent-ide/commit/8ce3a47))
+* test: 增強 file-system 和 memory-monitor 測試 ([6d65425](https://github.com/vivalalova/agent-ide/commit/6d65425))
+* test: 新增 Python E2E 測試 ([f9e2d52](https://github.com/vivalalova/agent-ide/commit/f9e2d52))
+* test: 補充 Unit 測試提升模組覆蓋率 ([dcfafa2](https://github.com/vivalalova/agent-ide/commit/dcfafa2))
+* test: 補強低覆蓋率模組 Unit 測試 ([cfb7634](https://github.com/vivalalova/agent-ide/commit/cfb7634))
+* fix: 修正 Python parser WASM 路徑解析 ([8342ff0](https://github.com/vivalalova/agent-ide/commit/8342ff0))
+
 ## <small>0.4.2 (2025-12-06)</small>
 
 * Merge pull request #16 from vivalalova/claude/increase-test-coverage-01H8QXhvGqfyzSSdEANF6YnQ ([3ba8a7c](https://github.com/vivalalova/agent-ide/commit/3ba8a7c)), closes [#16](https://github.com/vivalalova/agent-ide/issues/16)
