@@ -159,7 +159,8 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       }
     });
 
-    it('應該處理中文符號名稱（視為非法識別符）', async () => {
+    it('應該支援中文符號名稱（Unicode 識別符）', async () => {
+      // JavaScript/TypeScript/Python 等現代語言都支援 Unicode 識別符
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
@@ -168,9 +169,13 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'invalid_identifier')).toBe(true);
-        }
+        // 中文是有效的 Unicode 識別符，不應該有 invalid_identifier 衝突
+        const hasInvalidIdentifierConflict = output.conflicts?.some(
+          (c: { type: string }) => c.type === 'invalid_identifier'
+        );
+        expect(hasInvalidIdentifierConflict).toBeFalsy();
+        // 應該成功找到並準備重命名
+        expect(output.success).toBe(true);
       }
     });
   });

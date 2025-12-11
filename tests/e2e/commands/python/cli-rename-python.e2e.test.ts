@@ -594,4 +594,118 @@ describe('CLI rename Python - 基於 python-sample-project fixture', () => {
       }
     });
   });
+
+  describe('Unicode 識別符支援', () => {
+    it('應該支援重命名為中文識別符（user_data → 用戶基本資料）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'user_data', '--to', '用戶基本資料', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        expect(output.conflicts).toEqual([]);
+        // 應該找到 session_keys.py 和 state_manager.py 中的引用
+        expect(output.affectedFiles).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('應該支援重命名為日文識別符（company_name → 会社名）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'company_name', '--to', '会社名', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        expect(output.conflicts).toEqual([]);
+      }
+    });
+
+    it('應該支援重命名為韓文識別符（theme → 테마）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'theme', '--to', '테마', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        expect(output.conflicts).toEqual([]);
+      }
+    });
+
+    it('應該支援混合語言識別符（factory_name → 工廠name）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'factory_name', '--to', '工廠name', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        expect(output.conflicts).toEqual([]);
+      }
+    });
+
+    it('應該拒絕以數字開頭的識別符（user_data → 123資料）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'user_data', '--to', '123資料', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.conflicts.length).toBeGreaterThan(0);
+        expect(output.conflicts[0].type).toBe('invalid_identifier');
+      }
+    });
+
+    it('應該支援 str, Enum 多重繼承模式的成員重命名', async () => {
+      // KEY(str, Enum) 模式中的小寫 snake_case 成員
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'current_page', '--to', '當前頁面', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        expect(output.conflicts).toEqual([]);
+      }
+    });
+
+    it('應該正確更新跨檔案的 Unicode 識別符引用', async () => {
+      // user_data 在 session_keys.py 定義，在 state_manager.py 被引用
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'user_data', '--to', '用戶資料', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        // 應該影響至少 2 個檔案
+        expect(output.affectedFiles).toBeGreaterThanOrEqual(2);
+        // 檢查 fileSummaries 包含兩個檔案
+        const filePaths = output.fileSummaries.map((f: { filePath: string }) => f.filePath);
+        expect(filePaths.some((p: string) => p.includes('session_keys.py'))).toBe(true);
+        expect(filePaths.some((p: string) => p.includes('state_manager.py'))).toBe(true);
+      }
+    });
+  });
 });

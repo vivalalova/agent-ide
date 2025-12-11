@@ -825,4 +825,75 @@ describe.skipIf(isNotMacOS)('CLI rename - 基於 swift-sample-project fixture', 
       }
     });
   });
+
+  describe('Unicode 識別符支援', () => {
+    it('應該支援重命名為中文識別符（User → 用戶）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        // 中文是有效的 Swift Unicode 識別符，不應該有 invalid_identifier 衝突
+        const hasInvalidIdentifierConflict = output.conflicts?.some(
+          (c: { type: string }) => c.type === 'invalid_identifier'
+        );
+        expect(hasInvalidIdentifierConflict).toBeFalsy();
+      }
+    });
+
+    it('應該支援重命名為日文識別符（name → 名前）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'name', '--to', '名前', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        const hasInvalidIdentifierConflict = output.conflicts?.some(
+          (c: { type: string }) => c.type === 'invalid_identifier'
+        );
+        expect(hasInvalidIdentifierConflict).toBeFalsy();
+      }
+    });
+
+    it('應該支援混合語言識別符（Product → 商品Product）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'Product', '--to', '商品Product', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.command).toBe('rename');
+        expect(output.success).toBe(true);
+        const hasInvalidIdentifierConflict = output.conflicts?.some(
+          (c: { type: string }) => c.type === 'invalid_identifier'
+        );
+        expect(hasInvalidIdentifierConflict).toBeFalsy();
+      }
+    });
+
+    it('應該拒絕以數字開頭的識別符（User → 123用戶）', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '123用戶', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        // 數字開頭應該被標記為無效識別符
+        expect(output.conflicts?.some((c: { type: string }) => c.type === 'invalid_identifier')).toBe(true);
+      }
+    });
+  });
 });

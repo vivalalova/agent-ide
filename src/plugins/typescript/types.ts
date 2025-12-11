@@ -425,16 +425,53 @@ export function createTypeScriptASTNode(
 }
 
 /**
+ * TypeScript/JavaScript 保留字列表
+ */
+const TYPESCRIPT_RESERVED_WORDS = new Set([
+  // JavaScript reserved words
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
+  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
+  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
+  // ES6+
+  'let', 'static', 'async', 'await',
+  // Strict mode reserved words
+  'implements', 'interface', 'package', 'private', 'protected', 'public',
+  // TypeScript specific
+  'enum', 'type', 'namespace', 'module', 'declare', 'abstract', 'as',
+  'asserts', 'any', 'boolean', 'constructor', 'get', 'infer', 'is',
+  'keyof', 'never', 'readonly', 'require', 'number', 'object', 'set',
+  'string', 'symbol', 'undefined', 'unique', 'unknown', 'from', 'global',
+  'of', 'null', 'true', 'false'
+]);
+
+/** 預編譯的 Unicode 識別符正則表達式 */
+const TYPESCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
+
+/**
  * 驗證識別符名稱
+ *
+ * TypeScript 支援 Unicode 識別符（與 JavaScript 相同）：
+ * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
+ * - 後續字元：Unicode 類別 ID_Continue 或 $
+ *
+ * 範例：
+ * - const 用戶名稱 = "John"  // 合法
+ * - let データ = 123         // 合法
  */
 export function isValidIdentifier(name: string): boolean {
   if (!name || name.length === 0) {
     return false;
   }
 
-  // TypeScript 識別符規則
-  const identifierPattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
-  return identifierPattern.test(name);
+  return TYPESCRIPT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isTypeScriptReservedWord(name);
+}
+
+/**
+ * 檢查是否為 TypeScript 保留字
+ */
+export function isTypeScriptReservedWord(name: string): boolean {
+  return TYPESCRIPT_RESERVED_WORDS.has(name);
 }
 
 /**

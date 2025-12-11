@@ -247,11 +247,54 @@ export function getNodeName(node: SwiftASTNode): string | null {
 }
 
 /**
+ * Swift 保留字列表
+ */
+const SWIFT_RESERVED_WORDS = new Set([
+  // Declaration keywords
+  'associatedtype', 'class', 'deinit', 'enum', 'extension', 'fileprivate',
+  'func', 'import', 'init', 'inout', 'internal', 'let', 'open', 'operator',
+  'private', 'precedencegroup', 'protocol', 'public', 'rethrows', 'static',
+  'struct', 'subscript', 'typealias', 'var',
+  // Statement keywords
+  'break', 'case', 'catch', 'continue', 'default', 'defer', 'do', 'else',
+  'fallthrough', 'for', 'guard', 'if', 'in', 'repeat', 'return', 'throw',
+  'switch', 'where', 'while',
+  // Expression keywords
+  'Any', 'as', 'await', 'catch', 'false', 'is', 'nil', 'self', 'Self',
+  'super', 'throw', 'throws', 'true', 'try',
+  // Pattern keywords
+  '_',
+  // Contextual keywords (commonly used)
+  'async', 'actor', 'some', 'any', 'macro', 'nonisolated', 'isolated'
+]);
+
+/** 預編譯的 Unicode 識別符正則表達式 */
+const SWIFT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_][\p{ID_Continue}]*$/u;
+
+/**
  * 判斷是否為有效的 Swift 識別符
+ *
+ * Swift 支援 Unicode 識別符：
+ * - 第一個字元：Unicode 類別 ID_Start 或底線
+ * - 後續字元：Unicode 類別 ID_Continue
+ *
+ * 範例：
+ * - let 数量: Int = 10       // 合法
+ * - var ユーザー = User()    // 合法
  */
 export function isValidIdentifier(name: string): boolean {
-  // Swift 識別符規則：字母或底線開頭，後接字母、數字或底線
-  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+  if (!name || name.length === 0) {
+    return false;
+  }
+
+  return SWIFT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isSwiftReservedWord(name);
+}
+
+/**
+ * 檢查是否為 Swift 保留字
+ */
+export function isSwiftReservedWord(name: string): boolean {
+  return SWIFT_RESERVED_WORDS.has(name);
 }
 
 /**

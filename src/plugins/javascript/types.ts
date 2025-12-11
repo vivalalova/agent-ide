@@ -404,34 +404,48 @@ export function createJavaScriptASTNode(
 }
 
 /**
+ * JavaScript 保留字列表
+ */
+const JAVASCRIPT_RESERVED_WORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
+  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
+  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
+  // ES6+
+  'let', 'static', 'async', 'await',
+  // Strict mode reserved words
+  'implements', 'interface', 'package', 'private', 'protected', 'public',
+  // Literals
+  'null', 'true', 'false'
+]);
+
+/** 預編譯的 Unicode 識別符正則表達式 */
+const JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
+
+/**
  * 驗證識別符名稱
+ *
+ * JavaScript 支援 Unicode 識別符：
+ * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
+ * - 後續字元：Unicode 類別 ID_Continue 或 $
+ *
+ * 範例：
+ * - const 用戶名稱 = "John"  // 合法
+ * - let π = 3.14159          // 合法
  */
 export function isValidIdentifier(name: string): boolean {
   if (!name || name.length === 0) {
     return false;
   }
 
-  // JavaScript 識別符規則
-  const identifierPattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
-  return identifierPattern.test(name) && !isReservedWord(name);
+  return JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isReservedWord(name);
 }
 
 /**
  * 檢查是否為保留字
  */
 export function isReservedWord(name: string): boolean {
-  const reservedWords = [
-    'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-    'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-    'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-    'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-    // ES6+
-    'let', 'static', 'async', 'await',
-    // Strict mode reserved words
-    'implements', 'interface', 'package', 'private', 'protected', 'public'
-  ];
-
-  return reservedWords.includes(name);
+  return JAVASCRIPT_RESERVED_WORDS.has(name);
 }
 
 /**
