@@ -202,6 +202,11 @@ export class ReferenceUpdater {
       let match;
 
       while ((match = regex.exec(line)) !== null) {
+        // 跳過字串字面值內的匹配
+        if (this.isInString(line, match.index)) {
+          continue;
+        }
+
         const startColumn = match.index + 1;
         const endColumn = startColumn + symbolName.length;
 
@@ -560,11 +565,42 @@ export class ReferenceUpdater {
       return true;
     }
 
+    // Python 單行註解
+    if (beforePosition.includes('#')) {
+      return true;
+    }
+
     // 檢查多行註解（簡化處理）
     const openComment = beforePosition.lastIndexOf('/*');
     const closeComment = beforePosition.lastIndexOf('*/');
 
     return openComment !== -1 && (closeComment === -1 || openComment > closeComment);
+  }
+
+  /**
+   * 檢查位置是否在字串字面值內
+   */
+  private isInString(line: string, position: number): boolean {
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+
+    for (let i = 0; i < position; i++) {
+      const char = line[i];
+      const prevChar = i > 0 ? line[i - 1] : '';
+
+      // 跳過轉義字符
+      if (prevChar === '\\') {
+        continue;
+      }
+
+      if (char === '\'' && !inDoubleQuote) {
+        inSingleQuote = !inSingleQuote;
+      } else if (char === '"' && !inSingleQuote) {
+        inDoubleQuote = !inDoubleQuote;
+      }
+    }
+
+    return inSingleQuote || inDoubleQuote;
   }
 
   /**
