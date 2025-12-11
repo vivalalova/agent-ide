@@ -1,3 +1,8 @@
+## <small>0.5.1 (2025-12-11)</small>
+
+* Merge pull request #19 from vivalalova/feature/unicode ([b4775b6](https://github.com/vivalalova/agent-ide/commit/b4775b6)), closes [#19](https://github.com/vivalalova/agent-ide/issues/19)
+* fix: [Unicode 識別符] 跳過字串字面值和 Python 註解內的匹配 ([6895186](https://github.com/vivalalova/agent-ide/commit/6895186))
+
 ## 0.5.0 (2025-12-11)
 
 * Merge pull request #18 from vivalalova/feature/unicode ([d299fad](https://github.com/vivalalova/agent-ide/commit/d299fad)), closes [#18](https://github.com/vivalalova/agent-ide/issues/18)
