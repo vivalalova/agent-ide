@@ -247,6 +247,31 @@ export function getNodeName(node: SwiftASTNode): string | null {
 }
 
 /**
+ * Swift 保留字列表
+ */
+const SWIFT_RESERVED_WORDS = new Set([
+  // Declaration keywords
+  'associatedtype', 'class', 'deinit', 'enum', 'extension', 'fileprivate',
+  'func', 'import', 'init', 'inout', 'internal', 'let', 'open', 'operator',
+  'private', 'precedencegroup', 'protocol', 'public', 'rethrows', 'static',
+  'struct', 'subscript', 'typealias', 'var',
+  // Statement keywords
+  'break', 'case', 'catch', 'continue', 'default', 'defer', 'do', 'else',
+  'fallthrough', 'for', 'guard', 'if', 'in', 'repeat', 'return', 'throw',
+  'switch', 'where', 'while',
+  // Expression keywords
+  'Any', 'as', 'await', 'catch', 'false', 'is', 'nil', 'self', 'Self',
+  'super', 'throw', 'throws', 'true', 'try',
+  // Pattern keywords
+  '_',
+  // Contextual keywords (commonly used)
+  'async', 'actor', 'some', 'any', 'macro', 'nonisolated', 'isolated'
+]);
+
+/** 預編譯的 Unicode 識別符正則表達式 */
+const SWIFT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_][\p{ID_Continue}]*$/u;
+
+/**
  * 判斷是否為有效的 Swift 識別符
  *
  * Swift 支援 Unicode 識別符：
@@ -262,9 +287,14 @@ export function isValidIdentifier(name: string): boolean {
     return false;
   }
 
-  // 使用 Unicode 屬性轉義驗證識別符
-  const unicodeIdentifierPattern = /^[\p{ID_Start}_][\p{ID_Continue}]*$/u;
-  return unicodeIdentifierPattern.test(name);
+  return SWIFT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isSwiftReservedWord(name);
+}
+
+/**
+ * 檢查是否為 Swift 保留字
+ */
+export function isSwiftReservedWord(name: string): boolean {
+  return SWIFT_RESERVED_WORDS.has(name);
 }
 
 /**

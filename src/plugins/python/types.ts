@@ -214,16 +214,46 @@ export function isRelativePath(path: string): boolean {
 }
 
 /**
+ * Python 保留字列表
+ */
+const PYTHON_RESERVED_WORDS = new Set([
+  // Keywords
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await',
+  'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+  'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is',
+  'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try',
+  'while', 'with', 'yield',
+  // Python 3.10+ soft keywords
+  'match', 'case', 'type', '_'
+]);
+
+/** 預編譯的 Unicode 識別符正則表達式 */
+const PYTHON_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_][\p{ID_Continue}]*$/u;
+
+/**
  * 驗證 Python 識別符名稱
+ *
+ * Python 3 支援 Unicode 識別符（PEP 3131）：
+ * - 第一個字元：Unicode 類別 ID_Start 或底線
+ * - 後續字元：Unicode 類別 ID_Continue
+ *
+ * 範例：
+ * - 用戶名稱 = "John"   # 合法
+ * - データ = 123        # 合法（日文）
  */
 export function isValidPythonIdentifier(name: string): boolean {
   if (!name || name.length === 0) {
     return false;
   }
 
-  // Python 識別符規則：以字母或底線開頭，後跟字母、數字或底線
-  const identifierPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
-  return identifierPattern.test(name);
+  return PYTHON_UNICODE_IDENTIFIER_PATTERN.test(name) && !isPythonReservedWord(name);
+}
+
+/**
+ * 檢查是否為 Python 保留字
+ */
+export function isPythonReservedWord(name: string): boolean {
+  return PYTHON_RESERVED_WORDS.has(name);
 }
 
 /**

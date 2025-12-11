@@ -24,6 +24,9 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 
+/** 預編譯的 Unicode 識別符正則表達式 */
+const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
+
 /**
  * 重新命名引擎類別
  * 使用 Parser 的 AST 分析進行精確的符號重命名
@@ -538,13 +541,11 @@ export class RenameEngine {
       return false;
     }
 
-    // 使用 Unicode 屬性轉義來驗證識別符
+    // 使用預編譯的 Unicode 識別符正則表達式
     // \p{ID_Start} - Unicode 識別符起始字元（包含所有語言的字母）
     // \p{ID_Continue} - Unicode 識別符後續字元（包含字母、數字、連接符等）
     // 注意：也允許 $ 作為起始字元（JavaScript 慣例）
-    const unicodeIdentifierRegex = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
-
-    return unicodeIdentifierRegex.test(name);
+    return UNICODE_IDENTIFIER_PATTERN.test(name);
   }
 
   /**
