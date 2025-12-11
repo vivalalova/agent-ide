@@ -405,15 +405,23 @@ export function createJavaScriptASTNode(
 
 /**
  * 驗證識別符名稱
+ *
+ * JavaScript 支援 Unicode 識別符：
+ * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
+ * - 後續字元：Unicode 類別 ID_Continue 或 $
+ *
+ * 範例：
+ * - const 用戶名稱 = "John"  // 合法
+ * - let π = 3.14159          // 合法
  */
 export function isValidIdentifier(name: string): boolean {
   if (!name || name.length === 0) {
     return false;
   }
 
-  // JavaScript 識別符規則
-  const identifierPattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
-  return identifierPattern.test(name) && !isReservedWord(name);
+  // 使用 Unicode 屬性轉義驗證識別符
+  const unicodeIdentifierPattern = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
+  return unicodeIdentifierPattern.test(name) && !isReservedWord(name);
 }
 
 /**

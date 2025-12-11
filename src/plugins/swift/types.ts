@@ -248,10 +248,23 @@ export function getNodeName(node: SwiftASTNode): string | null {
 
 /**
  * 判斷是否為有效的 Swift 識別符
+ *
+ * Swift 支援 Unicode 識別符：
+ * - 第一個字元：Unicode 類別 ID_Start 或底線
+ * - 後續字元：Unicode 類別 ID_Continue
+ *
+ * 範例：
+ * - let 数量: Int = 10       // 合法
+ * - var ユーザー = User()    // 合法
  */
 export function isValidIdentifier(name: string): boolean {
-  // Swift 識別符規則：字母或底線開頭，後接字母、數字或底線
-  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+  if (!name || name.length === 0) {
+    return false;
+  }
+
+  // 使用 Unicode 屬性轉義驗證識別符
+  const unicodeIdentifierPattern = /^[\p{ID_Start}_][\p{ID_Continue}]*$/u;
+  return unicodeIdentifierPattern.test(name);
 }
 
 /**
