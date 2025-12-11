@@ -65,7 +65,9 @@ function resolveWasmPath(): string {
   // 嘗試從 node_modules 解析
   try {
     const treeSitterPythonPath = require.resolve('tree-sitter-python');
-    const packageDir = path.dirname(treeSitterPythonPath);
+    // require.resolve 返回 bindings/node/index.js，需要往上找到套件根目錄
+    const bindingsDir = path.dirname(treeSitterPythonPath); // bindings/node
+    const packageDir = path.dirname(path.dirname(bindingsDir)); // 套件根目錄
     return path.join(packageDir, 'tree-sitter-python.wasm');
   } catch {
     // 備用路徑
