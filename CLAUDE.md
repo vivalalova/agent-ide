@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、4 Parser（TS/JS/Swift/Python）
+**現況**：7 核心模組、4 Parser（TS/JS/Swift/Python）、Unicode 識別符支援
 
 ## 常用指令
 
@@ -154,6 +154,16 @@ agent-ide move <source> <target> --path <path> [--dry-run]
 agent-ide move-member <sourceFile> <memberName> --target-file <file> [--dry-run]
 ```
 
+### Unicode 識別符支援
+rename 命令支援 Unicode 識別符（中/日/韓/阿拉伯等多國語言）：
+```bash
+agent-ide rename --path . --from user_data --to 用戶資料 --dry-run
+agent-ide rename --path . --from name --to 名前 --dry-run        # 日文
+agent-ide rename --path . --from theme --to 테마 --dry-run       # 韓文
+```
+- 使用 Unicode 標準 UAX #31 (`\p{ID_Start}`, `\p{ID_Continue}`)
+- 各 Parser 內建保留字驗證（Python/TypeScript/JavaScript/Swift）
+
 ## 輸出處理架構
 
 ### 🚨 強制規範
@@ -242,5 +252,5 @@ outputHandler.outputMutation(previewInput, format);
 - 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
-- E2E 測試：`tests/e2e/commands/cli-<command>.e2e.test.ts`
+- E2E 測試：`tests/e2e/commands/<language>/cli-<command>.e2e.test.ts`（按語言分類）
 - Unit 測試：`tests/unit/<module-name>.test.ts`
