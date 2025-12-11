@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
 describe('CLI rename Python - 基於 python-sample-project fixture', () => {
   let fixture: FixtureContext;

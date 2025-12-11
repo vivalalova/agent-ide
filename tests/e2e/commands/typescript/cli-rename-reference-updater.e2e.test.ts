@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
 describe('CLI rename reference-updater - 覆蓋率補強測試', () => {
   let fixture: FixtureContext;

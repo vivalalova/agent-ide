@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 import * as path from 'path';
 
 describe('CLI move basic - 基於 sample-project fixture', () => {

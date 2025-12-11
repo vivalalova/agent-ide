@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
 // Swift parser 只在 macOS 可用
 const isNotMacOS = process.platform !== 'darwin';

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 import type { SnapshotResult, ModuleSnapshotData, ProjectSnapshotData } from '@infrastructure/formatters/query-types.js';
 
 describe('CLI snapshot - 基於 sample-project fixture', () => {

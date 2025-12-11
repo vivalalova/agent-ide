@@ -1,22 +1,19 @@
 /**
  * CLI snapshot 命令 E2E 測試
- * 基於 swift-sample-project fixture 測試 Swift 專案快照功能
+ * 基於 python-sample-project fixture 測試 Python 專案快照功能
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadFixture, executeCLI, type FixtureContext } from '../../helpers/index.js';
-import type { SnapshotResult, ModuleSnapshotData, ProjectSnapshotData } from '@infrastructure/formatters/query-types.js';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
+import type { SnapshotResult, ProjectSnapshotData } from '@infrastructure/formatters/query-types.js';
 
-// Swift parser 只在 macOS 可用
-const isNotMacOS = process.platform !== 'darwin';
-
-describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture', () => {
+describe('CLI snapshot Python - 基於 python-sample-project fixture', () => {
   let fixture: FixtureContext;
   let modelsPath: string;
 
   beforeEach(async () => {
-    fixture = await loadFixture('swift-sample-project');
-    modelsPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Models`;
+    fixture = await loadFixture('python-sample-project');
+    modelsPath = `${fixture.rootPath}/src/models`;
   });
 
   afterEach(() => {
@@ -56,8 +53,8 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
     });
   });
 
-  describe('Swift 專案結構解析', () => {
-    it('應該正確識別 Swift Package 專案', async () => {
+  describe('Python 專案結構解析', () => {
+    it('應該正確識別 Python 專案', async () => {
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -65,7 +62,7 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該識別專案中的 Swift 檔案', async () => {
+    it('應該識別專案中的 Python 檔案', async () => {
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -74,14 +71,13 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
       if (snapshotResult.snapshotType === 'project') {
         const snapshot = snapshotResult.snapshot as ProjectSnapshotData;
         expect(snapshot.modules).toBeDefined();
-        // 專案應該有多個模組
         expect(Object.keys(snapshot.modules).length).toBeGreaterThan(0);
       }
     });
   });
 
-  describe('Swift struct 解析', () => {
-    it('應該提取 User struct 結構', async () => {
+  describe('Python class 解析', () => {
+    it('應該提取 User dataclass 結構', async () => {
       const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -89,7 +85,7 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該提取 Product struct 結構', async () => {
+    it('應該提取 UserManager class 結構', async () => {
       const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -97,7 +93,15 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該提取 Order 和 OrderItem struct', async () => {
+    it('應該提取 Product 和 ProductCatalog class', async () => {
+      const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      expect(snapshotResult.success).toBe(true);
+    });
+
+    it('應該提取 Order 和 OrderProcessor class', async () => {
       const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -106,7 +110,7 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
     });
   });
 
-  describe('Swift enum 解析', () => {
+  describe('Python enum 解析', () => {
     it('應該提取 UserRole enum', async () => {
       const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
@@ -123,7 +127,7 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該提取 ProductCategory enum', async () => {
+    it('應該提取 Category enum', async () => {
       const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
@@ -132,10 +136,9 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
     });
   });
 
-  describe('Swift protocol 解析', () => {
-    it('應該提取 Services 目錄中的 protocol', async () => {
-      const servicesPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Services`;
-      const result = await executeCLI(['snapshot', '--path', servicesPath, '--format', 'json'], { memfs: fixture.memfs });
+  describe('Python dataclass 解析', () => {
+    it('應該提取 OrderItem dataclass', async () => {
+      const result = await executeCLI(['snapshot', '--path', modelsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
@@ -143,39 +146,10 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
     });
   });
 
-  describe('Swift class 解析', () => {
-    it('應該提取 UserService class', async () => {
-      const servicesPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Services`;
-      const result = await executeCLI(['snapshot', '--path', servicesPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
-      expect(snapshotResult.success).toBe(true);
-    });
-
-    it('應該提取 Logger class（單例模式）', async () => {
-      const utilsPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Utils`;
+  describe('Python function 解析', () => {
+    it('應該提取 utils 模組中的函數', async () => {
+      const utilsPath = `${fixture.rootPath}/src/utils`;
       const result = await executeCLI(['snapshot', '--path', utilsPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
-      expect(snapshotResult.success).toBe(true);
-    });
-  });
-
-  describe('Swift extension 解析', () => {
-    it('應該提取 Date extension', async () => {
-      const extensionsPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Extensions`;
-      const result = await executeCLI(['snapshot', '--path', extensionsPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
-      expect(snapshotResult.success).toBe(true);
-    });
-
-    it('應該提取 String extension', async () => {
-      const extensionsPath = `${fixture.rootPath}/Sources/SwiftSampleApp/Extensions`;
-      const result = await executeCLI(['snapshot', '--path', extensionsPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
       const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
@@ -206,20 +180,27 @@ describe.skipIf(isNotMacOS)('CLI snapshot - 基於 swift-sample-project fixture'
     });
   });
 
-  describe('動態建立 Swift 檔案測試', () => {
-    it('應該處理新增的 Swift struct', async () => {
-      await fixture.writeFile('custom.swift', `
-import Foundation
+  describe('動態建立 Python 檔案測試', () => {
+    it('應該處理新增的 Python class', async () => {
+      await fixture.writeFile('custom.py', `
+from dataclasses import dataclass
+from typing import Optional
 
-struct CustomModel: Codable {
-    let id: String
-    let name: String
-    var value: Int
+@dataclass
+class CustomModel:
+    """Custom model for testing"""
+    id: str
+    name: str
+    value: int = 0
 
-    func calculate() -> Int {
-        return value * 2
-    }
-}
+    def calculate(self) -> int:
+        """Calculate double value"""
+        return self.value * 2
+
+    @staticmethod
+    def create(name: str) -> "CustomModel":
+        """Factory method"""
+        return CustomModel(id="1", name=name)
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
@@ -229,18 +210,23 @@ struct CustomModel: Codable {
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該處理新增的 Swift protocol', async () => {
-      await fixture.writeFile('protocols.swift', `
-protocol Cacheable {
-    associatedtype CacheKey: Hashable
-    func cacheKey() -> CacheKey
-    func invalidateCache()
-}
+    it('應該處理新增的 Python enum', async () => {
+      await fixture.writeFile('enums.py', `
+from enum import Enum, auto
 
-protocol NetworkClient {
-    func fetch<T: Decodable>(url: URL) async throws -> T
-    func post<T: Encodable, R: Decodable>(url: URL, body: T) async throws -> R
-}
+class Priority(Enum):
+    """Priority levels"""
+    LOW = auto()
+    MEDIUM = auto()
+    HIGH = auto()
+    CRITICAL = auto()
+
+class TaskType(Enum):
+    """Task types"""
+    BUG = "bug"
+    FEATURE = "feature"
+    IMPROVEMENT = "improvement"
+    DOCUMENTATION = "documentation"
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
@@ -250,23 +236,34 @@ protocol NetworkClient {
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該處理 Swift 泛型類別', async () => {
-      await fixture.writeFile('generics.swift', `
-class Repository<T: Identifiable> {
-    private var items: [T.ID: T] = [:]
+    it('應該處理 Python 泛型類別', async () => {
+      await fixture.writeFile('generics.py', `
+from typing import TypeVar, Generic, Optional, Dict
 
-    func get(id: T.ID) -> T? {
-        return items[id]
-    }
+T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
 
-    func save(_ item: T) {
-        items[item.id] = item
-    }
+class Repository(Generic[T]):
+    """Generic repository class"""
 
-    func delete(id: T.ID) {
-        items.removeValue(forKey: id)
-    }
-}
+    def __init__(self):
+        self._items: Dict[str, T] = {}
+
+    def get(self, id: str) -> Optional[T]:
+        """Get item by ID"""
+        return self._items.get(id)
+
+    def save(self, id: str, item: T) -> None:
+        """Save item"""
+        self._items[id] = item
+
+    def delete(self, id: str) -> bool:
+        """Delete item"""
+        if id in self._items:
+            del self._items[id]
+            return True
+        return False
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
@@ -285,25 +282,37 @@ class Repository<T: Identifiable> {
     });
   });
 
-  describe('Swift 特有語法結構', () => {
-    it('應該處理 computed property', async () => {
-      await fixture.writeFile('computed.swift', `
-struct Circle {
-    var radius: Double
+  describe('Python 特有語法結構', () => {
+    it('應該處理 property 裝飾器', async () => {
+      await fixture.writeFile('properties.py', `
+class Circle:
+    """Circle with computed properties"""
 
-    var diameter: Double {
-        radius * 2
-    }
+    def __init__(self, radius: float):
+        self._radius = radius
 
-    var area: Double {
-        .pi * radius * radius
-    }
+    @property
+    def radius(self) -> float:
+        """Get radius"""
+        return self._radius
 
-    var circumference: Double {
-        get { 2 * .pi * radius }
-        set { radius = newValue / (2 * .pi) }
-    }
-}
+    @radius.setter
+    def radius(self, value: float) -> None:
+        """Set radius"""
+        if value < 0:
+            raise ValueError("Radius cannot be negative")
+        self._radius = value
+
+    @property
+    def diameter(self) -> float:
+        """Get diameter"""
+        return self._radius * 2
+
+    @property
+    def area(self) -> float:
+        """Get area"""
+        import math
+        return math.pi * self._radius ** 2
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
@@ -314,23 +323,32 @@ struct Circle {
     });
 
     it('應該處理 async/await 方法', async () => {
-      await fixture.writeFile('async.swift', `
-actor DataManager {
-    private var cache: [String: Data] = [:]
+      await fixture.writeFile('async_module.py', `
+import asyncio
+from typing import Dict, Any
 
-    func fetch(key: String) async throws -> Data {
-        if let cached = cache[key] {
-            return cached
-        }
-        let data = try await loadFromNetwork(key: key)
-        cache[key] = data
+class AsyncDataManager:
+    """Async data manager"""
+
+    def __init__(self):
+        self._cache: Dict[str, Any] = {}
+
+    async def fetch(self, key: str) -> Any:
+        """Fetch data with caching"""
+        if key in self._cache:
+            return self._cache[key]
+        data = await self._load_from_source(key)
+        self._cache[key] = data
         return data
-    }
 
-    private func loadFromNetwork(key: String) async throws -> Data {
-        return Data()
-    }
-}
+    async def _load_from_source(self, key: str) -> Any:
+        """Load data from source"""
+        await asyncio.sleep(0.1)
+        return {"key": key, "value": "loaded"}
+
+    async def clear_cache(self) -> None:
+        """Clear all cached data"""
+        self._cache.clear()
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
@@ -340,28 +358,90 @@ actor DataManager {
       expect(snapshotResult.success).toBe(true);
     });
 
-    it('應該處理 property wrapper', async () => {
-      await fixture.writeFile('wrappers.swift', `
-@propertyWrapper
-struct Clamped<Value: Comparable> {
-    private var value: Value
-    private let range: ClosedRange<Value>
+    it('應該處理 classmethod 和 staticmethod', async () => {
+      await fixture.writeFile('methods.py', `
+from dataclasses import dataclass
+from typing import List, Optional
 
-    var wrappedValue: Value {
-        get { value }
-        set { value = min(max(range.lowerBound, newValue), range.upperBound) }
-    }
+@dataclass
+class Person:
+    """Person with class and static methods"""
+    name: str
+    age: int
 
-    init(wrappedValue: Value, _ range: ClosedRange<Value>) {
-        self.range = range
-        self.value = min(max(range.lowerBound, wrappedValue), range.upperBound)
-    }
-}
+    _instances: List["Person"] = []
 
-struct Volume {
-    @Clamped(0...100)
-    var level: Int = 50
-}
+    def __post_init__(self):
+        Person._instances.append(self)
+
+    @classmethod
+    def create(cls, name: str, age: int) -> "Person":
+        """Factory method"""
+        return cls(name=name, age=age)
+
+    @classmethod
+    def get_all(cls) -> List["Person"]:
+        """Get all instances"""
+        return cls._instances.copy()
+
+    @staticmethod
+    def validate_age(age: int) -> bool:
+        """Validate age"""
+        return 0 <= age <= 150
+
+    @staticmethod
+    def validate_name(name: str) -> bool:
+        """Validate name"""
+        return len(name) > 0 and len(name) <= 100
+`);
+
+      const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      expect(snapshotResult.success).toBe(true);
+    });
+
+    it('應該處理 abstract class', async () => {
+      await fixture.writeFile('abstract.py', `
+from abc import ABC, abstractmethod
+from typing import List
+
+class Shape(ABC):
+    """Abstract shape class"""
+
+    @abstractmethod
+    def area(self) -> float:
+        """Calculate area"""
+        pass
+
+    @abstractmethod
+    def perimeter(self) -> float:
+        """Calculate perimeter"""
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Get shape name"""
+        pass
+
+class Rectangle(Shape):
+    """Rectangle implementation"""
+
+    def __init__(self, width: float, height: float):
+        self._width = width
+        self._height = height
+
+    def area(self) -> float:
+        return self._width * self._height
+
+    def perimeter(self) -> float:
+        return 2 * (self._width + self._height)
+
+    @property
+    def name(self) -> str:
+        return "Rectangle"
 `);
 
       const result = await executeCLI(['snapshot', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
