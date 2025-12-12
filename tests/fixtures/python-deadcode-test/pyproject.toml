@@ -1,4 +1,0 @@
-[project]
-name = "python-deadcode-test"
-version = "0.1.0"
-description = "Dead code detection test fixture"
