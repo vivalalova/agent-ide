@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RenameEngine } from '../../src/core/rename/rename-engine.js';
-import { createSymbol, createScope, SymbolType } from '../../src/shared/types/index.js';
+import { RenameEngine } from '@core/rename/rename-engine.js';
+import { createSymbol, createScope, SymbolType } from '@shared/types/index.js';
 
 describe('RenameEngine', () => {
   let renameEngine: RenameEngine;
