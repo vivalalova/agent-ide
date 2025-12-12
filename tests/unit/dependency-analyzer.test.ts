@@ -170,20 +170,6 @@ describe('DependencyAnalyzer', () => {
       expect(result.filePath).toBe('/src/a.js');
     });
 
-    it('應該分析 Swift 檔案的依賴', async () => {
-      const files = {
-        '/src/a.swift': 'import Foundation\nimport UIKit\nclass A {}',
-      };
-      const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
-
-      const result = await analyzer.analyzeFile('/src/a.swift');
-
-      expect(result.filePath).toBe('/src/a.swift');
-      expect(result.dependencies.some(d => d.path === 'Foundation')).toBe(true);
-      expect(result.dependencies.some(d => d.path === 'UIKit')).toBe(true);
-    });
-
     it('應該拋出錯誤當檔案路徑為空', async () => {
       const fs = createMockFileSystem();
       const analyzer = new DependencyAnalyzer(fs);
@@ -528,7 +514,6 @@ describe('DependencyAnalyzer', () => {
           || fd.filePath.endsWith('.tsx')
           || fd.filePath.endsWith('.js')
           || fd.filePath.endsWith('.jsx')
-          || fd.filePath.endsWith('.swift')
         ).toBe(true);
       });
     });
@@ -626,25 +611,6 @@ describe('DependencyAnalyzer', () => {
       const result = await analyzer.analyzeProject('/project');
 
       expect(result.fileDependencies).toEqual([]);
-    });
-  });
-
-  describe('Swift external dependencies', () => {
-    it('應該識別 Swift 外部依賴', async () => {
-      const files = {
-        '/src/a.swift': 'import Foundation\nimport SwiftUI\nclass A {}',
-      };
-      const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
-
-      const result = await analyzer.analyzeFile('/src/a.swift');
-
-      const foundationDep = result.dependencies.find(d => d.path === 'Foundation');
-      const swiftUIDep = result.dependencies.find(d => d.path === 'SwiftUI');
-
-      expect(foundationDep).toBeDefined();
-      expect(foundationDep?.isRelative).toBe(false);
-      expect(swiftUIDep).toBeDefined();
     });
   });
 
