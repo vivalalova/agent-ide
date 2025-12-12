@@ -47,3 +47,6 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: CLI Integration Test
+        run: pnpm test:cli

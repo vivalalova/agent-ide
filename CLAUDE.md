@@ -16,6 +16,7 @@ pnpm typecheck                # 型別檢查
 pnpm test                     # 執行所有測試（E2E + Unit）
 pnpm test:e2e                 # 僅 E2E 測試（CLI 端對端）
 pnpm test:unit                # 僅 Unit 測試（獨立模組）
+pnpm test:cli                 # CLI 整合煙霧測試（實際執行）
 pnpm test:e2e:bail            # E2E 失敗即停
 pnpm test:unit:bail           # Unit 失敗即停
 pnpm lint                     # ESLint
@@ -57,8 +58,9 @@ src/
 
 | 類型 | 目錄 | 配置檔 | 命令 | 用途 |
 |-----|------|-------|------|------|
-| **E2E** | `tests/e2e/` | `vitest.config.e2e.ts` | `pnpm test:e2e` | CLI 端對端測試 |
+| **E2E** | `tests/e2e/` | `vitest.config.e2e.ts` | `pnpm test:e2e` | CLI 端對端測試（memfs 隔離） |
 | **Unit** | `tests/unit/` | `vitest.config.unit.ts` | `pnpm test:unit` | 獨立模組/函式測試 |
+| **CLI** | `tests/cli/` | `vitest.config.cli.ts` | `pnpm test:cli` | CLI 整合煙霧測試（實際執行） |
 
 ### E2E 測試規範
 
@@ -260,3 +262,4 @@ outputHandler.outputMutation(previewInput, format);
 **測試位置**：
 - E2E 測試：`tests/e2e/commands/typescript/cli-<command>.e2e.test.ts`
 - Unit 測試：`tests/unit/<module-name>.test.ts`
+- CLI 測試：`tests/cli/cli-commands.cli.test.ts`
