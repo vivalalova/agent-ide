@@ -82,6 +82,7 @@
     "commander": "^12.1.0",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "web-tree-sitter": "^0.25.10"
   }
 }
