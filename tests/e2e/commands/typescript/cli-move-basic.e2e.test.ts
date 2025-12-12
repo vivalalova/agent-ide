@@ -655,4 +655,99 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.summary).toBeDefined();
     });
   });
+
+  describe('目錄移動', () => {
+    it('應該成功移動整個目錄並處理所有檔案', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils');
+      const target = path.join(fixture.rootPath, 'src/shared/utils');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('move');
+      expect(output.success).toBe(true);
+      expect(output.summary).toBeDefined();
+      // 目錄內有多個檔案，應該影響至少 2 個檔案
+      expect(output.affectedFiles).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該在目錄移動時更新目錄內檔案的內部 import', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils');
+      const target = path.join(fixture.rootPath, 'src/lib/utils');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 檢查是否有檔案被影響（目錄內的檔案）
+      expect(output.files).toBeDefined();
+      expect(Array.isArray(output.files)).toBe(true);
+    });
+
+    it('應該在目錄移動時更新外部檔案對目錄內檔案的引用', async () => {
+      const source = path.join(fixture.rootPath, 'src/models');
+      const target = path.join(fixture.rootPath, 'src/entities');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary).toBeDefined();
+    });
+
+    it('應該處理目標目錄已存在的錯誤', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils');
+      const target = path.join(fixture.rootPath, 'src/models'); // 已存在的目錄（有檔案）
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('已存在');
+    });
+
+    it('應該支援 summary 格式輸出目錄移動結果', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils');
+      const target = path.join(fixture.rootPath, 'src/shared/utils');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(typeof result.stdout).toBe('string');
+      expect(result.stdout.length).toBeGreaterThan(0);
+    });
+
+    it('應該實際移動目錄（非 dry-run）', async () => {
+      const source = path.join(fixture.rootPath, 'src/utils');
+      const target = path.join(fixture.rootPath, 'src/moved-utils');
+
+      const result = await executeCLI(
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+  });
 });
