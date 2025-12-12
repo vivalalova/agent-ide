@@ -7,8 +7,6 @@ import { Command } from 'commander';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
-import { SwiftParser } from '@plugins/swift/parser.js';
-import { PythonParser } from '@plugins/python/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import {
   setupMoveCommand,
@@ -112,32 +110,6 @@ export class AgentIdeCLI {
         // 如果 JavaScript Parser 載入失敗，記錄錯誤
         console.debug('JavaScript parser loading failed:', jsError);
         console.debug('JavaScript Parser initialization warning:', jsError);
-      }
-
-      // 嘗試註冊內建的 Swift Parser
-      try {
-        // 解析 Swift CLI Bridge 路徑
-        const swiftBridgePath = path.resolve(__dirname, '../../plugins/swift/swift-bridge/swift-parser');
-        const swiftParser = new SwiftParser(swiftBridgePath);
-        if (!registry.getParserByName('swift')) {
-          registry.register(swiftParser);
-        }
-      } catch (swiftError) {
-        // 如果 Swift Parser 載入失敗，記錄錯誤
-        console.debug('Swift parser loading failed:', swiftError);
-        console.debug('Swift Parser initialization warning:', swiftError);
-      }
-
-      // 嘗試註冊內建的 Python Parser
-      try {
-        const pythonParser = new PythonParser();
-        if (!registry.getParserByName('python')) {
-          registry.register(pythonParser);
-        }
-      } catch (pythonError) {
-        // 如果 Python Parser 載入失敗，記錄錯誤
-        console.debug('Python parser loading failed:', pythonError);
-        console.debug('Python Parser initialization warning:', pythonError);
       }
     } catch (error) {
       // 靜默處理初始化錯誤，避免影響 CLI 啟動

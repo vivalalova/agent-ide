@@ -469,7 +469,7 @@ export class MoveMemberService {
    * 檢查是否為支援的檔案類型
    */
   private isSupportedFile(filename: string): boolean {
-    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.swift'];
+    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
     return supportedExtensions.some(ext => filename.endsWith(ext));
   }
 

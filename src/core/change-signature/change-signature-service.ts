@@ -523,28 +523,23 @@ export class ChangeSignatureService {
    */
   private generateParameterString(signature: FunctionSignature, filePath: string): string {
     const extension = this.getFileExtension(filePath);
-    const isSwift = extension === '.swift';
     const isTypeScript = extension === '.ts' || extension === '.tsx';
 
     return signature.parameters.map(param => {
       let result = '';
 
       if (param.rest) {
-        result += isSwift ? '' : '...';
+        result += '...';
       }
 
       result += param.name;
 
-      if (param.optional && !param.defaultValue && !isSwift) {
+      if (param.optional && !param.defaultValue) {
         result += '?';
       }
 
-      if (param.type && (isTypeScript || isSwift)) {
-        result += isSwift ? `: ${param.type}` : `: ${param.type}`;
-      }
-
-      if (param.rest && isSwift) {
-        result += '...';
+      if (param.type && isTypeScript) {
+        result += `: ${param.type}`;
       }
 
       if (param.defaultValue) {
@@ -625,7 +620,7 @@ export class ChangeSignatureService {
    * 檢查是否為支援的檔案類型
    */
   private isSupportedFile(filename: string): boolean {
-    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.swift'];
+    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
     return supportedExtensions.some(ext => filename.endsWith(ext));
   }
 

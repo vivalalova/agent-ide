@@ -11,7 +11,7 @@ import type { Symbol, Dependency, Location } from '@shared/types/index.js';
  */
 export const CLI_INDEX_DEFAULTS = {
   /** 支援的程式語言副檔名 */
-  includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'] as const,
+  includeExtensions: ['.ts', '.tsx', '.js', '.jsx'] as const,
   /** 排除的目錄模式 */
   excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'] as const,
   /** CLI 命令不需要持久化索引 */

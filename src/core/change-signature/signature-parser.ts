@@ -35,8 +35,6 @@ export class SignatureParser {
       case '.js':
       case '.jsx':
         return this.parseJavaScriptSignature(content, filePath, functionName);
-      case '.swift':
-        return this.parseSwiftSignature(content, filePath, functionName);
       default:
         return null;
     }
@@ -143,57 +141,6 @@ export class SignatureParser {
   }
 
   /**
-   * 解析 Swift 函式簽名
-   */
-  private parseSwiftSignature(content: string, filePath: string, functionName: string): FunctionSignature | null {
-    const lines = content.split('\n');
-
-    // func name(params) -> ReturnType
-    const pattern = new RegExp(
-      `^(\\s*)(public|private|internal|fileprivate|open)?\\s*(static)?\\s*func\\s+${this.escapeRegex(functionName)}\\s*(<[^>]*>)?\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^{]+))?\\s*\\{?`,
-      'm'
-    );
-
-    const match = content.match(pattern);
-    if (!match) {
-      return null;
-    }
-
-    const matchIndex = content.indexOf(match[0]);
-    const lineNumber = content.substring(0, matchIndex).split('\n').length;
-    const column = match[1]?.length ?? 0;
-
-    const modifiers: string[] = [];
-    if (match[2]) {modifiers.push(match[2]);}
-    if (match[3]) {modifiers.push('static');}
-
-    const paramsString = match[5] || '';
-    const returnType = match[6]?.trim();
-
-    // 解析 Swift 參數
-    const parameters = this.parseSwiftParameters(paramsString, lineNumber, column + match[0].indexOf('(') + 1);
-
-    // 計算結束位置
-    const endLine = this.findFunctionEndLine(lines, lineNumber - 1);
-
-    return {
-      name: functionName,
-      parameters,
-      returnType,
-      location: {
-        filePath,
-        range: {
-          start: { line: lineNumber, column: column + 1, offset: matchIndex },
-          end: { line: endLine + 1, column: 1, offset: undefined }
-        }
-      },
-      isMethod: this.isSwiftMethod(content, matchIndex),
-      className: this.findEnclosingSwiftClass(content, matchIndex),
-      modifiers
-    };
-  }
-
-  /**
    * 解析 TypeScript 參數列表
    */
   private parseTypeScriptParameters(paramsString: string, baseLine: number, baseColumn: number): ParameterDefinition[] {
@@ -238,58 +185,6 @@ export class SignatureParser {
       }
 
       currentColumn += param.length + 2; // +2 for ", "
-    }
-
-    return parameters;
-  }
-
-  /**
-   * 解析 Swift 參數列表
-   */
-  private parseSwiftParameters(paramsString: string, baseLine: number, baseColumn: number): ParameterDefinition[] {
-    if (!paramsString.trim()) {
-      return [];
-    }
-
-    const parameters: ParameterDefinition[] = [];
-    const params = this.splitParameters(paramsString);
-
-    let currentColumn = baseColumn;
-
-    for (const param of params) {
-      const trimmed = param.trim();
-      if (!trimmed) {continue;}
-
-      // Swift 參數：externalName internalName: Type = default
-      // 或：_ name: Type（無外部名稱）
-      // 或：name: Type...（variadic）
-      const isVariadic = trimmed.endsWith('...');
-      const paramContent = isVariadic ? trimmed.slice(0, -3) : trimmed;
-
-      // 簡化解析：name: Type = default
-      const paramPattern = /^(?:(\w+)\s+)?(\w+)\s*:\s*([^=]+?)(?:\s*=\s*(.+))?$/;
-      const match = paramContent.match(paramPattern);
-
-      if (match) {
-        const externalName = match[1];
-        const name = match[2];
-        const type = match[3]?.trim();
-        const defaultValue = match[4]?.trim();
-
-        parameters.push({
-          name: externalName && externalName !== '_' ? `${externalName} ${name}` : name,
-          type,
-          defaultValue,
-          optional: !!defaultValue,
-          rest: isVariadic,
-          range: {
-            start: { line: baseLine, column: currentColumn, offset: undefined },
-            end: { line: baseLine, column: currentColumn + param.length, offset: undefined }
-          }
-        });
-      }
-
-      currentColumn += param.length + 2;
     }
 
     return parameters;
@@ -361,30 +256,6 @@ export class SignatureParser {
     if (classMatch && classMatch.length > 0) {
       const lastClass = classMatch[classMatch.length - 1];
       const nameMatch = lastClass.match(/class\s+(\w+)/);
-      return nameMatch?.[1];
-    }
-
-    return undefined;
-  }
-
-  /**
-   * 檢查是否為 Swift 方法
-   */
-  private isSwiftMethod(content: string, position: number): boolean {
-    const beforePosition = content.substring(0, position);
-    return /(?:class|struct|enum|extension)\s+\w+/.test(beforePosition);
-  }
-
-  /**
-   * 找到包含的 Swift 類別名稱
-   */
-  private findEnclosingSwiftClass(content: string, position: number): string | undefined {
-    const beforePosition = content.substring(0, position);
-    const classMatch = beforePosition.match(/(?:class|struct|enum|extension)\s+(\w+)/g);
-
-    if (classMatch && classMatch.length > 0) {
-      const lastClass = classMatch[classMatch.length - 1];
-      const nameMatch = lastClass.match(/(?:class|struct|enum|extension)\s+(\w+)/);
       return nameMatch?.[1];
     }
 
