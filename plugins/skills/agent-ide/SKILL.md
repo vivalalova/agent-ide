@@ -50,7 +50,7 @@ cd ${PLUGIN_ROOT} && pnpm install && pnpm build
 之後可直接執行：
 
 ```bash
-node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
+npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 ```
 
 ## 命令索引
