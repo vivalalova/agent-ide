@@ -9,8 +9,7 @@
     "agent-ide": "./bin/agent-ide.js"
   },
   "scripts": {
-    "build": "tsc && tsc-alias && npm run postbuild",
-    "postbuild": "mkdir -p dist/plugins/swift/swift-bridge && cp src/plugins/swift/swift-bridge/swift-parser dist/plugins/swift/swift-bridge/ 2>/dev/null || true",
+    "build": "tsc && tsc-alias",
     "pretest": "bash scripts/cleanup-vitest.sh",
     "test": "pnpm test:e2e && pnpm test:unit",
     "test:e2e": "NODE_OPTIONS='--expose-gc --max-old-space-size=4096' npx vitest run --config vitest.config.e2e.ts --coverage",
@@ -83,8 +82,6 @@
     "commander": "^12.1.0",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3",
-    "tree-sitter-python": "^0.25.0",
-    "typescript": "^5.0.0",
-    "web-tree-sitter": "^0.25.10"
+    "typescript": "^5.0.0"
   }
 }
