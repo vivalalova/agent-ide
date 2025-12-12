@@ -69,6 +69,14 @@ describe('RenameEngine', () => {
         { name: '用戶_データ', description: '中文加日文' },
         { name: 'Test測試テスト', description: '英文加中文加日文' },
 
+        // RTL 語言混合（希伯來文、阿拉伯文與 LTR 混合）
+        { name: 'data_משתנה', description: '英文加希伯來文' },
+        { name: 'משתנה_data', description: '希伯來文加英文' },
+        { name: 'بيانات_user', description: '阿拉伯文加英文' },
+        { name: 'config_متغير', description: '英文加阿拉伯文' },
+        { name: 'משתנה_متغير', description: '希伯來文加阿拉伯文' },
+        { name: 'ערך_قيمة_value', description: '希伯來文加阿拉伯文加英文' },
+
         // 數字（非開頭）
         { name: 'user1', description: '英文加數字' },
         { name: '用戶1', description: '中文加數字' },

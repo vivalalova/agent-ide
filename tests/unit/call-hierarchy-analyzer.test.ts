@@ -1317,4 +1317,180 @@ function target() {}
       expect(result.incoming[0].caller).toBe('b');
     });
   });
+
+  describe('循環呼叫檢測', () => {
+    beforeEach(() => {
+      mockFileSystem = {
+        readFile: vi.fn(),
+      } as unknown as IFileSystem;
+    });
+
+    it('應該正確處理直接循環呼叫 (A→B→A)', async () => {
+      const code = `
+function a() { b(); }
+function b() { a(); }
+`;
+      const sourceFile = createRealSourceFile(code);
+
+      const mockParser = {
+        parse: vi.fn().mockResolvedValue({ tsSourceFile: sourceFile }),
+        canParse: vi.fn().mockReturnValue(true),
+      };
+
+      mockParserRegistry = {
+        getParser: vi.fn().mockReturnValue(mockParser),
+      } as unknown as ParserRegistry;
+
+      (mockFileSystem.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(code);
+
+      const mockSymbolFinder = {
+        findDefinition: vi.fn().mockResolvedValue(null),
+        findCallSites: vi.fn().mockImplementation((name: string) => {
+          if (name === 'a') {
+            return Promise.resolve([{
+              functionName: 'b',
+              location: {
+                filePath: '/test/file.ts',
+                range: { start: { line: 3, column: 16, offset: 0 }, end: { line: 3, column: 18, offset: 2 } },
+              },
+            }]);
+          }
+          if (name === 'b') {
+            return Promise.resolve([{
+              functionName: 'a',
+              location: {
+                filePath: '/test/caller.ts',
+                range: { start: { line: 2, column: 16, offset: 0 }, end: { line: 2, column: 18, offset: 2 } },
+              },
+            }]);
+          }
+          return Promise.resolve([]);
+        }),
+      };
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+      Object.defineProperty(analyzer, 'symbolFinder', {
+        value: mockSymbolFinder,
+        writable: true,
+      });
+
+      const result = await analyzer.analyzeWithDefinition(
+        'a',
+        '/test/target.ts',
+        { start: { line: 2, column: 1, offset: 0 }, end: { line: 2, column: 22, offset: 21 } },
+        ['/test/caller.ts', '/test/file.ts'],
+        { direction: 'incoming', depth: 3 }
+      );
+
+      // 應該能處理循環呼叫而不造成無限迴圈
+      expect(result).toBeDefined();
+      expect(result.incoming.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('應該正確處理間接循環呼叫 (A→B→C→A)', async () => {
+      const code = `
+function a() { b(); }
+function b() { c(); }
+function c() { a(); }
+`;
+      const sourceFile = createRealSourceFile(code);
+
+      const mockParser = {
+        parse: vi.fn().mockResolvedValue({ tsSourceFile: sourceFile }),
+        canParse: vi.fn().mockReturnValue(true),
+      };
+
+      mockParserRegistry = {
+        getParser: vi.fn().mockReturnValue(mockParser),
+      } as unknown as ParserRegistry;
+
+      (mockFileSystem.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(code);
+
+      const mockSymbolFinder = {
+        findDefinition: vi.fn().mockResolvedValue(null),
+        findCallSites: vi.fn().mockImplementation((name: string) => {
+          if (name === 'a') {
+            return Promise.resolve([{
+              functionName: 'c',
+              location: {
+                filePath: '/test/caller.ts',
+                range: { start: { line: 4, column: 16, offset: 0 }, end: { line: 4, column: 18, offset: 2 } },
+              },
+            }]);
+          }
+          if (name === 'c') {
+            return Promise.resolve([{
+              functionName: 'b',
+              location: {
+                filePath: '/test/caller.ts',
+                range: { start: { line: 3, column: 16, offset: 0 }, end: { line: 3, column: 18, offset: 2 } },
+              },
+            }]);
+          }
+          if (name === 'b') {
+            return Promise.resolve([{
+              functionName: 'a',
+              location: {
+                filePath: '/test/caller.ts',
+                range: { start: { line: 2, column: 16, offset: 0 }, end: { line: 2, column: 18, offset: 2 } },
+              },
+            }]);
+          }
+          return Promise.resolve([]);
+        }),
+      };
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+      Object.defineProperty(analyzer, 'symbolFinder', {
+        value: mockSymbolFinder,
+        writable: true,
+      });
+
+      const result = await analyzer.analyzeWithDefinition(
+        'a',
+        '/test/target.ts',
+        { start: { line: 2, column: 1, offset: 0 }, end: { line: 2, column: 22, offset: 21 } },
+        ['/test/caller.ts'],
+        { direction: 'incoming', depth: 5 }
+      );
+
+      // 應該能處理循環呼叫而不造成無限迴圈
+      expect(result).toBeDefined();
+    });
+
+    it('應該正確處理自我循環呼叫（遞迴）', async () => {
+      const code = `
+function recursive(n) {
+  if (n <= 0) return;
+  recursive(n - 1);
+}
+`;
+      const sourceFile = createRealSourceFile(code);
+
+      const mockParser = {
+        parse: vi.fn().mockResolvedValue({ tsSourceFile: sourceFile }),
+        canParse: vi.fn().mockReturnValue(true),
+      };
+
+      mockParserRegistry = {
+        getParser: vi.fn().mockReturnValue(mockParser),
+      } as unknown as ParserRegistry;
+
+      (mockFileSystem.readFile as ReturnType<typeof vi.fn>).mockResolvedValue(code);
+
+      analyzer = new CallHierarchyAnalyzer(mockParserRegistry, mockFileSystem);
+
+      const result = await analyzer.analyzeWithDefinition(
+        'recursive',
+        '/test/file.ts',
+        { start: { line: 2, column: 1, offset: 0 }, end: { line: 5, column: 1, offset: 70 } },
+        ['/test/file.ts'],
+        { direction: 'outgoing', depth: 1 }
+      );
+
+      // 遞迴呼叫應該在 outgoing 中被檢測到
+      expect(result).toBeDefined();
+      expect(result.outgoing.some(c => c.callee === 'recursive')).toBe(true);
+    });
+  });
 });

@@ -329,6 +329,122 @@ describe('MemoryCache with TTL strategy', () => {
   });
 });
 
+describe('MemoryCache 並行操作', () => {
+  it('should handle concurrent set operations safely', async () => {
+    const cache = new MemoryCache<string, number>({
+      maxSize: 100,
+      enableStats: true
+    });
+
+    // 同時執行 50 個並行寫入操作
+    const promises = Array.from({ length: 50 }, (_, i) =>
+      Promise.resolve().then(() => cache.set(`key${i}`, i))
+    );
+
+    await Promise.all(promises);
+
+    // 驗證所有寫入都成功
+    expect(cache.size()).toBeLessThanOrEqual(100);
+
+    // 驗證至少有部分資料被保存
+    let foundCount = 0;
+    for (let i = 0; i < 50; i++) {
+      if (cache.has(`key${i}`)) {
+        expect(cache.get(`key${i}`)).toBe(i);
+        foundCount++;
+      }
+    }
+    expect(foundCount).toBeGreaterThan(0);
+
+    cache.dispose();
+  });
+
+  it('should handle concurrent get and set operations', async () => {
+    const cache = new MemoryCache<string, number>({
+      maxSize: 10,
+      enableStats: true
+    });
+
+    // 先設置一些初始資料
+    for (let i = 0; i < 5; i++) {
+      cache.set(`key${i}`, i);
+    }
+
+    // 同時執行讀取和寫入
+    const operations = [
+      ...Array.from({ length: 10 }, (_, i) => () => cache.get(`key${i % 5}`)),
+      ...Array.from({ length: 10 }, (_, i) => () => cache.set(`newKey${i}`, i * 10)),
+    ];
+
+    // 隨機打亂操作順序
+    const shuffled = operations.sort(() => Math.random() - 0.5);
+
+    // 並行執行
+    await Promise.all(shuffled.map(op => Promise.resolve().then(op)));
+
+    // 驗證快取狀態正確
+    const stats = cache.getStats();
+    expect(stats.totalRequests).toBeGreaterThan(0);
+    expect(cache.size()).toBeLessThanOrEqual(10);
+
+    cache.dispose();
+  });
+
+  it('should handle concurrent delete operations', async () => {
+    const cache = new MemoryCache<string, number>({ maxSize: 100 });
+
+    // 設置資料
+    for (let i = 0; i < 50; i++) {
+      cache.set(`key${i}`, i);
+    }
+
+    // 並行刪除部分資料
+    const deletePromises = Array.from({ length: 25 }, (_, i) =>
+      Promise.resolve().then(() => cache.delete(`key${i * 2}`))
+    );
+
+    await Promise.all(deletePromises);
+
+    // 驗證刪除成功
+    for (let i = 0; i < 25; i++) {
+      expect(cache.has(`key${i * 2}`)).toBe(false);
+    }
+
+    cache.dispose();
+  });
+
+  it('should handle high-frequency concurrent mget operations', async () => {
+    const cache = new MemoryCache<string, number>({
+      maxSize: 50,
+      enableStats: true
+    });
+
+    // 設置資料
+    for (let i = 0; i < 30; i++) {
+      cache.set(`key${i}`, i);
+    }
+
+    // 100 個並行 mget 請求
+    const mgetPromises = Array.from({ length: 100 }, () =>
+      Promise.resolve().then(() =>
+        cache.mget(['key0', 'key10', 'key20', 'key99'])
+      )
+    );
+
+    const results = await Promise.all(mgetPromises);
+
+    // 驗證所有 mget 都返回正確格式
+    for (const result of results) {
+      expect(result).toBeInstanceOf(Map);
+    }
+
+    const stats = cache.getStats();
+    expect(stats.totalRequests).toBeGreaterThanOrEqual(100);
+
+    cache.dispose();
+  });
+});
+
 describe('MemoryCache with different strategies', () => {
   it('should work with LFU strategy', () => {
     const cache = new MemoryCache<string, any>({
@@ -544,15 +660,6 @@ describe('FIFOStrategy', () => {
     const keyToEvict = strategy.selectEvictionKey(items);
     expect(keyToEvict).toBe('key1');
   });
-
-  it('should not do anything on access, set, delete, clear', () => {
-    const item = { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 };
-    strategy.onAccess('key1', item);
-    strategy.onSet('key1', item);
-    strategy.onDelete('key1');
-    strategy.clear();
-    // None of these should throw
-  });
 });
 
 describe('TTLStrategy', () => {
@@ -598,14 +705,6 @@ describe('TTLStrategy', () => {
     const keyToEvict = strategy.selectEvictionKey(items);
     expect(keyToEvict).toBeUndefined();
   });
-
-  it('should not do anything on access, set, delete, clear', () => {
-    const item = { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 };
-    strategy.onAccess('key1', item);
-    strategy.onSet('key1', item);
-    strategy.onDelete('key1');
-    strategy.clear();
-  });
 });
 
 describe('RandomStrategy', () => {
@@ -635,41 +734,47 @@ describe('RandomStrategy', () => {
     const keyToEvict = strategy.selectEvictionKey(new Map());
     expect(keyToEvict).toBeUndefined();
   });
+});
 
-  it('should not do anything on access, set, delete, clear', () => {
-    const item = { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 };
-    strategy.onAccess('key1', item);
-    strategy.onSet('key1', item);
-    strategy.onDelete('key1');
-    strategy.clear();
-  });
+// 無狀態策略的 no-op 方法測試（合併重複測試）
+describe('Stateless strategies no-op methods', () => {
+  const statelessStrategies = [
+    { name: 'FIFO', factory: () => new FIFOStrategy<string, any>() },
+    { name: 'TTL', factory: () => new TTLStrategy<string, any>() },
+    { name: 'Random', factory: () => new RandomStrategy<string, any>() },
+  ];
+
+  it.each(statelessStrategies)(
+    '$name strategy should not throw on lifecycle methods',
+    ({ factory }) => {
+      const strategy = factory();
+      const item = { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 };
+
+      // 所有這些方法都應該是 no-op，不應拋出錯誤
+      expect(() => strategy.onAccess('key1', item)).not.toThrow();
+      expect(() => strategy.onSet('key1', item)).not.toThrow();
+      expect(() => strategy.onDelete('key1')).not.toThrow();
+      expect(() => strategy.clear()).not.toThrow();
+    }
+  );
 });
 
 describe('StrategyFactory', () => {
-  it('should create LRU strategy', () => {
-    const strategy = StrategyFactory.createStrategy(EvictionStrategy.LRU);
-    expect(strategy.name).toBe(EvictionStrategy.LRU);
-  });
+  const supportedStrategies = [
+    EvictionStrategy.LRU,
+    EvictionStrategy.LFU,
+    EvictionStrategy.FIFO,
+    EvictionStrategy.TTL,
+    EvictionStrategy.RANDOM,
+  ];
 
-  it('should create LFU strategy', () => {
-    const strategy = StrategyFactory.createStrategy(EvictionStrategy.LFU);
-    expect(strategy.name).toBe(EvictionStrategy.LFU);
-  });
-
-  it('should create FIFO strategy', () => {
-    const strategy = StrategyFactory.createStrategy(EvictionStrategy.FIFO);
-    expect(strategy.name).toBe(EvictionStrategy.FIFO);
-  });
-
-  it('should create TTL strategy', () => {
-    const strategy = StrategyFactory.createStrategy(EvictionStrategy.TTL);
-    expect(strategy.name).toBe(EvictionStrategy.TTL);
-  });
-
-  it('should create RANDOM strategy', () => {
-    const strategy = StrategyFactory.createStrategy(EvictionStrategy.RANDOM);
-    expect(strategy.name).toBe(EvictionStrategy.RANDOM);
-  });
+  it.each(supportedStrategies)(
+    'should create %s strategy with correct name',
+    (strategyType) => {
+      const strategy = StrategyFactory.createStrategy(strategyType);
+      expect(strategy.name).toBe(strategyType);
+    }
+  );
 
   it('should throw for unsupported strategy', () => {
     expect(() => StrategyFactory.createStrategy('invalid' as any)).toThrow('Unsupported eviction strategy');
