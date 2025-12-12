@@ -57,16 +57,16 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 | 命令 | 說明 | 類型 |
 |------|------|------|
-| rename | 符號重命名 | 變更類 |
-| change-signature | 函式簽章修改 | 變更類 |
-| move | 檔案移動 + import 更新 | 變更類 |
-| move-member | 成員移動（方法/類別等） | 變更類 |
-| cycles | 循環依賴檢測 | 查詢類 |
-| impact | 影響分析 | 查詢類 |
-| snapshot | 模組/專案快照 | 查詢類 |
-| find-references | 符號引用搜尋 | 查詢類 |
-| call-hierarchy | 呼叫層次分析 | 查詢類 |
-| deadcode | Dead code 檢測 | 查詢類 |
+| [rename](references/rename.md) | 符號重命名 | 變更類 |
+| [change-signature](references/change-signature.md) | 函式簽章修改 | 變更類 |
+| [move](references/move.md) | 檔案移動 + import 更新 | 變更類 |
+| [move-member](references/move-member.md) | 成員移動（方法/類別等） | 變更類 |
+| [cycles](references/deps.md) | 循環依賴檢測 | 查詢類 |
+| [impact](references/deps.md) | 影響分析 | 查詢類 |
+| [snapshot](references/snapshot.md) | 模組/專案快照 | 查詢類 |
+| [find-references](references/find-references.md) | 符號引用搜尋 | 查詢類 |
+| [call-hierarchy](references/call-hierarchy.md) | 呼叫層次分析 | 查詢類 |
+| [deadcode](references/deadcode.md) | Dead code 檢測 | 查詢類 |
 
 ## 命令速查表
 
