@@ -370,39 +370,62 @@ describe('Parser error type guards', () => {
     }
   };
 
-  it('isParserError should return true for ParserError and subclasses', () => {
-    expect(isParserError(new ParserError('test', mockLocation))).toBe(true);
-    expect(isParserError(new DuplicateParserError('test'))).toBe(true);
-    expect(isParserError(new ParserNotFoundError('test', 'name'))).toBe(true);
-    expect(isParserError(new IncompatibleVersionError('test', '1', '2'))).toBe(true);
-    expect(isParserError(new ParserInitializationError('test', 'reason'))).toBe(true);
-    expect(isParserError(new ParserFactoryError('test'))).toBe(true);
-  });
+  const parserErrorInstances = [
+    { name: 'ParserError', error: () => new ParserError('test', mockLocation) },
+    { name: 'DuplicateParserError', error: () => new DuplicateParserError('test') },
+    { name: 'ParserNotFoundError', error: () => new ParserNotFoundError('test', 'name') },
+    { name: 'IncompatibleVersionError', error: () => new IncompatibleVersionError('test', '1', '2') },
+    { name: 'ParserInitializationError', error: () => new ParserInitializationError('test', 'reason') },
+    { name: 'ParserFactoryError', error: () => new ParserFactoryError('test') },
+  ];
 
-  it('isDuplicateParserError should return true only for DuplicateParserError', () => {
-    expect(isDuplicateParserError(new DuplicateParserError('test'))).toBe(true);
-    expect(isDuplicateParserError(new ParserError('test', mockLocation))).toBe(false);
-  });
+  it.each(parserErrorInstances)(
+    'isParserError should return true for $name',
+    ({ error }) => {
+      expect(isParserError(error())).toBe(true);
+    }
+  );
 
-  it('isParserNotFoundError should return true only for ParserNotFoundError', () => {
-    expect(isParserNotFoundError(new ParserNotFoundError('test', 'name'))).toBe(true);
-    expect(isParserNotFoundError(new ParserError('test', mockLocation))).toBe(false);
-  });
+  const typeGuardCases = [
+    {
+      guard: isDuplicateParserError,
+      guardName: 'isDuplicateParserError',
+      matchingError: () => new DuplicateParserError('test'),
+      nonMatchingError: () => new ParserError('test', mockLocation),
+    },
+    {
+      guard: isParserNotFoundError,
+      guardName: 'isParserNotFoundError',
+      matchingError: () => new ParserNotFoundError('test', 'name'),
+      nonMatchingError: () => new ParserError('test', mockLocation),
+    },
+    {
+      guard: isIncompatibleVersionError,
+      guardName: 'isIncompatibleVersionError',
+      matchingError: () => new IncompatibleVersionError('test', '1', '2'),
+      nonMatchingError: () => new ParserError('test', mockLocation),
+    },
+    {
+      guard: isParserInitializationError,
+      guardName: 'isParserInitializationError',
+      matchingError: () => new ParserInitializationError('test', 'reason'),
+      nonMatchingError: () => new ParserError('test', mockLocation),
+    },
+    {
+      guard: isParserFactoryError,
+      guardName: 'isParserFactoryError',
+      matchingError: () => new ParserFactoryError('test'),
+      nonMatchingError: () => new ParserError('test', mockLocation),
+    },
+  ];
 
-  it('isIncompatibleVersionError should return true only for IncompatibleVersionError', () => {
-    expect(isIncompatibleVersionError(new IncompatibleVersionError('test', '1', '2'))).toBe(true);
-    expect(isIncompatibleVersionError(new ParserError('test', mockLocation))).toBe(false);
-  });
-
-  it('isParserInitializationError should return true only for ParserInitializationError', () => {
-    expect(isParserInitializationError(new ParserInitializationError('test', 'reason'))).toBe(true);
-    expect(isParserInitializationError(new ParserError('test', mockLocation))).toBe(false);
-  });
-
-  it('isParserFactoryError should return true only for ParserFactoryError', () => {
-    expect(isParserFactoryError(new ParserFactoryError('test'))).toBe(true);
-    expect(isParserFactoryError(new ParserError('test', mockLocation))).toBe(false);
-  });
+  it.each(typeGuardCases)(
+    '$guardName should return true only for matching error',
+    ({ guard, matchingError, nonMatchingError }) => {
+      expect(guard(matchingError())).toBe(true);
+      expect(guard(nonMatchingError())).toBe(false);
+    }
+  );
 });
 
 // ============================================

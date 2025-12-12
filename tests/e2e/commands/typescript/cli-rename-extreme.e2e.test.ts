@@ -159,192 +159,92 @@ describe('CLI rename extreme - 基於 sample-project fixture', () => {
       }
     });
 
-    it('應該支援中文符號名稱（Unicode 識別符）', async () => {
-      // JavaScript/TypeScript/Python 等現代語言都支援 Unicode 識別符
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', '用戶', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
+    const unicodeIdentifierCases = [
+      // 中文
+      { name: '用戶', description: '繁體中文' },
+      { name: '用户', description: '簡體中文' },
+      { name: '用戶資料', description: '多字中文' },
+      // 日文
+      { name: '名前', description: '日文漢字' },
+      { name: 'ユーザー', description: '日文片假名' },
+      { name: 'ひらがな', description: '日文平假名' },
+      // 韓文
+      { name: '테마', description: '韓文' },
+      { name: '사용자', description: '韓文（使用者）' },
+      // 歐洲語言
+      { name: 'données', description: '法文（含重音符號）' },
+      { name: 'größe', description: '德文（含變音符號）' },
+      { name: 'переменная', description: '俄文（西里爾字母）' },
+      { name: 'μεταβλητή', description: '希臘文' },
+      // RTL 語言
+      { name: 'משתנה', description: '希伯來文' },
+      { name: 'متغير', description: '阿拉伯文' },
+      // 混合語言
+      { name: '用戶Data', description: '中文加英文' },
+      { name: 'user用戶', description: '英文加中文' },
+      { name: '用戶_データ', description: '中文加日文' },
+      { name: 'Test測試テスト', description: '英文加中文加日文' },
+      // RTL 混合
+      { name: 'data_משתנה', description: '英文加希伯來文' },
+      { name: 'משתנה_data', description: '希伯來文加英文' },
+      { name: 'بيانات_user', description: '阿拉伯文加英文' },
+      { name: 'config_متغير', description: '英文加阿拉伯文' },
+    ];
 
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        // 中文是有效的 Unicode 識別符，不應該有 invalid_identifier 衝突
-        const hasInvalidIdentifierConflict = output.conflicts?.some(
-          (c: { type: string }) => c.type === 'invalid_identifier'
+    it.each(unicodeIdentifierCases)(
+      '應該支援 Unicode 識別符: $name ($description)',
+      async ({ name }) => {
+        const result = await executeCLI(
+          ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', name, '--dry-run', '--format', 'json'],
+          { memfs: fixture.memfs }
         );
-        expect(hasInvalidIdentifierConflict).toBeFalsy();
-        // 應該成功找到並準備重命名
-        expect(output.success).toBe(true);
+
+        expect(result.exitCode).toBe(0);
+        if (result.stdout) {
+          const output = JSON.parse(result.stdout);
+          // 應該是有效的 Unicode 識別符，不應該有 invalid_identifier 衝突
+          const hasInvalidIdentifierConflict = output.conflicts?.some(
+            (c: { type: string }) => c.type === 'invalid_identifier'
+          );
+          expect(hasInvalidIdentifierConflict).toBeFalsy();
+          expect(output.success).toBe(true);
+        }
       }
-    });
+    );
   });
 
   describe('保留字和關鍵字', () => {
-    it('應該檢測 JavaScript 保留字 (var)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'var', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
+    const reservedKeywords = [
+      { keyword: 'var', category: 'JavaScript 保留字' },
+      { keyword: 'let', category: 'JavaScript 保留字' },
+      { keyword: 'const', category: 'JavaScript 保留字' },
+      { keyword: 'interface', category: 'TypeScript 關鍵字' },
+      { keyword: 'enum', category: 'TypeScript 關鍵字' },
+      { keyword: 'type', category: 'TypeScript 關鍵字' },
+      { keyword: 'if', category: '控制流程關鍵字' },
+      { keyword: 'while', category: '迴圈關鍵字' },
+      { keyword: 'try', category: '異常處理關鍵字' },
+      { keyword: 'import', category: '模組關鍵字' },
+      { keyword: 'export', category: '模組關鍵字' },
+    ];
 
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+    it.each(reservedKeywords)(
+      '應該檢測 $category ($keyword)',
+      async ({ keyword }) => {
+        const result = await executeCLI(
+          ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', keyword, '--dry-run', '--format', 'json'],
+          { memfs: fixture.memfs }
+        );
+
+        expect(result.exitCode).toBe(0);
+        if (result.stdout) {
+          const output = JSON.parse(result.stdout);
+          if (output.conflicts) {
+            expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
+          }
         }
       }
-    });
-
-    it('應該檢測 JavaScript 保留字 (let)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'let', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測 JavaScript 保留字 (const)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'const', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測 TypeScript 關鍵字 (interface)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'interface', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測 TypeScript 關鍵字 (enum)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'enum', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測 TypeScript 關鍵字 (type)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'type', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測控制流程關鍵字 (if)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'if', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測迴圈關鍵字 (while)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'while', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測異常處理關鍵字 (try)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'try', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測模組關鍵字 (import)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'import', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
-
-    it('應該檢測模組關鍵字 (export)', async () => {
-      const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'export', '--dry-run', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        if (output.conflicts) {
-          expect(output.conflicts.some((c: any) => c.type === 'reserved_keyword')).toBe(true);
-        }
-      }
-    });
+    );
   });
 
   describe('非法識別符檢測', () => {

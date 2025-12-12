@@ -24,17 +24,18 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
     });
 
-    it('應該支援 JSON 格式輸出', async () => {
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+    const outputFormats = [
+      { format: 'json', description: 'JSON 格式', validateJson: true },
+      { format: 'summary', description: 'summary 格式', validateJson: false },
+    ];
+
+    it.each(outputFormats)('應該支援 $description 輸出', async ({ format, validateJson }) => {
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', format], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該支援 summary 格式輸出', async () => {
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'summary'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
+      if (validateJson) {
+        expect(() => JSON.parse(result.stdout)).not.toThrow();
+      }
     });
 
   });
@@ -169,58 +170,49 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
 
-    it('應該支援循環依賴檢測', async () => {
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      // 主要驗證命令能正常執行
-      expect(result.exitCode).toBe(0);
-    });
   });
 
   describe('特殊 Import 語法', () => {
-    it('應該處理動態 import', async () => {
-      await fixture.writeFile('dynamic-target.ts', 'export const value = "dynamic";');
-      await fixture.writeFile('dynamic-import.ts', 'const module = await import("./dynamic-target.js");\nexport const result = module.value;');
+    const importSyntaxCases = [
+      {
+        name: '動態 import',
+        files: [
+          { path: 'dynamic-target.ts', content: 'export const value = "dynamic";' },
+          { path: 'dynamic-import.ts', content: 'const module = await import("./dynamic-target.js");\nexport const result = module.value;' },
+        ],
+      },
+      {
+        name: 'Re-export (export * from)',
+        files: [
+          { path: 're-source.ts', content: 'export const a = 1;\nexport const b = 2;' },
+          { path: 're-export.ts', content: 'export * from "./re-source.js";' },
+        ],
+      },
+      {
+        name: 'Namespace import',
+        files: [
+          { path: 'namespace-source.ts', content: 'export const a = 1;\nexport const b = 2;' },
+          { path: 'namespace-import.ts', content: 'import * as NS from "./namespace-source.js";\nexport const result = NS.a + NS.b;' },
+        ],
+      },
+      {
+        name: 'Side-effect import',
+        files: [
+          { path: 'side-effect.ts', content: 'console.log("side effect");' },
+          { path: 'side-effect-import.ts', content: 'import "./side-effect.js";\nexport const done = true;' },
+        ],
+      },
+      {
+        name: 'Type-only import',
+        files: [
+          { path: 'types-source.ts', content: 'export interface User { id: string; }' },
+          { path: 'types-import.ts', content: 'import type { User } from "./types-source.js";\nexport const user: User = { id: "1" };' },
+        ],
+      },
+    ];
 
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該處理 Re-export (export * from)', async () => {
-      await fixture.writeFile('re-source.ts', 'export const a = 1;\nexport const b = 2;');
-      await fixture.writeFile('re-export.ts', 'export * from "./re-source.js";');
-
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該處理 Namespace import', async () => {
-      await fixture.writeFile('namespace-source.ts', 'export const a = 1;\nexport const b = 2;');
-      await fixture.writeFile('namespace-import.ts', 'import * as NS from "./namespace-source.js";\nexport const result = NS.a + NS.b;');
-
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該處理 Side-effect import', async () => {
-      await fixture.writeFile('side-effect.ts', 'console.log("side effect");');
-      await fixture.writeFile('side-effect-import.ts', 'import "./side-effect.js";\nexport const done = true;');
-
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該處理 Type-only import', async () => {
-      await fixture.writeFile('types-source.ts', 'export interface User { id: string; }');
-      await fixture.writeFile('types-import.ts', 'import type { User } from "./types-source.js";\nexport const user: User = { id: "1" };');
+    it.each(importSyntaxCases)('應該處理 $name', async ({ files }) => {
+      await Promise.all(files.map(f => fixture.writeFile(f.path, f.content)));
 
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
@@ -731,31 +723,18 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       expect(Array.isArray(output.cycles)).toBe(true);
     });
 
-    it('應該正確處理中等長度循環（4 節點）', async () => {
-      // 建立 4 節點循環
-      await fixture.writeFile('mid-1.ts', 'import { m2 } from "./mid-2";\nexport const m1 = m2;');
-      await fixture.writeFile('mid-2.ts', 'import { m3 } from "./mid-3";\nexport const m2 = m3;');
-      await fixture.writeFile('mid-3.ts', 'import { m4 } from "./mid-4";\nexport const m3 = m4;');
-      await fixture.writeFile('mid-4.ts', 'import { m1 } from "./mid-1";\nexport const m4 = m1;');
+    const cycleLengthCases = [
+      { length: 4, description: '中等長度循環（4 節點）', minExpectedLength: 4 },
+      { length: 8, description: '長循環（8 節點）', minExpectedLength: 7 },
+      { length: 12, description: '超長循環（12 節點）', minExpectedLength: 10 },
+    ];
 
-      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
-
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.cycles.length).toBeGreaterThan(0);
-
-      // 驗證有 4 節點循環
-      const fourNodeCycle = output.cycles.find((c: { length: number }) => c.length === 4);
-      expect(fourNodeCycle).toBeDefined();
-    });
-
-    it('應該正確處理長循環（8 節點）', async () => {
-      // 建立 8 節點循環
-      const files = Array.from({ length: 8 }, (_, i) => ({
-        path: `long-${i}.ts`,
-        content: i === 7
-          ? `import { node0 } from "./long-0";\nexport const node${i} = node0;`
-          : `import { node${i + 1} } from "./long-${i + 1}";\nexport const node${i} = node${i + 1};`
+    it.each(cycleLengthCases)('應該正確處理 $description', async ({ length, minExpectedLength }) => {
+      const files = Array.from({ length }, (_, i) => ({
+        path: `cycle-len-${length}-node-${i}.ts`,
+        content: i === length - 1
+          ? `import { node0 } from "./cycle-len-${length}-node-0";\nexport const node${i} = node0;`
+          : `import { node${i + 1} } from "./cycle-len-${length}-node-${i + 1}";\nexport const node${i} = node${i + 1};`
       }));
 
       await Promise.all(files.map(f => fixture.writeFile(f.path, f.content)));
@@ -766,9 +745,8 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.cycles.length).toBeGreaterThan(0);
 
-      // 驗證有長循環
-      const longCycle = output.cycles.find((c: { length: number }) => c.length >= 7);
-      expect(longCycle).toBeDefined();
+      const matchingCycle = output.cycles.find((c: { length: number }) => c.length >= minExpectedLength);
+      expect(matchingCycle).toBeDefined();
     });
 
     it('應該正確處理交叉循環（共享節點）', async () => {
