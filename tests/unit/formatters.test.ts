@@ -33,6 +33,7 @@ import {
   type SnapshotResult,
   type FindReferencesResult,
   type CallHierarchyResult,
+  type DeadCodeResult,
   type ModuleSnapshotData,
   type ProjectSnapshotData,
   AnalyzeType
@@ -580,7 +581,7 @@ describe('QueryFormatter', () => {
         command: QueryCommand.Analyze,
         success: true,
         summary: {},
-        analyzeType: AnalyzeType.DeadCode,
+        analyzeType: AnalyzeType.Complexity,
         issues: Array.from({ length: 15 }, (_, i) => ({
           type: 'issue',
           message: `Issue ${i}`,
@@ -592,6 +593,119 @@ describe('QueryFormatter', () => {
 
       expect(summary).toContain('發現 15 個問題');
       expect(summary).toContain('... 還有 5 個問題');
+    });
+  });
+
+  describe('formatDeadCodeSummary', () => {
+    it('應該顯示 Dead Code 標題和統計', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [],
+        byType: {},
+        filesAffected: 0,
+        scanTime: 100,
+        summary: { totalScanned: 50 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('Dead Code');
+      expect(summary).toContain('掃描符號: 50');
+      expect(summary).toContain('Dead Code: 0 個');
+      expect(summary).toContain('影響檔案: 0 個');
+    });
+
+    it('應該列出 Dead Code 項目', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [
+          { name: 'unusedFunc', type: 'function', file: '/src/test.ts', line: 10, column: 1, confidence: 0.95, reason: '函式沒有任何引用' },
+          { name: 'UnusedClass', type: 'class', file: '/src/test.ts', line: 20, column: 1, confidence: 0.9, reason: '類別沒有任何引用' }
+        ],
+        byType: { function: 1, class: 1 },
+        filesAffected: 1,
+        scanTime: 150,
+        summary: { totalScanned: 100 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('Dead Code: 2 個');
+      expect(summary).toContain('unusedFunc');
+      expect(summary).toContain('UnusedClass');
+      expect(summary).toContain('L10');
+      expect(summary).toContain('L20');
+    });
+
+    it('應該按類型統計', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [
+          { name: 'func1', type: 'function', file: '/src/a.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' },
+          { name: 'func2', type: 'function', file: '/src/b.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' },
+          { name: 'MyClass', type: 'class', file: '/src/c.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' }
+        ],
+        byType: { function: 2, class: 1 },
+        filesAffected: 3,
+        scanTime: 200,
+        summary: { totalScanned: 50 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('按類型統計');
+      expect(summary).toContain('函式: 2');
+      expect(summary).toContain('類別: 1');
+    });
+
+    it('應該顯示無 Dead Code 訊息', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [],
+        byType: {},
+        filesAffected: 0,
+        scanTime: 50,
+        summary: { totalScanned: 100 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('未發現 Dead Code');
+    });
+
+    it('應該截斷過長的項目列表', () => {
+      const items = Array.from({ length: 15 }, (_, i) => ({
+        name: `unused${i}`,
+        type: 'function' as const,
+        file: '/src/test.ts',
+        line: i + 1,
+        column: 1,
+        confidence: 0.9,
+        reason: '未使用'
+      }));
+
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items,
+        byType: { function: 15 },
+        filesAffected: 1,
+        scanTime: 100,
+        summary: { totalScanned: 50 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('... 還有 5 個');
     });
   });
 
