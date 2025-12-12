@@ -36,7 +36,8 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/infrastructure/formatters/**',
         'src/infrastructure/storage/**',
         'src/plugins/typescript/**',
-        'src/plugins/javascript/**'
+        'src/plugins/javascript/**',
+        'src/plugins/swift/**'
       ],
       exclude: [
         'node_modules/**',
