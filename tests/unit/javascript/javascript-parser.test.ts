@@ -422,7 +422,7 @@ describe('JavaScriptParser', () => {
 
   describe('Edge Cases', () => {
     it('應該處理空類別', async () => {
-      const code = `class EmptyClass {}`;
+      const code = 'class EmptyClass {}';
 
       const ast = await parser.parse(code, '/test/empty-class.js');
       const symbols = await parser.extractSymbols(ast);
