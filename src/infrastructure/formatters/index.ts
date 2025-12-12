@@ -55,7 +55,9 @@ export {
   type CallHierarchyResult,
   type CallHierarchyDirection,
   type IncomingCallItem,
-  type OutgoingCallItem
+  type OutgoingCallItem,
+  type DeadCodeResult,
+  type DeadCodeResultItem
 } from './query-types.js';
 
 export {

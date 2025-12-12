@@ -6,6 +6,7 @@
 import {
   QueryCommand,
   IssueSeverity,
+  AnalyzeType,
   type QueryResult,
   type SearchResult,
   type DepsResult,
@@ -13,6 +14,7 @@ import {
   type SnapshotResult,
   type FindReferencesResult,
   type CallHierarchyResult,
+  type DeadCodeResult,
   type ReferenceItem,
   type IncomingCallItem,
   type OutgoingCallItem,
@@ -169,6 +171,11 @@ export class QueryFormatter {
    * 格式化 Analyze 摘要
    */
   private formatAnalyzeSummary(result: AnalyzeResult): string {
+    // 特殊處理 DeadCode 類型
+    if (result.analyzeType === AnalyzeType.DeadCode) {
+      return this.formatDeadCodeSummary(result as DeadCodeResult);
+    }
+
     const lines: string[] = [];
 
     lines.push(`分析類型: ${result.analyzeType}`);
@@ -192,6 +199,96 @@ export class QueryFormatter {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * 格式化 DeadCode 摘要
+   */
+  private formatDeadCodeSummary(result: DeadCodeResult): string {
+    const lines: string[] = [];
+
+    // 標題
+    lines.push('🔍 Dead Code 檢測結果');
+    lines.push('');
+
+    // 統計
+    lines.push(`📊 掃描符號: ${result.summary.totalScanned || 0}`);
+    lines.push(`💀 Dead Code: ${result.items.length} 個`);
+    lines.push(`📁 影響檔案: ${result.filesAffected} 個`);
+    lines.push(`⏱️  耗時: ${result.scanTime}ms`);
+    lines.push('');
+
+    // 按類型統計
+    if (Object.keys(result.byType).length > 0) {
+      lines.push('按類型統計:');
+      for (const [type, count] of Object.entries(result.byType)) {
+        const label = this.getTypeLabel(type);
+        lines.push(`  ${label}: ${count}`);
+      }
+      lines.push('');
+    }
+
+    // Dead code 列表
+    if (result.items.length > 0) {
+      lines.push('Dead Code 列表:');
+
+      // 按檔案分組
+      const byFile = new Map<string, typeof result.items>();
+      result.items.forEach(item => {
+        const list = byFile.get(item.file) || [];
+        list.push(item);
+        byFile.set(item.file, list);
+      });
+
+      for (const [file, items] of byFile) {
+        lines.push(`  ${this.colorize(file, Colors.cyan)}`);
+        items.slice(0, 10).forEach(item => {
+          const icon = this.getDeadCodeIcon(item.type);
+          const conf = Math.round(item.confidence * 100);
+          lines.push(`    ${icon} L${item.line}: ${item.name} (${item.type}, ${conf}%)`);
+          lines.push(`       ${this.colorize(item.reason, Colors.dim)}`);
+        });
+        if (items.length > 10) {
+          lines.push(`    ... 還有 ${items.length - 10} 個`);
+        }
+      }
+    } else {
+      lines.push(this.colorize('✅ 未發現 Dead Code', Colors.green));
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 取得類型標籤
+   */
+  private getTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      function: '函式',
+      class: '類別',
+      variable: '變數',
+      interface: '介面',
+      type: '型別',
+      property: '屬性',
+      method: '方法',
+      enum: '列舉',
+      constant: '常數'
+    };
+    return labels[type] || type;
+  }
+
+  /**
+   * 取得 Dead Code 圖示
+   */
+  private getDeadCodeIcon(type: string): string {
+    switch (type) {
+      case 'function': return '⚡';
+      case 'class': return '📦';
+      case 'variable': return '📌';
+      case 'interface': return '📋';
+      case 'type': return '🏷️';
+      default: return '💀';
+    }
   }
 
   /**
