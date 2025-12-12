@@ -129,6 +129,11 @@ describe('MyModule', () => {
 - 深度極端：10+ 層嵌套
 - 長度極端：500+ 行、1000+ 字元
 
+### Fixtures 規範
+
+- **🚨 `tests/fixtures/` 的專案必須可編譯/運行**
+- 新增/修改 fixture 後須驗證：TS 用 `pnpm typecheck`、Python 用 `py_compile`、Swift 用 `swift build`
+
 ## CLI 命令
 
 ### 統一輸出格式
@@ -144,6 +149,7 @@ agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
 agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
 agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
+agent-ide deadcode --path <path> [--include-exports]          # Dead code 檢測
 ```
 
 ### 變更類命令（支援 --dry-run）
