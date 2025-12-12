@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：7 核心模組、3 Parser（TS/JS/Swift）、Unicode 識別符支援
 
 ## 常用指令
 
@@ -46,7 +46,7 @@ src/
 │   ├── move-member/      # 成員移動（方法/類別/函式）
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/              # TS（Compiler API）、JS（Babel）
+├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（Tree-sitter WASM）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
