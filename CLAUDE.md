@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、4 Parser（TS/JS/Swift/Python）、Unicode 識別符支援
+**現況**：7 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
 ## 常用指令
 
 ```bash
-pnpm build                    # 建置（含 Swift parser 複製）
+pnpm build                    # 建置
 pnpm typecheck                # 型別檢查
 pnpm test                     # 執行所有測試（E2E + Unit）
 pnpm test:e2e                 # 僅 E2E 測試（CLI 端對端）
@@ -46,7 +46,7 @@ src/
 │   ├── move-member/      # 成員移動（方法/類別/函式）
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
+├── plugins/              # TS（Compiler API）、JS（Babel）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
@@ -132,7 +132,7 @@ describe('MyModule', () => {
 ### Fixtures 規範
 
 - **🚨 `tests/fixtures/` 的專案必須可編譯/運行**
-- 新增/修改 fixture 後須驗證：TS 用 `pnpm typecheck`、Python 用 `py_compile`、Swift 用 `swift build`
+- 新增/修改 fixture 後須驗證：TS 用 `pnpm typecheck`
 
 ## CLI 命令
 
@@ -168,7 +168,7 @@ agent-ide rename --path . --from name --to 名前 --dry-run        # 日文
 agent-ide rename --path . --from theme --to 테마 --dry-run       # 韓文
 ```
 - 使用 Unicode 標準 UAX #31 (`\p{ID_Start}`, `\p{ID_Continue}`)
-- 各 Parser 內建保留字驗證（Python/TypeScript/JavaScript/Swift）
+- 各 Parser 內建保留字驗證（TypeScript/JavaScript）
 
 ## 輸出處理架構
 
@@ -258,5 +258,5 @@ outputHandler.outputMutation(previewInput, format);
 - 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
-- E2E 測試：`tests/e2e/commands/<language>/cli-<command>.e2e.test.ts`（按語言分類）
+- E2E 測試：`tests/e2e/commands/typescript/cli-<command>.e2e.test.ts`
 - Unit 測試：`tests/unit/<module-name>.test.ts`

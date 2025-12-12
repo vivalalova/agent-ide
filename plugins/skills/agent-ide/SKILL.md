@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析、dead code 檢測。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift/Python
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析、dead code 檢測。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS
 ---
 
 # Agent IDE
@@ -142,8 +142,6 @@ agent-ide cycles --path .
 
 - TypeScript
 - JavaScript
-- Swift
-- Python
 
 ## 效能
 
