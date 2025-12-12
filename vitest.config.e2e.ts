@@ -36,8 +36,7 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/infrastructure/formatters/**',
         'src/infrastructure/storage/**',
         'src/plugins/typescript/**',
-        'src/plugins/javascript/**',
-        'src/plugins/swift/**'
+        'src/plugins/javascript/**'
       ],
       exclude: [
         'node_modules/**',
@@ -52,20 +51,10 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/core/patterns/**',
         'src/core/search/**',
         '**/*.md',
-        '**/*.swift',
         '**/*.sh',
         '**/*.yaml',
-        '**/*.resolved',
-        '**/swift-bridge/**'
+        '**/*.resolved'
       ],
-      /**
-       * E2E 覆蓋率門檻說明：
-       * PR #14 移除 5 個低價值命令（analyze, search 等），刪除約 9,000 行程式碼。
-       * 門檻從 40% 調整至 28-38%，原因：
-       * 1. 移除的模組原本有部分測試覆蓋，刪除後影響整體比例
-       * 2. 新增的 find-references/call-hierarchy 為核心 AST 分析，複雜度高
-       * 3. 實際測試案例從 ~400 增至 785，品質提升但分支覆蓋率計算方式不同
-       */
       thresholds: {
         lines: 35,
         functions: 38,
