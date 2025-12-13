@@ -263,3 +263,40 @@ export interface CallHierarchyResult extends QueryResult {
   /** 被呼叫者列表（此函數呼叫了誰） */
   outgoing: OutgoingCallItem[];
 }
+
+// ========== DeadCode 結果 ==========
+
+/** Dead Code 項目 */
+export interface DeadCodeResultItem {
+  /** 符號名稱 */
+  name: string;
+  /** 符號類型 */
+  type: string;
+  /** 檔案路徑 */
+  file: string;
+  /** 行號 */
+  line: number;
+  /** 欄位 */
+  column?: number;
+  /** 信心程度（0-1） */
+  confidence: number;
+  /** 原因說明 */
+  reason: string;
+}
+
+/** DeadCode 結果 */
+export interface DeadCodeResult extends QueryResult {
+  command: QueryCommand.Analyze;
+  /** 分析類型 */
+  analyzeType: AnalyzeType.DeadCode;
+  /** Dead code 項目列表 */
+  items: DeadCodeResultItem[];
+  /** 按類型統計 */
+  byType: Record<string, number>;
+  /** 影響的檔案數 */
+  filesAffected: number;
+  /** 掃描耗時（毫秒） */
+  scanTime: number;
+  /** 跳過的檔案數（解析失敗） */
+  skippedFiles: number;
+}

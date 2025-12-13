@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift/Python
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析、dead code 檢測。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift
 ---
 
 # Agent IDE
@@ -22,6 +22,7 @@ description: 程式碼重構與分析 CLI 工具。以下情境優先使用：�
 | 影響分析 | `impact` | 分析修改影響範圍 |
 | 符號引用搜尋 | `find-references` | 精確找出定義和所有引用 |
 | 呼叫層次分析 | `call-hierarchy` | 分析函數呼叫者和被呼叫者 |
+| Dead code 檢測 | `deadcode` | 找出未使用的符號，清理程式碼 |
 
 ## 🚀 為什麼使用 Agent IDE？
 
@@ -49,22 +50,23 @@ cd ${PLUGIN_ROOT} && pnpm install && pnpm build
 之後可直接執行：
 
 ```bash
-node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
+npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 ```
 
 ## 命令索引
 
 | 命令 | 說明 | 類型 |
 |------|------|------|
-| rename | 符號重命名 | 變更類 |
-| change-signature | 函式簽章修改 | 變更類 |
-| move | 檔案移動 + import 更新 | 變更類 |
-| move-member | 成員移動（方法/類別等） | 變更類 |
-| cycles | 循環依賴檢測 | 查詢類 |
-| impact | 影響分析 | 查詢類 |
-| snapshot | 模組/專案快照 | 查詢類 |
-| find-references | 符號引用搜尋 | 查詢類 |
-| call-hierarchy | 呼叫層次分析 | 查詢類 |
+| [rename](references/rename.md) | 符號重命名 | 變更類 |
+| [change-signature](references/change-signature.md) | 函式簽章修改 | 變更類 |
+| [move](references/move.md) | 檔案移動 + import 更新 | 變更類 |
+| [move-member](references/move-member.md) | 成員移動（方法/類別等） | 變更類 |
+| [cycles](references/deps.md) | 循環依賴檢測 | 查詢類 |
+| [impact](references/deps.md) | 影響分析 | 查詢類 |
+| [snapshot](references/snapshot.md) | 模組/專案快照 | 查詢類 |
+| [find-references](references/find-references.md) | 符號引用搜尋 | 查詢類 |
+| [call-hierarchy](references/call-hierarchy.md) | 呼叫層次分析 | 查詢類 |
+| [deadcode](references/deadcode.md) | Dead code 檢測 | 查詢類 |
 
 ## 命令速查表
 
@@ -88,6 +90,7 @@ node ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 專案快照   | `agent-ide snapshot --path . --format json`                 |
 | 符號引用   | `agent-ide find-references processData --path . --format json` |
 | 呼叫層次   | `agent-ide call-hierarchy handleRequest --path . --direction both` |
+| Dead code  | `agent-ide deadcode --path . --format json`                 |
 
 ## 輸出格式
 
@@ -139,8 +142,6 @@ agent-ide cycles --path .
 
 - TypeScript
 - JavaScript
-- Swift
-- Python
 
 ## 效能
 

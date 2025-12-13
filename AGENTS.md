@@ -6,7 +6,7 @@
 src/
 ├── core/           # 7個核心模組（indexing, search, rename, move, refactor, analysis, dependency）
 ├── infrastructure/ # parser, cache, storage, utils
-├── plugins/        # TypeScript, JavaScript, Swift
+├── plugins/        # TypeScript, JavaScript
 ├── interfaces/     # CLI, MCP
 ├── application/    # 服務協調層
 └── shared/         # types, constants, errors

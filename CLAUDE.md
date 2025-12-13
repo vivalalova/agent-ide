@@ -6,16 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、4 Parser（TS/JS/Swift/Python）、Unicode 識別符支援
+**現況**：7 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
 ## 常用指令
 
 ```bash
-pnpm build                    # 建置（含 Swift parser 複製）
+pnpm build                    # 建置
 pnpm typecheck                # 型別檢查
 pnpm test                     # 執行所有測試（E2E + Unit）
 pnpm test:e2e                 # 僅 E2E 測試（CLI 端對端）
 pnpm test:unit                # 僅 Unit 測試（獨立模組）
+pnpm test:cli                 # CLI 整合煙霧測試（實際執行）
 pnpm test:e2e:bail            # E2E 失敗即停
 pnpm test:unit:bail           # Unit 失敗即停
 pnpm lint                     # ESLint
@@ -46,7 +47,7 @@ src/
 │   ├── move-member/      # 成員移動（方法/類別/函式）
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（SwiftSyntax CLI）、Python（tree-sitter）
+├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（Tree-sitter WASM）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
@@ -57,8 +58,9 @@ src/
 
 | 類型 | 目錄 | 配置檔 | 命令 | 用途 |
 |-----|------|-------|------|------|
-| **E2E** | `tests/e2e/` | `vitest.config.e2e.ts` | `pnpm test:e2e` | CLI 端對端測試 |
+| **E2E** | `tests/e2e/` | `vitest.config.e2e.ts` | `pnpm test:e2e` | CLI 端對端測試（memfs 隔離） |
 | **Unit** | `tests/unit/` | `vitest.config.unit.ts` | `pnpm test:unit` | 獨立模組/函式測試 |
+| **CLI** | `tests/cli/` | `vitest.config.cli.ts` | `pnpm test:cli` | CLI 整合煙霧測試（實際執行） |
 
 ### E2E 測試規範
 
@@ -129,6 +131,11 @@ describe('MyModule', () => {
 - 深度極端：10+ 層嵌套
 - 長度極端：500+ 行、1000+ 字元
 
+### Fixtures 規範
+
+- **🚨 `tests/fixtures/` 的專案必須可編譯/運行**
+- 新增/修改 fixture 後須驗證：TS 用 `pnpm typecheck`
+
 ## CLI 命令
 
 ### 統一輸出格式
@@ -144,6 +151,7 @@ agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
 agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
 agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
+agent-ide deadcode --path <path> [--include-exports]          # Dead code 檢測
 ```
 
 ### 變更類命令（支援 --dry-run）
@@ -162,7 +170,7 @@ agent-ide rename --path . --from name --to 名前 --dry-run        # 日文
 agent-ide rename --path . --from theme --to 테마 --dry-run       # 韓文
 ```
 - 使用 Unicode 標準 UAX #31 (`\p{ID_Start}`, `\p{ID_Continue}`)
-- 各 Parser 內建保留字驗證（Python/TypeScript/JavaScript/Swift）
+- 各 Parser 內建保留字驗證（TypeScript/JavaScript）
 
 ## 輸出處理架構
 
@@ -252,5 +260,6 @@ outputHandler.outputMutation(previewInput, format);
 - 調整門檻需有正當理由（如移除大量功能）並記錄於 commit message
 
 **測試位置**：
-- E2E 測試：`tests/e2e/commands/<language>/cli-<command>.e2e.test.ts`（按語言分類）
+- E2E 測試：`tests/e2e/commands/typescript/cli-<command>.e2e.test.ts`
 - Unit 測試：`tests/unit/<module-name>.test.ts`
+- CLI 測試：`tests/cli/cli-commands.cli.test.ts`

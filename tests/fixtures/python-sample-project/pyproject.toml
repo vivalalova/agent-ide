@@ -1,9 +1,0 @@
-[project]
-name = "python-sample-project"
-version = "1.0.0"
-description = "Sample Python project for testing"
-requires-python = ">=3.8"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"

@@ -108,7 +108,7 @@ async function handleMoveCommand(
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
       pathAliases,
-      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue', '.swift'],
+      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
       includeNodeModules: false
     });
 

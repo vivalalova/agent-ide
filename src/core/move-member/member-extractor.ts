@@ -40,8 +40,6 @@ export class MemberExtractor {
       case '.js':
       case '.jsx':
         return this.extractJavaScriptMember(content, filePath, memberName, memberType, className);
-      case '.swift':
-        return this.extractSwiftMember(content, filePath, memberName, memberType, className);
       default:
         return null;
     }
@@ -65,8 +63,6 @@ export class MemberExtractor {
       case '.js':
       case '.jsx':
         return this.listJavaScriptMembers(content, filePath, className);
-      case '.swift':
-        return this.listSwiftMembers(content, filePath, className);
       default:
         return [];
     }
@@ -325,99 +321,6 @@ export class MemberExtractor {
    */
   private listJavaScriptMembers(content: string, filePath: string, className?: string): MemberDefinition[] {
     return this.listTypeScriptMembers(content, filePath, className);
-  }
-
-  /**
-   * 提取 Swift 成員
-   */
-  private extractSwiftMember(
-    content: string,
-    filePath: string,
-    memberName: string,
-    memberType?: MemberType,
-    className?: string
-  ): MemberDefinition | null {
-    const members = this.listSwiftMembers(content, filePath, className);
-    return members.find(m => {
-      const nameMatch = m.name === memberName;
-      const typeMatch = !memberType || m.type === memberType;
-      const classMatch = !className || m.className === className;
-      return nameMatch && typeMatch && classMatch;
-    }) || null;
-  }
-
-  /**
-   * 列出 Swift 成員
-   */
-  private listSwiftMembers(content: string, filePath: string, filterClassName?: string): MemberDefinition[] {
-    const members: MemberDefinition[] = [];
-    const lines = content.split('\n');
-
-    // 函式
-    const funcPattern = /^(\s*)(public|private|internal|fileprivate|open)?\s*(static)?\s*func\s+(\w+)/gm;
-    let match;
-    while ((match = funcPattern.exec(content)) !== null) {
-      const lineNumber = content.substring(0, match.index).split('\n').length;
-      const endLine = this.findBlockEnd(lines, lineNumber - 1);
-      const sourceCode = lines.slice(lineNumber - 1, endLine + 1).join('\n');
-
-      members.push(this.createMember(
-        match[4],
-        MemberType.Function,
-        filePath,
-        lineNumber,
-        endLine + 1,
-        sourceCode,
-        undefined,
-        this.extractModifiers(match[0]),
-        this.extractDocumentation(lines, lineNumber - 1),
-        this.extractDependencies(sourceCode)
-      ));
-    }
-
-    // 類別/結構
-    const classPattern = /^(\s*)(public|private|internal|fileprivate|open)?\s*(class|struct)\s+(\w+)/gm;
-    while ((match = classPattern.exec(content)) !== null) {
-      const lineNumber = content.substring(0, match.index).split('\n').length;
-      const endLine = this.findBlockEnd(lines, lineNumber - 1);
-      const sourceCode = lines.slice(lineNumber - 1, endLine + 1).join('\n');
-
-      members.push(this.createMember(
-        match[4],
-        MemberType.Class,
-        filePath,
-        lineNumber,
-        endLine + 1,
-        sourceCode,
-        undefined,
-        this.extractModifiers(match[0]),
-        this.extractDocumentation(lines, lineNumber - 1),
-        this.extractDependencies(sourceCode)
-      ));
-    }
-
-    // 列舉
-    const enumPattern = /^(\s*)(public|private|internal|fileprivate|open)?\s*enum\s+(\w+)/gm;
-    while ((match = enumPattern.exec(content)) !== null) {
-      const lineNumber = content.substring(0, match.index).split('\n').length;
-      const endLine = this.findBlockEnd(lines, lineNumber - 1);
-      const sourceCode = lines.slice(lineNumber - 1, endLine + 1).join('\n');
-
-      members.push(this.createMember(
-        match[3],
-        MemberType.Enum,
-        filePath,
-        lineNumber,
-        endLine + 1,
-        sourceCode,
-        undefined,
-        this.extractModifiers(match[0]),
-        this.extractDocumentation(lines, lineNumber - 1),
-        this.extractDependencies(sourceCode)
-      ));
-    }
-
-    return members;
   }
 
   /**

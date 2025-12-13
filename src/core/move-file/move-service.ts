@@ -21,7 +21,7 @@ export class MoveService {
     } else {
       const defaultConfig: ImportResolverConfig = {
         pathAliases: {},
-        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue', '.swift'],
+        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue'],
         ...config
       };
       this.importResolver = new ImportResolver(defaultConfig);
@@ -40,21 +40,47 @@ export class MoveService {
       // 1. 驗證路徑
       await this.validatePaths(source, target);
 
+      // 檢查是否為目錄
+      const isDirectory = await this.fileSystem.isDirectory(source);
+
       // 2. 收集需要更新的檔案
       const pathUpdates: PathUpdate[] = [];
 
       if (updateImports) {
-        // 2.1 更新其他檔案對被移動檔案的引用
-        const affectedFiles = await this.findAffectedFiles(source, projectRoot);
+        if (isDirectory) {
+          // 目錄移動：處理目錄內所有檔案
+          const filesInDir = await this.getFilesInDirectory(source);
 
-        for (const filePath of affectedFiles) {
-          const updates = await this.calculatePathUpdates(filePath, source, target);
-          pathUpdates.push(...updates);
+          for (const filePath of filesInDir) {
+            // 計算檔案在目錄內的相對路徑
+            const relativePath = path.relative(source, filePath);
+            const newFilePath = path.join(target, relativePath);
+
+            // 2.1 更新其他檔案對目錄內檔案的引用
+            const affectedFiles = await this.findAffectedFiles(filePath, projectRoot);
+            for (const affectedFile of affectedFiles) {
+              const updates = await this.calculatePathUpdates(affectedFile, filePath, newFilePath);
+              pathUpdates.push(...updates);
+            }
+
+            // 2.2 更新目錄內檔案的內部 import
+            const internalUpdates = await this.calculateMovedFileInternalUpdates(filePath, newFilePath);
+            pathUpdates.push(...internalUpdates);
+          }
+        } else {
+          // 單一檔案移動
+          // 2.1 更新其他檔案對被移動檔案的引用
+          const affectedFiles = await this.findAffectedFiles(source, projectRoot);
+
+          for (const filePath of affectedFiles) {
+            const updates = await this.calculatePathUpdates(filePath, source, target);
+            pathUpdates.push(...updates);
+          }
+
+          // 2.2 更新被移動檔案內部的 import（在移動前處理）
+          const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
+          pathUpdates.push(...movedFileInternalUpdates);
         }
-
-        // 2.2 更新被移動檔案內部的 import（在移動前處理）
-        const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
-        pathUpdates.push(...movedFileInternalUpdates);
       }
 
       // 3. 預覽模式
@@ -160,12 +186,47 @@ export class MoveService {
    * 執行實際的檔案移動
    */
   private async performMove(source: string, target: string): Promise<void> {
-    // 確保目標目錄存在
-    const targetDir = path.dirname(target);
-    await this.fileSystem.createDirectory(targetDir);
+    const isDirectory = await this.fileSystem.isDirectory(source);
 
-    // 移動檔案或目錄
-    await this.fileSystem.moveFile(source, target);
+    if (isDirectory) {
+      // 目錄移動：遞迴複製所有檔案，然後刪除原目錄
+      await this.moveDirectory(source, target);
+    } else {
+      // 單一檔案移動
+      const targetDir = path.dirname(target);
+      await this.fileSystem.createDirectory(targetDir);
+      await this.fileSystem.moveFile(source, target);
+    }
+  }
+
+  /**
+   * 遞迴移動目錄
+   */
+  private async moveDirectory(source: string, target: string): Promise<void> {
+    // 建立目標目錄
+    await this.fileSystem.createDirectory(target);
+
+    // 讀取源目錄內容
+    const entries = await this.fileSystem.readDirectory(source);
+
+    for (const entry of entries) {
+      const sourcePath = entry.path;
+      const relativePath = path.relative(source, sourcePath);
+      const targetPath = path.join(target, relativePath);
+
+      if (entry.isDirectory) {
+        // 遞迴處理子目錄
+        await this.moveDirectory(sourcePath, targetPath);
+      } else if (entry.isFile) {
+        // 複製檔案
+        const content = await this.fileSystem.readFile(sourcePath, 'utf-8');
+        await this.fileSystem.writeFile(targetPath, content as string);
+        await this.fileSystem.deleteFile(sourcePath);
+      }
+    }
+
+    // 刪除原目錄
+    await this.fileSystem.deleteDirectory(source);
   }
 
   /**
@@ -196,7 +257,7 @@ export class MoveService {
    */
   private async getAllProjectFiles(projectRoot: string): Promise<string[]> {
     const files: string[] = [];
-    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.swift'];
+    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
     const excludePatterns = ['node_modules', 'dist', '.git', 'coverage', '.build'];
 
     const walkDir = async (dir: string): Promise<void> => {
@@ -217,13 +278,41 @@ export class MoveService {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // 忽略無法存取的目錄
-        // console.debug(`無法存取目錄 ${dir}:`, error);
       }
     };
 
     await walkDir(projectRoot);
+    return files;
+  }
+
+  /**
+   * 獲取目錄內的所有檔案（遞迴）
+   */
+  private async getFilesInDirectory(dirPath: string): Promise<string[]> {
+    const files: string[] = [];
+    const allowedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
+
+    const walkDir = async (dir: string): Promise<void> => {
+      try {
+        const entries = await this.fileSystem.readDirectory(dir);
+
+        for (const entry of entries) {
+          if (entry.isDirectory) {
+            await walkDir(entry.path);
+          } else if (entry.isFile) {
+            if (allowedExtensions.some(ext => entry.name.endsWith(ext))) {
+              files.push(entry.path);
+            }
+          }
+        }
+      } catch {
+        // 忽略無法存取的目錄
+      }
+    };
+
+    await walkDir(dirPath);
     return files;
   }
 
@@ -321,7 +410,7 @@ export class MoveService {
    */
   private removeExtension(filePath: string): string {
     const ext = path.extname(filePath);
-    if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
+    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
       return filePath.slice(0, -ext.length);
     }
     return filePath;
@@ -457,7 +546,7 @@ export class MoveService {
 
           // 移除副檔名
           const ext = path.extname(relativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
+          if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
             relativeToAlias = relativeToAlias.slice(0, -ext.length);
           }
 
@@ -467,7 +556,7 @@ export class MoveService {
 
           // 移除副檔名
           const newExt = path.extname(newRelativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(newExt)) {
+          if (['.js', '.ts', '.jsx', '.tsx'].includes(newExt)) {
             newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
           }
 
@@ -490,7 +579,7 @@ export class MoveService {
 
     // 移除副檔名（如果目標是支援的檔案類型）
     const ext = path.extname(relativePath);
-    if (['.js', '.ts', '.jsx', '.tsx', '.swift'].includes(ext)) {
+    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
       relativePath = relativePath.slice(0, -ext.length);
     }
 

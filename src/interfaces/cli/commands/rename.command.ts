@@ -106,8 +106,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       while (currentDir !== path.dirname(currentDir)) {
         const hasPackageJson = await context.fileSystem.exists(path.join(currentDir, 'package.json'));
         const hasGit = await context.fileSystem.exists(path.join(currentDir, '.git'));
-        const hasSwiftPackage = await context.fileSystem.exists(path.join(currentDir, 'Package.swift'));
-        if (hasPackageJson || hasGit || hasSwiftPackage) {
+        if (hasPackageJson || hasGit) {
           workspacePath = currentDir;
           break;
         }
@@ -117,7 +116,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     // 初始化索引引擎（每次都重新索引以確保資料是最新的）
     const config = createIndexConfig(workspacePath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx', '.swift', '.py'],
+      includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
       excludePatterns: ['node_modules/**', '*.test.*']
     });
     const indexEngine = new IndexEngine(config, context.fileSystem);
