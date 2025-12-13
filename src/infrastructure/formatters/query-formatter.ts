@@ -97,9 +97,10 @@ export class QueryFormatter {
         return this.formatFindReferencesSummary(result as FindReferencesResult);
       case QueryCommand.CallHierarchy:
         return this.formatCallHierarchySummary(result as CallHierarchyResult);
-      default:
-        return this.formatDefaultSummary(result);
     }
+    // Exhaustive check: 編譯時確保所有 QueryCommand 都被處理
+    const _exhaustiveCheck: never = result.command;
+    return this.formatDefaultSummary({ ...result, command: _exhaustiveCheck });
   }
 
   /**
@@ -216,6 +217,9 @@ export class QueryFormatter {
     lines.push(`💀 Dead Code: ${result.items.length} 個`);
     lines.push(`📁 影響檔案: ${result.filesAffected} 個`);
     lines.push(`⏱️  耗時: ${result.scanTime}ms`);
+    if (result.skippedFiles > 0) {
+      lines.push(this.colorize(`⚠️  跳過檔案: ${result.skippedFiles} 個（解析失敗）`, Colors.yellow));
+    }
     lines.push('');
 
     // 按類型統計

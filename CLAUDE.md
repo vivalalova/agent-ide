@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、3 Parser（TS/JS/Swift）、Unicode 識別符支援
+**現況**：7 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
 ## 常用指令
 

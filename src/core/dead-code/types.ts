@@ -63,6 +63,8 @@ export interface DeadCodeStats {
   readonly filesAffected: number;
   /** 掃描耗時（毫秒） */
   readonly scanTime: number;
+  /** 跳過的檔案數（解析失敗） */
+  readonly skippedFiles: number;
 }
 
 /**

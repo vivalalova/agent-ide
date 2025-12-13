@@ -297,4 +297,6 @@ export interface DeadCodeResult extends QueryResult {
   filesAffected: number;
   /** 掃描耗時（毫秒） */
   scanTime: number;
+  /** 跳過的檔案數（解析失敗） */
+  skippedFiles: number;
 }

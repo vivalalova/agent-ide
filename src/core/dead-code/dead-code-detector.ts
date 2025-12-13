@@ -43,7 +43,7 @@ export class DeadCodeDetector {
       const filePaths = indexedFiles.map(f => f.filePath);
 
       // 收集所有符號
-      const allSymbols = await this.collectAllSymbols(filePaths);
+      const { symbols: allSymbols, skippedFiles } = await this.collectAllSymbols(filePaths);
 
       // 過濾要檢測的符號類型
       const targetSymbols = allSymbols.filter(s =>
@@ -105,7 +105,7 @@ export class DeadCodeDetector {
       }
 
       // 計算統計
-      const stats = this.calculateStats(targetSymbols.length, deadItems, startTime);
+      const stats = this.calculateStats(targetSymbols.length, deadItems, startTime, skippedFiles);
 
       return {
         success: true,
@@ -121,18 +121,20 @@ export class DeadCodeDetector {
           deadCodeCount: 0,
           byType: {},
           filesAffected: 0,
-          scanTime: Date.now() - startTime
+          scanTime: Date.now() - startTime,
+          skippedFiles: 0
         },
         error: error instanceof Error ? error.message : String(error)
       };
     }
   }
 
-  /**
+/**
    * 收集所有符號
    */
-  private async collectAllSymbols(filePaths: readonly string[]): Promise<Symbol[]> {
+  private async collectAllSymbols(filePaths: readonly string[]): Promise<{ symbols: Symbol[]; skippedFiles: number }> {
     const allSymbols: Symbol[] = [];
+    let skippedFiles = 0;
 
     for (const filePath of filePaths) {
       const parser = this.getParser(filePath);
@@ -145,12 +147,17 @@ export class DeadCodeDetector {
         const ast = await parser.parse(content, filePath);
         const symbols = await parser.extractSymbols(ast);
         allSymbols.push(...symbols);
-      } catch {
-        // 忽略解析失敗的檔案
+      } catch (error) {
+        skippedFiles++;
+        // 非測試環境記錄警告
+        if (process.env.NODE_ENV !== 'test') {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
+        }
       }
     }
 
-    return allSymbols;
+    return { symbols: allSymbols, skippedFiles };
   }
 
   /**
@@ -244,7 +251,8 @@ export class DeadCodeDetector {
   private calculateStats(
     totalSymbols: number,
     deadItems: readonly DeadCodeItem[],
-    startTime: number
+    startTime: number,
+    skippedFiles: number
   ): DeadCodeStats {
     const byType: Record<string, number> = {};
 
@@ -259,7 +267,8 @@ export class DeadCodeDetector {
       deadCodeCount: deadItems.length,
       byType,
       filesAffected,
-      scanTime: Date.now() - startTime
+      scanTime: Date.now() - startTime,
+      skippedFiles
     };
   }
 

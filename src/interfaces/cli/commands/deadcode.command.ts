@@ -122,6 +122,7 @@ async function handleDeadCodeCommand(
       byType: detectionResult.stats.byType,
       filesAffected: detectionResult.stats.filesAffected,
       scanTime: detectionResult.stats.scanTime,
+      skippedFiles: detectionResult.stats.skippedFiles,
       summary: {
         totalScanned: detectionResult.stats.totalSymbols,
         issuesFound: detectionResult.stats.deadCodeCount
