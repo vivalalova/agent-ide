@@ -151,13 +151,10 @@ describe('DEFAULT_DEAD_CODE_OPTIONS', () => {
     expect(Array.isArray(DEFAULT_DEAD_CODE_OPTIONS.symbolTypes)).toBe(true);
   });
 
+  // 注意：預設只排除 main（程式進入點）
+  // 其他如 index、App、setup、init、configure 等應由使用者根據專案特性自行配置
   it.each([
     { pattern: 'main', description: '入口函數' },
-    { pattern: 'index', description: '索引檔案' },
-    { pattern: 'App', description: '應用根元件' },
-    { pattern: 'setup', description: '設定函數' },
-    { pattern: 'init', description: '初始化函數' },
-    { pattern: 'configure', description: '配置函數' },
   ])('應該排除 $description ($pattern)', ({ pattern }) => {
     expect(DEFAULT_DEAD_CODE_OPTIONS.excludePatterns).toContain(pattern);
   });
@@ -410,14 +407,11 @@ describe('DeadCodeDetector 排除邏輯', () => {
       symbolName: string;
     }
 
+    // 注意：預設只排除 main 和 constructor
+    // 其他如 index、App、setup、init、configure 等應由使用者根據專案特性自行配置
     it.each<BuiltInExclusionTestCase>([
       { scenario: 'constructor', symbolName: 'constructor' },
       { scenario: '預設排除 main', symbolName: 'main' },
-      { scenario: '預設排除 index', symbolName: 'index' },
-      { scenario: '預設排除 App', symbolName: 'App' },
-      { scenario: '預設排除 setup', symbolName: 'setup' },
-      { scenario: '預設排除 init', symbolName: 'init' },
-      { scenario: '預設排除 configure', symbolName: 'configure' },
     ])('應該排除 $scenario', async ({ symbolName }) => {
       // Given: 有該符號的專案
       const deps = createMockDependencies({
