@@ -59,7 +59,8 @@ export class DeadCodeDetector {
       // 收集所有符號名稱
       const symbolNames = new Set(symbolsToCheck.map(s => s.name));
 
-      // 批次查找所有符號的引用（O(M) 而非 O(N × M)）
+      // 批次查找所有符號的引用
+      // 優化：M 次檔案讀取（一次遍歷 M 檔查找 N 符號），而非 N×M 次（N 符號各遍歷 M 檔）
       const allReferences = await symbolFinder.findReferencesMultiple(symbolNames, filePaths);
 
       // 檢測每個符號
