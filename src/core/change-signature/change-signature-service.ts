@@ -135,6 +135,15 @@ export class ChangeSignatureService {
         } else {
           newParameterNames.add(change.name);
         }
+
+        // 驗證新增參數必須有預設值
+        if (!change.callSiteValue && !change.defaultValue) {
+          errors.push({
+            code: ChangeSignatureErrorCode.MissingDefaultValue,
+            message: `參數 ${change.name} 缺少預設值，請使用 --default-value 或 --call-site-value 指定`,
+            parameterName: change.name
+          });
+        }
       }
 
       if (isRemoveParameterChange(change)) {
@@ -459,8 +468,8 @@ export class ChangeSignatureService {
     const addedPositions = new Set<number>();
     for (const change of changes) {
       if (isAddParameterChange(change)) {
-        // 使用 callSiteValue, defaultValue, 或 undefined 作為預設值
-        const value = change.callSiteValue || change.defaultValue || 'undefined';
+        // 使用 callSiteValue 或 defaultValue（驗證階段已確保至少有一個值）
+        const value = change.callSiteValue || change.defaultValue!;
         const position = change.position < 0 ? result.length - 1 : Math.min(change.position, result.length - 1);
         if (position >= 0 && position < result.length && !result[position]) {
           result[position] = value;
