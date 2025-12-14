@@ -156,7 +156,9 @@ agent-ide snapshot --path <path> --since last             # 增量快照
 agent-ide snapshot --path <path> --refresh                # 強制刷新快取
 agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
 agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
-agent-ide deadcode --path <path> [--include-exports]          # Dead code 檢測
+agent-ide deadcode --path <path> [--include-exports]       # Dead code 檢測
+agent-ide deadcode --path <path> --autofix                 # 預覽刪除（dry-run）
+agent-ide deadcode --path <path> --autofix --no-dry-run    # 實際刪除 dead code
 ```
 
 ### 變更類命令（支援 --dry-run）
@@ -185,8 +187,8 @@ agent-ide rename --path . --from theme --to 테마 --dry-run       # 韓文
 
 | 命令類型 | 輸出方法 | 結果型別 |
 |---------|---------|---------|
-| 查詢類（cycles, impact, snapshot, find-references, call-hierarchy） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
-| 變更類（rename, move, change-signature, move-member） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
+| 查詢類（cycles, impact, snapshot, find-references, call-hierarchy, deadcode） | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
+| 變更類（rename, move, change-signature, move-member, deadcode --autofix） | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
 
 ### 新增命令的輸出整合步驟
 

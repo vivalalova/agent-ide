@@ -1,9 +1,9 @@
-# Dead Code 檢測 (deadcode)
+# Dead Code 檢測與刪除 (deadcode)
 
 > **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
 > （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
 
-語義級 Dead Code 檢測，找出專案中未使用的符號（函式、變數、類別等）。
+語義級 Dead Code 檢測，找出專案中未使用的符號（函式、變數、類別等）。支援 `--autofix` 自動刪除。
 
 ## 為什麼使用 deadcode？
 
@@ -11,12 +11,15 @@
 |------|------|
 | **語義精確** | 分析符號引用關係，不是簡單文字搜尋 |
 | **信心分數** | 每個結果附帶信心分數，避免誤判 |
+| **自動刪除** | `--autofix` 一鍵刪除 dead code 並清理 import |
 | **結構化輸出** | JSON 格式，AI 可直接解析處理 |
 
 ## 用法
 
+### 檢測 Dead Code
+
 ```bash
-# 檢測 dead code
+# 檢測 dead code（JSON 格式）
 agent-ide deadcode --path . --format json
 
 # 人類可讀格式
@@ -26,13 +29,43 @@ agent-ide deadcode --path . --format summary
 agent-ide deadcode --path . --include-exports
 ```
 
+### 自動刪除 (--autofix)
+
+```bash
+# 預覽刪除（diff 格式，預設 dry-run）
+agent-ide deadcode --path . --autofix
+
+# 預覽刪除（JSON 格式）
+agent-ide deadcode --path . --autofix --format json
+
+# 實際執行刪除
+agent-ide deadcode --path . --autofix --no-dry-run
+
+# 設定信心度門檻（只刪除高信心度項目）
+agent-ide deadcode --path . --autofix --min-confidence 0.95
+
+# 排除特定符號
+agent-ide deadcode --path . --autofix --exclude main App
+```
+
 ## 參數
+
+### 檢測參數
 
 | 參數 | 說明 |
 |------|------|
 | `--path` | 專案路徑（預設 `.`） |
-| `--format` | 輸出格式：`json`、`summary` |
+| `--format` | 輸出格式：`json`、`summary`、`diff`（autofix 預設） |
 | `--include-exports` | 包含 export 的符號（預設排除） |
+
+### Autofix 參數
+
+| 參數 | 說明 |
+|------|------|
+| `--autofix` | 啟用自動刪除模式 |
+| `--no-dry-run` | 實際執行刪除（預設只預覽） |
+| `--min-confidence` | 最小信心度門檻（0-1，預設 0.9） |
+| `--exclude` | 排除的符號名稱（可多個） |
 
 ## 輸出格式
 
@@ -94,6 +127,45 @@ Dead Code 列表:
        變數 'oldVariable' 只有定義，無使用引用
 ```
 
+### autofix (json)
+
+```json
+{
+  "command": "deadcode-removal",
+  "success": true,
+  "files": [
+    {
+      "filePath": "src/utils.ts",
+      "hunks": [
+        {
+          "startLine": 42,
+          "endLine": 50,
+          "oldContent": "function unusedFunction() {...}",
+          "newContent": ""
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "totalFiles": 1,
+    "totalChanges": 1,
+    "dryRun": true
+  }
+}
+```
+
+### autofix (diff)
+
+```diff
+--- src/utils.ts
++++ src/utils.ts
+@@ -42,9 +42,0 @@
+-function unusedFunction() {
+-  // dead code
+-  return null;
+-}
+```
+
 ## 符號類型
 
 | 類型 | 說明 |
@@ -110,3 +182,5 @@ Dead Code 列表:
 - **預設排除 export**：export 的符號可能被外部使用，預設不標記為 dead code
 - **信心分數**：分數越高代表越確定是 dead code，建議優先處理高分數項目
 - **動態引用**：無法檢測 `eval()`、`require()` 動態字串等運行時引用
+- **Autofix 預設 dry-run**：使用 `--no-dry-run` 才會實際刪除
+- **Import 清理**：刪除符號後自動清理變成未使用的 import
