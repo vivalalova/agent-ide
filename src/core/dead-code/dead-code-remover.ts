@@ -237,67 +237,182 @@ export class DeadCodeRemover {
 
   /**
    * 解析 import 語句
+   * 支援 named import, default import, namespace import, 多行 import
    */
   private parseImports(content: string): Array<{
     symbolName: string;
     statement: string;
     range: Range;
+    isDefault?: boolean;
+    isNamespace?: boolean;
   }> {
     const imports: Array<{
       symbolName: string;
       statement: string;
       range: Range;
+      isDefault?: boolean;
+      isNamespace?: boolean;
     }> = [];
 
     const lines = content.split('\n');
+
+    // 用於處理多行 import
+    let multiLineImport = '';
+    let multiLineStartLine = -1;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNumber = i + 1;
 
-      // 匹配 named import: import { X } from '...'
-      const namedImportMatch = line.match(/import\s*\{([^}]+)\}\s*from/);
-      if (namedImportMatch) {
-        const symbols = namedImportMatch[1].split(',').map(s => s.trim());
-        for (const symbol of symbols) {
-          // 處理 as 別名
-          const cleanSymbol = symbol.split(/\s+as\s+/)[0].trim();
-          if (cleanSymbol) {
-            imports.push({
-              symbolName: cleanSymbol,
-              statement: line.trim(),
-              range: {
-                start: { line: lineNumber, column: 1, offset: undefined },
-                end: { line: lineNumber, column: line.length + 1, offset: undefined }
-              }
-            });
-          }
+      // 處理多行 import
+      if (multiLineImport) {
+        multiLineImport += '\n' + line;
+        if (line.includes('from')) {
+          // 多行 import 結束
+          this.parseImportLine(multiLineImport, multiLineStartLine, lineNumber, imports);
+          multiLineImport = '';
+          multiLineStartLine = -1;
         }
+        continue;
       }
+
+      // 檢查是否為多行 import 開始（有 { 但沒有 } 或沒有 from）
+      if (line.match(/^\s*import\s*\{/) && !line.includes('}')) {
+        multiLineImport = line;
+        multiLineStartLine = lineNumber;
+        continue;
+      }
+
+      // 單行處理
+      this.parseImportLine(line, lineNumber, lineNumber, imports);
     }
 
     return imports;
   }
 
   /**
+   * 解析單行或合併後的 import 語句
+   */
+  private parseImportLine(
+    line: string,
+    startLine: number,
+    endLine: number,
+    imports: Array<{
+      symbolName: string;
+      statement: string;
+      range: Range;
+      isDefault?: boolean;
+      isNamespace?: boolean;
+    }>
+  ): void {
+    const trimmedLine = line.replace(/\s+/g, ' ').trim();
+
+    // 1. Namespace import: import * as X from '...'
+    const namespaceMatch = trimmedLine.match(/import\s+\*\s+as\s+(\w+)\s+from/);
+    if (namespaceMatch) {
+      imports.push({
+        symbolName: namespaceMatch[1],
+        statement: trimmedLine,
+        range: {
+          start: { line: startLine, column: 1, offset: undefined },
+          end: { line: endLine, column: line.length + 1, offset: undefined }
+        },
+        isNamespace: true
+      });
+      return;
+    }
+
+    // 2. Default import with named: import X, { Y } from '...'
+    const defaultWithNamedMatch = trimmedLine.match(/import\s+(\w+)\s*,\s*\{([^}]+)\}\s*from/);
+    if (defaultWithNamedMatch) {
+      // Default import
+      imports.push({
+        symbolName: defaultWithNamedMatch[1],
+        statement: trimmedLine,
+        range: {
+          start: { line: startLine, column: 1, offset: undefined },
+          end: { line: endLine, column: line.length + 1, offset: undefined }
+        },
+        isDefault: true
+      });
+      // Named imports
+      const symbols = defaultWithNamedMatch[2].split(',').map(s => s.trim());
+      for (const symbol of symbols) {
+        const cleanSymbol = symbol.split(/\s+as\s+/)[0].trim();
+        if (cleanSymbol && !cleanSymbol.startsWith('type ')) {
+          imports.push({
+            symbolName: cleanSymbol,
+            statement: trimmedLine,
+            range: {
+              start: { line: startLine, column: 1, offset: undefined },
+              end: { line: endLine, column: line.length + 1, offset: undefined }
+            }
+          });
+        }
+      }
+      return;
+    }
+
+    // 3. Default import only: import X from '...'
+    const defaultMatch = trimmedLine.match(/import\s+(\w+)\s+from\s+['"]/);
+    if (defaultMatch && !trimmedLine.includes('{')) {
+      imports.push({
+        symbolName: defaultMatch[1],
+        statement: trimmedLine,
+        range: {
+          start: { line: startLine, column: 1, offset: undefined },
+          end: { line: endLine, column: line.length + 1, offset: undefined }
+        },
+        isDefault: true
+      });
+      return;
+    }
+
+    // 4. Named import: import { X, Y } from '...'
+    const namedImportMatch = trimmedLine.match(/import\s*(?:type\s*)?\{([^}]+)\}\s*from/);
+    if (namedImportMatch) {
+      const symbols = namedImportMatch[1].split(',').map(s => s.trim());
+      for (const symbol of symbols) {
+        // 處理 as 別名，跳過 type-only imports
+        const cleanSymbol = symbol.split(/\s+as\s+/)[0].trim();
+        if (cleanSymbol && !cleanSymbol.startsWith('type ')) {
+          imports.push({
+            symbolName: cleanSymbol,
+            statement: trimmedLine,
+            range: {
+              start: { line: startLine, column: 1, offset: undefined },
+              end: { line: endLine, column: line.length + 1, offset: undefined }
+            }
+          });
+        }
+      }
+    }
+  }
+
+  /**
    * 檢查 import 是否仍被使用
+   * 排除註解和字串中的匹配
    */
   private isImportStillUsed(
     content: string,
     symbolName: string,
     removalsInFile: readonly RemovalOperation[]
   ): boolean {
+    // 移除註解和字串後再檢查
+    const cleanContent = this.removeCommentsAndStrings(content);
+
     // 建立正則表達式匹配符號使用
     const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
 
-    // 計算原始內容中的使用次數
-    const matches = content.match(regex) || [];
+    // 計算清理後內容中的使用次數
+    const matches = cleanContent.match(regex) || [];
     const originalCount = matches.length;
 
-    // 計算被刪除的程式碼中的使用次數
+    // 計算被刪除的程式碼中的使用次數（也清理註解和字串）
     let removedCount = 0;
     for (const removal of removalsInFile) {
-      const removedMatches = removal.originalCode.match(regex) || [];
+      const cleanRemoval = this.removeCommentsAndStrings(removal.originalCode);
+      const removedMatches = cleanRemoval.match(regex) || [];
       removedCount += removedMatches.length;
     }
 
@@ -307,7 +422,32 @@ export class DeadCodeRemover {
   }
 
   /**
+   * 移除註解和字串，用於準確檢測符號使用
+   */
+  private removeCommentsAndStrings(content: string): string {
+    let result = content;
+
+    // 移除多行註解 /* ... */
+    result = result.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // 移除單行註解 // ...
+    result = result.replace(/\/\/[^\n]*/g, '');
+
+    // 移除模板字串 `...`（簡化處理，不處理嵌套）
+    result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
+
+    // 移除雙引號字串 "..."
+    result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+
+    // 移除單引號字串 '...'
+    result = result.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+
+    return result;
+  }
+
+  /**
    * 擴展範圍至完整宣告（包含前導註解和空行）
+   * 使用清理後的內容進行括號匹配，避免字串/註解中的括號干擾
    */
   private expandRangeToFullDeclaration(
     content: string,
@@ -342,7 +482,9 @@ export class DeadCodeRemover {
       let foundOpenBrace = false;
 
       for (let i = range.start.line - 1; i < lines.length; i++) {
-        for (const char of lines[i]) {
+        // 清理該行的註解和字串，避免括號誤判
+        const cleanLine = this.removeCommentsAndStringsFromLine(lines[i]);
+        for (const char of cleanLine) {
           if (char === '{') {
             braceCount++;
             foundOpenBrace = true;
@@ -368,6 +510,31 @@ export class DeadCodeRemover {
       start: { line: startLine + 1, column: 1, offset: undefined },
       end: { line: endLine + 1, column: lines[endLine].length + 1, offset: undefined }
     };
+  }
+
+  /**
+   * 移除單行中的註解和字串（用於括號匹配）
+   */
+  private removeCommentsAndStringsFromLine(line: string): string {
+    let result = line;
+
+    // 移除單行註解 // ...
+    const commentIndex = result.indexOf('//');
+    if (commentIndex !== -1) {
+      // 確保 // 不在字串中
+      const beforeComment = result.substring(0, commentIndex);
+      const quoteCount = (beforeComment.match(/['"]/g) || []).length;
+      if (quoteCount % 2 === 0) {
+        result = beforeComment;
+      }
+    }
+
+    // 移除字串（簡化處理）
+    result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    result = result.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
+
+    return result;
   }
 
   /**
