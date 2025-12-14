@@ -151,6 +151,7 @@ export class CallHierarchyAnalyzer {
 
   /**
    * 找出 incoming 呼叫（誰呼叫了目標函數）
+   * 使用批次處理優化：按檔案分組，避免重複讀取/解析同一檔案
    */
   private async findIncomingCalls(
     functionName: string,
@@ -172,23 +173,33 @@ export class CallHierarchyAnalyzer {
 
       const callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
 
-      for (const callSite of callSites) {
-        // 排除定義檔案中的自身呼叫（如果是遞迴）
-        if (callSite.location.filePath === definitionFile
-            && callSite.functionName === targetName) {
-          continue;
-        }
+      // 過濾掉遞迴自身呼叫
+      const filteredCallSites = callSites.filter(
+        callSite => !(callSite.location.filePath === definitionFile
+                      && callSite.functionName === targetName)
+      );
 
-        // 找出呼叫點所在的函數
-        const callerInfo = await this.findEnclosingFunction(
-          callSite.location.filePath,
-          callSite.location.range.start.line
-        );
+      if (filteredCallSites.length === 0) {
+        return;
+      }
 
-        const context = await this.getLineContext(
-          callSite.location.filePath,
-          callSite.location.range.start.line
-        );
+      // 批次查詢所有 callSites 的 enclosing functions（按檔案分組處理）
+      const queries = filteredCallSites.map(callSite => ({
+        filePath: callSite.location.filePath,
+        line: callSite.location.range.start.line
+      }));
+      const enclosingFunctions = await this.findEnclosingFunctionsMultiFile(queries);
+
+      // 批次取得所有 context（按檔案分組處理）
+      const contexts = await this.getLineContextsBatch(queries);
+
+      // 建立 incoming 結果
+      // 使用 filePath:functionName 作為唯一鍵，避免同名但不同檔案的函數被去重
+      const callersToRecurse = new Map<string, { name: string; file: string }>();
+      for (const callSite of filteredCallSites) {
+        const key = `${callSite.location.filePath}:${callSite.location.range.start.line}`;
+        const callerInfo = enclosingFunctions.get(key);
+        const context = contexts.get(key) || '';
 
         incoming.push({
           caller: callerInfo?.name || '<anonymous>',
@@ -197,10 +208,18 @@ export class CallHierarchyAnalyzer {
           callerDefinitionFile: callerInfo?.file
         });
 
-        // 遞迴查找（如果深度允許）
+        // 收集需要遞迴的 caller（使用 filePath:functionName 作為唯一鍵去重）
         if (currentDepth < depth && callerInfo?.name && callerInfo.name !== '<anonymous>') {
-          await findCallsRecursive(callerInfo.name, currentDepth + 1);
+          const callerKey = `${callerInfo.file}:${callerInfo.name}`;
+          if (!callersToRecurse.has(callerKey)) {
+            callersToRecurse.set(callerKey, { name: callerInfo.name, file: callerInfo.file });
+          }
         }
+      }
+
+      // 遞迴查找（如果深度允許）
+      for (const caller of callersToRecurse.values()) {
+        await findCallsRecursive(caller.name, currentDepth + 1);
       }
     };
 
@@ -368,66 +387,190 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
-   * 找出某行所在的外層函數
+   * 批次找出單一檔案中多個行號所在的外層函數
+   * 將 O(N) 檔案讀取降為 O(1)
    */
-  private async findEnclosingFunction(
+  private async findEnclosingFunctions(
     filePath: string,
-    line: number
-  ): Promise<{ name: string; file: string } | null> {
+    lines: readonly number[]
+  ): Promise<Map<number, { name: string; file: string }>> {
+    const results = new Map<number, { name: string; file: string }>();
+
+    if (lines.length === 0) {
+      return results;
+    }
+
     const content = await this.readFile(filePath);
-    if (!content) {return null;}
+    if (!content) {
+      return results;
+    }
 
     const parser = this.parserRegistry.getParser(this.getExtension(filePath));
-    if (!parser) {return null;}
+    if (!parser) {
+      return results;
+    }
 
     try {
       const ast = await parser.parse(content, filePath);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sourceFile = (ast as any).tsSourceFile as ts.SourceFile | undefined;
 
-      if (!sourceFile) {return null;}
+      if (!sourceFile) {
+        return results;
+      }
 
-      const position = sourceFile.getPositionOfLineAndCharacter(line - 1, 0);
-      let enclosingFunction: string | null = null;
+      // 將行號轉換為 position 並建立映射（跳過超出範圍的行號）
+      const lineCount = sourceFile.getLineStarts().length;
+      const linePositions = lines
+        .filter(line => line >= 1 && line <= lineCount)
+        .map(line => ({
+          line,
+          position: sourceFile.getPositionOfLineAndCharacter(line - 1, 0)
+        }));
 
-      const visit = (node: ts.Node): void => {
-        if (position >= node.getStart(sourceFile) && position < node.getEnd()) {
-          // FunctionDeclaration
-          if (ts.isFunctionDeclaration(node) && node.name) {
-            enclosingFunction = node.name.text;
-          }
-          // MethodDeclaration
-          else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
-            enclosingFunction = node.name.text;
-          }
-          // Arrow function 或 function expression 賦值給變數
-          else if (ts.isVariableDeclaration(node)
-                   && ts.isIdentifier(node.name)
-                   && node.initializer
-                   && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
-            enclosingFunction = node.name.text;
-          }
-
-          ts.forEachChild(node, visit);
+      // 遍歷 AST 找出每個 position 的 enclosing function
+      for (const { line, position } of linePositions) {
+        const enclosingName = this.findEnclosingFunctionAtPosition(sourceFile, position);
+        if (enclosingName) {
+          results.set(line, { name: enclosingName, file: filePath });
         }
-      };
-
-      visit(sourceFile);
-
-      return enclosingFunction ? { name: enclosingFunction, file: filePath } : null;
+      }
     } catch {
-      return null;
+      // Parser 失敗，返回空結果
     }
+
+    return results;
   }
 
   /**
-   * 取得某行的程式碼內容
+   * 批次查詢多個檔案中多個行號的 enclosing functions
+   * 按檔案分組後批次處理，避免重複讀取/解析同一檔案
    */
-  private async getLineContext(filePath: string, line: number): Promise<string> {
-    const content = await this.readFile(filePath);
-    if (!content) {return '';}
-    const lines = content.split('\n');
-    return lines[line - 1]?.trim() || '';
+  private async findEnclosingFunctionsMultiFile(
+    queries: readonly { filePath: string; line: number }[]
+  ): Promise<Map<string, { name: string; file: string }>> {
+    const results = new Map<string, { name: string; file: string }>();
+
+    if (queries.length === 0) {
+      return results;
+    }
+
+    // 按檔案分組（使用 Set 避免重複行號）
+    const fileGroups = new Map<string, Set<number>>();
+    for (const query of queries) {
+      const existing = fileGroups.get(query.filePath);
+      if (existing) {
+        existing.add(query.line);
+      } else {
+        fileGroups.set(query.filePath, new Set([query.line]));
+      }
+    }
+
+    // 批次處理每個檔案
+    await Promise.all(
+      Array.from(fileGroups.entries()).map(async ([filePath, linesSet]) => {
+        try {
+          const fileResults = await this.findEnclosingFunctions(filePath, [...linesSet]);
+          for (const [line, result] of fileResults) {
+            // 使用 filePath:line 作為唯一鍵
+            results.set(`${filePath}:${line}`, result);
+          }
+        } catch (error) {
+          // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
+          console.debug(`[CallHierarchyAnalyzer] findEnclosingFunctionsMultiFile failed for ${filePath}:`, error);
+        }
+      })
+    );
+
+    return results;
+  }
+
+  /**
+   * 在 AST 中找出指定 position 的 enclosing function 名稱
+   */
+  private findEnclosingFunctionAtPosition(
+    sourceFile: ts.SourceFile,
+    position: number
+  ): string | null {
+    let enclosingFunction: string | null = null;
+
+    const visit = (node: ts.Node): void => {
+      if (position >= node.getStart(sourceFile) && position < node.getEnd()) {
+        // FunctionDeclaration
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          enclosingFunction = node.name.text;
+        }
+        // MethodDeclaration
+        else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+          enclosingFunction = node.name.text;
+        }
+        // Arrow function 或 function expression 賦值給變數
+        else if (ts.isVariableDeclaration(node)
+                 && ts.isIdentifier(node.name)
+                 && node.initializer
+                 && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
+          enclosingFunction = node.name.text;
+        }
+
+        ts.forEachChild(node, visit);
+      }
+    };
+
+    visit(sourceFile);
+    return enclosingFunction;
+  }
+
+  /**
+   * 批次取得多個檔案中多個行號的程式碼內容
+   * 按檔案分組後批次處理，避免重複讀取同一檔案
+   */
+  private async getLineContextsBatch(
+    queries: readonly { filePath: string; line: number }[]
+  ): Promise<Map<string, string>> {
+    const results = new Map<string, string>();
+
+    if (queries.length === 0) {
+      return results;
+    }
+
+    // 按檔案分組（使用 Set 避免重複行號）
+    const fileGroups = new Map<string, Set<number>>();
+    for (const query of queries) {
+      const existing = fileGroups.get(query.filePath);
+      if (existing) {
+        existing.add(query.line);
+      } else {
+        fileGroups.set(query.filePath, new Set([query.line]));
+      }
+    }
+
+    // 批次處理每個檔案
+    await Promise.all(
+      Array.from(fileGroups.entries()).map(async ([filePath, linesSet]) => {
+        try {
+          const content = await this.readFile(filePath);
+          if (!content) {
+            return;
+          }
+
+          const contentLines = content.split('\n');
+          const lineCount = contentLines.length;
+          for (const line of linesSet) {
+            // 跳過超出範圍的行號
+            if (line < 1 || line > lineCount) {
+              continue;
+            }
+            const lineContent = contentLines[line - 1]?.trim() || '';
+            results.set(`${filePath}:${line}`, lineContent);
+          }
+        } catch (error) {
+          // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
+          console.debug(`[CallHierarchyAnalyzer] getLineContextsBatch failed for ${filePath}:`, error);
+        }
+      })
+    );
+
+    return results;
   }
 
   /**
