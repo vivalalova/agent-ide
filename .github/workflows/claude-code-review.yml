@@ -40,18 +40,43 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            **重要：請使用繁體中文（Traditional Chinese）提供所有 code review 結果。**
+            **重要：請使用繁體中文提供 code review 結果。**
 
-            請審查此 Pull Request 並提供以下方面的反饋：
+            ## 審查重點
             - 程式碼品質和最佳實踐
             - 潛在的 bug 或問題
             - 效能考量
             - 安全性疑慮
             - 測試覆蓋率
 
-            請參考專案的 CLAUDE.md 檔案以了解程式碼風格和慣例。請提供建設性且有幫助的反饋。
+            ## 輸出格式要求
+            **只輸出需要修改的建議，不要輸出稱讚或肯定的內容。**
 
-            使用 `gh pr comment` 指令（透過 Bash 工具）將你的審查結果作為評論發布到 PR 上。
+            格式如下：
+            ```
+            ## 🔧 修改建議
+
+            ### 1. [問題標題] (重要度: 🔴高/🟡中/🟢低)
+            **位置**: `檔案路徑:行號`
+            **問題**: 簡述問題
+            **建議**: 具體修改方式
+
+            ## 🎯 結論
+            - 必須修復: X 項
+            - 建議修復: X 項
+            - 可選改進: X 項
+
+            **審查結果**: ✅ 可合併 / ⚠️ 需修改後合併 / ❌ 需重大修改
+            ```
+
+            如果沒有任何問題，只需輸出：
+            ```
+            ## 🎯 結論
+            **審查結果**: ✅ 可合併（無需修改）
+            ```
+
+            請參考專案的 CLAUDE.md 檔案了解程式碼風格規範。
+            使用 `gh pr comment` 將審查結果發布到 PR。
 
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
