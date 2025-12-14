@@ -354,7 +354,9 @@ interface ImportCleanupLike {
     readonly end: { readonly line: number; readonly column: number };
   };
   readonly originalImport: string;
-  readonly unusedSymbol: string;
+  readonly unusedSymbols: readonly string[];
+  readonly cleanupType: 'delete' | 'partial';
+  readonly newImport?: string;
 }
 
 /**
@@ -398,23 +400,52 @@ export function convertDeadCodeRemovalPreview(
     groupedOps.set(removal.filePath, existing);
   }
 
-  // 處理 import 清理
+  // 處理 import 清理（包含部分清理）
+  const importCleanups = new Map<string, Array<{ line: number; oldContent: string; newContent: string | null }>>();
+
   for (const cleanup of preview.importCleanups) {
-    const existing = groupedOps.get(cleanup.filePath) ?? [];
+    const existing = importCleanups.get(cleanup.filePath) ?? [];
     existing.push({
       line: cleanup.range.start.line,
-      oldContent: cleanup.originalImport
+      oldContent: cleanup.originalImport,
+      newContent: cleanup.cleanupType === 'partial' && cleanup.newImport ? cleanup.newImport : null
     });
-    groupedOps.set(cleanup.filePath, existing);
+    importCleanups.set(cleanup.filePath, existing);
   }
 
   // 轉換為 FileChangeInput
+  // 先處理刪除操作
   for (const [filePath, ops] of groupedOps) {
     const originalContent = originalContents.get(filePath) ?? '';
     const changes: LineChange[] = ops.map(op => ({
       line: op.line,
       oldContent: op.oldContent,
       newContent: null // 刪除操作
+    }));
+
+    // 合併同檔案的 import 清理操作
+    const importOps = importCleanups.get(filePath);
+    if (importOps) {
+      for (const importOp of importOps) {
+        changes.push({
+          line: importOp.line,
+          oldContent: importOp.oldContent,
+          newContent: importOp.newContent
+        });
+      }
+      importCleanups.delete(filePath);
+    }
+
+    fileChanges.push({ filePath, originalContent, changes });
+  }
+
+  // 處理只有 import 清理的檔案
+  for (const [filePath, ops] of importCleanups) {
+    const originalContent = originalContents.get(filePath) ?? '';
+    const changes: LineChange[] = ops.map(op => ({
+      line: op.line,
+      oldContent: op.oldContent,
+      newContent: op.newContent
     }));
 
     fileChanges.push({ filePath, originalContent, changes });
