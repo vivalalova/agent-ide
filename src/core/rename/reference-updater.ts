@@ -131,7 +131,12 @@ export class ReferenceUpdater {
       try {
         const refs = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
 
-        // 轉換 SymbolFinder 的 SymbolReference 為本地型別
+        // 轉換 SymbolFinder 的 SymbolReference (@core/shared/symbol-finder)
+        // 為本地型別 SymbolReference (@core/rename/types)
+        // 兩者差異：
+        // - SymbolFinder 版本：{ symbolName, location: Location, type: SymbolReferenceType }
+        // - 本地版本：{ symbolName, range: Range, type: 'definition' | 'usage' | 'comment' }
+        // filePath 資訊已知（來自方法參數），故只需映射 range 和 type
         return refs.map(ref => ({
           symbolName,
           range: ref.location.range,
@@ -149,6 +154,9 @@ export class ReferenceUpdater {
 
   /**
    * 映射 SymbolFinder 的引用類型到本地類型
+   *
+   * 注意：'comment' 類型只會從降級方法 findSymbolReferencesByText 產生，
+   * 不會經過此映射函式。SymbolReferenceType enum 目前沒有 Comment 類型。
    */
   private mapReferenceType(type: SymbolReferenceType): 'definition' | 'usage' | 'comment' {
     switch (type) {
