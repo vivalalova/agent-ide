@@ -194,7 +194,8 @@ export class CallHierarchyAnalyzer {
       const contexts = await this.getLineContextsBatch(queries);
 
       // 建立 incoming 結果
-      const callersToRecurse = new Set<string>();
+      // 使用 filePath:functionName 作為唯一鍵，避免同名但不同檔案的函數被去重
+      const callersToRecurse = new Map<string, { name: string; file: string }>();
       for (const callSite of filteredCallSites) {
         const key = `${callSite.location.filePath}:${callSite.location.range.start.line}`;
         const callerInfo = enclosingFunctions.get(key);
@@ -207,15 +208,18 @@ export class CallHierarchyAnalyzer {
           callerDefinitionFile: callerInfo?.file
         });
 
-        // 收集需要遞迴的 caller（使用 Set 自動去重）
+        // 收集需要遞迴的 caller（使用 filePath:functionName 作為唯一鍵去重）
         if (currentDepth < depth && callerInfo?.name && callerInfo.name !== '<anonymous>') {
-          callersToRecurse.add(callerInfo.name);
+          const callerKey = `${callerInfo.file}:${callerInfo.name}`;
+          if (!callersToRecurse.has(callerKey)) {
+            callersToRecurse.set(callerKey, { name: callerInfo.name, file: callerInfo.file });
+          }
         }
       }
 
       // 遞迴查找（如果深度允許）
-      for (const callerName of callersToRecurse) {
-        await findCallsRecursive(callerName, currentDepth + 1);
+      for (const caller of callersToRecurse.values()) {
+        await findCallsRecursive(caller.name, currentDepth + 1);
       }
     };
 
@@ -415,11 +419,14 @@ export class CallHierarchyAnalyzer {
         return results;
       }
 
-      // 將行號轉換為 position 並建立映射
-      const linePositions = lines.map(line => ({
-        line,
-        position: sourceFile.getPositionOfLineAndCharacter(line - 1, 0)
-      }));
+      // 將行號轉換為 position 並建立映射（跳過超出範圍的行號）
+      const lineCount = sourceFile.getLineStarts().length;
+      const linePositions = lines
+        .filter(line => line >= 1 && line <= lineCount)
+        .map(line => ({
+          line,
+          position: sourceFile.getPositionOfLineAndCharacter(line - 1, 0)
+        }));
 
       // 遍歷 AST 找出每個 position 的 enclosing function
       for (const { line, position } of linePositions) {
@@ -468,8 +475,9 @@ export class CallHierarchyAnalyzer {
             // 使用 filePath:line 作為唯一鍵
             results.set(`${filePath}:${line}`, result);
           }
-        } catch {
-          // 個別檔案處理失敗不影響其他檔案
+        } catch (error) {
+          // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
+          console.debug(`[CallHierarchyAnalyzer] findEnclosingFunctionsMultiFile failed for ${filePath}:`, error);
         }
       })
     );
@@ -546,12 +554,18 @@ export class CallHierarchyAnalyzer {
           }
 
           const contentLines = content.split('\n');
+          const lineCount = contentLines.length;
           for (const line of linesSet) {
+            // 跳過超出範圍的行號
+            if (line < 1 || line > lineCount) {
+              continue;
+            }
             const lineContent = contentLines[line - 1]?.trim() || '';
             results.set(`${filePath}:${line}`, lineContent);
           }
-        } catch {
-          // 個別檔案處理失敗不影響其他檔案
+        } catch (error) {
+          // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
+          console.debug(`[CallHierarchyAnalyzer] getLineContextsBatch failed for ${filePath}:`, error);
         }
       })
     );

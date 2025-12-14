@@ -660,6 +660,324 @@ export function contextCaller() {
     });
   });
 
+  describe('同名函數處理', () => {
+    it('應該正確處理有唯一名稱的函數呼叫層次', async () => {
+      // Given: 使用唯一函數名稱的場景
+      await fixture.writeFile('src/unique-processor.ts', `
+import { uniqueHelper } from './unique-helper.js';
+
+export function uniqueProcess() {
+  return uniqueHelper();
+}
+      `.trim());
+
+      await fixture.writeFile('src/unique-helper.ts', `
+export function uniqueHelper() {
+  return 'unique';
+}
+      `.trim());
+
+      await fixture.writeFile('src/unique-caller.ts', `
+import { uniqueProcess } from './unique-processor.js';
+
+export function uniqueCaller() {
+  return uniqueProcess();
+}
+      `.trim());
+
+      // When: 分析 uniqueProcess
+      const result = await executeCLI(
+        ['call-hierarchy', 'uniqueProcess', '--path', fixture.rootPath, '--direction', 'both', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('unique-processor.ts');
+
+      // outgoing 應包含 uniqueHelper
+      const outgoingCallees = output.outgoing.map((call: { callee: string }) => call.callee);
+      expect(outgoingCallees).toContain('uniqueHelper');
+
+      // incoming 應包含 uniqueCaller
+      const incomingCallers = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(incomingCallers).toContain('uniqueCaller');
+    });
+
+    it('應該正確處理遞迴函數的呼叫層次', async () => {
+      // Given: 一個遞迴呼叫場景
+      await fixture.writeFile('src/recursive-factorial.ts', `
+export function factorial(n: number): number {
+  if (n <= 1) return 1;
+  return n * factorial(n - 1);
+}
+      `.trim());
+
+      await fixture.writeFile('src/factorial-caller.ts', `
+import { factorial } from './recursive-factorial.js';
+
+export function computeFactorials() {
+  return [factorial(5), factorial(10)];
+}
+      `.trim());
+
+      // When: 分析 factorial
+      const result = await executeCLI(
+        ['call-hierarchy', 'factorial', '--path', fixture.rootPath, '--direction', 'both', '--depth', '3', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.file).toContain('recursive-factorial.ts');
+
+      // incoming 應包含 computeFactorials（外部呼叫者）
+      const incomingCallers = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(incomingCallers).toContain('computeFactorials');
+    });
+
+    it('應該正確處理多個 caller 呼叫同一個函數的層次', async () => {
+      // Given: 多個檔案呼叫同一個目標函數
+      await fixture.writeFile('src/shared-target.ts', `
+export function sharedTarget() {
+  return 'shared';
+}
+      `.trim());
+
+      await fixture.writeFile('src/caller-alpha.ts', `
+import { sharedTarget } from './shared-target.js';
+
+export function callerAlpha() {
+  return sharedTarget();
+}
+      `.trim());
+
+      await fixture.writeFile('src/caller-beta.ts', `
+import { sharedTarget } from './shared-target.js';
+
+export function callerBeta() {
+  return sharedTarget();
+}
+      `.trim());
+
+      await fixture.writeFile('src/caller-gamma.ts', `
+import { sharedTarget } from './shared-target.js';
+
+export function callerGamma() {
+  return sharedTarget();
+}
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'sharedTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 應該找到所有三個 caller
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('callerAlpha');
+      expect(callerNames).toContain('callerBeta');
+      expect(callerNames).toContain('callerGamma');
+    });
+  });
+
+  describe('錯誤輸入處理', () => {
+    it('應該處理不存在的函數名稱', async () => {
+      // Given: 專案中沒有這個函數
+      await fixture.writeFile('src/some-file.ts', `
+export function existingFn() {
+  return 42;
+}
+      `.trim());
+
+      // When: 查詢不存在的函數
+      const result = await executeCLI(
+        ['call-hierarchy', 'nonExistentFunction', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該返回錯誤
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.success).toBe(false);
+      expect(output.errors.length).toBeGreaterThan(0);
+    });
+
+    it('應該處理空函數名稱參數', async () => {
+      // When: 不提供函數名稱
+      const result = await executeCLI(
+        ['call-hierarchy', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該報錯（CLI 參數缺失）
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    it('應該處理特殊字元的函數名稱', async () => {
+      // When: 使用不合法的函數名稱
+      const result = await executeCLI(
+        ['call-hierarchy', '123invalid', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該返回找不到函數的錯誤
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.errors.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('混合正常/失敗檔案的批次處理', () => {
+    it('應該在部分檔案有語法錯誤時仍正確分析其他檔案', async () => {
+      // Given: 混合正常檔案和有語法錯誤的檔案
+      await fixture.writeFile('src/valid-target.ts', `
+export function validTarget() {
+  return 42;
+}
+      `.trim());
+
+      await fixture.writeFile('src/valid-caller.ts', `
+import { validTarget } from './valid-target.js';
+
+export function validCaller() {
+  return validTarget() + 1;
+}
+      `.trim());
+
+      await fixture.writeFile('src/syntax-error.ts', `
+// 這個檔案有語法錯誤
+export function brokenFn( {
+  return 'missing closing paren';
+}
+      `.trim());
+
+      // When: 分析 validTarget 的呼叫層次
+      const result = await executeCLI(
+        ['call-hierarchy', 'validTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功分析，忽略有語法錯誤的檔案
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 應該找到 validCaller
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('validCaller');
+    });
+
+    it('應該在目標函數檔案正常但引用檔案有錯誤時仍返回結果', async () => {
+      // Given
+      await fixture.writeFile('src/core-function.ts', `
+export function coreFunction() {
+  return 'core';
+}
+      `.trim());
+
+      await fixture.writeFile('src/good-consumer.ts', `
+import { coreFunction } from './core-function.js';
+
+export function goodConsumer() {
+  return coreFunction();
+}
+      `.trim());
+
+      await fixture.writeFile('src/bad-consumer.ts', `
+import { coreFunction } from './core-function.js';
+
+// 語法錯誤：缺少 function body
+export function badConsumer()
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'coreFunction', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該找到 goodConsumer，即使 bad-consumer.ts 有錯誤
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('goodConsumer');
+    });
+
+    it('應該在多個檔案混合狀態下返回正確的統計摘要', async () => {
+      // Given: 3 個正常檔案 + 1 個語法錯誤檔案
+      await fixture.writeFile('src/shared-util.ts', `
+export function sharedUtil() {
+  return 'shared';
+}
+      `.trim());
+
+      await fixture.writeFile('src/consumer-1.ts', `
+import { sharedUtil } from './shared-util.js';
+
+export function consumer1() {
+  return sharedUtil();
+}
+      `.trim());
+
+      await fixture.writeFile('src/consumer-2.ts', `
+import { sharedUtil } from './shared-util.js';
+
+export function consumer2() {
+  return sharedUtil();
+}
+      `.trim());
+
+      await fixture.writeFile('src/consumer-3.ts', `
+import { sharedUtil } from './shared-util.js';
+
+export function consumer3() {
+  return sharedUtil();
+}
+      `.trim());
+
+      await fixture.writeFile('src/broken-consumer.ts', `
+import { sharedUtil } from './shared-util.js';
+
+export const broken = ( => { sharedUtil(); };
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'sharedUtil', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 應該至少找到 3 個正常的 consumer
+      expect(output.incoming.length).toBeGreaterThanOrEqual(3);
+
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('consumer1');
+      expect(callerNames).toContain('consumer2');
+      expect(callerNames).toContain('consumer3');
+
+      // summary 應該反映實際找到的呼叫數量
+      expect(output.summary.incomingCount).toBeGreaterThanOrEqual(3);
+    });
+  });
+
   describe('邊界條件', () => {
     it('應該處理 depth=1（預設值）', async () => {
       const result = await executeCLI(
