@@ -283,7 +283,7 @@ describe('SnapshotGenerator - JavaScript', () => {
 
     it('應該忽略非 createXxx 的函數', () => {
       const symbols: Symbol[] = [
-        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(name)'),
+        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(name, {})'),
         createTestSymbol('initApp', SymbolType.Function, [], undefined, 'initApp()'),
         createTestSymbol('setupConfig', SymbolType.Function, [], undefined, 'setupConfig()'),
       ];
