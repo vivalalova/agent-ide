@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照、符號引用搜尋、呼叫層次分析、dead code 檢測。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、結構化 JSON 輸出。支援 TS/JS/Swift
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照（支援增量快照）、符號引用搜尋、呼叫層次分析、dead code 檢測。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、增量快照追蹤變更、結構化 JSON 輸出。支援 TS/JS/Swift
 ---
 
 # Agent IDE
@@ -82,15 +82,16 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 ### 查詢類命令
 
-| 任務       | 命令                                                        |
-| ---------- | ----------------------------------------------------------- |
-| 循環依賴   | `agent-ide cycles --path . --format json`                   |
-| 影響分析   | `agent-ide impact --file src/core.ts --path .`              |
-| 模組快照   | `agent-ide snapshot --path src/core/indexing --format json` |
-| 專案快照   | `agent-ide snapshot --path . --format json`                 |
-| 符號引用   | `agent-ide find-references processData --path . --format json` |
+| 任務       | 命令                                                               |
+| ---------- | ------------------------------------------------------------------ |
+| 循環依賴   | `agent-ide cycles --path . --format json`                          |
+| 影響分析   | `agent-ide impact --file src/core.ts --path .`                     |
+| 模組快照   | `agent-ide snapshot --path src/core/indexing --format json`        |
+| 專案快照   | `agent-ide snapshot --path . --format json`                        |
+| 增量快照   | `agent-ide snapshot --path . --since last --format json`           |
+| 符號引用   | `agent-ide find-references processData --path . --format json`     |
 | 呼叫層次   | `agent-ide call-hierarchy handleRequest --path . --direction both` |
-| Dead code  | `agent-ide deadcode --path . --format json`                 |
+| Dead code  | `agent-ide deadcode --path . --format json`                        |
 
 ## 輸出格式
 
