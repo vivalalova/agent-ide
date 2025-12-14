@@ -1,3 +1,7 @@
+## 0.7.0 (2025-12-14)
+
+* feat: deadcode autofix 功能與 CLI 簡化 (#23) ([4b7c8f9](https://github.com/vivalalova/agent-ide/commit/4b7c8f9)), closes [#23](https://github.com/vivalalova/agent-ide/issues/23)
+
 ## 0.6.0 (2025-12-14)
 
 * feat: [Dead Code 檢測] 新增 CLI deadcode 命令 ([d153635](https://github.com/vivalalova/agent-ide/commit/d153635))
