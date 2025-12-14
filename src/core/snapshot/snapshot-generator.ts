@@ -8,7 +8,9 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/indexing/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
-import { SnapshotScope } from './types.js';
+import { SnapshotScope, isProjectSnapshot } from './types.js';
+import { SnapshotCacheManager } from './snapshot-cache.js';
+import type { IncrementalSnapshot, SnapshotDelta } from './snapshot-cache.js';
 
 /** 擴展 Symbol 型別，包含 Parser 額外資訊 */
 interface ExtendedSymbol extends Symbol {
@@ -21,6 +23,7 @@ interface ExtendedSymbol extends Symbol {
  */
 export class SnapshotGenerator {
   private readonly fileSystem: IFileSystem;
+  private cacheManager: SnapshotCacheManager | null = null;
 
   constructor(fileSystem: IFileSystem) {
     this.fileSystem = fileSystem;
@@ -37,6 +40,75 @@ export class SnapshotGenerator {
     }
 
     return this.generateModuleSnapshot(targetPath);
+  }
+
+  /**
+   * 產生增量快照
+   * @param targetPath 目標路徑
+   * @param since 基準版本 ('last' 使用上次快取, ISO timestamp 或 'refresh' 強制刷新)
+   */
+  async generateIncremental(targetPath: string, since: string): Promise<IncrementalSnapshot> {
+    // 初始化快取管理器
+    if (!this.cacheManager) {
+      this.cacheManager = new SnapshotCacheManager(this.fileSystem, targetPath);
+    }
+
+    // 強制刷新
+    if (since === 'refresh') {
+      const fullSnapshot = await this.generate(targetPath);
+      const version = await this.cacheManager.save(fullSnapshot);
+      return this.createFullAsIncremental(fullSnapshot, version.timestamp);
+    }
+
+    // 載入快取
+    const baseCache = await this.cacheManager.load();
+
+    // 無快取，產生完整快照
+    if (!baseCache) {
+      const fullSnapshot = await this.generate(targetPath);
+      const version = await this.cacheManager.save(fullSnapshot);
+      return this.createFullAsIncremental(fullSnapshot, version.timestamp);
+    }
+
+    // 產生當前快照
+    const currentSnapshot = await this.generate(targetPath);
+
+    // 計算差異
+    const delta = this.cacheManager.computeDelta(
+      baseCache.snapshot,
+      currentSnapshot as ModuleSnapshot | ProjectSnapshot
+    );
+
+    // 更新快取
+    const newVersion = await this.cacheManager.save(currentSnapshot);
+
+    return {
+      version: newVersion.timestamp,
+      baseVersion: baseCache.version.timestamp,
+      delta
+    };
+  }
+
+  /**
+   * 將完整快照轉為增量格式（用於首次快照）
+   */
+  private createFullAsIncremental(snapshot: SnapshotResult, timestamp: string): IncrementalSnapshot {
+    const delta: SnapshotDelta = {
+      added: {
+        modules: isProjectSnapshot(snapshot)
+          ? snapshot.modules
+          : { [snapshot.module]: snapshot },
+        symbols: []
+      },
+      modified: { modules: [], symbols: [] },
+      removed: { modules: [], symbols: [] }
+    };
+
+    return {
+      version: timestamp,
+      baseVersion: '',
+      delta
+    };
   }
 
   /**
@@ -123,7 +195,7 @@ export class SnapshotGenerator {
 
     const processDir = async (dirPath: string): Promise<void> => {
       const exists = await this.fileSystem.exists(dirPath);
-      if (!exists) {return;}
+      if (!exists) { return; }
 
       const entries = await this.fileSystem.readDirectory(dirPath);
 

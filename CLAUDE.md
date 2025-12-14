@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：7 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：8 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+
+**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM 模組系統 | v0.5.1
 
 ## 常用指令
 
@@ -45,9 +47,10 @@ src/
 │   ├── change-signature/ # 參數重構+呼叫點更新
 │   ├── move-file/        # 檔案移動+import更新
 │   ├── move-member/      # 成員移動（方法/類別/函式）
+│   ├── dead-code/        # Dead code 檢測
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/              # TS（Compiler API）、JS（Babel）、Swift（Tree-sitter WASM）
+├── plugins/              # TS（Compiler API）、JS（Babel）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
@@ -149,6 +152,8 @@ describe('MyModule', () => {
 agent-ide cycles --path <path>                             # 循環依賴檢測
 agent-ide impact --file <file> --path <path>               # 影響分析
 agent-ide snapshot --path <path> [--format json|summary]   # 模組/專案快照
+agent-ide snapshot --path <path> --since last             # 增量快照
+agent-ide snapshot --path <path> --refresh                # 強制刷新快取
 agent-ide find-references <symbol> --path <path>           # 符號引用搜尋
 agent-ide call-hierarchy <function> --path <path>          # 呼叫層次分析
 agent-ide deadcode --path <path> [--include-exports]          # Dead code 檢測

@@ -161,13 +161,54 @@ export interface ProjectSnapshotData {
   modules: Record<string, ModuleSnapshotData>;
 }
 
+/** 增量快照差異符號 */
+export interface DeltaSymbolData {
+  /** 所屬模組 */
+  module: string;
+  /** 符號名稱 */
+  name: string;
+  /** 簽章（新增/修改時） */
+  signature?: string;
+  /** 符號類型 */
+  type: 'class' | 'function' | 'interface' | 'type' | 'factory';
+}
+
+/** 增量快照差異 */
+export interface SnapshotDeltaData {
+  /** 新增的內容 */
+  added: {
+    modules: Record<string, ModuleSnapshotData>;
+    symbols: DeltaSymbolData[];
+  };
+  /** 修改的內容 */
+  modified: {
+    modules: string[];
+    symbols: DeltaSymbolData[];
+  };
+  /** 刪除的內容 */
+  removed: {
+    modules: string[];
+    symbols: DeltaSymbolData[];
+  };
+}
+
+/** 增量快照資料 */
+export interface IncrementalSnapshotData {
+  /** 當前版本時間戳 */
+  version: string;
+  /** 基準版本時間戳（首次為空） */
+  baseVersion: string;
+  /** 變更內容 */
+  delta: SnapshotDeltaData;
+}
+
 /** Snapshot 結果 */
 export interface SnapshotResult extends QueryResult {
   command: QueryCommand.Snapshot;
   /** 快照類型 */
-  snapshotType: 'module' | 'project';
+  snapshotType: 'module' | 'project' | 'incremental';
   /** 快照資料 */
-  snapshot: ModuleSnapshotData | ProjectSnapshotData;
+  snapshot: ModuleSnapshotData | ProjectSnapshotData | IncrementalSnapshotData;
 }
 
 // ========== FindReferences 結果 ==========

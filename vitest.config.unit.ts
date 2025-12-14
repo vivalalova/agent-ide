@@ -10,10 +10,10 @@ const MAX_WORKERS = 4; // 最大並發 worker 數
 
 // === 覆蓋率門檻（百分比） ===
 const COVERAGE_THRESHOLD = {
-  lines: 40,
-  functions: 40,
-  branches: 30, // 分支覆蓋率要求較低，因為部分防禦性程式碼難以觸發
-  statements: 40
+  lines: 90,
+  functions: 95,
+  branches: 85,
+  statements: 90
 };
 
 /**

@@ -16,6 +16,12 @@ agent-ide snapshot --path . --format json
 
 # 人類可讀摘要
 agent-ide snapshot --path src/core/indexing --format summary
+
+# 增量快照（僅顯示變更）
+agent-ide snapshot --path . --since last --format json
+
+# 強制刷新快取
+agent-ide snapshot --path . --refresh --format json
 ```
 
 ## 參數
@@ -24,6 +30,8 @@ agent-ide snapshot --path src/core/indexing --format summary
 |------|------|
 | `--path` | 目標路徑 |
 | `--format` | 輸出格式：`json`、`summary` |
+| `--since` | 增量快照基準（`last` 使用上次快取） |
+| `--refresh` | 強制刷新快取並生成完整快照 |
 
 ## 自動偵測規則
 
@@ -40,7 +48,7 @@ agent-ide snapshot --path src/core/indexing --format summary
 | `command` | 命令類型（`snapshot`） |
 | `success` | 執行是否成功 |
 | `summary` | 統計摘要（掃描數量等） |
-| `snapshotType` | 快照類型（`module` 或 `project`） |
+| `snapshotType` | 快照類型（`module`、`project` 或 `incremental`） |
 | `snapshot.module` | 模組名稱（module 類型） |
 | `snapshot.project` | 專案名稱（project 類型） |
 | `snapshot.modules` | 各模組快照（project 類型） |
@@ -48,6 +56,9 @@ agent-ide snapshot --path src/core/indexing --format summary
 | `snapshot.factories` | `createXxx` 工廠函數及簽章 |
 | `snapshot.types` | Interface 和 Type 定義 |
 | `snapshot.private` | Class 私有欄位（供理解內部狀態） |
+| `snapshot.version` | 當前版本時間戳（incremental 類型） |
+| `snapshot.baseVersion` | 基準版本時間戳（incremental 類型） |
+| `snapshot.delta` | 變更內容（incremental 類型） |
 
 ## 輸出格式
 
@@ -105,3 +116,57 @@ agent-ide snapshot --path src/core/indexing --format summary
 | `factories` | `createXxx` 開頭的工廠函數 |
 | `types` | Interface 和 Type alias 定義 |
 | `private` | Class 的私有欄位列表（供理解內部狀態） |
+
+## 增量快照
+
+使用 `--since last` 可生成增量快照，僅顯示自上次快照以來的變更。
+
+### 增量快照輸出
+
+```json
+{
+  "command": "snapshot",
+  "success": true,
+  "snapshotType": "incremental",
+  "snapshot": {
+    "version": "2024-12-14T10:30:00.000Z",
+    "baseVersion": "2024-12-14T09:00:00.000Z",
+    "delta": {
+      "added": {
+        "modules": {},
+        "symbols": [
+          { "module": "indexing", "name": "NewClass", "type": "class" }
+        ]
+      },
+      "modified": {
+        "modules": ["indexing"],
+        "symbols": [
+          { "module": "indexing", "name": "IndexEngine", "type": "class" }
+        ]
+      },
+      "removed": {
+        "modules": [],
+        "symbols": []
+      }
+    }
+  }
+}
+```
+
+### 增量快照 summary
+
+```
+📦 增量快照 (Version: 2024-12-14T10:30:00.000Z)
+🔖 基準版本: 2024-12-14T09:00:00.000Z
+
+✨ 新增: 0 個模組, 1 個符號
+  ➕ class indexing.NewClass
+
+📝 修改: 1 個模組, 1 個符號
+  📂 模組 indexing
+  ✏️  class indexing.IndexEngine
+```
+
+### 快取位置
+
+增量快照的快取存放於專案根目錄的 `.agent-ide/snapshot-cache.json`。
