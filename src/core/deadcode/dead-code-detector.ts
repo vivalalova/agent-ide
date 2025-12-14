@@ -152,8 +152,7 @@ export class DeadCodeDetector {
         allSymbols.push(...symbols);
       } catch (error) {
         skippedFiles++;
-        // 非測試環境記錄警告
-        if (process.env.NODE_ENV !== 'test') {
+        if (this.options.verbose) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
         }

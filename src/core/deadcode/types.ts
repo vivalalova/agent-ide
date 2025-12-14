@@ -33,6 +33,8 @@ export interface DeadCodeDetectorOptions {
   readonly minConfidence?: number;
   /** 要檢測的符號類型 */
   readonly symbolTypes?: readonly SymbolType[];
+  /** 是否輸出詳細警告資訊（預設 true，測試時可設 false） */
+  readonly verbose?: boolean;
 }
 
 /**
@@ -93,7 +95,8 @@ export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
     SymbolType.Variable,
     SymbolType.Interface,
     SymbolType.Type
-  ]
+  ],
+  verbose: true
 };
 
 // ============================================================================

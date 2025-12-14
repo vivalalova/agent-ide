@@ -80,6 +80,8 @@ export interface PathResolutionResult {
  */
 export interface ExtendedDependencyAnalysisOptions extends DependencyAnalysisOptions {
   readonly concurrency?: number;
+  /** 是否輸出詳細警告資訊（預設 true） */
+  readonly verbose?: boolean;
 }
 
 /**

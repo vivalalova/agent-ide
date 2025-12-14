@@ -309,7 +309,9 @@ export class ImpactAnalyzer {
       }
     } catch (error) {
       // 解析錯誤，回傳空陣列而不拋出錯誤
-      console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
+      if (this.options.verbose !== false) {
+        console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
+      }
     }
 
     return dependencies;
