@@ -131,11 +131,9 @@ async function handleDeadCodeCommand(
     }
 
     // 2. 建立 DeadCodeRemover
-    const parserRegistry = ParserRegistry.getInstance();
     const minConfidence = parseFloat(options.minConfidence);
 
     const remover = createDeadCodeRemover(
-      parserRegistry,
       context.fileSystem,
       {
         minConfidence: isNaN(minConfidence) ? 0.9 : minConfidence,
