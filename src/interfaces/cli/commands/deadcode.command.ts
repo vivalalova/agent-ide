@@ -54,9 +54,9 @@ export function setupDeadCodeCommand(program: Command, context: CommandContext):
 async function runDeadCodeDetection(
   options: DeadCodeOptions,
   context: CommandContext,
-  indexEngine: IndexEngine
+  indexEngine: IndexEngine,
+  parserRegistry: ParserRegistry
 ): Promise<DeadCodeDetectionResult> {
-  const parserRegistry = ParserRegistry.getInstance();
   const detector = createDeadCodeDetector(
     indexEngine,
     parserRegistry,
@@ -108,12 +108,14 @@ async function handleDeadCodeCommand(
   const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
   const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
 
+  const parserRegistry = ParserRegistry.getInstance();
+
   try {
     // 索引專案
     await indexEngine.indexProject(projectPath);
 
     // 1. 先執行 dead code 檢測
-    const detectionResult = await runDeadCodeDetection(options, context, indexEngine);
+    const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);
 
     if (!detectionResult.success) {
       outputHandler.outputError(`檢測失敗: ${detectionResult.error}`, format);
@@ -135,6 +137,7 @@ async function handleDeadCodeCommand(
 
     const remover = createDeadCodeRemover(
       context.fileSystem,
+      parserRegistry,
       {
         minConfidence: isNaN(minConfidence) ? 0.9 : minConfidence,
         excludeSymbols: options.exclude || [],

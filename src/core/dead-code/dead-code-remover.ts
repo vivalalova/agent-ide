@@ -7,6 +7,8 @@ import { minimatch } from 'minimatch';
 import type { Range } from '@shared/types/core.js';
 import type { SymbolType } from '@shared/types/symbol.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -67,12 +69,15 @@ interface FileOperation {
 export class DeadCodeRemover {
   private readonly options: Required<DeadCodeRemovalOptions>;
   private readonly fileCache = new Map<string, string>();
+  private readonly symbolFinder: SymbolFinder;
 
   constructor(
     private readonly fileSystem: IFileSystem,
+    private readonly parserRegistry: ParserRegistry,
     options?: DeadCodeRemovalOptions
   ) {
     this.options = { ...DEFAULT_REMOVAL_OPTIONS, ...options };
+    this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
   }
 
   /**
@@ -268,7 +273,7 @@ export class DeadCodeRemover {
         for (const symbol of stmt.symbols) {
           // 符號是否在被刪除的列表中，且刪除後不再使用
           if (removedSymbols.has(symbol.name)) {
-            const stillUsed = this.isImportStillUsed(content, symbol.name, fileRemovals);
+            const stillUsed = await this.isImportStillUsed(filePath, symbol.name, fileRemovals);
             if (!stillUsed) {
               unusedSymbols.push(symbol.name);
             } else {
@@ -520,34 +525,33 @@ export class DeadCodeRemover {
 
   /**
    * 檢查 import 是否仍被使用
-   * 排除註解和字串中的匹配
+   * 使用 SymbolFinder.findReferencesInFile 進行語義分析
    */
-  private isImportStillUsed(
-    content: string,
+  private async isImportStillUsed(
+    filePath: string,
     symbolName: string,
     removalsInFile: readonly RemovalOperation[]
-  ): boolean {
-    // 移除註解和字串後再檢查
-    const cleanContent = this.removeCommentsAndStrings(content);
+  ): Promise<boolean> {
+    // 使用 SymbolFinder 查找該檔案中的所有引用
+    const references = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
 
-    // 建立正則表達式匹配符號使用
-    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+    // 過濾掉 import 類型的引用（import 語句本身）
+    const usageRefs = references.filter(ref => ref.type === SymbolReferenceType.Usage);
 
-    // 計算清理後內容中的使用次數
-    const matches = cleanContent.match(regex) || [];
-    const originalCount = matches.length;
+    // 過濾掉被刪除程式碼區塊內的引用
+    const remainingRefs = usageRefs.filter(ref => {
+      const refLine = ref.location.range.start.line;
+      // 檢查引用是否在任一刪除範圍內
+      for (const removal of removalsInFile) {
+        if (refLine >= removal.range.start.line && refLine <= removal.range.end.line) {
+          return false; // 在刪除範圍內，過濾掉
+        }
+      }
+      return true;
+    });
 
-    // 計算被刪除的程式碼中的使用次數（也清理註解和字串）
-    let removedCount = 0;
-    for (const removal of removalsInFile) {
-      const cleanRemoval = this.removeCommentsAndStrings(removal.originalCode);
-      const removedMatches = cleanRemoval.match(regex) || [];
-      removedCount += removedMatches.length;
-    }
-
-    // 如果刪除後還有使用，則 import 仍需要
-    // -1 是因為 import 語句本身也會匹配
-    return (originalCount - removedCount) > 1;
+    // 如果還有剩餘的使用引用，表示 import 仍需要
+    return remainingRefs.length > 0;
   }
 
   /**
@@ -1011,7 +1015,8 @@ export class DeadCodeRemover {
  */
 export function createDeadCodeRemover(
   fileSystem: IFileSystem,
+  parserRegistry: ParserRegistry,
   options?: DeadCodeRemovalOptions
 ): DeadCodeRemover {
-  return new DeadCodeRemover(fileSystem, options);
+  return new DeadCodeRemover(fileSystem, parserRegistry, options);
 }

@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DeadCodeRemover, createDeadCodeRemover } from '@core/dead-code/dead-code-remover.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { DeadCodeItem, DeadCodeRemovalOptions } from '@core/dead-code/types.js';
 import { SymbolType } from '@shared/types/symbol.js';
 
@@ -37,6 +38,15 @@ const createMockFileSystem = (
   createReadStream: vi.fn(),
   createWriteStream: vi.fn(),
 }) as unknown as IFileSystem;
+
+/**
+ * Mock ParserRegistry 建立
+ */
+const createMockParserRegistry = (): ParserRegistry => ({
+  getParser: vi.fn().mockReturnValue(null), // 降級到文字匹配
+  registerParser: vi.fn(),
+  getSupportedExtensions: vi.fn().mockReturnValue([]),
+}) as unknown as ParserRegistry;
 
 /**
  * DeadCodeItem 測試資料建立
@@ -77,8 +87,13 @@ const createDeadCodeItem = (
  */
 const createSut = (
   fileSystem: IFileSystem,
-  options?: DeadCodeRemovalOptions
-): DeadCodeRemover => createDeadCodeRemover(fileSystem, options);
+  options?: DeadCodeRemovalOptions,
+  parserRegistry?: ParserRegistry
+): DeadCodeRemover => createDeadCodeRemover(
+  fileSystem,
+  parserRegistry ?? createMockParserRegistry(),
+  options
+);
 
 // ============================================================================
 // MARK: - Import 解析功能測試
@@ -686,9 +701,10 @@ describe('createDeadCodeRemover', () => {
   it('應該建立 DeadCodeRemover 實例', () => {
     // Given: mock 依賴
     const fs = createMockFileSystem();
+    const parserRegistry = createMockParserRegistry();
 
     // When: 使用 factory 函數建立
-    const result = createDeadCodeRemover(fs);
+    const result = createDeadCodeRemover(fs, parserRegistry);
 
     // Then: 回傳正確型別
     expect(result).toBeInstanceOf(DeadCodeRemover);
@@ -697,13 +713,14 @@ describe('createDeadCodeRemover', () => {
   it('應該接受自訂選項', () => {
     // Given: mock 依賴與選項
     const fs = createMockFileSystem();
+    const parserRegistry = createMockParserRegistry();
     const options: DeadCodeRemovalOptions = {
       minConfidence: 0.5,
       cleanupImports: false,
     };
 
     // When: 使用選項建立
-    const result = createDeadCodeRemover(fs, options);
+    const result = createDeadCodeRemover(fs, parserRegistry, options);
 
     // Then: 實例建立成功
     expect(result).toBeInstanceOf(DeadCodeRemover);
