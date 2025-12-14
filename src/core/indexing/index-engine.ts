@@ -7,7 +7,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
-import type { Symbol, SymbolType } from '@shared/types/index.js';
+import type { Symbol, SymbolType, Dependency } from '@shared/types/index.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -17,6 +17,23 @@ import type {
   IndexProgress,
   BatchIndexOptions
 } from './types.js';
+import { MemoryCache } from '@infrastructure/cache/memory-cache.js';
+import { EvictionStrategy } from '@infrastructure/cache/types.js';
+
+/**
+ * AST 解析快取項目
+ * 儲存已解析的符號和依賴關係，避免重複解析相同內容的檔案
+ */
+interface ParseCacheEntry {
+  /** 檔案內容的 SHA-256 checksum */
+  checksum: string;
+  /** 解析後的符號列表 */
+  symbols: Symbol[];
+  /** 解析後的依賴列表 */
+  dependencies: Dependency[];
+  /** 快取建立時間戳記 */
+  timestamp: number;
+}
 import {
   createFileInfo,
   createSearchOptions,
@@ -30,6 +47,9 @@ import { ParserRegistry } from '@infrastructure/parser/index.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 
+/** AST 解析快取預設大小：最多快取 1000 個檔案的解析結果 */
+const PARSE_CACHE_DEFAULT_SIZE = 1000;
+
 /**
  * 索引引擎類別
  * 協調檔案索引、符號索引和解析器的核心引擎
@@ -40,6 +60,8 @@ export class IndexEngine {
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
   private readonly fileSystem: IFileSystem;
+  /** AST 解析快取，使用 LRU 策略避免重複解析相同內容的檔案 */
+  private readonly parseCache: MemoryCache<string, ParseCacheEntry>;
   private _disposed = false;
   private _indexed = false;
 
@@ -51,6 +73,12 @@ export class IndexEngine {
     this.fileIndex = new FileIndex(config);
     this.symbolIndex = new SymbolIndex();
     this.fileSystem = fileSystem;
+
+    // 初始化 AST 解析快取（LRU 策略）
+    this.parseCache = new MemoryCache<string, ParseCacheEntry>({
+      maxSize: PARSE_CACHE_DEFAULT_SIZE,
+      evictionStrategy: EvictionStrategy.LRU
+    });
 
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
     const registry = ParserRegistry.getInstance();
@@ -71,6 +99,12 @@ export class IndexEngine {
       const jsParser = new JavaScriptParser();
       this.parserRegistry.register(jsParser);
     }
+
+    // 初始化 AST 解析快取
+    this.parseCache = new MemoryCache<string, ParseCacheEntry>({
+      maxSize: PARSE_CACHE_DEFAULT_SIZE,
+      evictionStrategy: EvictionStrategy.LRU
+    });
   }
 
   /**
@@ -201,15 +235,16 @@ export class IndexEngine {
     // 使用整合後的排除模式
     const effectiveExcludePatterns = this.getEffectiveExcludePatterns();
 
-    const allFiles: string[] = [];
-    for (const pattern of includePatterns) {
-      const files = await this.fileSystem.glob(pattern, {
-        cwd: dirPath,
-        ignore: effectiveExcludePatterns,
-        absolute: true
-      });
-      allFiles.push(...files);
-    }
+    const allFilesArrays = await Promise.all(
+      includePatterns.map(pattern =>
+        this.fileSystem.glob(pattern, {
+          cwd: dirPath,
+          ignore: effectiveExcludePatterns,
+          absolute: true
+        })
+      )
+    );
+    const allFiles = allFilesArrays.flat();
 
     // 過濾重複檔案並檢查是否應該索引
     const uniqueFiles = [...new Set(allFiles)];
@@ -274,6 +309,13 @@ export class IndexEngine {
 
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
+      // 計算當前檔案的 checksum
+      const currentChecksum = createHash('sha256').update(content).digest('hex');
+
+      // 檢查快取是否命中（checksum 相同則跳過解析）
+      const cachedEntry = this.parseCache.get(filePath);
+      const cacheHit = cachedEntry && cachedEntry.checksum === currentChecksum;
+
       const fileInfo = await this.createFileInfoFromStat(filePath, stat);
 
       // 新增到檔案索引
@@ -283,15 +325,32 @@ export class IndexEngine {
       this._indexed = true;
 
       try {
-        // 解析檔案並提取符號
-        const parser = this.parserRegistry.getParser(path.extname(filePath));
-        if (!parser) {
-          throw new Error(`找不到適合的解析器: ${filePath}`);
-        }
+        let symbols: Symbol[];
+        let dependencies: Dependency[];
 
-        const ast = await parser.parse(content, filePath);
-        const symbols = await parser.extractSymbols(ast);
-        const dependencies = await parser.extractDependencies(ast);
+        if (cacheHit) {
+          // 快取命中：直接使用快取的解析結果
+          symbols = cachedEntry.symbols;
+          dependencies = cachedEntry.dependencies;
+        } else {
+          // 快取未命中：執行完整解析
+          const parser = this.parserRegistry.getParser(path.extname(filePath));
+          if (!parser) {
+            throw new Error(`找不到適合的解析器: ${filePath}`);
+          }
+
+          const ast = await parser.parse(content, filePath);
+          symbols = await parser.extractSymbols(ast);
+          dependencies = await parser.extractDependencies(ast);
+
+          // 將解析結果存入快取
+          this.parseCache.set(filePath, {
+            checksum: currentChecksum,
+            symbols,
+            dependencies,
+            timestamp: Date.now()
+          });
+        }
 
         // 更新檔案索引的符號和依賴
         await this.fileIndex.setFileSymbols(filePath, symbols);
@@ -463,6 +522,7 @@ export class IndexEngine {
   async clear(): Promise<void> {
     await this.fileIndex.clear();
     await this.symbolIndex.clear();
+    this.parseCache.clear();
     this._indexed = false;
   }
 
@@ -614,9 +674,9 @@ export class IndexEngine {
   dispose(): void {
     if (!this._disposed) {
       this.clear();
+      this.parseCache.dispose();
       this._disposed = true;
     }
-    // 可以在這裡加入其他清理邏輯
   }
 
   /**
