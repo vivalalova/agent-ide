@@ -201,7 +201,7 @@ export class Service {
     it('應該識別 createXxx 模式的 factory', async () => {
       await fixture.writeFile('src/factory/index.ts', `
 export interface User { name: string; }
-export function createUser(name: string): User { return { name }; }
+export function createUser(string): User { return { name }; }
 export function createDefaultUser(): User { return { name: 'default' }; }
 `);
 

@@ -342,7 +342,7 @@ describe('SnapshotGenerator', () => {
   describe('buildModuleSnapshot - Factories 提取', () => {
     it('應該提取 createXxx 工廠函數', () => {
       const symbols: Symbol[] = [
-        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(name: string): User'),
+        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(string): User'),
         createTestSymbol('createDatabase', SymbolType.Function, [], undefined, 'createDatabase(): Database'),
       ];
 
@@ -500,7 +500,7 @@ describe('SnapshotGenerator', () => {
         createTestSymbol('name', SymbolType.Property, [], 'User'),
 
         // Factory
-        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(name: string): User'),
+        createTestSymbol('createUser', SymbolType.Function, [], undefined, 'createUser(string): User'),
 
         // Interface
         createTestSymbol('Config', SymbolType.Interface),

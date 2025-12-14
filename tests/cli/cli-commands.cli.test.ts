@@ -108,13 +108,8 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
-    it('deadcode - Dead code 檢測', () => {
-      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --format json`);
-      expect(result.success).toBe(true);
-    });
-
-    it('deadcode --include-exports - 含 exports 的 dead code 檢測', () => {
-      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --include-exports --format json`);
+    it('deadcode --dry-run - Dead code 預覽', () => {
+      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --dry-run --format json`);
       expect(result.success).toBe(true);
     });
   });
@@ -124,6 +119,41 @@ describe('CLI 整合測試', () => {
   // ========================================
 
   describe('Mutation Commands', () => {
+    it('deadcode - 刪除 dead code 並驗證輸出結構', () => {
+      // 執行 deadcode 刪除（會實際修改檔案，afterEach 會還原）
+      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --include-exports --format json`);
+
+      // 驗證基本結構
+      expect(result.success).toBe(true);
+      expect(result.command).toBe('deadcode-removal');
+      expect(result.files).toBeDefined();
+      expect(Array.isArray(result.files)).toBe(true);
+
+      // 驗證 summary 統計
+      expect(result.summary).toBeDefined();
+      expect(typeof result.summary.totalFiles).toBe('number');
+      expect(typeof result.summary.totalChanges).toBe('number');
+
+      // 驗證有檢測到 dead code（deadcode-test fixture 應該有）
+      expect(result.files.length).toBeGreaterThan(0);
+
+      // 驗證每個 file 的結構
+      const file = result.files[0];
+      expect(file.filePath).toBeDefined();
+      expect(file.hunks).toBeDefined();
+      expect(Array.isArray(file.hunks)).toBe(true);
+
+      // 驗證 hunk 結構（使用 diff 格式：oldStart, oldCount, newStart, newCount）
+      if (file.hunks.length > 0) {
+        const hunk = file.hunks[0];
+        expect(typeof hunk.oldStart).toBe('number');
+        expect(typeof hunk.oldCount).toBe('number');
+        expect(hunk.header).toBeDefined();
+        expect(hunk.lines).toBeDefined();
+        expect(Array.isArray(hunk.lines)).toBe(true);
+      }
+    });
+
     it('rename - 符號重命名', () => {
       const result = runCLI(`${CLI} rename --path "${SAMPLE_PROJECT}" --from UserModel --to UserEntity --format json`);
       expect(result.success).toBe(true);
