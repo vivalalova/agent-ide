@@ -175,9 +175,15 @@ export class SnapshotGenerator {
     const srcPath = path.join(projectPath, 'src');
     const modulesDirs = await this.findModuleDirs(srcPath);
 
-    for (const moduleDir of modulesDirs) {
-      const moduleSnapshot = await this.generateModuleSnapshot(moduleDir);
-      const relativePath = path.relative(projectPath, moduleDir);
+    const snapshots = await Promise.all(
+      modulesDirs.map(async (moduleDir) => {
+        const moduleSnapshot = await this.generateModuleSnapshot(moduleDir);
+        const relativePath = path.relative(projectPath, moduleDir);
+        return { relativePath, moduleSnapshot };
+      })
+    );
+
+    for (const { relativePath, moduleSnapshot } of snapshots) {
       modules[relativePath] = moduleSnapshot;
     }
 
