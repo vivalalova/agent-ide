@@ -154,20 +154,11 @@ export class ReferenceUpdater {
     switch (type) {
       case SymbolReferenceType.Definition:
         return 'definition';
-      default:
+      case SymbolReferenceType.Usage:
+      case SymbolReferenceType.Import:
+      case SymbolReferenceType.Export:
         return 'usage';
     }
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    if (!filePath || typeof filePath !== 'string') {
-      return '';
-    }
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
 
   /**
