@@ -311,13 +311,14 @@ export class DeadCodeRemover {
 
   /**
    * 產生部分清理後的 import 語句
+   * 支援：純 named import、混合 default + named import
    */
   private generatePartialImport(
     stmt: ImportStatementInfo,
     usedSymbols: string[]
   ): string | null {
-    // Default import 或 namespace import 不支援部分清理
-    if (stmt.hasDefault || stmt.isNamespace) {
+    // Namespace import 不支援部分清理（整體使用）
+    if (stmt.isNamespace) {
       return null;
     }
 
@@ -329,17 +330,39 @@ export class DeadCodeRemover {
     const fromPath = fromMatch[2];
     const quote = fromMatch[1];
 
-    // 保留別名資訊
-    const symbolsWithAlias = usedSymbols.map(name => {
-      const symbol = stmt.symbols.find(s => s.name === name);
-      return symbol?.alias ? `${name} as ${symbol.alias}` : name;
-    });
+    // 分離 default 和 named symbols
+    const defaultSymbol = stmt.symbols.find(s => s.isDefault);
+    const namedSymbols = stmt.symbols.filter(s => !s.isDefault);
 
-    // 判斷是否需要 type 關鍵字
+    // 檢查 default import 是否仍需保留
+    const keepDefault = defaultSymbol && usedSymbols.includes(defaultSymbol.name);
+
+    // 過濾出需要保留的 named symbols，並保留別名資訊
+    const keptNamedSymbols = usedSymbols
+      .filter(name => namedSymbols.some(s => s.name === name))
+      .map(name => {
+        const symbol = namedSymbols.find(s => s.name === name);
+        return symbol?.alias ? `${name} as ${symbol.alias}` : name;
+      });
+
+    // 判斷是否需要 type 關鍵字（僅對純 named import）
     const isTypeImport = stmt.statement.match(/import\s+type\s*\{/);
     const typePrefix = isTypeImport ? 'type ' : '';
 
-    return `import ${typePrefix}{ ${symbolsWithAlias.join(', ')} } from ${quote}${fromPath}${quote};`;
+    // 建構新的 import 語句
+    if (keepDefault && keptNamedSymbols.length > 0) {
+      // 混合格式：import X, { Y, Z } from '...'
+      return `import ${defaultSymbol!.name}, { ${keptNamedSymbols.join(', ')} } from ${quote}${fromPath}${quote};`;
+    } else if (keepDefault) {
+      // 只有 default：import X from '...'
+      return `import ${defaultSymbol!.name} from ${quote}${fromPath}${quote};`;
+    } else if (keptNamedSymbols.length > 0) {
+      // 只有 named：import { Y, Z } from '...'
+      return `import ${typePrefix}{ ${keptNamedSymbols.join(', ')} } from ${quote}${fromPath}${quote};`;
+    }
+
+    // 沒有任何符號需要保留
+    return null;
   }
 
   /**
