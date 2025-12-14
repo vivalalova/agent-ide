@@ -1,5 +1,5 @@
 /**
- * 依賴關係分析相關型別定義
+ * 影響分析相關型別定義
  */
 
 import { Dependency } from '@shared/types/index.js';
@@ -35,45 +35,6 @@ export interface DependencyStats {
 }
 
 /**
- * 循環依賴資訊
- */
-export interface CircularDependency {
-  readonly cycle: readonly string[];
-  readonly length: number;
-  readonly severity: 'low' | 'medium' | 'high';
-}
-
-/**
- * 強連通分量
- */
-export interface StronglyConnectedComponent {
-  readonly nodes: readonly string[];
-  readonly size: number;
-  readonly cycleComplexity: number;
-}
-
-/**
- * 依賴圖邊
- */
-export interface DependencyEdge {
-  readonly from: string;
-  readonly to: string;
-  readonly weight: number;
-  readonly dependencyType: 'import' | 'require' | 'include';
-}
-
-/**
- * 依賴圖節點
- */
-export interface DependencyNode {
-  readonly filePath: string;
-  readonly inDegree: number;
-  readonly outDegree: number;
-  readonly dependencies: readonly string[];
-  readonly dependents: readonly string[];
-}
-
-/**
  * 影響分析結果
  */
 export interface ImpactAnalysisResult {
@@ -82,15 +43,6 @@ export interface ImpactAnalysisResult {
   readonly transitivelyAffected: readonly string[];
   readonly affectedTests: readonly string[];
   readonly impactScore: number;
-}
-
-/**
- * 拓撲排序結果
- */
-export interface TopologicalSortResult {
-  readonly sortedFiles: readonly string[];
-  readonly hasCycle: boolean;
-  readonly cycleFiles?: readonly string[];
 }
 
 /**
@@ -114,15 +66,6 @@ export interface DependencyQueryOptions {
 }
 
 /**
- * 循環檢測選項
- */
-export interface CycleDetectionOptions {
-  readonly maxCycleLength: number;
-  readonly reportAllCycles: boolean;
-  readonly ignoreSelfLoops: boolean;
-}
-
-/**
  * 路徑解析結果
  */
 export interface PathResolutionResult {
@@ -133,21 +76,12 @@ export interface PathResolutionResult {
 }
 
 /**
- * 依賴分析器配置
- */
-export interface DependencyAnalyzerConfig {
-  readonly analysisOptions: DependencyAnalysisOptions;
-  readonly queryOptions: DependencyQueryOptions;
-  readonly cycleDetectionOptions: CycleDetectionOptions;
-  readonly cacheEnabled: boolean;
-  readonly concurrency: number;
-}
-
-/**
  * 擴展的依賴分析選項（包含 concurrency）
  */
 export interface ExtendedDependencyAnalysisOptions extends DependencyAnalysisOptions {
   readonly concurrency?: number;
+  /** 是否輸出詳細警告資訊（預設 true） */
+  readonly verbose?: boolean;
 }
 
 /**
@@ -172,39 +106,6 @@ export function createDefaultQueryOptions(): DependencyQueryOptions {
     maxDepth: 10,
     direction: 'dependencies'
   };
-}
-
-/**
- * 建立預設循環檢測選項
- */
-export function createDefaultCycleDetectionOptions(): CycleDetectionOptions {
-  return {
-    maxCycleLength: 20,
-    reportAllCycles: false,
-    ignoreSelfLoops: true
-  };
-}
-
-/**
- * 建立預設分析器配置
- */
-export function createDefaultAnalyzerConfig(): DependencyAnalyzerConfig {
-  return {
-    analysisOptions: createDefaultAnalysisOptions(),
-    queryOptions: createDefaultQueryOptions(),
-    cycleDetectionOptions: createDefaultCycleDetectionOptions(),
-    cacheEnabled: true,
-    concurrency: 4
-  };
-}
-
-/**
- * 計算循環依賴嚴重程度
- */
-export function calculateCycleSeverity(cycleLength: number): 'low' | 'medium' | 'high' {
-  if (cycleLength <= 3) {return 'low';}
-  if (cycleLength <= 6) {return 'medium';}
-  return 'high';
 }
 
 /**
@@ -241,26 +142,5 @@ export function isProjectDependencies(value: unknown): value is ProjectDependenc
     Array.isArray(obj.fileDependencies) &&
     obj.fileDependencies.every(isFileDependencies) &&
     obj.analyzedAt instanceof Date
-  );
-}
-
-/**
- * CircularDependency 型別守衛
- */
-export function isCircularDependency(value: unknown): value is CircularDependency {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const obj = value as Record<string, unknown>;
-  const validSeverities = ['low', 'medium', 'high'];
-
-  return (
-    Array.isArray(obj.cycle) &&
-    obj.cycle.length >= 2 &&
-    obj.cycle.every((item: unknown) => typeof item === 'string') &&
-    typeof obj.length === 'number' &&
-    obj.length >= 2 &&
-    validSeverities.includes(obj.severity as string)
   );
 }

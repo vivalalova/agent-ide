@@ -3,20 +3,13 @@
  * 提供有向圖資料結構來表示檔案間的依賴關係
  */
 
+import { DependencyType } from '@shared/types/index.js';
 import type {
   DependencyNode,
   DependencyEdge,
-  TopologicalSortResult
+  TopologicalSortResult,
+  SerializedGraph
 } from './types.js';
-
-/**
- * 圖的序列化格式
- */
-export interface SerializedGraph {
-  nodes: string[];
-  edges: Array<{ from: string; to: string; weight: number }>;
-  metadata?: Record<string, any>;
-}
 
 /**
  * 依賴圖類別
@@ -259,7 +252,10 @@ export class DependencyGraph {
 
     // Kahn's 算法
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
       result.push(current);
 
       const dependencies = this.getDependencies(current);
@@ -311,7 +307,7 @@ export class DependencyGraph {
           from,
           to,
           weight: 1, // 預設權重
-          dependencyType: 'import' // 預設類型
+          dependencyType: DependencyType.Import
         });
       }
     }
@@ -339,7 +335,10 @@ export class DependencyGraph {
     visited.add(startNode);
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
 
       // 檢查所有相鄰節點（雙向）
       const dependencies = this.getDependencies(current);

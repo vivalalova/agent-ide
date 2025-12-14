@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
 import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
@@ -97,7 +97,8 @@ async function handleFindReferencesCommand(
     // 建立 SymbolFinder 查找所有引用
     const parserRegistry = ParserRegistry.getInstance();
     const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
-    const refs = await symbolFinder.findReferences(symbolName, filePaths);
+    const refsMap = await symbolFinder.findReferencesMultiple(new Set([symbolName]), filePaths);
+    const refs = refsMap.get(symbolName) ?? [];
 
     // 轉換為輸出格式
     const references: ReferenceItem[] = refs.map(ref => ({

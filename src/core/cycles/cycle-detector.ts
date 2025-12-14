@@ -3,13 +3,15 @@
  * 使用 Tarjan 算法檢測強連通分量和循環依賴
  */
 
-import type { DependencyGraph } from '@core/dependency/dependency-graph.js';
+import type { DependencyGraph } from '@core/shared/dependency-graph/index.js';
 import type {
   CircularDependency,
   StronglyConnectedComponent,
-  CycleDetectionOptions
+  CycleDetectionOptions,
+  CycleStatistics,
+  CycleFixSuggestion
 } from './types.js';
-import { calculateCycleSeverity } from '@core/dependency/types.js';
+import { calculateCycleSeverity } from './types.js';
 
 /**
  * Tarjan 算法的節點狀態
@@ -200,7 +202,11 @@ export class CycleDetector {
     const visited = new Set<string>();
 
     while (queue.length > 0) {
-      const { node, path } = queue.shift()!;
+      const item = queue.shift();
+      if (!item) {
+        break;
+      }
+      const { node, path } = item;
 
       if (visited.has(node) && node !== startNode) {
         continue;
@@ -287,12 +293,7 @@ export class CycleDetector {
    * @param graph 依賴圖
    * @returns 統計資訊
    */
-  getCycleStatistics(graph: DependencyGraph): {
-    totalCycles: number;
-    averageCycleLength: number;
-    maxCycleLength: number;
-    cyclesBySeverity: Record<string, number>;
-  } {
+  getCycleStatistics(graph: DependencyGraph): CycleStatistics {
     const cycles = this.detectCycles(graph, {
       reportAllCycles: true,
       maxCycleLength: 100,
@@ -329,12 +330,7 @@ export class CycleDetector {
    * @param cycles 循環依賴列表
    * @returns 修復建議
    */
-  suggestFixStrategies(cycles: CircularDependency[]): Array<{
-    cycle: string[];
-    strategy: string;
-    description: string;
-    priority: 'high' | 'medium' | 'low';
-  }> {
+  suggestFixStrategies(cycles: CircularDependency[]): CycleFixSuggestion[] {
     return cycles.map(cycle => {
       let strategy = '';
       let description = '';

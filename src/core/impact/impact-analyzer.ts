@@ -1,12 +1,12 @@
 /**
- * 依賴關係分析器
- * 分析檔案和專案的依賴關係，提供影響分析和統計功能
+ * 影響分析器
+ * 分析檔案變更的影響範圍，提供依賴追蹤和統計功能
  */
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { DependencyGraph } from '@core/dependency/dependency-graph.js';
-import { CycleDetector } from '@core/dependency/cycle-detector.js';
+import { DependencyGraph } from '@core/shared/dependency-graph/index.js';
+import { CycleDetector } from '@core/cycles/index.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -28,9 +28,9 @@ interface CacheEntry {
 }
 
 /**
- * 依賴關係分析器類別
+ * 影響分析器類別
  */
-export class DependencyAnalyzer {
+export class ImpactAnalyzer {
   private graph: DependencyGraph;
   private cycleDetector: CycleDetector;
   private cache: Map<string, CacheEntry>;
@@ -261,6 +261,14 @@ export class DependencyAnalyzer {
   }
 
   /**
+   * 取得依賴圖
+   * @returns 依賴圖實例
+   */
+  getGraph(): DependencyGraph {
+    return this.graph;
+  }
+
+  /**
    * 從檔案內容中提取依賴關係
    * @param content 檔案內容
    * @param filePath 檔案路徑
@@ -301,7 +309,9 @@ export class DependencyAnalyzer {
       }
     } catch (error) {
       // 解析錯誤，回傳空陣列而不拋出錯誤
-      console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
+      if (this.options.verbose !== false) {
+        console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
+      }
     }
 
     return dependencies;
@@ -411,7 +421,7 @@ export class DependencyAnalyzer {
       if (!stat.isDirectory) {
         return [];
       }
-    } catch (error) {
+    } catch {
       // 路徑不存在或無法訪問
       return [];
     }
@@ -474,11 +484,6 @@ export class DependencyAnalyzer {
    * @returns 是否匹配
    */
   private matchGlob(filePath: string, pattern: string): boolean {
-    // 簡化實作，實際應該使用專業的 glob 函式庫
-    // ** 匹配任意層級目錄 (包含 0 層)
-    // * 匹配單層目錄或檔名中的任意字元（不包含 /）
-    // ? 匹配單一字元
-
     // 將 ** 替換為特殊標記，避免與 * 衝突
     let regexPattern = pattern.replace(/\*\*/g, '<!DOUBLE_STAR!>');
 

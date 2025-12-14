@@ -4,12 +4,12 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   createCallHierarchyAnalyzer,
   type CallHierarchyOptions
-} from '@core/shared/call-hierarchy-analyzer.js';
+} from '@core/call-hierarchy/index.js';
 import {
   QueryCommand,
   type CallHierarchyResult,

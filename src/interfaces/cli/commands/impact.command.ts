@@ -4,9 +4,8 @@
  */
 
 import type { Command } from 'commander';
-import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
-import { DependencyGraph } from '@core/dependency/dependency-graph.js';
-import { CycleDetector } from '@core/dependency/cycle-detector.js';
+import { ImpactAnalyzer } from '@core/impact/index.js';
+import { CycleDetector } from '@core/cycles/index.js';
 import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -59,23 +58,17 @@ async function handleImpactCommand(
     const analyzePath = options.path || process.cwd();
     const targetFile = options.file;
 
-    // 初始化依賴分析器
-    const dependencyAnalyzer = new DependencyAnalyzer(context.fileSystem);
+    // 初始化影響分析器
+    const impactAnalyzer = new ImpactAnalyzer(context.fileSystem);
 
     // 分析專案依賴
-    const projectDeps = await dependencyAnalyzer.analyzeProject(analyzePath);
+    await impactAnalyzer.analyzeProject(analyzePath);
 
     // 獲取統計資訊
-    const stats = dependencyAnalyzer.getStats();
+    const stats = impactAnalyzer.getStats();
 
-    // 建立依賴圖
-    const graph = new DependencyGraph();
-    for (const fileDep of projectDeps.fileDependencies) {
-      graph.addNode(fileDep.filePath);
-      for (const dep of fileDep.dependencies) {
-        graph.addDependency(fileDep.filePath, dep.path);
-      }
-    }
+    // 取得依賴圖
+    const graph = impactAnalyzer.getGraph();
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();
@@ -88,8 +81,8 @@ async function handleImpactCommand(
     }));
 
     // 取得影響分析資訊
-    const dependents = graph.getDependents(targetFile);
-    const dependencies = graph.getDependencies(targetFile);
+    const dependents = impactAnalyzer.getDependents(targetFile);
+    const dependencies = impactAnalyzer.getDependencies(targetFile);
 
     const result: DepsResult = {
       command: QueryCommand.Deps,

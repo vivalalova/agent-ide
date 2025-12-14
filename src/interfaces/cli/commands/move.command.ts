@@ -5,7 +5,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveService } from '@core/move-file/move-service.js';
+import { MoveService } from '@core/move/move-service.js';
 import { convertMovePreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';

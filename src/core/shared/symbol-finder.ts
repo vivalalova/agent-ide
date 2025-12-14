@@ -4,7 +4,7 @@
  */
 
 import type { Range, Location } from '@shared/types/core.js';
-import type { Symbol, SymbolType } from '@shared/types/symbol.js';
+import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
@@ -123,17 +123,118 @@ export class SymbolFinder {
   }
 
   /**
-   * 查找所有引用
+   * 批次查找符號的引用（一次遍歷所有檔案，減少重複解析）
+   * 時間複雜度：O(M × N)，M=檔案數，N=符號數
+   * 優化點：M 次檔案讀取/解析（一次遍歷 M 檔查找 N 符號），
+   * 而非 N×M 次（N 符號各遍歷 M 檔）
    */
-  async findReferences(symbolName: string, projectFiles: readonly string[]): Promise<SymbolReference[]> {
-    const results: SymbolReference[] = [];
+  async findReferencesMultiple(
+    symbolNames: ReadonlySet<string>,
+    projectFiles: readonly string[]
+  ): Promise<Map<string, SymbolReference[]>> {
+    const results = new Map<string, SymbolReference[]>();
 
+    // 初始化結果 Map
+    for (const name of symbolNames) {
+      results.set(name, []);
+    }
+
+    // 一次遍歷所有檔案
     for (const filePath of projectFiles) {
-      const refs = await this.findReferencesInFile(filePath, symbolName);
-      results.push(...refs);
+      const content = await this.readFile(filePath);
+      if (!content) {
+        continue;
+      }
+
+      const parser = this.getParser(filePath);
+      if (!parser) {
+        // 降級到文字匹配
+        this.findReferencesMultipleByText(filePath, content, symbolNames, results);
+        continue;
+      }
+
+      try {
+        const ast = await parser.parse(content, filePath);
+
+        // 對每個目標符號查找引用
+        for (const symbolName of symbolNames) {
+          const dummySymbol: Symbol = {
+            name: symbolName,
+            type: SymbolType.Variable,
+            location: {
+              filePath,
+              range: {
+                start: { line: 1, column: 1, offset: undefined },
+                end: { line: 1, column: 1, offset: undefined }
+              }
+            },
+            scope: undefined,
+            modifiers: []
+          };
+
+          const references = await parser.findReferences(ast, dummySymbol);
+          const refs = results.get(symbolName);
+          if (!refs) {
+            continue;
+          }
+
+          for (const ref of references) {
+            refs.push({
+              symbolName,
+              location: ref.location,
+              type: ref.type === 'definition'
+                ? SymbolReferenceType.Definition
+                : SymbolReferenceType.Usage
+            });
+          }
+        }
+      } catch {
+        // Parser 失敗，降級到文字匹配
+        this.findReferencesMultipleByText(filePath, content, symbolNames, results);
+      }
     }
 
     return results;
+  }
+
+  /**
+   * 批次文字匹配查找（降級方法）
+   */
+  private findReferencesMultipleByText(
+    filePath: string,
+    content: string,
+    symbolNames: ReadonlySet<string>,
+    results: Map<string, SymbolReference[]>
+  ): void {
+    const lines = content.split('\n');
+
+    for (const symbolName of symbolNames) {
+      const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+      const refs = results.get(symbolName);
+      if (!refs) {
+        continue;
+      }
+
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        let match;
+
+        while ((match = regex.exec(line)) !== null) {
+          refs.push({
+            symbolName,
+            location: {
+              filePath,
+              range: {
+                start: { line: lineIndex + 1, column: match.index + 1, offset: undefined },
+                end: { line: lineIndex + 1, column: match.index + 1 + symbolName.length, offset: undefined }
+              }
+            },
+            type: SymbolReferenceType.Usage,
+            context: line.trim()
+          });
+        }
+      }
+    }
   }
 
   /**
@@ -157,12 +258,12 @@ export class SymbolFinder {
       // 建立虛擬符號用於查找
       const dummySymbol: Symbol = {
         name: symbolName,
-        type: 'variable' as SymbolType,
+        type: SymbolType.Variable,
         location: {
           filePath,
           range: {
-            start: { line: 1, column: 1, offset: 0 },
-            end: { line: 1, column: 1, offset: 0 }
+            start: { line: 1, column: 1, offset: undefined },
+            end: { line: 1, column: 1, offset: undefined }
           }
         },
         scope: undefined,
@@ -213,8 +314,8 @@ export class SymbolFinder {
     }
 
     try {
-      const ast = await parser.parse(content, filePath);
-      const symbols = await parser.extractSymbols(ast);
+      // 驗證檔案可解析（確保語法正確）
+      await parser.parse(content, filePath);
 
       // 查找所有函式呼叫
       const callSites: CallSite[] = [];

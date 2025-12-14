@@ -38,22 +38,78 @@ pnpm test:e2e -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/                 # 核心模組（扁平化結構）
-│   ├── dependency/       # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-│   ├── indexing/         # 1000檔/秒、查詢<10ms
+├── core/                 # 核心模組（對應 CLI 命令）
+│   ├── shared/           # 共享層
+│   │   ├── indexing/     # 索引引擎（1000檔/秒、查詢<10ms）
+│   │   ├── dependency-graph/  # 依賴圖資料結構
+│   │   └── symbol-finder.ts   # 符號搜尋器
+│   ├── cycles/           # 循環依賴檢測（Tarjan）
+│   ├── impact/           # 影響分析（BFS）
+│   ├── find-references/  # 符號引用搜尋
+│   ├── call-hierarchy/   # 呼叫層次分析
 │   ├── snapshot/         # 模組快照（AI 理解用，~91% token 節省）
-│   ├── shared/           # 共享元件（CodeEditor, SymbolFinder）
 │   ├── rename/           # 符號重命名+引用更新
 │   ├── change-signature/ # 參數重構+呼叫點更新
-│   ├── move-file/        # 檔案移動+import更新
+│   ├── move/             # 檔案移動+import更新
 │   ├── move-member/      # 成員移動（方法/類別/函式）
-│   ├── dead-code/        # Dead code 檢測
+│   ├── deadcode/         # Dead code 檢測與移除
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/              # TS（Compiler API）、JS（Babel）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
+
+### Core 目錄設計原則
+
+**CLI 命令對應**：每個 `core/<module>/` 目錄對應一個 CLI 命令，讓維護者從命令名直接找到實作位置。
+
+**shared/ 層存在原因**：多個命令共用的基礎設施（indexing、dependency-graph、symbol-finder）集中於此，避免重複實作。
+
+**模組入口 re-export 規則**：
+- 禁止 re-export 是通用規則，避免中間檔案轉導出
+- **例外**：`index.ts` 的 barrel export 允許，因為是為了模組化方便
+- `core/<module>/index.ts` 作為該命令的 public API，可 re-export `shared/` 層實作
+
+```
+CLI: find-references → @core/find-references/index.ts → @core/shared/symbol-finder.ts
+                       ↑ 模組入口（public API）         ↑ 實際實作（internal）
+```
+
+### Core 依賴架構圖（三層）
+
+```
+┌────────────────────────────────────────────┐
+│  第三層：複合模組（依賴其他功能模組）        │
+│  ┌─────────┐                               │
+│  │ impact  │ ← 依賴 cycles + shared        │
+│  └────┬────┘                               │
+└───────┼────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────┐
+│  第二層：功能模組（僅依賴 shared）           │
+│  cycles, find-references, call-hierarchy,  │
+│  snapshot, rename, deadcode, move,         │
+│  move-member, change-signature             │
+└───────┬────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────┐
+│  第一層：shared/（三個獨立模組，無互依賴）   │
+│  ┌──────────┐ ┌─────────┐ ┌─────────────┐ │
+│  │ indexing │ │ dep-gph │ │symbol-finder│ │
+│  └──────────┘ └─────────┘ └─────────────┘ │
+│  （dep-gph = dependency-graph/）           │
+│        ↓           ↓            ↓         │
+│     @infrastructure + @shared/types       │
+└────────────────────────────────────────────┘
+```
+
+**依賴規則**：
+- 第三層 → 第二層 + 第一層（`impact/` → `cycles/` + `shared/`）
+- 第二層 → 第一層（功能模組 → `shared/`）
+- 第一層內部無互依賴，各自依賴 `@infrastructure`
 
 ## 測試規範
 

@@ -24,8 +24,8 @@ import {
   calculateProgress
 } from './types.js';
 
-import { FileIndex } from '@core/indexing/file-index.js';
-import { SymbolIndex } from '@core/indexing/symbol-index.js';
+import { FileIndex } from './file-index.js';
+import { SymbolIndex } from './symbol-index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';

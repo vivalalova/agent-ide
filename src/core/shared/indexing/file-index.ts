@@ -11,7 +11,7 @@ import type {
   IndexStats,
   IndexUpdateEvent
 } from './types.js';
-import { UpdateOperation } from '@core/indexing/types.js';
+import { UpdateOperation } from './types.js';
 
 /**
  * 檔案索引類別

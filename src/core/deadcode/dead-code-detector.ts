@@ -4,7 +4,7 @@
  */
 
 import type { Symbol, SymbolType } from '@shared/types/symbol.js';
-import type { IndexEngine } from '@core/indexing/index.js';
+import type { IndexEngine } from '@core/shared/indexing/index.js';
 import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
@@ -53,17 +53,21 @@ export class DeadCodeDetector {
       // 建立 SymbolFinder
       const symbolFinder = createSymbolFinder(this.parserRegistry, this.fileSystem);
 
-      // 檢測每個符號的引用
+      // 過濾要檢測的符號（排除不需要的）
+      const symbolsToCheck = targetSymbols.filter(s => !this.shouldExclude(s));
+
+      // 收集所有符號名稱
+      const symbolNames = new Set(symbolsToCheck.map(s => s.name));
+
+      // 批次查找所有符號的引用
+      // 優化：M 次檔案讀取（一次遍歷 M 檔查找 N 符號），而非 N×M 次（N 符號各遍歷 M 檔）
+      const allReferences = await symbolFinder.findReferencesMultiple(symbolNames, filePaths);
+
+      // 檢測每個符號
       const deadItems: DeadCodeItem[] = [];
 
-      for (const symbol of targetSymbols) {
-        // 排除模式檢查
-        if (this.shouldExclude(symbol)) {
-          continue;
-        }
-
-        // 查找引用
-        const references = await symbolFinder.findReferences(symbol.name, filePaths);
+      for (const symbol of symbolsToCheck) {
+        const references = allReferences.get(symbol.name) ?? [];
 
         // 分析引用：過濾掉定義位置本身
         const symbolLine = symbol.location.range.start.line;
@@ -149,8 +153,7 @@ export class DeadCodeDetector {
         allSymbols.push(...symbols);
       } catch (error) {
         skippedFiles++;
-        // 非測試環境記錄警告
-        if (process.env.NODE_ENV !== 'test') {
+        if (this.options.verbose) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
         }
