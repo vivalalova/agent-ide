@@ -252,7 +252,10 @@ export class DependencyGraph {
 
     // Kahn's 算法
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
       result.push(current);
 
       const dependencies = this.getDependencies(current);
@@ -332,7 +335,10 @@ export class DependencyGraph {
     visited.add(startNode);
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
 
       // 檢查所有相鄰節點（雙向）
       const dependencies = this.getDependencies(current);

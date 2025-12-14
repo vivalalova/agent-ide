@@ -202,7 +202,11 @@ export class CycleDetector {
     const visited = new Set<string>();
 
     while (queue.length > 0) {
-      const { node, path } = queue.shift()!;
+      const item = queue.shift();
+      if (!item) {
+        break;
+      }
+      const { node, path } = item;
 
       if (visited.has(node) && node !== startNode) {
         continue;
