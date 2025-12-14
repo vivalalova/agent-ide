@@ -78,6 +78,10 @@ const DEFAULT_EXCLUDE_PATTERNS: readonly string[] = ['main'];
 
 /**
  * 預設選項
+ *
+ * 信心度門檻設計考量：
+ * - 檢測用 0.8：較寬鬆，報告更多潛在問題供開發者檢視判斷
+ * - 刪除用 0.9（見 DEFAULT_REMOVAL_OPTIONS）：較嚴格，避免誤刪正常程式碼
  */
 export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
   includeExports: false,
@@ -219,6 +223,10 @@ const DEFAULT_EXCLUDE_SYMBOLS: readonly string[] = ['main'];
 
 /**
  * 刪除選項預設值
+ *
+ * 信心度門檻設計考量：
+ * - 刪除用 0.9：較嚴格，避免誤刪正常程式碼
+ * - 檢測用 0.8（見 DEFAULT_DEAD_CODE_OPTIONS）：較寬鬆，報告更多潛在問題供開發者檢視判斷
  */
 export const DEFAULT_REMOVAL_OPTIONS: Required<DeadCodeRemovalOptions> = {
   minConfidence: 0.9,

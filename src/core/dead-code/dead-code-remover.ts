@@ -343,12 +343,10 @@ export class DeadCodeRemover {
     const keepDefault = defaultSymbol && usedSymbols.includes(defaultSymbol.name);
 
     // 過濾出需要保留的 named symbols，並保留別名資訊
-    const keptNamedSymbols = usedSymbols
-      .filter(name => namedSymbols.some(s => s.name === name))
-      .map(name => {
-        const symbol = namedSymbols.find(s => s.name === name);
-        return symbol?.alias ? `${name} as ${symbol.alias}` : name;
-      });
+    // 同時檢查 name 和 alias，因為 usedSymbols 可能包含別名
+    const keptNamedSymbols = namedSymbols
+      .filter(s => usedSymbols.includes(s.name) || (s.alias && usedSymbols.includes(s.alias)))
+      .map(s => s.alias ? `${s.name} as ${s.alias}` : s.name);
 
     // 判斷是否需要 type 關鍵字（僅對純 named import）
     const isTypeImport = stmt.statement.match(/import\s+type\s*\{/);
