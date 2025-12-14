@@ -325,8 +325,8 @@ export class ChangeSignatureService {
 
   /**
    * 生成呼叫點更新
-   * 效能優化：使用 Map 快取檔案內容，避免同一檔案被重複讀取
-   * 複雜度從 O(N) 降到 O(M)，M = 不重複檔案數
+   * 效能優化：按檔案分組後批次讀取，避免重複讀取同一檔案
+   * 檔案讀取次數從 O(N) 降到 O(M)，N = callSites 數量，M = 不重複檔案數
    */
   private async generateCallSiteUpdates(
     callSites: readonly CallSite[],

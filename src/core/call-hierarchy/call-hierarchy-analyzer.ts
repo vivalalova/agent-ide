@@ -448,24 +448,28 @@ export class CallHierarchyAnalyzer {
       return results;
     }
 
-    // 按檔案分組
-    const fileGroups = new Map<string, number[]>();
+    // 按檔案分組（使用 Set 避免重複行號）
+    const fileGroups = new Map<string, Set<number>>();
     for (const query of queries) {
       const existing = fileGroups.get(query.filePath);
       if (existing) {
-        existing.push(query.line);
+        existing.add(query.line);
       } else {
-        fileGroups.set(query.filePath, [query.line]);
+        fileGroups.set(query.filePath, new Set([query.line]));
       }
     }
 
     // 批次處理每個檔案
     await Promise.all(
-      Array.from(fileGroups.entries()).map(async ([filePath, lines]) => {
-        const fileResults = await this.findEnclosingFunctions(filePath, lines);
-        for (const [line, result] of fileResults) {
-          // 使用 filePath:line 作為唯一鍵
-          results.set(`${filePath}:${line}`, result);
+      Array.from(fileGroups.entries()).map(async ([filePath, linesSet]) => {
+        try {
+          const fileResults = await this.findEnclosingFunctions(filePath, [...linesSet]);
+          for (const [line, result] of fileResults) {
+            // 使用 filePath:line 作為唯一鍵
+            results.set(`${filePath}:${line}`, result);
+          }
+        } catch {
+          // 個別檔案處理失敗不影響其他檔案
         }
       })
     );
@@ -521,29 +525,33 @@ export class CallHierarchyAnalyzer {
       return results;
     }
 
-    // 按檔案分組
-    const fileGroups = new Map<string, number[]>();
+    // 按檔案分組（使用 Set 避免重複行號）
+    const fileGroups = new Map<string, Set<number>>();
     for (const query of queries) {
       const existing = fileGroups.get(query.filePath);
       if (existing) {
-        existing.push(query.line);
+        existing.add(query.line);
       } else {
-        fileGroups.set(query.filePath, [query.line]);
+        fileGroups.set(query.filePath, new Set([query.line]));
       }
     }
 
     // 批次處理每個檔案
     await Promise.all(
-      Array.from(fileGroups.entries()).map(async ([filePath, lines]) => {
-        const content = await this.readFile(filePath);
-        if (!content) {
-          return;
-        }
+      Array.from(fileGroups.entries()).map(async ([filePath, linesSet]) => {
+        try {
+          const content = await this.readFile(filePath);
+          if (!content) {
+            return;
+          }
 
-        const contentLines = content.split('\n');
-        for (const line of lines) {
-          const lineContent = contentLines[line - 1]?.trim() || '';
-          results.set(`${filePath}:${line}`, lineContent);
+          const contentLines = content.split('\n');
+          for (const line of linesSet) {
+            const lineContent = contentLines[line - 1]?.trim() || '';
+            results.set(`${filePath}:${line}`, lineContent);
+          }
+        } catch {
+          // 個別檔案處理失敗不影響其他檔案
         }
       })
     );
