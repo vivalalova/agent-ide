@@ -38,16 +38,21 @@ pnpm test:e2e -- --run -t "應該分析專案"
 
 ```
 src/
-├── core/                 # 核心模組（扁平化結構）
-│   ├── dependency/       # 依賴圖、循環檢測（Tarjan）、影響分析（BFS）
-│   ├── indexing/         # 1000檔/秒、查詢<10ms
+├── core/                 # 核心模組（對應 CLI 命令）
+│   ├── shared/           # 共享層
+│   │   ├── indexing/     # 索引引擎（1000檔/秒、查詢<10ms）
+│   │   ├── dependency-graph/  # 依賴圖資料結構
+│   │   └── symbol-finder.ts   # 符號搜尋器
+│   ├── cycles/           # 循環依賴檢測（Tarjan）
+│   ├── impact/           # 影響分析（BFS）
+│   ├── find-references/  # 符號引用搜尋
+│   ├── call-hierarchy/   # 呼叫層次分析
 │   ├── snapshot/         # 模組快照（AI 理解用，~91% token 節省）
-│   ├── shared/           # 共享元件（CodeEditor, SymbolFinder）
 │   ├── rename/           # 符號重命名+引用更新
 │   ├── change-signature/ # 參數重構+呼叫點更新
-│   ├── move-file/        # 檔案移動+import更新
+│   ├── move/             # 檔案移動+import更新
 │   ├── move-member/      # 成員移動（方法/類別/函式）
-│   ├── dead-code/        # Dead code 檢測
+│   ├── deadcode/         # Dead code 檢測與移除
 │   └── patterns/         # 設計模式
 ├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
 ├── plugins/              # TS（Compiler API）、JS（Babel）
