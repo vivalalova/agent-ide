@@ -253,70 +253,67 @@ export class SnapshotCacheManager {
         const removed: DeltaSymbol[] = [];
 
         // 比對 API (classes) - 巢狀結構用 JSON.stringify 作為 signature
-        this.compareRecords(
-            base.api,
-            current.api,
+        this.compareRecords({
+            base: base.api,
+            current: current.api,
             moduleName,
-            'class',
+            type: 'class',
             added,
             modified,
             removed,
-            (value) => JSON.stringify(value),
-            (baseVal, currentVal) => this.computeChecksum(baseVal) !== this.computeChecksum(currentVal)
-        );
+            getSignature: (value) => JSON.stringify(value),
+            hasChanged: (baseVal, currentVal) => this.computeChecksum(baseVal) !== this.computeChecksum(currentVal)
+        });
 
         // 比對 factories - 簡單結構直接用值作為 signature
-        this.compareRecords(
-            base.factories,
-            current.factories,
+        this.compareRecords({
+            base: base.factories,
+            current: current.factories,
             moduleName,
-            'factory',
+            type: 'factory',
             added,
             modified,
             removed,
-            (value) => value as string,
-            (baseVal, currentVal) => baseVal !== currentVal
-        );
+            getSignature: (value) => value as string,
+            hasChanged: (baseVal, currentVal) => baseVal !== currentVal
+        });
 
         // 比對 types - 簡單結構直接用值作為 signature
-        this.compareRecords(
-            base.types,
-            current.types,
+        this.compareRecords({
+            base: base.types,
+            current: current.types,
             moduleName,
-            'type',
+            type: 'type',
             added,
             modified,
             removed,
-            (value) => value as string,
-            (baseVal, currentVal) => baseVal !== currentVal
-        );
+            getSignature: (value) => value as string,
+            hasChanged: (baseVal, currentVal) => baseVal !== currentVal
+        });
 
         return { added, modified, removed };
     }
 
     /**
      * 比對記錄並產生差異符號
-     * @param base 基準記錄
-     * @param current 當前記錄
-     * @param moduleName 模組名稱
-     * @param type 符號類型
-     * @param added 新增符號陣列（mutable）
-     * @param modified 修改符號陣列（mutable）
-     * @param removed 刪除符號陣列（mutable）
-     * @param getSignature 取得 signature 的函數
-     * @param hasChanged 判斷是否變更的函數
      */
-    private compareRecords<T>(
-        base: Record<string, T>,
-        current: Record<string, T>,
-        moduleName: string,
-        type: DeltaSymbol['type'],
-        added: DeltaSymbol[],
-        modified: DeltaSymbol[],
-        removed: DeltaSymbol[],
-        getSignature: (value: T) => string,
-        hasChanged: (baseVal: T, currentVal: T) => boolean
-    ): void {
+    private compareRecords<T>(options: {
+        base: Record<string, T>;
+        current: Record<string, T>;
+        moduleName: string;
+        type: DeltaSymbol['type'];
+        /** 新增符號陣列（mutable） */
+        added: DeltaSymbol[];
+        /** 修改符號陣列（mutable） */
+        modified: DeltaSymbol[];
+        /** 刪除符號陣列（mutable） */
+        removed: DeltaSymbol[];
+        /** 取得 signature 的函數 */
+        getSignature: (value: T) => string;
+        /** 判斷是否變更的函數 */
+        hasChanged: (baseVal: T, currentVal: T) => boolean;
+    }): void {
+        const { base, current, moduleName, type, added, modified, removed, getSignature, hasChanged } = options;
         const baseKeys = new Set(Object.keys(base));
         const currentKeys = new Set(Object.keys(current));
 
