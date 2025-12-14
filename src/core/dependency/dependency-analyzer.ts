@@ -36,6 +36,8 @@ export class DependencyAnalyzer {
   private cache: Map<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
   private fileSystem: IFileSystem;
+  /** 路徑解析快取：key 為 `${importPath}:${fromFile}`，value 為解析結果或 null */
+  private readonly resolvedPaths = new Map<string, PathResolutionResult | null>();
 
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
@@ -308,6 +310,22 @@ export class DependencyAnalyzer {
   }
 
   /**
+   * 清除路徑解析快取
+   */
+  clearPathCache(): void {
+    this.resolvedPaths.clear();
+  }
+
+  /**
+   * 清除所有快取（包含檔案快取和路徑解析快取）
+   */
+  clearAllCache(): void {
+    this.cache.clear();
+    this.resolvedPaths.clear();
+    this.cycleDetector.clearCache();
+  }
+
+  /**
    * 解析路徑
    * @param importPath 匯入路徑
    * @param fromFile 來源檔案
@@ -317,17 +335,24 @@ export class DependencyAnalyzer {
     importPath: string,
     fromFile: string
   ): Promise<PathResolutionResult | null> {
+    // 檢查快取
+    const cacheKey = `${importPath}:${fromFile}`;
+    if (this.resolvedPaths.has(cacheKey)) {
+      return this.resolvedPaths.get(cacheKey) ?? null;
+    }
+
     const isRelative = importPath.startsWith('.') || importPath.startsWith('/');
 
     if (!isRelative && !this.options.includeNodeModules) {
+      this.resolvedPaths.set(cacheKey, null);
       return null; // 忽略 node_modules
     }
 
-    let resolvedPath: string;
+    let result: PathResolutionResult | null = null;
 
     if (isRelative) {
       const dir = path.dirname(fromFile);
-      resolvedPath = path.resolve(dir, importPath);
+      const resolvedPath = path.resolve(dir, importPath);
 
       // 嘗試常見的副檔名
       const extensions = ['.ts', '.tsx', '.js', '.jsx'];
@@ -347,7 +372,7 @@ export class DependencyAnalyzer {
         }
       }
 
-      return {
+      result = {
         resolvedPath: finalPath,
         isRelative: true,
         exists,
@@ -355,13 +380,17 @@ export class DependencyAnalyzer {
       };
     } else {
       // 非相對路徑（例如 npm 套件）
-      return {
+      result = {
         resolvedPath: importPath,
         isRelative: false,
         exists: true, // 假設存在
         extension: ''
       };
     }
+
+    // 儲存到快取
+    this.resolvedPaths.set(cacheKey, result);
+    return result;
   }
 
   /**

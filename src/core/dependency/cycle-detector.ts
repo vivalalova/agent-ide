@@ -24,6 +24,44 @@ interface TarjanNode {
  * 循環依賴檢測器類別
  */
 export class CycleDetector {
+  /** 快取的循環依賴結果 */
+  private cachedCycles: CircularDependency[] | null = null;
+  /** 圖的 hash 值，用於判斷圖是否改變 */
+  private graphHash: string = '';
+  /** 快取的檢測選項 hash */
+  private optionsHash: string = '';
+
+  /**
+   * 計算依賴圖的 hash 值
+   * @param graph 依賴圖
+   * @returns hash 字串
+   */
+  private computeGraphHash(graph: DependencyGraph): string {
+    const nodes = graph.getAllNodes().sort();
+    const edges = graph.getAllEdges()
+      .map(e => `${e.from}:${e.to}`)
+      .sort();
+    return `${nodes.join(',')}|${edges.join(',')}`;
+  }
+
+  /**
+   * 計算選項的 hash 值
+   * @param options 檢測選項
+   * @returns hash 字串
+   */
+  private computeOptionsHash(options: CycleDetectionOptions): string {
+    return `${options.maxCycleLength}:${options.reportAllCycles}:${options.ignoreSelfLoops}`;
+  }
+
+  /**
+   * 清除快取
+   */
+  clearCache(): void {
+    this.cachedCycles = null;
+    this.graphHash = '';
+    this.optionsHash = '';
+  }
+
   /**
    * 檢測圖中的所有循環依賴
    * @param graph 依賴圖
@@ -38,6 +76,18 @@ export class CycleDetector {
 
     if (opts.maxCycleLength <= 0) {
       throw new Error('最大循環長度必須大於 0');
+    }
+
+    // 計算 hash 並檢查快取
+    const newGraphHash = this.computeGraphHash(graph);
+    const newOptionsHash = this.computeOptionsHash(opts);
+
+    if (
+      newGraphHash === this.graphHash
+      && newOptionsHash === this.optionsHash
+      && this.cachedCycles !== null
+    ) {
+      return this.cachedCycles;
     }
 
     const stronglyConnectedComponents = this.findStronglyConnectedComponents(graph);
@@ -76,6 +126,11 @@ export class CycleDetector {
         }
       }
     }
+
+    // 更新快取
+    this.cachedCycles = cycles;
+    this.graphHash = newGraphHash;
+    this.optionsHash = newOptionsHash;
 
     return cycles;
   }
