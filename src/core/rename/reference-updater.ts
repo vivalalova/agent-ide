@@ -1,7 +1,7 @@
 /**
  * 引用更新器實作
  * 負責更新程式碼中的符號引用
- * 使用 Parser 的 AST 分析而非文字匹配
+ * 使用 SymbolFinder 進行精確的 AST 分析
  */
 
 import {
@@ -11,25 +11,29 @@ import {
   SymbolReference,
   RenameOperation
 } from './types.js';
-import { Position, Range, Location } from '@shared/types/core.js';
+import { Range } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder.js';
 
 /**
  * 引用更新器類別
- * 使用 Parser 的 findReferences 進行精確的 AST 分析
+ * 使用 SymbolFinder 進行精確的 AST 分析
  */
 export class ReferenceUpdater {
   private readonly fileCache = new Map<string, string>();
-  private readonly parserRegistry?: ParserRegistry;
   private readonly fileSystem: IFileSystem;
+  private readonly symbolFinder?: SymbolFinder;
 
   constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
-    this.parserRegistry = parserRegistry;
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
+
+    if (parserRegistry) {
+      this.symbolFinder = createSymbolFinder(parserRegistry, this.fileSystem);
+    }
   }
 
   /**
@@ -111,7 +115,7 @@ export class ReferenceUpdater {
 
   /**
    * 尋找檔案中的符號引用
-   * 使用 Parser 的 AST 分析，精確過濾字串和註解
+   * 委託 SymbolFinder 進行 AST 分析
    */
   async findSymbolReferences(
     filePath: string,
@@ -122,65 +126,50 @@ export class ReferenceUpdater {
       return [];
     }
 
-    // 如果有 ParserRegistry，使用 Parser 的 AST 分析
-    if (this.parserRegistry) {
+    // 使用 SymbolFinder 查找引用
+    if (this.symbolFinder) {
       try {
-        // 根據副檔名獲取 parser
-        const extension = this.getFileExtension(filePath);
-        const parser = this.parserRegistry.getParser(extension);
+        const refs = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
 
-        if (parser) {
-          const content = await this.getFileContent(filePath);
-          if (!content) {return [];}
-
-          // 解析 AST
-          const ast = await parser.parse(content, filePath);
-
-          // 建立一個虛擬符號用於查找引用
-          // 注意：我們不需要符號定義在這個檔案中，只需要查找引用
-          const dummySymbol: Symbol = {
-            name: symbolName,
-            type: 'class' as any, // 型別不重要，只是為了滿足介面
-            location: {
-              filePath,
-              range: {
-                start: { line: 0, column: 0, offset: 0 },
-                end: { line: 0, column: 0, offset: 0 }
-              }
-            },
-            scope: undefined,
-            modifiers: []
-          };
-
-          // 使用 Parser 的 findReferences 查找所有引用
-          const references = await parser.findReferences(ast, dummySymbol);
-
-          // 轉換為 SymbolReference 格式
-          return references.map((ref: any) => ({
-            symbolName,
-            range: ref.location.range,
-            type: ref.type === 'definition' ? 'definition' as const : 'usage' as const
-          }));
-        }
+        // 轉換 SymbolFinder 的 SymbolReference (@core/shared/symbol-finder)
+        // 為本地型別 SymbolReference (@core/rename/types)
+        // 兩者差異：
+        // - SymbolFinder 版本：{ symbolName, location: Location, type: SymbolReferenceType }
+        // - 本地版本：{ symbolName, range: Range, type: 'definition' | 'usage' | 'comment' }
+        // filePath 資訊已知（來自方法參數），故只需映射 range 和 type
+        return refs.map(ref => ({
+          symbolName,
+          range: ref.location.range,
+          type: this.mapReferenceType(ref.type)
+        }));
       } catch (error) {
-        // Parser 失敗時降級到文字匹配
-        console.warn(`Parser failed for ${filePath}, falling back to text matching:`, error);
+        // SymbolFinder 失敗時降級到文字匹配
+        console.warn(`SymbolFinder failed for ${filePath}, falling back to text matching:`, error);
       }
     }
 
-    // 降級：使用舊的文字匹配方法（保留以確保向後相容）
+    // 降級：使用文字匹配方法
     return this.findSymbolReferencesByText(filePath, symbolName);
   }
 
   /**
-   * 取得檔案副檔名
+   * 映射 SymbolFinder 的引用類型到本地類型
+   *
+   * 注意：'comment' 類型只會從降級方法 findSymbolReferencesByText 產生，
+   * 不會經過此映射函式。SymbolReferenceType enum 目前沒有 Comment 類型。
    */
-  private getFileExtension(filePath: string): string {
-    if (!filePath || typeof filePath !== 'string') {
-      return '';
+  private mapReferenceType(type: SymbolReferenceType): 'definition' | 'usage' | 'comment' {
+    switch (type) {
+      case SymbolReferenceType.Definition:
+        return 'definition';
+      case SymbolReferenceType.Usage:
+      case SymbolReferenceType.Import:
+      case SymbolReferenceType.Export:
+        return 'usage';
+      default:
+        // 未來新增的 enum 值降級為 usage
+        return 'usage';
     }
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
 
   /**
