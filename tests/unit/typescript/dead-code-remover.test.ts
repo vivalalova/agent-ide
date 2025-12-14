@@ -4,10 +4,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DeadCodeRemover, createDeadCodeRemover } from '@core/dead-code/dead-code-remover.js';
+import { DeadCodeRemover, createDeadCodeRemover } from '@core/deadcode/dead-code-remover.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
-import type { DeadCodeItem, DeadCodeRemovalOptions } from '@core/dead-code/types.js';
+import type { DeadCodeItem, DeadCodeRemovalOptions } from '@core/deadcode/types.js';
 import { SymbolType } from '@shared/types/symbol.js';
 
 // ============================================================================

@@ -9,7 +9,7 @@ import {
   CallHierarchyAnalyzer,
   createCallHierarchyAnalyzer,
   type CallHierarchyOptions
-} from '@core/shared/call-hierarchy-analyzer.js';
+} from '@core/call-hierarchy/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';

@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CycleDetector } from '@core/dependency/cycle-detector.js';
-import { DependencyGraph } from '@core/dependency/dependency-graph.js';
+import { CycleDetector } from '@core/cycles/index.js';
+import { DependencyGraph } from '@core/shared/dependency-graph/index.js';
 
 // ============================================================================
 // CycleDetector Tests

@@ -1,10 +1,10 @@
 /**
- * DependencyAnalyzer 測試
+ * ImpactAnalyzer 測試
  * 測試依賴關係分析器的所有功能
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
+import { ImpactAnalyzer } from '@core/impact/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { DirectoryEntry, FileStats } from '@infrastructure/storage/types.js';
 
@@ -118,21 +118,21 @@ function createMockFileSystem(files: Record<string, string> = {}): IFileSystem {
 }
 
 // ============================================================================
-// DependencyAnalyzer Tests
+// ImpactAnalyzer Tests
 // ============================================================================
 
-describe('DependencyAnalyzer', () => {
+describe('ImpactAnalyzer', () => {
   describe('constructor', () => {
     it('應該使用預設選項建立分析器', () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       expect(analyzer).toBeDefined();
     });
 
     it('應該使用自訂選項建立分析器', () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs, {
+      const analyzer = new ImpactAnalyzer(fs, {
         includeNodeModules: true,
         maxDepth: 50,
         concurrency: 8,
@@ -149,7 +149,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeFile('/src/a.ts');
 
@@ -163,7 +163,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.js': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeFile('/src/a.js');
 
@@ -172,7 +172,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該拋出錯誤當檔案路徑為空', async () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await expect(analyzer.analyzeFile('')).rejects.toThrow('檔案路徑不能為空');
       await expect(analyzer.analyzeFile('   ')).rejects.toThrow('檔案路徑不能為空');
@@ -180,7 +180,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該拋出錯誤當檔案不存在', async () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await expect(analyzer.analyzeFile('/nonexistent.ts')).rejects.toThrow();
     });
@@ -191,7 +191,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/a.ts');
@@ -206,7 +206,7 @@ describe('DependencyAnalyzer', () => {
       };
       const fs = createMockFileSystem(files);
 
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
 
@@ -234,7 +234,7 @@ describe('DependencyAnalyzer', () => {
         '/src/a.py': 'import os\nprint("hello")',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeFile('/src/a.py');
 
@@ -255,7 +255,7 @@ describe('DependencyAnalyzer', () => {
         '/src/e.ts': 'console.log("side effect");',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeFile('/src/a.ts');
 
@@ -271,7 +271,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/c.ts': 'import { foo } from "./b";',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project/src');
 
@@ -285,7 +285,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/a.ts': 'import { foo } from "./b";',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project/src/a.ts');
 
@@ -294,7 +294,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該回傳空結果當路徑不存在', async () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/nonexistent');
 
@@ -309,7 +309,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
 
@@ -323,7 +323,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/b.ts');
@@ -341,7 +341,7 @@ describe('DependencyAnalyzer', () => {
         '/src/c.ts': 'export const bar = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/b.ts');
@@ -357,7 +357,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
 
@@ -374,7 +374,7 @@ describe('DependencyAnalyzer', () => {
         '/src/c.ts': 'import { foo } from "./b";',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/b.ts');
@@ -392,7 +392,7 @@ describe('DependencyAnalyzer', () => {
         '/src/b.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/b.ts');
@@ -415,7 +415,7 @@ describe('DependencyAnalyzer', () => {
         '/tests/a.spec.ts': 'import { foo } from "../src/a"; test("foo", () => {});',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/a.test.ts');
@@ -434,7 +434,7 @@ describe('DependencyAnalyzer', () => {
         '/src/c.ts': 'export const bar = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
       await analyzer.analyzeFile('/src/b.ts');
@@ -452,7 +452,7 @@ describe('DependencyAnalyzer', () => {
 
     it('應該回傳空統計對空圖', () => {
       const fs = createMockFileSystem();
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const stats = analyzer.getStats();
 
@@ -468,7 +468,7 @@ describe('DependencyAnalyzer', () => {
         '/project/node_modules/lib/index.ts': 'export const foo = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project');
 
@@ -484,7 +484,7 @@ describe('DependencyAnalyzer', () => {
         '/project/.git/config': 'git config',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project');
 
@@ -504,7 +504,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/d.json': '{"key": "value"}',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project/src');
 
@@ -529,7 +529,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/e.ts': 'export const e = 5;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project/src');
 
@@ -542,7 +542,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/b.ts': 'export const b = 2;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs, { concurrency: 1 });
+      const analyzer = new ImpactAnalyzer(fs, { concurrency: 1 });
 
       const result = await analyzer.analyzeProject('/project/src');
 
@@ -558,7 +558,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/deep/deeper/c.ts': 'export const c = 3;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs, { maxDepth: 1 });
+      const analyzer = new ImpactAnalyzer(fs, { maxDepth: 1 });
 
       const result = await analyzer.analyzeProject('/project/src');
 
@@ -572,7 +572,7 @@ describe('DependencyAnalyzer', () => {
         '/src/a.ts': 'export const a = 1;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       await analyzer.analyzeFile('/src/a.ts');
 
@@ -594,7 +594,7 @@ describe('DependencyAnalyzer', () => {
         '/src/a.ts': 'this is not valid import { syntax',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       // 應該不拋出錯誤，而是回傳空依賴
       const result = await analyzer.analyzeFile('/src/a.ts');
@@ -607,7 +607,7 @@ describe('DependencyAnalyzer', () => {
         new Error('Permission denied')
       );
 
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
       const result = await analyzer.analyzeProject('/project');
 
       expect(result.fileDependencies).toEqual([]);
@@ -622,7 +622,7 @@ describe('DependencyAnalyzer', () => {
         '/project/src/sub/deep/c.ts': 'export const c = 3;',
       };
       const fs = createMockFileSystem(files);
-      const analyzer = new DependencyAnalyzer(fs);
+      const analyzer = new ImpactAnalyzer(fs);
 
       const result = await analyzer.analyzeProject('/project');
 

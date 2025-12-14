@@ -7,13 +7,13 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   DeadCodeDetector,
   createDeadCodeDetector,
-} from '@core/dead-code/dead-code-detector.js';
+} from '@core/deadcode/dead-code-detector.js';
 import {
   DEFAULT_DEAD_CODE_OPTIONS,
   type DeadCodeDetectorOptions,
-} from '@core/dead-code/types.js';
+} from '@core/deadcode/types.js';
 import { SymbolType } from '@shared/types/symbol.js';
-import type { IndexEngine } from '@core/indexing/index.js';
+import type { IndexEngine } from '@core/shared/indexing/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Symbol } from '@shared/types/symbol.js';
