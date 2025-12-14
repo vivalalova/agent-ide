@@ -153,5 +153,125 @@ describe('SnapshotCacheManager', () => {
             expect(delta.modified.symbols).toHaveLength(0);
             expect(delta.removed.symbols).toHaveLength(0);
         });
+
+        describe('factories 比對', () => {
+            const baseWithFactory: ModuleSnapshot = {
+                module: 'test',
+                api: {},
+                factories: { 'createUser': '(name: string) -> User' },
+                types: {},
+                private: {}
+            };
+
+            it('應該偵測新增的 factory', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithFactory,
+                    factories: {
+                        'createUser': '(name: string) -> User',
+                        'createAdmin': '(name: string) -> Admin'
+                    }
+                };
+
+                const delta = cacheManager.computeDelta(baseWithFactory, current);
+
+                expect(delta.added.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'createAdmin',
+                    type: 'factory',
+                    signature: '(name: string) -> Admin'
+                });
+            });
+
+            it('應該偵測刪除的 factory', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithFactory,
+                    factories: {}
+                };
+
+                const delta = cacheManager.computeDelta(baseWithFactory, current);
+
+                expect(delta.removed.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'createUser',
+                    type: 'factory'
+                });
+            });
+
+            it('應該偵測修改的 factory', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithFactory,
+                    factories: { 'createUser': '(name: string, age: number) -> User' }
+                };
+
+                const delta = cacheManager.computeDelta(baseWithFactory, current);
+
+                expect(delta.modified.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'createUser',
+                    type: 'factory',
+                    signature: '(name: string, age: number) -> User'
+                });
+            });
+        });
+
+        describe('types 比對', () => {
+            const baseWithType: ModuleSnapshot = {
+                module: 'test',
+                api: {},
+                factories: {},
+                types: { 'UserType': 'interface { name: string }' },
+                private: {}
+            };
+
+            it('應該偵測新增的 type', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithType,
+                    types: {
+                        'UserType': 'interface { name: string }',
+                        'AdminType': 'interface { role: string }'
+                    }
+                };
+
+                const delta = cacheManager.computeDelta(baseWithType, current);
+
+                expect(delta.added.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'AdminType',
+                    type: 'type',
+                    signature: 'interface { role: string }'
+                });
+            });
+
+            it('應該偵測刪除的 type', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithType,
+                    types: {}
+                };
+
+                const delta = cacheManager.computeDelta(baseWithType, current);
+
+                expect(delta.removed.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'UserType',
+                    type: 'type'
+                });
+            });
+
+            it('應該偵測修改的 type', () => {
+                const current: ModuleSnapshot = {
+                    ...baseWithType,
+                    types: { 'UserType': 'interface { name: string; age: number }' }
+                };
+
+                const delta = cacheManager.computeDelta(baseWithType, current);
+
+                expect(delta.modified.symbols).toContainEqual({
+                    module: 'test',
+                    name: 'UserType',
+                    type: 'type',
+                    signature: 'interface { name: string; age: number }'
+                });
+            });
+        });
     });
 });
