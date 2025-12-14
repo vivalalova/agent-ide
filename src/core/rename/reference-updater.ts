@@ -158,6 +158,9 @@ export class ReferenceUpdater {
       case SymbolReferenceType.Import:
       case SymbolReferenceType.Export:
         return 'usage';
+      default:
+        // 未來新增的 enum 值降級為 usage
+        return 'usage';
     }
   }
 
