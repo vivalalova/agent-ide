@@ -1,3 +1,7 @@
+## <small>0.7.2 (2025-12-14)</small>
+
+* refactor: [core 目錄重構] CLI 命令對應架構 (#26) ([022115c](https://github.com/vivalalova/agent-ide/commit/022115c)), closes [#26](https://github.com/vivalalova/agent-ide/issues/26)
+
 ## <small>0.7.1 (2025-12-14)</small>
 
 * refactor: ReferenceUpdater 使用 SymbolFinder 統一引用查找邏輯 (#25) ([2676521](https://github.com/vivalalova/agent-ide/commit/2676521)), closes [#25](https://github.com/vivalalova/agent-ide/issues/25)
