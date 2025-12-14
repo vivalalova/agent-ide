@@ -1,9 +1,9 @@
-# Dead Code 檢測 (deadcode)
+# Dead Code 檢測與刪除 (deadcode)
 
 > **執行方式**：以下 `agent-ide` 指 `node ${PLUGIN_ROOT}/bin/agent-ide.js`
 > （PLUGIN_ROOT = 此 skill 所在 repo 根目錄，往上三層）
 
-語義級 Dead Code 檢測，找出專案中未使用的符號（函式、變數、類別等）。
+語義級 Dead Code 檢測與刪除，找出專案中未使用的符號（函式、變數、類別等）並自動清理。
 
 ## 為什麼使用 deadcode？
 
@@ -11,16 +11,26 @@
 |------|------|
 | **語義精確** | 分析符號引用關係，不是簡單文字搜尋 |
 | **信心分數** | 每個結果附帶信心分數，避免誤判 |
+| **自動刪除** | 預設刪除 dead code 並清理 import |
 | **結構化輸出** | JSON 格式，AI 可直接解析處理 |
 
 ## 用法
 
 ```bash
-# 檢測 dead code
-agent-ide deadcode --path . --format json
+# 刪除 dead code（預設行為）
+agent-ide deadcode --path .
 
-# 人類可讀格式
-agent-ide deadcode --path . --format summary
+# 預覽刪除（不實際執行）
+agent-ide deadcode --path . --dry-run
+
+# JSON 格式輸出
+agent-ide deadcode --path . --dry-run --format json
+
+# 設定信心度門檻（只刪除高信心度項目）
+agent-ide deadcode --path . --min-confidence 0.95
+
+# 排除特定符號
+agent-ide deadcode --path . --exclude main App
 
 # 包含 export 的符號（預設排除）
 agent-ide deadcode --path . --include-exports
@@ -31,7 +41,10 @@ agent-ide deadcode --path . --include-exports
 | 參數 | 說明 |
 |------|------|
 | `--path` | 專案路徑（預設 `.`） |
-| `--format` | 輸出格式：`json`、`summary` |
+| `--format` | 輸出格式：`json`、`summary`、`diff`（預設） |
+| `--dry-run` | 預覽變更而不執行 |
+| `--min-confidence` | 最小信心度門檻（0-1，預設 0.9） |
+| `--exclude` | 排除的符號名稱（可多個） |
 | `--include-exports` | 包含 export 的符號（預設排除） |
 
 ## 輸出格式
@@ -40,58 +53,39 @@ agent-ide deadcode --path . --include-exports
 
 ```json
 {
-  "command": "analyze",
-  "analyzeType": "dead-code",
+  "command": "deadcode-removal",
   "success": true,
-  "items": [
+  "files": [
     {
-      "name": "unusedFunction",
-      "type": "function",
-      "file": "src/utils.ts",
-      "line": 42,
-      "column": 10,
-      "confidence": 0.95,
-      "reason": "函式 'unusedFunction' 只有定義，無使用引用"
-    },
-    {
-      "name": "oldVariable",
-      "type": "variable",
-      "file": "src/config.ts",
-      "line": 15,
-      "column": 5,
-      "confidence": 0.9,
-      "reason": "變數 'oldVariable' 只有定義，無使用引用"
+      "filePath": "src/utils.ts",
+      "hunks": [
+        {
+          "startLine": 42,
+          "endLine": 50,
+          "oldContent": "function unusedFunction() {...}",
+          "newContent": ""
+        }
+      ]
     }
   ],
   "summary": {
-    "totalScanned": 500,
-    "deadCodeCount": 12,
-    "filesAffected": 5
+    "totalFiles": 1,
+    "totalChanges": 1,
+    "dryRun": true
   }
 }
 ```
 
-### summary
+### diff
 
-```
-Dead Code 檢測結果
-
-掃描符號: 500
-Dead Code: 12 個
-影響檔案: 5 個
-
-按類型統計:
-  函式: 8
-  變數: 3
-  介面: 1
-
-Dead Code 列表:
-  src/utils.ts
-    L42: unusedFunction (function, 95%)
-       函式 'unusedFunction' 只有定義，無使用引用
-  src/config.ts
-    L15: oldVariable (variable, 90%)
-       變數 'oldVariable' 只有定義，無使用引用
+```diff
+--- src/utils.ts
++++ src/utils.ts
+@@ -42,9 +42,0 @@
+-function unusedFunction() {
+-  // dead code
+-  return null;
+-}
 ```
 
 ## 符號類型
@@ -110,3 +104,5 @@ Dead Code 列表:
 - **預設排除 export**：export 的符號可能被外部使用，預設不標記為 dead code
 - **信心分數**：分數越高代表越確定是 dead code，建議優先處理高分數項目
 - **動態引用**：無法檢測 `eval()`、`require()` 動態字串等運行時引用
+- **使用 --dry-run 預覽**：建議先用 `--dry-run` 確認變更內容
+- **Import 清理**：刪除符號後自動清理變成未使用的 import

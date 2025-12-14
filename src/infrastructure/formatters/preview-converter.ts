@@ -324,3 +324,155 @@ function convertRenameConflicts(conflicts: readonly ConflictLike[]): ConflictInf
     line: c.location?.range?.start.line ?? null
   }));
 }
+
+// ============================================================================
+// Dead Code Removal 轉換
+// ============================================================================
+
+/**
+ * Dead Code 刪除操作介面
+ */
+interface RemovalOperationLike {
+  readonly filePath: string;
+  readonly range: {
+    readonly start: { readonly line: number; readonly column: number };
+    readonly end: { readonly line: number; readonly column: number };
+  };
+  readonly originalCode: string;
+  readonly symbolName: string;
+  readonly symbolType: string;
+  readonly confidence: number;
+}
+
+/**
+ * Import 清理操作介面
+ */
+interface ImportCleanupLike {
+  readonly filePath: string;
+  readonly range: {
+    readonly start: { readonly line: number; readonly column: number };
+    readonly end: { readonly line: number; readonly column: number };
+  };
+  readonly originalImport: string;
+  readonly unusedSymbols: readonly string[];
+  readonly cleanupType: 'delete' | 'partial';
+  readonly newImport?: string;
+}
+
+/**
+ * Dead Code 刪除預覽介面
+ */
+interface DeadCodeRemovalPreviewLike {
+  readonly success: boolean;
+  readonly removals: readonly RemovalOperationLike[];
+  readonly importCleanups: readonly ImportCleanupLike[];
+  readonly affectedFiles: readonly string[];
+  readonly summary: {
+    readonly totalRemovals: number;
+    readonly byType: Record<string, number>;
+    readonly filesAffected: number;
+    readonly linesRemoved: number;
+    readonly importsCleanedUp: number;
+  };
+  readonly warnings?: readonly string[];
+  readonly errors?: readonly string[];
+}
+
+/**
+ * 從 DeadCodeRemover 的 preview 結果轉換為 PreviewInput
+ */
+export function convertDeadCodeRemovalPreview(
+  preview: DeadCodeRemovalPreviewLike,
+  originalContents: Map<string, string>
+): PreviewInput {
+  const fileChanges: FileChangeInput[] = [];
+
+  // 按檔案分組所有操作
+  const groupedOps = new Map<string, Array<{ line: number; oldContent: string }>>();
+
+  // 處理刪除操作
+  for (const removal of preview.removals) {
+    const existing = groupedOps.get(removal.filePath) ?? [];
+    existing.push({
+      line: removal.range.start.line,
+      oldContent: removal.originalCode
+    });
+    groupedOps.set(removal.filePath, existing);
+  }
+
+  // 處理 import 清理（包含部分清理）
+  const importCleanups = new Map<string, Array<{ line: number; oldContent: string; newContent: string | null }>>();
+
+  for (const cleanup of preview.importCleanups) {
+    const existing = importCleanups.get(cleanup.filePath) ?? [];
+    existing.push({
+      line: cleanup.range.start.line,
+      oldContent: cleanup.originalImport,
+      newContent: cleanup.cleanupType === 'partial' && cleanup.newImport ? cleanup.newImport : null
+    });
+    importCleanups.set(cleanup.filePath, existing);
+  }
+
+  // 轉換為 FileChangeInput
+  // 先處理刪除操作
+  for (const [filePath, ops] of groupedOps) {
+    const originalContent = originalContents.get(filePath) ?? '';
+    const changes: LineChange[] = ops.map(op => ({
+      line: op.line,
+      oldContent: op.oldContent,
+      newContent: null // 刪除操作
+    }));
+
+    // 合併同檔案的 import 清理操作
+    const importOps = importCleanups.get(filePath);
+    if (importOps) {
+      for (const importOp of importOps) {
+        changes.push({
+          line: importOp.line,
+          oldContent: importOp.oldContent,
+          newContent: importOp.newContent
+        });
+      }
+      importCleanups.delete(filePath);
+    }
+
+    fileChanges.push({ filePath, originalContent, changes });
+  }
+
+  // 處理只有 import 清理的檔案
+  for (const [filePath, ops] of importCleanups) {
+    const originalContent = originalContents.get(filePath) ?? '';
+    const changes: LineChange[] = ops.map(op => ({
+      line: op.line,
+      oldContent: op.oldContent,
+      newContent: op.newContent
+    }));
+
+    fileChanges.push({ filePath, originalContent, changes });
+  }
+
+  // 生成操作描述
+  const { totalRemovals, importsCleanedUp, byType } = preview.summary;
+  let operationDescription = `Removed ${totalRemovals} dead code item${totalRemovals !== 1 ? 's' : ''}`;
+
+  // 加入類型細節
+  const typeDetails = Object.entries(byType)
+    .map(([type, count]) => `${count} ${type}${count !== 1 ? 's' : ''}`)
+    .join(', ');
+  if (typeDetails) {
+    operationDescription += ` (${typeDetails})`;
+  }
+
+  // 加入 import 清理資訊
+  if (importsCleanedUp > 0) {
+    operationDescription += ` and cleaned up ${importsCleanedUp} import${importsCleanedUp !== 1 ? 's' : ''}`;
+  }
+
+  return {
+    command: PreviewCommand.DeadCodeRemoval,
+    success: preview.success,
+    fileChanges,
+    operationDescription,
+    errors: preview.errors ? [...preview.errors] : undefined
+  };
+}

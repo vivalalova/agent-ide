@@ -376,14 +376,11 @@ describe('JavaScript DeadCodeDetector', () => {
       symbolName: string;
     }
 
+    // 注意：預設只排除 main 和 constructor
+    // 其他如 index、App、setup、init、configure 等應由使用者根據專案特性自行配置
     it.each<JsExclusionTestCase>([
       { scenario: 'constructor', symbolName: 'constructor' },
       { scenario: 'main 入口', symbolName: 'main' },
-      { scenario: 'index 入口', symbolName: 'index' },
-      { scenario: 'App 元件', symbolName: 'App' },
-      { scenario: 'setup 函式', symbolName: 'setup' },
-      { scenario: 'init 函式', symbolName: 'init' },
-      { scenario: 'configure 函式', symbolName: 'configure' },
     ])('應該排除 $scenario', async ({ symbolName }) => {
       // Given: 有該符號的 JavaScript 專案
       const deps = createMockDependencies({

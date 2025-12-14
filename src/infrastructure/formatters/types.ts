@@ -8,7 +8,8 @@ export enum PreviewCommand {
   Rename = 'rename',
   Move = 'move',
   Shift = 'shift',
-  Refactor = 'refactor'
+  Refactor = 'refactor',
+  DeadCodeRemoval = 'deadcode-removal'
 }
 
 /** 輸出格式類型 */

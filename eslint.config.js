@@ -95,6 +95,7 @@ export default [
       '**/dist/**',
       'node_modules/**',
       'coverage/**',
+      'tests/fixtures/**',
       '*.config.js',
       '*.config.ts',
     ],

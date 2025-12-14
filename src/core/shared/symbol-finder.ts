@@ -226,6 +226,9 @@ export class SymbolFinder {
         'g'
       );
 
+      // 函式定義的關鍵字模式（用於排除函式定義）
+      const definitionKeywords = /(?:^|[\s{;])(async\s+)?(function\s+|static\s+|private\s+|public\s+|protected\s+|get\s+|set\s+)/;
+
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const line = lines[lineIndex];
         let match;
@@ -233,6 +236,26 @@ export class SymbolFinder {
         while ((match = callPattern.exec(line)) !== null) {
           const receiver = match[1];
           const startColumn = match.index + 1;
+
+          // 排除函式定義：檢查前面是否有定義關鍵字
+          const beforeMatch = line.substring(0, match.index);
+          if (definitionKeywords.test(beforeMatch)) {
+            continue;
+          }
+
+          // 排除方法定義：檢查是否在類別中定義方法（沒有 receiver 且後面有返回類型）
+          if (!receiver) {
+            // 找到對應的右括號
+            const argsStart = match.index + match[0].length - 1;
+            const closingParen = this.findMatchingCloseParen(line, argsStart);
+            if (closingParen > 0) {
+              // 檢查右括號後是否有冒號（表示返回類型，即方法定義）
+              const afterParen = line.substring(closingParen + 1).trim();
+              if (afterParen.startsWith(':') || afterParen.startsWith('{')) {
+                continue;
+              }
+            }
+          }
 
           // 解析參數
           const argsStart = match.index + match[0].length - 1;
@@ -449,6 +472,29 @@ export class SymbolFinder {
     }
 
     return result;
+  }
+
+  /**
+   * 找到匹配的右括號位置
+   */
+  private findMatchingCloseParen(line: string, openParenIndex: number): number {
+    let depth = 1;
+    let i = openParenIndex + 1;
+
+    while (i < line.length && depth > 0) {
+      const char = line[i];
+      if (char === '(') {
+        depth++;
+      } else if (char === ')') {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+      i++;
+    }
+
+    return -1;
   }
 
   /**

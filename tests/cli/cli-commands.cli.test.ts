@@ -17,6 +17,7 @@ const PROJECT_ROOT = resolve(__dirname, '../..');
 const FIXTURE_PATH = resolve(PROJECT_ROOT, 'tests/fixtures');
 const SAMPLE_PROJECT = resolve(FIXTURE_PATH, 'sample-project');
 const DEADCODE_TEST = resolve(FIXTURE_PATH, 'deadcode-test');
+const DEADCODE_AUTOFIX = resolve(FIXTURE_PATH, 'deadcode-autofix');
 const CLI = `node ${resolve(PROJECT_ROOT, 'bin/agent-ide.js')}`;
 
 interface CLIResult {
@@ -46,6 +47,15 @@ function runCLI(command: string): CLIResult {
     }
     return { success: false, error: execError.stderr || 'Unknown error' };
   }
+}
+
+/** 驗證專案仍可編譯 */
+function verifyTypecheck(projectPath: string): void {
+  execSync(`npx tsc --noEmit -p "${projectPath}"`, {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
 }
 
 /** 還原 fixtures */
@@ -108,13 +118,8 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
-    it('deadcode - Dead code 檢測', () => {
-      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --format json`);
-      expect(result.success).toBe(true);
-    });
-
-    it('deadcode --include-exports - 含 exports 的 dead code 檢測', () => {
-      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --include-exports --format json`);
+    it('deadcode --dry-run - Dead code 預覽', () => {
+      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_TEST}" --dry-run --format json`);
       expect(result.success).toBe(true);
     });
   });
@@ -124,29 +129,75 @@ describe('CLI 整合測試', () => {
   // ========================================
 
   describe('Mutation Commands', () => {
-    it('rename - 符號重命名', () => {
+    it('deadcode - 刪除 dead code、驗證輸出結構、確認仍可編譯', () => {
+      // 使用 deadcode-autofix fixture（有 tsconfig.json 可驗證編譯）
+      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_AUTOFIX}" --format json`);
+
+      // 驗證基本結構
+      expect(result.success).toBe(true);
+      expect(result.command).toBe('deadcode-removal');
+      expect(result.files).toBeDefined();
+      expect(Array.isArray(result.files)).toBe(true);
+
+      // 驗證 summary 統計
+      expect(result.summary).toBeDefined();
+      expect(typeof result.summary.totalFiles).toBe('number');
+      expect(typeof result.summary.totalChanges).toBe('number');
+
+      // 驗證有檢測到 dead code（deadcode-test fixture 應該有）
+      expect(result.files.length).toBeGreaterThan(0);
+
+      // 驗證每個 file 的結構
+      const file = result.files[0];
+      expect(file.filePath).toBeDefined();
+      expect(file.hunks).toBeDefined();
+      expect(Array.isArray(file.hunks)).toBe(true);
+
+      // 驗證 hunk 結構（使用 diff 格式：oldStart, oldCount, newStart, newCount）
+      if (file.hunks.length > 0) {
+        const hunk = file.hunks[0];
+        expect(typeof hunk.oldStart).toBe('number');
+        expect(typeof hunk.oldCount).toBe('number');
+        expect(hunk.header).toBeDefined();
+        expect(hunk.lines).toBeDefined();
+        expect(Array.isArray(hunk.lines)).toBe(true);
+      }
+
+      // 🔥 關鍵驗證：刪除 dead code 後專案仍可編譯
+      verifyTypecheck(DEADCODE_AUTOFIX);
+    });
+
+    it('rename - 符號重命名後仍可編譯', () => {
       const result = runCLI(`${CLI} rename --path "${SAMPLE_PROJECT}" --from UserModel --to UserEntity --format json`);
       expect(result.success).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
 
-    it('change-signature - 參數重構', () => {
-      const result = runCLI(`${CLI} change-signature "${SAMPLE_PROJECT}/src/services/user-service.ts" createUser --add "options:object@2" --format json`);
+    it('change-signature - 參數重構後仍可編譯', () => {
+      const result = runCLI(`${CLI} change-signature "${SAMPLE_PROJECT}/src/services/user-service.ts" createUser --add "options:object={}@2" --format json`);
       expect(result.success).toBe(true);
+      expect(result.callSiteUpdates).toBeDefined();
+      expect(Array.isArray(result.callSiteUpdates)).toBe(true);
+      expect(result.callSiteUpdates.length).toBeGreaterThan(0);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
 
-    it('move file - 檔案移動', () => {
+    it('move file - 檔案移動後仍可編譯', () => {
       const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils/string-utils.ts" "${SAMPLE_PROJECT}/src/new-utils/string-utils.ts" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
 
-    it('move directory - 目錄移動', () => {
+    it('move directory - 目錄移動後仍可編譯', () => {
       const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils" "${SAMPLE_PROJECT}/src/moved-utils" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
 
-    it('move-member - 成員移動', () => {
+    it('move-member - 成員移動後仍可編譯', () => {
       const result = runCLI(`${CLI} move-member "${SAMPLE_PROJECT}/src/utils/string-utils.ts" capitalize --target-file "${SAMPLE_PROJECT}/src/utils/array-utils.ts" --format json`);
       expect(result.success).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
   });
 

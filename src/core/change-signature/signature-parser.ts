@@ -60,8 +60,36 @@ export class SignatureParser {
       const match = content.match(pattern);
       if (match) {
         const matchIndex = content.indexOf(match[0]);
-        const lineNumber = content.substring(0, matchIndex).split('\n').length;
-        const column = match[1]?.length ?? 0;
+
+        /**
+         * 行號計算邏輯說明：
+         *
+         * 問題背景：
+         * 正則表達式使用 'm' 多行模式，^ 會匹配每行開頭而非僅字串開頭。
+         * 當 match[1]（前導空白群組）跨越多行時，matchIndex 指向的是
+         * 匹配「開始」的位置，但實際的函式定義可能在後面幾行。
+         *
+         * 範例：
+         * ```
+         * // Line 1: 空行
+         * // Line 2: 空行
+         *    function foo() {}  // Line 3: 函式定義
+         * ```
+         * 若 match[1] = "\n\n   "（包含2個換行），matchIndex 可能指向 Line 1，
+         * 但函式實際在 Line 3。
+         *
+         * 計算公式：
+         * 1. content.substring(0, matchIndex).split('\n').length
+         *    → 取得匹配「起始位置」的行號
+         * 2. newlinesInMatch = match[1] 中的換行數
+         *    → 補償前導空白中包含的行數偏移
+         * 3. 最終行號 = 起始行號 + 換行偏移量
+         */
+        const newlinesInMatch = (match[1] || '').split('\n').length - 1;
+        const lineNumber = content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
+
+        // 計算欄位：取 match[1] 最後一行的長度（即最後一個換行後的空白數）
+        const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
 
         // 根據不同模式提取參數和修飾符
         let paramsString: string;

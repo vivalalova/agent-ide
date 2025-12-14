@@ -248,6 +248,8 @@ export enum ChangeSignatureErrorCode {
   InvalidParameterType = 'invalid-parameter-type',
   /** 無效的預設值 */
   InvalidDefaultValue = 'invalid-default-value',
+  /** 缺少預設值（新增參數時必須指定） */
+  MissingDefaultValue = 'missing-default-value',
   /** 不支援的語言 */
   UnsupportedLanguage = 'unsupported-language',
   /** 解析錯誤 */

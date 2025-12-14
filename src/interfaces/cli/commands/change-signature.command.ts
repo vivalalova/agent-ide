@@ -65,9 +65,9 @@ async function handleChangeSignatureCommand(
   const isJsonFormat = format === OutputFormat.Json;
 
   try {
-    // 解析檔案路徑
-    const filePath = path.resolve(options.path || process.cwd(), file);
-    const projectRoot = options.path || process.cwd();
+    // 解析檔案路徑（如果是絕對路徑則直接使用，否則從 cwd 解析）
+    const filePath = path.isAbsolute(file) ? file : path.resolve(process.cwd(), file);
+    const projectRoot = options.path ? path.resolve(process.cwd(), options.path) : process.cwd();
 
     // 解析變更操作
     const changes = parseChanges(options);
