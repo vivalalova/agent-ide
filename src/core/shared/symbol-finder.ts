@@ -4,7 +4,7 @@
  */
 
 import type { Range, Location } from '@shared/types/core.js';
-import type { Symbol, SymbolType } from '@shared/types/symbol.js';
+import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
@@ -160,12 +160,12 @@ export class SymbolFinder {
         for (const symbolName of symbolNames) {
           const dummySymbol: Symbol = {
             name: symbolName,
-            type: 'variable' as SymbolType,
+            type: SymbolType.Variable,
             location: {
               filePath,
               range: {
-                start: { line: 1, column: 1, offset: 0 },
-                end: { line: 1, column: 1, offset: 0 }
+                start: { line: 1, column: 1, offset: undefined },
+                end: { line: 1, column: 1, offset: undefined }
               }
             },
             scope: undefined,
@@ -258,12 +258,12 @@ export class SymbolFinder {
       // 建立虛擬符號用於查找
       const dummySymbol: Symbol = {
         name: symbolName,
-        type: 'variable' as SymbolType,
+        type: SymbolType.Variable,
         location: {
           filePath,
           range: {
-            start: { line: 1, column: 1, offset: 0 },
-            end: { line: 1, column: 1, offset: 0 }
+            start: { line: 1, column: 1, offset: undefined },
+            end: { line: 1, column: 1, offset: undefined }
           }
         },
         scope: undefined,
