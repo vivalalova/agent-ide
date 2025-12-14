@@ -275,7 +275,9 @@ export class DeadCodeRemover {
         multiLineCount++;
 
         // 檢測結束條件：有 from 或 semicolon，或超過安全限制
-        const isComplete = line.includes('from') || line.includes(';');
+        // 排除註解和字串中的 'from'
+        const cleanLine = line.replace(/\/\/.*/, '').replace(/\/\*[\s\S]*?\*\//, '');
+        const isComplete = cleanLine.includes('from') || cleanLine.includes(';');
         const isOverLimit = multiLineCount > MAX_MULTILINE_IMPORT;
 
         if (isComplete || isOverLimit) {
@@ -514,6 +516,34 @@ export class DeadCodeRemover {
       }
     }
 
+    // 對於 variable（可能是 arrow function），只有當包含 { 時才做括號匹配
+    if (symbolType === 'variable') {
+      const startLineContent = lines[range.start.line - 1] || '';
+      // 檢查是否包含 arrow function 的 block body
+      if (startLineContent.includes('=>') && startLineContent.includes('{')) {
+        let braceCount = 0;
+        let foundOpenBrace = false;
+
+        for (let i = range.start.line - 1; i < lines.length; i++) {
+          const cleanLine = this.removeCommentsAndStringsFromLine(lines[i]);
+          for (const char of cleanLine) {
+            if (char === '{') {
+              braceCount++;
+              foundOpenBrace = true;
+            }
+            if (char === '}') {
+              braceCount--;
+            }
+          }
+
+          if (foundOpenBrace && braceCount === 0) {
+            endLine = i;
+            break;
+          }
+        }
+      }
+    }
+
     // 包含後續空行（最多一行）
     if (endLine < lines.length - 1 && lines[endLine + 1].trim() === '') {
       endLine++;
@@ -580,25 +610,39 @@ export class DeadCodeRemover {
   }
 
   /**
-   * 按檔案分組操作
+   * 按檔案分組操作（去重相同 range）
    */
   private groupOperationsByFile(
     preview: DeadCodeRemovalPreview
   ): Map<string, Array<{ range: Range; type: 'removal' | 'import' }>> {
     const fileOperations = new Map<string, Array<{ range: Range; type: 'removal' | 'import' }>>();
 
+    // 用於檢查 range 是否重複
+    const rangeKey = (r: Range) => `${r.start.line}:${r.start.column}-${r.end.line}:${r.end.column}`;
+    const seenRanges = new Map<string, Set<string>>();
+
+    const addOperation = (filePath: string, range: Range, type: 'removal' | 'import') => {
+      const existing = fileOperations.get(filePath) || [];
+      const seen = seenRanges.get(filePath) || new Set();
+      const key = rangeKey(range);
+
+      // 去重：相同 range 只加入一次
+      if (!seen.has(key)) {
+        existing.push({ range, type });
+        seen.add(key);
+        fileOperations.set(filePath, existing);
+        seenRanges.set(filePath, seen);
+      }
+    };
+
     // 加入刪除操作
     for (const removal of preview.removals) {
-      const existing = fileOperations.get(removal.filePath) || [];
-      existing.push({ range: removal.range, type: 'removal' });
-      fileOperations.set(removal.filePath, existing);
+      addOperation(removal.filePath, removal.range, 'removal');
     }
 
     // 加入 import 清理操作
     for (const cleanup of preview.importCleanups) {
-      const existing = fileOperations.get(cleanup.filePath) || [];
-      existing.push({ range: cleanup.range, type: 'import' });
-      fileOperations.set(cleanup.filePath, existing);
+      addOperation(cleanup.filePath, cleanup.range, 'import');
     }
 
     return fileOperations;
@@ -779,6 +823,8 @@ export class DeadCodeRemover {
       this.fileCache.set(filePath, contentStr);
       return contentStr;
     } catch {
+      // 清除可能存在的失敗快取，避免重試時仍返回 null
+      this.fileCache.delete(filePath);
       return null;
     }
   }
