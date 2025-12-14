@@ -48,8 +48,6 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/**/index.ts',
         'src/bin/**',
         'src/interfaces/**',
-        'src/core/patterns/**',
-        'src/core/search/**',
         '**/*.md',
         '**/*.sh',
         '**/*.yaml',
