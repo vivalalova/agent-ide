@@ -383,17 +383,6 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
-   * 找出某行所在的外層函數
-   */
-  private async findEnclosingFunction(
-    filePath: string,
-    line: number
-  ): Promise<{ name: string; file: string } | null> {
-    const results = await this.findEnclosingFunctions(filePath, [line]);
-    return results.get(line) || null;
-  }
-
-  /**
    * 批次找出單一檔案中多個行號所在的外層函數
    * 將 O(N) 檔案讀取降為 O(1)
    */
@@ -517,14 +506,6 @@ export class CallHierarchyAnalyzer {
 
     visit(sourceFile);
     return enclosingFunction;
-  }
-
-  /**
-   * 取得某行的程式碼內容
-   */
-  private async getLineContext(filePath: string, line: number): Promise<string> {
-    const results = await this.getLineContextsBatch([{ filePath, line }]);
-    return results.get(`${filePath}:${line}`) || '';
   }
 
   /**
