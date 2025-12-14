@@ -73,6 +73,8 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/application/services/**', // 服務層，整合多個核心模組
         'src/application/workflows/**', // 工作流程，多步驟操作
         'src/core/change-signature/**', // 簽名變更，需測試呼叫點更新
+        'src/core/dead-code/**', // Dead code，需測試檔案修改和 import 處理
+        'src/core/dependency/**', // 依賴分析，需實際檔案解析
         'src/core/indexing/**', // 索引引擎，需大量檔案測試
         'src/core/move-file/**', // 檔案移動，需測試 import 更新
         'src/core/move-member/**', // 成員移動，涉及多檔案修改
