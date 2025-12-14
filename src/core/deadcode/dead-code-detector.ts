@@ -53,17 +53,20 @@ export class DeadCodeDetector {
       // 建立 SymbolFinder
       const symbolFinder = createSymbolFinder(this.parserRegistry, this.fileSystem);
 
-      // 檢測每個符號的引用
+      // 過濾要檢測的符號（排除不需要的）
+      const symbolsToCheck = targetSymbols.filter(s => !this.shouldExclude(s));
+
+      // 收集所有符號名稱
+      const symbolNames = new Set(symbolsToCheck.map(s => s.name));
+
+      // 批次查找所有符號的引用（O(M) 而非 O(N × M)）
+      const allReferences = await symbolFinder.findReferencesMultiple(symbolNames, filePaths);
+
+      // 檢測每個符號
       const deadItems: DeadCodeItem[] = [];
 
-      for (const symbol of targetSymbols) {
-        // 排除模式檢查
-        if (this.shouldExclude(symbol)) {
-          continue;
-        }
-
-        // 查找引用
-        const references = await symbolFinder.findReferences(symbol.name, filePaths);
+      for (const symbol of symbolsToCheck) {
+        const references = allReferences.get(symbol.name) ?? [];
 
         // 分析引用：過濾掉定義位置本身
         const symbolLine = symbol.location.range.start.line;
