@@ -455,7 +455,7 @@ export class DeadCodeRemover {
     result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
 
     // 移除單引號字串 '...'
-    result = result.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    result = result.replace(/'(?:[^'\\]|\\.)*'/g, '\'\'');
 
     return result;
   }
@@ -574,7 +574,7 @@ export class DeadCodeRemover {
 
     // 移除字串（簡化處理）
     result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
-    result = result.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    result = result.replace(/'(?:[^'\\]|\\.)*'/g, '\'\'');
     result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
 
     return result;
