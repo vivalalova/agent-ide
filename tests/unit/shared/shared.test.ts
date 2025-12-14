@@ -200,57 +200,130 @@ describe('SymbolFinder', () => {
     });
   });
 
-  describe('findReferences', () => {
-    it('應該在多個檔案中找到引用', async () => {
+  describe('findReferencesMultiple', () => {
+    it('應該批次查找多個符號的引用', async () => {
       const files = {
-        '/test/file1.ts': 'import { testFunc } from "./file2"',
-        '/test/file2.ts': 'export function testFunc() {}'
+        '/test/file1.ts': 'import { funcA, funcB } from "./file2"',
+        '/test/file2.ts': 'export function funcA() {} export function funcB() {}'
       };
       mockFileSystem = createMockFileSystem(files);
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
-      const mockSymbol = createMockSymbol('testFunc');
-      const mockRef1 = createMockReference(mockSymbol, 'usage', {
+      const mockSymbolA = createMockSymbol('funcA');
+      const mockSymbolB = createMockSymbol('funcB');
+      const mockRefA = createMockReference(mockSymbolA, 'usage', {
         filePath: '/test/file1.ts',
         range: {
           start: { line: 1, column: 10, offset: 9 },
-          end: { line: 1, column: 18, offset: 17 }
+          end: { line: 1, column: 15, offset: 14 }
         }
       });
-      const mockRef2 = createMockReference(mockSymbol, 'definition', {
-        filePath: '/test/file2.ts',
+      const mockRefB = createMockReference(mockSymbolB, 'usage', {
+        filePath: '/test/file1.ts',
         range: {
           start: { line: 1, column: 17, offset: 16 },
-          end: { line: 1, column: 25, offset: 24 }
+          end: { line: 1, column: 22, offset: 21 }
         }
       });
 
       vi.mocked(mockParser.findReferences)
-        .mockResolvedValueOnce([mockRef1])
-        .mockResolvedValueOnce([mockRef2]);
+        .mockImplementation(async (_ast, symbol) => {
+          if (symbol.name === 'funcA') {
+            return [mockRefA];
+          }
+          if (symbol.name === 'funcB') {
+            return [mockRefB];
+          }
+          return [];
+        });
 
-      const result = await symbolFinder.findReferences('testFunc', [
-        '/test/file1.ts',
-        '/test/file2.ts'
-      ]);
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['funcA', 'funcB']),
+        ['/test/file1.ts', '/test/file2.ts']
+      );
 
-      expect(result).toHaveLength(2);
-      expect(result[0].symbolName).toBe('testFunc');
-      expect(result[1].symbolName).toBe('testFunc');
+      expect(result.size).toBe(2);
+      expect(result.get('funcA')?.length).toBeGreaterThan(0);
+      expect(result.get('funcB')?.length).toBeGreaterThan(0);
     });
 
-    it('應該在沒有引用時返回空陣列', async () => {
+    it('應該在沒有引用時為每個符號返回空陣列', async () => {
       vi.mocked(mockParser.findReferences).mockResolvedValue([]);
 
-      const result = await symbolFinder.findReferences('testFunc', ['/test/file.ts']);
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['testFunc']),
+        ['/test/file.ts']
+      );
 
-      expect(result).toHaveLength(0);
+      expect(result.size).toBe(1);
+      expect(result.get('testFunc')).toHaveLength(0);
     });
 
-    it('應該在檔案清單為空時返回空陣列', async () => {
-      const result = await symbolFinder.findReferences('testFunc', []);
+    it('應該在檔案清單為空時返回空結果', async () => {
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['testFunc']),
+        []
+      );
 
-      expect(result).toHaveLength(0);
+      expect(result.size).toBe(1);
+      expect(result.get('testFunc')).toHaveLength(0);
+    });
+
+    it('應該在 parser 失敗時降級到文字匹配', async () => {
+      const fileContent = 'funcA(); funcB();';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      vi.mocked(mockParser.parse).mockRejectedValue(new Error('Parse error'));
+
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['funcA', 'funcB']),
+        ['/test/file.ts']
+      );
+
+      expect(result.size).toBe(2);
+      expect(result.get('funcA')?.length).toBeGreaterThan(0);
+      expect(result.get('funcB')?.length).toBeGreaterThan(0);
+    });
+
+    it('應該在沒有 parser 時降級到文字匹配', async () => {
+      const fileContent = 'funcA(); funcB();';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      vi.mocked(mockParserRegistry.getParser).mockReturnValue(null);
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['funcA', 'funcB']),
+        ['/test/file.ts']
+      );
+
+      expect(result.size).toBe(2);
+      expect(result.get('funcA')?.length).toBeGreaterThan(0);
+      expect(result.get('funcB')?.length).toBeGreaterThan(0);
+    });
+
+    it('應該正確區分不同符號的引用', async () => {
+      const fileContent = 'funcA(); funcB(); funcA();';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      vi.mocked(mockParserRegistry.getParser).mockReturnValue(null);
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set(['funcA', 'funcB']),
+        ['/test/file.ts']
+      );
+
+      expect(result.get('funcA')).toHaveLength(2);
+      expect(result.get('funcB')).toHaveLength(1);
+    });
+
+    it('應該處理空符號集合', async () => {
+      const result = await symbolFinder.findReferencesMultiple(
+        new Set<string>(),
+        ['/test/file.ts']
+      );
+
+      expect(result.size).toBe(0);
     });
   });
 
