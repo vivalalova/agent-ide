@@ -92,6 +92,14 @@ export class DeadCodeDetector {
   }
 
   /**
+   * 產生符號的唯一快取 key
+   * 使用 name:filePath:line 格式避免同名符號衝突
+   */
+  private getSymbolCacheKey(symbol: Symbol): string {
+    return `${symbol.name}:${symbol.location.filePath}:${symbol.location.range.start.line}`;
+  }
+
+  /**
    * 批量查找所有符號的引用
    * 一次掃描所有檔案，收集所有符號名稱的引用，避免重複讀取檔案
    */
@@ -102,8 +110,16 @@ export class DeadCodeDetector {
     const symbolFinder = createSymbolFinder(this.parserRegistry, this.fileSystem);
     const cache = new Map<string, SymbolReferencesCache>();
 
+    // 建立符號名稱到符號列表的映射（同名符號會被分組）
+    const nameToSymbols = new Map<string, Symbol[]>();
+    for (const symbol of symbols) {
+      const existing = nameToSymbols.get(symbol.name) ?? [];
+      existing.push(symbol);
+      nameToSymbols.set(symbol.name, existing);
+    }
+
     // 取得所有需要查找的符號名稱（去重）
-    const symbolNames = [...new Set(symbols.map(s => s.name))];
+    const symbolNames = [...nameToSymbols.keys()];
 
     // 分批並行查找，避免記憶體溢出
     const BATCH_SIZE = 10;
@@ -118,9 +134,13 @@ export class DeadCodeDetector {
         })
       );
 
-      // 建立快取
+      // 為每個具體符號建立獨立快取（使用精確的 key）
       for (const { name, references } of results) {
-        cache.set(name, { references });
+        const symbolsWithName = nameToSymbols.get(name) ?? [];
+        for (const symbol of symbolsWithName) {
+          const cacheKey = this.getSymbolCacheKey(symbol);
+          cache.set(cacheKey, { references });
+        }
       }
     }
 
@@ -134,8 +154,9 @@ export class DeadCodeDetector {
     symbol: Symbol,
     referencesCache: Map<string, SymbolReferencesCache>
   ): Promise<DeadCodeItem | null> {
-    // 從快取取得引用
-    const cached = referencesCache.get(symbol.name);
+    // 從快取取得引用（使用精確的 key）
+    const cacheKey = this.getSymbolCacheKey(symbol);
+    const cached = referencesCache.get(cacheKey);
     const references = cached?.references ?? [];
 
     // 分析引用：過濾掉定義位置本身
@@ -219,7 +240,7 @@ export class DeadCodeDetector {
             // 非測試環境記錄警告
             if (process.env.NODE_ENV !== 'test') {
               const errorMessage = error instanceof Error ? error.message : String(error);
-              console.warn(`  跳過檔案 ${filePath}: ${errorMessage}`);
+              console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
             }
             return { symbols: [], skipped: true };
           }

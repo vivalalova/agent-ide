@@ -53,6 +53,7 @@ export class RenameEngine {
 
   /**
    * 查找符號的所有引用
+   * 使用分批並行策略避免記憶體溢出
    */
   async findReferences(
     filePaths: string[],
@@ -61,40 +62,47 @@ export class RenameEngine {
   ): Promise<Array<{ filePath: string; line: number; column: number; text: string }>> {
     const references: Array<{ filePath: string; line: number; column: number; text: string }> = [];
 
-    // 使用並行讀取來查找引用
+    // 分批並行讀取檔案，避免記憶體溢出
+    const BATCH_SIZE = 10;
+
     try {
-      const fileContents = await Promise.all(
-        filePaths.map(async (filePath) => {
-          try {
-            const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-            return { filePath, content, error: null };
-          } catch (error) {
-            console.debug(`無法讀取檔案 ${filePath}:`, error);
-            return { filePath, content: null, error };
-          }
-        })
-      );
+      for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+        const batch = filePaths.slice(i, i + BATCH_SIZE);
 
-      for (const { filePath, content } of fileContents) {
-        if (!content) { continue; }
+        const fileContents = await Promise.all(
+          batch.map(async (filePath) => {
+            try {
+              const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+              return { filePath, content, error: null };
+            } catch (error) {
+              console.debug(`無法讀取檔案 ${filePath}:`, error);
+              return { filePath, content: null, error };
+            }
+          })
+        );
 
-        const lines = content.split('\n');
+        // 處理當前批次後立即釋放記憶體
+        for (const { filePath, content } of fileContents) {
+          if (!content) { continue; }
 
-        // 查找所有包含符號名稱的行
-        lines.forEach((line, lineIndex) => {
-          // 使用單詞邊界進行精確匹配
-          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
-          let match;
+          const lines = content.split('\n');
 
-          while ((match = regex.exec(line)) !== null) {
-            references.push({
-              filePath,
-              line: lineIndex + 1,
-              column: match.index + 1,
-              text: line.trim()
-            });
-          }
-        });
+          // 查找所有包含符號名稱的行
+          lines.forEach((line, lineIndex) => {
+            // 使用單詞邊界進行精確匹配
+            const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+            let match;
+
+            while ((match = regex.exec(line)) !== null) {
+              references.push({
+                filePath,
+                line: lineIndex + 1,
+                column: match.index + 1,
+                text: line.trim()
+              });
+            }
+          });
+        }
       }
     } catch (error) {
       // 備援錯誤處理

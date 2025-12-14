@@ -100,11 +100,6 @@ export class IndexEngine {
       this.parserRegistry.register(jsParser);
     }
 
-    // 初始化 AST 解析快取
-    this.parseCache = new MemoryCache<string, ParseCacheEntry>({
-      maxSize: PARSE_CACHE_DEFAULT_SIZE,
-      evictionStrategy: EvictionStrategy.LRU
-    });
   }
 
   /**
