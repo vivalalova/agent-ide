@@ -4,12 +4,15 @@
  */
 
 // 核心類別
-export { IndexEngine } from './index-engine.js';
-export { FileIndex } from './file-index.js';
-export { SymbolIndex } from './symbol-index.js';
+import { IndexEngine } from './index-engine.js';
+import { FileIndex } from './file-index.js';
+import { SymbolIndex } from './symbol-index.js';
+
+// 基礎設施
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 // 型別定義
-export type {
+import type {
   FileInfo,
   FileIndexEntry,
   SymbolIndexEntry,
@@ -27,14 +30,11 @@ export type {
   IndexQuery
 } from './types.js';
 
-// 列舉
-export { UpdateOperation } from './types.js';
-
-// 常數
-export { CLI_INDEX_DEFAULTS } from './types.js';
+// 列舉與常數
+import { UpdateOperation, CLI_INDEX_DEFAULTS } from './types.js';
 
 // 工廠函式
-export {
+import {
   createFileInfo,
   createIndexConfig,
   createSearchOptions,
@@ -43,17 +43,57 @@ export {
 } from './types.js';
 
 // 型別守衛
+import { isFileInfo, isIndexConfig } from './types.js';
+
+// 匯出核心類別
+export { IndexEngine, FileIndex, SymbolIndex };
+
+// 匯出型別
+export type {
+  FileInfo,
+  FileIndexEntry,
+  SymbolIndexEntry,
+  IndexConfig,
+  IndexStats,
+  SearchOptions,
+  SymbolSearchResult,
+  FileSearchResult,
+  IndexUpdateEvent,
+  BatchIndexOptions,
+  IndexProgress,
+  IndexStorage,
+  IndexData,
+  StorageStats,
+  IndexQuery
+};
+
+// 匯出列舉與常數
+export { UpdateOperation, CLI_INDEX_DEFAULTS };
+
+// 匯出工廠函式
 export {
-  isFileInfo,
-  isIndexConfig
-} from './types.js';
+  createFileInfo,
+  createIndexConfig,
+  createSearchOptions,
+  shouldIndexFile,
+  calculateProgress
+};
+
+// 匯出型別守衛
+export { isFileInfo, isIndexConfig };
 
 /**
  * 建立預設的索引引擎實例
+ * @param workspacePath - 工作區路徑
+ * @param fileSystem - 檔案系統抽象
+ * @param options - 索引配置選項
+ * @returns IndexEngine 實例
  */
-export function createIndexEngine(workspacePath: string, options?: any) {
-  const { IndexEngine } = require('./index-engine');
-  const { createIndexConfig } = require('./types');
+export function createIndexEngine(
+  workspacePath: string,
+  fileSystem: IFileSystem,
+  options?: Partial<IndexConfig>
+): IndexEngine {
   const config = createIndexConfig(workspacePath, options);
-  return new IndexEngine(config);
+  return new IndexEngine(config, fileSystem);
 }
