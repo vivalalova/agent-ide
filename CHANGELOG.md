@@ -1,3 +1,7 @@
+## <small>0.7.1 (2025-12-14)</small>
+
+* refactor: ReferenceUpdater 使用 SymbolFinder 統一引用查找邏輯 (#25) ([2676521](https://github.com/vivalalova/agent-ide/commit/2676521)), closes [#25](https://github.com/vivalalova/agent-ide/issues/25)
+
 ## 0.7.0 (2025-12-14)
 
 * feat: deadcode autofix 功能與 CLI 簡化 (#23) ([4b7c8f9](https://github.com/vivalalova/agent-ide/commit/4b7c8f9)), closes [#23](https://github.com/vivalalova/agent-ide/issues/23)
