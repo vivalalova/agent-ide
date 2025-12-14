@@ -173,10 +173,13 @@ describe('CLI 整合測試', () => {
       verifyTypecheck(SAMPLE_PROJECT);
     });
 
-    it('change-signature - 參數重構', () => {
+    it('change-signature - 參數重構後仍可編譯', () => {
       const result = runCLI(`${CLI} change-signature "${SAMPLE_PROJECT}/src/services/user-service.ts" createUser --add "options:object@2" --format json`);
       expect(result.success).toBe(true);
-      // TODO: verifyTypecheck 暫時跳過，change-signature 有已知 bug 會產生無效程式碼
+      expect(result.callSiteUpdates).toBeDefined();
+      expect(Array.isArray(result.callSiteUpdates)).toBe(true);
+      expect(result.callSiteUpdates.length).toBeGreaterThan(0);
+      verifyTypecheck(SAMPLE_PROJECT);
     });
 
     it('move file - 檔案移動後仍可編譯', () => {

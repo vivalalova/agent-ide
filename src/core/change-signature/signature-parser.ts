@@ -60,8 +60,11 @@ export class SignatureParser {
       const match = content.match(pattern);
       if (match) {
         const matchIndex = content.indexOf(match[0]);
-        const lineNumber = content.substring(0, matchIndex).split('\n').length;
-        const column = match[1]?.length ?? 0;
+        // 計算行號時，需要加上 match[0] 中包含的換行數
+        // 因為 ^ 在多行模式下匹配的是行首，但 indexOf 返回的是匹配開始位置
+        const newlinesInMatch = (match[1] || '').split('\n').length - 1;
+        const lineNumber = content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
+        const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
 
         // 根據不同模式提取參數和修飾符
         let paramsString: string;

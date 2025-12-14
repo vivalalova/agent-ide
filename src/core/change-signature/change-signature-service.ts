@@ -456,18 +456,21 @@ export class ChangeSignatureService {
     }
 
     // 填入新增參數的值
+    const addedPositions = new Set<number>();
     for (const change of changes) {
       if (isAddParameterChange(change)) {
-        const value = change.callSiteValue || change.defaultValue || '';
-        const position = change.position < 0 ? result.length - 1 : change.position;
-        if (position < result.length && !result[position]) {
+        // 使用 callSiteValue, defaultValue, 或 undefined 作為預設值
+        const value = change.callSiteValue || change.defaultValue || 'undefined';
+        const position = change.position < 0 ? result.length - 1 : Math.min(change.position, result.length - 1);
+        if (position >= 0 && position < result.length && !result[position]) {
           result[position] = value;
+          addedPositions.add(position);
         }
       }
     }
 
-    // 移除空值（但保留有意義的空字串）
-    return result.filter((v, i) => v !== '' || i < callSite.arguments.length);
+    // 移除空值（但保留原始參數位置和新增參數位置）
+    return result.filter((v, i) => v !== '' || i < callSite.arguments.length || addedPositions.has(i));
   }
 
   /**
