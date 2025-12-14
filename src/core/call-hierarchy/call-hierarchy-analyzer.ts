@@ -194,7 +194,7 @@ export class CallHierarchyAnalyzer {
       const contexts = await this.getLineContextsBatch(queries);
 
       // 建立 incoming 結果
-      const callersToRecurse: string[] = [];
+      const callersToRecurse = new Set<string>();
       for (const callSite of filteredCallSites) {
         const key = `${callSite.location.filePath}:${callSite.location.range.start.line}`;
         const callerInfo = enclosingFunctions.get(key);
@@ -207,9 +207,9 @@ export class CallHierarchyAnalyzer {
           callerDefinitionFile: callerInfo?.file
         });
 
-        // 收集需要遞迴的 caller
+        // 收集需要遞迴的 caller（使用 Set 自動去重）
         if (currentDepth < depth && callerInfo?.name && callerInfo.name !== '<anonymous>') {
-          callersToRecurse.push(callerInfo.name);
+          callersToRecurse.add(callerInfo.name);
         }
       }
 
