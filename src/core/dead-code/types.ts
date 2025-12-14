@@ -68,11 +68,20 @@ export interface DeadCodeStats {
 }
 
 /**
+ * 預設排除的符號名稱
+ *
+ * 只排除 `main`：程式進入點通常不會被其他模組引用，但為必要符號。
+ * 其他如 `index`、`App`、`setup`、`init`、`configure` 等應由使用者根據專案特性自行配置，
+ * 以避免過度排除導致漏報真正未使用的程式碼。
+ */
+const DEFAULT_EXCLUDE_PATTERNS: readonly string[] = ['main'];
+
+/**
  * 預設選項
  */
 export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
   includeExports: false,
-  excludePatterns: ['main', 'index', 'App', 'setup', 'init', 'configure'],
+  excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
   minConfidence: 0.8,
   symbolTypes: [
     SymbolType.Function,
@@ -200,11 +209,20 @@ export interface DeadCodeRemovalResult {
 }
 
 /**
+ * 預設排除的符號名稱（刪除操作用）
+ *
+ * 只排除 `main`：程式進入點通常不會被其他模組引用，但為必要符號。
+ * 其他如 `index`、`App`、`setup`、`init`、`configure` 等應由使用者根據專案特性自行配置，
+ * 以避免過度排除導致漏報真正未使用的程式碼。
+ */
+const DEFAULT_EXCLUDE_SYMBOLS: readonly string[] = ['main'];
+
+/**
  * 刪除選項預設值
  */
 export const DEFAULT_REMOVAL_OPTIONS: Required<DeadCodeRemovalOptions> = {
   minConfidence: 0.9,
   excludeFiles: [],
-  excludeSymbols: ['main', 'index', 'App', 'setup', 'init', 'configure'],
+  excludeSymbols: DEFAULT_EXCLUDE_SYMBOLS,
   cleanupImports: true
 };
