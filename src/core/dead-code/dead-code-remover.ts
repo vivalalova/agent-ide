@@ -3,9 +3,9 @@
  * 負責刪除未使用的程式碼並清理相關 import
  */
 
+import { minimatch } from 'minimatch';
 import type { Range } from '@shared/types/core.js';
 import type { SymbolType } from '@shared/types/symbol.js';
-import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
   DeadCodeItem,
@@ -20,6 +20,48 @@ import type {
 import { DEFAULT_REMOVAL_OPTIONS } from './types.js';
 
 /**
+ * Import 語句中的符號資訊
+ */
+interface ImportSymbolInfo {
+  /** 符號名稱 */
+  name: string;
+  /** 別名（如果有 as） */
+  alias?: string;
+  /** 是否為 default import */
+  isDefault?: boolean;
+  /** 是否為 namespace import */
+  isNamespace?: boolean;
+}
+
+/**
+ * Import 語句資訊
+ */
+interface ImportStatementInfo {
+  /** 完整的 import 語句 */
+  statement: string;
+  /** 語句範圍 */
+  range: Range;
+  /** 包含的所有符號 */
+  symbols: ImportSymbolInfo[];
+  /** 是否有 default import */
+  hasDefault: boolean;
+  /** 是否為 namespace import */
+  isNamespace: boolean;
+}
+
+/**
+ * 檔案操作資訊
+ */
+interface FileOperation {
+  /** 操作範圍 */
+  range: Range;
+  /** 操作類型 */
+  type: 'removal' | 'import-delete' | 'import-partial';
+  /** 部分清理時的新內容 */
+  newContent?: string;
+}
+
+/**
  * Dead Code 刪除器
  */
 export class DeadCodeRemover {
@@ -27,7 +69,6 @@ export class DeadCodeRemover {
   private readonly fileCache = new Map<string, string>();
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem,
     options?: DeadCodeRemovalOptions
   ) {
@@ -135,9 +176,9 @@ export class DeadCodeRemover {
         continue;
       }
 
-      // 排除檔案模式
+      // 排除檔案模式（支援 glob 匹配）
       if (this.options.excludeFiles.some(pattern =>
-        item.location.filePath.includes(pattern)
+        this.matchesExcludePattern(item.location.filePath, pattern)
       )) {
         warnings.push(`跳過 ${item.name}：檔案被排除`);
         continue;
@@ -195,6 +236,7 @@ export class DeadCodeRemover {
 
   /**
    * 分析需要清理的 import
+   * 支援部分清理：當 import { A, B, C } 中只有部分符號未使用時，保留其他符號
    */
   private async analyzeImportCleanups(
     removals: readonly RemovalOperation[]
@@ -209,26 +251,55 @@ export class DeadCodeRemover {
         continue;
       }
 
-      // 解析 import 語句
-      const imports = this.parseImports(content);
+      // 解析 import 語句（以語句為單位）
+      const importStatements = this.parseImportStatements(content);
+      const fileRemovals = removals.filter(r => r.filePath === filePath);
 
-      for (const importInfo of imports) {
-        // 檢查 import 的符號是否在被刪除的列表中
-        // 如果是，這個 import 可能變成未使用
-        if (removedSymbols.has(importInfo.symbolName)) {
-          // 檢查這個 import 是否還有其他用途
-          const stillUsed = this.isImportStillUsed(
-            content,
-            importInfo.symbolName,
-            removals.filter(r => r.filePath === filePath)
-          );
+      for (const stmt of importStatements) {
+        // 找出此 import 中需要清理的符號
+        const unusedSymbols: string[] = [];
+        const usedSymbols: string[] = [];
 
-          if (!stillUsed) {
+        for (const symbol of stmt.symbols) {
+          // 符號是否在被刪除的列表中，且刪除後不再使用
+          if (removedSymbols.has(symbol.name)) {
+            const stillUsed = this.isImportStillUsed(content, symbol.name, fileRemovals);
+            if (!stillUsed) {
+              unusedSymbols.push(symbol.name);
+            } else {
+              usedSymbols.push(symbol.name);
+            }
+          } else {
+            usedSymbols.push(symbol.name);
+          }
+        }
+
+        // 沒有需要清理的符號，跳過
+        if (unusedSymbols.length === 0) {
+          continue;
+        }
+
+        // 判斷清理類型
+        if (usedSymbols.length === 0) {
+          // 所有符號都未使用，刪除整行
+          cleanups.push({
+            filePath,
+            range: stmt.range,
+            originalImport: stmt.statement,
+            unusedSymbols,
+            cleanupType: 'delete'
+          });
+        } else {
+          // 部分符號仍在使用，產生新的 import 語句
+          const newImport = this.generatePartialImport(stmt, usedSymbols);
+          if (newImport) {
             cleanups.push({
               filePath,
-              range: importInfo.range,
-              originalImport: importInfo.statement,
-              unusedSymbol: importInfo.symbolName
+              range: stmt.range,
+              originalImport: stmt.statement,
+              unusedSymbols,
+              cleanupType: 'partial',
+              newImport
             });
           }
         }
@@ -239,24 +310,44 @@ export class DeadCodeRemover {
   }
 
   /**
-   * 解析 import 語句
+   * 產生部分清理後的 import 語句
+   */
+  private generatePartialImport(
+    stmt: ImportStatementInfo,
+    usedSymbols: string[]
+  ): string | null {
+    // Default import 或 namespace import 不支援部分清理
+    if (stmt.hasDefault || stmt.isNamespace) {
+      return null;
+    }
+
+    // 從原始語句中提取 from 路徑
+    const fromMatch = stmt.statement.match(/from\s+(['"])(.+?)\1/);
+    if (!fromMatch) {
+      return null;
+    }
+    const fromPath = fromMatch[2];
+    const quote = fromMatch[1];
+
+    // 保留別名資訊
+    const symbolsWithAlias = usedSymbols.map(name => {
+      const symbol = stmt.symbols.find(s => s.name === name);
+      return symbol?.alias ? `${name} as ${symbol.alias}` : name;
+    });
+
+    // 判斷是否需要 type 關鍵字
+    const isTypeImport = stmt.statement.match(/import\s+type\s*\{/);
+    const typePrefix = isTypeImport ? 'type ' : '';
+
+    return `import ${typePrefix}{ ${symbolsWithAlias.join(', ')} } from ${quote}${fromPath}${quote};`;
+  }
+
+  /**
+   * 解析 import 語句（以語句為單位）
    * 支援 named import, default import, namespace import, 多行 import
    */
-  private parseImports(content: string): Array<{
-    symbolName: string;
-    statement: string;
-    range: Range;
-    isDefault?: boolean;
-    isNamespace?: boolean;
-  }> {
-    const imports: Array<{
-      symbolName: string;
-      statement: string;
-      range: Range;
-      isDefault?: boolean;
-      isNamespace?: boolean;
-    }> = [];
-
+  private parseImportStatements(content: string): ImportStatementInfo[] {
+    const statements: ImportStatementInfo[] = [];
     const lines = content.split('\n');
 
     // 用於處理多行 import
@@ -274,15 +365,17 @@ export class DeadCodeRemover {
         multiLineImport += '\n' + line;
         multiLineCount++;
 
-        // 檢測結束條件：有 from 或 semicolon，或超過安全限制
-        // 排除註解和字串中的 'from'
-        const cleanLine = line.replace(/\/\/.*/, '').replace(/\/\*[\s\S]*?\*\//, '');
-        const isComplete = cleanLine.includes('from') || cleanLine.includes(';');
+        // 檢測結束條件：有 from 和 引號，或超過安全限制
+        const cleanLine = line.replace(/\/\/.*/, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const isComplete = cleanLine.includes('from') && /['"]/.test(cleanLine);
         const isOverLimit = multiLineCount > MAX_MULTILINE_IMPORT;
 
         if (isComplete || isOverLimit) {
           // 多行 import 結束
-          this.parseImportLine(multiLineImport, multiLineStartLine, lineNumber, imports);
+          const stmt = this.parseImportStatementLine(multiLineImport, multiLineStartLine, lineNumber, lines);
+          if (stmt) {
+            statements.push(stmt);
+          }
           multiLineImport = '';
           multiLineStartLine = -1;
           multiLineCount = 0;
@@ -291,7 +384,7 @@ export class DeadCodeRemover {
       }
 
       // 檢查是否為多行 import 開始（有 { 但沒有 } 或沒有 from）
-      if (line.match(/^\s*import\s*\{/) && !line.includes('}')) {
+      if (line.match(/^\s*import\s+(?:type\s*)?\{/) && !line.includes('}')) {
         multiLineImport = line;
         multiLineStartLine = lineNumber;
         multiLineCount = 1;
@@ -299,106 +392,101 @@ export class DeadCodeRemover {
       }
 
       // 單行處理
-      this.parseImportLine(line, lineNumber, lineNumber, imports);
+      const stmt = this.parseImportStatementLine(line, lineNumber, lineNumber, lines);
+      if (stmt) {
+        statements.push(stmt);
+      }
     }
 
-    return imports;
+    return statements;
   }
 
   /**
    * 解析單行或合併後的 import 語句
    */
-  private parseImportLine(
+  private parseImportStatementLine(
     line: string,
     startLine: number,
     endLine: number,
-    imports: Array<{
-      symbolName: string;
-      statement: string;
-      range: Range;
-      isDefault?: boolean;
-      isNamespace?: boolean;
-    }>
-  ): void {
+    lines: string[]
+  ): ImportStatementInfo | null {
     const trimmedLine = line.replace(/\s+/g, ' ').trim();
+
+    // 不是 import 語句
+    if (!trimmedLine.startsWith('import ')) {
+      return null;
+    }
+
+    // Side-effect import: import '...' (沒有符號)
+    if (trimmedLine.match(/^import\s+['"][^'"]+['"]/)) {
+      return null;
+    }
+
+    const range: Range = {
+      start: { line: startLine, column: 1, offset: undefined },
+      end: { line: endLine, column: (lines[endLine - 1] || '').length + 1, offset: undefined }
+    };
+
+    const symbols: ImportSymbolInfo[] = [];
+    let hasDefault = false;
+    let isNamespace = false;
 
     // 1. Namespace import: import * as X from '...'
     const namespaceMatch = trimmedLine.match(/import\s+\*\s+as\s+(\w+)\s+from/);
     if (namespaceMatch) {
-      imports.push({
-        symbolName: namespaceMatch[1],
-        statement: trimmedLine,
-        range: {
-          start: { line: startLine, column: 1, offset: undefined },
-          end: { line: endLine, column: line.length + 1, offset: undefined }
-        },
-        isNamespace: true
-      });
-      return;
+      symbols.push({ name: namespaceMatch[1], isNamespace: true });
+      isNamespace = true;
+      return { statement: trimmedLine, range, symbols, hasDefault, isNamespace };
     }
 
-    // 2. Default import with named: import X, { Y } from '...'
+    // 2. Default import with named: import X, { Y, Z } from '...'
     const defaultWithNamedMatch = trimmedLine.match(/import\s+(\w+)\s*,\s*\{([^}]+)\}\s*from/);
     if (defaultWithNamedMatch) {
-      // Default import
-      imports.push({
-        symbolName: defaultWithNamedMatch[1],
-        statement: trimmedLine,
-        range: {
-          start: { line: startLine, column: 1, offset: undefined },
-          end: { line: endLine, column: line.length + 1, offset: undefined }
-        },
-        isDefault: true
-      });
-      // Named imports
-      const symbols = defaultWithNamedMatch[2].split(',').map(s => s.trim());
-      for (const symbol of symbols) {
-        const cleanSymbol = symbol.split(/\s+as\s+/)[0].trim();
-        if (cleanSymbol && !cleanSymbol.startsWith('type ')) {
-          imports.push({
-            symbolName: cleanSymbol,
-            statement: trimmedLine,
-            range: {
-              start: { line: startLine, column: 1, offset: undefined },
-              end: { line: endLine, column: line.length + 1, offset: undefined }
-            }
-          });
-        }
-      }
-      return;
+      hasDefault = true;
+      symbols.push({ name: defaultWithNamedMatch[1], isDefault: true });
+      this.parseNamedSymbols(defaultWithNamedMatch[2], symbols);
+      return { statement: trimmedLine, range, symbols, hasDefault, isNamespace };
     }
 
     // 3. Default import only: import X from '...'
     const defaultMatch = trimmedLine.match(/import\s+(\w+)\s+from\s+['"]/);
     if (defaultMatch && !trimmedLine.includes('{')) {
-      imports.push({
-        symbolName: defaultMatch[1],
-        statement: trimmedLine,
-        range: {
-          start: { line: startLine, column: 1, offset: undefined },
-          end: { line: endLine, column: line.length + 1, offset: undefined }
-        },
-        isDefault: true
-      });
-      return;
+      hasDefault = true;
+      symbols.push({ name: defaultMatch[1], isDefault: true });
+      return { statement: trimmedLine, range, symbols, hasDefault, isNamespace };
     }
 
-    // 4. Named import: import { X, Y } from '...'
-    const namedImportMatch = trimmedLine.match(/import\s*(?:type\s*)?\{([^}]+)\}\s*from/);
+    // 4. Named import: import { X, Y } from '...' or import type { X } from '...'
+    const namedImportMatch = trimmedLine.match(/import\s+(?:type\s*)?\{([^}]+)\}\s*from/);
     if (namedImportMatch) {
-      const symbols = namedImportMatch[1].split(',').map(s => s.trim());
-      for (const symbol of symbols) {
-        // 處理 as 別名，跳過 type-only imports
-        const cleanSymbol = symbol.split(/\s+as\s+/)[0].trim();
-        if (cleanSymbol && !cleanSymbol.startsWith('type ')) {
-          imports.push({
-            symbolName: cleanSymbol,
-            statement: trimmedLine,
-            range: {
-              start: { line: startLine, column: 1, offset: undefined },
-              end: { line: endLine, column: line.length + 1, offset: undefined }
-            }
-          });
+      this.parseNamedSymbols(namedImportMatch[1], symbols);
+      if (symbols.length > 0) {
+        return { statement: trimmedLine, range, symbols, hasDefault, isNamespace };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 解析 named import 中的符號
+   */
+  private parseNamedSymbols(symbolsStr: string, symbols: ImportSymbolInfo[]): void {
+    const parts = symbolsStr.split(',').map(s => s.trim());
+    for (const part of parts) {
+      // 跳過空字串和 type-only imports
+      if (!part || part.startsWith('type ')) {
+        continue;
+      }
+
+      // 處理 as 別名: X as Y
+      const asMatch = part.match(/^(\w+)\s+as\s+(\w+)$/);
+      if (asMatch) {
+        symbols.push({ name: asMatch[1], alias: asMatch[2] });
+      } else {
+        const cleanSymbol = part.trim();
+        if (cleanSymbol) {
+          symbols.push({ name: cleanSymbol });
         }
       }
     }
@@ -614,21 +702,21 @@ export class DeadCodeRemover {
    */
   private groupOperationsByFile(
     preview: DeadCodeRemovalPreview
-  ): Map<string, Array<{ range: Range; type: 'removal' | 'import' }>> {
-    const fileOperations = new Map<string, Array<{ range: Range; type: 'removal' | 'import' }>>();
+  ): Map<string, FileOperation[]> {
+    const fileOperations = new Map<string, FileOperation[]>();
 
     // 用於檢查 range 是否重複
     const rangeKey = (r: Range) => `${r.start.line}:${r.start.column}-${r.end.line}:${r.end.column}`;
     const seenRanges = new Map<string, Set<string>>();
 
-    const addOperation = (filePath: string, range: Range, type: 'removal' | 'import') => {
+    const addOperation = (filePath: string, op: FileOperation) => {
       const existing = fileOperations.get(filePath) || [];
       const seen = seenRanges.get(filePath) || new Set();
-      const key = rangeKey(range);
+      const key = rangeKey(op.range);
 
       // 去重：相同 range 只加入一次
       if (!seen.has(key)) {
-        existing.push({ range, type });
+        existing.push(op);
         seen.add(key);
         fileOperations.set(filePath, existing);
         seenRanges.set(filePath, seen);
@@ -637,12 +725,20 @@ export class DeadCodeRemover {
 
     // 加入刪除操作
     for (const removal of preview.removals) {
-      addOperation(removal.filePath, removal.range, 'removal');
+      addOperation(removal.filePath, { range: removal.range, type: 'removal' });
     }
 
     // 加入 import 清理操作
     for (const cleanup of preview.importCleanups) {
-      addOperation(cleanup.filePath, cleanup.range, 'import');
+      if (cleanup.cleanupType === 'partial' && cleanup.newImport) {
+        addOperation(cleanup.filePath, {
+          range: cleanup.range,
+          type: 'import-partial',
+          newContent: cleanup.newImport
+        });
+      } else {
+        addOperation(cleanup.filePath, { range: cleanup.range, type: 'import-delete' });
+      }
     }
 
     return fileOperations;
@@ -653,7 +749,7 @@ export class DeadCodeRemover {
    */
   private async applyFileOperations(
     filePath: string,
-    operations: Array<{ range: Range; type: 'removal' | 'import' }>
+    operations: FileOperation[]
   ): Promise<UpdatedFile> {
     const originalContent = await this.readFile(filePath);
     if (!originalContent) {
@@ -678,15 +774,25 @@ export class DeadCodeRemover {
       const endLine = Math.max(startLine, Math.min(op.range.end.line - 1, lines.length - 1));
       const deleteCount = endLine - startLine + 1;
 
-      // 確保不會刪除超出範圍的行
-      if (startLine < lines.length && deleteCount > 0) {
-        lines.splice(startLine, deleteCount);
-      }
-
-      if (op.type === 'removal') {
-        removedSymbols++;
-      } else {
+      if (op.type === 'import-partial' && op.newContent) {
+        // 部分清理：替換而非刪除
+        if (startLine < lines.length && deleteCount > 0) {
+          // 保留原始縮排
+          const originalIndent = lines[startLine].match(/^(\s*)/)?.[1] || '';
+          lines.splice(startLine, deleteCount, originalIndent + op.newContent);
+        }
         cleanedImports++;
+      } else {
+        // 完整刪除
+        if (startLine < lines.length && deleteCount > 0) {
+          lines.splice(startLine, deleteCount);
+        }
+
+        if (op.type === 'removal') {
+          removedSymbols++;
+        } else {
+          cleanedImports++;
+        }
       }
     }
 
@@ -838,6 +944,19 @@ export class DeadCodeRemover {
   }
 
   /**
+   * 檢查檔案路徑是否匹配排除模式
+   * 支援 glob 模式（如 *.test.ts、**\/__tests__/**）和簡單字串匹配
+   */
+  private matchesExcludePattern(filePath: string, pattern: string): boolean {
+    // 如果 pattern 包含 glob 特殊字符，使用 minimatch
+    if (pattern.includes('*') || pattern.includes('?') || pattern.includes('[')) {
+      return minimatch(filePath, pattern, { dot: true, matchBase: true });
+    }
+    // 否則使用簡單字串包含匹配（向後相容）
+    return filePath.includes(pattern);
+  }
+
+  /**
    * 逸出正則表達式特殊字符
    */
   private escapeRegex(text: string): string {
@@ -856,9 +975,8 @@ export class DeadCodeRemover {
  * 建立 DeadCodeRemover 實例
  */
 export function createDeadCodeRemover(
-  parserRegistry: ParserRegistry,
   fileSystem: IFileSystem,
   options?: DeadCodeRemovalOptions
 ): DeadCodeRemover {
-  return new DeadCodeRemover(parserRegistry, fileSystem, options);
+  return new DeadCodeRemover(fileSystem, options);
 }
