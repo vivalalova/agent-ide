@@ -123,8 +123,9 @@ export class SymbolFinder {
   }
 
   /**
-   * 批次查找符號的引用（一次遍歷所有檔案）
-   * 時間複雜度：O(M) 而非 O(N × M)
+   * 批次查找符號的引用（一次遍歷所有檔案，減少重複解析）
+   * 時間複雜度：O(M × N)，但透過共享 AST 解析減少重複工作
+   * （相較於分別呼叫 findReferencesInFile N 次，節省 N-1 次檔案讀取和解析）
    */
   async findReferencesMultiple(
     symbolNames: ReadonlySet<string>,

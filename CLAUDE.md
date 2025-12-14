@@ -67,9 +67,9 @@ src/
 **shared/ 層存在原因**：多個命令共用的基礎設施（indexing、dependency-graph、symbol-finder）集中於此，避免重複實作。
 
 **模組入口 re-export 規則**：
-- `core/<module>/index.ts` 作為該命令的 public API
-- 允許 re-export `shared/` 層的實作，讓使用者從 `@core/<module>` 取得完整 API
-- 這不違反「禁止 re-export」規則，因為是模組邊界的 barrel export
+- 禁止 re-export 是通用規則，避免中間檔案轉導出
+- **例外**：`index.ts` 的 barrel export 允許，因為是為了模組化方便
+- `core/<module>/index.ts` 作為該命令的 public API，可 re-export `shared/` 層實作
 
 ```
 CLI: find-references → @core/find-references/index.ts → @core/shared/symbol-finder.ts
@@ -98,8 +98,9 @@ CLI: find-references → @core/find-references/index.ts → @core/shared/symbol-
 ┌────────────────────────────────────────────┐
 │  第一層：shared/（三個獨立模組，無互依賴）   │
 │  ┌──────────┐ ┌─────────┐ ┌─────────────┐ │
-│  │ indexing │ │dep-graph│ │symbol-finder│ │
+│  │ indexing │ │ dep-gph │ │symbol-finder│ │
 │  └──────────┘ └─────────┘ └─────────────┘ │
+│  （dep-gph = dependency-graph/）           │
 │        ↓           ↓            ↓         │
 │     @infrastructure + @shared/types       │
 └────────────────────────────────────────────┘

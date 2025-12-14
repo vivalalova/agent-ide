@@ -26,7 +26,7 @@ export {
   isProjectDependencies
 } from './types.js';
 
-// 重新匯出共享型別
+// 重新匯出共享型別（模組入口 barrel export）
 export type { Dependency } from '@shared/types/index.js';
 export { DependencyType } from '@shared/types/index.js';
 
