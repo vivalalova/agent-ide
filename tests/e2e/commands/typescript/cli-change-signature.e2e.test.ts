@@ -608,6 +608,111 @@ const str = identity('hello', 'string');
     });
   });
 
+  describe('效能優化 - 同檔案多呼叫點快取', () => {
+    it('應該正確處理同一檔案中的多個呼叫點（檔案只讀取一次）', async () => {
+      const testFile = `${fixture.rootPath}/test-same-file-calls.ts`;
+      // 20 個呼叫點都在同一檔案
+      const calls = Array.from({ length: 20 }, (_, i) => `const r${i} = calculate(${i * 10}, ${i * 5});`).join('\n');
+
+      await fixture.memfs.writeFile(testFile, `
+function calculate(a: number, b: number): number {
+  return a - b;
+}
+
+${calls}
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'calculate', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        // 20 個呼叫點（函式定義不算）
+        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(19);
+        // 所有更新都在同一檔案
+        expect(output.stats.filesAffected).toBe(1);
+      }
+    });
+
+    it('應該正確處理混合場景（同檔案多呼叫 + 跨檔案）', async () => {
+      // 主檔案：定義 + 5 個呼叫
+      await fixture.writeFile('src/main.ts', `
+export function sharedCalc(x: number, y: string): string {
+  return y + x;
+}
+
+const a1 = sharedCalc(1, 'a');
+const a2 = sharedCalc(2, 'b');
+const a3 = sharedCalc(3, 'c');
+const a4 = sharedCalc(4, 'd');
+const a5 = sharedCalc(5, 'e');
+`);
+
+      // 5 個跨檔案引用，每個檔案 3 個呼叫
+      for (let i = 0; i < 5; i++) {
+        await fixture.writeFile(`src/caller${i}.ts`, `
+import { sharedCalc } from './main';
+
+const b${i}_1 = sharedCalc(${i * 10 + 1}, 'x');
+const b${i}_2 = sharedCalc(${i * 10 + 2}, 'y');
+const b${i}_3 = sharedCalc(${i * 10 + 3}, 'z');
+`);
+      }
+
+      const result = await executeCLI(
+        ['change-signature', fixture.getFilePath('src/main.ts'), 'sharedCalc', '--reorder', 'y,x', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        // 5 呼叫在 main.ts + 15 呼叫在 5 個 caller 檔案
+        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(20);
+        // 1 個 main.ts + 5 個 caller 檔案
+        expect(output.stats.filesAffected).toBe(6);
+      }
+    });
+
+    it('應該正確處理超多呼叫在少量檔案的場景', async () => {
+      // 3 個檔案，每個檔案 30 個呼叫（共 90 個呼叫）
+      await fixture.writeFile('src/target.ts', `
+export function targetFn(a: number, b: number): number {
+  return a * b;
+}
+`);
+
+      for (let f = 0; f < 3; f++) {
+        const calls = Array.from({ length: 30 }, (_, i) => `const v${f}_${i} = targetFn(${i}, ${i + 1});`).join('\n');
+        await fixture.writeFile(`src/consumer${f}.ts`, `
+import { targetFn } from './target';
+
+${calls}
+`);
+      }
+
+      const result = await executeCLI(
+        ['change-signature', fixture.getFilePath('src/target.ts'), 'targetFn', '--reorder', 'b,a', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      if (result.stdout) {
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+        // 應有 90 個呼叫點
+        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(90);
+        // 只有 4 個檔案（1 個 target + 3 個 consumer）
+        expect(output.stats.filesAffected).toBe(4);
+      }
+    });
+  });
+
   describe('缺少參數處理', () => {
     it('應該處理缺少檔案參數', async () => {
       const result = await executeCLI(

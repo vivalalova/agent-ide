@@ -325,6 +325,8 @@ export class ChangeSignatureService {
 
   /**
    * 生成呼叫點更新
+   * 效能優化：使用 Map 快取檔案內容，避免同一檔案被重複讀取
+   * 複雜度從 O(N) 降到 O(M)，M = 不重複檔案數
    */
   private async generateCallSiteUpdates(
     callSites: readonly CallSite[],
@@ -337,36 +339,53 @@ export class ChangeSignatureService {
     // 建立參數映射
     const parameterMapping = this.createParameterMapping(originalSignature, newSignature, changes);
 
+    // 按檔案分組 callSites，避免重複讀取同一檔案
+    const callSitesByFile = new Map<string, CallSite[]>();
     for (const callSite of callSites) {
-      const content = await this.readFile(callSite.location.filePath);
+      const filePath = callSite.location.filePath;
+      const existing = callSitesByFile.get(filePath);
+      if (existing) {
+        existing.push(callSite);
+      } else {
+        callSitesByFile.set(filePath, [callSite]);
+      }
+    }
+
+    // 批次讀取所有不重複的檔案並處理
+    for (const [filePath, fileCallSites] of callSitesByFile) {
+      const content = await this.readFile(filePath);
       if (!content) {continue;}
 
       const lines = content.split('\n');
-      const lineIndex = callSite.location.range.start.line - 1;
-      const originalLine = lines[lineIndex];
 
-      // 建立新的參數列表
-      const newArgs = this.mapCallSiteArguments(callSite, parameterMapping, changes);
-      const newArgsString = newArgs.join(', ');
+      // 處理該檔案的所有 callSites
+      for (const callSite of fileCallSites) {
+        const lineIndex = callSite.location.range.start.line - 1;
+        const originalLine = lines[lineIndex];
 
-      // 找到呼叫的括號位置
-      const funcNameIndex = originalLine.indexOf(callSite.functionName);
-      if (funcNameIndex < 0) {continue;}
+        // 建立新的參數列表
+        const newArgs = this.mapCallSiteArguments(callSite, parameterMapping, changes);
+        const newArgsString = newArgs.join(', ');
 
-      const openParenIndex = originalLine.indexOf('(', funcNameIndex);
-      const closeParenIndex = this.findMatchingParen(originalLine, openParenIndex);
+        // 找到呼叫的括號位置
+        const funcNameIndex = originalLine.indexOf(callSite.functionName);
+        if (funcNameIndex < 0) {continue;}
 
-      const newLine = originalLine.substring(0, openParenIndex + 1) +
-        newArgsString +
-        originalLine.substring(closeParenIndex);
+        const openParenIndex = originalLine.indexOf('(', funcNameIndex);
+        const closeParenIndex = this.findMatchingParen(originalLine, openParenIndex);
 
-      if (newLine !== originalLine) {
-        updates.push({
-          filePath: callSite.location.filePath,
-          originalCode: originalLine,
-          newCode: newLine,
-          location: callSite.location
-        });
+        const newLine = originalLine.substring(0, openParenIndex + 1) +
+          newArgsString +
+          originalLine.substring(closeParenIndex);
+
+        if (newLine !== originalLine) {
+          updates.push({
+            filePath: callSite.location.filePath,
+            originalCode: originalLine,
+            newCode: newLine,
+            location: callSite.location
+          });
+        }
       }
     }
 
