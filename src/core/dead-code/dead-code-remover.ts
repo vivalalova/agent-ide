@@ -92,9 +92,12 @@ export class DeadCodeRemover {
       warnings.push(...removalWarnings);
 
       // 3. 分析並產生 import 清理操作
-      const importCleanups = this.options.cleanupImports
-        ? await this.analyzeImportCleanups(removals)
-        : [];
+      let importCleanups: ImportCleanupOperation[] = [];
+      if (this.options.cleanupImports) {
+        const importResult = await this.analyzeImportCleanups(removals);
+        importCleanups = importResult.cleanups;
+        warnings.push(...importResult.warnings);
+      }
 
       // 4. 計算統計
       const summary = this.calculateSummary(removals, importCleanups);
@@ -240,14 +243,16 @@ export class DeadCodeRemover {
    */
   private async analyzeImportCleanups(
     removals: readonly RemovalOperation[]
-  ): Promise<ImportCleanupOperation[]> {
+  ): Promise<{ cleanups: ImportCleanupOperation[]; warnings: string[] }> {
     const cleanups: ImportCleanupOperation[] = [];
+    const warnings: string[] = [];
     const affectedFiles = new Set(removals.map(r => r.filePath));
     const removedSymbols = new Set(removals.map(r => r.symbolName));
 
     for (const filePath of affectedFiles) {
       const content = await this.readFile(filePath);
       if (!content) {
+        warnings.push(`跳過 import 清理：無法讀取檔案 ${filePath}`);
         continue;
       }
 
@@ -306,7 +311,7 @@ export class DeadCodeRemover {
       }
     }
 
-    return cleanups;
+    return { cleanups, warnings };
   }
 
   /**
@@ -780,11 +785,20 @@ export class DeadCodeRemover {
     }
 
     // 按位置從後往前排序（避免位置偏移）
+    // 第三層：type 排序確保穩定性（import 清理優先於符號刪除）
+    const typeOrder: Record<FileOperation['type'], number> = {
+      'import-partial': 0,
+      'import-delete': 1,
+      'removal': 2
+    };
     const sortedOps = [...operations].sort((a, b) => {
       if (a.range.start.line !== b.range.start.line) {
         return b.range.start.line - a.range.start.line;
       }
-      return b.range.start.column - a.range.start.column;
+      if (a.range.start.column !== b.range.start.column) {
+        return b.range.start.column - a.range.start.column;
+      }
+      return typeOrder[a.type] - typeOrder[b.type];
     });
 
     let lines = originalContent.split('\n');
