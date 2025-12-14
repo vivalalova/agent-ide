@@ -259,6 +259,8 @@ export class DeadCodeRemover {
     // 用於處理多行 import
     let multiLineImport = '';
     let multiLineStartLine = -1;
+    let multiLineCount = 0;
+    const MAX_MULTILINE_IMPORT = 20; // 安全限制：最多 20 行
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -267,11 +269,18 @@ export class DeadCodeRemover {
       // 處理多行 import
       if (multiLineImport) {
         multiLineImport += '\n' + line;
-        if (line.includes('from')) {
+        multiLineCount++;
+
+        // 檢測結束條件：有 from 或 semicolon，或超過安全限制
+        const isComplete = line.includes('from') || line.includes(';');
+        const isOverLimit = multiLineCount > MAX_MULTILINE_IMPORT;
+
+        if (isComplete || isOverLimit) {
           // 多行 import 結束
           this.parseImportLine(multiLineImport, multiLineStartLine, lineNumber, imports);
           multiLineImport = '';
           multiLineStartLine = -1;
+          multiLineCount = 0;
         }
         continue;
       }
@@ -280,6 +289,7 @@ export class DeadCodeRemover {
       if (line.match(/^\s*import\s*\{/) && !line.includes('}')) {
         multiLineImport = line;
         multiLineStartLine = lineNumber;
+        multiLineCount = 1;
         continue;
       }
 
@@ -542,21 +552,24 @@ export class DeadCodeRemover {
    */
   private extractCode(content: string, range: Range): string {
     const lines = content.split('\n');
-    const startLine = range.start.line - 1;
-    const endLine = range.end.line - 1;
+    // 邊界檢查：確保索引在有效範圍內
+    const startLine = Math.max(0, Math.min(range.start.line - 1, lines.length - 1));
+    const endLine = Math.max(0, Math.min(range.end.line - 1, lines.length - 1));
 
     if (startLine === endLine) {
-      return lines[startLine].substring(range.start.column - 1, range.end.column - 1);
+      const line = lines[startLine] || '';
+      return line.substring(range.start.column - 1, range.end.column - 1);
     }
 
     const result: string[] = [];
     for (let i = startLine; i <= endLine; i++) {
+      const line = lines[i] || '';
       if (i === startLine) {
-        result.push(lines[i].substring(range.start.column - 1));
+        result.push(line.substring(range.start.column - 1));
       } else if (i === endLine) {
-        result.push(lines[i].substring(0, range.end.column - 1));
+        result.push(line.substring(0, range.end.column - 1));
       } else {
-        result.push(lines[i]);
+        result.push(line);
       }
     }
 
@@ -613,11 +626,15 @@ export class DeadCodeRemover {
     let cleanedImports = 0;
 
     for (const op of sortedOps) {
-      const startLine = op.range.start.line - 1;
-      const endLine = op.range.end.line - 1;
+      // 邊界檢查：確保索引在有效範圍內
+      const startLine = Math.max(0, Math.min(op.range.start.line - 1, lines.length - 1));
+      const endLine = Math.max(startLine, Math.min(op.range.end.line - 1, lines.length - 1));
+      const deleteCount = endLine - startLine + 1;
 
-      // 刪除這些行
-      lines.splice(startLine, endLine - startLine + 1);
+      // 確保不會刪除超出範圍的行
+      if (startLine < lines.length && deleteCount > 0) {
+        lines.splice(startLine, deleteCount);
+      }
 
       if (op.type === 'removal') {
         removedSymbols++;
