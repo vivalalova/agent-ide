@@ -4,12 +4,12 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,
   type DeadCodeDetectionResult
-} from '@core/dead-code/index.js';
+} from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { convertDeadCodeRemovalPreview } from '@infrastructure/formatters/preview-converter.js';
 import {

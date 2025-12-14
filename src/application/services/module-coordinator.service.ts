@@ -11,9 +11,9 @@ import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
 import { RenameEngine } from '@core/rename/rename-engine.js';
-import { MoveService } from '@core/move-file/move-service.js';
-import { DependencyAnalyzer } from '@core/dependency/dependency-analyzer.js';
-import { IndexEngine } from '@core/indexing/index-engine.js';
+import { MoveService } from '@core/move/move-service.js';
+import { ImpactAnalyzer } from '@core/impact/index.js';
+import { IndexEngine } from '@core/shared/indexing/index-engine.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
@@ -60,7 +60,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   // 核心模組實例
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
-  private readonly dependencyAnalyzer: DependencyAnalyzer;
+  private readonly impactAnalyzer: ImpactAnalyzer;
   private readonly indexEngine: IndexEngine;
   private readonly fileSystem: IFileSystem;
 
@@ -81,7 +81,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     // 初始化核心模組實例
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
-    this.dependencyAnalyzer = new DependencyAnalyzer(this.fileSystem);
+    this.impactAnalyzer = new ImpactAnalyzer(this.fileSystem);
     this.indexEngine = new IndexEngine({} as any, this.fileSystem);
 
     // 註冊所有模組
@@ -246,7 +246,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
     try {
       // 1. 分析移動影響
-      const dependencyResult = await this.dependencyAnalyzer.analyzeFile(source);
+      const dependencyResult = await this.impactAnalyzer.analyzeFile(source);
 
       // 2. 執行移動操作
       const moveResult = await this.moveService.moveFile({ source, target });
@@ -331,7 +331,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
    */
   private registerModules(): void {
     const moduleConfigs = [
-      { id: 'dependency', name: 'dependency', instance: this.dependencyAnalyzer },
+      { id: 'dependency', name: 'dependency', instance: this.impactAnalyzer },
       { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
       { id: 'rename', name: 'rename', instance: this.renameEngine }

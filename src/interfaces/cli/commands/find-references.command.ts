@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
 import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
