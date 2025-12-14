@@ -1,3 +1,7 @@
+## <small>0.7.3 (2025-12-14)</small>
+
+* perf: [批次讀檔優化] call-hierarchy & change-signature 模組 (#27) ([1667668](https://github.com/vivalalova/agent-ide/commit/1667668)), closes [#27](https://github.com/vivalalova/agent-ide/issues/27)
+
 ## <small>0.7.2 (2025-12-14)</small>
 
 * refactor: [core 目錄重構] CLI 命令對應架構 (#26) ([022115c](https://github.com/vivalalova/agent-ide/commit/022115c)), closes [#26](https://github.com/vivalalova/agent-ide/issues/26)
