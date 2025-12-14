@@ -129,8 +129,12 @@ export interface ImportCleanupOperation {
   readonly range: Range;
   /** 原始 import 語句 */
   readonly originalImport: string;
-  /** 變成未使用的符號 */
-  readonly unusedSymbol: string;
+  /** 變成未使用的符號（可能有多個） */
+  readonly unusedSymbols: readonly string[];
+  /** 清理類型：delete=刪除整行, partial=部分清理 */
+  readonly cleanupType: 'delete' | 'partial';
+  /** 部分清理時的新 import 語句 */
+  readonly newImport?: string;
 }
 
 /**
