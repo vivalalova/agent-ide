@@ -273,5 +273,68 @@ describe('SnapshotCacheManager', () => {
                 });
             });
         });
+
+        describe('類型不匹配', () => {
+            const moduleSnapshot: ModuleSnapshot = {
+                module: 'test',
+                api: {},
+                factories: {},
+                types: {},
+                private: {}
+            };
+
+            const projectSnapshot: ProjectSnapshot = {
+                project: 'test-project',
+                modules: {
+                    'test': moduleSnapshot
+                }
+            };
+
+            it('應該在 Module vs Project 比對時拋出錯誤', () => {
+                expect(() => {
+                    cacheManager.computeDelta(moduleSnapshot, projectSnapshot);
+                }).toThrow('快照類型不匹配');
+            });
+
+            it('應該在 Project vs Module 比對時拋出錯誤', () => {
+                expect(() => {
+                    cacheManager.computeDelta(projectSnapshot, moduleSnapshot);
+                }).toThrow('快照類型不匹配');
+            });
+        });
+
+        describe('Project 快照比對', () => {
+            const baseProject: ProjectSnapshot = {
+                project: 'test-project',
+                modules: {
+                    'moduleA': { module: 'moduleA', api: { 'ClassA': {} }, factories: {}, types: {}, private: {} }
+                }
+            };
+
+            it('應該偵測新增的模組', () => {
+                const currentProject: ProjectSnapshot = {
+                    ...baseProject,
+                    modules: {
+                        ...baseProject.modules,
+                        'moduleB': { module: 'moduleB', api: {}, factories: {}, types: {}, private: {} }
+                    }
+                };
+
+                const delta = cacheManager.computeDelta(baseProject, currentProject);
+
+                expect(Object.keys(delta.added.modules)).toContain('moduleB');
+            });
+
+            it('應該偵測刪除的模組', () => {
+                const currentProject: ProjectSnapshot = {
+                    ...baseProject,
+                    modules: {}
+                };
+
+                const delta = cacheManager.computeDelta(baseProject, currentProject);
+
+                expect(delta.removed.modules).toContain('moduleA');
+            });
+        });
     });
 });

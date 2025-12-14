@@ -85,6 +85,7 @@ export class SnapshotCacheManager {
 
     /**
      * 載入快取
+     * @returns 快取內容，若不存在或損壞則返回 null
      */
     async load(): Promise<SnapshotCache | null> {
         try {
@@ -98,11 +99,17 @@ export class SnapshotCacheManager {
 
             // 驗證快取結構
             if (!cache.version || !cache.snapshot) {
+                console.warn(`[SnapshotCache] 快取結構無效，將重新生成快照: ${this.cachePath}`);
                 return null;
             }
 
             return cache;
-        } catch {
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                console.warn(`[SnapshotCache] 快取 JSON 格式錯誤，將重新生成快照: ${this.cachePath}`);
+            } else {
+                console.warn(`[SnapshotCache] 載入快取失敗: ${error}`);
+            }
             return null;
         }
     }
@@ -139,11 +146,11 @@ export class SnapshotCacheManager {
     }
 
     /**
-     * 計算快照 checksum
+     * 計算快照 checksum（使用 SHA-256）
      */
     computeChecksum(data: unknown): string {
         const content = JSON.stringify(data);
-        return crypto.createHash('md5').update(content).digest('hex');
+        return crypto.createHash('sha256').update(content).digest('hex');
     }
 
     /**
@@ -165,11 +172,23 @@ export class SnapshotCacheManager {
 
     /**
      * 比對兩個快照，產生差異
+     * @throws Error 當快照類型不匹配時
      */
     computeDelta(
         baseSnapshot: ModuleSnapshot | ProjectSnapshot,
         currentSnapshot: ModuleSnapshot | ProjectSnapshot
     ): SnapshotDelta {
+        // 驗證快照類型一致性
+        const baseIsProject = isProjectSnapshot(baseSnapshot);
+        const currentIsProject = isProjectSnapshot(currentSnapshot);
+
+        if (baseIsProject !== currentIsProject) {
+            throw new Error(
+                `快照類型不匹配：基準快照是 ${baseIsProject ? 'Project' : 'Module'}，` +
+                `當前快照是 ${currentIsProject ? 'Project' : 'Module'}`
+            );
+        }
+
         // 使用 mutable 內部變數構建差異
         const addedModules: Record<string, ModuleSnapshot> = {};
         const addedSymbols: DeltaSymbol[] = [];
@@ -178,15 +197,17 @@ export class SnapshotCacheManager {
         const removedModules: string[] = [];
         const removedSymbols: DeltaSymbol[] = [];
 
-        if (isProjectSnapshot(baseSnapshot) && isProjectSnapshot(currentSnapshot)) {
-            // 專案級比對
-            const baseModuleNames = new Set(Object.keys(baseSnapshot.modules));
-            const currentModuleNames = new Set(Object.keys(currentSnapshot.modules));
+        if (baseIsProject && currentIsProject) {
+            // 專案級比對（已驗證兩者都是 ProjectSnapshot）
+            const baseProject = baseSnapshot as ProjectSnapshot;
+            const currentProject = currentSnapshot as ProjectSnapshot;
+            const baseModuleNames = new Set(Object.keys(baseProject.modules));
+            const currentModuleNames = new Set(Object.keys(currentProject.modules));
 
             // 新增的模組
             for (const moduleName of currentModuleNames) {
                 if (!baseModuleNames.has(moduleName)) {
-                    addedModules[moduleName] = currentSnapshot.modules[moduleName];
+                    addedModules[moduleName] = currentProject.modules[moduleName];
                 }
             }
 
@@ -200,16 +221,16 @@ export class SnapshotCacheManager {
             // 修改的模組
             for (const moduleName of currentModuleNames) {
                 if (baseModuleNames.has(moduleName)) {
-                    const baseChecksum = this.computeChecksum(baseSnapshot.modules[moduleName]);
-                    const currentChecksum = this.computeChecksum(currentSnapshot.modules[moduleName]);
+                    const baseChecksum = this.computeChecksum(baseProject.modules[moduleName]);
+                    const currentChecksum = this.computeChecksum(currentProject.modules[moduleName]);
 
                     if (baseChecksum !== currentChecksum) {
                         modifiedModules.push(moduleName);
 
                         // 計算符號級差異
                         const symbolDelta = this.computeModuleSymbolDelta(
-                            baseSnapshot.modules[moduleName],
-                            currentSnapshot.modules[moduleName],
+                            baseProject.modules[moduleName],
+                            currentProject.modules[moduleName],
                             moduleName
                         );
 
@@ -219,10 +240,12 @@ export class SnapshotCacheManager {
                     }
                 }
             }
-        } else if (!isProjectSnapshot(baseSnapshot) && !isProjectSnapshot(currentSnapshot)) {
-            // 模組級比對
-            const moduleName = currentSnapshot.module;
-            const symbolDelta = this.computeModuleSymbolDelta(baseSnapshot, currentSnapshot, moduleName);
+        } else {
+            // 模組級比對（已驗證兩者都是 ModuleSnapshot）
+            const baseModule = baseSnapshot as ModuleSnapshot;
+            const currentModule = currentSnapshot as ModuleSnapshot;
+            const moduleName = currentModule.module;
+            const symbolDelta = this.computeModuleSymbolDelta(baseModule, currentModule, moduleName);
 
             addedSymbols.push(...symbolDelta.added);
             modifiedSymbols.push(...symbolDelta.modified);
