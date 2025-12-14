@@ -47,7 +47,8 @@ export class DeadCodeRemover {
       }
 
       // 2. 產生刪除操作
-      const removals = await this.generateRemovalOperations(filteredItems);
+      const { operations: removals, warnings: removalWarnings } = await this.generateRemovalOperations(filteredItems);
+      warnings.push(...removalWarnings);
 
       // 3. 分析並產生 import 清理操作
       const importCleanups = this.options.cleanupImports
@@ -159,12 +160,14 @@ export class DeadCodeRemover {
    */
   private async generateRemovalOperations(
     items: readonly DeadCodeItem[]
-  ): Promise<RemovalOperation[]> {
+  ): Promise<{ operations: RemovalOperation[]; warnings: string[] }> {
     const operations: RemovalOperation[] = [];
+    const warnings: string[] = [];
 
     for (const item of items) {
       const content = await this.readFile(item.location.filePath);
       if (!content) {
+        warnings.push(`跳過 ${item.name}：無法讀取檔案 ${item.location.filePath}`);
         continue;
       }
 
@@ -187,7 +190,7 @@ export class DeadCodeRemover {
       });
     }
 
-    return operations;
+    return { operations, warnings };
   }
 
   /**

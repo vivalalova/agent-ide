@@ -78,8 +78,8 @@ async function handleDeadCodeCommand(
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
-  // autofix 模式預設使用 diff 格式
-  const formatStr = options.format === 'summary' ? 'diff' : options.format;
+  // 使用者指定的格式
+  const formatStr = options.format;
   let format: OutputFormat;
 
   try {
@@ -213,7 +213,7 @@ async function handleDeadCodeCommand(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    outputHandler.outputError(`Autofix 失敗: ${errorMessage}`, format);
+    outputHandler.outputError(`Dead code 刪除失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
     indexEngine.dispose();
