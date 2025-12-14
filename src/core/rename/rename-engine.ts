@@ -61,33 +61,40 @@ export class RenameEngine {
   ): Promise<Array<{ filePath: string; line: number; column: number; text: string }>> {
     const references: Array<{ filePath: string; line: number; column: number; text: string }> = [];
 
-    // 使用簡單的文字匹配來查找引用
+    // 使用並行讀取來查找引用
     try {
-      for (const filePath of filePaths) {
-        try {
-          // 使用注入的 fileSystem 讀取檔案內容
-          const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-          const lines = content.split('\n');
+      const fileContents = await Promise.all(
+        filePaths.map(async (filePath) => {
+          try {
+            const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+            return { filePath, content, error: null };
+          } catch (error) {
+            console.debug(`無法讀取檔案 ${filePath}:`, error);
+            return { filePath, content: null, error };
+          }
+        })
+      );
 
-          // 查找所有包含符號名稱的行
-          lines.forEach((line, lineIndex) => {
-            // 使用單詞邊界進行精確匹配
-            const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
-            let match;
+      for (const { filePath, content } of fileContents) {
+        if (!content) { continue; }
 
-            while ((match = regex.exec(line)) !== null) {
-              references.push({
-                filePath,
-                line: lineIndex + 1,
-                column: match.index + 1,
-                text: line.trim()
-              });
-            }
-          });
-        } catch (error) {
-          // 忽略無法讀取的檔案
-          console.debug(`無法讀取檔案 ${filePath}:`, error);
-        }
+        const lines = content.split('\n');
+
+        // 查找所有包含符號名稱的行
+        lines.forEach((line, lineIndex) => {
+          // 使用單詞邊界進行精確匹配
+          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+          let match;
+
+          while ((match = regex.exec(line)) !== null) {
+            references.push({
+              filePath,
+              line: lineIndex + 1,
+              column: match.index + 1,
+              text: line.trim()
+            });
+          }
+        });
       }
     } catch (error) {
       // 備援錯誤處理
