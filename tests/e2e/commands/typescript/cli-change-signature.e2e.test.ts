@@ -610,11 +610,11 @@ const str = identity('hello', 'string');
 
   describe('效能優化 - 同檔案多呼叫點快取', () => {
     it('應該正確處理同一檔案中的多個呼叫點（檔案只讀取一次）', async () => {
-      const testFile = `${fixture.rootPath}/test-same-file-calls.ts`;
+      const testFile = 'test-same-file-calls.ts';
       // 20 個呼叫點都在同一檔案
       const calls = Array.from({ length: 20 }, (_, i) => `const r${i} = calculate(${i * 10}, ${i * 5});`).join('\n');
 
-      await fixture.memfs.writeFile(testFile, `
+      await fixture.writeFile(testFile, `
 function calculate(a: number, b: number): number {
   return a - b;
 }
@@ -623,7 +623,7 @@ ${calls}
 `.trim());
 
       const result = await executeCLI(
-        ['change-signature', testFile, 'calculate', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        ['change-signature', fixture.getFilePath(testFile), 'calculate', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
