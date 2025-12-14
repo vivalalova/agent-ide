@@ -74,8 +74,12 @@ export function createDefaultCycleDetectionOptions(): CycleDetectionOptions {
  * 計算循環依賴嚴重程度
  */
 export function calculateCycleSeverity(cycleLength: number): 'low' | 'medium' | 'high' {
-  if (cycleLength <= 3) {return 'low';}
-  if (cycleLength <= 6) {return 'medium';}
+  if (cycleLength <= 3) {
+    return 'low';
+  }
+  if (cycleLength <= 6) {
+    return 'medium';
+  }
   return 'high';
 }
 

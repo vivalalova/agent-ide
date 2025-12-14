@@ -2,6 +2,8 @@
  * 依賴圖相關型別定義
  */
 
+import { DependencyType } from '@shared/types/index.js';
+
 /**
  * 依賴圖邊
  */
@@ -9,7 +11,7 @@ export interface DependencyEdge {
   readonly from: string;
   readonly to: string;
   readonly weight: number;
-  readonly dependencyType: 'import' | 'require' | 'include';
+  readonly dependencyType: DependencyType;
 }
 
 /**

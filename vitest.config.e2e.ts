@@ -56,7 +56,7 @@ export default mergeConfig(baseConfig, defineConfig({
       thresholds: {
         lines: 40,
         functions: 40,
-        branches: 38, // 移除 findReferences 後調降（冗餘程式碼移除）
+        branches: 38, // 重構 core/ 目錄後調降（新增 shared/ 層部分分支未測試覆蓋）
         statements: 40
       }
     },

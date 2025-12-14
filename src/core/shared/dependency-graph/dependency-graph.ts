@@ -3,6 +3,7 @@
  * 提供有向圖資料結構來表示檔案間的依賴關係
  */
 
+import { DependencyType } from '@shared/types/index.js';
 import type {
   DependencyNode,
   DependencyEdge,
@@ -303,7 +304,7 @@ export class DependencyGraph {
           from,
           to,
           weight: 1, // 預設權重
-          dependencyType: 'import' // 預設類型
+          dependencyType: DependencyType.Import
         });
       }
     }
