@@ -5,7 +5,7 @@
 
 import type { Symbol, SymbolType } from '@shared/types/symbol.js';
 import type { IndexEngine } from '@core/indexing/index.js';
-import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolReference } from '@core/shared/symbol-finder.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
@@ -15,6 +15,11 @@ import type {
   DeadCodeStats
 } from './types.js';
 import { DEFAULT_DEAD_CODE_OPTIONS } from './types.js';
+
+/** 符號引用快取 */
+interface SymbolReferencesCache {
+  readonly references: readonly SymbolReference[];
+}
 
 /**
  * Dead Code 檢測器
@@ -45,64 +50,21 @@ export class DeadCodeDetector {
       // 收集所有符號
       const { symbols: allSymbols, skippedFiles } = await this.collectAllSymbols(filePaths);
 
-      // 過濾要檢測的符號類型
+      // 過濾要檢測的符號類型（排除已知排除模式）
       const targetSymbols = allSymbols.filter(s =>
-        this.options.symbolTypes.includes(s.type)
+        this.options.symbolTypes.includes(s.type) && !this.shouldExclude(s)
       );
 
-      // 建立 SymbolFinder
-      const symbolFinder = createSymbolFinder(this.parserRegistry, this.fileSystem);
+      // 批量收集所有符號的引用（一次掃描所有檔案）
+      const referencesCache = await this.batchFindReferences(targetSymbols, filePaths);
 
-      // 檢測每個符號的引用
-      const deadItems: DeadCodeItem[] = [];
+      // 並行分析每個符號
+      const analysisResults = await Promise.all(
+        targetSymbols.map(symbol => this.analyzeSingleSymbol(symbol, referencesCache))
+      );
 
-      for (const symbol of targetSymbols) {
-        // 排除模式檢查
-        if (this.shouldExclude(symbol)) {
-          continue;
-        }
-
-        // 查找引用
-        const references = await symbolFinder.findReferences(symbol.name, filePaths);
-
-        // 分析引用：過濾掉定義位置本身
-        const symbolLine = symbol.location.range.start.line;
-        const symbolFile = symbol.location.filePath;
-
-        const usageRefs = references.filter(ref => {
-          // 排除定義位置（同檔案，±1 行容錯）
-          const isSameLocation = ref.location.filePath === symbolFile
-            && Math.abs(ref.location.range.start.line - symbolLine) <= 1;
-          if (isSameLocation) {
-            return false;
-          }
-          // 只計算 usage 類型
-          return ref.type === SymbolReferenceType.Usage;
-        });
-
-        const hasExport = symbol.modifiers.includes('export');
-
-        // 判斷是否為 dead code
-        if (usageRefs.length === 0) {
-          // 沒有使用引用
-          if (hasExport && !this.options.includeExports) {
-            // export 的符號，可能被外部使用，跳過
-            continue;
-          }
-
-          const confidence = this.calculateConfidence(symbol, references.length, hasExport);
-
-          if (confidence >= this.options.minConfidence) {
-            deadItems.push({
-              name: symbol.name,
-              type: symbol.type,
-              location: symbol.location,
-              confidence,
-              reason: this.generateReason(symbol, hasExport, references.length)
-            });
-          }
-        }
-      }
+      // 過濾出 dead code
+      const deadItems = analysisResults.filter((item): item is DeadCodeItem => item !== null);
 
       // 計算統計
       const stats = this.calculateStats(targetSymbols.length, deadItems, startTime, skippedFiles);
@@ -129,30 +91,146 @@ export class DeadCodeDetector {
     }
   }
 
+  /**
+   * 批量查找所有符號的引用
+   * 一次掃描所有檔案，收集所有符號名稱的引用，避免重複讀取檔案
+   */
+  private async batchFindReferences(
+    symbols: readonly Symbol[],
+    filePaths: readonly string[]
+  ): Promise<Map<string, SymbolReferencesCache>> {
+    const symbolFinder = createSymbolFinder(this.parserRegistry, this.fileSystem);
+    const cache = new Map<string, SymbolReferencesCache>();
+
+    // 取得所有需要查找的符號名稱（去重）
+    const symbolNames = [...new Set(symbols.map(s => s.name))];
+
+    // 分批並行查找，避免記憶體溢出
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < symbolNames.length; i += BATCH_SIZE) {
+      const batch = symbolNames.slice(i, i + BATCH_SIZE);
+
+      // 並行查找當前批次的符號引用
+      const results = await Promise.all(
+        batch.map(async (name) => {
+          const references = await symbolFinder.findReferences(name, filePaths);
+          return { name, references };
+        })
+      );
+
+      // 建立快取
+      for (const { name, references } of results) {
+        cache.set(name, { references });
+      }
+    }
+
+    return cache;
+  }
+
+  /**
+   * 分析單一符號是否為 dead code
+   */
+  private async analyzeSingleSymbol(
+    symbol: Symbol,
+    referencesCache: Map<string, SymbolReferencesCache>
+  ): Promise<DeadCodeItem | null> {
+    // 從快取取得引用
+    const cached = referencesCache.get(symbol.name);
+    const references = cached?.references ?? [];
+
+    // 分析引用：過濾掉定義位置本身
+    const symbolLine = symbol.location.range.start.line;
+    const symbolFile = symbol.location.filePath;
+
+    const usageRefs = references.filter(ref => {
+      // 排除定義位置（同檔案，±1 行容錯）
+      const isSameLocation = ref.location.filePath === symbolFile
+        && Math.abs(ref.location.range.start.line - symbolLine) <= 1;
+      if (isSameLocation) {
+        return false;
+      }
+      // 只計算 usage 類型
+      return ref.type === SymbolReferenceType.Usage;
+    });
+
+    const hasExport = symbol.modifiers.includes('export');
+
+    // 判斷是否為 dead code
+    if (usageRefs.length === 0) {
+      // 沒有使用引用
+      if (hasExport && !this.options.includeExports) {
+        // export 的符號，可能被外部使用，跳過
+        return null;
+      }
+
+      const confidence = this.calculateConfidence(symbol, references.length, hasExport);
+
+      if (confidence >= this.options.minConfidence) {
+        return {
+          name: symbol.name,
+          type: symbol.type,
+          location: symbol.location,
+          confidence,
+          reason: this.generateReason(symbol, hasExport, references.length)
+        };
+      }
+    }
+
+    return null;
+  }
+
 /**
    * 收集所有符號
+   * 優先從 IndexEngine 取得已快取的符號，避免重複解析
    */
   private async collectAllSymbols(filePaths: readonly string[]): Promise<{ symbols: Symbol[]; skippedFiles: number }> {
     const allSymbols: Symbol[] = [];
     let skippedFiles = 0;
 
-    for (const filePath of filePaths) {
-      const parser = this.getParser(filePath);
-      if (!parser) {continue;}
+    // 分批並行處理，避免記憶體溢出
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+      const batch = filePaths.slice(i, i + BATCH_SIZE);
 
-      try {
-        const content = await this.readFile(filePath);
-        if (!content) {continue;}
+      const results = await Promise.all(
+        batch.map(async (filePath) => {
+          try {
+            // 優先從 IndexEngine 取得已索引的符號
+            const cachedSymbols = await this.indexEngine.getFileSymbols(filePath);
+            if (cachedSymbols.length > 0) {
+              return { symbols: [...cachedSymbols], skipped: false };
+            }
 
-        const ast = await parser.parse(content, filePath);
-        const symbols = await parser.extractSymbols(ast);
-        allSymbols.push(...symbols);
-      } catch (error) {
-        skippedFiles++;
-        // 非測試環境記錄警告
-        if (process.env.NODE_ENV !== 'test') {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
+            // Fallback: 手動解析
+            const parser = this.getParser(filePath);
+            if (!parser) {
+              return { symbols: [], skipped: false };
+            }
+
+            const content = await this.readFile(filePath);
+            if (!content) {
+              return { symbols: [], skipped: false };
+            }
+
+            const ast = await parser.parse(content, filePath);
+            const symbols = await parser.extractSymbols(ast);
+            return { symbols, skipped: false };
+          } catch (error) {
+            // 非測試環境記錄警告
+            if (process.env.NODE_ENV !== 'test') {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              console.warn(`  跳過檔案 ${filePath}: ${errorMessage}`);
+            }
+            return { symbols: [], skipped: true };
+          }
+        })
+      );
+
+      // 彙整結果
+      for (const result of results) {
+        allSymbols.push(...result.symbols);
+        if (result.skipped) {
+          skippedFiles++;
         }
       }
     }
