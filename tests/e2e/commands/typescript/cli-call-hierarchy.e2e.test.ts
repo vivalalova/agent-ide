@@ -482,6 +482,184 @@ export const arrowFn = () => {
     });
   });
 
+  describe('批次處理效能優化', () => {
+    it('應該正確處理同一檔案中多個呼叫點', async () => {
+      // Given: 一個被多個函數呼叫的 target，且這些函數都在同一檔案
+      await fixture.writeFile('src/batch-target.ts', `
+export function batchTarget() {
+  return 42;
+}
+      `.trim());
+
+      await fixture.writeFile('src/batch-callers.ts', `
+import { batchTarget } from './batch-target.js';
+
+export function batchCaller1() {
+  return batchTarget() + 1;
+}
+
+export function batchCaller2() {
+  return batchTarget() + 2;
+}
+
+export function batchCaller3() {
+  const result = batchTarget();
+  return result * 2;
+}
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'batchTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.incoming.length).toBeGreaterThanOrEqual(3);
+
+      // 驗證三個 caller 都被正確識別
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('batchCaller1');
+      expect(callerNames).toContain('batchCaller2');
+      expect(callerNames).toContain('batchCaller3');
+    });
+
+    it('應該正確處理多個檔案中的呼叫點', async () => {
+      // Given: 一個被多個檔案呼叫的 target
+      await fixture.writeFile('src/multi-target.ts', `
+export function multiTarget() {
+  return 'result';
+}
+      `.trim());
+
+      await fixture.writeFile('src/multi-file1.ts', `
+import { multiTarget } from './multi-target.js';
+
+export function fromMultiFile1() {
+  return multiTarget();
+}
+      `.trim());
+
+      await fixture.writeFile('src/multi-file2.ts', `
+import { multiTarget } from './multi-target.js';
+
+export function fromMultiFile2() {
+  return multiTarget();
+}
+      `.trim());
+
+      await fixture.writeFile('src/multi-file3.ts', `
+import { multiTarget } from './multi-target.js';
+
+export function fromMultiFile3() {
+  return multiTarget();
+}
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'multiTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.incoming.length).toBeGreaterThanOrEqual(3);
+
+      // 驗證三個不同檔案的 caller 都被正確識別
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('fromMultiFile1');
+      expect(callerNames).toContain('fromMultiFile2');
+      expect(callerNames).toContain('fromMultiFile3');
+    });
+
+    it('應該正確處理混合情境：同檔案多呼叫 + 跨檔案呼叫', async () => {
+      // Given: 混合情境
+      await fixture.writeFile('src/mixed-core.ts', `
+export function mixedCore() {
+  return 'core';
+}
+      `.trim());
+
+      await fixture.writeFile('src/mixed-utils.ts', `
+import { mixedCore } from './mixed-core.js';
+
+export function mixedUtil1() {
+  return mixedCore();
+}
+
+export function mixedUtil2() {
+  return mixedCore();
+}
+      `.trim());
+
+      await fixture.writeFile('src/mixed-service.ts', `
+import { mixedCore } from './mixed-core.js';
+
+export class MixedService {
+  doMixedTask() {
+    return mixedCore();
+  }
+}
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'mixedCore', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.incoming.length).toBeGreaterThanOrEqual(3);
+
+      const callerNames = output.incoming.map((call: { caller: string }) => call.caller);
+      expect(callerNames).toContain('mixedUtil1');
+      expect(callerNames).toContain('mixedUtil2');
+      expect(callerNames).toContain('doMixedTask');
+    });
+
+    it('應該正確返回呼叫點的 context', async () => {
+      // Given
+      await fixture.writeFile('src/context-target.ts', `
+export function contextTarget() {
+  return 42;
+}
+      `.trim());
+
+      await fixture.writeFile('src/context-caller.ts', `
+import { contextTarget } from './context-target.js';
+
+export function contextCaller() {
+  const value = contextTarget();
+  return value;
+}
+      `.trim());
+
+      // When
+      const result = await executeCLI(
+        ['call-hierarchy', 'contextTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const callerEntry = output.incoming.find((call: { caller: string }) => call.caller === 'contextCaller');
+      expect(callerEntry).toBeDefined();
+      expect(callerEntry.context).toContain('contextTarget()');
+    });
+  });
+
   describe('邊界條件', () => {
     it('應該處理 depth=1（預設值）', async () => {
       const result = await executeCLI(
