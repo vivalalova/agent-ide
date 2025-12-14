@@ -60,6 +60,56 @@ src/
 └── application/          # 服務層、DI容器
 ```
 
+### Core 目錄設計原則
+
+**CLI 命令對應**：每個 `core/<module>/` 目錄對應一個 CLI 命令，讓維護者從命令名直接找到實作位置。
+
+**shared/ 層存在原因**：多個命令共用的基礎設施（indexing、dependency-graph、symbol-finder）集中於此，避免重複實作。
+
+**模組入口 re-export 規則**：
+- `core/<module>/index.ts` 作為該命令的 public API
+- 允許 re-export `shared/` 層的實作，讓使用者從 `@core/<module>` 取得完整 API
+- 這不違反「禁止 re-export」規則，因為是模組邊界的 barrel export
+
+```
+CLI: find-references → @core/find-references/index.ts → @core/shared/symbol-finder.ts
+                       ↑ 模組入口（public API）         ↑ 實際實作（internal）
+```
+
+### Core 依賴架構圖（三層）
+
+```
+┌────────────────────────────────────────────┐
+│  第三層：複合模組（依賴其他功能模組）        │
+│  ┌─────────┐                               │
+│  │ impact  │ ← 依賴 cycles + shared        │
+│  └────┬────┘                               │
+└───────┼────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────┐
+│  第二層：功能模組（僅依賴 shared）           │
+│  cycles, find-references, call-hierarchy,  │
+│  snapshot, rename, deadcode, move,         │
+│  move-member, change-signature             │
+└───────┬────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────┐
+│  第一層：shared/（三個獨立模組，無互依賴）   │
+│  ┌──────────┐ ┌─────────┐ ┌─────────────┐ │
+│  │ indexing │ │dep-graph│ │symbol-finder│ │
+│  └──────────┘ └─────────┘ └─────────────┘ │
+│        ↓           ↓            ↓         │
+│     @infrastructure + @shared/types       │
+└────────────────────────────────────────────┘
+```
+
+**依賴規則**：
+- 第三層 → 第二層 + 第一層（`impact/` → `cycles/` + `shared/`）
+- 第二層 → 第一層（功能模組 → `shared/`）
+- 第一層內部無互依賴，各自依賴 `@infrastructure`
+
 ## 測試規範
 
 ### 測試類型
