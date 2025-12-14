@@ -56,7 +56,11 @@ export default mergeConfig(baseConfig, defineConfig({
       thresholds: {
         lines: 40,
         functions: 40,
-        branches: 38, // 重構 core/ 目錄後調降（新增 shared/ 層部分分支未測試覆蓋）
+        // branches 調降至 38% 原因：
+        // 1. 重構 core/ 目錄新增 shared/ 層，部分分支（parser 降級、Buffer 處理）在 E2E 較難觸發
+        // 2. plugins/javascript parser 幾乎未使用（branches 1.17%）拉低整體覆蓋率
+        // 3. 相關邏輯已在 unit 測試補齊覆蓋（tests/unit/shared/shared.test.ts）
+        branches: 38,
         statements: 40
       }
     },

@@ -550,6 +550,38 @@ describe('SymbolFinder', () => {
     });
   });
 
+  describe('readFile edge cases', () => {
+    it('應該處理 readFile 返回 Buffer 的情況', async () => {
+      // 模擬 readFile 返回 Buffer 而非 string
+      const bufferContent = Buffer.from('export function testFunc() {}');
+      const mockFs = {
+        readFile: vi.fn().mockResolvedValue(bufferContent),
+        writeFile: vi.fn(),
+        appendFile: vi.fn(),
+        deleteFile: vi.fn(),
+        createDirectory: vi.fn(),
+        readDirectory: vi.fn().mockResolvedValue([]),
+        deleteDirectory: vi.fn(),
+        exists: vi.fn().mockResolvedValue(true),
+        getStats: vi.fn(),
+        isFile: vi.fn().mockResolvedValue(true),
+        isDirectory: vi.fn().mockResolvedValue(false),
+        copyFile: vi.fn(),
+        moveFile: vi.fn(),
+        glob: vi.fn().mockResolvedValue([])
+      } as unknown as IFileSystem;
+
+      const finder = new SymbolFinder(mockParserRegistry, mockFs);
+      const mockSymbol = createMockSymbol('testFunc', 'function');
+      vi.mocked(mockParser.extractSymbols).mockResolvedValue([mockSymbol]);
+
+      const result = await finder.findDefinition('/test/file.ts', 'testFunc');
+
+      expect(result).toBeDefined();
+      expect(result?.symbol.name).toBe('testFunc');
+    });
+  });
+
   describe('extractDocumentation', () => {
     it('應該提取 JSDoc 註解', async () => {
       const fileContent = `/**
@@ -712,6 +744,128 @@ function testFunc() {}`;
       const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
 
       expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 function 關鍵字定義', async () => {
+      const fileContent = 'function testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 async function 定義', async () => {
+      const fileContent = 'async function testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除類別方法定義（有返回類型）', async () => {
+      const fileContent = '  testFunc(): string { return ""; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除類別方法定義（有大括號）', async () => {
+      const fileContent = '  testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 static 方法定義', async () => {
+      const fileContent = 'static testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 private 方法定義', async () => {
+      const fileContent = 'private testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 public 方法定義', async () => {
+      const fileContent = 'public testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 protected 方法定義', async () => {
+      const fileContent = 'protected testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 get accessor 定義', async () => {
+      const fileContent = 'get testFunc() { return 1; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該排除 set accessor 定義', async () => {
+      const fileContent = 'set testFunc(v: number) { this.x = v; }';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('應該識別真正的函式呼叫而非定義', async () => {
+      const fileContent = `foo(); testFunc();
+const result = testFunc(42);`;
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      expect(result.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該處理找不到匹配右括號的情況', async () => {
+      const fileContent = 'testFunc(';  // 不完整的呼叫
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSites('testFunc', ['/test/file.ts']);
+
+      // 即使括號不匹配，仍應該找到呼叫（但 closingParen 會是 -1）
+      expect(result).toHaveLength(1);
     });
   });
 
