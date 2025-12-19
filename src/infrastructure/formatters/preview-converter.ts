@@ -22,6 +22,8 @@ interface OperationLike {
     readonly start: { readonly line: number; readonly column: number };
     readonly end: { readonly line: number; readonly column: number };
   };
+  /** 引用所在行的完整程式碼（用於 diff 輸出顯示完整行） */
+  readonly context?: string;
 }
 
 /**
@@ -273,6 +275,9 @@ export function convertRefactorPreview(
 
 /**
  * 通用操作轉換函數
+ *
+ * 當操作包含 context（完整行內容）時，會使用 context 來生成 diff，
+ * 這樣 diff 輸出會顯示完整的程式碼行，而非只有被替換的符號名稱。
  */
 function convertOperationsToPreviewInput(
   command: PreviewCommand,
@@ -295,11 +300,27 @@ function convertOperationsToPreviewInput(
   for (const [filePath, ops] of groupedOps) {
     const originalContent = originalContents.get(filePath) ?? '';
 
-    const changes: LineChange[] = ops.map(op => ({
-      line: op.range.start.line,
-      oldContent: op.oldText,
-      newContent: op.newText
-    }));
+    const changes: LineChange[] = ops.map(op => {
+      // 如果有 context（完整行內容），使用它來生成 diff
+      // 這樣可以顯示完整的程式碼行，而非只有符號名稱
+      if (op.context) {
+        // oldContent: 完整的原始行
+        // newContent: 將原始行中的 oldText 替換為 newText
+        const newContext = op.context.replace(op.oldText, op.newText);
+        return {
+          line: op.range.start.line,
+          oldContent: op.context,
+          newContent: newContext
+        };
+      }
+
+      // 沒有 context 時，降級為只顯示符號名稱
+      return {
+        line: op.range.start.line,
+        oldContent: op.oldText,
+        newContent: op.newText
+      };
+    });
 
     fileChanges.push({ filePath, originalContent, changes });
   }

@@ -167,6 +167,42 @@ describe('CLI rename basic - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
     });
 
+    it('diff 輸出應該顯示完整的程式碼行而非只有符號名稱 (Issue #36)', async () => {
+      // Given: 建立一個有明確符號定義的測試檔案
+      await fixture.writeFile('src/test-diff.ts', `
+export function getDefaultDayType(date: Date): string {
+  return date.toISOString();
+}
+
+const dayType = getDefaultDayType(new Date());
+console.log(dayType);
+`);
+
+      // When: 執行 rename 命令並使用 diff 格式
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'getDefaultDayType', '--to', 'determineDefaultDayType', '--dry-run', '--format', 'diff'],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: diff 輸出應該包含完整的程式碼行
+      expect(result.exitCode).toBe(0);
+
+      // 驗證 diff 輸出包含完整行內容，而非只有符號名稱
+      // 預期看到類似：-export function getDefaultDayType(date: Date): string {
+      // 而非只有：-getDefaultDayType
+      const stdout = result.stdout;
+
+      // 刪除行應該包含完整的函數定義
+      expect(stdout).toMatch(/-.*export function getDefaultDayType.*\(date: Date\)/);
+      // 新增行應該包含替換後的完整函數定義
+      expect(stdout).toMatch(/\+.*export function determineDefaultDayType.*\(date: Date\)/);
+
+      // 刪除行應該包含完整的變數賦值
+      expect(stdout).toMatch(/-.*const dayType = getDefaultDayType/);
+      // 新增行應該包含替換後的完整變數賦值
+      expect(stdout).toMatch(/\+.*const dayType = determineDefaultDayType/);
+    });
+
     it('應該預設使用 diff 格式', async () => {
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'UserRole', '--to', 'AccountRole'],

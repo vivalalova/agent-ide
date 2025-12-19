@@ -250,7 +250,9 @@ export class ReferenceUpdater {
         references.push({
           symbolName,
           range,
-          type: type as 'definition' | 'usage' | 'comment'
+          type: type as 'definition' | 'usage' | 'comment',
+          // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
+          context: line
         });
       }
     }

@@ -282,8 +282,9 @@ export class SymbolFinder {
 
       return references.map(ref => {
         const lineIndex = ref.location.range.start.line - 1;
+        // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
         const context = lineIndex >= 0 && lineIndex < lines.length
-          ? lines[lineIndex].trim()
+          ? lines[lineIndex]
           : undefined;
 
         return {
@@ -334,8 +335,9 @@ export class SymbolFinder {
 
       return references.map(ref => {
         const lineIndex = ref.location.range.start.line - 1;
+        // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
         const context = lineIndex >= 0 && lineIndex < lines.length
-          ? lines[lineIndex].trim()
+          ? lines[lineIndex]
           : undefined;
 
         return {
@@ -573,7 +575,8 @@ export class SymbolFinder {
             }
           },
           type: SymbolReferenceType.Usage,
-          context: line.trim()
+          // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
+          context: line
         });
       }
     }
@@ -647,7 +650,8 @@ export class SymbolFinder {
             }
           },
           type: SymbolReferenceType.Usage,
-          context: line.trim()
+          // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
+          context: line
         });
       }
     }
