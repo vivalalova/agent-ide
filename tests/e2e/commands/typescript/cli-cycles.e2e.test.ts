@@ -286,6 +286,23 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       // 確保不會崩潰
       expect([0, 1]).toContain(result.exitCode);
     });
+
+    it('應該對不存在的路徑顯示錯誤訊息並返回 exit code 1', async () => {
+      const result = await executeCLI(['cycles', '--path', '/not-exist-folder', '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
+    });
+
+    it('應該對不存在的路徑在 summary 格式顯示錯誤訊息', async () => {
+      const result = await executeCLI(['cycles', '--path', '/not-exist-folder', '--format', 'summary'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(1);
+      // summary 格式的錯誤輸出到 stderr
+      expect(result.stderr).toContain('路徑不存在');
+    });
   });
 
   describe('DependencyGraph 邊界測試', () => {

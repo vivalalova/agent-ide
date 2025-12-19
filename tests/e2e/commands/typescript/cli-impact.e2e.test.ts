@@ -20,7 +20,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
   describe('基本功能', () => {
     it('應該成功分析檔案影響範圍', async () => {
       const result = await executeCLI(
-        ['impact', '--file', 'src/utils/array.ts', '--path', fixture.rootPath, '--format', 'json'],
+        ['impact', '--file', 'src/utils/array-utils.ts', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -294,6 +294,66 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
+    });
+  });
+
+  describe('錯誤處理 - 路徑/檔案不存在', () => {
+    it('應該對不存在的檔案顯示錯誤訊息並返回 exit code 1', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'not-exist-file.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('檔案不存在');
+    });
+
+    it('應該對不存在的檔案在 summary 格式顯示錯誤訊息', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'not-exist-file.ts', '--path', fixture.rootPath, '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      // summary 格式的錯誤輸出到 stderr
+      expect(result.stderr).toContain('檔案不存在');
+    });
+
+    it('應該對不存在的專案路徑顯示錯誤訊息並返回 exit code 1', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'test.ts', '--path', '/not-exist-path', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
+    });
+
+    it('應該對不存在的專案路徑在 summary 格式顯示錯誤訊息', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'test.ts', '--path', '/not-exist-path', '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      // summary 格式的錯誤輸出到 stderr
+      expect(result.stderr).toContain('路徑不存在');
+    });
+
+    it('應該對深層不存在的檔案路徑顯示錯誤', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src/modules/not-exist.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('檔案不存在');
     });
   });
 

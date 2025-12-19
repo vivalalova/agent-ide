@@ -49,13 +49,21 @@ async function handleCyclesCommand(
     return;
   }
 
+  const analyzePath = path.resolve(options.path || process.cwd());
+
+  // 檢查路徑是否存在（在進度訊息前檢查）
+  const pathExists = await context.fileSystem.exists(analyzePath);
+  if (!pathExists) {
+    outputHandler.outputError(`路徑不存在: ${analyzePath}`, format);
+    process.exitCode = 1;
+    return;
+  }
+
   if (format !== OutputFormat.Json) {
     console.log('🔄 循環依賴分析...');
   }
 
   try {
-    const analyzePath = path.resolve(options.path || process.cwd());
-
     // 初始化影響分析器
     const impactAnalyzer = new ImpactAnalyzer(context.fileSystem);
 

@@ -51,17 +51,34 @@ async function handleImpactCommand(
     return;
   }
 
+  const analyzePath = path.resolve(options.path || process.cwd());
+
+  // 檢查專案路徑是否存在（在進度訊息前檢查）
+  const pathExists = await context.fileSystem.exists(analyzePath);
+  if (!pathExists) {
+    outputHandler.outputError(`路徑不存在: ${analyzePath}`, format);
+    process.exitCode = 1;
+    return;
+  }
+
+  // 將相對路徑轉為絕對路徑
+  const targetFile = path.isAbsolute(options.file)
+    ? options.file
+    : path.join(analyzePath, options.file);
+
+  // 檢查目標檔案是否存在（在進度訊息前檢查）
+  const fileExists = await context.fileSystem.exists(targetFile);
+  if (!fileExists) {
+    outputHandler.outputError(`檔案不存在: ${targetFile}`, format);
+    process.exitCode = 1;
+    return;
+  }
+
   if (format !== OutputFormat.Json) {
     console.log('💥 影響分析...');
   }
 
   try {
-    const analyzePath = path.resolve(options.path || process.cwd());
-    // 將相對路徑轉為絕對路徑
-    const targetFile = path.isAbsolute(options.file)
-      ? options.file
-      : path.join(analyzePath, options.file);
-
     // 讀取 tsconfig.json 路徑別名
     const pathAliases = await loadPathAliases(analyzePath, context.fileSystem);
 
