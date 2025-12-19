@@ -15,7 +15,8 @@ import {
   type CallHierarchyResult,
   type CallHierarchyDirection,
   type IncomingCallItem,
-  type OutgoingCallItem
+  type OutgoingCallItem,
+  type FunctionDefinitionInfo
 } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
@@ -103,13 +104,16 @@ async function handleCallHierarchyCommand(
     // 使用 IndexEngine 查找函數定義（與 find-references 相同的方式）
     const symbolResults = await indexEngine.findSymbol(functionName);
 
-    // 優先找 function，但也接受其他類型（如 variable 用於 arrow function）
-    const functionSymbol = symbolResults.find(r => r.symbol.type === 'function')
-      || symbolResults.find(r => r.symbol.type === 'variable')
-      || symbolResults[0];
+    // 過濾出函數類型的符號（function 或 variable 用於 arrow function）
+    const functionSymbols = symbolResults.filter(
+      r => r.symbol.type === 'function' || r.symbol.type === 'variable'
+    );
+
+    // 若無函數類型，回退到所有結果
+    const matchedSymbols = functionSymbols.length > 0 ? functionSymbols : symbolResults;
 
     // 函數找不到的情況
-    if (!functionSymbol) {
+    if (matchedSymbols.length === 0) {
       const errorResult: CallHierarchyResult = {
         command: QueryCommand.CallHierarchy,
         success: false,
@@ -131,7 +135,15 @@ async function handleCallHierarchyCommand(
       return;
     }
 
-    // 取得函數定義位置
+    // 收集所有定義位置（用於多定義場景）
+    const allDefinitions: FunctionDefinitionInfo[] = matchedSymbols.map(sym => ({
+      file: sym.symbol.location.filePath,
+      line: sym.symbol.location.range.start.line,
+      className: sym.symbol.scope?.name
+    }));
+
+    // 使用第一個定義進行分析（向後相容）
+    const functionSymbol = matchedSymbols[0];
     const definitionFile = functionSymbol.symbol.location.filePath;
     const definitionLine = functionSymbol.symbol.location.range.start.line;
     const definitionRange = functionSymbol.symbol.location.range;
@@ -182,6 +194,7 @@ async function handleCallHierarchyCommand(
       function: functionName,
       file: definitionFile,
       definitionLine,
+      definitions: allDefinitions.length > 1 ? allDefinitions : undefined,
       direction,
       depth,
       incoming,
@@ -189,7 +202,8 @@ async function handleCallHierarchyCommand(
       summary: {
         incomingCount: incoming.length,
         outgoingCount: outgoing.length,
-        uniqueFiles
+        uniqueFiles,
+        definitionCount: allDefinitions.length
       }
     };
 

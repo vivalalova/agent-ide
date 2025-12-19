@@ -82,16 +82,20 @@ async function handleFindReferencesCommand(
     // 查找符號定義
     const symbolResults = await indexEngine.findSymbol(symbolName);
     let definition: DefinitionLocation | null = null;
+    let definitions: DefinitionLocation[] = [];
     let symbolType = 'unknown';
 
     if (symbolResults.length > 0) {
-      const firstResult = symbolResults[0];
-      definition = {
-        file: firstResult.symbol.location.filePath,
-        line: firstResult.symbol.location.range.start.line,
-        column: firstResult.symbol.location.range.start.column
-      };
-      symbolType = firstResult.symbol.type;
+      // 收集所有定義位置
+      definitions = symbolResults.map(result => ({
+        file: result.symbol.location.filePath,
+        line: result.symbol.location.range.start.line,
+        column: result.symbol.location.range.start.column
+      }));
+
+      // 第一個定義（向後相容）
+      definition = definitions[0];
+      symbolType = symbolResults[0].symbol.type;
     }
 
     // 建立 SymbolFinder 查找所有引用
@@ -119,10 +123,12 @@ async function handleFindReferencesCommand(
       symbol: symbolName,
       type: symbolType,
       definition,
+      definitions: definitions.length > 1 ? definitions : undefined,
       references,
       summary: {
         totalReferences: references.length,
-        filesAffected
+        filesAffected,
+        definitionCount: definitions.length
       }
     };
 

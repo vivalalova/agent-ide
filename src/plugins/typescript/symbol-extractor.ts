@@ -6,8 +6,7 @@
 import * as ts from 'typescript';
 import type {
   Symbol,
-  Scope,
-  ScopeType
+  Scope
 } from '../../shared/types/index.js';
 import {
   SymbolType,
@@ -99,6 +98,11 @@ export class TypeScriptSymbolExtractor {
       const scope = createScope('class', name, this.getCurrentScope());
       this.scopeStack.push(scope);
       needsRestore = true;
+    } else if (ts.isInterfaceDeclaration(node)) {
+      const name = getNodeName(node);
+      const scope = createScope('interface', name, this.getCurrentScope());
+      this.scopeStack.push(scope);
+      needsRestore = true;
     } else if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node)) {
       const name = getNodeName(node) || 'constructor';
       const scope = createScope('function', name, this.getCurrentScope());
@@ -134,7 +138,8 @@ export class TypeScriptSymbolExtractor {
       return null;
     }
 
-    const range = tsNodeToRange(node, this.sourceFile);
+    // 優先使用符號識別符的位置，避免裝飾器造成行號偏移
+    const range = this.getSymbolIdentifierRange(node);
     const location = {
       filePath: this.sourceFile.fileName,
       range
@@ -158,6 +163,25 @@ export class TypeScriptSymbolExtractor {
     };
 
     return symbol;
+  }
+
+  /**
+   * 取得符號識別符的位置範圍
+   * 優先返回 name identifier 的位置，避免裝飾器造成行號偏移
+   */
+  private getSymbolIdentifierRange(
+    node: ts.Node
+  ): import('../../shared/types/index.js').Range {
+    // 嘗試取得節點的 name 屬性（識別符）
+    if ('name' in node && node.name) {
+      const nameNode = node.name as ts.Node;
+      if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode)) {
+        return tsNodeToRange(nameNode, this.sourceFile);
+      }
+    }
+
+    // 若無 name 屬性，回退到整個節點的範圍
+    return tsNodeToRange(node, this.sourceFile);
   }
 
   /**
