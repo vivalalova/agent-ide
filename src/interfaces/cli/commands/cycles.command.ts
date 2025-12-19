@@ -3,6 +3,7 @@
  * 循環依賴分析（從 deps cycles 攤平而來）
  */
 
+import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
@@ -53,13 +54,13 @@ async function handleCyclesCommand(
   }
 
   try {
-    const analyzePath = options.path || process.cwd();
+    const analyzePath = path.resolve(options.path || process.cwd());
 
     // 初始化影響分析器
     const impactAnalyzer = new ImpactAnalyzer(context.fileSystem);
 
     // 分析專案依賴
-    const projectDeps = await impactAnalyzer.analyzeProject(analyzePath);
+    await impactAnalyzer.analyzeProject(analyzePath);
 
     // 獲取統計資訊
     const stats = impactAnalyzer.getStats();
@@ -87,7 +88,8 @@ async function handleCyclesCommand(
         totalFiles: stats.totalFiles,
         totalDependencies: stats.totalDependencies,
         cyclesFound: cycles.length
-      }
+      },
+      basePath: analyzePath
     };
 
     outputHandler.outputQuery(result, format);

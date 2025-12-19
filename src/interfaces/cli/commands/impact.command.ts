@@ -3,10 +3,10 @@
  * 影響分析（從 deps impact 攤平而來）
  */
 
+import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
-import { CycleDetector } from '@core/cycles/index.js';
-import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type DepsResult } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -55,7 +55,7 @@ async function handleImpactCommand(
   }
 
   try {
-    const analyzePath = options.path || process.cwd();
+    const analyzePath = path.resolve(options.path || process.cwd());
     const targetFile = options.file;
 
     // 初始化影響分析器
@@ -67,40 +67,29 @@ async function handleImpactCommand(
     // 獲取統計資訊
     const stats = impactAnalyzer.getStats();
 
-    // 取得依賴圖
-    const graph = impactAnalyzer.getGraph();
-
-    // 使用 CycleDetector 檢測循環依賴
-    const cycleDetector = new CycleDetector();
-    const cycles = cycleDetector.detectCycles(graph);
-
-    // 轉換 cycles 為 CycleInfo
-    const cycleInfos: CycleInfo[] = cycles.map(c => ({
-      cycle: [...c.cycle],
-      length: c.length
-    }));
-
     // 取得影響分析資訊
     const dependents = impactAnalyzer.getDependents(targetFile);
     const dependencies = impactAnalyzer.getDependencies(targetFile);
 
+    // Impact 命令不輸出循環依賴（改用 cycles 命令獲取）
     const result: DepsResult = {
       command: QueryCommand.Deps,
       success: true,
-      cycles: cycleInfos,
+      cycles: [],
       summary: {
         totalScanned: stats.totalFiles,
-        issuesFound: cycles.length,
+        issuesFound: 0,
         totalFiles: stats.totalFiles,
         totalDependencies: stats.totalDependencies,
-        cyclesFound: cycles.length
+        cyclesFound: 0
       },
       impact: {
         targetFile,
         dependents,
         dependencies,
         totalAffected: dependents.length
-      }
+      },
+      basePath: analyzePath
     };
 
     outputHandler.outputQuery(result, format);

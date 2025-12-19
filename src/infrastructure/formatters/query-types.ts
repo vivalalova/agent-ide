@@ -120,6 +120,8 @@ export interface DepsResult extends QueryResult {
   cycles: CycleInfo[];
   /** 影響分析 */
   impact?: ImpactInfo;
+  /** 專案根目錄路徑（用於計算相對路徑） */
+  basePath?: string;
 }
 
 /** Analyze 分析類型 */
@@ -247,8 +249,10 @@ export interface FindReferencesResult extends QueryResult {
   symbol: string;
   /** 符號類型 */
   type: string;
-  /** 定義位置（找不到時為 null） */
+  /** 定義位置（找不到時為 null）- 單一定義時使用 */
   definition: DefinitionLocation | null;
+  /** 所有定義位置（多個同名符號時使用） */
+  definitions?: DefinitionLocation[];
   /** 所有引用 */
   references: ReferenceItem[];
 }
@@ -286,6 +290,16 @@ export interface OutgoingCallItem {
   context?: string;
 }
 
+/** 函數定義資訊（用於多定義場景） */
+export interface FunctionDefinitionInfo {
+  /** 定義所在檔案 */
+  file: string;
+  /** 定義行號 */
+  line: number;
+  /** 所屬類別名稱（若為方法） */
+  className?: string;
+}
+
 /** CallHierarchy 結果 */
 export interface CallHierarchyResult extends QueryResult {
   command: QueryCommand.CallHierarchy;
@@ -295,6 +309,8 @@ export interface CallHierarchyResult extends QueryResult {
   file: string;
   /** 目標函數定義行號 */
   definitionLine?: number;
+  /** 所有定義位置（多個同名函數時使用） */
+  definitions?: FunctionDefinitionInfo[];
   /** 分析方向 */
   direction: CallHierarchyDirection;
   /** 分析深度 */
