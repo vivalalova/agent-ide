@@ -134,11 +134,22 @@ async function handleDeadCodeCommand(
     }
 
     // 2. 建立 DeadCodeRemover
+    // 區分 --exclude 參數中的檔案模式和符號名稱
+    // 包含 /、*、? 或以 . 開頭的視為檔案模式，其餘為符號名稱
+    const excludePatterns = options.exclude || [];
+    const excludeFiles = excludePatterns.filter(p =>
+      p.includes('/') || p.includes('*') || p.includes('?') || p.startsWith('.')
+    );
+    const excludeSymbols = excludePatterns.filter(p =>
+      !p.includes('/') && !p.includes('*') && !p.includes('?') && !p.startsWith('.')
+    );
+
     const remover = createDeadCodeRemover(
       context.fileSystem,
       parserRegistry,
       {
-        excludeSymbols: options.exclude || [],
+        excludeFiles,
+        excludeSymbols,
         cleanupImports: true
       }
     );

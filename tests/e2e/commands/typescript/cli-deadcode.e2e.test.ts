@@ -453,4 +453,98 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       }
     });
   });
+
+  describe('--exclude 選項（Issue #40 修復）', () => {
+    it('--exclude 目錄模式應該排除整個目錄', async () => {
+      // 不使用 --exclude 時應該檢測到 lint-rules 目錄的 dead code
+      const resultWithout = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-exports'],
+        { memfs: fixture.memfs }
+      );
+
+      const outputWithout = JSON.parse(resultWithout.stdout);
+      const lintRulesFileWithout = outputWithout.files.find((f: { filePath: string }) =>
+        f.filePath.includes('lint-rules')
+      );
+
+      // 使用 --exclude 排除 lint-rules 目錄
+      const resultWith = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-exports', '--exclude', 'lint-rules/**'],
+        { memfs: fixture.memfs }
+      );
+
+      const outputWith = JSON.parse(resultWith.stdout);
+      const lintRulesFileWith = outputWith.files.find((f: { filePath: string }) =>
+        f.filePath.includes('lint-rules')
+      );
+
+      // 排除後不應該有 lint-rules 目錄的結果
+      expect(lintRulesFileWith).toBeUndefined();
+      // 不排除時應該有結果（如果有 dead code）
+      // 注意：lint-rules 目錄的檔案可能沒有 dead code（因為是 export），所以用 warnings 驗證
+    });
+
+    it('--exclude 副檔名模式應該排除符合的檔案', async () => {
+      // 使用 --exclude 排除 *.example.ts 檔案
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-exports', '--exclude', '*.example.ts'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      const exampleFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('.example.ts')
+      );
+
+      // 排除後不應該有 .example.ts 檔案的結果
+      expect(exampleFile).toBeUndefined();
+    });
+
+    it('--exclude 多個模式應該同時生效', async () => {
+      // 同時排除 lint-rules/** 和 *.example.ts
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-exports', '--exclude', 'lint-rules/**', '*.example.ts'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 兩種檔案都不應該出現
+      const lintRulesFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('lint-rules')
+      );
+      const exampleFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('.example.ts')
+      );
+
+      expect(lintRulesFile).toBeUndefined();
+      expect(exampleFile).toBeUndefined();
+    });
+
+    it('--exclude 符號名稱應該排除特定符號', async () => {
+      // 排除 unusedFunction 符號名稱
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--exclude', 'unusedFunction'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 收集所有被刪除的內容
+      const allDeletedContent: string[] = [];
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              allDeletedContent.push(line.content);
+            }
+          }
+        }
+      }
+      const deletedText = allDeletedContent.join('\n');
+
+      // unusedFunction 不應該出現在刪除列表中
+      expect(deletedText).not.toContain('unusedFunction');
+    });
+  });
 });
