@@ -362,8 +362,10 @@ export class SnapshotGenerator {
    */
   private formatInterfaceFields(iface: Symbol, allSymbols: ExtendedSymbol[]): string {
     // 找出屬於此 interface 的屬性
+    // scope.type === 'interface' 確保只匹配 interface 內的屬性
     const props = allSymbols.filter(s =>
       (s.type === SymbolType.Property || s.type === SymbolType.Variable)
+      && s.scope?.type === 'interface'
       && s.scope?.name === iface.name
     );
 

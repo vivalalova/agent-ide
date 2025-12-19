@@ -26,7 +26,7 @@ export enum SymbolType {
 /**
  * Scope 類型
  */
-export type ScopeType = 'global' | 'module' | 'namespace' | 'class' | 'function' | 'block';
+export type ScopeType = 'global' | 'module' | 'namespace' | 'class' | 'interface' | 'function' | 'block';
 
 /**
  * 表示程式碼作用域
@@ -97,7 +97,7 @@ export function createScope(
   name?: string,
   parent?: Scope
 ): Scope {
-  const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'function', 'block'];
+  const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'interface', 'function', 'block'];
 
   if (!validTypes.includes(type)) {
     throw new Error('無效的 scope 類型');
@@ -196,7 +196,7 @@ export function isScope(value: unknown): value is Scope {
   }
 
   const obj = value as Record<string, unknown>;
-  const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'function', 'block'];
+  const validTypes: ScopeType[] = ['global', 'module', 'namespace', 'class', 'interface', 'function', 'block'];
 
   return (
     typeof obj.type === 'string' &&

@@ -123,7 +123,7 @@ export const SYMBOL_TYPE_MAP: Partial<Record<ts.SyntaxKind, SymbolType>> = {
   [ts.SyntaxKind.TypeAliasDeclaration]: SymbolType.Type,
   [ts.SyntaxKind.EnumDeclaration]: SymbolType.Enum,
   [ts.SyntaxKind.ModuleDeclaration]: SymbolType.Module,
-  [ts.SyntaxKind.TypeParameter]: SymbolType.Type,
+  // 注意：TypeParameter 不列入，避免泛型參數（如 T、K、V）被識別為獨立類型
   [ts.SyntaxKind.Parameter]: SymbolType.Variable,
   [ts.SyntaxKind.PropertySignature]: SymbolType.Variable,
   [ts.SyntaxKind.MethodSignature]: SymbolType.Function,
@@ -252,6 +252,7 @@ export function getNodeName(node: ts.Node): string | undefined {
 
 /**
  * 檢查節點是否為符號宣告
+ * 注意：TypeParameterDeclaration 不列入，避免泛型參數（如 T、K、V）被識別為獨立類型
  */
 export function isSymbolDeclaration(node: ts.Node): boolean {
   return (
@@ -267,7 +268,6 @@ export function isSymbolDeclaration(node: ts.Node): boolean {
     ts.isEnumDeclaration(node) ||
     ts.isModuleDeclaration(node) ||
     ts.isParameter(node) ||
-    ts.isTypeParameterDeclaration(node) ||
     ts.isGetAccessor(node) ||
     ts.isSetAccessor(node)
   );
