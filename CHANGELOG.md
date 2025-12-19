@@ -1,3 +1,14 @@
+## <small>0.7.5 (2025-12-19)</small>
+
+* style: [GitHub #32] 移除未使用的 import ([8234c2b](https://github.com/vivalalova/agent-ide/commit/8234c2b)), closes [#32](https://github.com/vivalalova/agent-ide/issues/32)
+* refactor: [GitHub #32] deadcode 程式碼品質改善 ([05608b5](https://github.com/vivalalova/agent-ide/commit/05608b5)), closes [#32](https://github.com/vivalalova/agent-ide/issues/32)
+* refactor: deadcode 移除信心分數功能 ([099fa8d](https://github.com/vivalalova/agent-ide/commit/099fa8d))
+* fix: [GitHub #29] move 命令修復相對路徑、目錄目標、--no-update-imports 支援 ([609b7b7](https://github.com/vivalalova/agent-ide/commit/609b7b7)), closes [#29](https://github.com/vivalalova/agent-ide/issues/29)
+* fix: [GitHub #30] impact 命令支援 TypeScript 路徑別名 (@/*) ([4da3eb5](https://github.com/vivalalova/agent-ide/commit/4da3eb5)), closes [#30](https://github.com/vivalalova/agent-ide/issues/30)
+* fix: [GitHub #31] move-member 命令修復成員意外移動、import 更新範圍錯誤 ([f23267b](https://github.com/vivalalova/agent-ide/commit/f23267b)), closes [#31](https://github.com/vivalalova/agent-ide/issues/31)
+* fix: [GitHub #32] deadcode 命令四項 bug 修復 ([d4f9b1d](https://github.com/vivalalova/agent-ide/commit/d4f9b1d)), closes [#32](https://github.com/vivalalova/agent-ide/issues/32)
+* docs: 簡化 plugin description ([8687d2e](https://github.com/vivalalova/agent-ide/commit/8687d2e))
+
 ## <small>0.7.4 (2025-12-19)</small>
 
 * test: [E2E 測試] 修正因 exitCode 捕獲改進而揭露的測試問題 ([9e2aa9d](https://github.com/vivalalova/agent-ide/commit/9e2aa9d))
