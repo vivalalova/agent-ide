@@ -118,43 +118,52 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
   const lastChange = changes[changes.length - 1];
 
   // 計算 hunk 範圍（包含 context）
+  // 注意：endLine 不限制在 originalLines.length，因為可能有新增行超出原始範圍
   const startLine = Math.max(1, firstChange.line - contextLines);
-  const endLine = Math.min(originalLines.length, lastChange.line + contextLines);
+  const endLine = lastChange.line + contextLines;
+  // 原始檔案的最大可用行號
+  const maxOriginalLine = originalLines.length;
 
   const lines: ChangeLine[] = [];
   let oldLineCount = 0;
   let newLineCount = 0;
 
-  // 建立變更行的 Map 以便快速查找
-  const changeMap = new Map<number, LineChange>();
-  changes.forEach(c => changeMap.set(c.line, c));
+  // 建立變更行的 Map 以便快速查找（支援同一行多個變更）
+  const changeMap = new Map<number, LineChange[]>();
+  for (const c of changes) {
+    const existing = changeMap.get(c.line) || [];
+    existing.push(c);
+    changeMap.set(c.line, existing);
+  }
 
   // 遍歷範圍內的每一行
   for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-    const change = changeMap.get(lineNum);
+    const lineChanges = changeMap.get(lineNum);
 
-    if (change) {
-      // 有變更的行
-      if (change.oldContent !== null) {
-        // 刪除行
-        lines.push({
-          type: ChangeLineType.Delete,
-          lineNumber: lineNum,
-          content: change.oldContent
-        });
-        oldLineCount++;
+    if (lineChanges && lineChanges.length > 0) {
+      // 有變更的行 - 處理該行所有變更
+      for (const change of lineChanges) {
+        if (change.oldContent !== null) {
+          // 刪除行
+          lines.push({
+            type: ChangeLineType.Delete,
+            lineNumber: lineNum,
+            content: change.oldContent
+          });
+          oldLineCount++;
+        }
+        if (change.newContent !== null) {
+          // 新增行
+          lines.push({
+            type: ChangeLineType.Add,
+            lineNumber: lineNum,
+            content: change.newContent
+          });
+          newLineCount++;
+        }
       }
-      if (change.newContent !== null) {
-        // 新增行
-        lines.push({
-          type: ChangeLineType.Add,
-          lineNumber: lineNum,
-          content: change.newContent
-        });
-        newLineCount++;
-      }
-    } else {
-      // Context 行
+    } else if (lineNum <= maxOriginalLine) {
+      // Context 行（只有在原始檔案範圍內才輸出 context）
       const content = originalLines[lineNum - 1] ?? '';
       lines.push({
         type: ChangeLineType.Context,
@@ -164,6 +173,7 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
       oldLineCount++;
       newLineCount++;
     }
+    // 超出原始範圍且無變更的行跳過
   }
 
   // 生成 hunk header

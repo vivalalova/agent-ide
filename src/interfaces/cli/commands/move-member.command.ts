@@ -5,9 +5,11 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveMemberService, MoveTargetType, MemberType } from '@core/move-member/index.js';
+import { MoveMemberService, MoveTargetType, MemberType, type MoveMemberResult } from '@core/move-member/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { createPreviewFormatter } from '@infrastructure/formatters/preview-formatter.js';
+import { PreviewCommand, PreviewFormat, type PreviewInput, type LineChange } from '@infrastructure/formatters/types.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Move Member 命令選項 */
@@ -180,31 +182,161 @@ function parseMemberType(typeStr: string): MemberType | undefined {
 
 /**
  * 印出 diff 輸出
+ * 使用統一的 PreviewFormatter 生成實際的程式碼差異
  */
-function printDiffOutput(result: any, projectRoot: string): void {
-  console.log('\n📝 來源檔案變更:');
-  console.log(`--- ${path.relative(projectRoot, result.sourceFileChange.filePath)}`);
-  console.log('（成員已移除）');
+function printDiffOutput(result: MoveMemberResult, projectRoot: string): void {
+  const previewInput = convertToPreviewInput(result, projectRoot);
+  const formatter = createPreviewFormatter({ color: process.stdout.isTTY ?? false });
+  const previewResult = formatter.createPreview(previewInput);
+  const output = formatter.format(previewResult, PreviewFormat.Diff);
 
-  console.log('\n📝 目標檔案變更:');
-  console.log(`+++ ${path.relative(projectRoot, result.targetFileChange.filePath)}`);
-  if (result.targetFileChange.isNewFile) {
-    console.log('（新檔案）');
+  console.log(output);
+  console.log('');
+  console.log(result.executed ? '✅ 變更已執行' : '🔍 預覽模式');
+}
+
+/**
+ * 將 MoveMemberResult 轉換為 PreviewInput
+ */
+function convertToPreviewInput(result: MoveMemberResult, projectRoot: string): PreviewInput {
+  const fileChanges: PreviewInput['fileChanges'] = [];
+
+  // 來源檔案變更（移除成員）
+  const sourceChanges = calculateLineChanges(
+    result.sourceFileChange.originalCode,
+    result.sourceFileChange.newCode
+  );
+  fileChanges.push({
+    filePath: path.relative(projectRoot, result.sourceFileChange.filePath),
+    originalContent: result.sourceFileChange.originalCode,
+    changes: sourceChanges
+  });
+
+  // 目標檔案變更（加入成員）
+  const targetOriginal = result.targetFileChange.originalCode ?? '';
+  const targetChanges = calculateLineChanges(
+    targetOriginal,
+    result.targetFileChange.newCode
+  );
+  fileChanges.push({
+    filePath: path.relative(projectRoot, result.targetFileChange.filePath),
+    originalContent: targetOriginal,
+    changes: targetChanges
+  });
+
+  // 引用更新
+  for (const refUpdate of result.referenceUpdates) {
+    const refChanges: LineChange[] = [{
+      line: refUpdate.location.range.start.line,
+      oldContent: refUpdate.originalImport,
+      newContent: refUpdate.newImport
+    }];
+    fileChanges.push({
+      filePath: path.relative(projectRoot, refUpdate.filePath),
+      originalContent: refUpdate.originalImport,
+      changes: refChanges
+    });
   }
-  console.log('（成員已加入）');
 
-  if (result.referenceUpdates.length > 0) {
-    console.log(`\n📞 引用更新: ${result.referenceUpdates.length} 個`);
-    for (const update of result.referenceUpdates.slice(0, 5)) {
-      console.log(`  - ${path.relative(projectRoot, update.filePath)}`);
-    }
-    if (result.referenceUpdates.length > 5) {
-      console.log(`  ... 還有 ${result.referenceUpdates.length - 5} 個`);
+  return {
+    command: PreviewCommand.Move,
+    success: true,
+    fileChanges,
+    operationDescription: `移動成員 '${result.member.name}' (${result.member.type})`
+  };
+}
+
+/**
+ * 計算兩段程式碼之間的行級變更
+ * 使用簡單的逐行比較算法
+ */
+function calculateLineChanges(original: string, modified: string): LineChange[] {
+  const originalLines = original.split('\n');
+  const modifiedLines = modified.split('\n');
+  const changes: LineChange[] = [];
+
+  // 使用 LCS（最長共同子序列）的簡化版本來找出差異
+  const lcs = computeLCS(originalLines, modifiedLines);
+
+  let origIdx = 0;
+  let modIdx = 0;
+  let lcsIdx = 0;
+  let virtualLineNum = 1;  // 用於追蹤輸出行號
+
+  while (origIdx < originalLines.length || modIdx < modifiedLines.length) {
+    if (lcsIdx < lcs.length
+        && origIdx < originalLines.length
+        && modIdx < modifiedLines.length
+        && originalLines[origIdx] === lcs[lcsIdx]
+        && modifiedLines[modIdx] === lcs[lcsIdx]) {
+      // 共同行（context）- 不需要記錄為變更
+      origIdx++;
+      modIdx++;
+      lcsIdx++;
+      virtualLineNum++;
+    } else if (origIdx < originalLines.length
+               && (lcsIdx >= lcs.length || originalLines[origIdx] !== lcs[lcsIdx])) {
+      // 刪除行
+      changes.push({
+        line: virtualLineNum,
+        oldContent: originalLines[origIdx],
+        newContent: null
+      });
+      origIdx++;
+      virtualLineNum++;
+    } else if (modIdx < modifiedLines.length
+               && (lcsIdx >= lcs.length || modifiedLines[modIdx] !== lcs[lcsIdx])) {
+      // 新增行 - 使用當前 virtualLineNum 作為參考行號
+      changes.push({
+        line: virtualLineNum,
+        oldContent: null,
+        newContent: modifiedLines[modIdx]
+      });
+      modIdx++;
+      virtualLineNum++;
     }
   }
 
-  console.log('\n' + (result.executed ? '✅ 變更已執行' : '🔍 預覽模式'));
-  console.log(`📊 統計: ${result.stats.referencesUpdated} 個引用, ${result.stats.filesAffected} 個檔案`);
+  return changes;
+}
+
+/**
+ * 計算兩個字串陣列的最長共同子序列（LCS）
+ */
+function computeLCS(a: string[], b: string[]): string[] {
+  const m = a.length;
+  const n = b.length;
+
+  // 建立 DP 表格
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // 回溯找出 LCS
+  const lcs: string[] = [];
+  let i = m;
+  let j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      lcs.unshift(a[i - 1]);
+      i--;
+      j--;
+    } else if (dp[i - 1][j] > dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+
+  return lcs;
 }
 
 /**

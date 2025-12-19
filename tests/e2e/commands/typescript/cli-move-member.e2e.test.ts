@@ -624,4 +624,87 @@ import { Config } from './types';
       expect(result.stderr || result.stdout).toBeDefined();
     });
   });
+
+  describe('輸出格式測試', () => {
+    it('diff 格式應該顯示實際的程式碼變更內容', async () => {
+      await fixture.writeFile('src/source.ts', `
+export function helper(): number {
+  return 42;
+}
+
+export function main(): number {
+  return helper();
+}
+`);
+
+      await fixture.writeFile('src/target.ts', `
+export function existing(): string {
+  return 'existing';
+}
+`);
+
+      const result = await executeCLI(
+        [
+          'move-member',
+          fixture.getFilePath('src/source.ts'),
+          'helper',
+          '-p', fixture.rootPath,
+          '--target-file', fixture.getFilePath('src/target.ts'),
+          '--dry-run',
+          '--format', 'diff'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout || '';
+
+      // 應該包含 diff header
+      expect(output).toContain('---');
+      expect(output).toContain('+++');
+
+      // 應該包含 hunk header（@@ 格式）
+      expect(output).toMatch(/@@ .* @@/);
+
+      // 應該包含實際的程式碼內容（而非佔位文字）
+      expect(output).toContain('helper');
+      expect(output).toContain('return 42');
+
+      // 不應該包含舊的佔位文字
+      expect(output).not.toContain('成員已移除');
+      expect(output).not.toContain('成員已加入');
+    });
+
+    it('diff 格式應該顯示刪除行和新增行', async () => {
+      await fixture.writeFile('src/source.ts', `
+export function toMove(): string {
+  return 'moved';
+}
+`);
+
+      await fixture.writeFile('src/target.ts', `
+export function other(): void {}
+`);
+
+      const result = await executeCLI(
+        [
+          'move-member',
+          fixture.getFilePath('src/source.ts'),
+          'toMove',
+          '-p', fixture.rootPath,
+          '--target-file', fixture.getFilePath('src/target.ts'),
+          '--dry-run',
+          '--format', 'diff'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = result.stdout || '';
+
+      // 應該包含刪除標記（-）和新增標記（+）
+      expect(output).toMatch(/-.*toMove/);
+      expect(output).toMatch(/\+.*toMove/);
+    });
+  });
 });
