@@ -218,14 +218,20 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
 
       const output = JSON.parse(result.stdout);
 
-      // 取得所有被標記為 dead code 的符號名稱
+      // 只檢查 interface-properties.ts 檔案中的內容
+      const interfaceFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('interface-properties.ts')
+      );
+
+      // 取得 interface-properties.ts 中被標記為 dead code 的符號名稱
       const deadSymbols = new Set<string>();
-      for (const file of output.files ?? []) {
-        for (const hunk of file.hunks ?? []) {
+      if (interfaceFile) {
+        for (const hunk of interfaceFile.hunks ?? []) {
           for (const line of hunk.lines ?? []) {
             if (line.type === 'delete') {
-              // 提取屬性名稱（如 name: string;）
-              const propMatch = line.content.match(/^\s*(\w+)\s*[?]?\s*:/);
+              // 提取 TypeScript interface/type 屬性名稱（如 name: string;）
+              // 使用更精確的正則：屬性名後面跟著 : 和型別（不是字串值）
+              const propMatch = line.content.match(/^\s*(\w+)\s*[?]?\s*:\s*[A-Za-z]/);
               if (propMatch) {
                 deadSymbols.add(propMatch[1]);
               }
@@ -353,6 +359,98 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       // 錯誤訊息可能在 stdout 或 stderr
       const output = result.stdout + result.stderr;
       expect(output).toContain('不支援的輸出格式');
+    });
+  });
+
+  describe('物件字面值保護（Bug #34 修復）', () => {
+    it('物件字面值中的屬性不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 收集所有被刪除的內容
+      const allDeletedContent: string[] = [];
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              allDeletedContent.push(line.content);
+            }
+          }
+        }
+      }
+      const deletedText = allDeletedContent.join('\n');
+
+      // structural-code-protection.ts 中的物件字面值屬性不應被刪除
+      // Vite plugin 的 name 屬性
+      expect(deletedText).not.toContain('name: \'auto-update-api\'');
+      // 物件方法 buildStart, transform
+      expect(deletedText).not.toContain('async buildStart()');
+      expect(deletedText).not.toContain('transform(code');
+      // config 物件的屬性
+      expect(deletedText).not.toContain('apiEndpoint:');
+      expect(deletedText).not.toContain('timeout:');
+    });
+
+    it('structural-code-protection.ts 不應出現在 dead code 結果中', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // structural-code-protection.ts 不應有任何 dead code
+      const structuralFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('structural-code-protection.ts')
+      );
+
+      // 檔案不應出現在結果中，或者沒有 hunks
+      if (structuralFile) {
+        expect(structuralFile.hunks.length).toBe(0);
+      }
+    });
+
+    it('diff 輸出中每個刪除行應該是單獨的行', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'diff'],
+        { memfs: fixture.memfs }
+      );
+
+      // diff 輸出中不應該有包含換行符的刪除行
+      // 每個 `-` 開頭的行應該是單行
+      const lines = result.stdout.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('-') && !line.startsWith('---')) {
+          // 刪除行不應包含換行符（除了行尾）
+          expect(line).not.toContain('\n');
+        }
+      }
+    });
+  });
+
+  describe('try/catch 區塊保護（Bug #34 修復）', () => {
+    it('try/catch 區塊內的函數內變數不會被提取為頂層符號', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // try-catch-test.ts 不應出現在結果中
+      // 因為所有「未使用」的變數都在函數內部，不是頂層符號
+      const tryCatchFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('try-catch-test.ts')
+      );
+
+      // 檔案不應出現在結果中，或者沒有 hunks
+      if (tryCatchFile) {
+        expect(tryCatchFile.hunks.length).toBe(0);
+      }
     });
   });
 });

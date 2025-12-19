@@ -111,11 +111,64 @@ function groupAdjacentChanges(changes: LineChange[], contextLines: number): Line
 }
 
 /**
+ * 展開多行變更為單行變更列表
+ * Bug #34 修復：處理 oldContent/newContent 包含多行的情況
+ */
+function expandMultilineChanges(changes: LineChange[]): LineChange[] {
+  const expanded: LineChange[] = [];
+
+  for (const change of changes) {
+    // 檢查 oldContent 是否為多行
+    if (change.oldContent !== null && change.oldContent.includes('\n')) {
+      const oldLines = change.oldContent.split('\n');
+      for (let i = 0; i < oldLines.length; i++) {
+        expanded.push({
+          line: change.line + i,
+          oldContent: oldLines[i],
+          newContent: null // 刪除操作的每行都是刪除
+        });
+      }
+      // 如果有 newContent，單獨處理（替換操作）
+      if (change.newContent !== null) {
+        const newLines = change.newContent.split('\n');
+        for (let i = 0; i < newLines.length; i++) {
+          expanded.push({
+            line: change.line + i,
+            oldContent: null,
+            newContent: newLines[i]
+          });
+        }
+      }
+    }
+    // 檢查 newContent 是否為多行（純新增操作）
+    else if (change.newContent !== null && change.newContent.includes('\n') && change.oldContent === null) {
+      const newLines = change.newContent.split('\n');
+      for (let i = 0; i < newLines.length; i++) {
+        expanded.push({
+          line: change.line + i,
+          oldContent: null,
+          newContent: newLines[i]
+        });
+      }
+    }
+    // 單行變更，直接保留
+    else {
+      expanded.push(change);
+    }
+  }
+
+  return expanded;
+}
+
+/**
  * 從一組變更建立 hunk
  */
 function createHunk(originalLines: string[], changes: LineChange[], contextLines: number): DiffHunk {
-  const firstChange = changes[0];
-  const lastChange = changes[changes.length - 1];
+  // Bug #34 修復：展開多行變更
+  const expandedChanges = expandMultilineChanges(changes);
+
+  const firstChange = expandedChanges[0];
+  const lastChange = expandedChanges[expandedChanges.length - 1];
 
   // 計算 hunk 範圍（包含 context）
   // 注意：endLine 不限制在 originalLines.length，因為可能有新增行超出原始範圍
@@ -129,35 +182,48 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
   let newLineCount = 0;
 
   // 建立變更行的 Map 以便快速查找（支援同一行多個變更）
-  const changeMap = new Map<number, LineChange[]>();
-  for (const c of changes) {
-    const existing = changeMap.get(c.line) || [];
-    existing.push(c);
-    changeMap.set(c.line, existing);
+  // 分別追蹤刪除和新增，以正確處理行號
+  const deleteMap = new Map<number, string[]>();
+  const addMap = new Map<number, string[]>();
+
+  for (const c of expandedChanges) {
+    if (c.oldContent !== null) {
+      const existing = deleteMap.get(c.line) || [];
+      existing.push(c.oldContent);
+      deleteMap.set(c.line, existing);
+    }
+    if (c.newContent !== null) {
+      const existing = addMap.get(c.line) || [];
+      existing.push(c.newContent);
+      addMap.set(c.line, existing);
+    }
   }
 
   // 遍歷範圍內的每一行
   for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-    const lineChanges = changeMap.get(lineNum);
+    const hasDelete = deleteMap.has(lineNum);
+    const hasAdd = addMap.has(lineNum);
 
-    if (lineChanges && lineChanges.length > 0) {
-      // 有變更的行 - 處理該行所有變更
-      for (const change of lineChanges) {
-        if (change.oldContent !== null) {
-          // 刪除行
+    if (hasDelete || hasAdd) {
+      // 有變更的行
+      // 先輸出刪除
+      if (hasDelete) {
+        for (const content of deleteMap.get(lineNum)!) {
           lines.push({
             type: ChangeLineType.Delete,
             lineNumber: lineNum,
-            content: change.oldContent
+            content
           });
           oldLineCount++;
         }
-        if (change.newContent !== null) {
-          // 新增行
+      }
+      // 再輸出新增
+      if (hasAdd) {
+        for (const content of addMap.get(lineNum)!) {
           lines.push({
             type: ChangeLineType.Add,
             lineNumber: lineNum,
-            content: change.newContent
+            content
           });
           newLineCount++;
         }

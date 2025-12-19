@@ -138,6 +138,12 @@ export class TypeScriptSymbolExtractor {
       return null;
     }
 
+    // Bug #34 修復：排除物件字面值中的方法和屬性
+    // 物件字面值中的 MethodDeclaration 和屬性是物件的一部分，不應該被當作獨立符號
+    if (this.isInsideObjectLiteral(node)) {
+      return null;
+    }
+
     // 優先使用符號識別符的位置，避免裝飾器造成行號偏移
     const range = this.getSymbolIdentifierRange(node);
     const location = {
@@ -407,6 +413,27 @@ export class TypeScriptSymbolExtractor {
           ts.isArrowFunction(parent) ||
           ts.isFunctionExpression(parent)) {
         return true;
+      }
+      parent = parent.parent;
+    }
+    return false;
+  }
+
+  /**
+   * Bug #34 修復：檢查節點是否在物件字面值中
+   * 物件字面值中的 MethodDeclaration 和屬性不應被當作獨立符號
+   */
+  private isInsideObjectLiteral(node: ts.Node): boolean {
+    let parent = node.parent;
+    while (parent) {
+      if (ts.isObjectLiteralExpression(parent)) {
+        return true;
+      }
+      // 遇到 class 或 function 宣告則停止（類別內的方法不算物件字面值）
+      if (ts.isClassDeclaration(parent) ||
+          ts.isFunctionDeclaration(parent) ||
+          ts.isSourceFile(parent)) {
+        return false;
       }
       parent = parent.parent;
     }
