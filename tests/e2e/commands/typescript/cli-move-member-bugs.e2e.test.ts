@@ -410,6 +410,221 @@ export function helperFunc(): string {
     });
   });
 
+  describe('Bug 4: GitHub Issue #37 - 方法插入到類別外部', () => {
+    it('應該將方法插入到目標類別內部，而非類別閉合括號之後', async () => {
+      // Given: 來源類別有一個方法
+      await fixture.writeFile('src/notification-coordinator.ts', `
+export class NotificationCoordinatorService {
+  private readonly config: Config;
+
+  sendAnomalyNotifications(): void {
+    console.log('send anomaly');
+  }
+}
+`);
+
+      // 目標類別已有一個方法
+      await fixture.writeFile('src/teams-notification.ts', `
+export class TeamsNotificationService {
+  constructor(private readonly config: Config) {}
+
+  async sendNotification(message: string): Promise<void> {
+    console.log(message);
+  }
+}
+`);
+
+      // When: 移動方法到目標類別
+      const result = await executeCLI(
+        [
+          'move-member',
+          fixture.getFilePath('src/notification-coordinator.ts'),
+          'sendAnomalyNotifications',
+          '-p', fixture.rootPath,
+          '--type', 'method',
+          '--class', 'NotificationCoordinatorService',
+          '--target-file', fixture.getFilePath('src/teams-notification.ts'),
+          '--target-class', 'TeamsNotificationService',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 方法應該在類別內部
+      expect(result.exitCode).toBe(0);
+
+      const targetContent = await fixture.memfs.readFile(
+        fixture.getFilePath('src/teams-notification.ts'),
+        'utf-8'
+      );
+
+      // 驗證方法存在
+      expect(targetContent).toContain('sendAnomalyNotifications');
+
+      // 驗證方法在類別內部（關鍵檢查）
+      // 方法必須出現在類別閉合 } 之前
+      const classEndIndex = targetContent.lastIndexOf('}');
+      const methodIndex = targetContent.indexOf('sendAnomalyNotifications');
+      expect(methodIndex).toBeLessThan(classEndIndex);
+
+      // 更嚴格的驗證：計算花括號配對
+      // 方法位置時，depth 應該 >= 1（在類別內）
+      let depth = 0;
+      let methodDepth = -1;
+      for (let i = 0; i < targetContent.length; i++) {
+        if (targetContent[i] === '{') {
+          depth++;
+        } else if (targetContent[i] === '}') {
+          depth--;
+        }
+        if (i === methodIndex && methodDepth === -1) {
+          methodDepth = depth;
+        }
+      }
+
+      // 方法開始時必須在類別內（depth >= 1）
+      expect(methodDepth).toBeGreaterThanOrEqual(1);
+    });
+
+    it('應該正確處理檔案開頭有包含類別名稱的註解', async () => {
+      // Given: 檔案開頭有包含類別名稱的註解（這是 Issue #37 的根本原因）
+      await fixture.writeFile('src/source-with-comment.ts', `
+export class SourceService {
+  doWork(): void {
+    console.log('work');
+  }
+}
+`);
+
+      // 目標檔案有註解包含類別名稱
+      await fixture.writeFile('src/target-with-comment.ts', `
+// This file implements TargetService for notification handling
+import { Config } from './config';
+
+export class TargetService {
+  constructor(private readonly config: Config) {}
+
+  async sendMessage(msg: string): Promise<void> {
+    console.log(msg);
+  }
+}
+`);
+
+      // When: 移動方法到目標類別
+      const result = await executeCLI(
+        [
+          'move-member',
+          fixture.getFilePath('src/source-with-comment.ts'),
+          'doWork',
+          '-p', fixture.rootPath,
+          '--type', 'method',
+          '--class', 'SourceService',
+          '--target-file', fixture.getFilePath('src/target-with-comment.ts'),
+          '--target-class', 'TargetService',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 方法應該在類別內部，不受註解影響
+      expect(result.exitCode).toBe(0);
+
+      const targetContent = await fixture.memfs.readFile(
+        fixture.getFilePath('src/target-with-comment.ts'),
+        'utf-8'
+      );
+
+      // 驗證方法存在
+      expect(targetContent).toContain('doWork');
+
+      // 驗證方法在類別內部（關鍵檢查）
+      // 找到類別定義和方法位置
+      const lines = targetContent.split('\n');
+      const classLine = lines.findIndex(l => /^\s*(export\s+)?class\s+TargetService/.test(l));
+      const methodLine = lines.findIndex(l => l.includes('doWork'));
+
+      // 計算類別結束位置（最後一個獨立的 }）
+      let depth = 0;
+      let classEndLine = -1;
+      for (let i = classLine; i < lines.length; i++) {
+        for (const char of lines[i]) {
+          if (char === '{') {depth++;}
+          else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              classEndLine = i;
+              break;
+            }
+          }
+        }
+        if (classEndLine !== -1) {break;}
+      }
+
+      // 方法應該在類別開始之後、類別結束之前
+      expect(methodLine).toBeGreaterThan(classLine);
+      expect(methodLine).toBeLessThan(classEndLine);
+
+      // 額外驗證：方法不應該出現在註解之後、import 之後
+      const importLine = lines.findIndex(l => l.includes('import'));
+      expect(methodLine).toBeGreaterThan(importLine);
+    });
+
+    it('應該處理類別只有 constructor 的情況', async () => {
+      // Given: 來源類別有一個方法
+      await fixture.writeFile('src/source-service.ts', `
+export class SourceService {
+  doSomething(): void {
+    console.log('do something');
+  }
+}
+`);
+
+      // 目標類別只有 constructor（同一行的 {}）
+      await fixture.writeFile('src/target-service.ts', `
+export class TargetService {
+  constructor(private readonly config: Config) {}
+}
+`);
+
+      // When: 移動方法到目標類別
+      const result = await executeCLI(
+        [
+          'move-member',
+          fixture.getFilePath('src/source-service.ts'),
+          'doSomething',
+          '-p', fixture.rootPath,
+          '--type', 'method',
+          '--class', 'SourceService',
+          '--target-file', fixture.getFilePath('src/target-service.ts'),
+          '--target-class', 'TargetService',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 方法應該在類別內部
+      expect(result.exitCode).toBe(0);
+
+      const targetContent = await fixture.memfs.readFile(
+        fixture.getFilePath('src/target-service.ts'),
+        'utf-8'
+      );
+
+      // 驗證方法存在
+      expect(targetContent).toContain('doSomething');
+
+      // 驗證方法在類別內部
+      const lines = targetContent.split('\n');
+      const classLine = lines.findIndex(l => l.includes('class TargetService'));
+      const methodLine = lines.findIndex(l => l.includes('doSomething'));
+      const lastBraceLine = lines.length - 1 - [...lines].reverse().findIndex(l => l.trim() === '}');
+
+      // 方法應該在類別開始之後、類別結束之前
+      expect(methodLine).toBeGreaterThan(classLine);
+      expect(methodLine).toBeLessThan(lastBraceLine);
+    });
+  });
+
   describe('綜合測試：多個成員、多個 consumer', () => {
     it('應該正確處理複雜的多檔案場景', async () => {
       // Given: 複雜的檔案結構

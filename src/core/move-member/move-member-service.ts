@@ -512,16 +512,23 @@ export class MoveMemberService {
 
   /**
    * 找到類別內的插入位置
+   * 使用正則表達式嚴格匹配類別定義，避免匹配註解中的類別名稱
    */
   private async findClassInsertPosition(content: string, className: string): Promise<number> {
     const lines = content.split('\n');
     let inClass = false;
     let depth = 0;
 
+    // 嚴格匹配類別定義：可選的 export/abstract，後接 class 關鍵字和類別名稱
+    const classPattern = new RegExp(
+      `^\\s*(export\\s+)?(abstract\\s+)?class\\s+${className}\\b`
+    );
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      if (line.includes(`class ${className}`)) {
+      // 使用正則表達式匹配，避免匹配註解
+      if (!inClass && classPattern.test(line)) {
         inClass = true;
       }
 
