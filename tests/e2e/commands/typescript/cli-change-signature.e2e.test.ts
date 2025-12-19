@@ -193,7 +193,8 @@ const n = count(42);
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr || result.stdout).toBeDefined();
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(false);
@@ -213,7 +214,8 @@ function test(a: number): number {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr || result.stdout).toBeDefined();
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(false);

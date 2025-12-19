@@ -398,6 +398,9 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
     });
 
     it('應該處理從父目錄到深層子目錄的移動', async () => {
+      // Create intermediate directories
+      await fixture.writeFile('src/utils/formatters/string/.gitkeep', '');
+
       const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
       const target = path.join(fixture.rootPath, 'src/utils/formatters/string/formatter.ts');
 
@@ -454,6 +457,10 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       const deepPath = `${deepDirs}/user.ts`;
       const target = path.join(fixture.rootPath, 'src', deepPath);
 
+      // Create deep directory structure
+      const deepDirPath = `src/${deepDirs}`;
+      await fixture.writeFile(`${deepDirPath}/.gitkeep`, '');
+
       const result = await executeCLI(
         ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
@@ -504,6 +511,9 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
 
   describe('Import 更新複雜情境', () => {
     it('應該更新相對路徑 import (從 ./ 到 ../)', async () => {
+      // Create intermediate directories
+      await fixture.writeFile('src/helpers/text/.gitkeep', '');
+
       const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
       const target = path.join(fixture.rootPath, 'src/helpers/text/formatter.ts');
 
@@ -602,6 +612,9 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
     });
 
     it('應該處理多個檔案被引用的情況', async () => {
+      // Create intermediate directories
+      await fixture.writeFile('src/shared/types/.gitkeep', '');
+
       const source = path.join(fixture.rootPath, 'src/types/common.ts');
       const target = path.join(fixture.rootPath, 'src/shared/types/common.ts');
 

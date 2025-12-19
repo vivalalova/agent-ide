@@ -324,11 +324,8 @@ export function existing(): void {}
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr || result.stdout).toContain('nonExistent');
     });
 
     it('應該處理不存在的來源檔案', async () => {
@@ -361,11 +358,8 @@ export function myFunction(): void {}
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr || result.stdout).toContain('myFunction');
     });
   });
 

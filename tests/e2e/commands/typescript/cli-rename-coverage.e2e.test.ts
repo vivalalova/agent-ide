@@ -236,7 +236,9 @@ export function process(oldParam: string): string {
       expect(output.success).toBe(true);
     });
 
-    it('應該處理 generic type parameter 重命名', async () => {
+    it('應該報告無法找到 generic type parameter（不支援泛型參數重命名）', async () => {
+      // TypeParameter 已從符號類型中移除（避免 snapshot 誤判）
+      // 因此 rename 無法找到泛型參數
       await fixture.writeFile('src/generic-rename.ts', `
 export function identity<TOld>(value: TOld): TOld {
   return value;
@@ -248,9 +250,11 @@ export function identity<TOld>(value: TOld): TOld {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
+      // 預期失敗：找不到符號
+      expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
-      expect(output.success).toBe(true);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('找不到符號');
     });
   });
 

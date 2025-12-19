@@ -34,7 +34,7 @@ describe('CLI call-hierarchy - 基於 sample-project fixture', () => {
     });
 
     it('應該支援 summary 格式輸出', async () => {
-      await fixture.writeFile('fn.ts', 'export function fn() {}');
+      await fixture.writeFile('src/fn.ts', 'export function fn() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'fn', '--path', fixture.rootPath, '--format', 'summary'],
@@ -49,13 +49,13 @@ describe('CLI call-hierarchy - 基於 sample-project fixture', () => {
 
   describe('direction 選項', () => {
     it('應該只分析 incoming 當 direction=incoming', async () => {
-      await fixture.writeFile('target.ts', `
+      await fixture.writeFile('src/target.ts', `
 export function target() {
   console.log('target');
 }
       `.trim());
 
-      await fixture.writeFile('caller.ts', `
+      await fixture.writeFile('src/caller.ts', `
 import { target } from './target.js';
 
 export function caller() {
@@ -76,7 +76,7 @@ export function caller() {
     });
 
     it('應該只分析 outgoing 當 direction=outgoing', async () => {
-      await fixture.writeFile('target.ts', `
+      await fixture.writeFile('src/target.ts', `
 import { helper } from './helper.js';
 
 export function target() {
@@ -84,7 +84,7 @@ export function target() {
 }
       `.trim());
 
-      await fixture.writeFile('helper.ts', 'export function helper() {}');
+      await fixture.writeFile('src/helper.ts', 'export function helper() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'target', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
@@ -99,7 +99,7 @@ export function target() {
     });
 
     it('應該同時分析 incoming 和 outgoing 當 direction=both', async () => {
-      await fixture.writeFile('target.ts', `
+      await fixture.writeFile('src/target.ts', `
 import { helper } from './helper.js';
 
 export function target() {
@@ -107,8 +107,8 @@ export function target() {
 }
       `.trim());
 
-      await fixture.writeFile('helper.ts', 'export function helper() {}');
-      await fixture.writeFile('caller.ts', `
+      await fixture.writeFile('src/helper.ts', 'export function helper() {}');
+      await fixture.writeFile('src/caller.ts', `
 import { target } from './target.js';
 
 export function caller() {
@@ -129,7 +129,7 @@ export function caller() {
 
   describe('depth 選項', () => {
     it('應該正確處理 depth 參數', async () => {
-      await fixture.writeFile('a.ts', `
+      await fixture.writeFile('src/a.ts', `
 import { b } from './b.js';
 
 export function a() {
@@ -137,7 +137,7 @@ export function a() {
 }
       `.trim());
 
-      await fixture.writeFile('b.ts', `
+      await fixture.writeFile('src/b.ts', `
 import { c } from './c.js';
 
 export function b() {
@@ -145,7 +145,7 @@ export function b() {
 }
       `.trim());
 
-      await fixture.writeFile('c.ts', 'export function c() {}');
+      await fixture.writeFile('src/c.ts', 'export function c() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'b', '--path', fixture.rootPath, '--depth', '2', '--format', 'json'],
@@ -160,7 +160,7 @@ export function b() {
 
   describe('統計摘要', () => {
     it('應該包含正確的 summary 統計', async () => {
-      await fixture.writeFile('target.ts', `
+      await fixture.writeFile('src/target.ts', `
 import { h1 } from './h1.js';
 import { h2 } from './h2.js';
 
@@ -170,8 +170,8 @@ export function target() {
 }
       `.trim());
 
-      await fixture.writeFile('h1.ts', 'export function h1() {}');
-      await fixture.writeFile('h2.ts', 'export function h2() {}');
+      await fixture.writeFile('src/h1.ts', 'export function h1() {}');
+      await fixture.writeFile('src/h2.ts', 'export function h2() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'target', '--path', fixture.rootPath, '--format', 'json'],
@@ -189,7 +189,7 @@ export function target() {
 
   describe('錯誤處理', () => {
     it('應該處理找不到的函數', async () => {
-      await fixture.writeFile('empty.ts', 'export const x = 1;');
+      await fixture.writeFile('src/empty.ts', 'export const x = 1;');
 
       const result = await executeCLI(
         ['call-hierarchy', 'nonExistent', '--path', fixture.rootPath, '--format', 'json'],
@@ -205,7 +205,7 @@ export function target() {
     });
 
     it('應該拒絕無效的 direction 並輸出錯誤', async () => {
-      await fixture.writeFile('fn.ts', 'export function fn() {}');
+      await fixture.writeFile('src/fn.ts', 'export function fn() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'fn', '--path', fixture.rootPath, '--direction', 'invalid', '--format', 'json'],
@@ -218,7 +218,7 @@ export function target() {
     });
 
     it('應該拒絕超出範圍的 depth 並輸出錯誤', async () => {
-      await fixture.writeFile('fn.ts', 'export function fn() {}');
+      await fixture.writeFile('src/fn.ts', 'export function fn() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'fn', '--path', fixture.rootPath, '--depth', '100', '--format', 'json'],
@@ -231,7 +231,7 @@ export function target() {
     });
 
     it('應該拒絕無效的格式並輸出錯誤', async () => {
-      await fixture.writeFile('fn.ts', 'export function fn() {}');
+      await fixture.writeFile('src/fn.ts', 'export function fn() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'fn', '--path', fixture.rootPath, '--format', 'invalid'],
@@ -245,7 +245,7 @@ export function target() {
 
   describe('JSON 輸出結構驗證', () => {
     it('應該包含完整的結構欄位', async () => {
-      await fixture.writeFile('target.ts', `
+      await fixture.writeFile('src/target.ts', `
 export function target() {
   console.log('hello');
 }
@@ -272,7 +272,7 @@ export function target() {
 
   describe('類別方法', () => {
     it('應該能分析類別方法的呼叫', async () => {
-      await fixture.writeFile('service.ts', `
+      await fixture.writeFile('src/service.ts', `
 export class UserService {
   getUser() {
     this.validateUser();
@@ -299,7 +299,7 @@ export class UserService {
 
   describe('Arrow Function', () => {
     it('應該能分析 arrow function', async () => {
-      await fixture.writeFile('arrow.ts', `
+      await fixture.writeFile('src/arrow.ts', `
 import { helper } from './helper.js';
 
 export const arrowFn = () => {
@@ -308,7 +308,7 @@ export const arrowFn = () => {
 };
       `.trim());
 
-      await fixture.writeFile('helper.ts', 'export function helper() {}');
+      await fixture.writeFile('src/helper.ts', 'export function helper() {}');
 
       const result = await executeCLI(
         ['call-hierarchy', 'arrowFn', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
@@ -397,7 +397,17 @@ export const arrowFn = () => {
       expect(output.command).toBe('call-hierarchy');
       expect(output.function).toBe('sortBy');
       expect(output.success).toBe(true);
-      expect(output.file).toContain('array-utils');
+      // sortBy 可能有多個定義（function 和 interface property）
+      // 檢查 definitions 陣列中有來自 array-utils 的定義
+      if (output.definitions && output.definitions.length > 0) {
+        const hasArrayUtilsDef = output.definitions.some(
+          (d: { file: string }) => d.file.includes('array-utils')
+        );
+        expect(hasArrayUtilsDef).toBe(true);
+      } else {
+        // 向後相容：若無 definitions，檢查 file
+        expect(output.file).toContain('array-utils');
+      }
     });
 
     it('應該正確處理沒有 outgoing 呼叫的函數', async () => {
