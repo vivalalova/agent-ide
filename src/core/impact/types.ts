@@ -82,6 +82,8 @@ export interface ExtendedDependencyAnalysisOptions extends DependencyAnalysisOpt
   readonly concurrency?: number;
   /** 是否輸出詳細警告資訊（預設 true） */
   readonly verbose?: boolean;
+  /** TypeScript 路徑別名映射（鍵為別名前綴，值為絕對路徑） */
+  readonly pathAliases?: Record<string, string>;
 }
 
 /**
