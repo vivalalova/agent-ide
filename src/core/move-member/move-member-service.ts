@@ -260,6 +260,7 @@ export class MoveMemberService {
   /**
    * 準備引用更新
    * 直接掃描 import 語句，不依賴 SymbolFinder 的引用類型
+   * 支援分離 import 語句：當 import 包含多個成員時，只更新被移動的成員
    */
   private async prepareReferenceUpdates(
     options: MoveMemberOptions,
@@ -287,9 +288,6 @@ export class MoveMemberService {
         const importPathMatch = this.extractImportPath(line);
         if (!importPathMatch) {continue;}
 
-        // 檢查是否包含成員名稱
-        if (!this.lineContainsMember(line, member.name)) {continue;}
-
         // 解析 import 路徑為絕對路徑並比較
         const resolvedImportPath = this.resolveImportPathToAbsolute(importPathMatch, filePath);
         const normalizedSourceFile = path.normalize(options.sourceFile);
@@ -297,18 +295,51 @@ export class MoveMemberService {
         // 比較路徑（考慮副檔名）
         if (!this.pathsMatch(resolvedImportPath, normalizedSourceFile)) {continue;}
 
-        // 計算新的相對路徑並更新
-        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
-        const newLine = line.replace(
-          new RegExp(`(['"\`])${this.escapeRegex(importPathMatch)}\\1`),
-          `$1${newRelativePath}$1`
-        );
+        // 解析 import 中的所有成員
+        const importedMembers = this.parseImportedMembers(line);
+        if (importedMembers.length === 0) {continue;}
 
-        if (newLine !== line) {
+        // 找出需要移動的成員（可能帶別名）
+        const memberToMove = importedMembers.find(m => m.name === member.name);
+        if (!memberToMove) {continue;}
+
+        // 計算新的相對路徑
+        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
+        const quoteChar = this.detectQuoteChar(line);
+
+        // 根據是否有其他成員決定如何更新 import
+        const otherMembers = importedMembers.filter(m => m.name !== member.name);
+        let newImport: string;
+
+        if (otherMembers.length === 0) {
+          // 只有一個成員，直接替換路徑
+          newImport = line.replace(
+            new RegExp(`(['"\`])${this.escapeRegex(importPathMatch)}\\1`),
+            `$1${newRelativePath}$1`
+          );
+        } else {
+          // 有多個成員，需要分離 import
+          // 生成保留在原位置的 import
+          const remainingMembersStr = otherMembers.map(m =>
+            m.alias ? `${m.name} as ${m.alias}` : m.name
+          ).join(', ');
+          const remainingImport = `import { ${remainingMembersStr} } from ${quoteChar}${importPathMatch}${quoteChar};`;
+
+          // 生成移動到新位置的 import
+          const movedMemberStr = memberToMove.alias
+            ? `${memberToMove.name} as ${memberToMove.alias}`
+            : memberToMove.name;
+          const newLocationImport = `import { ${movedMemberStr} } from ${quoteChar}${newRelativePath}${quoteChar};`;
+
+          // 合併成新的 import（新位置的 import 在前）
+          newImport = `${newLocationImport}\n${remainingImport}`;
+        }
+
+        if (newImport !== line) {
           updates.push({
             filePath,
             originalImport: line,
-            newImport: newLine,
+            newImport,
             location: {
               filePath,
               range: {
@@ -322,6 +353,44 @@ export class MoveMemberService {
     }
 
     return updates;
+  }
+
+  /**
+   * 解析 import 語句中的成員列表
+   */
+  private parseImportedMembers(line: string): Array<{ name: string; alias?: string }> {
+    const members: Array<{ name: string; alias?: string }> = [];
+
+    // 匹配 { A, B as C, D } 形式
+    const match = line.match(/import\s*\{([^}]+)\}\s*from/);
+    if (!match) {return members;}
+
+    const membersStr = match[1];
+    const memberParts = membersStr.split(',');
+
+    for (const part of memberParts) {
+      const trimmed = part.trim();
+      if (!trimmed) {continue;}
+
+      // 檢查是否有別名 (name as alias)
+      const aliasMatch = trimmed.match(/^(\w+)\s+as\s+(\w+)$/);
+      if (aliasMatch) {
+        members.push({ name: aliasMatch[1], alias: aliasMatch[2] });
+      } else {
+        members.push({ name: trimmed });
+      }
+    }
+
+    return members;
+  }
+
+  /**
+   * 檢測 import 語句使用的引號類型
+   */
+  private detectQuoteChar(line: string): string {
+    if (line.includes('\'')) {return '\'';}
+    if (line.includes('"')) {return '"';}
+    return '\'';
   }
 
   /**
@@ -343,14 +412,6 @@ export class MoveMemberService {
       return directImport ? directImport[1] : null;
     }
     return match[1];
-  }
-
-  /**
-   * 檢查行是否包含指定成員名稱
-   */
-  private lineContainsMember(line: string, memberName: string): boolean {
-    const memberPattern = new RegExp(`\\b${this.escapeRegex(memberName)}\\b`);
-    return memberPattern.test(line);
   }
 
   /**
@@ -436,19 +497,18 @@ export class MoveMemberService {
 
   /**
    * 生成 import 陳述
+   * 注意：不應該 import 成員自身，因為成員已經被移動到新檔案
    */
-  private generateImports(member: MemberDefinition, options: MoveMemberOptions): string {
-    // 分析依賴並生成必要的 import
-    const imports: string[] = [];
-
-    for (const dep of member.dependencies) {
-      // 檢查依賴是否在來源檔案中
-      // 這裡簡化處理，實際應該更精確地分析
-      const relativePath = this.calculateRelativePath(options.target.filePath, options.sourceFile);
-      imports.push(`import { ${dep} } from '${relativePath}';`);
-    }
-
-    return imports.join('\n');
+  private generateImports(member: MemberDefinition, _options: MoveMemberOptions): string {
+    // 新檔案不需要從來源檔案 import 任何東西
+    // 因為：
+    // 1. 成員自身已經被複製到新檔案，不需要 import
+    // 2. 成員的依賴應該從原本的 import 路徑導入，而不是從來源檔案
+    // 3. 實際的依賴（如型別）應該透過分析原始檔案的 import 來決定
+    //
+    // 目前暫時不生成任何 import，因為這需要更複雜的依賴分析
+    // 未來可以改進：分析成員使用的型別和函式，從原始檔案的 import 中提取
+    return '';
   }
 
   /**
