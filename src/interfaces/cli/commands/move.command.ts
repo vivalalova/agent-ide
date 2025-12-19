@@ -30,7 +30,8 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
     .option('-s, --source <path>', '來源路徑')
     .option('-t, --target <path>', '目標路徑')
     .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
-    .option('--update-imports', '自動更新 import 路徑', true)
+    .option('--update-imports', '自動更新 import 路徑（預設為 true）', true)
+    .option('--no-update-imports', '不更新 import 路徑')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
     .action(async (sourceArg, targetArg, options: MoveOptions) => {
@@ -74,6 +75,10 @@ async function handleMoveCommand(
   }
 
   const isJsonFormat = format === OutputFormat.Json;
+  const projectRoot = options.path || process.cwd();
+
+  // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
+  const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
 
   if (!isJsonFormat) {
     console.log(`   ${source}   ${target}`);
@@ -81,7 +86,7 @@ async function handleMoveCommand(
 
   try {
     // 檢查源檔案是否存在
-    const sourceExists = await context.fileSystem.exists(source);
+    const sourceExists = await context.fileSystem.exists(resolvedSource);
     if (!sourceExists) {
       outputHandler.outputError(`源檔案找不到: ${source}`, format);
       process.exitCode = 1;
@@ -89,9 +94,34 @@ async function handleMoveCommand(
       return;
     }
 
+    // Bug 2 修復：處理目標為目錄的情況
+    let resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+
+    // 檢查目標是否為目錄（以 / 結尾或已存在的目錄）
+    const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
+    let targetIsDirectory = false;
+
+    if (targetEndsWithSlash) {
+      targetIsDirectory = true;
+    } else {
+      // 檢查目標是否為已存在的目錄
+      try {
+        targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
+      } catch {
+        // 目標不存在，視為檔案路徑
+        targetIsDirectory = false;
+      }
+    }
+
+    // 如果目標是目錄，將原檔名加到目標路徑
+    if (targetIsDirectory) {
+      const sourceBasename = path.basename(resolvedSource);
+      resolvedTarget = path.join(resolvedTarget, sourceBasename);
+    }
+
     // 檢查源和目標是否相同
-    const normalizedSource = path.resolve(source);
-    const normalizedTarget = path.resolve(target);
+    const normalizedSource = path.resolve(resolvedSource);
+    const normalizedTarget = path.resolve(resolvedTarget);
     if (normalizedSource === normalizedTarget) {
       // 源和目標相同時，視為 no-op，成功返回
       if (isJsonFormat) {
@@ -103,7 +133,7 @@ async function handleMoveCommand(
     }
 
     // 讀取 tsconfig.json 路徑別名
-    const pathAliases = await loadPathAliases(options.path || process.cwd(), context);
+    const pathAliases = await loadPathAliases(projectRoot, context);
 
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
@@ -120,7 +150,7 @@ async function handleMoveCommand(
 
     const moveOptions = {
       preview: options.dryRun,
-      projectRoot: options.path || process.cwd()
+      projectRoot
     };
 
     // 執行移動操作

@@ -721,8 +721,14 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
     });
 
     it('應該處理目標目錄已存在的錯誤', async () => {
+      // 當目標是已存在的目錄時，會將原目錄/檔案名加到目標路徑
+      // 所以 move src/utils src/models → src/models/utils
+      // 只有當 src/models/utils 也存在時才會報錯
       const source = path.join(fixture.rootPath, 'src/utils');
-      const target = path.join(fixture.rootPath, 'src/models'); // 已存在的目錄（有檔案）
+
+      // 先建立 src/models/utils 目錄，讓目標真正已存在
+      await fixture.writeFile('src/models/utils/.gitkeep', '');
+      const target = path.join(fixture.rootPath, 'src/models'); // 已存在的目錄
 
       const result = await executeCLI(
         ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],

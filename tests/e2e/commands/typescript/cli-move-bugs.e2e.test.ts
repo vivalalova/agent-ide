@@ -1,0 +1,316 @@
+/**
+ * CLI move 命令 E2E 測試 - Bug 修復驗證
+ * GitHub Issue #29: 相對路徑不支援、目錄目標處理錯誤、--no-update-imports 無法禁用
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
+import * as path from 'path';
+
+describe('CLI move bugs - GitHub Issue #29', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('Bug 1: 相對路徑不支援', () => {
+    it('應該支援相對於 --path 的來源路徑', async () => {
+      // 使用相對路徑（不含 fixture.rootPath 前綴）
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts',  // 相對路徑
+          'src/helpers/string-utils.ts', // 相對路徑
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+
+    it('應該支援相對於 --path 的目標路徑', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          '--source', 'src/utils/formatter.ts',
+          '--target', 'src/lib/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+
+    it('應該在 dry-run 模式下支援相對路徑', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          'src/types/user.ts',
+          'src/entities/user.ts',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.command).toBe('move');
+    });
+
+    it('應該正確顯示相對路徑不存在的錯誤', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          'src/nonexistent.ts',
+          'src/new-location.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toMatch(/找不到|不存在/);
+    });
+  });
+
+  describe('Bug 2: 目錄目標處理錯誤', () => {
+    it('應該支援目標為目錄（以 / 結尾）並保留原檔名', async () => {
+      // 先確保目標目錄存在
+      await fixture.writeFile('src/helpers/.gitkeep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/utils/string-utils.ts'),
+          path.join(fixture.rootPath, 'src/helpers/'), // 目錄目標（以 / 結尾）
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+      // 目標應該是 src/helpers/string-utils.ts（保留原檔名）
+      expect(output.target).toContain('string-utils.ts');
+    });
+
+    it('應該支援目標為已存在目錄（不以 / 結尾但為目錄）', async () => {
+      // src/helpers 已存在且為目錄
+      await fixture.writeFile('src/helpers/.gitkeep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/utils/formatter.ts'),
+          path.join(fixture.rootPath, 'src/helpers'), // 目錄目標（不以 / 結尾）
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+      // 目標應該是 src/helpers/formatter.ts（保留原檔名）
+      expect(output.target).toContain('formatter.ts');
+    });
+
+    it('應該在 dry-run 模式下正確處理目錄目標', async () => {
+      await fixture.writeFile('src/lib/.gitkeep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/types/user.ts',
+          'src/lib/', // 目錄目標
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 預覽中應該顯示完整的目標路徑（含檔名）
+      expect(output.summary).toBeDefined();
+    });
+
+    it('應該處理目錄目標不存在的情況（自動建立）', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/utils/array-utils.ts'),
+          path.join(fixture.rootPath, 'src/new-dir/'), // 不存在的目錄
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+      expect(output.target).toContain('array-utils.ts');
+    });
+  });
+
+  describe('Bug 3: --no-update-imports 選項無法禁用', () => {
+    it('應該支援 --no-update-imports 語法', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/types/user.ts'),
+          path.join(fixture.rootPath, 'src/entities/user.ts'),
+          '--path', fixture.rootPath,
+          '--no-update-imports',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+      // --no-update-imports 應該不更新 import，所以 pathUpdates 應該為空
+      expect(output.pathUpdates).toEqual([]);
+    });
+
+    it('應該支援多次使用 --no-update-imports', async () => {
+      // Commander 不支援 --update-imports=false 語法
+      // 但 --no-update-imports 可以正常工作
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/types/common.ts'),
+          path.join(fixture.rootPath, 'src/shared/common.ts'),
+          '--path', fixture.rootPath,
+          '--no-update-imports',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+      // pathUpdates 應該為空（未更新 import）
+      expect(output.pathUpdates).toEqual([]);
+    });
+
+    it('應該預設啟用 --update-imports（有更新 import）', async () => {
+      // 先確認有檔案引用 user.ts
+      const result = await executeCLI(
+        [
+          'move',
+          path.join(fixture.rootPath, 'src/types/user.ts'),
+          path.join(fixture.rootPath, 'src/models/entities/user.ts'),
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 預設應該更新 import，所以 files 中應該有內容
+      expect(output.files).toBeDefined();
+    });
+
+    it('應該在 dry-run 模式下正確處理 --no-update-imports', async () => {
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/lib/formatter.ts',
+          '--path', fixture.rootPath,
+          '--no-update-imports',
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 不更新 import，所以 files 應該只包含移動本身，沒有 import 變更
+      expect(output.summary.totalChanges).toBe(0);
+    });
+  });
+
+  describe('組合測試：多個 Bug 修復整合', () => {
+    it('應該同時支援相對路徑和目錄目標', async () => {
+      await fixture.writeFile('src/shared/.gitkeep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts', // 相對路徑
+          'src/shared/',               // 目錄目標
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.target).toContain('string-utils.ts');
+    });
+
+    it('應該同時支援相對路徑、目錄目標和 --no-update-imports', async () => {
+      await fixture.writeFile('src/lib/.gitkeep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/types/user.ts',  // 相對路徑
+          'src/lib/',           // 目錄目標
+          '--path', fixture.rootPath,
+          '--no-update-imports',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.target).toContain('user.ts');
+      expect(output.pathUpdates).toEqual([]);
+    });
+  });
+});
