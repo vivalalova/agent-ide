@@ -1,3 +1,18 @@
+## <small>0.7.4 (2025-12-19)</small>
+
+* test: [E2E 測試] 修正因 exitCode 捕獲改進而揭露的測試問題 ([9e2aa9d](https://github.com/vivalalova/agent-ide/commit/9e2aa9d))
+* test: 修正 snapshot-generator 測試的 scope.type 設定 ([56be931](https://github.com/vivalalova/agent-ide/commit/56be931))
+* fix: [Bug Reports 修復] 修正 change-signature 多行呼叫點與可選參數 ([e9d0de3](https://github.com/vivalalova/agent-ide/commit/e9d0de3))
+* fix: [Bug Reports 修復] 修正 cycles-impact 輸出格式問題 ([96c0e8e](https://github.com/vivalalova/agent-ide/commit/96c0e8e))
+* fix: [Bug Reports 修復] 修正 find-refs 多定義支援與行號偏移 ([73db669](https://github.com/vivalalova/agent-ide/commit/73db669))
+* fix: [Bug Reports 修復] 修正 move 路徑映射支援 ([b33e1e3](https://github.com/vivalalova/agent-ide/commit/b33e1e3))
+* fix: [Bug Reports 修復] 修正 rename 作用域感知與輸出格式 ([ec26b61](https://github.com/vivalalova/agent-ide/commit/ec26b61))
+* fix: [Bug Reports 修復] 修正 snapshot interface 與 TypeParameter 處理 ([0b0a157](https://github.com/vivalalova/agent-ide/commit/0b0a157))
+* fix: [deadcode 修復] 修正 5 個導致誤刪程式碼的 Bug ([1bf2118](https://github.com/vivalalova/agent-ide/commit/1bf2118))
+* fix: [E2E 測試] 修正 cli-executor 正確捕獲 process.exitCode ([bc8c188](https://github.com/vivalalova/agent-ide/commit/bc8c188))
+* ci: 自動同步 marketplace.json 版號與 npm 版號 ([881ca02](https://github.com/vivalalova/agent-ide/commit/881ca02))
+* docs: [Bug Reports 修復] 新增功能測試報告 ([1447634](https://github.com/vivalalova/agent-ide/commit/1447634))
+
 ## <small>0.7.3 (2025-12-14)</small>
 
 * perf: [批次讀檔優化] call-hierarchy & change-signature 模組 (#27) ([1667668](https://github.com/vivalalova/agent-ide/commit/1667668)), closes [#27](https://github.com/vivalalova/agent-ide/issues/27)
