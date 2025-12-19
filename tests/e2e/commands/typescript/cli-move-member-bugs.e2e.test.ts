@@ -288,7 +288,7 @@ export function multiply(a: number, b: number): number {
 }
 `);
 
-      // When: 使用 --new-file 建立新檔案
+      // When: 移動到新檔案（自動偵測檔案不存在）
       const result = await executeCLI(
         [
           'move-member',
@@ -296,7 +296,6 @@ export function multiply(a: number, b: number): number {
           'multiply',
           '-p', fixture.rootPath,
           '--target-file', fixture.getFilePath('src/new-math.ts'),
-          '--new-file',
           '--format', 'json'
         ],
         { memfs: fixture.memfs }
@@ -340,7 +339,6 @@ export function otherFunc(): void {}
           'processConfig',
           '-p', fixture.rootPath,
           '--target-file', fixture.getFilePath('src/processor.ts'),
-          '--new-file',
           '--format', 'json'
         ],
         { memfs: fixture.memfs }
@@ -374,7 +372,6 @@ export function helperFunc(): string {
           'helperFunc',
           '-p', fixture.rootPath,
           '--target-file', fixture.getFilePath('src/new-helper.ts'),
-          '--new-file',
           '--dry-run',
           '--format', 'json'
         ],
@@ -398,7 +395,6 @@ export function helperFunc(): string {
           'helperFunc',
           '-p', fixture.rootPath,
           '--target-file', fixture.getFilePath('src/new-helper.ts'),
-          '--new-file',
           '--format', 'json'
         ],
         { memfs: fixture.memfs }

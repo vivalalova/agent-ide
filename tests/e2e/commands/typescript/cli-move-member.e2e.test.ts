@@ -60,7 +60,7 @@ export function stay(): number {
 `);
 
       const result = await executeCLI(
-        ['move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/new-file.ts'), '--new-file', '--dry-run', '--format', 'json'],
+        ['move-member', fixture.getFilePath('src/source.ts'), 'toMove', '-p', fixture.rootPath, '--target-file', fixture.getFilePath('src/new-file.ts'), '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

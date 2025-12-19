@@ -20,7 +20,6 @@ interface MoveMemberOptions {
   class?: string;
   targetFile: string;
   targetClass?: string;
-  newFile?: boolean;
   keepReexport?: boolean;
   updateRefs?: boolean;
   dryRun?: boolean;
@@ -37,9 +36,8 @@ export function setupMoveMemberCommand(program: Command, context: CommandContext
     .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
     .option('-t, --type <type>', '成員類型 (method|property|function|class|interface|type|constant|enum)')
     .option('-c, --class <name>', '來源類別名稱（若為類別成員）')
-    .option('--target-file <file>', '目標檔案路徑')
+    .option('--target-file <file>', '目標檔案路徑（檔案不存在時自動創建）')
     .option('--target-class <name>', '目標類別名稱（移動到類別內）')
-    .option('--new-file', '建立新檔案')
     .option('--keep-reexport', '保留原位置的 re-export')
     .option('--update-refs', '更新所有引用（預設為 true）', true)
     .option('--no-update-refs', '不更新引用')
@@ -88,13 +86,10 @@ async function handleMoveMemberCommand(
     // 解析成員類型
     const memberType = options.type ? parseMemberType(options.type) : undefined;
 
-    // 決定目標類型
-    let targetType = MoveTargetType.ExistingFile;
-    if (options.newFile) {
-      targetType = MoveTargetType.NewFile;
-    } else if (options.targetClass) {
-      targetType = MoveTargetType.ExistingClass;
-    }
+    // 決定目標類型（服務層會自動判斷檔案是否存在）
+    const targetType = options.targetClass
+      ? MoveTargetType.ExistingClass
+      : MoveTargetType.ExistingFile;
 
     if (!isJsonFormat) {
       console.log(`📦 移動成員: ${memberName}`);

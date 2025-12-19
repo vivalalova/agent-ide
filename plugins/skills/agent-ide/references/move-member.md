@@ -11,8 +11,8 @@
 # 移動函式到現有檔案
 agent-ide transform move-member src/utils.ts calculateSum --target-file src/math.ts --dry-run
 
-# 移動函式到新檔案
-agent-ide transform move-member src/utils.ts calculateSum --target-file src/math.ts --new-file --dry-run
+# 移動函式到新檔案（自動偵測檔案不存在時建立）
+agent-ide transform move-member src/utils.ts calculateSum --target-file src/new-math.ts --dry-run
 
 # 移動類別方法到另一個類別
 agent-ide transform move-member src/user.ts validateEmail --class User --target-file src/validator.ts --target-class Validator --dry-run
@@ -35,9 +35,8 @@ agent-ide transform move-member src/utils.ts calculateSum --target-file src/math
 | `<memberName>` | 成員名稱 |
 | `--type` | 成員類型：`method`、`property`、`function`、`class`、`interface`、`type`、`constant`、`enum` |
 | `--class` | 來源類別名稱（若為類別成員） |
-| `--target-file` | 目標檔案路徑 |
+| `--target-file` | 目標檔案路徑（檔案不存在時自動建立） |
 | `--target-class` | 目標類別名稱（移動到類別內） |
-| `--new-file` | 建立新檔案 |
 | `--keep-reexport` | 保留原位置的 re-export |
 | `--update-refs` | 更新所有引用（預設 true） |
 | `--no-update-refs` | 不更新引用 |

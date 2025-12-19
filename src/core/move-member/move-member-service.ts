@@ -104,10 +104,10 @@ export class MoveMemberService {
     member: MemberDefinition
   ): Promise<{ code: MoveMemberErrorCode; message: string } | null> {
     const { target } = options;
+    const exists = await this.fileSystem.exists(target.filePath);
 
-    // 檢查目標檔案
-    if (target.type === MoveTargetType.ExistingFile || target.type === MoveTargetType.ExistingClass) {
-      const exists = await this.fileSystem.exists(target.filePath);
+    // 檢查目標類別（必須檔案存在）
+    if (target.type === MoveTargetType.ExistingClass && target.className) {
       if (!exists) {
         return {
           code: MoveMemberErrorCode.TargetFileNotFound,
@@ -115,7 +115,18 @@ export class MoveMemberService {
         };
       }
 
-      // 檢查是否已有同名成員
+      const members = await this.memberExtractor.listMembers(target.filePath);
+      const targetClass = members.find(m => m.name === target.className);
+      if (!targetClass) {
+        return {
+          code: MoveMemberErrorCode.TargetClassNotFound,
+          message: `找不到目標類別: ${target.className}`
+        };
+      }
+    }
+
+    // 檢查是否已有同名成員（僅當檔案存在時）
+    if (exists) {
       const existingMember = await this.memberExtractor.extractMember(
         target.filePath,
         member.name,
@@ -127,18 +138,6 @@ export class MoveMemberService {
         return {
           code: MoveMemberErrorCode.DuplicateMemberInTarget,
           message: `目標位置已存在同名成員: ${member.name}`
-        };
-      }
-    }
-
-    // 檢查目標類別
-    if (target.type === MoveTargetType.ExistingClass && target.className) {
-      const members = await this.memberExtractor.listMembers(target.filePath);
-      const targetClass = members.find(m => m.name === target.className);
-      if (!targetClass) {
-        return {
-          code: MoveMemberErrorCode.TargetClassNotFound,
-          message: `找不到目標類別: ${target.className}`
         };
       }
     }
@@ -191,13 +190,13 @@ export class MoveMemberService {
 
   /**
    * 準備目標檔案變更
+   * 自動判斷目標檔案是否存在：存在則插入，不存在則創建新檔案
    */
   private async prepareTargetFileChange(
     options: MoveMemberOptions,
     member: MemberDefinition
   ): Promise<{ filePath: string; originalCode: string | null; newCode: string; isNewFile: boolean }> {
     const { target } = options;
-    const isNewFile = target.type === MoveTargetType.NewFile;
 
     // 準備要插入的程式碼
     let memberCode = member.sourceCode;
@@ -209,6 +208,10 @@ export class MoveMemberService {
     if (!memberCode.includes('export') && member.modifiers.includes('export')) {
       memberCode = 'export ' + memberCode;
     }
+
+    // 自動判斷檔案是否存在
+    const content = await this.readFile(target.filePath);
+    const isNewFile = content === null;
 
     if (isNewFile) {
       // 新檔案：生成完整的檔案內容
@@ -224,10 +227,6 @@ export class MoveMemberService {
     }
 
     // 現有檔案
-    const content = await this.readFile(target.filePath);
-    if (content === null) {
-      throw new Error(`無法讀取目標檔案: ${target.filePath}`);
-    }
 
     const lines = content.split('\n');
     let insertLine = target.insertPosition ?? -1;
