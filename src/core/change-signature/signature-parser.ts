@@ -3,7 +3,6 @@
  * 從程式碼中提取函式簽名
  */
 
-import type { Range, Location } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { FunctionSignature, ParameterDefinition } from './types.js';

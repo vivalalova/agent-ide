@@ -255,7 +255,9 @@ export enum ChangeSignatureErrorCode {
   /** 解析錯誤 */
   ParseError = 'parse-error',
   /** 必填參數不可移除（有呼叫點依賴） */
-  RequiredParameterInUse = 'required-parameter-in-use'
+  RequiredParameterInUse = 'required-parameter-in-use',
+  /** 可選參數位於必選參數之前（TypeScript 規則違反） */
+  OptionalBeforeRequired = 'optional-before-required'
 }
 
 /**
