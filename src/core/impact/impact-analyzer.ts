@@ -12,7 +12,6 @@ import type {
   ProjectDependencies,
   DependencyStats,
   ImpactAnalysisResult,
-  DependencyAnalysisOptions,
   DependencyQueryOptions,
   PathResolutionResult,
   ExtendedDependencyAnalysisOptions
