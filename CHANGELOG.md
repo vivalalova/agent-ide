@@ -1,3 +1,11 @@
+## <small>0.7.6 (2025-12-19)</small>
+
+* refactor: [程式碼品質] review 發現問題修復 ([cf59d59](https://github.com/vivalalova/agent-ide/commit/cf59d59))
+* fix: [GitHub #33] move-member diff 格式輸出顯示實際程式碼變更 ([2a52184](https://github.com/vivalalova/agent-ide/commit/2a52184)), closes [#33](https://github.com/vivalalova/agent-ide/issues/33) [#33](https://github.com/vivalalova/agent-ide/issues/33)
+* fix: [GitHub #34] deadcode 命令誤判修復 ([ba0ae69](https://github.com/vivalalova/agent-ide/commit/ba0ae69)), closes [#34](https://github.com/vivalalova/agent-ide/issues/34) [#34](https://github.com/vivalalova/agent-ide/issues/34)
+* fix: [GitHub #35] cycles 和 impact 命令路徑存在性檢查 ([b75fb8d](https://github.com/vivalalova/agent-ide/commit/b75fb8d)), closes [#35](https://github.com/vivalalova/agent-ide/issues/35) [#35](https://github.com/vivalalova/agent-ide/issues/35)
+* fix: [GitHub #36] rename diff 輸出顯示完整程式碼行 ([ba02789](https://github.com/vivalalova/agent-ide/commit/ba02789)), closes [#36](https://github.com/vivalalova/agent-ide/issues/36) [#36](https://github.com/vivalalova/agent-ide/issues/36)
+
 ## <small>0.7.5 (2025-12-19)</small>
 
 * style: [GitHub #32] 移除未使用的 import ([8234c2b](https://github.com/vivalalova/agent-ide/commit/8234c2b)), closes [#32](https://github.com/vivalalova/agent-ide/issues/32)
