@@ -17,6 +17,19 @@ import type {
 import { DEFAULT_DEAD_CODE_OPTIONS } from './types.js';
 
 /**
+ * 符號使用資訊
+ */
+interface SymbolUsageInfo {
+  /** 使用引用列表 */
+  usageRefs: Array<{
+    location: { filePath: string; range: { start: { line: number } } };
+    type: string;
+  }>;
+  /** 是否有 export 修飾符 */
+  hasExport: boolean;
+}
+
+/**
  * Dead Code 檢測器
  */
 export class DeadCodeDetector {
@@ -67,7 +80,6 @@ export class DeadCodeDetector {
       const classMembersMap = this.buildClassMembersMap(symbolsToCheck);
 
       // 第一輪：分析每個符號的使用情況
-      type SymbolUsageInfo = { usageRefs: { location: { filePath: string; range: { start: { line: number } } }; type: string }[]; hasExport: boolean };
       const symbolUsageMap = new Map<Symbol, SymbolUsageInfo>();
 
       for (const symbol of symbolsToCheck) {
@@ -342,20 +354,19 @@ export class DeadCodeDetector {
    * 用於判斷 class 是否有成員被使用
    */
   private buildClassMembersMap(symbols: readonly Symbol[]): Map<string, Symbol[]> {
-    const classMap = new Map<string, Symbol[]>();
+    // 第一步：收集所有 class 符號（以 filePath:className 為 key）
+    const classMap = symbols
+      .filter(s => s.type === 'class')
+      .reduce((map, s) => {
+        map.set(`${s.location.filePath}:${s.name}`, []);
+        return map;
+      }, new Map<string, Symbol[]>());
 
-    // 先收集所有 class 符號（以 filePath:className 為 key）
-    for (const symbol of symbols) {
-      if (symbol.type === 'class') {
-        const key = `${symbol.location.filePath}:${symbol.name}`;
-        classMap.set(key, []);
-      }
-    }
-
-    // 再收集每個 class 的成員
-    for (const symbol of symbols) {
-      // 判斷是否為 class member
-      // 方法：scope.parent.type === 'class' 或 scope.type === 'class' && symbol.type !== 'class'
+    // 第二步：將成員分配到對應的 class
+    symbols.forEach(symbol => {
+      // 判斷 parent class 名稱
+      // - 方法：scope.parent.type === 'class'
+      // - 屬性：scope.type === 'class' && symbol.type !== 'class'
       const parentClassName = symbol.scope?.parent?.type === 'class'
         ? symbol.scope.parent.name
         : (symbol.scope?.type === 'class' && symbol.type !== 'class')
@@ -363,40 +374,29 @@ export class DeadCodeDetector {
           : null;
 
       if (parentClassName) {
-        // 找到對應的 class（同檔案）
         const key = `${symbol.location.filePath}:${parentClassName}`;
-        const members = classMap.get(key);
-        if (members) {
-          members.push(symbol);
-        }
+        classMap.get(key)?.push(symbol);
       }
-    }
+    });
 
     return classMap;
   }
 
   /**
    * 檢查 class 是否有任何成員被使用
-   * @param classSymbol class 符號
-   * @param classMembersMap class → members 映射
-   * @param symbolUsageMap 符號使用資訊映射
    */
   private hasAnyUsedMember(
     classSymbol: Symbol,
     classMembersMap: Map<string, Symbol[]>,
-    symbolUsageMap: Map<Symbol, { usageRefs: unknown[]; hasExport: boolean }>
+    symbolUsageMap: Map<Symbol, SymbolUsageInfo>
   ): boolean {
     const key = `${classSymbol.location.filePath}:${classSymbol.name}`;
     const members = classMembersMap.get(key) ?? [];
 
-    for (const member of members) {
+    return members.some(member => {
       const usageInfo = symbolUsageMap.get(member);
-      if (usageInfo && usageInfo.usageRefs.length > 0) {
-        return true;
-      }
-    }
-
-    return false;
+      return usageInfo && usageInfo.usageRefs.length > 0;
+    });
   }
 }
 

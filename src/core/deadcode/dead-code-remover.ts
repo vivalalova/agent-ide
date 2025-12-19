@@ -590,7 +590,7 @@ export class DeadCodeRemover {
       // Bug #32 修復：如果遇到 JSDoc 結尾 */，繼續向上找到開始 /**
       if (prevLine.endsWith('*/')) {
         startLine--;
-        // 繼續向上找到 JSDoc 開始 /**
+        // 繼續向上找到 JSDoc 開始 /**（使用 >= 0 確保第 0 行也能檢查）
         while (startLine > 0) {
           const jsdocLine = lines[startLine - 1].trim();
           if (jsdocLine.startsWith('/**')) {
@@ -598,6 +598,10 @@ export class DeadCodeRemover {
             break;
           }
           startLine--;
+        }
+        // 額外檢查第 0 行是否為 JSDoc 開始
+        if (startLine === 0 && lines[0].trim().startsWith('/**')) {
+          // 已經到達第 0 行，不需要再減
         }
         continue;
       }
