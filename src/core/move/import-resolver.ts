@@ -203,23 +203,21 @@ export class ImportResolver {
 
   /**
    * 解析路徑別名
+   * 返回絕對路徑（如果 pathAliases 中的值是絕對路徑）
    */
   resolvePathAlias(aliasPath: string): string {
     const { pathAliases } = this.config;
 
     for (const [alias, realPath] of Object.entries(pathAliases)) {
-      if (aliasPath.startsWith(alias)) {
-        // 確保路徑拼接正確
+      // 精確匹配：alias 本身或 alias/ 開頭
+      if (aliasPath === alias || aliasPath.startsWith(alias + '/')) {
         // 移除前導的 / 以避免 path.join 的問題
         const remainingPath = aliasPath.slice(alias.length).replace(/^\//, '');
-        let resolved = path.join(realPath, remainingPath).replace(/\\/g, '/');
+        // 使用 path.join 拼接，保持 realPath 的格式（絕對或相對）
+        const resolved = path.join(realPath, remainingPath);
 
-        // 確保相對路徑以 ./ 開始
-        if (!resolved.startsWith('.') && !path.isAbsolute(resolved)) {
-          resolved = './' + resolved;
-        }
-
-        return resolved;
+        // 統一使用正斜線（跨平台）
+        return resolved.replace(/\\/g, '/');
       }
     }
 

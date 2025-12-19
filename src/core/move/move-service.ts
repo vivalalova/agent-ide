@@ -359,19 +359,20 @@ export class MoveService {
       return path.normalize(resolved);
     }
 
-    // 嘗試解析別名
+    // 嘗試解析別名（如 @/ 開頭的路徑映射）
     const resolved = this.importResolver.resolvePathAlias(importPath);
     if (resolved !== importPath) {
       // 如果解析成功（與原始路徑不同）
       if (path.isAbsolute(resolved)) {
         // 絕對路徑直接返回
         return path.normalize(resolved);
-      } else if (resolved.startsWith('.')) {
-        // 相對路徑需要轉換為絕對路徑
-        const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
-        const absoluteResolved = path.resolve(fromDir, resolved);
-        return path.normalize(absoluteResolved);
       }
+      // 非絕對路徑：相對於專案根目錄或 baseUrl
+      // 由於 pathAliases 已經在 move.command.ts 中轉為絕對路徑，這裡應該是絕對路徑
+      // 若仍為相對路徑，則視為相對於當前檔案
+      const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
+      const absoluteResolved = path.resolve(fromDir, resolved);
+      return path.normalize(absoluteResolved);
     }
 
     return importPath;
@@ -533,22 +534,10 @@ export class MoveService {
   ): string {
     // 如果原本是路徑別名，保留別名並更新路徑
     if (!originalImportPath.startsWith('.') && !originalImportPath.startsWith('/')) {
-      // 檢查是否為路徑別名
+      // 檢查是否為路徑別名（精確匹配：alias 本身或 alias/ 開頭）
       for (const [alias, aliasPath] of Object.entries(this.importResolver['config'].pathAliases)) {
-        if (originalImportPath.startsWith(alias)) {
-          // 將舊路徑轉換為別名格式
-          const resolvedOldPath = path.normalize(oldFilePath);
+        if (originalImportPath === alias || originalImportPath.startsWith(alias + '/')) {
           const resolvedAliasPath = path.normalize(aliasPath);
-
-          // 計算舊檔案相對於別名基礎路徑的相對路徑
-          let relativeToAlias = path.relative(resolvedAliasPath, resolvedOldPath);
-          relativeToAlias = relativeToAlias.replace(/\\/g, '/');
-
-          // 移除副檔名
-          const ext = path.extname(relativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
-            relativeToAlias = relativeToAlias.slice(0, -ext.length);
-          }
 
           // 計算新檔案相對於別名基礎路徑的相對路徑
           let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
@@ -560,8 +549,10 @@ export class MoveService {
             newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
           }
 
-          // 替換路徑部分
-          return originalImportPath.replace(relativeToAlias, newRelativeToAlias);
+          // 組合新的別名路徑：alias + / + newRelativeToAlias
+          // 如果 alias 本身不以 / 結尾，需要加上
+          const separator = alias.endsWith('/') ? '' : '/';
+          return alias + separator + newRelativeToAlias;
         }
       }
     }

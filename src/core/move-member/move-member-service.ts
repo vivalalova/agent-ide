@@ -278,31 +278,45 @@ export class MoveMemberService {
       if (!content) {continue;}
 
       const lines = content.split('\n');
-      const oldRelativePath = this.calculateRelativePath(filePath, options.sourceFile);
 
       // 掃描每一行找 import 語句
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
         // 檢查是否是 import 語句且包含成員名稱和來源路徑
-        if (this.isImportFromSource(line, member.name, oldRelativePath)) {
-          const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
-          const newLine = line.replace(oldRelativePath, newRelativePath);
+        const importPathMatch = this.extractImportPath(line);
+        if (!importPathMatch) {continue;}
 
-          if (newLine !== line) {
-            updates.push({
+        // 檢查是否包含成員名稱
+        if (!this.lineContainsMember(line, member.name)) {continue;}
+
+        // 解析 import 路徑為絕對路徑並比較
+        const resolvedImportPath = this.resolveImportPathToAbsolute(importPathMatch, filePath);
+        const normalizedSourceFile = path.normalize(options.sourceFile);
+
+        // 比較路徑（考慮副檔名）
+        if (!this.pathsMatch(resolvedImportPath, normalizedSourceFile)) {continue;}
+
+        // 計算新的相對路徑並更新
+        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
+        const newLine = line.replace(
+          new RegExp(`(['"\`])${this.escapeRegex(importPathMatch)}\\1`),
+          `$1${newRelativePath}$1`
+        );
+
+        if (newLine !== line) {
+          updates.push({
+            filePath,
+            originalImport: line,
+            newImport: newLine,
+            location: {
               filePath,
-              originalImport: line,
-              newImport: newLine,
-              location: {
-                filePath,
-                range: {
-                  start: { line: i + 1, column: 1, offset: undefined },
-                  end: { line: i + 1, column: line.length + 1, offset: undefined }
-                }
+              range: {
+                start: { line: i + 1, column: 1, offset: undefined },
+                end: { line: i + 1, column: line.length + 1, offset: undefined }
               }
-            });
-          }
+            }
+          });
         }
       }
     }
@@ -311,24 +325,76 @@ export class MoveMemberService {
   }
 
   /**
-   * 檢查是否是從指定來源 import 指定成員的語句
+   * 從 import/export 語句中提取路徑
    */
-  private isImportFromSource(line: string, memberName: string, sourcePath: string): boolean {
+  private extractImportPath(line: string): string | null {
     const trimmed = line.trim();
 
-    // 檢查是否是 import 語句
+    // 檢查是否是 import/export 語句
     if (!trimmed.startsWith('import ') && !(trimmed.startsWith('export ') && trimmed.includes('from'))) {
-      return false;
+      return null;
     }
 
-    // 檢查是否包含成員名稱（用 word boundary）
+    // 提取引號內的路徑
+    const match = line.match(/from\s+['"`]([^'"`]+)['"`]/);
+    if (!match) {
+      // 嘗試匹配 import 'path' 形式
+      const directImport = line.match(/import\s+['"`]([^'"`]+)['"`]/);
+      return directImport ? directImport[1] : null;
+    }
+    return match[1];
+  }
+
+  /**
+   * 檢查行是否包含指定成員名稱
+   */
+  private lineContainsMember(line: string, memberName: string): boolean {
     const memberPattern = new RegExp(`\\b${this.escapeRegex(memberName)}\\b`);
-    if (!memberPattern.test(line)) {
-      return false;
+    return memberPattern.test(line);
+  }
+
+  /**
+   * 解析 import 路徑為絕對路徑
+   */
+  private resolveImportPathToAbsolute(importPath: string, fromFile: string): string {
+    if (importPath.startsWith('.')) {
+      // 相對路徑
+      const fromDir = path.dirname(fromFile);
+      return path.normalize(path.resolve(fromDir, importPath));
+    }
+    // 非相對路徑（可能是 node_modules 或路徑別名）
+    // 目前只處理相對路徑，其他情況返回原路徑
+    return importPath;
+  }
+
+  /**
+   * 比較兩個路徑是否指向同一檔案（考慮副檔名）
+   */
+  private pathsMatch(path1: string, path2: string): boolean {
+    const normalized1 = path.normalize(path1);
+    const normalized2 = path.normalize(path2);
+
+    // 完全匹配
+    if (normalized1 === normalized2) {
+      return true;
     }
 
-    // 檢查是否從指定來源 import
-    return line.includes(sourcePath);
+    // 移除副檔名後比較
+    const withoutExt1 = this.removeExtension(normalized1);
+    const withoutExt2 = this.removeExtension(normalized2);
+
+    return withoutExt1 === withoutExt2;
+  }
+
+  /**
+   * 移除檔案副檔名
+   */
+  private removeExtension(filePath: string): string {
+    const ext = path.extname(filePath);
+    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+      return filePath.slice(0, -ext.length);
+    }
+    return filePath;
   }
 
   /**
