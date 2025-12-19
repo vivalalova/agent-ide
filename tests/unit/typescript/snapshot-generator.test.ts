@@ -77,7 +77,8 @@ function createTestSymbol(
   modifiers: string[] = [],
   scopeName?: string,
   signature?: string,
-  typeInfo?: string
+  typeInfo?: string,
+  scopeType: 'class' | 'interface' | 'function' = 'class'
 ): Symbol & { signature?: string; typeInfo?: string } {
   return {
     name,
@@ -90,7 +91,7 @@ function createTestSymbol(
       }
     },
     scope: scopeName ? {
-      type: 'class',
+      type: scopeType,
       name: scopeName,
       parent: undefined
     } : undefined,
@@ -385,8 +386,8 @@ describe('SnapshotGenerator', () => {
     it('應該提取 interface 的欄位', () => {
       const symbols: Symbol[] = [
         createTestSymbol('User', SymbolType.Interface),
-        createTestSymbol('name', SymbolType.Property, [], 'User', undefined, 'string'),
-        createTestSymbol('age', SymbolType.Property, [], 'User', undefined, 'number'),
+        createTestSymbol('name', SymbolType.Property, [], 'User', undefined, 'string', 'interface'),
+        createTestSymbol('age', SymbolType.Property, [], 'User', undefined, 'number', 'interface'),
       ];
 
       const fs = createMockFileSystem(new Map());
@@ -435,7 +436,7 @@ describe('SnapshotGenerator', () => {
     it('應該處理 interface 欄位無型別資訊', () => {
       const symbols: Symbol[] = [
         createTestSymbol('Config', SymbolType.Interface),
-        createTestSymbol('value', SymbolType.Property, [], 'Config'),
+        createTestSymbol('value', SymbolType.Property, [], 'Config', undefined, undefined, 'interface'),
       ];
 
       const fs = createMockFileSystem(new Map());
@@ -504,7 +505,7 @@ describe('SnapshotGenerator', () => {
 
         // Interface
         createTestSymbol('Config', SymbolType.Interface),
-        createTestSymbol('port', SymbolType.Property, [], 'Config', undefined, 'number'),
+        createTestSymbol('port', SymbolType.Property, [], 'Config', undefined, 'number', 'interface'),
 
         // Type
         createTestSymbol('ID', SymbolType.Type, [], undefined, undefined, 'string'),
