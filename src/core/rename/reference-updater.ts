@@ -134,7 +134,7 @@ export class ReferenceUpdater {
         // 轉換 SymbolFinder 的 SymbolReference (@core/shared/symbol-finder)
         // 為本地型別 SymbolReference (@core/rename/types)
         // 兩者差異：
-        // - SymbolFinder 版本：{ symbolName, location: Location, type: SymbolReferenceType }
+        // - SymbolFinder 版本：{ symbolName, location: Location, type: SymbolReferenceType, context? }
         // - 本地版本：{ symbolName, range: Range, type: 'definition' | 'usage' | 'comment' }
         // filePath 資訊已知（來自方法參數），故只需映射 range 和 type
         return refs.map(ref => ({
@@ -150,6 +150,46 @@ export class ReferenceUpdater {
 
     // 降級：使用文字匹配方法
     return this.findSymbolReferencesByText(filePath, symbolName);
+  }
+
+  /**
+   * 使用完整符號資訊查找檔案中的引用（作用域感知版本）
+   *
+   * 此方法會使用完整的符號資訊（包含類型、作用域等）進行精確匹配，
+   * 避免同名符號被誤改的問題。
+   *
+   * @param filePath 檔案路徑
+   * @param symbol 完整的符號資訊
+   * @returns 符號引用陣列（包含 context 上下文）
+   */
+  async findSymbolReferencesWithSymbol(
+    filePath: string,
+    symbol: Symbol
+  ): Promise<SymbolReference[]> {
+    // 檢查參數有效性
+    if (!filePath || typeof filePath !== 'string' || !symbol || !symbol.name) {
+      return [];
+    }
+
+    // 使用 SymbolFinder 的作用域感知版本查找引用
+    if (this.symbolFinder) {
+      try {
+        const refs = await this.symbolFinder.findReferencesInFileWithSymbol(filePath, symbol);
+
+        return refs.map(ref => ({
+          symbolName: symbol.name,
+          range: ref.location.range,
+          type: this.mapReferenceType(ref.type),
+          context: ref.context // 傳遞上下文資訊
+        }));
+      } catch (error) {
+        // SymbolFinder 失敗時降級到文字匹配
+        console.warn(`SymbolFinder (with symbol) failed for ${filePath}, falling back to text matching:`, error);
+      }
+    }
+
+    // 降級：使用文字匹配方法
+    return this.findSymbolReferencesByText(filePath, symbol.name);
   }
 
   /**
@@ -221,6 +261,9 @@ export class ReferenceUpdater {
   /**
    * 收集重新命名變更（不寫入檔案）
    * 用於 preview 和實際執行共用邏輯
+   *
+   * 使用作用域感知的符號查找，確保只修改目標符號的引用，
+   * 不會影響其他同名但不同作用域的符號。
    */
   async collectRenameChanges(
     symbol: Symbol,
@@ -248,8 +291,8 @@ export class ReferenceUpdater {
           continue;
         }
 
-        // 查找所有引用
-        const references = await this.findSymbolReferences(filePath, symbol.name);
+        // 使用作用域感知的方法查找引用
+        const references = await this.findSymbolReferencesWithSymbol(filePath, symbol);
 
         // 如果沒有找到引用，檢查是否為符號定義所在檔案
         if (references.length === 0) {
@@ -267,11 +310,12 @@ export class ReferenceUpdater {
           continue;
         }
 
-        // 轉換為 TextChange
+        // 轉換為 TextChange（包含 context 資訊）
         const changes: TextChange[] = references.map(ref => ({
           range: ref.range,
           oldText: symbol.name,
-          newText: newName
+          newText: newName,
+          context: ref.context
         }));
 
         fileChanges.push({ filePath, changes });
@@ -337,6 +381,8 @@ export class ReferenceUpdater {
 
   /**
    * 更新檔案中的引用
+   *
+   * 使用作用域感知的符號查找，確保只修改目標符號的引用。
    */
   private async updateFileReferences(
     filePath: string,
@@ -346,7 +392,8 @@ export class ReferenceUpdater {
     const originalContent = await this.getFileContent(filePath);
     if (!originalContent) {return null;}
 
-    const references = await this.findSymbolReferences(filePath, symbol.name);
+    // 使用作用域感知的方法查找引用
+    const references = await this.findSymbolReferencesWithSymbol(filePath, symbol);
 
     // 如果沒有找到引用，至少處理符號定義位置
     if (references.length === 0) {

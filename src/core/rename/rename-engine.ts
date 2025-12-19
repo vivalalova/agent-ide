@@ -253,19 +253,22 @@ export class RenameEngine {
         Array.from(options.filePaths)
       );
 
-      // 轉換為 RenameOperation
+      // 轉換為 RenameOperation（包含 context 資訊）
       const operations: RenameOperation[] = [];
       const affectedFiles: string[] = [];
 
       for (const { filePath, changes } of fileChanges) {
         affectedFiles.push(filePath);
         for (const change of changes) {
-          operations.push(createRenameOperation(
+          // 使用物件字面值來包含 context（createRenameOperation 不支援 context 參數）
+          const operation: RenameOperation = {
             filePath,
-            change.oldText,
-            change.newText,
-            change.range
-          ));
+            oldText: change.oldText,
+            newText: change.newText,
+            range: change.range,
+            context: change.context
+          };
+          operations.push(operation);
         }
       }
 

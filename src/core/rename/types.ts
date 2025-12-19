@@ -24,6 +24,8 @@ export interface RenameOperation {
   readonly oldText: string;
   readonly newText: string;
   readonly range: Range;
+  /** 引用所在行的完整程式碼（用於輸出顯示上下文） */
+  readonly context?: string;
 }
 
 /**
@@ -226,6 +228,8 @@ export interface TextChange {
   readonly range: Range;
   readonly oldText: string;
   readonly newText: string;
+  /** 引用所在行的完整程式碼（用於輸出顯示上下文） */
+  readonly context?: string;
 }
 
 /**
@@ -235,6 +239,8 @@ export interface SymbolReference {
   readonly symbolName: string;
   readonly range: Range;
   readonly type: 'definition' | 'usage' | 'comment';
+  /** 引用所在行的完整程式碼（用於輸出顯示上下文） */
+  readonly context?: string;
 }
 
 /**

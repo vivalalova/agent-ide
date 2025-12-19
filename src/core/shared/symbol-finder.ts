@@ -15,7 +15,14 @@ export interface SymbolReference {
   readonly symbolName: string;
   readonly location: Location;
   readonly type: SymbolReferenceType;
+  /** 引用所在行的完整程式碼（用於輸出顯示） */
   readonly context?: string;
+  /** 所屬容器名稱（class、interface 等，用於作用域識別） */
+  readonly containerName?: string;
+  /** 是否為方法呼叫（用於區分同名方法） */
+  readonly isMethodCall?: boolean;
+  /** 呼叫者類型名稱（用於精確匹配方法所屬類別） */
+  readonly receiverType?: string;
 }
 
 /**
@@ -271,18 +278,97 @@ export class SymbolFinder {
       };
 
       const references = await parser.findReferences(ast, dummySymbol);
+      const lines = content.split('\n');
 
-      return references.map(ref => ({
-        symbolName,
-        location: ref.location,
-        type: ref.type === 'definition'
-          ? SymbolReferenceType.Definition
-          : SymbolReferenceType.Usage
-      }));
+      return references.map(ref => {
+        const lineIndex = ref.location.range.start.line - 1;
+        const context = lineIndex >= 0 && lineIndex < lines.length
+          ? lines[lineIndex].trim()
+          : undefined;
+
+        return {
+          symbolName,
+          location: ref.location,
+          type: ref.type === 'definition'
+            ? SymbolReferenceType.Definition
+            : SymbolReferenceType.Usage,
+          context
+        };
+      });
     } catch {
       // Parser 失敗，降級到文字匹配
       return this.findReferencesByText(filePath, content, symbolName);
     }
+  }
+
+  /**
+   * 使用完整符號資訊查找檔案中的引用（作用域感知版本）
+   *
+   * 此方法會：
+   * 1. 使用完整的符號資訊（包含類型、作用域等）進行精確匹配
+   * 2. 過濾掉註解和字串中的符號
+   * 3. 包含完整的程式碼上下文
+   *
+   * @param filePath 檔案路徑
+   * @param symbol 完整的符號資訊
+   * @returns 符號引用陣列
+   */
+  async findReferencesInFileWithSymbol(filePath: string, symbol: Symbol): Promise<SymbolReference[]> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const parser = this.getParser(filePath);
+    if (!parser) {
+      // 降級到文字匹配（但會過濾字串和註解）
+      return this.findReferencesByTextFiltered(filePath, content, symbol.name);
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+
+      // 使用完整符號資訊進行查找
+      const references = await parser.findReferences(ast, symbol);
+      const lines = content.split('\n');
+
+      return references.map(ref => {
+        const lineIndex = ref.location.range.start.line - 1;
+        const context = lineIndex >= 0 && lineIndex < lines.length
+          ? lines[lineIndex].trim()
+          : undefined;
+
+        return {
+          symbolName: symbol.name,
+          location: ref.location,
+          type: ref.type === 'definition'
+            ? SymbolReferenceType.Definition
+            : SymbolReferenceType.Usage,
+          context
+        };
+      });
+    } catch {
+      // Parser 失敗，降級到文字匹配
+      return this.findReferencesByTextFiltered(filePath, content, symbol.name);
+    }
+  }
+
+  /**
+   * 在多個檔案中查找符號引用（使用完整符號資訊）
+   *
+   * @param symbol 完整的符號資訊
+   * @param projectFiles 專案檔案列表
+   * @returns 所有找到的引用
+   */
+  async findReferencesWithSymbol(symbol: Symbol, projectFiles: readonly string[]): Promise<SymbolReference[]> {
+    const allReferences: SymbolReference[] = [];
+
+    for (const filePath of projectFiles) {
+      const refs = await this.findReferencesInFileWithSymbol(filePath, symbol);
+      allReferences.push(...refs);
+    }
+
+    return allReferences;
   }
 
   /**
@@ -346,22 +432,23 @@ export class SymbolFinder {
 
           // 排除方法定義：檢查是否在類別中定義方法（沒有 receiver 且後面有返回類型）
           if (!receiver) {
-            // 找到對應的右括號
+            // 找到對應的右括號（支援多行）
             const argsStart = match.index + match[0].length - 1;
-            const closingParen = this.findMatchingCloseParen(line, argsStart);
-            if (closingParen > 0) {
+            const multilineResult = this.findMatchingCloseParenMultiline(lines, lineIndex, argsStart);
+            if (multilineResult.index >= 0) {
               // 檢查右括號後是否有冒號（表示返回類型，即方法定義）
-              const afterParen = line.substring(closingParen + 1).trim();
+              const closingLine = lines[multilineResult.line];
+              const afterParen = closingLine.substring(multilineResult.index + 1).trim();
               if (afterParen.startsWith(':') || afterParen.startsWith('{')) {
                 continue;
               }
             }
           }
 
-          // 解析參數
+          // 解析參數（支援多行）
           const argsStart = match.index + match[0].length - 1;
-          const argsString = this.extractArgumentsString(line, argsStart);
-          const args = this.parseArguments(argsString, lineIndex + 1, argsStart);
+          const multilineArgs = this.extractArgumentsStringMultiline(lines, lineIndex, argsStart);
+          const args = this.parseArgumentsMultiline(multilineArgs.content, lineIndex + 1, argsStart);
 
           callSites.push({
             functionName,
@@ -369,7 +456,7 @@ export class SymbolFinder {
               filePath,
               range: {
                 start: { line: lineIndex + 1, column: startColumn, offset: undefined },
-                end: { line: lineIndex + 1, column: startColumn + match[0].length, offset: undefined }
+                end: { line: multilineArgs.endLine + 1, column: multilineArgs.endColumn + 1, offset: undefined }
               }
             },
             arguments: args,
@@ -495,6 +582,132 @@ export class SymbolFinder {
   }
 
   /**
+   * 使用文字匹配查找引用（過濾字串和註解版本）
+   *
+   * 此方法會過濾掉：
+   * 1. 字串字面值中的符號（單引號、雙引號、模板字串）
+   * 2. 單行註解中的符號（// 和 #）
+   * 3. 多行註解中的符號
+   */
+  private findReferencesByTextFiltered(filePath: string, content: string, symbolName: string): SymbolReference[] {
+    const references: SymbolReference[] = [];
+    const lines = content.split('\n');
+    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+    let inBlockComment = false;
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      let match;
+
+      // 追蹤多行註解狀態
+      if (inBlockComment) {
+        const closeCommentIndex = line.indexOf('*/');
+        if (closeCommentIndex >= 0) {
+          inBlockComment = false;
+        } else {
+          continue; // 整行在多行註解中，跳過
+        }
+      }
+
+      while ((match = regex.exec(line)) !== null) {
+        const position = match.index;
+
+        // 檢查是否在字串中
+        if (this.isInString(line, position)) {
+          continue;
+        }
+
+        // 檢查是否在單行註解中
+        if (this.isInSingleLineComment(line, position)) {
+          continue;
+        }
+
+        // 檢查是否在多行註解開始後
+        const openCommentIndex = line.lastIndexOf('/*', position);
+        if (openCommentIndex >= 0) {
+          const closeCommentIndex = line.indexOf('*/', openCommentIndex);
+          if (closeCommentIndex < 0 || closeCommentIndex > position) {
+            // 在未關閉的多行註解中
+            if (closeCommentIndex < 0) {
+              inBlockComment = true;
+            }
+            continue;
+          }
+        }
+
+        const startColumn = position + 1;
+
+        references.push({
+          symbolName,
+          location: {
+            filePath,
+            range: {
+              start: { line: lineIndex + 1, column: startColumn, offset: undefined },
+              end: { line: lineIndex + 1, column: startColumn + symbolName.length, offset: undefined }
+            }
+          },
+          type: SymbolReferenceType.Usage,
+          context: line.trim()
+        });
+      }
+    }
+
+    return references;
+  }
+
+  /**
+   * 檢查位置是否在字串字面值中
+   */
+  private isInString(line: string, position: number): boolean {
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTemplate = false;
+
+    for (let i = 0; i < position; i++) {
+      const char = line[i];
+      const prevChar = i > 0 ? line[i - 1] : '';
+
+      // 跳過轉義字元
+      if (prevChar === '\\') {
+        continue;
+      }
+
+      if (char === '\'' && !inDoubleQuote && !inTemplate) {
+        inSingleQuote = !inSingleQuote;
+      } else if (char === '"' && !inSingleQuote && !inTemplate) {
+        inDoubleQuote = !inDoubleQuote;
+      } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+        inTemplate = !inTemplate;
+      }
+    }
+
+    return inSingleQuote || inDoubleQuote || inTemplate;
+  }
+
+  /**
+   * 檢查位置是否在單行註解中
+   */
+  private isInSingleLineComment(line: string, position: number): boolean {
+    const beforePosition = line.substring(0, position);
+
+    // TypeScript/JavaScript 單行註解
+    if (beforePosition.includes('//')) {
+      return true;
+    }
+
+    // Python/Shell 單行註解
+    if (beforePosition.includes('#')) {
+      // 排除 # 在字串中的情況
+      const hashIndex = beforePosition.indexOf('#');
+      if (!this.isInString(line, hashIndex)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * 提取函式簽名
    */
   private extractSignature(content: string, symbol: Symbol): string | undefined {
@@ -550,7 +763,7 @@ export class SymbolFinder {
   }
 
   /**
-   * 提取參數字串
+   * 提取參數字串（單行版本，保留向後相容）
    */
   private extractArgumentsString(line: string, startIndex: number): string {
     let depth = 1;
@@ -576,7 +789,104 @@ export class SymbolFinder {
   }
 
   /**
-   * 找到匹配的右括號位置
+   * 提取參數字串（支援多行）
+   * @returns { content: 完整參數字串, endLine: 結束行索引, endColumn: 結束欄位 }
+   */
+  private extractArgumentsStringMultiline(
+    lines: readonly string[],
+    startLine: number,
+    startIndex: number
+  ): { content: string; endLine: number; endColumn: number } {
+    let depth = 1;
+    let lineIndex = startLine;
+    let charIndex = startIndex + 1;
+    let result = '';
+
+    while (lineIndex < lines.length && depth > 0) {
+      const line = lines[lineIndex];
+
+      while (charIndex < line.length && depth > 0) {
+        const char = line[charIndex];
+
+        if (char === '(') {
+          depth++;
+        } else if (char === ')') {
+          depth--;
+        }
+
+        if (depth > 0) {
+          result += char;
+        }
+        charIndex++;
+      }
+
+      if (depth > 0 && lineIndex < lines.length - 1) {
+        // 保留換行符號
+        result += '\n';
+        lineIndex++;
+        charIndex = 0;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      content: result,
+      endLine: lineIndex,
+      endColumn: charIndex - 1
+    };
+  }
+
+  /**
+   * 解析參數（支援多行）
+   */
+  private parseArgumentsMultiline(argsString: string, baseLine: number, baseColumn: number): CallSiteArgument[] {
+    if (!argsString.trim()) {
+      return [];
+    }
+
+    const args: CallSiteArgument[] = [];
+    const parts = this.splitArguments(argsString);
+
+    let currentLine = baseLine;
+    let column = baseColumn + 1;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const trimmed = part.trim();
+
+      // 計算參數中的換行數
+      const newlines = (part.match(/\n/g) || []).length;
+
+      // 檢查是否是具名參數
+      const namedMatch = trimmed.match(/^(\w+)\s*[:=]\s*(.+)$/s);
+
+      args.push({
+        index: i,
+        name: namedMatch ? namedMatch[1] : undefined,
+        value: namedMatch ? namedMatch[2].trim() : trimmed,
+        range: {
+          start: { line: currentLine, column, offset: undefined },
+          end: { line: currentLine + newlines, column: column + part.length, offset: undefined }
+        }
+      });
+
+      // 更新行號和欄位
+      if (newlines > 0) {
+        currentLine += newlines;
+        // 計算最後一行的欄位位置
+        const lastNewlineIndex = part.lastIndexOf('\n');
+        column = part.length - lastNewlineIndex;
+      } else {
+        column += part.length + 1; // +1 for comma
+      }
+    }
+
+    return args;
+  }
+
+  /**
+   * 找到匹配的右括號位置（單行版本，保留向後相容）
    */
   private findMatchingCloseParen(line: string, openParenIndex: number): number {
     let depth = 1;
@@ -596,6 +906,42 @@ export class SymbolFinder {
     }
 
     return -1;
+  }
+
+  /**
+   * 找到匹配的右括號位置（支援多行）
+   * @returns { line: 行索引, index: 該行的字元索引 }
+   */
+  private findMatchingCloseParenMultiline(
+    lines: readonly string[],
+    startLine: number,
+    openParenIndex: number
+  ): { line: number; index: number } {
+    let depth = 1;
+    let lineIndex = startLine;
+    let charIndex = openParenIndex + 1;
+
+    while (lineIndex < lines.length && depth > 0) {
+      const line = lines[lineIndex];
+
+      while (charIndex < line.length && depth > 0) {
+        const char = line[charIndex];
+        if (char === '(') {
+          depth++;
+        } else if (char === ')') {
+          depth--;
+          if (depth === 0) {
+            return { line: lineIndex, index: charIndex };
+          }
+        }
+        charIndex++;
+      }
+
+      lineIndex++;
+      charIndex = 0;
+    }
+
+    return { line: -1, index: -1 };
   }
 
   /**
