@@ -86,12 +86,19 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       const outputWithout = JSON.parse(resultWithout.stdout);
       const outputWith = JSON.parse(resultWith.stdout);
 
-      // 計算 hunks 總數
-      const countHunks = (output: { files?: Array<{ hunks?: unknown[] }> }) =>
-        output.files?.reduce((sum, f) => sum + (f.hunks?.length ?? 0), 0) ?? 0;
+      // 從 operationDescription 提取符號數量
+      const extractCount = (output: { operationDescription?: string }) => {
+        const match = output.operationDescription?.match(/Removed (\d+) dead code/);
+        return match ? parseInt(match[1], 10) : 0;
+      };
 
-      // 包含 exports 時應該檢測到更多或相同
-      expect(countHunks(outputWith)).toBeGreaterThanOrEqual(countHunks(outputWithout));
+      const countWithout = extractCount(outputWithout);
+      const countWith = extractCount(outputWith);
+
+      // 包含 exports 時應該檢測到更多符號
+      // true-deadcode.ts 有 3 個 exported 但未使用的符號
+      expect(countWith).toBeGreaterThan(countWithout);
+      expect(countWith - countWithout).toBeGreaterThanOrEqual(3);
     });
 
     it('--include-public-members 應該包含 public class members', async () => {
@@ -198,6 +205,130 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
         expect(file.filePath).toBeDefined();
         expect(file.hunks).toBeDefined();
         expect(Array.isArray(file.hunks)).toBe(true);
+      }
+    });
+  });
+
+  describe('Interface/Type 屬性保護（Bug 2 修復）', () => {
+    it('interface 屬性不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-exports'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 取得所有被標記為 dead code 的符號名稱
+      const deadSymbols = new Set<string>();
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              // 提取屬性名稱（如 name: string;）
+              const propMatch = line.content.match(/^\s*(\w+)\s*[?]?\s*:/);
+              if (propMatch) {
+                deadSymbols.add(propMatch[1]);
+              }
+            }
+          }
+        }
+      }
+
+      // interface-properties.ts 中的 interface/type 屬性不應被標記
+      // TestConfig interface 屬性
+      expect(deadSymbols.has('name')).toBe(false);
+      expect(deadSymbols.has('value')).toBe(false);
+      expect(deadSymbols.has('isEnabled')).toBe(false);
+
+      // UserData type 屬性
+      expect(deadSymbols.has('id')).toBe(false);
+      expect(deadSymbols.has('email')).toBe(false);
+
+      // TestCase interface 屬性（模擬 .spec.ts 使用情境）
+      expect(deadSymbols.has('expectedSeverity')).toBe(false);
+      expect(deadSymbols.has('contractCapacity')).toBe(false);
+    });
+
+    it('interface-properties.ts 檔案不應出現在 dead code 結果中', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // interface-properties.ts 不應有任何 dead code（所有內容都是 interface 定義和使用）
+      const interfaceFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('interface-properties.ts')
+      );
+
+      // 如果檔案存在於結果中，不應該有 hunks
+      if (interfaceFile) {
+        expect(interfaceFile.hunks.length).toBe(0);
+      }
+    });
+  });
+
+  describe('Class 成員使用保護（Bug #32 修復）', () => {
+    it('有成員被使用的 class 不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 取得所有被標記為 dead code 的 class 名稱
+      const deadClasses = new Set<string>();
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              // 提取 class 名稱（使用全域匹配，因為 content 可能包含多行）
+              const classMatches = line.content.matchAll(/(?:export\s+)?class\s+(\w+)/g);
+              for (const match of classMatches) {
+                deadClasses.add(match[1]);
+              }
+            }
+          }
+        }
+      }
+
+      // UsedServiceClass 有 public method 被使用（service.usedMethod()），整個 class 不應被刪除
+      expect(deadClasses.has('UsedServiceClass')).toBe(false);
+
+      // TotallyUnusedClass 完全沒被使用，應該被標記為 dead code
+      expect(deadClasses.has('TotallyUnusedClass')).toBe(true);
+    });
+
+    it('class 內未使用的 private 方法仍應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 找到 class-with-used-member.ts 檔案
+      const targetFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('class-with-used-member.ts')
+      );
+
+      if (targetFile) {
+        // 從所有 hunks 的 lines 中提取 delete 類型的 content
+        const allDeletedContent = targetFile.hunks
+          .flatMap((h: { lines: Array<{ type: string; content: string }> }) =>
+            h.lines
+              .filter((l: { type: string }) => l.type === 'delete')
+              .map((l: { content: string }) => l.content)
+          )
+          .join('\n');
+
+        // bug32UnusedPrivateMethod 應該被標記為 dead code（使用唯一名稱避免同名符號問題）
+        expect(allDeletedContent).toContain('bug32UnusedPrivateMethod');
+
+        // usedMethod 不應被標記
+        expect(allDeletedContent).not.toMatch(/\busedMethod\b.*\{/);
       }
     });
   });

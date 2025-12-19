@@ -586,8 +586,24 @@ export class DeadCodeRemover {
     // 向上擴展：包含 JSDoc 註解和裝飾器
     while (startLine > 0) {
       const prevLine = lines[startLine - 1].trim();
+
+      // Bug #32 修復：如果遇到 JSDoc 結尾 */，繼續向上找到開始 /**
+      if (prevLine.endsWith('*/')) {
+        startLine--;
+        // 繼續向上找到 JSDoc 開始 /**
+        while (startLine > 0) {
+          const jsdocLine = lines[startLine - 1].trim();
+          if (jsdocLine.startsWith('/**')) {
+            startLine--;
+            break;
+          }
+          startLine--;
+        }
+        continue;
+      }
+
+      // 處理單行註解、裝飾器、空行、JSDoc 中間行
       if (
-        prevLine.endsWith('*/') ||
         prevLine.startsWith('*') ||
         prevLine.startsWith('//') ||
         prevLine.startsWith('@') ||

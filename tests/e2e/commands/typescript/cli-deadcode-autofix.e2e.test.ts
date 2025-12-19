@@ -199,4 +199,79 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       expect(output.summary.totalChanges).toBeGreaterThanOrEqual(0);
     });
   });
+
+  describe('GitHub #32 Bug 4 - JSDoc 和註解刪除', () => {
+    it('刪除 dead code 時應該一併刪除 JSDoc 註解', async () => {
+      const originalContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+
+      expect(originalContent).toContain('function unusedFunction');
+      expect(originalContent).toContain('@param x 輸入參數');
+      expect(originalContent).toContain('@returns 計算結果');
+
+      const result = await executeCLI(['deadcode', '--path', fixture.rootPath], { memfs: fixture.memfs });
+      expect(result.exitCode).toBe(0);
+
+      const afterContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+
+      expect(afterContent).not.toContain('function unusedFunction');
+      expect(afterContent).not.toContain('@param x 輸入參數');
+      expect(afterContent).not.toContain('@returns 計算結果');
+      expect(afterContent).not.toContain('未使用的函式 - 應該被刪除');
+    });
+
+    it('刪除 dead code 時不應留下孤立的 JSDoc', async () => {
+      const result = await executeCLI(['deadcode', '--path', fixture.rootPath], { memfs: fixture.memfs });
+      expect(result.exitCode).toBe(0);
+
+      const afterContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+
+      const lines = afterContent.split('\n');
+      let foundFirstJsDoc = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('/**')) {
+          if (!foundFirstJsDoc) {
+            foundFirstJsDoc = true;
+            while (i < lines.length && !lines[i].trim().endsWith('*/')) {
+              i++;
+            }
+            continue;
+          }
+
+          let endIndex = i;
+          while (endIndex < lines.length && !lines[endIndex].trim().endsWith('*/')) {
+            endIndex++;
+          }
+
+          let nextLineIndex = endIndex + 1;
+          while (nextLineIndex < lines.length && lines[nextLineIndex].trim() === '') {
+            nextLineIndex++;
+          }
+
+          const nextLine = lines[nextLineIndex]?.trim() || '';
+          const isDeclaration =
+            nextLine.includes('function ') ||
+            nextLine.includes('class ') ||
+            nextLine.includes('const ') ||
+            nextLine.includes('let ') ||
+            nextLine.includes('interface ') ||
+            nextLine.includes('type ') ||
+            nextLine.includes('export ') ||
+            nextLine.startsWith('@');
+
+          expect(isDeclaration).toBe(true);
+        }
+      }
+    });
+  });
 });

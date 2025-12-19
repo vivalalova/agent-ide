@@ -63,8 +63,12 @@ export class DeadCodeDetector {
       // 優化：M 次檔案讀取（一次遍歷 M 檔查找 N 符號），而非 N×M 次（N 符號各遍歷 M 檔）
       const allReferences = await symbolFinder.findReferencesMultiple(symbolNames, filePaths);
 
-      // 檢測每個符號
-      const deadItems: DeadCodeItem[] = [];
+      // 建立 class → members 映射，用於判斷 class 是否有成員被使用
+      const classMembersMap = this.buildClassMembersMap(symbolsToCheck);
+
+      // 第一輪：分析每個符號的使用情況
+      type SymbolUsageInfo = { usageRefs: { location: { filePath: string; range: { start: { line: number } } }; type: string }[]; hasExport: boolean };
+      const symbolUsageMap = new Map<Symbol, SymbolUsageInfo>();
 
       for (const symbol of symbolsToCheck) {
         const references = allReferences.get(symbol.name) ?? [];
@@ -93,6 +97,14 @@ export class DeadCodeDetector {
         });
 
         const hasExport = symbol.modifiers.includes('export');
+        symbolUsageMap.set(symbol, { usageRefs, hasExport });
+      }
+
+      // 第二輪：檢測每個符號是否為 dead code
+      const deadItems: DeadCodeItem[] = [];
+
+      for (const symbol of symbolsToCheck) {
+        const { usageRefs, hasExport } = symbolUsageMap.get(symbol)!;
 
         // 判斷是否為 public class member（class 內的非 private/protected 成員）
         // 注意：class 本身不算 "class member"，只有 method/property 才算
@@ -119,6 +131,16 @@ export class DeadCodeDetector {
             continue;
           }
 
+          // Bug #32 修復：檢查 class 是否有任何成員被使用
+          // 如果 class 本身沒有直接引用，但其成員被使用，則 class 不應被標記為 dead code
+          if (symbol.type === 'class') {
+            const hasUsedMember = this.hasAnyUsedMember(symbol, classMembersMap, symbolUsageMap);
+            if (hasUsedMember) {
+              continue;
+            }
+          }
+
+          const references = allReferences.get(symbol.name) ?? [];
           deadItems.push({
             name: symbol.name,
             type: symbol.type,
@@ -192,6 +214,12 @@ export class DeadCodeDetector {
       return true;
     }
 
+    // 排除 interface/type 的屬性
+    // Interface 屬性是型別定義的一部分，不應該被獨立檢測
+    if (this.isInterfaceOrTypeProperty(symbol)) {
+      return true;
+    }
+
     // 排除名稱模式
     for (const pattern of this.options.excludePatterns) {
       if (symbol.name === pattern || symbol.name.toLowerCase() === pattern.toLowerCase()) {
@@ -207,6 +235,16 @@ export class DeadCodeDetector {
     }
 
     return false;
+  }
+
+  /**
+   * 判斷符號是否為 interface 或 type 的屬性
+   * Interface/Type 的屬性是型別定義的一部分，不應被獨立檢測為 dead code
+   */
+  private isInterfaceOrTypeProperty(symbol: Symbol): boolean {
+    // 檢查符號的 scope 是否為 interface
+    // Interface 的屬性定義在 interface scope 內
+    return symbol.scope?.type === 'interface';
   }
 
   /**
@@ -297,6 +335,68 @@ export class DeadCodeDetector {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 建立 class → members 映射
+   * 用於判斷 class 是否有成員被使用
+   */
+  private buildClassMembersMap(symbols: readonly Symbol[]): Map<string, Symbol[]> {
+    const classMap = new Map<string, Symbol[]>();
+
+    // 先收集所有 class 符號（以 filePath:className 為 key）
+    for (const symbol of symbols) {
+      if (symbol.type === 'class') {
+        const key = `${symbol.location.filePath}:${symbol.name}`;
+        classMap.set(key, []);
+      }
+    }
+
+    // 再收集每個 class 的成員
+    for (const symbol of symbols) {
+      // 判斷是否為 class member
+      // 方法：scope.parent.type === 'class' 或 scope.type === 'class' && symbol.type !== 'class'
+      const parentClassName = symbol.scope?.parent?.type === 'class'
+        ? symbol.scope.parent.name
+        : (symbol.scope?.type === 'class' && symbol.type !== 'class')
+          ? symbol.scope.name
+          : null;
+
+      if (parentClassName) {
+        // 找到對應的 class（同檔案）
+        const key = `${symbol.location.filePath}:${parentClassName}`;
+        const members = classMap.get(key);
+        if (members) {
+          members.push(symbol);
+        }
+      }
+    }
+
+    return classMap;
+  }
+
+  /**
+   * 檢查 class 是否有任何成員被使用
+   * @param classSymbol class 符號
+   * @param classMembersMap class → members 映射
+   * @param symbolUsageMap 符號使用資訊映射
+   */
+  private hasAnyUsedMember(
+    classSymbol: Symbol,
+    classMembersMap: Map<string, Symbol[]>,
+    symbolUsageMap: Map<Symbol, { usageRefs: unknown[]; hasExport: boolean }>
+  ): boolean {
+    const key = `${classSymbol.location.filePath}:${classSymbol.name}`;
+    const members = classMembersMap.get(key) ?? [];
+
+    for (const member of members) {
+      const usageInfo = symbolUsageMap.get(member);
+      if (usageInfo && usageInfo.usageRefs.length > 0) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 

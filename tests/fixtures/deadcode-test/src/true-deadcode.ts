@@ -54,3 +54,17 @@ function internalHelper() {
 export function publicFunction() {
   return internalHelper(); // 使用了 internalHelper
 }
+
+// ✅ DEADCODE（--include-exports 時）: 有 export 但無使用的函式
+export function unusedExportedFunction() {
+  return 'This is exported but never imported or called';
+}
+
+// ✅ DEADCODE（--include-exports 時）: 有 export 但無使用的介面
+export interface UnusedExportedInterface {
+  id: number;
+  name: string;
+}
+
+// ✅ DEADCODE（--include-exports 時）: 有 export 但無使用的型別
+export type UnusedExportedType = string | number;
