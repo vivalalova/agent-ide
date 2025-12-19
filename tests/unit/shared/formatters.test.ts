@@ -623,8 +623,8 @@ describe('QueryFormatter', () => {
         analyzeType: AnalyzeType.DeadCode,
         success: true,
         items: [
-          { name: 'unusedFunc', type: 'function', file: '/src/test.ts', line: 10, column: 1, confidence: 0.95, reason: '函式沒有任何引用' },
-          { name: 'UnusedClass', type: 'class', file: '/src/test.ts', line: 20, column: 1, confidence: 0.9, reason: '類別沒有任何引用' }
+          { name: 'unusedFunc', type: 'function', file: '/src/test.ts', line: 10, column: 1, reason: '函式沒有任何引用' },
+          { name: 'UnusedClass', type: 'class', file: '/src/test.ts', line: 20, column: 1, reason: '類別沒有任何引用' }
         ],
         byType: { function: 1, class: 1 },
         filesAffected: 1,
@@ -647,9 +647,9 @@ describe('QueryFormatter', () => {
         analyzeType: AnalyzeType.DeadCode,
         success: true,
         items: [
-          { name: 'func1', type: 'function', file: '/src/a.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' },
-          { name: 'func2', type: 'function', file: '/src/b.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' },
-          { name: 'MyClass', type: 'class', file: '/src/c.ts', line: 1, column: 1, confidence: 0.9, reason: '未使用' }
+          { name: 'func1', type: 'function', file: '/src/a.ts', line: 1, column: 1, reason: '未使用' },
+          { name: 'func2', type: 'function', file: '/src/b.ts', line: 1, column: 1, reason: '未使用' },
+          { name: 'MyClass', type: 'class', file: '/src/c.ts', line: 1, column: 1, reason: '未使用' }
         ],
         byType: { function: 2, class: 1 },
         filesAffected: 3,
@@ -688,7 +688,6 @@ describe('QueryFormatter', () => {
         file: '/src/test.ts',
         line: i + 1,
         column: 1,
-        confidence: 0.9,
         reason: '未使用'
       }));
 

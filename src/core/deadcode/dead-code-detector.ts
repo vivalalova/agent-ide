@@ -119,17 +119,12 @@ export class DeadCodeDetector {
             continue;
           }
 
-          const confidence = this.calculateConfidence(symbol, references.length, hasExport, isPublicClassMember);
-
-          if (confidence >= this.options.minConfidence) {
-            deadItems.push({
-              name: symbol.name,
-              type: symbol.type,
-              location: symbol.location,
-              confidence,
-              reason: this.generateReason(symbol, hasExport, references.length)
-            });
-          }
+          deadItems.push({
+            name: symbol.name,
+            type: symbol.type,
+            location: symbol.location,
+            reason: this.generateReason(symbol, hasExport, references.length)
+          });
         }
       }
 
@@ -212,40 +207,6 @@ export class DeadCodeDetector {
     }
 
     return false;
-  }
-
-  /**
-   * 計算信心程度
-   */
-  private calculateConfidence(
-    symbol: Symbol,
-    totalRefs: number,
-    hasExport: boolean,
-    isPublicClassMember: boolean
-  ): number {
-    let confidence = 1.0;
-
-    // 有定義引用但無使用引用，信心較高
-    if (totalRefs > 0) {
-      confidence = 0.95;
-    }
-
-    // export 的符號信心較低（可能被外部使用）
-    if (hasExport) {
-      confidence *= 0.7;
-    }
-
-    // public class member 信心較低（可能被外部使用）
-    if (isPublicClassMember) {
-      confidence *= 0.7;
-    }
-
-    // 私有符號信心較高
-    if (symbol.modifiers.includes('private')) {
-      confidence = Math.min(confidence * 1.1, 1.0);
-    }
-
-    return Math.round(confidence * 100) / 100;
   }
 
   /**

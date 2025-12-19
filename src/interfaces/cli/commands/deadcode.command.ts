@@ -26,7 +26,6 @@ interface DeadCodeOptions {
   includeExports: boolean;
   includePublicMembers: boolean;
   dryRun: boolean;
-  minConfidence: string;
   exclude: string[];
 }
 
@@ -42,7 +41,6 @@ export function setupDeadCodeCommand(program: Command, context: CommandContext):
     .option('--include-exports', '包含 export 的符號（預設排除）', false)
     .option('--include-public-members', '包含 public class members（預設排除）', false)
     .option('--dry-run', '預覽變更而不執行')
-    .option('--min-confidence <number>', '最小信心度門檻 (0-1)', '0.9')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
     .action(async (options: DeadCodeOptions) => {
       await handleDeadCodeCommand(options, context);
@@ -136,13 +134,10 @@ async function handleDeadCodeCommand(
     }
 
     // 2. 建立 DeadCodeRemover
-    const minConfidence = parseFloat(options.minConfidence);
-
     const remover = createDeadCodeRemover(
       context.fileSystem,
       parserRegistry,
       {
-        minConfidence: isNaN(minConfidence) ? 0.9 : minConfidence,
         excludeSymbols: options.exclude || [],
         cleanupImports: true
       }

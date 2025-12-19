@@ -10,7 +10,6 @@
 | 優勢 | 說明 |
 |------|------|
 | **語義精確** | 分析符號引用關係，不是簡單文字搜尋 |
-| **信心分數** | 每個結果附帶信心分數，避免誤判 |
 | **自動刪除** | 預設刪除 dead code 並清理 import |
 | **結構化輸出** | JSON 格式，AI 可直接解析處理 |
 
@@ -26,9 +25,6 @@ agent-ide deadcode --path . --dry-run
 # JSON 格式輸出
 agent-ide deadcode --path . --dry-run --format json
 
-# 設定信心度門檻（只刪除高信心度項目）
-agent-ide deadcode --path . --min-confidence 0.95
-
 # 排除特定符號
 agent-ide deadcode --path . --exclude main App
 
@@ -43,7 +39,6 @@ agent-ide deadcode --path . --include-exports
 | `--path` | 專案路徑（預設 `.`） |
 | `--format` | 輸出格式：`json`、`summary`、`diff`（預設） |
 | `--dry-run` | 預覽變更而不執行 |
-| `--min-confidence` | 最小信心度門檻（0-1，預設 0.9） |
 | `--exclude` | 排除的符號名稱（可多個） |
 | `--include-exports` | 包含 export 的符號（預設排除） |
 
@@ -102,7 +97,6 @@ agent-ide deadcode --path . --include-exports
 ## 注意事項
 
 - **預設排除 export**：export 的符號可能被外部使用，預設不標記為 dead code
-- **信心分數**：分數越高代表越確定是 dead code，建議優先處理高分數項目
 - **動態引用**：無法檢測 `eval()`、`require()` 動態字串等運行時引用
 - **使用 --dry-run 預覽**：建議先用 `--dry-run` 確認變更內容
 - **Import 清理**：刪除符號後自動清理變成未使用的 import

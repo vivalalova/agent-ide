@@ -341,7 +341,6 @@ interface RemovalOperationLike {
   readonly originalCode: string;
   readonly symbolName: string;
   readonly symbolType: string;
-  readonly confidence: number;
 }
 
 /**

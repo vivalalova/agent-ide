@@ -15,8 +15,6 @@ export interface DeadCodeItem {
   readonly type: SymbolType;
   /** 位置資訊 */
   readonly location: Location;
-  /** 信心程度（0-1） */
-  readonly confidence: number;
   /** 原因說明 */
   readonly reason: string;
 }
@@ -31,8 +29,6 @@ export interface DeadCodeDetectorOptions {
   readonly includePublicMembers?: boolean;
   /** 排除的符號名稱模式 */
   readonly excludePatterns?: readonly string[];
-  /** 最小信心程度門檻（0-1） */
-  readonly minConfidence?: number;
   /** 要檢測的符號類型 */
   readonly symbolTypes?: readonly SymbolType[];
   /** 是否輸出詳細警告資訊（預設 true，測試時可設 false） */
@@ -82,16 +78,11 @@ const DEFAULT_EXCLUDE_PATTERNS: readonly string[] = ['main'];
 
 /**
  * 預設選項
- *
- * 信心度門檻設計考量：
- * - 檢測用 0.8：較寬鬆，報告更多潛在問題供開發者檢視判斷
- * - 刪除用 0.9（見 DEFAULT_REMOVAL_OPTIONS）：較嚴格，避免誤刪正常程式碼
  */
 export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
   includeExports: false,
   includePublicMembers: false,
   excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
-  minConfidence: 0.8,
   symbolTypes: [
     SymbolType.Function,
     SymbolType.Class,
@@ -110,8 +101,6 @@ export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
  * Dead Code 刪除選項
  */
 export interface DeadCodeRemovalOptions {
-  /** 最小信心度門檻（0-1），預設 0.9 */
-  readonly minConfidence?: number;
   /** 排除的檔案模式 */
   readonly excludeFiles?: readonly string[];
   /** 排除的符號名稱 */
@@ -134,8 +123,6 @@ export interface RemovalOperation {
   readonly symbolName: string;
   /** 符號類型 */
   readonly symbolType: SymbolType;
-  /** 信心程度 */
-  readonly confidence: number;
 }
 
 /**
@@ -229,13 +216,8 @@ const DEFAULT_EXCLUDE_SYMBOLS: readonly string[] = ['main'];
 
 /**
  * 刪除選項預設值
- *
- * 信心度門檻設計考量：
- * - 刪除用 0.9：較嚴格，避免誤刪正常程式碼
- * - 檢測用 0.8（見 DEFAULT_DEAD_CODE_OPTIONS）：較寬鬆，報告更多潛在問題供開發者檢視判斷
  */
 export const DEFAULT_REMOVAL_OPTIONS: Required<DeadCodeRemovalOptions> = {
-  minConfidence: 0.9,
   excludeFiles: [],
   excludeSymbols: DEFAULT_EXCLUDE_SYMBOLS,
   cleanupImports: true

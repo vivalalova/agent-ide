@@ -109,30 +109,6 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
     });
   });
 
-  describe('信心度門檻', () => {
-    it('--min-confidence 應該過濾低信心度項目', async () => {
-      // 使用極高門檻
-      const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--min-confidence', '0.99', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      // 可能沒有符合條件的項目
-      const output = JSON.parse(result.stdout);
-      // 要嘛成功但 files 為空，要嘛有 message
-      if (output.files) {
-        expect(output.files.length).toBeLessThanOrEqual(
-          // 比較寬鬆的門檻結果
-          (await executeCLI(
-            ['deadcode', '--path', fixture.rootPath, '--dry-run', '--min-confidence', '0.8', '--format', 'json'],
-            { memfs: fixture.memfs }
-          ).then(r => JSON.parse(r.stdout).files?.length ?? 0))
-        );
-      }
-    });
-  });
-
   describe('排除機制', () => {
     it('--exclude 應該排除指定符號', async () => {
       // 不排除 unusedFunction

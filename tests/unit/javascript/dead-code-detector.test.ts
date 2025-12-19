@@ -424,61 +424,6 @@ describe('JavaScript DeadCodeDetector', () => {
     });
   });
 
-  describe('JavaScript 信心程度計算', () => {
-    interface JsConfidenceTestCase {
-      scenario: string;
-      modifiers: string[];
-      includeExports?: boolean;
-      minConfidence?: number;
-      expectedConfidenceRange: { min: number; max: number };
-    }
-
-    it.each<JsConfidenceTestCase>([
-      {
-        scenario: '私有函式（無 export）應有高信心',
-        modifiers: [],
-        expectedConfidenceRange: { min: 0.9, max: 1.0 },
-      },
-      {
-        scenario: 'export 函式應有較低信心',
-        modifiers: ['export'],
-        includeExports: true,
-        minConfidence: 0.5,
-        expectedConfidenceRange: { min: 0.5, max: 0.8 },
-      },
-    ])(
-      '$scenario',
-      async ({
-        modifiers,
-        includeExports,
-        minConfidence,
-        expectedConfidenceRange,
-      }) => {
-        // Given: 設定符號
-        const deps = createMockDependencies({
-          indexedFiles: [{ filePath: '/src/utils.js', size: 100 }],
-          symbols: [createMockSymbol({ name: 'testSymbol', modifiers })],
-        });
-        const options: DeadCodeDetectorOptions = {};
-        if (includeExports !== undefined) {options.includeExports = includeExports;}
-        if (minConfidence !== undefined) {options.minConfidence = minConfidence;}
-        const sut = createSut(deps, options);
-
-        // When: 執行檢測
-        const result = await sut.detect();
-
-        // Then: 信心程度在預期範圍
-        if (result.items.length > 0) {
-          const item = result.items[0];
-          expect(item.confidence).toBeGreaterThanOrEqual(
-            expectedConfidenceRange.min
-          );
-          expect(item.confidence).toBeLessThanOrEqual(expectedConfidenceRange.max);
-        }
-      }
-    );
-  });
-
   describe('JavaScript 混合檔案類型', () => {
     it('應該處理混合 JS/JSX 專案', async () => {
       // Given: 混合檔案類型
@@ -844,7 +789,6 @@ describe('JavaScript DeadCodeDetector', () => {
 describe('DEFAULT_DEAD_CODE_OPTIONS（JavaScript 上下文）', () => {
   it('應該有正確的預設值', () => {
     expect(DEFAULT_DEAD_CODE_OPTIONS.includeExports).toBe(false);
-    expect(DEFAULT_DEAD_CODE_OPTIONS.minConfidence).toBe(0.8);
     expect(Array.isArray(DEFAULT_DEAD_CODE_OPTIONS.excludePatterns)).toBe(true);
     expect(Array.isArray(DEFAULT_DEAD_CODE_OPTIONS.symbolTypes)).toBe(true);
   });

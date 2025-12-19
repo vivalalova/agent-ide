@@ -178,12 +178,6 @@ export class DeadCodeRemover {
     const warnings: string[] = [];
 
     for (const item of items) {
-      // 信心度檢查
-      if (item.confidence < this.options.minConfidence) {
-        warnings.push(`跳過 ${item.name}：信心度 ${(item.confidence * 100).toFixed(0)}% 低於門檻 ${(this.options.minConfidence * 100).toFixed(0)}%`);
-        continue;
-      }
-
       // 排除檔案模式（支援 glob 匹配）
       if (this.options.excludeFiles.some(pattern =>
         this.matchesExcludePattern(item.location.filePath, pattern)
@@ -234,8 +228,7 @@ export class DeadCodeRemover {
         range: expandedRange,
         originalCode,
         symbolName: item.name,
-        symbolType: item.type,
-        confidence: item.confidence
+        symbolType: item.type
       });
     }
 

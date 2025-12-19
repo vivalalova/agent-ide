@@ -270,8 +270,7 @@ export class QueryFormatter {
         lines.push(`  ${this.colorize(file, Colors.cyan)}`);
         items.slice(0, 10).forEach(item => {
           const icon = this.getDeadCodeIcon(item.type);
-          const conf = Math.round(item.confidence * 100);
-          lines.push(`    ${icon} L${item.line}: ${item.name} (${item.type}, ${conf}%)`);
+          lines.push(`    ${icon} L${item.line}: ${item.name} (${item.type})`);
           lines.push(`       ${this.colorize(item.reason, Colors.dim)}`);
         });
         if (items.length > 10) {

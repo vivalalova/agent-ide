@@ -58,7 +58,6 @@ const createDeadCodeItem = (
     filePath: string;
     startLine: number;
     endLine: number;
-    confidence: number;
   }> = {}
 ): DeadCodeItem => ({
   name: overrides.name ?? 'unusedSymbol',
@@ -78,7 +77,6 @@ const createDeadCodeItem = (
       },
     },
   },
-  confidence: overrides.confidence ?? 1.0,
   reason: 'Not referenced anywhere',
 });
 
@@ -774,30 +772,6 @@ describe('DeadCodeRemover.preview', () => {
   });
 
   describe('過濾行為', () => {
-    it('應該跳過低信心度項目', async () => {
-      // Given: 設定高門檻
-      const fileContent = `function unusedFunc() {
-  return 1;
-}`;
-      const fs = createMockFileSystem({ '/src/test.ts': fileContent });
-      const sut = createSut(fs, { minConfidence: 0.99 });
-      const items = [
-        createDeadCodeItem({
-          name: 'unusedFunc',
-          filePath: '/src/test.ts',
-          confidence: 0.8,
-        }),
-      ];
-
-      // When: 預覽刪除
-      const result = await sut.preview(items);
-
-      // Then: 應該被過濾
-      expect(result.success).toBe(true);
-      expect(result.removals).toHaveLength(0);
-      expect(result.warnings?.length).toBeGreaterThan(0);
-    });
-
     it('應該跳過被排除的符號', async () => {
       // Given: 排除特定符號
       const fileContent = `function skipThis() {

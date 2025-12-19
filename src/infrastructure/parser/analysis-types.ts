@@ -19,8 +19,6 @@ export interface UnusedCode {
     line: number;
     column: number;
   };
-  /** 信心程度（0-1） */
-  confidence: number;
   /** 原因說明 */
   reason?: string;
 }

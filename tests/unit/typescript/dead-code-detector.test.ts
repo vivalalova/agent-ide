@@ -146,7 +146,6 @@ describe('DEFAULT_DEAD_CODE_OPTIONS', () => {
     // When: 檢查各屬性
     // Then: 確認預設值正確
     expect(DEFAULT_DEAD_CODE_OPTIONS.includeExports).toBe(false);
-    expect(DEFAULT_DEAD_CODE_OPTIONS.minConfidence).toBe(0.8);
     expect(Array.isArray(DEFAULT_DEAD_CODE_OPTIONS.excludePatterns)).toBe(true);
     expect(Array.isArray(DEFAULT_DEAD_CODE_OPTIONS.symbolTypes)).toBe(true);
   });
@@ -534,57 +533,6 @@ describe('DeadCodeDetector 排除邏輯', () => {
 // ============================================================================
 
 describe('DeadCodeDetector 選項', () => {
-  describe('minConfidence 選項', () => {
-    interface MinConfidenceTestCase {
-      scenario: string;
-      minConfidence: number;
-      modifiers: string[];
-      shouldBeIncluded: boolean;
-    }
-
-    it.each<MinConfidenceTestCase>([
-      {
-        scenario: '高門檻過濾 export 符號',
-        minConfidence: 1.0,
-        modifiers: ['export'],
-        shouldBeIncluded: false,
-      },
-      {
-        scenario: '低門檻包含 export 符號',
-        minConfidence: 0.5,
-        modifiers: ['export'],
-        shouldBeIncluded: true,
-      },
-      {
-        scenario: '高門檻保留 private 符號',
-        minConfidence: 0.9,
-        modifiers: ['private'],
-        shouldBeIncluded: true,
-      },
-    ])(
-      '$scenario',
-      async ({ minConfidence, modifiers, shouldBeIncluded }) => {
-        // Given: 設定信心門檻
-        const deps = createMockDependencies({
-          indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
-          symbols: [createMockSymbol({ name: 'unusedFunc', modifiers })],
-        });
-        const options: DeadCodeDetectorOptions = {
-          minConfidence,
-          includeExports: modifiers.includes('export'),
-        };
-        const sut = createSut(deps, options);
-
-        // When: 執行檢測
-        const result = await sut.detect();
-
-        // Then: 驗證結果
-        const hasSymbol = result.items.some((i) => i.name === 'unusedFunc');
-        expect(hasSymbol).toBe(shouldBeIncluded);
-      }
-    );
-  });
-
   describe('symbolTypes 選項', () => {
     it('應該只檢測指定類型', async () => {
       // Given: 只檢測 Class
@@ -642,70 +590,6 @@ describe('DeadCodeDetector 選項', () => {
       expect(hasExported).toBe(true);
     });
   });
-});
-
-// ============================================================================
-// MARK: - Confidence Calculation Tests
-// ============================================================================
-
-describe('DeadCodeDetector 信心程度計算', () => {
-  interface ConfidenceTestCase {
-    scenario: string;
-    modifiers: string[];
-    includeExports?: boolean;
-    minConfidence?: number;
-    expectedConfidenceRange: { min: number; max: number };
-  }
-
-  it.each<ConfidenceTestCase>([
-    {
-      scenario: 'private 符號應有較高信心',
-      modifiers: ['private'],
-      expectedConfidenceRange: { min: 0.8, max: 1.0 },
-    },
-    {
-      scenario: 'export 符號應有較低信心',
-      modifiers: ['export'],
-      includeExports: true,
-      minConfidence: 0.5,
-      expectedConfidenceRange: { min: 0.5, max: 0.8 },
-    },
-    {
-      scenario: '無修飾詞符號應有標準信心',
-      modifiers: [],
-      expectedConfidenceRange: { min: 0.9, max: 1.0 },
-    },
-  ])(
-    '$scenario',
-    async ({
-      modifiers,
-      includeExports,
-      minConfidence,
-      expectedConfidenceRange,
-    }) => {
-      // Given: 設定符號
-      const deps = createMockDependencies({
-        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
-        symbols: [createMockSymbol({ name: 'testSymbol', modifiers })],
-      });
-      const options: DeadCodeDetectorOptions = {};
-      if (includeExports !== undefined) {options.includeExports = includeExports;}
-      if (minConfidence !== undefined) {options.minConfidence = minConfidence;}
-      const sut = createSut(deps, options);
-
-      // When: 執行檢測
-      const result = await sut.detect();
-
-      // Then: 信心程度在預期範圍
-      if (result.items.length > 0) {
-        const item = result.items[0];
-        expect(item.confidence).toBeGreaterThanOrEqual(
-          expectedConfidenceRange.min
-        );
-        expect(item.confidence).toBeLessThanOrEqual(expectedConfidenceRange.max);
-      }
-    }
-  );
 });
 
 // ============================================================================
@@ -825,8 +709,6 @@ describe('DeadCodeItem 結構', () => {
       expect(item.location).toBeDefined();
       expect(item.location.filePath).toBe('/src/test.ts');
       expect(item.location.range).toBeDefined();
-      expect(item.confidence).toBeGreaterThanOrEqual(0);
-      expect(item.confidence).toBeLessThanOrEqual(1);
       expect(typeof item.reason).toBe('string');
     }
   });
@@ -854,42 +736,6 @@ describe('DeadCodeDetector Edge Cases', () => {
       expect(hasMain).toBe(true);
     });
 
-    it('應該處理 minConfidence 為 0', async () => {
-      // Given: minConfidence = 0
-      const deps = createMockDependencies({
-        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
-        symbols: [
-          createMockSymbol({ name: 'lowConfSymbol', modifiers: ['export'] }),
-        ],
-      });
-      const sut = createSut(deps, {
-        minConfidence: 0,
-        includeExports: true,
-      });
-
-      // When: 執行檢測
-      const result = await sut.detect();
-
-      // Then: 所有符號都應包含
-      expect(result.items.length).toBeGreaterThanOrEqual(0);
-    });
-
-    it('應該處理 minConfidence 為 1', async () => {
-      // Given: minConfidence = 1
-      const deps = createMockDependencies({
-        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
-        symbols: [createMockSymbol({ name: 'strictSymbol' })],
-      });
-      const sut = createSut(deps, { minConfidence: 1 });
-
-      // When: 執行檢測
-      const result = await sut.detect();
-
-      // Then: 只有完全確定的符號會被包含
-      for (const item of result.items) {
-        expect(item.confidence).toBe(1);
-      }
-    });
   });
 
   describe('Unicode 與特殊字元', () => {
