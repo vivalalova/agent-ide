@@ -24,6 +24,7 @@ interface DeadCodeOptions {
   path: string;
   format: string;
   includeExports: boolean;
+  includePublicMembers: boolean;
   dryRun: boolean;
   minConfidence: string;
   exclude: string[];
@@ -39,6 +40,7 @@ export function setupDeadCodeCommand(program: Command, context: CommandContext):
     .option('-p, --path <path>', '專案路徑', '.')
     .option('--format <format>', '輸出格式 (json|summary|diff)', 'summary')
     .option('--include-exports', '包含 export 的符號（預設排除）', false)
+    .option('--include-public-members', '包含 public class members（預設排除）', false)
     .option('--dry-run', '預覽變更而不執行')
     .option('--min-confidence <number>', '最小信心度門檻 (0-1)', '0.9')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
@@ -62,7 +64,8 @@ async function runDeadCodeDetection(
     parserRegistry,
     context.fileSystem,
     {
-      includeExports: options.includeExports
+      includeExports: options.includeExports,
+      includePublicMembers: options.includePublicMembers
     }
   );
 

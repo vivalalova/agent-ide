@@ -27,6 +27,8 @@ export interface DeadCodeItem {
 export interface DeadCodeDetectorOptions {
   /** 是否包含 export 的符號（預設排除） */
   readonly includeExports?: boolean;
+  /** 是否包含 public class members（預設排除，因為可能被外部使用） */
+  readonly includePublicMembers?: boolean;
   /** 排除的符號名稱模式 */
   readonly excludePatterns?: readonly string[];
   /** 最小信心程度門檻（0-1） */
@@ -87,6 +89,7 @@ const DEFAULT_EXCLUDE_PATTERNS: readonly string[] = ['main'];
  */
 export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
   includeExports: false,
+  includePublicMembers: false,
   excludePatterns: DEFAULT_EXCLUDE_PATTERNS,
   minConfidence: 0.8,
   symbolTypes: [

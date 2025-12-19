@@ -93,6 +93,86 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       // 包含 exports 時應該檢測到更多或相同
       expect(countHunks(outputWith)).toBeGreaterThanOrEqual(countHunks(outputWithout));
     });
+
+    it('--include-public-members 應該包含 public class members', async () => {
+      // 不包含 public members
+      const resultWithout = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // 包含 public members
+      const resultWith = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json', '--include-public-members'],
+        { memfs: fixture.memfs }
+      );
+
+      const outputWithout = JSON.parse(resultWithout.stdout);
+      const outputWith = JSON.parse(resultWith.stdout);
+
+      // 計算 hunks 總數
+      const countHunks = (output: { files?: Array<{ hunks?: unknown[] }> }) =>
+        output.files?.reduce((sum, f) => sum + (f.hunks?.length ?? 0), 0) ?? 0;
+
+      // 包含 public members 時應該檢測到更多或相同
+      expect(countHunks(outputWith)).toBeGreaterThanOrEqual(countHunks(outputWithout));
+    });
+  });
+
+  describe('Public Class Members 保護（Bug 5 修復）', () => {
+    it('預設不應將 public class methods 標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 取得所有被標記為 dead code 的符號名稱
+      const deadSymbols = new Set<string>();
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          const content = hunk.content ?? '';
+          // 提取方法名稱
+          const methodMatches = content.matchAll(/^\s*(?:public\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{/gm);
+          for (const match of methodMatches) {
+            deadSymbols.add(match[1]);
+          }
+        }
+      }
+
+      // class-members.ts 中的 public methods 不應被標記（可能被外部使用）
+      expect(deadSymbols.has('publicMethod')).toBe(false);
+      expect(deadSymbols.has('callPrivate')).toBe(false);
+    });
+
+    it('private 未使用的 methods 仍應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 應該有檢測到一些 dead code（包含 private 未使用的）
+      expect(output.files.length).toBeGreaterThan(0);
+
+      // 驗證 class-members.ts 中的 private 未使用符號被檢測到
+      const classMembers = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('class-members.ts')
+      );
+
+      if (classMembers) {
+        // 從所有 hunks 的 lines 中提取 delete 類型的 content
+        const allContent = classMembers.hunks
+          .flatMap((h: { lines: Array<{ type: string; content: string }> }) =>
+            h.lines.filter((l: { type: string }) => l.type === 'delete').map((l: { content: string }) => l.content)
+          )
+          .join('\n');
+        // 應該包含 private 未使用的符號
+        expect(allContent).toContain('unusedPrivate');
+      }
+    });
   });
 
   describe('輸出格式', () => {

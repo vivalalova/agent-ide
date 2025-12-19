@@ -74,10 +74,18 @@ export class DeadCodeDetector {
         const symbolFile = symbol.location.filePath;
 
         const usageRefs = references.filter(ref => {
-          // 排除定義位置（同檔案，±1 行容錯）
-          const isSameLocation = ref.location.filePath === symbolFile
-            && Math.abs(ref.location.range.start.line - symbolLine) <= 1;
-          if (isSameLocation) {
+          // 排除定義位置
+          // 注意：symbol 使用 0-indexed 行號，但文字匹配降級方法可能使用 1-indexed
+          // 因此同時檢查精確匹配和 +1 偏移
+          const refLine = ref.location.range.start.line;
+
+          // 定義位置過濾：同檔案、同行（考慮 0/1-indexed 差異）
+          // 由於 symbol 位置指向宣告起點，而 reference 位置指向識別符，
+          // 我們不比對 column，只比對行號
+          const isDefinitionLine = ref.location.filePath === symbolFile
+            && (refLine === symbolLine || refLine === symbolLine + 1);
+
+          if (isDefinitionLine) {
             return false;
           }
           // 只計算 usage 類型
@@ -85,6 +93,18 @@ export class DeadCodeDetector {
         });
 
         const hasExport = symbol.modifiers.includes('export');
+
+        // 判斷是否為 public class member（class 內的非 private/protected 成員）
+        // 注意：class 本身不算 "class member"，只有 method/property 才算
+        // - 方法：scope.type === 'function' && scope.parent.type === 'class'
+        // - 屬性：scope.type === 'class' && symbol.type !== 'class'（屬性在 class scope 內，但符號類型不是 class）
+        const isClassMember = (
+          symbol.scope?.parent?.type === 'class'
+          || (symbol.scope?.type === 'class' && symbol.type !== 'class')
+        );
+        const isPublicClassMember = isClassMember
+          && !symbol.modifiers.includes('private')
+          && !symbol.modifiers.includes('protected');
 
         // 判斷是否為 dead code
         if (usageRefs.length === 0) {
@@ -94,7 +114,12 @@ export class DeadCodeDetector {
             continue;
           }
 
-          const confidence = this.calculateConfidence(symbol, references.length, hasExport);
+          if (isPublicClassMember && !this.options.includePublicMembers) {
+            // public class member，可能被外部使用，跳過
+            continue;
+          }
+
+          const confidence = this.calculateConfidence(symbol, references.length, hasExport, isPublicClassMember);
 
           if (confidence >= this.options.minConfidence) {
             deadItems.push({
@@ -192,7 +217,12 @@ export class DeadCodeDetector {
   /**
    * 計算信心程度
    */
-  private calculateConfidence(symbol: Symbol, totalRefs: number, hasExport: boolean): number {
+  private calculateConfidence(
+    symbol: Symbol,
+    totalRefs: number,
+    hasExport: boolean,
+    isPublicClassMember: boolean
+  ): number {
     let confidence = 1.0;
 
     // 有定義引用但無使用引用，信心較高
@@ -202,6 +232,11 @@ export class DeadCodeDetector {
 
     // export 的符號信心較低（可能被外部使用）
     if (hasExport) {
+      confidence *= 0.7;
+    }
+
+    // public class member 信心較低（可能被外部使用）
+    if (isPublicClassMember) {
       confidence *= 0.7;
     }
 
