@@ -56,19 +56,28 @@ export async function executeCLI(args: string[], options: ExecuteOptions): Promi
   const startTime = performance.now();
   let exitCode = 0;
 
+  // 重置 process.exitCode
+  const originalExitCode = process.exitCode;
+  process.exitCode = undefined;
+
   try {
     // 執行 CLI，模擬 node agent-ide <args>
     await cli.run(['node', 'agent-ide', ...args]);
+    // 捕獲 CLI 設定的 process.exitCode
+    if (process.exitCode !== undefined && process.exitCode !== 0) {
+      exitCode = process.exitCode;
+    }
   } catch (error) {
     exitCode = 1;
     if (error instanceof Error) {
       stderr.push(error.message);
     }
   } finally {
-    // 還原 console
+    // 還原 console 和 process.exitCode
     console.log = originalLog;
     console.error = originalError;
     console.warn = originalWarn;
+    process.exitCode = originalExitCode;
   }
 
   const duration = performance.now() - startTime;
