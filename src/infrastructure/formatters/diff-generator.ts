@@ -115,49 +115,47 @@ function groupAdjacentChanges(changes: LineChange[], contextLines: number): Line
  * Bug #34 修復：處理 oldContent/newContent 包含多行的情況
  */
 function expandMultilineChanges(changes: LineChange[]): LineChange[] {
-  const expanded: LineChange[] = [];
-
-  for (const change of changes) {
-    // 檢查 oldContent 是否為多行
+  return changes.flatMap(change => {
+    // oldContent 為多行：拆分為刪除行
     if (change.oldContent !== null && change.oldContent.includes('\n')) {
-      const oldLines = change.oldContent.split('\n');
-      for (let i = 0; i < oldLines.length; i++) {
-        expanded.push({
+      const oldLines = change.oldContent
+        .split('\n')
+        .map((content, i): LineChange => ({
           line: change.line + i,
-          oldContent: oldLines[i],
-          newContent: null // 刪除操作的每行都是刪除
-        });
-      }
+          oldContent: content,
+          newContent: null
+        }));
+
       // 如果有 newContent，單獨處理（替換操作）
-      if (change.newContent !== null) {
-        const newLines = change.newContent.split('\n');
-        for (let i = 0; i < newLines.length; i++) {
-          expanded.push({
-            line: change.line + i,
-            oldContent: null,
-            newContent: newLines[i]
-          });
-        }
-      }
+      const newLines = change.newContent !== null
+        ? change.newContent
+            .split('\n')
+            .map((content, i): LineChange => ({
+              line: change.line + i,
+              oldContent: null,
+              newContent: content
+            }))
+        : [];
+
+      return [...oldLines, ...newLines];
     }
-    // 檢查 newContent 是否為多行（純新增操作）
-    else if (change.newContent !== null && change.newContent.includes('\n') && change.oldContent === null) {
-      const newLines = change.newContent.split('\n');
-      for (let i = 0; i < newLines.length; i++) {
-        expanded.push({
+
+    // newContent 為多行（純新增操作）
+    if (change.newContent !== null
+        && change.newContent.includes('\n')
+        && change.oldContent === null) {
+      return change.newContent
+        .split('\n')
+        .map((content, i): LineChange => ({
           line: change.line + i,
           oldContent: null,
-          newContent: newLines[i]
-        });
-      }
+          newContent: content
+        }));
     }
-    // 單行變更，直接保留
-    else {
-      expanded.push(change);
-    }
-  }
 
-  return expanded;
+    // 單行變更，直接保留
+    return [change];
+  });
 }
 
 /**

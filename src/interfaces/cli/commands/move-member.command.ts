@@ -10,6 +10,7 @@ import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { createPreviewFormatter } from '@infrastructure/formatters/preview-formatter.js';
 import { PreviewCommand, PreviewFormat, type PreviewInput, type LineChange } from '@infrastructure/formatters/types.js';
+import { calculateLineChanges } from '@infrastructure/formatters/diff-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Move Member 命令選項 */
@@ -244,99 +245,6 @@ function convertToPreviewInput(result: MoveMemberResult, projectRoot: string): P
     fileChanges,
     operationDescription: `移動成員 '${result.member.name}' (${result.member.type})`
   };
-}
-
-/**
- * 計算兩段程式碼之間的行級變更
- * 使用簡單的逐行比較算法
- */
-function calculateLineChanges(original: string, modified: string): LineChange[] {
-  const originalLines = original.split('\n');
-  const modifiedLines = modified.split('\n');
-  const changes: LineChange[] = [];
-
-  // 使用 LCS（最長共同子序列）的簡化版本來找出差異
-  const lcs = computeLCS(originalLines, modifiedLines);
-
-  let origIdx = 0;
-  let modIdx = 0;
-  let lcsIdx = 0;
-  let virtualLineNum = 1;  // 用於追蹤輸出行號
-
-  while (origIdx < originalLines.length || modIdx < modifiedLines.length) {
-    if (lcsIdx < lcs.length
-        && origIdx < originalLines.length
-        && modIdx < modifiedLines.length
-        && originalLines[origIdx] === lcs[lcsIdx]
-        && modifiedLines[modIdx] === lcs[lcsIdx]) {
-      // 共同行（context）- 不需要記錄為變更
-      origIdx++;
-      modIdx++;
-      lcsIdx++;
-      virtualLineNum++;
-    } else if (origIdx < originalLines.length
-               && (lcsIdx >= lcs.length || originalLines[origIdx] !== lcs[lcsIdx])) {
-      // 刪除行
-      changes.push({
-        line: virtualLineNum,
-        oldContent: originalLines[origIdx],
-        newContent: null
-      });
-      origIdx++;
-      virtualLineNum++;
-    } else if (modIdx < modifiedLines.length
-               && (lcsIdx >= lcs.length || modifiedLines[modIdx] !== lcs[lcsIdx])) {
-      // 新增行 - 使用當前 virtualLineNum 作為參考行號
-      changes.push({
-        line: virtualLineNum,
-        oldContent: null,
-        newContent: modifiedLines[modIdx]
-      });
-      modIdx++;
-      virtualLineNum++;
-    }
-  }
-
-  return changes;
-}
-
-/**
- * 計算兩個字串陣列的最長共同子序列（LCS）
- */
-function computeLCS(a: string[], b: string[]): string[] {
-  const m = a.length;
-  const n = b.length;
-
-  // 建立 DP 表格
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-
-  // 回溯找出 LCS
-  const lcs: string[] = [];
-  let i = m;
-  let j = n;
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      lcs.unshift(a[i - 1]);
-      i--;
-      j--;
-    } else if (dp[i - 1][j] > dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
-  }
-
-  return lcs;
 }
 
 /**

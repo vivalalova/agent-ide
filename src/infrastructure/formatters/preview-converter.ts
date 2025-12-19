@@ -300,27 +300,47 @@ function convertOperationsToPreviewInput(
   for (const [filePath, ops] of groupedOps) {
     const originalContent = originalContents.get(filePath) ?? '';
 
-    const changes: LineChange[] = ops.map(op => {
-      // 如果有 context（完整行內容），使用它來生成 diff
-      // 這樣可以顯示完整的程式碼行，而非只有符號名稱
-      if (op.context) {
-        // oldContent: 完整的原始行
-        // newContent: 將原始行中的 oldText 替換為 newText
-        const newContext = op.context.replace(op.oldText, op.newText);
-        return {
-          line: op.range.start.line,
-          oldContent: op.context,
-          newContent: newContext
-        };
-      }
+    // ⚠️ 重要：按行號分組，合併同一行的多個操作
+    // 場景：同一行有多個相同符號時（如 `const foo = foo + foo;`）
+    // rename 會產生多個獨立 operation，若不合併會導致 diff 重複顯示該行
+    const lineOpsMap = new Map<number, OperationLike[]>();
+    for (const op of ops) {
+      const line = op.range.start.line;
+      const existing = lineOpsMap.get(line) ?? [];
+      existing.push(op);
+      lineOpsMap.set(line, existing);
+    }
 
-      // 沒有 context 時，降級為只顯示符號名稱
-      return {
-        line: op.range.start.line,
-        oldContent: op.oldText,
-        newContent: op.newText
-      };
-    });
+    const changes: LineChange[] = [];
+    for (const [line, lineOps] of lineOpsMap) {
+      const firstOp = lineOps[0];
+
+      if (firstOp.context) {
+        // ⚠️ 重要：使用 replace（不是 replaceAll）依次替換
+        // 每個 op 對應一個符號位置，依次 replace 可正確處理：
+        // "const foo = foo + foo;" → replace → "const bar = foo + foo;"
+        //                         → replace → "const bar = bar + foo;"
+        //                         → replace → "const bar = bar + bar;"
+        let newContext = firstOp.context;
+        for (const op of lineOps) {
+          newContext = newContext.replace(op.oldText, op.newText);
+        }
+        changes.push({
+          line,
+          oldContent: firstOp.context,
+          newContent: newContext
+        });
+      } else {
+        // 無 context：每個操作單獨處理（降級為只顯示符號名稱）
+        for (const op of lineOps) {
+          changes.push({
+            line,
+            oldContent: op.oldText,
+            newContent: op.newText
+          });
+        }
+      }
+    }
 
     fileChanges.push({ filePath, originalContent, changes });
   }
