@@ -621,30 +621,6 @@ export class DeadCodeRemover {
   }
 
   /**
-   * 移除註解和字串，用於準確檢測符號使用
-   */
-  private removeCommentsAndStrings(content: string): string {
-    let result = content;
-
-    // 移除多行註解 /* ... */
-    result = result.replace(/\/\*[\s\S]*?\*\//g, '');
-
-    // 移除單行註解 // ...
-    result = result.replace(/\/\/[^\n]*/g, '');
-
-    // 移除模板字串 `...`（簡化處理，不處理嵌套）
-    result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
-
-    // 移除雙引號字串 "..."
-    result = result.replace(/"(?:[^"\\]|\\.)*"/g, '""');
-
-    // 移除單引號字串 '...'
-    result = result.replace(/'(?:[^'\\]|\\.)*'/g, '\'\'');
-
-    return result;
-  }
-
-  /**
    * 擴展範圍至完整宣告（包含前導註解和空行）
    * 優先使用 Parser 的 getFullDeclarationRange 方法（AST 精確解析）
    * 若 Parser 不支援或回傳 null，fallback 到字串匹配邏輯
@@ -1130,13 +1106,6 @@ export class DeadCodeRemover {
     }
     // 否則使用簡單字串包含匹配（向後相容）
     return filePath.includes(pattern);
-  }
-
-  /**
-   * 逸出正則表達式特殊字符
-   */
-  private escapeRegex(text: string): string {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
