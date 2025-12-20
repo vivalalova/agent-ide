@@ -26,7 +26,7 @@ import {
   type PatternInfo,
   type ScopedFindReferencesOptions,
   type ScopedReference
-} from '../../infrastructure/parser/index.js';
+} from '@infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -34,13 +34,13 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types/index.js';
+} from '@shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
   ReferenceType,
   SymbolType
-} from '../../shared/types/index.js';
+} from '@shared/types/index.js';
 import {
   TypeScriptAST,
   TypeScriptSymbol,
@@ -58,7 +58,6 @@ import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/types
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
 import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor.js';
 import {
-  LINE_TOLERANCE,
   TYPESCRIPT_EXCLUDE_PATTERNS,
   isLineMatch,
   isFactoryReturnType,

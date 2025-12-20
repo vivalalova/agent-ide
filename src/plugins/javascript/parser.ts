@@ -6,11 +6,9 @@
 import { parse as babelParse } from '@babel/parser';
 import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
-import babelGenerate from '@babel/generator';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as any).default || babelTraverse;
-const generate = (babelGenerate as any).default || babelGenerate;
 import {
   ParserPlugin,
   CodeEdit,
@@ -33,7 +31,7 @@ import {
   type PatternInfo,
   type ScopedFindReferencesOptions,
   type ScopedReference
-} from '../../infrastructure/parser/index.js';
+} from '@infrastructure/parser/index.js';
 import type {
   AST,
   Symbol,
@@ -41,7 +39,7 @@ import type {
   Dependency,
   Position,
   Range
-} from '../../shared/types/index.js';
+} from '@shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
@@ -51,7 +49,7 @@ import {
   createSymbol,
   createReference,
   createDependency
-} from '../../shared/types/index.js';
+} from '@shared/types/index.js';
 import {
   JavaScriptAST,
   JavaScriptASTNode,
