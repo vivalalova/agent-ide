@@ -15,7 +15,17 @@ import {
   createValidationFailure,
   createCodeEdit,
   createDefinition,
-  createUsage
+  createUsage,
+  ScopedReferenceKind,
+  type ImportDeclaration,
+  type ImportNamedSpecifier,
+  type FormattedSignature,
+  type FormattedParameter,
+  type Documentation,
+  type DocumentationTag,
+  type PatternInfo,
+  type ScopedFindReferencesOptions,
+  type ScopedReference
 } from '../../infrastructure/parser/index.js';
 import type {
   AST,
@@ -33,7 +43,6 @@ import {
 } from '../../shared/types/index.js';
 import {
   TypeScriptAST,
-  TypeScriptASTNode,
   TypeScriptSymbol,
   DEFAULT_COMPILER_OPTIONS,
   TypeScriptParseError,
@@ -1206,5 +1215,1033 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
            filePath.includes('/__tests__/') ||
            filePath.includes('/__mocks__/');
+  }
+
+  /**
+   * 取得符號的完整宣告範圍（包含 JSDoc、裝飾器）
+   * 使用 TypeScript Compiler API 精確解析
+   */
+  getFullDeclarationRange(
+    code: string,
+    symbolName: string,
+    symbolType: string,
+    startLine: number
+  ): Range | null {
+    try {
+      // 建立 SourceFile
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      // 尋找目標節點
+      const targetNode = this.findDeclarationNode(sourceFile, symbolName, symbolType, startLine);
+      if (!targetNode) {
+        return null;
+      }
+
+      // 取得完整範圍（包含前導註解）
+      // getFullStart() 包含前導 trivia（空白、註解）
+      // getStart() 是實際程式碼開始位置
+      // getEnd() 是結束位置
+      const fullStart = targetNode.getFullStart();
+      const end = targetNode.getEnd();
+
+      // 轉換為 Position
+      const startPos = sourceFile.getLineAndCharacterOfPosition(fullStart);
+      const endPos = sourceFile.getLineAndCharacterOfPosition(end);
+
+      return {
+        start: {
+          line: startPos.line + 1, // 轉為 1-based
+          column: startPos.character + 1,
+          offset: fullStart
+        },
+        end: {
+          line: endPos.line + 1,
+          column: endPos.character + 1,
+          offset: end
+        }
+      };
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到字串匹配
+      return null;
+    }
+  }
+
+  /**
+   * 在 AST 中尋找符合條件的宣告節點
+   */
+  private findDeclarationNode(
+    sourceFile: ts.SourceFile,
+    symbolName: string,
+    symbolType: string,
+    startLine: number
+  ): ts.Node | null {
+    let result: ts.Node | null = null;
+
+    const visit = (node: ts.Node): void => {
+      if (result) {return;} // 已找到，停止搜尋
+
+      // 取得節點的行號（1-based）
+      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+
+      // 檢查是否為目標宣告
+      if (this.isMatchingDeclaration(node, symbolName, symbolType, nodeStartLine, startLine)) {
+        result = node;
+        return;
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return result;
+  }
+
+  /**
+   * 檢查節點是否符合目標宣告
+   */
+  private isMatchingDeclaration(
+    node: ts.Node,
+    symbolName: string,
+    symbolType: string,
+    nodeStartLine: number,
+    targetStartLine: number
+  ): boolean {
+    // 行號必須匹配（允許 JSDoc 造成的偏移，給予 ±10 行的容差）
+    if (Math.abs(nodeStartLine - targetStartLine) > 10) {
+      return false;
+    }
+
+    // 根據符號類型匹配節點類型
+    switch (symbolType) {
+      case 'class':
+        if (ts.isClassDeclaration(node) && node.name?.text === symbolName) {
+          return true;
+        }
+        break;
+
+      case 'function':
+        if (ts.isFunctionDeclaration(node) && node.name?.text === symbolName) {
+          return true;
+        }
+        // 檢查 arrow function 變數宣告
+        if (ts.isVariableStatement(node)) {
+          for (const decl of node.declarationList.declarations) {
+            if (ts.isIdentifier(decl.name) && decl.name.text === symbolName) {
+              if (decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) {
+                return true;
+              }
+            }
+          }
+        }
+        break;
+
+      case 'variable':
+      case 'constant':
+        if (ts.isVariableStatement(node)) {
+          for (const decl of node.declarationList.declarations) {
+            if (ts.isIdentifier(decl.name) && decl.name.text === symbolName) {
+              return true;
+            }
+          }
+        }
+        break;
+
+      case 'interface':
+        if (ts.isInterfaceDeclaration(node) && node.name.text === symbolName) {
+          return true;
+        }
+        break;
+
+      case 'type':
+        if (ts.isTypeAliasDeclaration(node) && node.name.text === symbolName) {
+          return true;
+        }
+        break;
+
+      case 'enum':
+        if (ts.isEnumDeclaration(node) && node.name.text === symbolName) {
+          return true;
+        }
+        break;
+
+      case 'namespace':
+      case 'module':
+        if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === symbolName) {
+          return true;
+        }
+        break;
+    }
+
+    return false;
+  }
+
+  /**
+   * 解析程式碼中的所有 import 宣告
+   * 使用 TypeScript Compiler API 精確解析
+   */
+  getImportDeclarations(code: string): ImportDeclaration[] | null {
+    try {
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      const declarations: ImportDeclaration[] = [];
+
+      ts.forEachChild(sourceFile, (node) => {
+        if (ts.isImportDeclaration(node)) {
+          const decl = this.parseImportDeclaration(node, sourceFile, code);
+          if (decl) {
+            declarations.push(decl);
+          }
+        }
+      });
+
+      return declarations;
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到字串解析
+      return null;
+    }
+  }
+
+  /**
+   * 解析單個 import 宣告節點
+   */
+  private parseImportDeclaration(
+    node: ts.ImportDeclaration,
+    sourceFile: ts.SourceFile,
+    code: string
+  ): ImportDeclaration | null {
+    // 取得模組路徑
+    if (!ts.isStringLiteral(node.moduleSpecifier)) {
+      return null;
+    }
+    const moduleSpecifier = node.moduleSpecifier.text;
+
+    // 取得範圍（1-based）
+    const startPos = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const endPos = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+    const range = {
+      start: { line: startPos.line + 1, column: startPos.character + 1, offset: node.getStart(sourceFile) },
+      end: { line: endPos.line + 1, column: endPos.character + 1, offset: node.getEnd() }
+    };
+
+    // 取得原始語句文字
+    const rawStatement = code.substring(node.getStart(sourceFile), node.getEnd());
+
+    // 判斷是否為 type-only import
+    const isTypeOnly = node.importClause?.isTypeOnly ?? false;
+
+    let defaultImport: string | undefined;
+    let namespaceImport: string | undefined;
+    const namedImports: ImportNamedSpecifier[] = [];
+
+    const importClause = node.importClause;
+    if (importClause) {
+      // Default import: import Foo from '...'
+      if (importClause.name) {
+        defaultImport = importClause.name.text;
+      }
+
+      // Named bindings
+      const namedBindings = importClause.namedBindings;
+      if (namedBindings) {
+        if (ts.isNamespaceImport(namedBindings)) {
+          // Namespace import: import * as Foo from '...'
+          namespaceImport = namedBindings.name.text;
+        } else if (ts.isNamedImports(namedBindings)) {
+          // Named imports: import { A, B as C } from '...'
+          for (const element of namedBindings.elements) {
+            const spec: ImportNamedSpecifier = {
+              name: element.propertyName?.text ?? element.name.text,
+              isTypeOnly: element.isTypeOnly
+            };
+            // 如果有 propertyName，表示有別名：import { foo as bar }
+            // propertyName = 'foo', name = 'bar'
+            if (element.propertyName) {
+              spec.alias = element.name.text;
+            }
+            namedImports.push(spec);
+          }
+        }
+      }
+    }
+
+    return {
+      range,
+      moduleSpecifier,
+      isTypeOnly,
+      defaultImport,
+      namespaceImport,
+      namedImports,
+      rawStatement
+    };
+  }
+
+  /**
+   * 格式化函數簽章
+   * 使用 TypeScript Compiler API 精確解析，正確處理複雜泛型巢狀
+   */
+  formatSignature(
+    code: string,
+    functionName: string,
+    line: number
+  ): FormattedSignature | null {
+    try {
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      // 尋找目標函數
+      const targetNode = this.findFunctionNode(sourceFile, functionName, line);
+      if (!targetNode) {
+        return null;
+      }
+
+      // 提取參數
+      const parameters = this.extractParameters(targetNode, sourceFile);
+
+      // 提取回傳型別
+      const returnType = this.extractReturnType(targetNode, sourceFile);
+
+      // 提取泛型參數
+      const typeParameters = this.extractTypeParameters(targetNode);
+
+      return {
+        parameters,
+        returnType,
+        typeParameters: typeParameters.length > 0 ? typeParameters : undefined
+      };
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到正則匹配
+      return null;
+    }
+  }
+
+  /**
+   * 尋找符合條件的函數節點
+   */
+  private findFunctionNode(
+    sourceFile: ts.SourceFile,
+    functionName: string,
+    targetLine: number
+  ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null {
+    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null = null;
+
+    const visit = (node: ts.Node): void => {
+      if (result) { return; }
+
+      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+
+      // 檢查函數宣告
+      if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
+        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+          result = node;
+          return;
+        }
+      }
+
+      // 檢查方法宣告
+      if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
+        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+          result = node;
+          return;
+        }
+      }
+
+      // 檢查箭頭函數（變數宣告）
+      if (ts.isVariableDeclaration(node)
+          && ts.isIdentifier(node.name)
+          && node.name.text === functionName
+          && node.initializer
+          && ts.isArrowFunction(node.initializer)) {
+        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+          result = node.initializer;
+          return;
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return result;
+  }
+
+  /**
+   * 提取函數參數
+   */
+  private extractParameters(
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    sourceFile: ts.SourceFile
+  ): FormattedParameter[] {
+    const parameters: FormattedParameter[] = [];
+
+    for (const param of node.parameters) {
+      if (!ts.isIdentifier(param.name)) {
+        // 跳過解構參數等複雜情況，使用整體表示
+        const paramText = param.getText(sourceFile);
+        parameters.push({
+          name: paramText.split(':')[0].trim(),
+          type: param.type ? param.type.getText(sourceFile) : 'any',
+          optional: !!param.questionToken || !!param.initializer
+        });
+        continue;
+      }
+
+      const paramName = param.name.text;
+      const paramType = param.type ? param.type.getText(sourceFile) : 'any';
+      const optional = !!param.questionToken || !!param.initializer;
+      const defaultValue = param.initializer ? param.initializer.getText(sourceFile) : undefined;
+
+      parameters.push({
+        name: paramName,
+        type: paramType,
+        optional,
+        defaultValue
+      });
+    }
+
+    return parameters;
+  }
+
+  /**
+   * 提取函數回傳型別
+   */
+  private extractReturnType(
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    sourceFile: ts.SourceFile
+  ): string {
+    if (node.type) {
+      return node.type.getText(sourceFile);
+    }
+    return 'void';
+  }
+
+  /**
+   * 提取泛型參數
+   */
+  private extractTypeParameters(
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction
+  ): string[] {
+    if (!node.typeParameters) {
+      return [];
+    }
+
+    return node.typeParameters.map(tp => tp.name.text);
+  }
+
+  /**
+   * 提取符號的 JSDoc 文件註解
+   * 使用 TypeScript Compiler API 精確識別屬於該節點的 JSDoc
+   */
+  getDocumentation(
+    code: string,
+    symbolName: string,
+    symbolType: string,
+    line: number
+  ): Documentation | null {
+    try {
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      // 尋找目標節點
+      const targetNode = this.findDeclarationNode(sourceFile, symbolName, symbolType, line);
+      if (!targetNode) {
+        return null;
+      }
+
+      // 使用 TypeScript 內建 API 取得 JSDoc
+      const jsDocComments = ts.getJSDocCommentsAndTags(targetNode);
+      if (jsDocComments.length === 0) {
+        return null;
+      }
+
+      // 提取原始文字和標籤
+      const tags: DocumentationTag[] = [];
+      let description: string | undefined;
+      const rawTextParts: string[] = [];
+
+      for (const jsDoc of jsDocComments) {
+        if (ts.isJSDoc(jsDoc)) {
+          // JSDoc 註解節點
+          const jsDocText = jsDoc.getFullText(sourceFile);
+          rawTextParts.push(jsDocText.trim());
+
+          // 提取描述
+          if (jsDoc.comment) {
+            const commentText = typeof jsDoc.comment === 'string'
+              ? jsDoc.comment
+              : jsDoc.comment.map(part => part.getText(sourceFile)).join('');
+            if (commentText && !description) {
+              description = commentText.trim();
+            }
+          }
+
+          // 提取標籤
+          if (jsDoc.tags) {
+            for (const tag of jsDoc.tags) {
+              const tagName = tag.tagName.text;
+              const tagText = this.extractJSDocTagText(tag, sourceFile);
+              tags.push({ name: tagName, text: tagText });
+            }
+          }
+        }
+      }
+
+      if (rawTextParts.length === 0) {
+        return null;
+      }
+
+      return {
+        rawText: rawTextParts.join('\n'),
+        description,
+        tags
+      };
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到行號回掃
+      return null;
+    }
+  }
+
+  /**
+   * 提取 JSDoc 標籤的文字內容
+   */
+  private extractJSDocTagText(tag: ts.JSDocTag, sourceFile: ts.SourceFile): string {
+    const parts: string[] = [];
+
+    // 處理 @param 等有名稱的標籤
+    if (ts.isJSDocParameterTag(tag) || ts.isJSDocPropertyTag(tag)) {
+      if (tag.name) {
+        parts.push(tag.name.getText(sourceFile));
+      }
+    }
+
+    // 處理 @returns/@return 標籤
+    if (ts.isJSDocReturnTag(tag)) {
+      // @returns 沒有名稱，只有 comment
+    }
+
+    // 處理註解文字
+    if (tag.comment) {
+      const commentText = typeof tag.comment === 'string'
+        ? tag.comment
+        : tag.comment.map(part => part.getText(sourceFile)).join('');
+      if (commentText) {
+        parts.push(commentText.trim());
+      }
+    }
+
+    return parts.join(' ').trim();
+  }
+
+  // ===== 設計模式識別支援 =====
+
+  /**
+   * 識別程式碼中的設計模式
+   * 使用語義分析（回傳型別分析）識別 factory 模式
+   */
+  identifyPatterns(code: string): PatternInfo[] | null {
+    try {
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      const patterns: PatternInfo[] = [];
+
+      // 遍歷所有節點，識別 factory 模式
+      const visit = (node: ts.Node): void => {
+        // 檢查函數宣告
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          const factoryInfo = this.analyzeFactoryPattern(node, sourceFile);
+          if (factoryInfo) {
+            patterns.push(factoryInfo);
+          }
+        }
+
+        // 檢查箭頭函數（變數宣告）
+        if (ts.isVariableStatement(node)) {
+          for (const decl of node.declarationList.declarations) {
+            if (ts.isIdentifier(decl.name)
+                && decl.initializer
+                && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) {
+              const factoryInfo = this.analyzeArrowFactoryPattern(decl, sourceFile);
+              if (factoryInfo) {
+                patterns.push(factoryInfo);
+              }
+            }
+          }
+        }
+
+        ts.forEachChild(node, visit);
+      };
+
+      ts.forEachChild(sourceFile, visit);
+
+      return patterns;
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到名稱比對
+      return null;
+    }
+  }
+
+  /**
+   * 分析函數宣告是否為 factory 模式
+   * 判斷條件：
+   * 1. 回傳型別是類別/介面實例（非 void、never、基本型別）
+   * 2. 函數體內有 new 表達式或回傳物件字面量
+   */
+  private analyzeFactoryPattern(
+    node: ts.FunctionDeclaration,
+    sourceFile: ts.SourceFile
+  ): PatternInfo | null {
+    if (!node.name) { return null; }
+
+    const functionName = node.name.text;
+
+    // 分析回傳型別
+    const returnTypeInfo = this.extractReturnTypeInfo(node, sourceFile);
+    if (!returnTypeInfo) { return null; }
+
+    // 檢查是否為 factory 模式的回傳型別
+    if (this.isFactoryReturnType(returnTypeInfo.typeName)) {
+      // 檢查函數體是否有 new 表達式或回傳物件
+      const hasFactoryBehavior = this.hasFactoryBehavior(node.body, sourceFile);
+
+      if (hasFactoryBehavior) {
+        return {
+          type: 'factory',
+          symbolName: functionName,
+          confidence: this.calculateFactoryConfidence(functionName, returnTypeInfo.typeName, hasFactoryBehavior),
+          metadata: {
+            producedType: returnTypeInfo.typeName
+          }
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 分析箭頭函數/函數表達式是否為 factory 模式
+   */
+  private analyzeArrowFactoryPattern(
+    decl: ts.VariableDeclaration,
+    sourceFile: ts.SourceFile
+  ): PatternInfo | null {
+    if (!ts.isIdentifier(decl.name) || !decl.initializer) { return null; }
+
+    const functionName = decl.name.text;
+    const funcNode = decl.initializer as ts.ArrowFunction | ts.FunctionExpression;
+
+    // 分析回傳型別
+    const returnTypeInfo = this.extractArrowReturnTypeInfo(funcNode, sourceFile);
+    if (!returnTypeInfo) { return null; }
+
+    // 檢查是否為 factory 模式的回傳型別
+    if (this.isFactoryReturnType(returnTypeInfo.typeName)) {
+      // 檢查函數體是否有 new 表達式或回傳物件
+      const body = funcNode.body;
+      const hasFactoryBehavior = ts.isBlock(body)
+        ? this.hasFactoryBehavior(body, sourceFile)
+        : this.isFactoryExpression(body, sourceFile);
+
+      if (hasFactoryBehavior) {
+        return {
+          type: 'factory',
+          symbolName: functionName,
+          confidence: this.calculateFactoryConfidence(functionName, returnTypeInfo.typeName, hasFactoryBehavior),
+          metadata: {
+            producedType: returnTypeInfo.typeName
+          }
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 提取函數的回傳型別資訊
+   */
+  private extractReturnTypeInfo(
+    node: ts.FunctionDeclaration | ts.MethodDeclaration,
+    sourceFile: ts.SourceFile
+  ): { typeName: string } | null {
+    if (node.type) {
+      const typeName = node.type.getText(sourceFile);
+      return { typeName };
+    }
+    return null;
+  }
+
+  /**
+   * 提取箭頭函數的回傳型別資訊
+   */
+  private extractArrowReturnTypeInfo(
+    node: ts.ArrowFunction | ts.FunctionExpression,
+    sourceFile: ts.SourceFile
+  ): { typeName: string } | null {
+    if (node.type) {
+      const typeName = node.type.getText(sourceFile);
+      return { typeName };
+    }
+    return null;
+  }
+
+  /**
+   * 判斷回傳型別是否符合 factory 模式
+   * 排除 void、never、基本型別、Promise<void> 等
+   */
+  private isFactoryReturnType(typeName: string): boolean {
+    const normalizedType = typeName.trim();
+
+    // 排除 void、never
+    if (normalizedType === 'void' || normalizedType === 'never') {
+      return false;
+    }
+
+    // 排除基本型別
+    const primitiveTypes = ['string', 'number', 'boolean', 'null', 'undefined', 'symbol', 'bigint'];
+    if (primitiveTypes.includes(normalizedType.toLowerCase())) {
+      return false;
+    }
+
+    // 排除 Promise<void>
+    if (/^Promise\s*<\s*void\s*>$/i.test(normalizedType)) {
+      return false;
+    }
+
+    // 排除純陣列基本型別
+    if (/^(string|number|boolean)\[\]$/.test(normalizedType)) {
+      return false;
+    }
+
+    // 接受其他型別（類別、介面、物件型別等）
+    return true;
+  }
+
+  /**
+   * 檢查函數體是否有 factory 行為
+   * 1. 有 new 表達式
+   * 2. 回傳物件字面量
+   */
+  private hasFactoryBehavior(body: ts.Block | undefined, sourceFile: ts.SourceFile): boolean {
+    if (!body) { return false; }
+
+    let hasNewExpression = false;
+    let hasObjectReturn = false;
+
+    const visit = (node: ts.Node): void => {
+      // 檢查 new 表達式
+      if (ts.isNewExpression(node)) {
+        hasNewExpression = true;
+      }
+
+      // 檢查 return 語句
+      if (ts.isReturnStatement(node) && node.expression) {
+        if (ts.isObjectLiteralExpression(node.expression)) {
+          hasObjectReturn = true;
+        } else if (ts.isNewExpression(node.expression)) {
+          hasNewExpression = true;
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(body, visit);
+
+    return hasNewExpression || hasObjectReturn;
+  }
+
+  /**
+   * 檢查表達式是否為 factory 行為（用於箭頭函數簡寫）
+   */
+  private isFactoryExpression(expr: ts.Expression, sourceFile: ts.SourceFile): boolean {
+    return ts.isNewExpression(expr) || ts.isObjectLiteralExpression(expr);
+  }
+
+  /**
+   * 計算 factory 模式的信心度
+   */
+  private calculateFactoryConfidence(
+    functionName: string,
+    returnType: string,
+    hasFactoryBehavior: boolean
+  ): number {
+    let confidence = 0;
+
+    // 名稱以 create/make/build 開頭 +0.3
+    if (/^(create|make|build)/i.test(functionName)) {
+      confidence += 0.3;
+    }
+
+    // 有明確的回傳型別（非 any） +0.3
+    if (returnType && returnType !== 'any') {
+      confidence += 0.3;
+    }
+
+    // 有 factory 行為（new 或物件字面量） +0.4
+    if (hasFactoryBehavior) {
+      confidence += 0.4;
+    }
+
+    return Math.min(confidence, 1);
+  }
+
+  // ===== 作用域感知符號查找支援 =====
+
+  /**
+   * 作用域感知的符號引用查找
+   * 使用 TypeScript 語義分析來精確匹配符號引用，區分不同類別的同名方法
+   *
+   * @param code 完整的檔案內容
+   * @param symbolName 要查找的符號名稱
+   * @param options 查找選項（可限定類別等）
+   * @returns 符號引用列表，如果無法解析則返回 null
+   */
+  findScopedReferences(
+    code: string,
+    symbolName: string,
+    options?: ScopedFindReferencesOptions
+  ): ScopedReference[] | null {
+    try {
+      const sourceFile = ts.createSourceFile(
+        'temp.ts',
+        code,
+        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+        true
+      );
+
+      const references: ScopedReference[] = [];
+      const targetClassName = options?.className;
+
+      // 遍歷 AST 查找所有符號引用
+      const visit = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && node.text === symbolName) {
+          // 過濾：跳過字串字面值和模板字串中的符號（由 AST 遍歷自動處理）
+          const parent = node.parent;
+
+          // 過濾：檢查是否在字串字面值中（透過父節點判斷）
+          if (parent && ts.isStringLiteral(parent)) {
+            return;
+          }
+
+          // 判斷引用類型和所屬容器
+          const refInfo = this.analyzeIdentifierReference(node, sourceFile, targetClassName);
+
+          if (refInfo) {
+            // 如果指定了 className，過濾不匹配的引用
+            if (targetClassName && refInfo.containerName !== targetClassName) {
+              // 只有當引用確實是方法呼叫且 receiverType 不匹配時才過濾
+              if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
+                return;
+              }
+            }
+
+            const range = tsNodeToRange(node, sourceFile);
+            const location = {
+              filePath: sourceFile.fileName,
+              range
+            };
+
+            references.push({
+              location,
+              kind: refInfo.kind,
+              isExactMatch: true,
+              containerName: refInfo.containerName
+            });
+          }
+        }
+
+        ts.forEachChild(node, visit);
+      };
+
+      visit(sourceFile);
+
+      return references;
+    } catch {
+      // 解析失敗，返回 null 讓呼叫端 fallback 到手動過濾
+      return null;
+    }
+  }
+
+  /**
+   * 分析標識符引用的詳細資訊
+   * 判斷引用類型（讀取/寫入/呼叫）和所屬容器
+   */
+  private analyzeIdentifierReference(
+    node: ts.Identifier,
+    sourceFile: ts.SourceFile,
+    targetClassName?: string
+  ): {
+    kind: ScopedReferenceKind;
+    containerName?: string;
+    isMethodCall: boolean;
+    receiverType?: string;
+  } | null {
+    const parent = node.parent;
+
+    // 判斷引用類型
+    let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
+    let isMethodCall = false;
+    let receiverType: string | undefined;
+
+    // 檢查是否為函式/方法呼叫
+    if (parent && ts.isCallExpression(parent)) {
+      // 直接呼叫：foo()
+      if (parent.expression === node) {
+        kind = ScopedReferenceKind.Call;
+        isMethodCall = false;
+      }
+    }
+
+    // 檢查是否為方法呼叫：obj.method()
+    if (parent && ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      const grandParent = parent.parent;
+      if (grandParent && ts.isCallExpression(grandParent) && grandParent.expression === parent) {
+        kind = ScopedReferenceKind.Call;
+        isMethodCall = true;
+
+        // 嘗試取得 receiver 的類型名稱
+        receiverType = this.inferReceiverType(parent.expression, sourceFile);
+      }
+    }
+
+    // 檢查是否為寫入（賦值左側）
+    if (parent && ts.isBinaryExpression(parent)) {
+      if (parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        kind = ScopedReferenceKind.Write;
+      }
+    }
+
+    // 檢查是否為宣告（變數宣告、參數等）
+    if (parent && (ts.isVariableDeclaration(parent)
+        || ts.isParameter(parent)
+        || ts.isPropertyDeclaration(parent))
+        && (parent as any).name === node) {
+      kind = ScopedReferenceKind.Write;
+    }
+
+    // 取得所屬容器名稱（類別、函式等）
+    const containerName = this.findContainerName(node);
+
+    return {
+      kind,
+      containerName,
+      isMethodCall,
+      receiverType
+    };
+  }
+
+  /**
+   * 推斷 receiver 表達式的類型名稱
+   * 例如：dog.bark() 中推斷 dog 的類型為 Dog
+   */
+  private inferReceiverType(
+    expression: ts.Expression,
+    sourceFile: ts.SourceFile
+  ): string | undefined {
+    // 1. 如果是標識符，嘗試查找其宣告並推斷類型
+    if (ts.isIdentifier(expression)) {
+      const varName = expression.text;
+
+      // 簡單的類型推斷：查找 const dog = new Dog() 或 const dog: Dog = ...
+      let result: string | undefined;
+
+      const findDeclaration = (node: ts.Node): void => {
+        if (result) { return; }
+
+        if (ts.isVariableDeclaration(node)
+            && ts.isIdentifier(node.name)
+            && node.name.text === varName) {
+          // 檢查類型註解：const dog: Dog
+          if (node.type && ts.isTypeReferenceNode(node.type)) {
+            if (ts.isIdentifier(node.type.typeName)) {
+              result = node.type.typeName.text;
+              return;
+            }
+          }
+
+          // 檢查初始化器：const dog = new Dog()
+          if (node.initializer && ts.isNewExpression(node.initializer)) {
+            const newExpr = node.initializer;
+            if (ts.isIdentifier(newExpr.expression)) {
+              result = newExpr.expression.text;
+              return;
+            }
+          }
+        }
+
+        ts.forEachChild(node, findDeclaration);
+      };
+
+      findDeclaration(sourceFile);
+      return result;
+    }
+
+    // 2. 如果是 new 表達式：(new Dog()).bark()
+    if (ts.isNewExpression(expression)) {
+      if (ts.isIdentifier(expression.expression)) {
+        return expression.expression.text;
+      }
+    }
+
+    // 3. 如果是屬性存取：this.dog.bark()（較複雜，暫不處理）
+
+    return undefined;
+  }
+
+  /**
+   * 查找標識符所屬的容器名稱（類別、函式等）
+   */
+  private findContainerName(node: ts.Node): string | undefined {
+    let current = node.parent;
+
+    while (current) {
+      // 類別方法
+      if (ts.isMethodDeclaration(current) || ts.isConstructorDeclaration(current)) {
+        const classDecl = current.parent;
+        if (ts.isClassDeclaration(classDecl) && classDecl.name) {
+          return classDecl.name.text;
+        }
+      }
+
+      // 類別屬性
+      if (ts.isPropertyDeclaration(current)) {
+        const classDecl = current.parent;
+        if (ts.isClassDeclaration(classDecl) && classDecl.name) {
+          return classDecl.name.text;
+        }
+      }
+
+      // 函式宣告
+      if (ts.isFunctionDeclaration(current) && current.name) {
+        return current.name.text;
+      }
+
+      current = current.parent;
+    }
+
+    return undefined;
   }
 }

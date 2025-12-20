@@ -6,6 +6,8 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/shared/indexing/index.js';
+import { ParserRegistry } from '@infrastructure/parser/index.js';
+import type { FormattedSignature, PatternInfo } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
 import { SnapshotScope, isProjectSnapshot } from './types.js';
@@ -158,10 +160,56 @@ export class SnapshotGenerator {
       const symbols = allSymbols.map(result => result.symbol);
       const relativePath = path.basename(modulePath);
 
-      return this.buildModuleSnapshot(relativePath, symbols, modulePath);
+      // 使用 Parser 識別 factory 模式
+      const factoryPatterns = await this.identifyFactoryPatterns(modulePath);
+
+      return this.buildModuleSnapshot(relativePath, symbols, modulePath, factoryPatterns);
     } finally {
       indexEngine.dispose();
     }
+  }
+
+  /**
+   * 使用 Parser 識別模組內的 factory 模式
+   */
+  private async identifyFactoryPatterns(modulePath: string): Promise<Map<string, PatternInfo>> {
+    const factoryMap = new Map<string, PatternInfo>();
+
+    try {
+      const entries = await this.fileSystem.readDirectory(modulePath);
+
+      for (const entry of entries) {
+        if (entry.isDirectory) { continue; }
+
+        const ext = path.extname(entry.name);
+        if (!['.ts', '.js', '.tsx', '.jsx'].includes(ext)) { continue; }
+
+        const filePath = path.join(modulePath, entry.name);
+        const parser = ParserRegistry.getInstance().getParser(ext);
+
+        if (!parser || !parser.identifyPatterns) { continue; }
+
+        try {
+          const content = await this.fileSystem.readFile(filePath);
+          const codeString = typeof content === 'string' ? content : content.toString('utf-8');
+          const patterns = parser.identifyPatterns(codeString);
+
+          if (patterns) {
+            for (const pattern of patterns) {
+              if (pattern.type === 'factory') {
+                factoryMap.set(pattern.symbolName, pattern);
+              }
+            }
+          }
+        } catch {
+          // 忽略單一檔案的解析錯誤，繼續處理其他檔案
+        }
+      }
+    } catch {
+      // 忽略目錄讀取錯誤，返回空 Map（fallback 到名稱比對）
+    }
+
+    return factoryMap;
   }
 
   /**
@@ -222,8 +270,14 @@ export class SnapshotGenerator {
 
   /**
    * 建構模組快照
+   * @param factoryPatterns Parser 識別的 factory 模式（優先使用，若為空則 fallback 到名稱比對）
    */
-  private buildModuleSnapshot(moduleName: string, symbols: Symbol[], _modulePath: string): ModuleSnapshot {
+  private buildModuleSnapshot(
+    moduleName: string,
+    symbols: Symbol[],
+    _modulePath: string,
+    factoryPatterns: Map<string, PatternInfo> = new Map()
+  ): ModuleSnapshot {
     // 轉型為 ExtendedSymbol 以存取 signature 和 typeInfo
     const extendedSymbols = symbols as ExtendedSymbol[];
     const api: Record<string, Record<string, string>> = {};
@@ -254,9 +308,16 @@ export class SnapshotGenerator {
       }
     }
 
-    // 處理 factory 函數（createXxx）
+    // 處理 factory 函數
+    // 優先使用 Parser 語義分析的結果，若無則 fallback 到名稱比對
     for (const func of functions) {
-      if (func.name.startsWith('create')) {
+      const parserPattern = factoryPatterns.get(func.name);
+
+      if (parserPattern) {
+        // Parser 識別為 factory（語義分析）
+        factories[func.name] = this.formatFunctionSignature(func);
+      } else if (factoryPatterns.size === 0 && func.name.startsWith('create')) {
+        // Fallback：Parser 未提供任何結果時，使用名稱比對（向後相容）
         factories[func.name] = this.formatFunctionSignature(func);
       }
     }
@@ -345,9 +406,16 @@ export class SnapshotGenerator {
 
   /**
    * 簡化簽章格式（移除函數名稱，保留參數和回傳型別）
+   * 使用括號平衡算法處理巢狀泛型
    */
   private simplifySignature(signature: string): string {
-    // 格式：name<T>(param: Type): ReturnType → (param: Type) → ReturnType
+    // 使用括號平衡算法找到參數列表的開始和結束位置
+    const result = this.parseSignatureWithBalancing(signature);
+    if (result) {
+      return result;
+    }
+
+    // Fallback：原始正則邏輯（向後相容）
     const match = signature.match(/^[^(]*\(([^)]*)\)(?:\s*:\s*(.+))?$/);
     if (match) {
       const params = match[1].trim();
@@ -355,6 +423,106 @@ export class SnapshotGenerator {
       return params ? `(${params}) → ${returnType}` : `() → ${returnType}`;
     }
     return signature;
+  }
+
+  /**
+   * 使用括號平衡算法解析簽章
+   * 正確處理巢狀泛型（如 Map<K, Fn<V>>）
+   */
+  private parseSignatureWithBalancing(signature: string): string | null {
+    // 找到第一個 '(' 的位置（跳過泛型參數 '<...>'）
+    let depth = 0;
+    let parenStart = -1;
+
+    for (let i = 0; i < signature.length; i++) {
+      const char = signature[i];
+      if (char === '<') {
+        depth++;
+      } else if (char === '>') {
+        depth--;
+      } else if (char === '(' && depth === 0) {
+        parenStart = i;
+        break;
+      }
+    }
+
+    if (parenStart === -1) {
+      return null;
+    }
+
+    // 從 parenStart 開始，使用括號平衡找到對應的 ')'
+    depth = 0;
+    let parenEnd = -1;
+
+    for (let i = parenStart; i < signature.length; i++) {
+      const char = signature[i];
+      if (char === '(' || char === '<' || char === '{' || char === '[') {
+        depth++;
+      } else if (char === ')' || char === '>' || char === '}' || char === ']') {
+        depth--;
+        if (depth === 0 && char === ')') {
+          parenEnd = i;
+          break;
+        }
+      }
+    }
+
+    if (parenEnd === -1) {
+      return null;
+    }
+
+    // 提取參數和回傳型別
+    const params = signature.substring(parenStart + 1, parenEnd).trim();
+    const afterParen = signature.substring(parenEnd + 1).trim();
+
+    // 解析回傳型別（跳過 ':' 後的部分）
+    let returnType = 'void';
+    if (afterParen.startsWith(':')) {
+      returnType = afterParen.substring(1).trim();
+    }
+
+    return params ? `(${params}) → ${returnType}` : `() → ${returnType}`;
+  }
+
+  /**
+   * 使用 Parser 的 formatSignature 方法格式化簽章
+   * 如果 Parser 不支援或解析失敗，返回 null
+   */
+  private formatSignatureWithParser(
+    code: string,
+    functionName: string,
+    line: number,
+    filePath: string
+  ): string | null {
+    try {
+      const parser = ParserRegistry.getInstance().getParser(path.extname(filePath));
+      if (!parser || !parser.formatSignature) {
+        return null;
+      }
+
+      const formattedSig = parser.formatSignature(code, functionName, line);
+      if (!formattedSig) {
+        return null;
+      }
+
+      return this.formatFormattedSignature(formattedSig);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 將 FormattedSignature 轉換為顯示字串
+   */
+  private formatFormattedSignature(sig: FormattedSignature): string {
+    const params = sig.parameters
+      .map((p: { name: string; type: string; optional: boolean }) => {
+        const optional = p.optional ? '?' : '';
+        return `${p.name}${optional}: ${p.type}`;
+      })
+      .join(', ');
+
+    return params ? `(${params}) → ${sig.returnType}` : `() → ${sig.returnType}`;
   }
 
   /**

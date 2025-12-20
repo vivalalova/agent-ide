@@ -4,6 +4,8 @@
 
 // 匯出所有接口和型別
 export { ParserPlugin, isParserPlugin, supportsExtension, supportsLanguage, getFileExtension, findPluginForFile } from './interface.js';
+export type { ImportDeclaration, ImportNamedSpecifier, FormattedSignature, FormattedParameter, Documentation, DocumentationTag, PatternInfo, PatternType, ScopedFindReferencesOptions, ScopedReference } from './interface.js';
+export { ScopedReferenceKind } from './interface.js';
 export type { CodeEdit, Definition, Usage, ValidationResult, ParserOptions, ParserCapabilities, DefinitionKind, UsageKind, ValidationError as ParserValidationError, ValidationWarning } from './types.js';
 export { createCodeEdit, createDefinition, createUsage, createValidationResult, createValidationSuccess, createValidationFailure, isCodeEdit, isDefinition, isUsage, isValidationResult, isParserCapabilities } from './types.js';
 

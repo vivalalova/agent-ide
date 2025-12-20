@@ -8,6 +8,7 @@ import type { Range } from '@shared/types/core.js';
 import type { SymbolType } from '@shared/types/symbol.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
 import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder.js';
 import type {
   DeadCodeItem,
@@ -215,10 +216,12 @@ export class DeadCodeRemover {
       }
 
       // 擴展範圍以包含完整宣告（含 JSDoc 註解）
-      const expandedRange = this.expandRangeToFullDeclaration(
+      const expandedRange = await this.expandRangeToFullDeclaration(
         content,
         item.location.range,
-        item.type
+        item.type,
+        item.name,
+        item.location.filePath
       );
 
       const originalCode = this.extractCode(content, expandedRange);
@@ -255,7 +258,8 @@ export class DeadCodeRemover {
       }
 
       // 解析 import 語句（以語句為單位）
-      const importStatements = this.parseImportStatements(content);
+      // 優先使用 Parser 的 AST 解析，fallback 到字串解析
+      const importStatements = this.parseImportStatements(content, filePath);
       const fileRemovals = removals.filter(r => r.filePath === filePath);
 
       for (const stmt of importStatements) {
@@ -368,9 +372,78 @@ export class DeadCodeRemover {
 
   /**
    * 解析 import 語句（以語句為單位）
-   * 支援 named import, default import, namespace import, 多行 import
+   * 優先使用 Parser 的 AST 解析（精確），fallback 到字串解析（向後相容）
+   * @param content 檔案內容
+   * @param filePath 檔案路徑（用於取得對應的 Parser）
    */
-  private parseImportStatements(content: string): ImportStatementInfo[] {
+  private parseImportStatements(content: string, filePath: string): ImportStatementInfo[] {
+    // 1. 優先嘗試使用 Parser 的 getImportDeclarations 方法
+    const parserResult = this.parseImportStatementsWithParser(content, filePath);
+    if (parserResult) {
+      return parserResult;
+    }
+
+    // 2. Fallback：使用原有的字串解析邏輯
+    return this.parseImportStatementsFallback(content);
+  }
+
+  /**
+   * 使用 Parser AST 解析 import 語句
+   * @returns ImportStatementInfo[] 如果成功，null 如果 Parser 不支援或解析失敗
+   */
+  private parseImportStatementsWithParser(content: string, filePath: string): ImportStatementInfo[] | null {
+    const parser = this.parserRegistry.getParser(this.getFileExtension(filePath));
+    if (!parser?.getImportDeclarations) {
+      return null;
+    }
+
+    const declarations = parser.getImportDeclarations(content);
+    if (!declarations) {
+      return null;
+    }
+
+    // 將 Parser 的 ImportDeclaration 轉換為內部的 ImportStatementInfo
+    return declarations.map(decl => this.convertImportDeclaration(decl));
+  }
+
+  /**
+   * 將 Parser 的 ImportDeclaration 轉換為內部的 ImportStatementInfo
+   */
+  private convertImportDeclaration(decl: ImportDeclaration): ImportStatementInfo {
+    const symbols: ImportSymbolInfo[] = [];
+
+    // 處理 default import
+    if (decl.defaultImport) {
+      symbols.push({ name: decl.defaultImport, isDefault: true });
+    }
+
+    // 處理 namespace import
+    if (decl.namespaceImport) {
+      symbols.push({ name: decl.namespaceImport, isNamespace: true });
+    }
+
+    // 處理 named imports
+    for (const named of decl.namedImports) {
+      symbols.push({
+        name: named.name,
+        alias: named.alias
+      });
+    }
+
+    return {
+      statement: decl.rawStatement,
+      range: decl.range,
+      symbols,
+      hasDefault: !!decl.defaultImport,
+      isNamespace: !!decl.namespaceImport
+    };
+  }
+
+  /**
+   * Fallback：使用字串解析 import 語句
+   * 保留原有邏輯以確保向後相容
+   */
+  private parseImportStatementsFallback(content: string): ImportStatementInfo[] {
     const statements: ImportStatementInfo[] = [];
     const lines = content.split('\n');
 
@@ -573,9 +646,52 @@ export class DeadCodeRemover {
 
   /**
    * 擴展範圍至完整宣告（包含前導註解和空行）
+   * 優先使用 Parser 的 getFullDeclarationRange 方法（AST 精確解析）
+   * 若 Parser 不支援或回傳 null，fallback 到字串匹配邏輯
+   */
+  private async expandRangeToFullDeclaration(
+    content: string,
+    range: Range,
+    symbolType: SymbolType,
+    symbolName: string,
+    filePath: string
+  ): Promise<Range> {
+    // 1. 優先嘗試使用 Parser 的 getFullDeclarationRange 方法
+    const parser = this.parserRegistry.getParser(this.getFileExtension(filePath));
+    if (parser?.getFullDeclarationRange) {
+      const parserRange = parser.getFullDeclarationRange(
+        content,
+        symbolName,
+        symbolType,
+        range.start.line
+      );
+      if (parserRange) {
+        // Parser 成功解析，處理後續空行
+        const lines = content.split('\n');
+        let endLine = parserRange.end.line - 1; // 轉為 0-based
+        if (endLine < lines.length - 1 && lines[endLine + 1]?.trim() === '') {
+          endLine++;
+        }
+        return {
+          start: parserRange.start,
+          end: {
+            line: endLine + 1,
+            column: (lines[endLine]?.length ?? 0) + 1,
+            offset: parserRange.end.offset
+          }
+        };
+      }
+    }
+
+    // 2. Fallback：使用原有的字串匹配邏輯
+    return this.expandRangeByStringMatching(content, range, symbolType);
+  }
+
+  /**
+   * 使用字串匹配邏輯擴展範圍（fallback 方法）
    * 使用清理後的內容進行括號匹配，避免字串/註解中的括號干擾
    */
-  private expandRangeToFullDeclaration(
+  private expandRangeByStringMatching(
     content: string,
     range: Range,
     symbolType: SymbolType
@@ -684,6 +800,14 @@ export class DeadCodeRemover {
       start: { line: startLine + 1, column: 1, offset: undefined },
       end: { line: endLine + 1, column: lines[endLine].length + 1, offset: undefined }
     };
+  }
+
+  /**
+   * 從檔案路徑取得副檔名
+   */
+  private getFileExtension(filePath: string): string {
+    const lastDot = filePath.lastIndexOf('.');
+    return lastDot === -1 ? '' : filePath.substring(lastDot);
   }
 
   /**

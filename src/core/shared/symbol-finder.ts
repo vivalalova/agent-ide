@@ -7,6 +7,8 @@ import type { Range, Location } from '@shared/types/core.js';
 import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { ScopedFindReferencesOptions } from '@infrastructure/parser/interface.js';
+import { ScopedReferenceKind } from '@infrastructure/parser/interface.js';
 
 /**
  * 符號引用
@@ -119,10 +121,26 @@ export class SymbolFinder {
         return null;
       }
 
+      // 優先使用 Parser 的 getDocumentation 方法（AST 精確解析）
+      // 若 Parser 不支援或返回 null，fallback 到行號回掃邏輯
+      let documentation: string | undefined;
+      if (parser.getDocumentation) {
+        const doc = parser.getDocumentation(
+          content,
+          symbol.name,
+          symbol.type,
+          symbol.location.range.start.line
+        );
+        documentation = doc?.rawText;
+      }
+      if (!documentation) {
+        documentation = this.extractDocumentationByLineScanning(content, symbol);
+      }
+
       return {
         symbol,
         signature: this.extractSignature(content, symbol),
-        documentation: this.extractDocumentation(content, symbol)
+        documentation
       };
     } catch {
       return null;
@@ -371,6 +389,113 @@ export class SymbolFinder {
     }
 
     return allReferences;
+  }
+
+  // ===== 作用域感知的符號查找（優先使用 Parser 語義分析） =====
+
+  /**
+   * 使用 Parser 的 findScopedReferences 方法查找符號引用（作用域感知版本）
+   *
+   * 此方法優先使用 Parser 的語義分析能力來精確匹配符號，
+   * 可以區分不同類別的同名方法。
+   *
+   * @example
+   * ```typescript
+   * // 區分 Dog.bark() 和 Car.bark()
+   * const refs = await finder.findScopedReferencesInFile(
+   *   'src/animals.ts',
+   *   'bark',
+   *   { className: 'Dog' }
+   * );
+   * ```
+   *
+   * @param filePath 檔案路徑
+   * @param symbolName 符號名稱
+   * @param options 作用域查找選項（可限定類別等）
+   * @returns 符號引用陣列
+   */
+  async findScopedReferencesInFile(
+    filePath: string,
+    symbolName: string,
+    options?: ScopedFindReferencesOptions
+  ): Promise<SymbolReference[]> {
+    const content = await this.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const parser = this.getParser(filePath);
+
+    // 優先使用 Parser 的 findScopedReferences 方法
+    if (parser && typeof parser.findScopedReferences === 'function') {
+      const scopedRefs = parser.findScopedReferences(content, symbolName, options);
+
+      if (scopedRefs) {
+        const lines = content.split('\n');
+
+        return scopedRefs.map(ref => {
+          const lineIndex = ref.location.range.start.line - 1;
+          const context = lineIndex >= 0 && lineIndex < lines.length
+            ? lines[lineIndex]
+            : undefined;
+
+          // 轉換 ScopedReferenceKind 到 SymbolReferenceType
+          const type = this.scopedReferenceKindToType(ref.kind);
+
+          return {
+            symbolName,
+            location: {
+              filePath,
+              range: ref.location.range
+            },
+            type,
+            context,
+            containerName: ref.containerName,
+            isMethodCall: ref.kind === ScopedReferenceKind.Call
+          };
+        });
+      }
+    }
+
+    // Fallback：使用原有的文字匹配（帶過濾）
+    return this.findReferencesByTextFiltered(filePath, content, symbolName);
+  }
+
+  /**
+   * 在多個檔案中查找符號引用（作用域感知版本）
+   *
+   * @param symbolName 符號名稱
+   * @param projectFiles 專案檔案列表
+   * @param options 作用域查找選項
+   * @returns 所有找到的引用
+   */
+  async findScopedReferences(
+    symbolName: string,
+    projectFiles: readonly string[],
+    options?: ScopedFindReferencesOptions
+  ): Promise<SymbolReference[]> {
+    const allReferences: SymbolReference[] = [];
+
+    for (const filePath of projectFiles) {
+      const refs = await this.findScopedReferencesInFile(filePath, symbolName, options);
+      allReferences.push(...refs);
+    }
+
+    return allReferences;
+  }
+
+  /**
+   * 轉換 ScopedReferenceKind 到 SymbolReferenceType
+   */
+  private scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
+    switch (kind) {
+      case ScopedReferenceKind.Write:
+        return SymbolReferenceType.Definition;
+      case ScopedReferenceKind.Call:
+      case ScopedReferenceKind.Read:
+      default:
+        return SymbolReferenceType.Usage;
+    }
   }
 
   /**
@@ -721,9 +846,10 @@ export class SymbolFinder {
   }
 
   /**
-   * 提取文件註解
+   * 提取文件註解（行號回掃方式）
+   * 這是 fallback 方法，當 Parser 不支援 getDocumentation 時使用
    */
-  private extractDocumentation(content: string, symbol: Symbol): string | undefined {
+  private extractDocumentationByLineScanning(content: string, symbol: Symbol): string | undefined {
     const lines = content.split('\n');
     const lineIndex = symbol.location.range.start.line - 2; // 前一行
 
