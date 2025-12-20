@@ -13,8 +13,12 @@ import type {
 } from '../../shared/types/index.js';
 import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.js';
 import type { CodeEdit } from '@infrastructure/parser/types.js';
+import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult } from '@babel/parser';
+
+// Re-export 共用函數供外部使用
+export { isRelativePath };
 
 /**
  * JavaScript AST 節點包裝器
@@ -305,13 +309,6 @@ export function getDependencyPath(node: babel.Node): string | undefined {
 }
 
 /**
- * 檢查路徑是否為相對路徑
- */
-export function isRelativePath(path: string): boolean {
-  return path.startsWith('./') || path.startsWith('../');
-}
-
-/**
  * 獲取導入的符號
  */
 export function getImportedSymbols(node: babel.ImportDeclaration): string[] {
@@ -419,9 +416,6 @@ const JAVASCRIPT_RESERVED_WORDS = new Set([
   'null', 'true', 'false'
 ]);
 
-/** 預編譯的 Unicode 識別符正則表達式 */
-const JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
-
 /**
  * 驗證識別符名稱
  *
@@ -434,11 +428,7 @@ const JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}
  * - let π = 3.14159          // 合法
  */
 export function isValidIdentifier(name: string): boolean {
-  if (!name || name.length === 0) {
-    return false;
-  }
-
-  return JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isReservedWord(name);
+  return isValidUnicodeIdentifier(name) && !isReservedWord(name);
 }
 
 /**

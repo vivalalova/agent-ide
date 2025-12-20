@@ -23,5 +23,8 @@ export {
   createDocumentation,
   createFormattedParameter,
   createEmptyRange,
+  isRelativePath,
+  UNICODE_IDENTIFIER_PATTERN,
+  isValidUnicodeIdentifier,
   matchesAnyPattern
 } from './parser-helpers.js';

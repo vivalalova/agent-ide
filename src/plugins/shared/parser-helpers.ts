@@ -214,6 +214,39 @@ export function createEmptyRange(): Range {
 }
 
 /**
+ * 檢查路徑是否為相對路徑
+ * 相對路徑以 ./ 或 ../ 開頭
+ *
+ * @param path 路徑字串
+ * @returns 是否為相對路徑
+ */
+export function isRelativePath(path: string): boolean {
+  return path.startsWith('./') || path.startsWith('../');
+}
+
+/**
+ * 預編譯的 Unicode 識別符正則表達式
+ * 符合 UAX #31 標準：
+ * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
+ * - 後續字元：Unicode 類別 ID_Continue 或 $
+ */
+export const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
+
+/**
+ * 檢查名稱是否符合 Unicode 識別符格式
+ * 不包含保留字檢查，僅驗證格式
+ *
+ * @param name 識別符名稱
+ * @returns 是否符合格式
+ */
+export function isValidUnicodeIdentifier(name: string): boolean {
+  if (!name || name.length === 0) {
+    return false;
+  }
+  return UNICODE_IDENTIFIER_PATTERN.test(name);
+}
+
+/**
  * 檢查檔案路徑是否匹配任一模式
  * 使用簡單的字串匹配，不依賴外部 glob 套件
  *

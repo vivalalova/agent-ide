@@ -13,7 +13,11 @@ import type {
 } from '../../shared/types/index.js';
 import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.js';
 import type { CodeEdit } from '@infrastructure/parser/types.js';
+import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
 import * as ts from 'typescript';
+
+// Re-export 共用函數供外部使用
+export { isRelativePath };
 
 /**
  * TypeScript AST 節點包裝器
@@ -323,13 +327,6 @@ export function getDependencyPath(node: ts.Node): string | undefined {
 }
 
 /**
- * 檢查路徑是否為相對路徑
- */
-export function isRelativePath(path: string): boolean {
-  return path.startsWith('./') || path.startsWith('../');
-}
-
-/**
  * 獲取導入的符號
  */
 export function getImportedSymbols(node: ts.ImportDeclaration): string[] {
@@ -445,9 +442,6 @@ const TYPESCRIPT_RESERVED_WORDS = new Set([
   'of', 'null', 'true', 'false'
 ]);
 
-/** 預編譯的 Unicode 識別符正則表達式 */
-const TYPESCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
-
 /**
  * 驗證識別符名稱
  *
@@ -460,11 +454,7 @@ const TYPESCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}
  * - let データ = 123         // 合法
  */
 export function isValidIdentifier(name: string): boolean {
-  if (!name || name.length === 0) {
-    return false;
-  }
-
-  return TYPESCRIPT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isTypeScriptReservedWord(name);
+  return isValidUnicodeIdentifier(name) && !isTypeScriptReservedWord(name);
 }
 
 /**
