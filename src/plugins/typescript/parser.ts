@@ -57,6 +57,15 @@ import {
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
 import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor.js';
+import {
+  LINE_TOLERANCE,
+  TYPESCRIPT_EXCLUDE_PATTERNS,
+  isLineMatch,
+  isFactoryReturnType,
+  calculateFactoryConfidence,
+  createFactoryPatternInfo,
+  matchesAnyPattern
+} from '@plugins/shared/index.js';
 
 /**
  * TypeScript Parser 實作
@@ -66,9 +75,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly version = '1.0.0';
   public readonly supportedExtensions = ['.ts', '.tsx', '.d.ts'] as const;
   public readonly supportedLanguages = ['typescript', 'tsx'] as const;
-
-  /** 行號匹配的容差值（允許 JSDoc 造成的偏移） */
-  private static readonly LINE_TOLERANCE = 10;
 
   private symbolExtractor: TypeScriptSymbolExtractor;
   private dependencyAnalyzer: TypeScriptDependencyAnalyzer;
@@ -516,27 +522,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 包含基礎排除模式 + TypeScript 測試檔案和型別定義
    */
   getDefaultExcludePatterns(): string[] {
-    return [
-      // 通用排除模式
-      'node_modules/**',
-      '.git/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-      '.next/**',
-      '.nuxt/**',
-      'out/**',
-      '.cache/**',
-      '.turbo/**',
-      // TypeScript 特定排除模式
-      '**/*.test.ts',
-      '**/*.spec.ts',
-      '**/*.test.tsx',
-      '**/*.spec.tsx',
-      '**/__tests__/**',
-      '**/__mocks__/**',
-      '**/*.d.ts' // 型別定義檔案通常不需要分析
-    ];
+    return [...TYPESCRIPT_EXCLUDE_PATTERNS];
   }
 
   /**
@@ -544,34 +530,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * TypeScript parser 會忽略測試檔案和型別定義檔案
    */
   shouldIgnoreFile(filePath: string): boolean {
-    const patterns = this.getDefaultExcludePatterns();
-    const normalizedPath = filePath.replace(/^\.?\//, '');
-
-    // 使用 minimatch 進行模式匹配
-    return patterns.some(pattern => {
-      try {
-        // 直接使用字串包含檢查來提高效能
-        if (pattern.includes('**')) {
-          // 對於包含 ** 的模式，進行簡單的子字串匹配
-          const simplePattern = pattern.replace(/\*\*/g, '').replace(/\//g, '');
-          if (normalizedPath.includes(simplePattern)) {
-            return true;
-          }
-        }
-
-        // 檢查檔案路徑是否匹配模式
-        if (pattern.startsWith('**/')) {
-          const suffix = pattern.substring(3);
-          if (normalizedPath.endsWith(suffix) || normalizedPath.includes('/' + suffix)) {
-            return true;
-          }
-        }
-
-        return false;
-      } catch (error) {
-        return false;
-      }
-    });
+    return matchesAnyPattern(filePath, TYPESCRIPT_EXCLUDE_PATTERNS);
   }
 
   /**
@@ -1315,7 +1274,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     targetStartLine: number
   ): boolean {
     // 行號必須匹配（允許 JSDoc 造成的偏移）
-    if (Math.abs(nodeStartLine - targetStartLine) > TypeScriptParser.LINE_TOLERANCE) {
+    if (!isLineMatch(nodeStartLine, targetStartLine)) {
       return false;
     }
 
@@ -1548,7 +1507,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
       // 檢查函數宣告
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
+        if (isLineMatch(nodeStartLine, targetLine)) {
           result = node;
           return;
         }
@@ -1556,7 +1515,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
       // 檢查方法宣告
       if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
-        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
+        if (isLineMatch(nodeStartLine, targetLine)) {
           result = node;
           return;
         }
@@ -1568,7 +1527,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
           && node.name.text === functionName
           && node.initializer
           && ts.isArrowFunction(node.initializer)) {
-        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
+        if (isLineMatch(nodeStartLine, targetLine)) {
           result = node.initializer;
           return;
         }
@@ -1824,19 +1783,18 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     if (!returnTypeInfo) { return null; }
 
     // 檢查是否為 factory 模式的回傳型別
-    if (this.isFactoryReturnType(returnTypeInfo.typeName)) {
+    if (isFactoryReturnType(returnTypeInfo.typeName)) {
       // 檢查函數體是否有 new 表達式或回傳物件
-      const hasFactoryBehavior = this.hasFactoryBehavior(node.body, sourceFile);
+      const hasFactoryBehaviorResult = this.hasFactoryBehavior(node.body, sourceFile);
 
-      if (hasFactoryBehavior) {
-        return {
-          type: 'factory',
-          symbolName: functionName,
-          confidence: this.calculateFactoryConfidence(functionName, returnTypeInfo.typeName, hasFactoryBehavior),
-          metadata: {
-            producedType: returnTypeInfo.typeName
-          }
-        };
+      if (hasFactoryBehaviorResult) {
+        const confidence = calculateFactoryConfidence(
+          functionName,
+          returnTypeInfo.typeName,
+          hasFactoryBehaviorResult,
+          false
+        );
+        return createFactoryPatternInfo(functionName, confidence, returnTypeInfo.typeName);
       }
     }
 
@@ -1860,22 +1818,21 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     if (!returnTypeInfo) { return null; }
 
     // 檢查是否為 factory 模式的回傳型別
-    if (this.isFactoryReturnType(returnTypeInfo.typeName)) {
+    if (isFactoryReturnType(returnTypeInfo.typeName)) {
       // 檢查函數體是否有 new 表達式或回傳物件
       const body = funcNode.body;
-      const hasFactoryBehavior = ts.isBlock(body)
+      const hasFactoryBehaviorResult = ts.isBlock(body)
         ? this.hasFactoryBehavior(body, sourceFile)
         : this.isFactoryExpression(body, sourceFile);
 
-      if (hasFactoryBehavior) {
-        return {
-          type: 'factory',
-          symbolName: functionName,
-          confidence: this.calculateFactoryConfidence(functionName, returnTypeInfo.typeName, hasFactoryBehavior),
-          metadata: {
-            producedType: returnTypeInfo.typeName
-          }
-        };
+      if (hasFactoryBehaviorResult) {
+        const confidence = calculateFactoryConfidence(
+          functionName,
+          returnTypeInfo.typeName,
+          hasFactoryBehaviorResult,
+          false
+        );
+        return createFactoryPatternInfo(functionName, confidence, returnTypeInfo.typeName);
       }
     }
 
@@ -1910,37 +1867,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return null;
   }
 
-  /**
-   * 判斷回傳型別是否符合 factory 模式
-   * 排除 void、never、基本型別、Promise<void> 等
-   */
-  private isFactoryReturnType(typeName: string): boolean {
-    const normalizedType = typeName.trim();
-
-    // 排除 void、never
-    if (normalizedType === 'void' || normalizedType === 'never') {
-      return false;
-    }
-
-    // 排除基本型別
-    const primitiveTypes = ['string', 'number', 'boolean', 'null', 'undefined', 'symbol', 'bigint'];
-    if (primitiveTypes.includes(normalizedType.toLowerCase())) {
-      return false;
-    }
-
-    // 排除 Promise<void>
-    if (/^Promise\s*<\s*void\s*>$/i.test(normalizedType)) {
-      return false;
-    }
-
-    // 排除純陣列基本型別
-    if (/^(string|number|boolean)\[\]$/.test(normalizedType)) {
-      return false;
-    }
-
-    // 接受其他型別（類別、介面、物件型別等）
-    return true;
-  }
 
   /**
    * 檢查函數體是否有 factory 行為
@@ -1981,34 +1907,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    */
   private isFactoryExpression(expr: ts.Expression, sourceFile: ts.SourceFile): boolean {
     return ts.isNewExpression(expr) || ts.isObjectLiteralExpression(expr);
-  }
-
-  /**
-   * 計算 factory 模式的信心度
-   */
-  private calculateFactoryConfidence(
-    functionName: string,
-    returnType: string,
-    hasFactoryBehavior: boolean
-  ): number {
-    let confidence = 0;
-
-    // 名稱以 create/make/build 開頭 +0.3
-    if (/^(create|make|build)/i.test(functionName)) {
-      confidence += 0.3;
-    }
-
-    // 有明確的回傳型別（非 any） +0.3
-    if (returnType && returnType !== 'any') {
-      confidence += 0.3;
-    }
-
-    // 有 factory 行為（new 或物件字面量） +0.4
-    if (hasFactoryBehavior) {
-      confidence += 0.4;
-    }
-
-    return Math.min(confidence, 1);
   }
 
   // ===== 作用域感知符號查找支援 =====

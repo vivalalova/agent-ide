@@ -73,6 +73,14 @@ import {
   getScopeType,
   BABEL_SYMBOL_TYPE_MAP
 } from './types.js';
+import {
+  JAVASCRIPT_EXCLUDE_PATTERNS,
+  isLineMatch,
+  matchesAnyPattern,
+  parseJSDocContent,
+  calculateFactoryConfidence,
+  createFactoryPatternInfo
+} from '@plugins/shared/index.js';
 
 /**
  * JavaScript Parser 實作
@@ -362,30 +370,7 @@ export class JavaScriptParser implements ParserPlugin {
    * 包含基礎排除模式 + JavaScript 測試檔案
    */
   getDefaultExcludePatterns(): string[] {
-    return [
-      // 通用排除模式
-      'node_modules/**',
-      '.git/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-      '.next/**',
-      '.nuxt/**',
-      'out/**',
-      '.cache/**',
-      '.turbo/**',
-      // JavaScript 特定排除模式
-      '**/*.test.js',
-      '**/*.spec.js',
-      '**/*.test.jsx',
-      '**/*.spec.jsx',
-      '**/*.test.mjs',
-      '**/*.spec.mjs',
-      '**/*.test.cjs',
-      '**/*.spec.cjs',
-      '**/__tests__/**',
-      '**/__mocks__/**'
-    ];
+    return [...JAVASCRIPT_EXCLUDE_PATTERNS];
   }
 
   /**
@@ -393,34 +378,7 @@ export class JavaScriptParser implements ParserPlugin {
    * JavaScript parser 會忽略測試檔案
    */
   shouldIgnoreFile(filePath: string): boolean {
-    const patterns = this.getDefaultExcludePatterns();
-    const normalizedPath = filePath.replace(/^\.?\//, '');
-
-    // 使用簡單的模式匹配
-    return patterns.some(pattern => {
-      try {
-        // 直接使用字串包含檢查來提高效能
-        if (pattern.includes('**')) {
-          // 對於包含 ** 的模式，進行簡單的子字串匹配
-          const simplePattern = pattern.replace(/\*\*/g, '').replace(/\//g, '');
-          if (normalizedPath.includes(simplePattern)) {
-            return true;
-          }
-        }
-
-        // 檢查檔案路徑是否匹配模式
-        if (pattern.startsWith('**/')) {
-          const suffix = pattern.substring(3);
-          if (normalizedPath.endsWith(suffix) || normalizedPath.includes('/' + suffix)) {
-            return true;
-          }
-        }
-
-        return false;
-      } catch (error) {
-        return false;
-      }
-    });
+    return matchesAnyPattern(filePath, JAVASCRIPT_EXCLUDE_PATTERNS);
   }
 
   /**
@@ -1203,7 +1161,7 @@ export class JavaScriptParser implements ParserPlugin {
       traverse(ast, {
         FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
           if (symbolType === 'function' && path.node.id?.name === symbolName) {
-            if (this.isLineMatch(path.node, startLine)) {
+            if (this.isNodeLineMatch(path.node, startLine)) {
               targetNode = path.node;
               path.stop();
             }
@@ -1212,7 +1170,7 @@ export class JavaScriptParser implements ParserPlugin {
 
         ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
           if (symbolType === 'class' && path.node.id?.name === symbolName) {
-            if (this.isLineMatch(path.node, startLine)) {
+            if (this.isNodeLineMatch(path.node, startLine)) {
               targetNode = path.node;
               path.stop();
             }
@@ -1223,7 +1181,7 @@ export class JavaScriptParser implements ParserPlugin {
           if (symbolType === 'variable' || symbolType === 'constant' || symbolType === 'function') {
             for (const decl of path.node.declarations) {
               if (babel.isIdentifier(decl.id) && decl.id.name === symbolName) {
-                if (this.isLineMatch(path.node, startLine)) {
+                if (this.isNodeLineMatch(path.node, startLine)) {
                   targetNode = path.node;
                   path.stop();
                 }
@@ -1275,11 +1233,11 @@ export class JavaScriptParser implements ParserPlugin {
 
   /**
    * 檢查節點行號是否匹配（允許 JSDoc 造成的偏移）
+   * 使用共用模組的 isLineMatch 函數
    */
-  private isLineMatch(node: babel.Node, targetStartLine: number): boolean {
+  private isNodeLineMatch(node: babel.Node, targetStartLine: number): boolean {
     const nodeStartLine = node.loc?.start.line ?? 0;
-    // 允許 ±10 行的容差（JSDoc 可能很長）
-    return Math.abs(nodeStartLine - targetStartLine) <= 10;
+    return isLineMatch(nodeStartLine, targetStartLine);
   }
 
   /**
@@ -1401,7 +1359,7 @@ export class JavaScriptParser implements ParserPlugin {
 
       traverse(ast, {
         FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-          if (path.node.id?.name === functionName && this.isLineMatch(path.node, line)) {
+          if (path.node.id?.name === functionName && this.isNodeLineMatch(path.node, line)) {
             foundParams = path.node.params;
             path.stop();
           }
@@ -1412,7 +1370,7 @@ export class JavaScriptParser implements ParserPlugin {
               && path.node.id.name === functionName
               && path.node.init
               && (babel.isArrowFunctionExpression(path.node.init) || babel.isFunctionExpression(path.node.init))
-              && this.isLineMatch(path.node, line)) {
+              && this.isNodeLineMatch(path.node, line)) {
             foundParams = path.node.init.params;
             path.stop();
           }
@@ -1421,7 +1379,7 @@ export class JavaScriptParser implements ParserPlugin {
         ClassMethod: (path: NodePath<babel.ClassMethod>) => {
           if (babel.isIdentifier(path.node.key)
               && path.node.key.name === functionName
-              && this.isLineMatch(path.node, line)) {
+              && this.isNodeLineMatch(path.node, line)) {
             foundParams = path.node.params;
             path.stop();
           }
@@ -1527,7 +1485,7 @@ export class JavaScriptParser implements ParserPlugin {
       traverse(ast, {
         FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
           if (symbolType === 'function' && path.node.id?.name === symbolName) {
-            if (this.isLineMatch(path.node, line)) {
+            if (this.isNodeLineMatch(path.node, line)) {
               targetNode = path.node;
               path.stop();
             }
@@ -1536,7 +1494,7 @@ export class JavaScriptParser implements ParserPlugin {
 
         ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
           if (symbolType === 'class' && path.node.id?.name === symbolName) {
-            if (this.isLineMatch(path.node, line)) {
+            if (this.isNodeLineMatch(path.node, line)) {
               targetNode = path.node;
               path.stop();
             }
@@ -1547,7 +1505,7 @@ export class JavaScriptParser implements ParserPlugin {
           if (symbolType === 'variable' || symbolType === 'constant' || symbolType === 'function') {
             for (const decl of path.node.declarations) {
               if (babel.isIdentifier(decl.id) && decl.id.name === symbolName) {
-                if (this.isLineMatch(path.node, line)) {
+                if (this.isNodeLineMatch(path.node, line)) {
                   targetNode = path.node;
                   path.stop();
                 }
@@ -1581,8 +1539,8 @@ export class JavaScriptParser implements ParserPlugin {
       // 組裝原始文字
       const rawText = `/*${jsDocComment.value}*/`;
 
-      // 解析 JSDoc 內容
-      const { description, tags } = this.parseJSDocContent(jsDocComment.value);
+      // 解析 JSDoc 內容（使用共用模組）
+      const { description, tags } = parseJSDocContent(jsDocComment.value);
 
       return {
         rawText,
@@ -1593,37 +1551,6 @@ export class JavaScriptParser implements ParserPlugin {
       // 解析失敗，返回 null 讓呼叫端 fallback 到行號回掃
       return null;
     }
-  }
-
-  /**
-   * 解析 JSDoc 註解內容
-   */
-  private parseJSDocContent(content: string): { description?: string; tags: DocumentationTag[] } {
-    const lines = content.split('\n');
-    const tags: DocumentationTag[] = [];
-    const descriptionLines: string[] = [];
-    let inDescription = true;
-
-    for (const line of lines) {
-      // 移除行首的 * 和空白
-      const trimmedLine = line.replace(/^\s*\*\s?/, '').trim();
-
-      // 檢查是否為標籤行
-      const tagMatch = trimmedLine.match(/^@(\w+)\s*(.*)?$/);
-
-      if (tagMatch) {
-        inDescription = false;
-        const tagName = tagMatch[1];
-        const tagText = tagMatch[2]?.trim() ?? '';
-        tags.push({ name: tagName, text: tagText });
-      } else if (inDescription && trimmedLine) {
-        descriptionLines.push(trimmedLine);
-      }
-    }
-
-    const description = descriptionLines.length > 0 ? descriptionLines.join(' ').trim() : undefined;
-
-    return { description, tags };
   }
 
   // ===== 設計模式識別支援 =====
@@ -1719,47 +1646,33 @@ export class JavaScriptParser implements ParserPlugin {
       this.traverseNode(statement, checkNode);
     }
 
-    // 只有當有 factory 行為時才返回
+    // 只有當有 factory 行為時才返回（使用共用模組）
     if (hasNewExpression || hasObjectReturn) {
-      return {
-        type: 'factory',
-        symbolName: functionName,
-        confidence: this.calculateJSFactoryConfidence(functionName, hasNewExpression, hasObjectReturn),
-        metadata: producedType ? { producedType } : undefined
-      };
+      const confidence = calculateFactoryConfidence(
+        functionName, undefined, hasNewExpression, hasObjectReturn
+      );
+      return createFactoryPatternInfo(functionName, confidence, producedType);
     }
 
     return null;
   }
 
   /**
-   * 分析箭頭函數簡寫的 factory 模式
+   * 分析箭頭函數簡寫的 factory 模式（使用共用模組）
    */
   private analyzeJSFactoryExpression(
     functionName: string,
     expr: babel.Expression
   ): PatternInfo | null {
-    let producedType: string | undefined;
-
     if (babel.isNewExpression(expr)) {
-      if (babel.isIdentifier(expr.callee)) {
-        producedType = expr.callee.name;
-      }
-      return {
-        type: 'factory',
-        symbolName: functionName,
-        confidence: this.calculateJSFactoryConfidence(functionName, true, false),
-        metadata: producedType ? { producedType } : undefined
-      };
+      const producedType = babel.isIdentifier(expr.callee) ? expr.callee.name : undefined;
+      const confidence = calculateFactoryConfidence(functionName, undefined, true, false);
+      return createFactoryPatternInfo(functionName, confidence, producedType);
     }
 
     if (babel.isObjectExpression(expr)) {
-      return {
-        type: 'factory',
-        symbolName: functionName,
-        confidence: this.calculateJSFactoryConfidence(functionName, false, true),
-        metadata: { producedType: 'Object' }
-      };
+      const confidence = calculateFactoryConfidence(functionName, undefined, false, true);
+      return createFactoryPatternInfo(functionName, confidence, 'Object');
     }
 
     return null;
@@ -1786,38 +1699,6 @@ export class JavaScriptParser implements ParserPlugin {
         }
       }
     }
-  }
-
-  /**
-   * 計算 JavaScript factory 模式的信心度
-   * JavaScript 沒有型別資訊，因此信心度基於：
-   * 1. 函數名稱
-   * 2. new 表達式存在
-   * 3. 物件字面量回傳
-   */
-  private calculateJSFactoryConfidence(
-    functionName: string,
-    hasNewExpression: boolean,
-    hasObjectReturn: boolean
-  ): number {
-    let confidence = 0;
-
-    // 名稱以 create/make/build 開頭 +0.4（JavaScript 沒有型別，名稱權重較高）
-    if (/^(create|make|build)/i.test(functionName)) {
-      confidence += 0.4;
-    }
-
-    // 有 new 表達式 +0.4
-    if (hasNewExpression) {
-      confidence += 0.4;
-    }
-
-    // 回傳物件字面量 +0.3
-    if (hasObjectReturn) {
-      confidence += 0.3;
-    }
-
-    return Math.min(confidence, 1);
   }
 
   // ===== 作用域感知符號查找支援 =====
