@@ -114,42 +114,72 @@ export interface ReferenceUpdate {
 }
 
 /**
- * Move Member 結果
+ * 檔案變更資訊
  */
-export interface MoveMemberResult {
-  /** 是否成功 */
-  readonly success: boolean;
-  /** 錯誤訊息（若失敗） */
-  readonly error?: string;
+export interface FileChange {
+  readonly filePath: string;
+  readonly originalCode: string;
+  readonly newCode: string;
+}
+
+/**
+ * 目標檔案變更資訊
+ */
+export interface TargetFileChange {
+  readonly filePath: string;
+  readonly originalCode: string | null;
+  readonly newCode: string;
+  readonly isNewFile: boolean;
+}
+
+/**
+ * 移動統計資訊
+ */
+export interface MoveMemberStats {
+  /** 更新的引用數量 */
+  readonly referencesUpdated: number;
+  /** 影響的檔案數量 */
+  readonly filesAffected: number;
+}
+
+/**
+ * Move Member 成功結果
+ */
+export interface MoveMemberSuccessResult {
+  /** 成功標記 */
+  readonly success: true;
   /** 被移動的成員 */
   readonly member: MemberDefinition;
   /** 移動目標 */
   readonly target: MoveTarget;
   /** 來源檔案變更 */
-  readonly sourceFileChange: {
-    readonly filePath: string;
-    readonly originalCode: string;
-    readonly newCode: string;
-  };
+  readonly sourceFileChange: FileChange;
   /** 目標檔案變更 */
-  readonly targetFileChange: {
-    readonly filePath: string;
-    readonly originalCode: string | null;
-    readonly newCode: string;
-    readonly isNewFile: boolean;
-  };
+  readonly targetFileChange: TargetFileChange;
   /** 引用更新列表 */
   readonly referenceUpdates: readonly ReferenceUpdate[];
   /** 是否已執行（false 表示僅預覽） */
   readonly executed: boolean;
   /** 統計資訊 */
-  readonly stats: {
-    /** 更新的引用數量 */
-    readonly referencesUpdated: number;
-    /** 影響的檔案數量 */
-    readonly filesAffected: number;
-  };
+  readonly stats: MoveMemberStats;
 }
+
+/**
+ * Move Member 錯誤結果
+ */
+export interface MoveMemberErrorResult {
+  /** 失敗標記 */
+  readonly success: false;
+  /** 錯誤代碼 */
+  readonly code: MoveMemberErrorCode;
+  /** 錯誤訊息 */
+  readonly error: string;
+}
+
+/**
+ * Move Member 結果（聯合型別）
+ */
+export type MoveMemberResult = MoveMemberSuccessResult | MoveMemberErrorResult;
 
 /**
  * 驗證錯誤

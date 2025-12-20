@@ -5,7 +5,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveMemberService, MoveTargetType, MemberType, type MoveMemberResult } from '@core/move-member/index.js';
+import { MoveMemberService, MoveTargetType, MemberType, type MoveMemberSuccessResult } from '@core/move-member/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { createPreviewFormatter } from '@infrastructure/formatters/preview-formatter.js';
@@ -180,7 +180,7 @@ function parseMemberType(typeStr: string): MemberType | undefined {
  * 印出 diff 輸出
  * 使用統一的 PreviewFormatter 生成實際的程式碼差異
  */
-function printDiffOutput(result: MoveMemberResult, projectRoot: string): void {
+function printDiffOutput(result: MoveMemberSuccessResult, projectRoot: string): void {
   const previewInput = convertToPreviewInput(result, projectRoot);
   const formatter = createPreviewFormatter({ color: process.stdout.isTTY ?? false });
   const previewResult = formatter.createPreview(previewInput);
@@ -192,9 +192,9 @@ function printDiffOutput(result: MoveMemberResult, projectRoot: string): void {
 }
 
 /**
- * 將 MoveMemberResult 轉換為 PreviewInput
+ * 將 MoveMemberSuccessResult 轉換為 PreviewInput
  */
-function convertToPreviewInput(result: MoveMemberResult, projectRoot: string): PreviewInput {
+function convertToPreviewInput(result: MoveMemberSuccessResult, projectRoot: string): PreviewInput {
   const fileChanges: PreviewInput['fileChanges'] = [];
 
   // 來源檔案變更（移除成員）
@@ -245,7 +245,7 @@ function convertToPreviewInput(result: MoveMemberResult, projectRoot: string): P
 /**
  * 印出摘要輸出
  */
-function printSummaryOutput(result: any, projectRoot: string): void {
+function printSummaryOutput(result: MoveMemberSuccessResult, projectRoot: string): void {
   console.log('\n✅ 成員移動成功!');
   console.log(`📦 成員: ${result.member.name} (${result.member.type})`);
   console.log(`📁 從: ${path.relative(projectRoot, result.sourceFileChange.filePath)}`);

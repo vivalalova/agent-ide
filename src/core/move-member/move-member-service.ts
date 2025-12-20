@@ -623,17 +623,8 @@ export class MoveMemberService {
   private createErrorResult(code: MoveMemberErrorCode, message: string): MoveMemberResult {
     return {
       success: false,
-      error: message,
-      member: null as any,
-      target: null as any,
-      sourceFileChange: null as any,
-      targetFileChange: null as any,
-      referenceUpdates: [],
-      executed: false,
-      stats: {
-        referencesUpdated: 0,
-        filesAffected: 0
-      }
+      code,
+      error: message
     };
   }
 }

@@ -14,7 +14,12 @@ export type {
   MoveMemberOptions,
   ReferenceUpdate,
   MoveMemberResult,
-  MoveMemberValidationError
+  MoveMemberSuccessResult,
+  MoveMemberErrorResult,
+  MoveMemberValidationError,
+  FileChange,
+  TargetFileChange,
+  MoveMemberStats
 } from './types.js';
 
 // 列舉
