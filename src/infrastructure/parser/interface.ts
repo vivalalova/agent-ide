@@ -5,6 +5,7 @@
 
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
 import type { CodeEdit, Definition, Usage, ValidationResult } from '@infrastructure/parser/types.js';
+import type { Location } from '@shared/types/core.js';
 
 // ===== Import 語句解析相關型別 =====
 
@@ -366,7 +367,7 @@ export enum ScopedReferenceKind {
  */
 export interface ScopedReference {
   /** 引用位置 */
-  readonly location: import('@shared/types/core.js').Location;
+  readonly location: Location;
   /** 引用類型 */
   readonly kind: ScopedReferenceKind;
   /** 是否為精確匹配（已由 Parser 確認屬於同一符號） */

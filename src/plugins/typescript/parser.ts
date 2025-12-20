@@ -67,6 +67,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly supportedExtensions = ['.ts', '.tsx', '.d.ts'] as const;
   public readonly supportedLanguages = ['typescript', 'tsx'] as const;
 
+  /** 行號匹配的容差值（允許 JSDoc 造成的偏移） */
+  private static readonly LINE_TOLERANCE = 10;
+
   private symbolExtractor: TypeScriptSymbolExtractor;
   private dependencyAnalyzer: TypeScriptDependencyAnalyzer;
   private compilerOptions: ts.CompilerOptions;
@@ -1311,8 +1314,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     nodeStartLine: number,
     targetStartLine: number
   ): boolean {
-    // 行號必須匹配（允許 JSDoc 造成的偏移，給予 ±10 行的容差）
-    if (Math.abs(nodeStartLine - targetStartLine) > 10) {
+    // 行號必須匹配（允許 JSDoc 造成的偏移）
+    if (Math.abs(nodeStartLine - targetStartLine) > TypeScriptParser.LINE_TOLERANCE) {
       return false;
     }
 
@@ -1545,7 +1548,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
       // 檢查函數宣告
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
           result = node;
           return;
         }
@@ -1553,7 +1556,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
       // 檢查方法宣告
       if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
-        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
           result = node;
           return;
         }
@@ -1565,7 +1568,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
           && node.name.text === functionName
           && node.initializer
           && ts.isArrowFunction(node.initializer)) {
-        if (Math.abs(nodeStartLine - targetLine) <= 10) {
+        if (Math.abs(nodeStartLine - targetLine) <= TypeScriptParser.LINE_TOLERANCE) {
           result = node.initializer;
           return;
         }

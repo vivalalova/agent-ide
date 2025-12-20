@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/shared/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
-import type { FormattedSignature, PatternInfo } from '@infrastructure/parser/index.js';
+import type { PatternInfo } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
 import { SnapshotScope, isProjectSnapshot } from './types.js';
@@ -482,47 +482,6 @@ export class SnapshotGenerator {
     }
 
     return params ? `(${params}) → ${returnType}` : `() → ${returnType}`;
-  }
-
-  /**
-   * 使用 Parser 的 formatSignature 方法格式化簽章
-   * 如果 Parser 不支援或解析失敗，返回 null
-   */
-  private formatSignatureWithParser(
-    code: string,
-    functionName: string,
-    line: number,
-    filePath: string
-  ): string | null {
-    try {
-      const parser = ParserRegistry.getInstance().getParser(path.extname(filePath));
-      if (!parser || !parser.formatSignature) {
-        return null;
-      }
-
-      const formattedSig = parser.formatSignature(code, functionName, line);
-      if (!formattedSig) {
-        return null;
-      }
-
-      return this.formatFormattedSignature(formattedSig);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 將 FormattedSignature 轉換為顯示字串
-   */
-  private formatFormattedSignature(sig: FormattedSignature): string {
-    const params = sig.parameters
-      .map((p: { name: string; type: string; optional: boolean }) => {
-        const optional = p.optional ? '?' : '';
-        return `${p.name}${optional}: ${p.type}`;
-      })
-      .join(', ');
-
-    return params ? `(${params}) → ${sig.returnType}` : `() → ${sig.returnType}`;
   }
 
   /**
