@@ -5,6 +5,11 @@
 export { TypeScriptParser } from './parser.js';
 export { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
 export { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
+export { LanguageServiceManager, createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
+export { ScopeAnalyzer, createScopeAnalyzer } from './scope-analyzer.js';
+export { DeclarationAnalyzer, createDeclarationAnalyzer } from './declaration-analyzer.js';
+export { PatternAnalyzer, createPatternAnalyzer } from './pattern-analyzer.js';
+export { ReferenceFinder, createReferenceFinder } from './reference-finder.js';
 
 export type {
   TypeScriptAST,
