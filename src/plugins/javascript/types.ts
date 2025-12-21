@@ -7,14 +7,25 @@ import type {
   ASTNode,
   Position,
   Range,
-  Symbol,
-  Reference,
-  Dependency
+  Symbol
 } from '../../shared/types/index.js';
-import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.js';
-import type { CodeEdit } from '@infrastructure/parser/types.js';
+import { SymbolType } from '@shared/types/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult } from '@babel/parser';
+
+// 從 shared 模組匯入共用工具
+import {
+  isRelativePath as sharedIsRelativePath,
+  isValidIdentifier as sharedIsValidIdentifier,
+  isReservedWord as sharedIsReservedWord,
+  JS_RESERVED_WORDS
+} from '../shared/index.js';
+
+// Re-export 供外部使用
+export { sharedIsRelativePath as isRelativePath };
+export { sharedIsValidIdentifier as isValidIdentifier };
+export { sharedIsReservedWord as isReservedWord };
+export { JS_RESERVED_WORDS };
 
 /**
  * JavaScript AST 節點包裝器
@@ -304,12 +315,6 @@ export function getDependencyPath(node: babel.Node): string | undefined {
   return undefined;
 }
 
-/**
- * 檢查路徑是否為相對路徑
- */
-export function isRelativePath(path: string): boolean {
-  return path.startsWith('./') || path.startsWith('../');
-}
 
 /**
  * 獲取導入的符號
@@ -403,50 +408,6 @@ export function createJavaScriptASTNode(
   return node;
 }
 
-/**
- * JavaScript 保留字列表
- */
-const JAVASCRIPT_RESERVED_WORDS = new Set([
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  // ES6+
-  'let', 'static', 'async', 'await',
-  // Strict mode reserved words
-  'implements', 'interface', 'package', 'private', 'protected', 'public',
-  // Literals
-  'null', 'true', 'false'
-]);
-
-/** 預編譯的 Unicode 識別符正則表達式 */
-const JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
-
-/**
- * 驗證識別符名稱
- *
- * JavaScript 支援 Unicode 識別符：
- * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
- * - 後續字元：Unicode 類別 ID_Continue 或 $
- *
- * 範例：
- * - const 用戶名稱 = "John"  // 合法
- * - let π = 3.14159          // 合法
- */
-export function isValidIdentifier(name: string): boolean {
-  if (!name || name.length === 0) {
-    return false;
-  }
-
-  return JAVASCRIPT_UNICODE_IDENTIFIER_PATTERN.test(name) && !isReservedWord(name);
-}
-
-/**
- * 檢查是否為保留字
- */
-export function isReservedWord(name: string): boolean {
-  return JAVASCRIPT_RESERVED_WORDS.has(name);
-}
 
 /**
  * 錯誤類別
