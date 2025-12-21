@@ -24,7 +24,7 @@ import {
   isChangeDefaultValueChange,
   isToggleOptionalChange
 } from './types.js';
-import { SymbolFinder, type CallSite } from '../shared/symbol-finder.js';
+import { SymbolFinder, type CallSite } from '../shared/symbol-finder/index.js';
 
 /**
  * Change Signature Service

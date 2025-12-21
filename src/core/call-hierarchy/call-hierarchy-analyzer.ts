@@ -8,7 +8,7 @@ import type { Location, Range } from '@shared/types/core.js';
 import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { createSymbolFinder, type SymbolFinder } from '@core/shared/symbol-finder.js';
+import { createSymbolFinder, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
 
 /** Outgoing 呼叫資訊（目標函數呼叫了誰） */
 export interface OutgoingCall {

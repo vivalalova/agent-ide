@@ -11,7 +11,7 @@ import {
   SymbolFinder,
   SymbolReferenceType,
   type SymbolReference
-} from '@core/shared/symbol-finder.js';
+} from '@core/shared/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';
