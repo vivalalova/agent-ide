@@ -11,7 +11,9 @@ import type { LineChange } from './types.js';
  *
  * 行號語義：
  * - 刪除行：使用原始檔案的行號（用於在原始檔案中定位被刪除的行）
- * - 新增行：使用原始檔案中的插入位置（上一個原始行號 + 1，用於 diff 輸出時正確排序）
+ * - 新增行：使用浮點數行號（如 1.001, 1.002, 1.003）來保持連續新增行的順序
+ *   - 基底為原始檔案中的插入位置（上一個原始行號）
+ *   - 小數部分用於區分同一位置的多個新增行
  *
  * @param original - 原始程式碼
  * @param modified - 修改後的程式碼
@@ -56,7 +58,8 @@ export function calculateLineChanges(original: string, modified: string): LineCh
       origLineNum++;
     } else if (modIdx < modifiedLines.length
                && (lcsIdx >= lcs.length || modifiedLines[modIdx] !== lcs[lcsIdx])) {
-      // 新增行 - 使用當前原始檔案位置（插入點）
+      // 新增行 - 使用當前 origLineNum 作為插入點
+      // 多個連續新增行會有相同的 line 值，依賴 changes 陣列順序保持正確性
       changes.push({
         line: origLineNum,
         oldContent: null,

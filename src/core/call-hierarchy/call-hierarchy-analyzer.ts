@@ -227,7 +227,7 @@ export class CallHierarchyAnalyzer {
 
           // 進一步驗證：檢查 receiver 是否來自目標函數的定義檔案
           // 如果 receiver 是 this.xxx，需要檢查是否對應到 targetFile 中的定義
-          if (!this.isCallToTargetFunction(callSite, targetFile, targetName)) {
+          if (!this.isCallToTargetFunction(callSite, targetFile)) {
             continue;
           }
         }
@@ -262,6 +262,9 @@ export class CallHierarchyAnalyzer {
   /**
    * 檢查 receiver.method() 是否為內建物件的方法
    * 用於排除 Map.get()、Array.push() 等內建方法
+   *
+   * 只檢查直接使用內建物件的情況（如 Map、console 等），
+   * 不使用啟發式命名模式判斷以避免誤判。
    */
   private isBuiltInObjectMethod(receiver: string, methodName: string): boolean {
     // 內建物件及其常見方法
@@ -293,28 +296,14 @@ export class CallHierarchyAnalyzer {
       'console': new Set(['log', 'error', 'warn', 'info', 'debug', 'trace', 'dir', 'table', 'time', 'timeEnd'])
     };
 
-    // 檢查 receiver 是否為實例變數（this.xxx）且方法名是內建方法
-    // 例如：this.sessions.get() 中的 sessions 可能是 Map
-    if (receiver.startsWith('this.')) {
-      const instanceName = receiver.substring(5);
-      // 常見的 Map/Set 實例命名模式
-      const mapInstancePatterns = ['sessions', 'users', 'cache', 'store', 'map', 'maps',
-        'notifications', 'orders', 'products', 'transactions', 'items', 'data'];
-      const setInstancePatterns = ['set', 'sets', 'visited', 'seen', 'ids'];
-
-      if (mapInstancePatterns.some(p => instanceName.toLowerCase().includes(p))
-          && builtInMethods['Map']?.has(methodName)) {
-        return true;
-      }
-      if (setInstancePatterns.some(p => instanceName.toLowerCase().includes(p))
-          && builtInMethods['Set']?.has(methodName)) {
-        return true;
-      }
-    }
-
-    // 檢查直接使用內建物件的情況（如 Map.prototype.get）
+    // 只檢查直接使用內建物件的情況
+    // 精確匹配：receiver 必須完全等於內建物件名稱，或是 new Map() 等建構式
     for (const [objectName, methods] of Object.entries(builtInMethods)) {
-      if (receiver.includes(objectName) && methods.has(methodName)) {
+      // 精確匹配：receiver === objectName（如 Map、console、JSON）
+      // 或是 new Map() 等建構式（receiver 以 new 開頭並包含物件名稱）
+      const isExactMatch = receiver === objectName;
+      const isNewExpression = receiver === `new ${objectName}()` || receiver === `new ${objectName}`;
+      if ((isExactMatch || isNewExpression) && methods.has(methodName)) {
         return true;
       }
     }
@@ -325,47 +314,39 @@ export class CallHierarchyAnalyzer {
   /**
    * 檢查呼叫是否真的呼叫目標函數
    * 用於 depth > 1 時的精確過濾
+   *
+   * 判斷邏輯：
+   * 1. 同一檔案內的呼叫 → 視為有效
+   * 2. 非 this.xxx 形式的呼叫（直接函數呼叫） → 視為有效
+   * 3. this.xxxService 形式（依賴注入） → 視為有效
+   * 4. 其他 this.xxx 形式 → 預設保守排除
    */
   private isCallToTargetFunction(
     callSite: { isMethodCall: boolean; receiver?: string; location: { filePath: string } },
-    targetFile: string,
-    _targetName: string
+    targetFile: string
   ): boolean {
-    // 如果是同一檔案內的呼叫，更可能是真正的呼叫
+    // 同一檔案內的呼叫，視為有效
     if (callSite.location.filePath === targetFile) {
       return true;
     }
 
-    // 如果是 this.method() 呼叫，需要檢查當前檔案是否 import 了 targetFile
-    // 這裡簡化處理：假設跨檔案的方法呼叫如果 receiver 是 this.xxxService，
-    // 則可能是通過依賴注入呼叫的合法呼叫
-    if (callSite.receiver?.startsWith('this.') && callSite.receiver.includes('Service')) {
-      return true;
-    }
-
-    // 如果 receiver 不是 this.xxx，可能是直接呼叫或其他模式
-    // 這種情況下，需要更多上下文才能判斷，暫時假設為有效呼叫
+    // 非 this.xxx 形式（直接函數呼叫或模組呼叫），視為有效
     if (!callSite.receiver?.startsWith('this.')) {
       return true;
     }
 
-    // 預設保守策略：不確定時排除，避免誤報
-    // 這裡檢查 receiver 是否看起來像是內建物件的實例
-    const receiver = callSite.receiver;
-    const lowerReceiver = receiver.toLowerCase();
-
-    // 如果 receiver 看起來像是集合類型的實例，可能是內建方法
-    const collectionPatterns = ['map', 'set', 'list', 'array', 'cache', 'store'];
-    if (collectionPatterns.some(p => lowerReceiver.includes(p))) {
-      return false;
+    // this.xxxService 形式（依賴注入模式），視為有效
+    if (callSite.receiver.endsWith('Service')) {
+      return true;
     }
 
-    return true;
+    // 其他 this.xxx 形式，預設保守排除以減少誤報
+    return false;
   }
 
   /**
    * 找出 outgoing 呼叫（目標函數呼叫了誰）
-   * @param depth 預留參數：未來可用於遞迴深度控制或效能優化
+   * @param _depth 預留參數：未來可用於遞迴深度控制或效能優化
    */
   private async findOutgoingCalls(
     filePath: string,
@@ -440,7 +421,7 @@ export class CallHierarchyAnalyzer {
 
   /**
    * 在 AST 中找到目標函數節點
-   * @param range 預留參數：未來可用於精確定位同名函數
+   * @param _range 預留參數：未來可用於精確定位同名函數
    */
   private findFunctionNode(
     sourceFile: ts.SourceFile,

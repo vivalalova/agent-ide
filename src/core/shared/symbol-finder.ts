@@ -423,31 +423,23 @@ export class SymbolFinder {
       // 函式定義的關鍵字模式（用於排除函式定義）
       const definitionKeywords = /(?:^|[\s{;])(async\s+)?(function\s+|static\s+|private\s+|public\s+|protected\s+|get\s+|set\s+)/;
 
-      // 追蹤多行註解狀態
-      let inBlockComment = false;
+      // 追蹤多行註解狀態（處理完前一行後的狀態）
+      let inBlockCommentBeforeLine = false;
 
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const line = lines[lineIndex];
 
-        // 處理多行註解狀態
-        if (inBlockComment) {
-          const closeCommentIndex = line.indexOf('*/');
-          if (closeCommentIndex >= 0) {
-            inBlockComment = false;
-            // 繼續處理 */ 後的內容（但這行後面的匹配會在下面的迴圈處理）
-          } else {
-            continue; // 整行在多行註解中，跳過
-          }
-        }
+        // 記錄這行開始時的狀態（用於 isInCommentWithState）
+        const lineStartsInComment = inBlockCommentBeforeLine;
 
-        // 檢查這行是否開始多行註解（在行尾未關閉）
-        const openCommentIndex = line.indexOf('/*');
-        if (openCommentIndex >= 0) {
-          const closeCommentIndex = line.indexOf('*/', openCommentIndex + 2);
-          if (closeCommentIndex < 0) {
-            // 多行註解在這行開始但未結束
-            inBlockComment = true;
-          }
+        // 計算這行結束後的 block comment 狀態
+        // 正確處理同一行中多個區塊註解的情況
+        const inBlockCommentAfterLine = this.computeBlockCommentStateAfterLine(line, inBlockCommentBeforeLine);
+
+        // 如果整行都在註解中（開始時在 block comment 且沒有 */），跳過
+        if (lineStartsInComment && !line.includes('*/')) {
+          inBlockCommentBeforeLine = inBlockCommentAfterLine;
+          continue;
         }
 
         let match;
@@ -457,8 +449,8 @@ export class SymbolFinder {
           const startColumn = match.index + 1;
           const matchPosition = match.index;
 
-          // 排除註解中的呼叫
-          if (this.isInComment(line, matchPosition, lines, lineIndex)) {
+          // 排除註解中的呼叫（傳入已計算的 block comment 狀態避免重複遍歷）
+          if (this.isInCommentWithState(line, matchPosition, lineStartsInComment)) {
             continue;
           }
 
@@ -507,6 +499,9 @@ export class SymbolFinder {
             receiver
           });
         }
+
+        // 更新狀態供下一行使用
+        inBlockCommentBeforeLine = inBlockCommentAfterLine;
       }
 
       return callSites;
@@ -516,49 +511,140 @@ export class SymbolFinder {
   }
 
   /**
-   * 檢查位置是否在註解中（支援單行和多行註解）
+   * 檢查位置是否在註解中（支援單行和跨行多行註解）
+   * 此方法會自動計算跨行 block comment 狀態
    */
   private isInComment(
     line: string,
     position: number,
-    _lines: readonly string[],
-    _lineIndex: number
+    lines: readonly string[],
+    lineIndex: number
+  ): boolean {
+    // 計算前面行的 block comment 狀態
+    const inBlockCommentFromPreviousLines = this.computeBlockCommentStateBeforeLine(lines, lineIndex);
+    return this.isInCommentWithState(line, position, inBlockCommentFromPreviousLines);
+  }
+
+  /**
+   * 檢查位置是否在註解中（優化版：接受預計算的 block comment 狀態）
+   * 避免重複遍歷前面的行
+   */
+  private isInCommentWithState(
+    line: string,
+    position: number,
+    lineStartsInBlockComment: boolean
   ): boolean {
     // 檢查單行註解（//）
     const singleLineCommentIndex = line.indexOf('//');
     if (singleLineCommentIndex >= 0 && singleLineCommentIndex < position) {
-      // 確保 // 不在字串中
+      // 確保 // 不在字串中且不在 block comment 中
       if (!this.isInString(line, singleLineCommentIndex)) {
-        return true;
+        // 還需確認 // 不在 block comment 中
+        if (!this.isPositionInBlockComment(line, singleLineCommentIndex, lineStartsInBlockComment)) {
+          return true;
+        }
       }
     }
 
-    // 檢查多行註解（/* */）
-    // 找到位置之前最近的 /* 和 */
+    // 檢查 block comment 狀態
+    return this.isPositionInBlockComment(line, position, lineStartsInBlockComment);
+  }
+
+  /**
+   * 檢查位置是否在 block comment 中
+   * 正確處理同一行中多個區塊註解開始與結束符號的情況
+   */
+  private isPositionInBlockComment(
+    line: string,
+    position: number,
+    lineStartsInBlockComment: boolean
+  ): boolean {
+    let inBlockComment = lineStartsInBlockComment;
     let searchStart = 0;
+
     while (searchStart < position) {
-      const openIndex = line.indexOf('/*', searchStart);
-      if (openIndex < 0 || openIndex >= position) {
-        break;
-      }
+      if (inBlockComment) {
+        // 在 block comment 中，找下一個 */
+        const closeIndex = line.indexOf('*/', searchStart);
+        if (closeIndex < 0 || closeIndex >= position) {
+          // 位置在未關閉的多行註解中
+          return true;
+        }
+        inBlockComment = false;
+        searchStart = closeIndex + 2;
+      } else {
+        // 不在 block comment 中，找下一個 /*
+        const openIndex = line.indexOf('/*', searchStart);
+        if (openIndex < 0 || openIndex >= position) {
+          break;
+        }
 
-      // 確保 /* 不在字串中
-      if (this.isInString(line, openIndex)) {
+        // 確保 /* 不在字串中
+        if (this.isInString(line, openIndex)) {
+          searchStart = openIndex + 2;
+          continue;
+        }
+
+        inBlockComment = true;
         searchStart = openIndex + 2;
-        continue;
       }
-
-      // 找對應的 */
-      const closeIndex = line.indexOf('*/', openIndex + 2);
-      if (closeIndex < 0 || closeIndex >= position) {
-        // 位置在未關閉的多行註解中
-        return true;
-      }
-
-      searchStart = closeIndex + 2;
     }
 
-    return false;
+    return inBlockComment;
+  }
+
+  /**
+   * 計算處理完一行後的 block comment 狀態
+   * 正確處理同一行中多個區塊註解開始與結束符號的情況
+   */
+  private computeBlockCommentStateAfterLine(line: string, initialState: boolean): boolean {
+    let inBlockComment = initialState;
+    let i = 0;
+
+    while (i < line.length) {
+      if (inBlockComment) {
+        // 在 block comment 中，找 */
+        const closeIndex = line.indexOf('*/', i);
+        if (closeIndex < 0) {
+          // 沒有找到 */，整行剩餘部分都在註解中
+          return true;
+        }
+        inBlockComment = false;
+        i = closeIndex + 2;
+      } else {
+        // 不在 block comment 中，找 /*
+        const openIndex = line.indexOf('/*', i);
+        if (openIndex < 0) {
+          // 沒有找到 /*
+          return false;
+        }
+
+        // 確保 /* 不在字串中
+        if (this.isInString(line, openIndex)) {
+          i = openIndex + 2;
+          continue;
+        }
+
+        inBlockComment = true;
+        i = openIndex + 2;
+      }
+    }
+
+    return inBlockComment;
+  }
+
+  /**
+   * 計算某行開始前的 block comment 狀態
+   * 遍歷前面所有行來確定
+   */
+  private computeBlockCommentStateBeforeLine(lines: readonly string[], lineIndex: number): boolean {
+    let inBlockComment = false;
+
+    for (let i = 0; i < lineIndex; i++) {
+      inBlockComment = this.computeBlockCommentStateAfterLine(lines[i], inBlockComment);
+    }
+
+    return inBlockComment;
   }
 
   /**
