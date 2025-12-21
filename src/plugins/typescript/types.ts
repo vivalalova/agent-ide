@@ -15,18 +15,6 @@ import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.j
 import type { CodeEdit } from '@infrastructure/parser/types.js';
 import * as ts from 'typescript';
 
-// 從 shared 模組 import 共用工具
-import {
-  isRelativePath as sharedIsRelativePath,
-  isValidTypeScriptIdentifier,
-  isTypeScriptReservedWord as sharedIsTypeScriptReservedWord
-} from '../shared/index.js';
-
-// Re-export 共用工具（向後相容）
-export const isRelativePath = sharedIsRelativePath;
-export const isValidIdentifier = isValidTypeScriptIdentifier;
-export const isTypeScriptReservedWord = sharedIsTypeScriptReservedWord;
-
 /**
  * TypeScript AST 節點包裝器
  * 包裝 TypeScript Compiler API 的 Node

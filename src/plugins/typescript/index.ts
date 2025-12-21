@@ -27,10 +27,15 @@ export {
   isSymbolDeclaration,
   isDependencyNode,
   getDependencyPath,
-  isRelativePath,
   getImportedSymbols,
   createTypeScriptASTNode,
-  isValidIdentifier,
   TypeScriptParseError,
   createParseError
 } from './types.js';
+
+// 共用工具從 shared 匯出
+export {
+  isRelativePath,
+  isValidTypeScriptIdentifier as isValidIdentifier,
+  isTypeScriptReservedWord
+} from '../shared/index.js';

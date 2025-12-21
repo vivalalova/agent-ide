@@ -20,18 +20,23 @@ export {
   createParseError,
   babelLocationToPosition,
   getNodeName,
-  isValidIdentifier,
   isSymbolDeclaration,
   isDependencyNode,
   getDependencyPath,
-  isRelativePath,
   getImportedSymbols,
   getPluginsForFile,
   getScopeType,
-  isReservedWord,
   BABEL_NODE_TYPE_MAP,
   BABEL_SYMBOL_TYPE_MAP
 } from './types.js';
+
+// 共用工具從 shared 匯出
+export {
+  isRelativePath,
+  isValidIdentifier,
+  isReservedWord,
+  JS_RESERVED_WORDS
+} from '../shared/index.js';
 
 // 主要 Parser 類別
 import { JavaScriptParser } from '@plugins/javascript/parser.js';

@@ -47,9 +47,9 @@ import {
   createJavaScriptASTNode,
   createParseError,
   babelLocationToPosition,
-  isValidIdentifier,
   getPluginsForFile
 } from './types.js';
+import { isValidIdentifier } from '../shared/index.js';
 import {
   extractFunctionSymbol,
   extractClassSymbol,

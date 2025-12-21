@@ -16,9 +16,9 @@ import {
   TypeScriptASTNode,
   getDependencyPath,
   getImportedSymbols,
-  isRelativePath,
   isDependencyNode
 } from './types.js';
+import { isRelativePath } from '../shared/index.js';
 
 /**
  * TypeScript 依賴分析器類別

@@ -13,20 +13,6 @@ import { SymbolType } from '@shared/types/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult } from '@babel/parser';
 
-// 從 shared 模組匯入共用工具
-import {
-  isRelativePath as sharedIsRelativePath,
-  isValidIdentifier as sharedIsValidIdentifier,
-  isReservedWord as sharedIsReservedWord,
-  JS_RESERVED_WORDS
-} from '../shared/index.js';
-
-// Re-export 供外部使用
-export { sharedIsRelativePath as isRelativePath };
-export { sharedIsValidIdentifier as isValidIdentifier };
-export { sharedIsReservedWord as isReservedWord };
-export { JS_RESERVED_WORDS };
-
 /**
  * JavaScript AST 節點包裝器
  * 包裝 Babel AST 節點

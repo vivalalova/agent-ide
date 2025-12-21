@@ -6,7 +6,8 @@
 import * as babel from '@babel/types';
 import type { Dependency } from '@shared/types/index.js';
 import { DependencyType, createDependency } from '@shared/types/index.js';
-import { isRelativePath, getImportedSymbols } from './types.js';
+import { isRelativePath } from '../shared/index.js';
+import { getImportedSymbols } from './types.js';
 
 /**
  * 提取 import 宣告的依賴
