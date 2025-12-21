@@ -51,7 +51,7 @@ import {
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
-import { MemoryMonitor, type Disposable } from '@shared/utils/memory-monitor.js';
+import { MemoryMonitor, type Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import { TYPESCRIPT_EXCLUDE_PATTERNS, matchesAnyPattern } from '@plugins/shared/index.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
