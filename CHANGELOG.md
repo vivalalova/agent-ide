@@ -1,3 +1,8 @@
+## <small>0.8.1 (2025-12-21)</small>
+
+* Merge branch 'fix/deadcode-trivia-line-boundary' ([9881c23](https://github.com/vivalalova/agent-ide/commit/9881c23))
+* fix: 修正 deadcode 刪除 type 時誤刪前一個宣告結束括號的 bug ([f987725](https://github.com/vivalalova/agent-ide/commit/f987725))
+
 ## 0.8.0 (2025-12-21)
 
 * refactor: [Code Review] 抽取 Parser 共用邏輯到 plugins/shared ([dc42a33](https://github.com/vivalalova/agent-ide/commit/dc42a33))
