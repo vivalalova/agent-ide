@@ -389,6 +389,7 @@ export class SymbolFinder {
 
   /**
    * 查找檔案中的函式呼叫點
+   * 排除註解和字串中的呼叫
    */
   async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
     const content = await this.readFile(filePath);
@@ -410,21 +411,61 @@ export class SymbolFinder {
       const lines = content.split('\n');
 
       // 使用正則表達式查找呼叫點
+      // 匹配 receiver.method() 形式，其中 receiver 可以是:
+      // - 單一識別符：foo.get()
+      // - this.property：this.sessions.get()
+      // - 鏈式呼叫：obj.prop.method.get()
       const callPattern = new RegExp(
-        `(?:(\\w+)\\.)?${this.escapeRegex(functionName)}\\s*\\(`,
+        `(?:((?:\\w+\\.)*\\w+)\\.)?${this.escapeRegex(functionName)}\\s*\\(`,
         'g'
       );
 
       // 函式定義的關鍵字模式（用於排除函式定義）
       const definitionKeywords = /(?:^|[\s{;])(async\s+)?(function\s+|static\s+|private\s+|public\s+|protected\s+|get\s+|set\s+)/;
 
+      // 追蹤多行註解狀態
+      let inBlockComment = false;
+
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const line = lines[lineIndex];
+
+        // 處理多行註解狀態
+        if (inBlockComment) {
+          const closeCommentIndex = line.indexOf('*/');
+          if (closeCommentIndex >= 0) {
+            inBlockComment = false;
+            // 繼續處理 */ 後的內容（但這行後面的匹配會在下面的迴圈處理）
+          } else {
+            continue; // 整行在多行註解中，跳過
+          }
+        }
+
+        // 檢查這行是否開始多行註解（在行尾未關閉）
+        const openCommentIndex = line.indexOf('/*');
+        if (openCommentIndex >= 0) {
+          const closeCommentIndex = line.indexOf('*/', openCommentIndex + 2);
+          if (closeCommentIndex < 0) {
+            // 多行註解在這行開始但未結束
+            inBlockComment = true;
+          }
+        }
+
         let match;
 
         while ((match = callPattern.exec(line)) !== null) {
           const receiver = match[1];
           const startColumn = match.index + 1;
+          const matchPosition = match.index;
+
+          // 排除註解中的呼叫
+          if (this.isInComment(line, matchPosition, lines, lineIndex)) {
+            continue;
+          }
+
+          // 排除字串中的呼叫
+          if (this.isInString(line, matchPosition)) {
+            continue;
+          }
 
           // 排除函式定義：檢查前面是否有定義關鍵字
           const beforeMatch = line.substring(0, match.index);
@@ -472,6 +513,52 @@ export class SymbolFinder {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * 檢查位置是否在註解中（支援單行和多行註解）
+   */
+  private isInComment(
+    line: string,
+    position: number,
+    _lines: readonly string[],
+    _lineIndex: number
+  ): boolean {
+    // 檢查單行註解（//）
+    const singleLineCommentIndex = line.indexOf('//');
+    if (singleLineCommentIndex >= 0 && singleLineCommentIndex < position) {
+      // 確保 // 不在字串中
+      if (!this.isInString(line, singleLineCommentIndex)) {
+        return true;
+      }
+    }
+
+    // 檢查多行註解（/* */）
+    // 找到位置之前最近的 /* 和 */
+    let searchStart = 0;
+    while (searchStart < position) {
+      const openIndex = line.indexOf('/*', searchStart);
+      if (openIndex < 0 || openIndex >= position) {
+        break;
+      }
+
+      // 確保 /* 不在字串中
+      if (this.isInString(line, openIndex)) {
+        searchStart = openIndex + 2;
+        continue;
+      }
+
+      // 找對應的 */
+      const closeIndex = line.indexOf('*/', openIndex + 2);
+      if (closeIndex < 0 || closeIndex >= position) {
+        // 位置在未關閉的多行註解中
+        return true;
+      }
+
+      searchStart = closeIndex + 2;
+    }
+
+    return false;
   }
 
   /**

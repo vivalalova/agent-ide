@@ -152,6 +152,9 @@ export class CallHierarchyAnalyzer {
   /**
    * 找出 incoming 呼叫（誰呼叫了目標函數）
    * 使用批次處理優化：按檔案分組，避免重複讀取/解析同一檔案
+   *
+   * 重要：遞迴分析時使用 filePath:functionName 作為唯一識別，
+   * 確保只追蹤真正呼叫目標函數的 caller，不會混淆同名的內建方法（如 Map.get()）
    */
   private async findIncomingCalls(
     functionName: string,
@@ -160,22 +163,32 @@ export class CallHierarchyAnalyzer {
     depth: number
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
+    // 使用 filePath:functionName 作為已訪問的唯一識別
     const visited = new Set<string>();
 
+    /**
+     * 遞迴查找呼叫者
+     * @param targetName 目標函數名稱
+     * @param targetFile 目標函數定義檔案（用於精確識別）
+     * @param currentDepth 當前遞迴深度
+     */
     const findCallsRecursive = async (
       targetName: string,
+      targetFile: string,
       currentDepth: number
     ): Promise<void> => {
-      if (currentDepth > depth || visited.has(targetName)) {
+      // 使用 filePath:functionName 作為唯一識別，避免同名函數混淆
+      const targetKey = `${targetFile}:${targetName}`;
+      if (currentDepth > depth || visited.has(targetKey)) {
         return;
       }
-      visited.add(targetName);
+      visited.add(targetKey);
 
       const callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
 
       // 過濾掉遞迴自身呼叫
       const filteredCallSites = callSites.filter(
-        callSite => !(callSite.location.filePath === definitionFile
+        callSite => !(callSite.location.filePath === targetFile
                       && callSite.functionName === targetName)
       );
 
@@ -196,10 +209,28 @@ export class CallHierarchyAnalyzer {
       // 建立 incoming 結果
       // 使用 filePath:functionName 作為唯一鍵，避免同名但不同檔案的函數被去重
       const callersToRecurse = new Map<string, { name: string; file: string }>();
+
       for (const callSite of filteredCallSites) {
         const key = `${callSite.location.filePath}:${callSite.location.range.start.line}`;
         const callerInfo = enclosingFunctions.get(key);
         const context = contexts.get(key) || '';
+
+        // 深度 > 1 時，需要驗證這個呼叫是否真的呼叫目標函數
+        // 如果是方法呼叫（receiver.method()），需要檢查 receiver 是否對應到目標函數的定義
+        if (currentDepth > 1 && callSite.isMethodCall) {
+          // 檢查是否為內建物件方法（Map, Set, Array 等）
+          // 這些方法不應該被當作使用者定義函數的 caller
+          const receiver = callSite.receiver || '';
+          if (this.isBuiltInObjectMethod(receiver, targetName)) {
+            continue;
+          }
+
+          // 進一步驗證：檢查 receiver 是否來自目標函數的定義檔案
+          // 如果 receiver 是 this.xxx，需要檢查是否對應到 targetFile 中的定義
+          if (!this.isCallToTargetFunction(callSite, targetFile, targetName)) {
+            continue;
+          }
+        }
 
         incoming.push({
           caller: callerInfo?.name || '<anonymous>',
@@ -218,13 +249,118 @@ export class CallHierarchyAnalyzer {
       }
 
       // 遞迴查找（如果深度允許）
+      // 使用 caller 的定義檔案作為下一層的 targetFile
       for (const caller of callersToRecurse.values()) {
-        await findCallsRecursive(caller.name, currentDepth + 1);
+        await findCallsRecursive(caller.name, caller.file, currentDepth + 1);
       }
     };
 
-    await findCallsRecursive(functionName, 1);
+    await findCallsRecursive(functionName, definitionFile, 1);
     return incoming;
+  }
+
+  /**
+   * 檢查 receiver.method() 是否為內建物件的方法
+   * 用於排除 Map.get()、Array.push() 等內建方法
+   */
+  private isBuiltInObjectMethod(receiver: string, methodName: string): boolean {
+    // 內建物件及其常見方法
+    const builtInMethods: Record<string, Set<string>> = {
+      // Map methods
+      'Map': new Set(['get', 'set', 'has', 'delete', 'clear', 'forEach', 'keys', 'values', 'entries']),
+      // Set methods
+      'Set': new Set(['add', 'has', 'delete', 'clear', 'forEach', 'keys', 'values', 'entries']),
+      // Array methods
+      'Array': new Set(['push', 'pop', 'shift', 'unshift', 'slice', 'splice', 'concat', 'join',
+        'indexOf', 'lastIndexOf', 'includes', 'find', 'findIndex', 'filter', 'map', 'reduce',
+        'reduceRight', 'forEach', 'some', 'every', 'sort', 'reverse', 'fill', 'copyWithin', 'flat', 'flatMap']),
+      // Object methods
+      'Object': new Set(['keys', 'values', 'entries', 'assign', 'freeze', 'seal', 'create',
+        'defineProperty', 'defineProperties', 'getOwnPropertyNames', 'getOwnPropertySymbols',
+        'getPrototypeOf', 'setPrototypeOf', 'is', 'fromEntries']),
+      // String methods
+      'String': new Set(['charAt', 'charCodeAt', 'concat', 'includes', 'endsWith', 'indexOf',
+        'lastIndexOf', 'match', 'replace', 'search', 'slice', 'split', 'startsWith', 'substring',
+        'toLowerCase', 'toUpperCase', 'trim', 'trimStart', 'trimEnd', 'padStart', 'padEnd', 'repeat']),
+      // Promise methods
+      'Promise': new Set(['then', 'catch', 'finally', 'all', 'race', 'allSettled', 'any', 'resolve', 'reject']),
+      // JSON methods
+      'JSON': new Set(['parse', 'stringify']),
+      // Math methods
+      'Math': new Set(['abs', 'ceil', 'floor', 'round', 'max', 'min', 'pow', 'sqrt', 'random',
+        'sin', 'cos', 'tan', 'log', 'exp']),
+      // Console methods
+      'console': new Set(['log', 'error', 'warn', 'info', 'debug', 'trace', 'dir', 'table', 'time', 'timeEnd'])
+    };
+
+    // 檢查 receiver 是否為實例變數（this.xxx）且方法名是內建方法
+    // 例如：this.sessions.get() 中的 sessions 可能是 Map
+    if (receiver.startsWith('this.')) {
+      const instanceName = receiver.substring(5);
+      // 常見的 Map/Set 實例命名模式
+      const mapInstancePatterns = ['sessions', 'users', 'cache', 'store', 'map', 'maps',
+        'notifications', 'orders', 'products', 'transactions', 'items', 'data'];
+      const setInstancePatterns = ['set', 'sets', 'visited', 'seen', 'ids'];
+
+      if (mapInstancePatterns.some(p => instanceName.toLowerCase().includes(p))
+          && builtInMethods['Map']?.has(methodName)) {
+        return true;
+      }
+      if (setInstancePatterns.some(p => instanceName.toLowerCase().includes(p))
+          && builtInMethods['Set']?.has(methodName)) {
+        return true;
+      }
+    }
+
+    // 檢查直接使用內建物件的情況（如 Map.prototype.get）
+    for (const [objectName, methods] of Object.entries(builtInMethods)) {
+      if (receiver.includes(objectName) && methods.has(methodName)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 檢查呼叫是否真的呼叫目標函數
+   * 用於 depth > 1 時的精確過濾
+   */
+  private isCallToTargetFunction(
+    callSite: { isMethodCall: boolean; receiver?: string; location: { filePath: string } },
+    targetFile: string,
+    _targetName: string
+  ): boolean {
+    // 如果是同一檔案內的呼叫，更可能是真正的呼叫
+    if (callSite.location.filePath === targetFile) {
+      return true;
+    }
+
+    // 如果是 this.method() 呼叫，需要檢查當前檔案是否 import 了 targetFile
+    // 這裡簡化處理：假設跨檔案的方法呼叫如果 receiver 是 this.xxxService，
+    // 則可能是通過依賴注入呼叫的合法呼叫
+    if (callSite.receiver?.startsWith('this.') && callSite.receiver.includes('Service')) {
+      return true;
+    }
+
+    // 如果 receiver 不是 this.xxx，可能是直接呼叫或其他模式
+    // 這種情況下，需要更多上下文才能判斷，暫時假設為有效呼叫
+    if (!callSite.receiver?.startsWith('this.')) {
+      return true;
+    }
+
+    // 預設保守策略：不確定時排除，避免誤報
+    // 這裡檢查 receiver 是否看起來像是內建物件的實例
+    const receiver = callSite.receiver;
+    const lowerReceiver = receiver.toLowerCase();
+
+    // 如果 receiver 看起來像是集合類型的實例，可能是內建方法
+    const collectionPatterns = ['map', 'set', 'list', 'array', 'cache', 'store'];
+    if (collectionPatterns.some(p => lowerReceiver.includes(p))) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
