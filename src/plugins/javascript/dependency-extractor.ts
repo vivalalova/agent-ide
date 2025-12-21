@@ -4,10 +4,15 @@
  */
 
 import * as babel from '@babel/types';
+import babelTraverse, { NodePath } from '@babel/traverse';
 import type { Dependency } from '@shared/types/index.js';
 import { DependencyType, createDependency } from '@shared/types/index.js';
 import { isRelativePath } from '../shared/index.js';
+import type { JavaScriptAST } from './types.js';
 import { getImportedSymbols } from './types.js';
+
+// Handle both ESM and CJS module formats
+const traverse = (babelTraverse as any).default || babelTraverse;
 
 /**
  * 提取 import 宣告的依賴
@@ -89,4 +94,41 @@ export function extractCallExpressionDependency(
       dependencies.push(dependency);
     }
   }
+}
+
+/**
+ * JavaScript 依賴提取器類別
+ * 包裝現有函式，提供與 TypeScript 一致的介面
+ */
+export class JavaScriptDependencyExtractor {
+  /**
+   * 從 AST 中提取所有依賴
+   */
+  async extractDependencies(ast: JavaScriptAST): Promise<Dependency[]> {
+    const dependencies: Dependency[] = [];
+
+    traverse(ast.babelAST, {
+      ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
+        extractImportDependency(path.node, dependencies);
+      },
+      ExportNamedDeclaration: (path: NodePath<babel.ExportNamedDeclaration>) => {
+        extractExportDependency(path.node, dependencies);
+      },
+      ExportAllDeclaration: (path: NodePath<babel.ExportAllDeclaration>) => {
+        extractExportDependency(path.node, dependencies);
+      },
+      CallExpression: (path: NodePath<babel.CallExpression>) => {
+        extractCallExpressionDependency(path.node, dependencies);
+      }
+    });
+
+    return dependencies;
+  }
+}
+
+/**
+ * 建立依賴提取器實例
+ */
+export function createDependencyExtractor(): JavaScriptDependencyExtractor {
+  return new JavaScriptDependencyExtractor();
 }

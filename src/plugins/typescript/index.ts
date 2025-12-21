@@ -2,9 +2,20 @@
  * TypeScript Parser 插件統一匯出
  */
 
+import { TypeScriptParser } from './parser.js';
+
 export { TypeScriptParser } from './parser.js';
 export { TypeScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
-export { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from './dependency-analyzer.js';
+export { TypeScriptDependencyExtractor, createDependencyExtractor } from './dependency-extractor.js';
+
+/**
+ * 創建 TypeScript Parser 實例的工廠函式
+ */
+export function createTypeScriptParser(): TypeScriptParser {
+  return new TypeScriptParser();
+}
+
+export default TypeScriptParser;
 
 export type {
   TypeScriptAST,

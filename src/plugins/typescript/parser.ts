@@ -43,7 +43,7 @@ import {
   tsNodeToRange
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
-import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
+import { TypeScriptDependencyExtractor, createDependencyExtractor } from '@plugins/typescript/dependency-extractor.js';
 import { MemoryMonitor, type Disposable, isValidIdentifier } from '../shared/index.js';
 
 // 導入拆分的工具模組
@@ -71,7 +71,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly supportedLanguages = ['typescript', 'tsx'] as const;
 
   private symbolExtractor: TypeScriptSymbolExtractor;
-  private dependencyAnalyzer: TypeScriptDependencyAnalyzer;
+  private dependencyExtractor: TypeScriptDependencyExtractor;
   private compilerOptions: ts.CompilerOptions;
   private languageService: ts.LanguageService | null = null;
   private languageServiceHost: ts.LanguageServiceHost | null = null;
@@ -79,7 +79,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
   constructor(compilerOptions?: ts.CompilerOptions) {
     this.symbolExtractor = createSymbolExtractor();
-    this.dependencyAnalyzer = createDependencyAnalyzer();
+    this.dependencyExtractor = createDependencyExtractor();
     this.compilerOptions = { ...DEFAULT_COMPILER_OPTIONS, ...compilerOptions };
 
     // 註冊到記憶體監控器
@@ -296,7 +296,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    */
   async extractDependencies(ast: AST): Promise<Dependency[]> {
     const typedAst = ast as TypeScriptAST;
-    return await this.dependencyAnalyzer.extractDependencies(typedAst);
+    return await this.dependencyExtractor.extractDependencies(typedAst);
   }
 
   /**
@@ -490,17 +490,17 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     // 清理編譯器選項參考（完全清空而非設為空物件）
     this.compilerOptions = null as any;
 
-    // 清理符號提取器和依賴分析器（如果有 dispose 方法）
+    // 清理符號提取器和依賴提取器（如果有 dispose 方法）
     if (this.symbolExtractor && 'dispose' in this.symbolExtractor && typeof (this.symbolExtractor as any).dispose === 'function') {
       await (this.symbolExtractor as any).dispose();
     }
-    if (this.dependencyAnalyzer && 'dispose' in this.dependencyAnalyzer && typeof (this.dependencyAnalyzer as any).dispose === 'function') {
-      await (this.dependencyAnalyzer as any).dispose();
+    if (this.dependencyExtractor && 'dispose' in this.dependencyExtractor && typeof (this.dependencyExtractor as any).dispose === 'function') {
+      await (this.dependencyExtractor as any).dispose();
     }
 
     // 清理其他參考
     this.symbolExtractor = null as any;
-    this.dependencyAnalyzer = null as any;
+    this.dependencyExtractor = null as any;
 
     // 多次觸發垃圾收集以確保記憶體完全釋放
     if (typeof global !== 'undefined' && 'gc' in global && typeof global.gc === 'function') {

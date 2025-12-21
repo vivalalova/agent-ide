@@ -1,5 +1,5 @@
 /**
- * TypeScript Dependency Analyzer
+ * TypeScript Dependency Extractor
  * 分析 TypeScript 程式碼中的依賴關係
  */
 
@@ -21,9 +21,9 @@ import {
 import { isRelativePath } from '../shared/index.js';
 
 /**
- * TypeScript 依賴分析器類別
+ * TypeScript 依賴提取器類別
  */
-export class TypeScriptDependencyAnalyzer {
+export class TypeScriptDependencyExtractor {
   private dependencies: Dependency[] = [];
   private sourceFile!: ts.SourceFile;
 
@@ -405,8 +405,8 @@ export class TypeScriptDependencyAnalyzer {
 }
 
 /**
- * 創建依賴分析器實例
+ * 創建依賴提取器實例
  */
-export function createDependencyAnalyzer(): TypeScriptDependencyAnalyzer {
-  return new TypeScriptDependencyAnalyzer();
+export function createDependencyExtractor(): TypeScriptDependencyExtractor {
+  return new TypeScriptDependencyExtractor();
 }

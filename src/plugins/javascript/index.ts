@@ -1,9 +1,13 @@
 /**
- * JavaScript Parser 插件導出模組
- * 提供 JavaScript 解析能力的統一入口
+ * JavaScript Parser 插件統一匯出
  */
 
-// 型別定義
+// ===== 主要類別 =====
+export { JavaScriptParser } from './parser.js';
+export { JavaScriptSymbolExtractor, createSymbolExtractor } from './symbol-extractor.js';
+export { JavaScriptDependencyExtractor, createDependencyExtractor } from './dependency-extractor.js';
+
+// ===== 型別定義 =====
 export type {
   JavaScriptAST,
   JavaScriptASTNode,
@@ -12,7 +16,7 @@ export type {
   BabelPlugin
 } from './types.js';
 
-// 工具函式
+// ===== 常數和工具 =====
 export {
   DEFAULT_PARSE_OPTIONS,
   JavaScriptParseError,
@@ -30,7 +34,7 @@ export {
   BABEL_SYMBOL_TYPE_MAP
 } from './types.js';
 
-// 共用工具從 shared 匯出
+// ===== 共用工具 =====
 export {
   isRelativePath,
   isValidIdentifier,
@@ -38,15 +42,13 @@ export {
   JS_RESERVED_WORDS
 } from '../shared/index.js';
 
-// 主要 Parser 類別
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
-import type { JavaScriptParseOptions } from '@plugins/javascript/types.js';
-export { JavaScriptParser };
+// ===== 工廠函式 =====
+import { JavaScriptParser } from './parser.js';
+import type { JavaScriptParseOptions } from './types.js';
 
-// 建立 Parser 實例的工廠函式
-export function createJavaScriptParser(options?: Partial<JavaScriptParseOptions>) {
+export function createJavaScriptParser(options?: Partial<JavaScriptParseOptions>): JavaScriptParser {
   return new JavaScriptParser(options);
 }
 
-// 預設導出
+// ===== 預設匯出 =====
 export default JavaScriptParser;

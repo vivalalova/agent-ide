@@ -4,9 +4,14 @@
  */
 
 import * as babel from '@babel/types';
+import babelTraverse, { NodePath } from '@babel/traverse';
 import type { Range } from '@shared/types/index.js';
 import { SymbolType, createSymbol } from '@shared/types/index.js';
-import { JavaScriptSymbol, babelLocationToPosition } from './types.js';
+import type { JavaScriptAST, JavaScriptSymbol } from './types.js';
+import { babelLocationToPosition } from './types.js';
+
+// Handle both ESM and CJS module formats
+const traverse = (babelTraverse as any).default || babelTraverse;
 
 /**
  * 獲取節點的範圍資訊
@@ -194,4 +199,60 @@ export function extractObjectPropertySymbol(
     );
     symbols.push(symbol);
   }
+}
+
+/**
+ * JavaScript 符號提取器類別
+ * 包裝現有函式，提供與 TypeScript 一致的介面
+ */
+export class JavaScriptSymbolExtractor {
+  /**
+   * 從 AST 中提取所有符號
+   */
+  async extractSymbols(ast: JavaScriptAST): Promise<JavaScriptSymbol[]> {
+    const symbols: JavaScriptSymbol[] = [];
+    const sourceFile = ast.sourceFile;
+
+    traverse(ast.babelAST, {
+      FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
+        extractFunctionSymbol(path.node, symbols, sourceFile);
+      },
+      ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
+        extractClassSymbol(path.node, symbols, sourceFile);
+      },
+      VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
+        extractVariableSymbol(path.node, symbols, sourceFile);
+      },
+      ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
+        extractImportSymbol(path.node, symbols, sourceFile);
+      },
+      ImportSpecifier: (path: NodePath<babel.ImportSpecifier>) => {
+        extractImportSymbol(path.node, symbols, sourceFile);
+      },
+      ImportNamespaceSpecifier: (path: NodePath<babel.ImportNamespaceSpecifier>) => {
+        extractImportSymbol(path.node, symbols, sourceFile);
+      },
+      ClassMethod: (path: NodePath<babel.ClassMethod>) => {
+        extractMethodSymbol(path.node, symbols, sourceFile);
+      },
+      ClassProperty: (path: NodePath<babel.ClassProperty>) => {
+        extractPropertySymbol(path.node, symbols, sourceFile);
+      },
+      ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
+        extractObjectMethodSymbol(path.node, symbols, sourceFile);
+      },
+      ObjectProperty: (path: NodePath<babel.ObjectProperty>) => {
+        extractObjectPropertySymbol(path.node, symbols, sourceFile);
+      }
+    });
+
+    return symbols;
+  }
+}
+
+/**
+ * 建立符號提取器實例
+ */
+export function createSymbolExtractor(): JavaScriptSymbolExtractor {
+  return new JavaScriptSymbolExtractor();
 }
