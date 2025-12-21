@@ -79,7 +79,7 @@ import {
   getFormattedMemoryReport,
   withMemoryMonitoring,
   type Disposable
-} from '@shared/utils/memory-monitor.js';
+} from '@plugins/shared/memory-monitor.js';
 
 // ============================================
 // Path Utilities Tests

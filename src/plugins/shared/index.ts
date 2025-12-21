@@ -22,3 +22,12 @@ export {
 
 // 保留字
 export { JS_RESERVED_WORDS, TS_RESERVED_WORDS } from './reserved-words.js';
+
+// 記憶體監控
+export {
+  MemoryMonitor,
+  withMemoryMonitoring,
+  getFormattedMemoryReport,
+  type MemoryStats,
+  type Disposable
+} from './memory-monitor.js';

@@ -45,7 +45,7 @@ import {
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
-import { MemoryMonitor, type Disposable } from '@shared/utils/memory-monitor.js';
+import { MemoryMonitor, type Disposable } from '../shared/index.js';
 
 // 導入拆分的工具模組
 import {
