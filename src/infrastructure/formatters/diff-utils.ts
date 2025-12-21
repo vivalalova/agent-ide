@@ -9,6 +9,10 @@ import type { LineChange } from './types.js';
  * 計算兩段程式碼之間的行級變更
  * 使用 LCS（最長共同子序列）算法來找出差異
  *
+ * 行號語義：
+ * - 刪除行：使用原始檔案的行號（用於在原始檔案中定位被刪除的行）
+ * - 新增行：使用原始檔案中的插入位置（上一個原始行號 + 1，用於 diff 輸出時正確排序）
+ *
  * @param original - 原始程式碼
  * @param modified - 修改後的程式碼
  * @returns 行級變更列表
@@ -24,7 +28,8 @@ export function calculateLineChanges(original: string, modified: string): LineCh
   let origIdx = 0;
   let modIdx = 0;
   let lcsIdx = 0;
-  let virtualLineNum = 1;  // 用於追蹤輸出行號
+  // 追蹤原始檔案的當前行號（1-based）
+  let origLineNum = 1;
 
   while (origIdx < originalLines.length || modIdx < modifiedLines.length) {
     const isCommonLine = lcsIdx < lcs.length
@@ -38,27 +43,27 @@ export function calculateLineChanges(original: string, modified: string): LineCh
       origIdx++;
       modIdx++;
       lcsIdx++;
-      virtualLineNum++;
+      origLineNum++;
     } else if (origIdx < originalLines.length
                && (lcsIdx >= lcs.length || originalLines[origIdx] !== lcs[lcsIdx])) {
-      // 刪除行
+      // 刪除行 - 使用原始檔案行號
       changes.push({
-        line: virtualLineNum,
+        line: origLineNum,
         oldContent: originalLines[origIdx],
         newContent: null
       });
       origIdx++;
-      virtualLineNum++;
+      origLineNum++;
     } else if (modIdx < modifiedLines.length
                && (lcsIdx >= lcs.length || modifiedLines[modIdx] !== lcs[lcsIdx])) {
-      // 新增行 - 使用當前 virtualLineNum 作為參考行號
+      // 新增行 - 使用當前原始檔案位置（插入點）
       changes.push({
-        line: virtualLineNum,
+        line: origLineNum,
         oldContent: null,
         newContent: modifiedLines[modIdx]
       });
       modIdx++;
-      virtualLineNum++;
+      // 新增行不增加 origLineNum，因為它不對應原始檔案中的任何行
     }
   }
 
