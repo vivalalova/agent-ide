@@ -91,7 +91,6 @@ export class ImportResolver {
       }
     }
 
-
     return statements;
   }
 
@@ -126,17 +125,6 @@ export class ImportResolver {
   }
 
   /**
-   * 找出 from 關鍵字所在的行索引
-   */
-  private findFromLineIndex(lines: string[], startIndex: number, endIndex: number): number {
-    for (let i = startIndex; i <= endIndex; i++) {
-      if (lines[i].includes('from') && lines[i].match(/from\s+['"`]/)) {
-        return i;
-      }
-    }
-    return endIndex;
-  }
-
   /**
    * 更新 import 路徑
    */

@@ -311,47 +311,7 @@ export class TypeScriptDependencyAnalyzer {
   }
 
   /**
-   * 檢查模組解析結果並標準化路徑
-   */
-  private normalizePath(path: string): string {
-    // 移除查詢參數和 fragment
-    const cleanPath = path.split('?')[0].split('#')[0];
-
-    // 標準化路徑分隔符
-    return cleanPath.replace(/\\/g, '/');
-  }
-
   /**
-   * 獲取依賴的型別（開發依賴還是執行時依賴）
-   */
-  private getDependencyCategory(node: ts.Node): 'runtime' | 'dev' | 'type' {
-    // 檢查是否為純型別導入
-    if (ts.isImportDeclaration(node)) {
-      if (node.importClause) {
-        // import type {} 或 import { type ... }
-        if ((node.importClause as any).isTypeOnly) {
-          return 'type';
-        }
-      }
-    }
-
-    // 其他啟發式方法判斷
-    const path = getDependencyPath(node);
-    if (path) {
-      // 常見的開發依賴
-      const devDependencies = [
-        '@types/', 'jest', 'vitest', 'eslint', 'prettier',
-        'webpack', 'rollup', 'vite', 'typescript'
-      ];
-
-      if (devDependencies.some(dep => path.includes(dep))) {
-        return 'dev';
-      }
-    }
-
-    return 'runtime';
-  }
-
   /**
    * 分析循環依賴
    */

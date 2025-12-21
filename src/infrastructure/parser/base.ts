@@ -296,12 +296,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   }
 
   /**
-   * 檢查插件是否支援特定檔案
-   */
-  protected supportsFile(filePath: string): boolean {
-    return this.validateFilePath(filePath);
-  }
-
   /**
    * 建立基本的 CodeEdit
    */
@@ -328,21 +322,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   }
 
   /**
-   * 安全執行異步操作
-   */
-  protected async safeExecute<T>(
-    operation: () => Promise<T>,
-    defaultValue: T,
-    context?: string
-  ): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      this.handleError(error as Error, context);
-      return defaultValue;
-    }
-  }
-
   // ===== 檔案過濾支援 =====
 
   /**

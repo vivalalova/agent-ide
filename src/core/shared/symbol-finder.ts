@@ -893,31 +893,6 @@ export class SymbolFinder {
   }
 
   /**
-   * 提取參數字串（單行版本，保留向後相容）
-   */
-  private extractArgumentsString(line: string, startIndex: number): string {
-    let depth = 1;
-    let i = startIndex + 1;
-    let result = '';
-
-    while (i < line.length && depth > 0) {
-      const char = line[i];
-
-      if (char === '(') {
-        depth++;
-      } else if (char === ')') {
-        depth--;
-      }
-
-      if (depth > 0) {
-        result += char;
-      }
-      i++;
-    }
-
-    return result;
-  }
-
   /**
    * 提取參數字串（支援多行）
    * @returns { content: 完整參數字串, endLine: 結束行索引, endColumn: 結束欄位 }
@@ -1016,28 +991,6 @@ export class SymbolFinder {
   }
 
   /**
-   * 找到匹配的右括號位置（單行版本，保留向後相容）
-   */
-  private findMatchingCloseParen(line: string, openParenIndex: number): number {
-    let depth = 1;
-    let i = openParenIndex + 1;
-
-    while (i < line.length && depth > 0) {
-      const char = line[i];
-      if (char === '(') {
-        depth++;
-      } else if (char === ')') {
-        depth--;
-        if (depth === 0) {
-          return i;
-        }
-      }
-      i++;
-    }
-
-    return -1;
-  }
-
   /**
    * 找到匹配的右括號位置（支援多行）
    * @returns { line: 行索引, index: 該行的字元索引 }
@@ -1075,41 +1028,6 @@ export class SymbolFinder {
   }
 
   /**
-   * 解析參數
-   */
-  private parseArguments(argsString: string, line: number, baseColumn: number): CallSiteArgument[] {
-    if (!argsString.trim()) {
-      return [];
-    }
-
-    const args: CallSiteArgument[] = [];
-    const parts = this.splitArguments(argsString);
-
-    let column = baseColumn + 1;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const trimmed = part.trim();
-
-      // 檢查是否是具名參數
-      const namedMatch = trimmed.match(/^(\w+)\s*[:=]\s*(.+)$/);
-
-      args.push({
-        index: i,
-        name: namedMatch ? namedMatch[1] : undefined,
-        value: namedMatch ? namedMatch[2] : trimmed,
-        range: {
-          start: { line, column, offset: undefined },
-          end: { line, column: column + part.length, offset: undefined }
-        }
-      });
-
-      column += part.length + 1; // +1 for comma
-    }
-
-    return args;
-  }
-
   /**
    * 分割參數（考慮巢狀括號）
    */
