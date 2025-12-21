@@ -5,7 +5,7 @@
 
 import type { Symbol, SymbolType } from '@shared/types/symbol.js';
 import type { IndexEngine } from '@core/shared/indexing/index.js';
-import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder.js';
+import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {

@@ -1,0 +1,310 @@
+/**
+ * 檔案操作處理器
+ * 負責套用刪除操作到檔案
+ */
+
+import type { Range } from '@shared/types/core.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type {
+  DeadCodeRemovalPreview,
+  ImportCleanupOperation,
+  RemovalOperation,
+  UpdatedFile
+} from './types.js';
+
+/**
+ * 檔案操作資訊
+ */
+export interface FileOperation {
+  /** 操作範圍 */
+  range: Range;
+  /** 操作類型 */
+  type: 'removal' | 'import-delete' | 'import-partial';
+  /** 部分清理時的新內容 */
+  newContent?: string;
+}
+
+/**
+ * 檔案操作處理器
+ */
+export class FileOperationsHandler {
+  private readonly fileCache = new Map<string, string>();
+
+  constructor(private readonly fileSystem: IFileSystem) {}
+
+  /**
+   * 按檔案分組操作（去重相同 range）
+   */
+  groupOperationsByFile(
+    preview: DeadCodeRemovalPreview
+  ): Map<string, FileOperation[]> {
+    const fileOperations = new Map<string, FileOperation[]>();
+
+    // 用於檢查 range 是否重複
+    const rangeKey = (r: Range) => `${r.start.line}:${r.start.column}-${r.end.line}:${r.end.column}`;
+    const seenRanges = new Map<string, Set<string>>();
+
+    const addOperation = (filePath: string, op: FileOperation) => {
+      const existing = fileOperations.get(filePath) || [];
+      const seen = seenRanges.get(filePath) || new Set();
+      const key = rangeKey(op.range);
+
+      // 去重：相同 range 只加入一次
+      if (!seen.has(key)) {
+        existing.push(op);
+        seen.add(key);
+        fileOperations.set(filePath, existing);
+        seenRanges.set(filePath, seen);
+      }
+    };
+
+    // 加入刪除操作
+    for (const removal of preview.removals) {
+      addOperation(removal.filePath, { range: removal.range, type: 'removal' });
+    }
+
+    // 加入 import 清理操作
+    for (const cleanup of preview.importCleanups) {
+      if (cleanup.cleanupType === 'partial' && cleanup.newImport) {
+        addOperation(cleanup.filePath, {
+          range: cleanup.range,
+          type: 'import-partial',
+          newContent: cleanup.newImport
+        });
+      } else {
+        addOperation(cleanup.filePath, { range: cleanup.range, type: 'import-delete' });
+      }
+    }
+
+    return fileOperations;
+  }
+
+  /**
+   * 套用檔案操作
+   */
+  async applyFileOperations(
+    filePath: string,
+    operations: FileOperation[]
+  ): Promise<UpdatedFile> {
+    const originalContent = await this.readFile(filePath);
+    if (!originalContent) {
+      throw new Error(`無法讀取檔案: ${filePath}`);
+    }
+
+    // 按位置從後往前排序（避免位置偏移）
+    // 第三層：type 排序確保穩定性（import 清理優先於符號刪除）
+    const typeOrder: Record<FileOperation['type'], number> = {
+      'import-partial': 0,
+      'import-delete': 1,
+      'removal': 2
+    };
+    const sortedOps = [...operations].sort((a, b) => {
+      if (a.range.start.line !== b.range.start.line) {
+        return b.range.start.line - a.range.start.line;
+      }
+      if (a.range.start.column !== b.range.start.column) {
+        return b.range.start.column - a.range.start.column;
+      }
+      return typeOrder[a.type] - typeOrder[b.type];
+    });
+
+    let lines = originalContent.split('\n');
+    let removedSymbols = 0;
+    let cleanedImports = 0;
+
+    for (const op of sortedOps) {
+      // 邊界檢查：確保索引在有效範圍內
+      const startLine = Math.max(0, Math.min(op.range.start.line - 1, lines.length - 1));
+      const endLine = Math.max(startLine, Math.min(op.range.end.line - 1, lines.length - 1));
+      const deleteCount = endLine - startLine + 1;
+
+      if (op.type === 'import-partial' && op.newContent) {
+        // 部分清理：替換而非刪除
+        if (startLine < lines.length && deleteCount > 0) {
+          // 保留原始縮排
+          const originalIndent = lines[startLine].match(/^(\s*)/)?.[1] || '';
+          lines.splice(startLine, deleteCount, originalIndent + op.newContent);
+        }
+        cleanedImports++;
+      } else {
+        // 完整刪除
+        if (startLine < lines.length && deleteCount > 0) {
+          lines.splice(startLine, deleteCount);
+        }
+
+        if (op.type === 'removal') {
+          removedSymbols++;
+        } else {
+          cleanedImports++;
+        }
+      }
+    }
+
+    // 清理連續空行（最多保留一行）
+    lines = this.cleanupEmptyLines(lines);
+
+    const newContent = lines.join('\n');
+
+    // 寫入檔案
+    await this.writeFile(filePath, newContent);
+
+    return {
+      filePath,
+      removedSymbols,
+      cleanedImports
+    };
+  }
+
+  /**
+   * 清理連續空行
+   */
+  private cleanupEmptyLines(lines: string[]): string[] {
+    const result: string[] = [];
+    let prevEmpty = false;
+
+    for (const line of lines) {
+      const isEmpty = line.trim() === '';
+
+      if (isEmpty && prevEmpty) {
+        // 跳過連續的空行
+        continue;
+      }
+
+      result.push(line);
+      prevEmpty = isEmpty;
+    }
+
+    return result;
+  }
+
+  /**
+   * 讀取檔案
+   */
+  async readFile(filePath: string): Promise<string | null> {
+    if (this.fileCache.has(filePath)) {
+      return this.fileCache.get(filePath)!;
+    }
+
+    try {
+      const content = await this.fileSystem.readFile(filePath, 'utf-8');
+      const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
+      this.fileCache.set(filePath, contentStr);
+      return contentStr;
+    } catch {
+      this.fileCache.delete(filePath);
+      return null;
+    }
+  }
+
+  /**
+   * 寫入檔案
+   */
+  async writeFile(filePath: string, content: string): Promise<void> {
+    await this.fileSystem.writeFile(filePath, content);
+    this.fileCache.set(filePath, content);
+  }
+
+  /**
+   * 提取程式碼
+   */
+  extractCode(content: string, range: Range): string {
+    const lines = content.split('\n');
+    // 邊界檢查：確保索引在有效範圍內
+    const startLine = Math.max(0, Math.min(range.start.line - 1, lines.length - 1));
+    const endLine = Math.max(0, Math.min(range.end.line - 1, lines.length - 1));
+
+    if (startLine === endLine) {
+      const line = lines[startLine] || '';
+      return line.substring(range.start.column - 1, range.end.column - 1);
+    }
+
+    const result: string[] = [];
+    for (let i = startLine; i <= endLine; i++) {
+      const line = lines[i] || '';
+      if (i === startLine) {
+        result.push(line.substring(range.start.column - 1));
+      } else if (i === endLine) {
+        result.push(line.substring(0, range.end.column - 1));
+      } else {
+        result.push(line);
+      }
+    }
+
+    return result.join('\n');
+  }
+
+  /**
+   * 計算統計摘要
+   */
+  calculateSummary(
+    removals: readonly RemovalOperation[],
+    importCleanups: readonly ImportCleanupOperation[]
+  ): {
+    totalRemovals: number;
+    byType: Record<string, number>;
+    filesAffected: number;
+    linesRemoved: number;
+    importsCleanedUp: number;
+  } {
+    const byType: Record<string, number> = {};
+
+    for (const removal of removals) {
+      byType[removal.symbolType] = (byType[removal.symbolType] || 0) + 1;
+    }
+
+    const filesAffected = new Set([
+      ...removals.map(r => r.filePath),
+      ...importCleanups.map(c => c.filePath)
+    ]).size;
+
+    // 計算刪除的行數
+    let linesRemoved = 0;
+    for (const removal of removals) {
+      linesRemoved += removal.range.end.line - removal.range.start.line + 1;
+    }
+    for (const cleanup of importCleanups) {
+      linesRemoved += cleanup.range.end.line - cleanup.range.start.line + 1;
+    }
+
+    return {
+      totalRemovals: removals.length,
+      byType,
+      filesAffected,
+      linesRemoved,
+      importsCleanedUp: importCleanups.length
+    };
+  }
+
+  /**
+   * 收集影響的檔案
+   */
+  collectAffectedFiles(
+    removals: readonly RemovalOperation[],
+    importCleanups: readonly ImportCleanupOperation[]
+  ): string[] {
+    const files = new Set<string>();
+
+    for (const removal of removals) {
+      files.add(removal.filePath);
+    }
+    for (const cleanup of importCleanups) {
+      files.add(cleanup.filePath);
+    }
+
+    return Array.from(files);
+  }
+
+  /**
+   * 清除快取
+   */
+  clearCache(): void {
+    this.fileCache.clear();
+  }
+}
+
+/**
+ * 建立 FileOperationsHandler 實例
+ */
+export function createFileOperationsHandler(fileSystem: IFileSystem): FileOperationsHandler {
+  return new FileOperationsHandler(fileSystem);
+}
