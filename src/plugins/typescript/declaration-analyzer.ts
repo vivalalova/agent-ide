@@ -63,10 +63,21 @@ export class DeclarationAnalyzer {
       const startPos = sourceFile.getLineAndCharacterOfPosition(fullStart);
       const endPos = sourceFile.getLineAndCharacterOfPosition(end);
 
+      // 修正：當 trivia 開始於行中間（column > 0，即不是行首）時，
+      // 表示該行有其他程式碼（如前一個宣告的 }），應從下一行開始刪除。
+      // 這是因為呼叫端的刪除邏輯是按整行刪除，不考慮 column。
+      let adjustedStartLine = startPos.line + 1;
+      let adjustedStartColumn = startPos.character + 1;
+      if (startPos.character > 0) {
+        // trivia 不是從行首開始，調整到下一行
+        adjustedStartLine = startPos.line + 2;
+        adjustedStartColumn = 1;
+      }
+
       return {
         start: {
-          line: startPos.line + 1, // 轉為 1-based
-          column: startPos.character + 1,
+          line: adjustedStartLine,
+          column: adjustedStartColumn,
           offset: fullStart
         },
         end: {

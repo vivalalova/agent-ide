@@ -102,6 +102,14 @@ export class DeclarationAnalyzer {
         }
       }
 
+      // 修正：當起始位置不是從行首開始（column > 0）時，
+      // 表示該行有其他程式碼（如前一個宣告的 }），應從下一行開始刪除。
+      // 這是因為呼叫端的刪除邏輯是按整行刪除，不考慮 column。
+      if (startColumn > 0) {
+        startLineNum++;
+        startColumn = 0;
+      }
+
       return {
         start: {
           line: startLineNum,
