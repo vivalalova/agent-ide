@@ -1,3 +1,21 @@
+## 0.8.0 (2025-12-21)
+
+* refactor: [Code Review] 抽取 Parser 共用邏輯到 plugins/shared ([dc42a33](https://github.com/vivalalova/agent-ide/commit/dc42a33))
+* refactor: [Code Review] 清理 Parser 未使用程式碼和修正 import 路徑 ([649e34c](https://github.com/vivalalova/agent-ide/commit/649e34c))
+* refactor: [JS Parser 職責拆分] 新增 4 個分析器模組 ([66cc0c4](https://github.com/vivalalova/agent-ide/commit/66cc0c4))
+* refactor: [JS Parser 職責拆分] 重構 parser.ts 為 Facade 模式 ([5f10edf](https://github.com/vivalalova/agent-ide/commit/5f10edf))
+* refactor: [Parser 職責拆分] 抽取 JS/TS 共用函數到 shared ([bb8b8a5](https://github.com/vivalalova/agent-ide/commit/bb8b8a5))
+* refactor: [Parser 職責拆分] 新增 5 個分析器模組 ([4a0ccc9](https://github.com/vivalalova/agent-ide/commit/4a0ccc9))
+* refactor: [Parser 職責拆分] 重構 parser.ts 為門面模式 ([2ceca36](https://github.com/vivalalova/agent-ide/commit/2ceca36))
+* refactor: [清理] 移除 4 個模組的未使用方法 ([9a3f3e5](https://github.com/vivalalova/agent-ide/commit/9a3f3e5))
+* refactor: [清理] 移除 DeadCodeRemover 未使用的方法 ([18d1aeb](https://github.com/vivalalova/agent-ide/commit/18d1aeb))
+* fix: [Code Review] 修正 MoveMemberResult 型別定義 ([ba416a5](https://github.com/vivalalova/agent-ide/commit/ba416a5))
+* fix: [GitHub #37] 修復 move-member 方法插入到類別外部的問題 ([e0329d3](https://github.com/vivalalova/agent-ide/commit/e0329d3)), closes [#37](https://github.com/vivalalova/agent-ide/issues/37)
+* fix: [GitHub #39] 移除 move-member --new-file 參數，改為自動偵測 ([9001a0a](https://github.com/vivalalova/agent-ide/commit/9001a0a)), closes [#39](https://github.com/vivalalova/agent-ide/issues/39)
+* fix: [GitHub #40] deadcode --exclude 選項支援檔案模式和符號名稱 ([8fc46f6](https://github.com/vivalalova/agent-ide/commit/8fc46f6)), closes [#40](https://github.com/vivalalova/agent-ide/issues/40) [#40](https://github.com/vivalalova/agent-ide/issues/40)
+* fix: 依據 code review 修正程式碼品質問題 ([238ac9d](https://github.com/vivalalova/agent-ide/commit/238ac9d))
+* feat: [Parser 職責擴展] 新增 6 個 Parser 介面方法 ([36cc89f](https://github.com/vivalalova/agent-ide/commit/36cc89f)), closes [#41](https://github.com/vivalalova/agent-ide/issues/41) [#42](https://github.com/vivalalova/agent-ide/issues/42) [#43](https://github.com/vivalalova/agent-ide/issues/43) [#44](https://github.com/vivalalova/agent-ide/issues/44) [#45](https://github.com/vivalalova/agent-ide/issues/45) [#46](https://github.com/vivalalova/agent-ide/issues/46)
+
 ## <small>0.7.6 (2025-12-19)</small>
 
 * refactor: [程式碼品質] review 發現問題修復 ([cf59d59](https://github.com/vivalalova/agent-ide/commit/cf59d59))
