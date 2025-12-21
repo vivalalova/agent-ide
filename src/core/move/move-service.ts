@@ -38,7 +38,7 @@ export class MoveService {
 
     try {
       // 1. 驗證路徑
-      await this.validatePaths(source, target);
+      await this.validatePaths(source, target, preview);
 
       // 檢查是否為目錄
       const isDirectory = await this.fileSystem.isDirectory(source);
@@ -159,18 +159,19 @@ export class MoveService {
 
   /**
    * 驗證路徑
+   * @param preview - 預覽模式下跳過目錄建立
    */
-  private async validatePaths(source: string, target: string): Promise<void> {
+  private async validatePaths(source: string, target: string, preview = false): Promise<void> {
     // 檢查來源是否存在
     const sourceExists = await this.fileSystem.exists(source);
     if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
     }
 
-    // 檢查目標路徑的父目錄
+    // 檢查目標路徑的父目錄（僅在非預覽模式下建立）
     const targetDir = path.dirname(target);
     const targetDirExists = await this.fileSystem.exists(targetDir);
-    if (!targetDirExists) {
+    if (!targetDirExists && !preview) {
       // 嘗試建立父目錄
       await this.fileSystem.createDirectory(targetDir);
     }
