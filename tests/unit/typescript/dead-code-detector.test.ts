@@ -49,6 +49,19 @@ const createMockLocation = (
 });
 
 /**
+ * Scope 測試資料建立
+ */
+const createMockScope = (
+  type: 'global' | 'module' | 'namespace' | 'class' | 'interface' | 'function' | 'block',
+  name?: string,
+  parent?: ReturnType<typeof createMockScope>
+) => ({
+  type,
+  name,
+  parent,
+});
+
+/**
  * Symbol 測試資料建立
  */
 const createMockSymbol = (
@@ -58,6 +71,7 @@ const createMockSymbol = (
     filePath: string;
     line: number;
     modifiers: string[];
+    scope: ReturnType<typeof createMockScope>;
   }> = {}
 ): Symbol => ({
   name: overrides.name ?? 'testSymbol',
@@ -67,6 +81,7 @@ const createMockSymbol = (
     line: overrides.line,
   }),
   modifiers: overrides.modifiers ?? [],
+  scope: overrides.scope,
 });
 
 /**
@@ -853,6 +868,314 @@ describe('DeadCodeDetector Edge Cases', () => {
 
       // Then: 不應拋出錯誤（可能不匹配）
       expect(result.success).toBe(true);
+    });
+  });
+});
+
+// ============================================================================
+// MARK: - isFunctionLocalVariable Tests (局部變數過濾)
+// ============================================================================
+
+describe('DeadCodeDetector 局部變數過濾', () => {
+  describe('函式內變數應被排除', () => {
+    it('應該排除函式內的變數 (scope.type = function)', async () => {
+      // Given: 函式內的變數
+      const functionScope = createMockScope('function', 'myFunction');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'localVar',
+            type: SymbolType.Variable,
+            scope: functionScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 函式內變數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('localVar');
+    });
+
+    it('應該排除函式內區塊的變數 (block -> function)', async () => {
+      // Given: 函式內 if 區塊的變數
+      const functionScope = createMockScope('function', 'myFunction');
+      const blockScope = createMockScope('block', undefined, functionScope);
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'blockVar',
+            type: SymbolType.Variable,
+            scope: blockScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 區塊內變數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('blockVar');
+    });
+
+    it('應該排除 arrow function 回呼參數', async () => {
+      // Given: arrow function 內的參數變數
+      const functionScope = createMockScope('function', 'callback');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'fc',
+            type: SymbolType.Variable,
+            scope: functionScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 回呼參數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('fc');
+    });
+
+    it('應該排除 for 迴圈變數', async () => {
+      // Given: for 迴圈變數 (通常在 function 內的 block)
+      const functionScope = createMockScope('function', 'processItems');
+      const blockScope = createMockScope('block', undefined, functionScope);
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'item',
+            type: SymbolType.Variable,
+            scope: blockScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 迴圈變數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('item');
+    });
+
+    it('應該排除函式內的常數', async () => {
+      // Given: 函式內的常數
+      const functionScope = createMockScope('function', 'myFunction');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'LOCAL_CONST',
+            type: SymbolType.Constant,
+            scope: functionScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps, { symbolTypes: [SymbolType.Constant] });
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 函式內常數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('LOCAL_CONST');
+    });
+  });
+
+  describe('模組層級變數不應被排除', () => {
+    it('不應排除模組層級的變數 (scope.type = global)', async () => {
+      // Given: 模組層級變數
+      const globalScope = createMockScope('global');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'moduleVar',
+            type: SymbolType.Variable,
+            scope: globalScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 模組層級變數應在結果中
+      expect(result.items.map(i => i.name)).toContain('moduleVar');
+    });
+
+    it('不應排除模組層級區塊內的變數 (block -> global)', async () => {
+      // Given: 模組層級 if 區塊內的變數（不在任何函式內）
+      const globalScope = createMockScope('global');
+      const blockScope = createMockScope('block', undefined, globalScope);
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'conditionalVar',
+            type: SymbolType.Variable,
+            scope: blockScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 模組層級區塊變數應在結果中
+      expect(result.items.map(i => i.name)).toContain('conditionalVar');
+    });
+
+    it('不應排除 namespace 內的變數', async () => {
+      // Given: namespace 內的變數
+      const namespaceScope = createMockScope('namespace', 'MyNamespace');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'nsVar',
+            type: SymbolType.Variable,
+            scope: namespaceScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: namespace 變數應在結果中
+      expect(result.items.map(i => i.name)).toContain('nsVar');
+    });
+
+    it('不應排除 class 內的 private 屬性', async () => {
+      // Given: class 內的 private 屬性（需要 private 修飾符，避免被 public member 保護機制排除）
+      const classScope = createMockScope('class', 'MyClass');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'classProperty',
+            type: SymbolType.Variable,
+            scope: classScope,
+            modifiers: ['private'],
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: class 屬性應在結果中（不被 isFunctionLocalVariable 過濾）
+      expect(result.items.map(i => i.name)).toContain('classProperty');
+    });
+  });
+
+  describe('非變數類型不應被過濾', () => {
+    it('不應排除函式內的函式宣告', async () => {
+      // Given: 函式內的巢狀函式
+      const functionScope = createMockScope('function', 'outerFunction');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'innerFunction',
+            type: SymbolType.Function,
+            scope: functionScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 巢狀函式應在結果中（isFunctionLocalVariable 只過濾 variable/constant）
+      expect(result.items.map(i => i.name)).toContain('innerFunction');
+    });
+
+    it('不應排除函式內的類別宣告', async () => {
+      // Given: 函式內的類別
+      const functionScope = createMockScope('function', 'outerFunction');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'InnerClass',
+            type: SymbolType.Class,
+            scope: functionScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 巢狀類別應在結果中
+      expect(result.items.map(i => i.name)).toContain('InnerClass');
+    });
+  });
+
+  describe('scope 鏈深度測試', () => {
+    it('應該正確處理多層 scope 鏈 (block -> block -> function)', async () => {
+      // Given: 多層巢狀區塊
+      const functionScope = createMockScope('function', 'deepFunction');
+      const block1 = createMockScope('block', undefined, functionScope);
+      const block2 = createMockScope('block', undefined, block1);
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'deepVar',
+            type: SymbolType.Variable,
+            scope: block2,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 深層巢狀變數不在結果中
+      expect(result.items.map(i => i.name)).not.toContain('deepVar');
+    });
+
+    it('應該正確處理多層 scope 鏈 (block -> block -> global)', async () => {
+      // Given: 模組層級多層巢狀區塊
+      const globalScope = createMockScope('global');
+      const block1 = createMockScope('block', undefined, globalScope);
+      const block2 = createMockScope('block', undefined, block1);
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'deepModuleVar',
+            type: SymbolType.Variable,
+            scope: block2,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 模組層級深層變數應在結果中
+      expect(result.items.map(i => i.name)).toContain('deepModuleVar');
     });
   });
 });

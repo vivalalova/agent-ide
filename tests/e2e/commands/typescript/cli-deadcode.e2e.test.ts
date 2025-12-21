@@ -547,4 +547,68 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       expect(deletedText).not.toContain('unusedFunction');
     });
   });
+
+  describe('函式局部變數保護（PR Review 修復）', () => {
+    it('arrow function 回呼參數不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 收集所有被刪除的變數名稱
+      const deletedVars = new Set<string>();
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              // 提取變數名稱
+              const varMatches = line.content.matchAll(/\b(item|num|fc|x|doubled)\b/g);
+              for (const match of varMatches) {
+                deletedVars.add(match[1]);
+              }
+            }
+          }
+        }
+      }
+
+      // false-positive-cases.ts 中的局部變數不應被標記
+      // arrow function 參數：item in items.map(item => ...)
+      expect(deletedVars.has('item')).toBe(false);
+      // for-of 迴圈變數：num in for (const num of numbers)
+      expect(deletedVars.has('num')).toBe(false);
+    });
+
+    it('函式參數和局部變數不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 檢查 false-positive-cases.ts 檔案
+      const falsePositiveFile = output.files.find((f: { filePath: string }) =>
+        f.filePath.includes('false-positive-cases.ts')
+      );
+
+      // 如果檔案存在於結果中，檢查是否包含局部變數
+      if (falsePositiveFile) {
+        const allDeletedContent = falsePositiveFile.hunks
+          .flatMap((h: { lines: Array<{ type: string; content: string }> }) =>
+            h.lines
+              .filter((l: { type: string }) => l.type === 'delete')
+              .map((l: { content: string }) => l.content)
+          )
+          .join('\n');
+
+        // 這些局部變數不應被刪除
+        expect(allDeletedContent).not.toMatch(/\bconst\s+doubled\s*=/);
+        expect(allDeletedContent).not.toMatch(/\blet\s+total\s*=/);
+        expect(allDeletedContent).not.toMatch(/\bconst\s+num\b/);
+        expect(allDeletedContent).not.toMatch(/\b(item)\s*=>/);
+      }
+    });
+  });
 });

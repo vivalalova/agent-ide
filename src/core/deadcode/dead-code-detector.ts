@@ -259,6 +259,9 @@ export class DeadCodeDetector {
   /**
    * 判斷符號是否為函式內部的變數或參數
    * 函式參數、arrow function 回呼參數、for 迴圈變數等不應被 deadcode 檢測
+   *
+   * 注意：此方法遍歷 scope 鏈確認變數是否在 function scope 內，
+   * 避免誤過濾模組層級的 block scope 變數（如 if 區塊內的變數）
    */
   private isFunctionLocalVariable(symbol: Symbol): boolean {
     // 只處理變數類型
@@ -266,9 +269,22 @@ export class DeadCodeDetector {
       return false;
     }
 
-    // 檢查 scope：如果 scope 是 function 或 block，則是局部變數
-    const scopeType = symbol.scope?.type;
-    return scopeType === 'function' || scopeType === 'block';
+    // 遍歷 scope 鏈，確認是否有 function scope
+    // 只有在 scope 鏈中找到 function 時，才認定為函式內部變數
+    let scope = symbol.scope;
+    while (scope) {
+      if (scope.type === 'function') {
+        return true;
+      }
+      // 遇到 module, namespace, global, class 則停止，表示不在函式內
+      if (scope.type === 'module' || scope.type === 'namespace' ||
+          scope.type === 'global' || scope.type === 'class') {
+        return false;
+      }
+      scope = scope.parent;
+    }
+
+    return false;
   }
 
   /**
