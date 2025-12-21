@@ -1081,6 +1081,49 @@ describe('DeadCodeDetector 局部變數過濾', () => {
       // Then: class 屬性應在結果中（不被 isFunctionLocalVariable 過濾）
       expect(result.items.map(i => i.name)).toContain('classProperty');
     });
+
+    it('不應排除 module scope 內的變數', async () => {
+      // Given: module scope 內的變數
+      const moduleScope = createMockScope('module', 'myModule');
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'moduleVar',
+            type: SymbolType.Variable,
+            scope: moduleScope,
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: module 變數應在結果中
+      expect(result.items.map(i => i.name)).toContain('moduleVar');
+    });
+
+    it('scope 為 undefined 的變數不應被過濾', async () => {
+      // Given: 沒有 scope 資訊的變數
+      const deps = createMockDependencies({
+        indexedFiles: [{ filePath: '/src/test.ts', size: 100 }],
+        symbols: [
+          createMockSymbol({
+            name: 'noScopeVar',
+            type: SymbolType.Variable,
+            // scope 未指定，為 undefined
+          }),
+        ],
+      });
+      const sut = createSut(deps);
+
+      // When: 執行檢測
+      const result = await sut.detect();
+
+      // Then: 無 scope 的變數應在結果中（不被 isFunctionLocalVariable 過濾）
+      expect(result.items.map(i => i.name)).toContain('noScopeVar');
+    });
   });
 
   describe('非變數類型不應被過濾', () => {

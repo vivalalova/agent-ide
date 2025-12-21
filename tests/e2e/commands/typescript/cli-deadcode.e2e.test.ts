@@ -589,7 +589,7 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       const output = JSON.parse(result.stdout);
 
       // 檢查 false-positive-cases.ts 檔案
-      const falsePositiveFile = output.files.find((f: { filePath: string }) =>
+      const falsePositiveFile = output.files?.find((f: { filePath: string }) =>
         f.filePath.includes('false-positive-cases.ts')
       );
 
