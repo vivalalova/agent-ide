@@ -232,6 +232,13 @@ export class DeadCodeDetector {
       return true;
     }
 
+    // 排除函式內部的變數和參數
+    // 這些是局部變數，不應被 deadcode 檢測（可能是函式參數、arrow function 回呼參數、
+    // for 迴圈變數等）。它們的 scope.type 會是 'function' 或 'block'
+    if (this.isFunctionLocalVariable(symbol)) {
+      return true;
+    }
+
     // 排除名稱模式
     for (const pattern of this.options.excludePatterns) {
       if (symbol.name === pattern || symbol.name.toLowerCase() === pattern.toLowerCase()) {
@@ -247,6 +254,21 @@ export class DeadCodeDetector {
     }
 
     return false;
+  }
+
+  /**
+   * 判斷符號是否為函式內部的變數或參數
+   * 函式參數、arrow function 回呼參數、for 迴圈變數等不應被 deadcode 檢測
+   */
+  private isFunctionLocalVariable(symbol: Symbol): boolean {
+    // 只處理變數類型
+    if (symbol.type !== 'variable' && symbol.type !== 'constant') {
+      return false;
+    }
+
+    // 檢查 scope：如果 scope 是 function 或 block，則是局部變數
+    const scopeType = symbol.scope?.type;
+    return scopeType === 'function' || scopeType === 'block';
   }
 
   /**
