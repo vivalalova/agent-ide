@@ -621,3 +621,322 @@ describe('convertRefactorPreview', () => {
     expect(result.fileChanges[0].changes).toEqual([]);
   });
 });
+
+// ============================================================================
+// convertDeadCodeRemovalPreview Tests
+// ============================================================================
+
+import { convertDeadCodeRemovalPreview } from '@infrastructure/formatters/preview-converter.js';
+
+describe('convertDeadCodeRemovalPreview', () => {
+  it('應該轉換空的 preview 結果', () => {
+    const preview = {
+      success: true,
+      removals: [],
+      importCleanups: [],
+      affectedFiles: [],
+      summary: {
+        totalRemovals: 0,
+        byType: {},
+        filesAffected: 0,
+        linesRemoved: 0,
+        importsCleanedUp: 0,
+      },
+    };
+
+    const result = convertDeadCodeRemovalPreview(preview, new Map());
+
+    expect(result.command).toBe(PreviewCommand.DeadCodeRemoval);
+    expect(result.success).toBe(true);
+    expect(result.fileChanges).toEqual([]);
+    expect(result.operationDescription).toContain('Removed 0 dead code items');
+  });
+
+  it('應該轉換刪除操作', () => {
+    const preview = {
+      success: true,
+      removals: [
+        {
+          filePath: '/src/a.ts',
+          range: { start: { line: 5, column: 1 }, end: { line: 7, column: 1 } },
+          originalCode: 'function unused() {}',
+          symbolName: 'unused',
+          symbolType: 'function',
+        },
+      ],
+      importCleanups: [],
+      affectedFiles: ['/src/a.ts'],
+      summary: {
+        totalRemovals: 1,
+        byType: { function: 1 },
+        filesAffected: 1,
+        linesRemoved: 3,
+        importsCleanedUp: 0,
+      },
+    };
+    const originalContents = new Map([['/src/a.ts', 'line1\nline2\nline3\nline4\nfunction unused() {}\nline6']]);
+
+    const result = convertDeadCodeRemovalPreview(preview, originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    expect(result.fileChanges[0].filePath).toBe('/src/a.ts');
+    expect(result.fileChanges[0].changes[0].oldContent).toBe('function unused() {}');
+    expect(result.fileChanges[0].changes[0].newContent).toBeNull();
+    expect(result.operationDescription).toContain('1 function');
+  });
+
+  it('應該轉換 import 刪除操作', () => {
+    const preview = {
+      success: true,
+      removals: [],
+      importCleanups: [
+        {
+          filePath: '/src/b.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 30 } },
+          originalImport: "import { unused } from './a';",
+          unusedSymbols: ['unused'],
+          cleanupType: 'delete' as const,
+        },
+      ],
+      affectedFiles: ['/src/b.ts'],
+      summary: {
+        totalRemovals: 0,
+        byType: {},
+        filesAffected: 1,
+        linesRemoved: 1,
+        importsCleanedUp: 1,
+      },
+    };
+    const originalContents = new Map([['/src/b.ts', "import { unused } from './a';\nconst x = 1;"]]);
+
+    const result = convertDeadCodeRemovalPreview(preview, originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    expect(result.fileChanges[0].changes[0].oldContent).toBe("import { unused } from './a';");
+    expect(result.fileChanges[0].changes[0].newContent).toBeNull();
+    expect(result.operationDescription).toContain('cleaned up 1 import');
+  });
+
+  it('應該轉換 import 部分清理操作', () => {
+    const preview = {
+      success: true,
+      removals: [],
+      importCleanups: [
+        {
+          filePath: '/src/c.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 40 } },
+          originalImport: "import { used, unused } from './a';",
+          unusedSymbols: ['unused'],
+          cleanupType: 'partial' as const,
+          newImport: "import { used } from './a';",
+        },
+      ],
+      affectedFiles: ['/src/c.ts'],
+      summary: {
+        totalRemovals: 0,
+        byType: {},
+        filesAffected: 1,
+        linesRemoved: 0,
+        importsCleanedUp: 1,
+      },
+    };
+    const originalContents = new Map([['/src/c.ts', "import { used, unused } from './a';\nused();"]]);
+
+    const result = convertDeadCodeRemovalPreview(preview, originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    expect(result.fileChanges[0].changes[0].oldContent).toBe("import { used, unused } from './a';");
+    expect(result.fileChanges[0].changes[0].newContent).toBe("import { used } from './a';");
+  });
+
+  it('應該合併同一檔案的刪除和 import 清理操作', () => {
+    const preview = {
+      success: true,
+      removals: [
+        {
+          filePath: '/src/d.ts',
+          range: { start: { line: 5, column: 1 }, end: { line: 5, column: 20 } },
+          originalCode: 'const unused = 1;',
+          symbolName: 'unused',
+          symbolType: 'variable',
+        },
+      ],
+      importCleanups: [
+        {
+          filePath: '/src/d.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 30 } },
+          originalImport: "import { helper } from './b';",
+          unusedSymbols: ['helper'],
+          cleanupType: 'delete' as const,
+        },
+      ],
+      affectedFiles: ['/src/d.ts'],
+      summary: {
+        totalRemovals: 1,
+        byType: { variable: 1 },
+        filesAffected: 1,
+        linesRemoved: 2,
+        importsCleanedUp: 1,
+      },
+    };
+    const originalContents = new Map([['/src/d.ts', "import { helper } from './b';\nline2\nline3\nline4\nconst unused = 1;"]]);
+
+    const result = convertDeadCodeRemovalPreview(preview, originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    expect(result.fileChanges[0].changes).toHaveLength(2);
+  });
+
+  it('應該處理多種類型的統計', () => {
+    const preview = {
+      success: true,
+      removals: [
+        {
+          filePath: '/src/e.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 20 } },
+          originalCode: 'function fn() {}',
+          symbolName: 'fn',
+          symbolType: 'function',
+        },
+        {
+          filePath: '/src/e.ts',
+          range: { start: { line: 2, column: 1 }, end: { line: 2, column: 20 } },
+          originalCode: 'class MyClass {}',
+          symbolName: 'MyClass',
+          symbolType: 'class',
+        },
+      ],
+      importCleanups: [],
+      affectedFiles: ['/src/e.ts'],
+      summary: {
+        totalRemovals: 2,
+        byType: { function: 1, class: 1 },
+        filesAffected: 1,
+        linesRemoved: 2,
+        importsCleanedUp: 0,
+      },
+    };
+    const originalContents = new Map([['/src/e.ts', 'function fn() {}\nclass MyClass {}']]);
+
+    const result = convertDeadCodeRemovalPreview(preview, originalContents);
+
+    expect(result.operationDescription).toContain('2 dead code items');
+    expect(result.operationDescription).toContain('1 function');
+    expect(result.operationDescription).toContain('1 class');
+  });
+
+  it('應該處理錯誤訊息', () => {
+    const preview = {
+      success: false,
+      removals: [],
+      importCleanups: [],
+      affectedFiles: [],
+      summary: {
+        totalRemovals: 0,
+        byType: {},
+        filesAffected: 0,
+        linesRemoved: 0,
+        importsCleanedUp: 0,
+      },
+      errors: ['Parse error in file.ts'],
+    };
+
+    const result = convertDeadCodeRemovalPreview(preview, new Map());
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toEqual(['Parse error in file.ts']);
+  });
+
+  it('應該處理空的 originalContents', () => {
+    const preview = {
+      success: true,
+      removals: [
+        {
+          filePath: '/src/f.ts',
+          range: { start: { line: 1, column: 1 }, end: { line: 1, column: 10 } },
+          originalCode: 'const x = 1;',
+          symbolName: 'x',
+          symbolType: 'variable',
+        },
+      ],
+      importCleanups: [],
+      affectedFiles: ['/src/f.ts'],
+      summary: {
+        totalRemovals: 1,
+        byType: { variable: 1 },
+        filesAffected: 1,
+        linesRemoved: 1,
+        importsCleanedUp: 0,
+      },
+    };
+
+    const result = convertDeadCodeRemovalPreview(preview, new Map());
+
+    expect(result.fileChanges[0].originalContent).toBe('');
+  });
+});
+
+// ============================================================================
+// convertOperationsToPreviewInput context 處理測試
+// ============================================================================
+
+describe('convertRenamePreview - context 處理', () => {
+  it('應該使用 context 合併同一行的多個替換', () => {
+    const operations = [
+      {
+        filePath: '/src/test.ts',
+        oldText: 'foo',
+        newText: 'bar',
+        range: { start: { line: 1, column: 7 }, end: { line: 1, column: 10 } },
+        context: 'const foo = foo + foo;',
+      },
+      {
+        filePath: '/src/test.ts',
+        oldText: 'foo',
+        newText: 'bar',
+        range: { start: { line: 1, column: 13 }, end: { line: 1, column: 16 } },
+        context: 'const foo = foo + foo;',
+      },
+      {
+        filePath: '/src/test.ts',
+        oldText: 'foo',
+        newText: 'bar',
+        range: { start: { line: 1, column: 19 }, end: { line: 1, column: 22 } },
+        context: 'const foo = foo + foo;',
+      },
+    ];
+    const originalContents = new Map([['/src/test.ts', 'const foo = foo + foo;']]);
+
+    const result = convertRenamePreview(operations, [], originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    // 同一行的多個操作應該合併為一個變更
+    expect(result.fileChanges[0].changes).toHaveLength(1);
+    expect(result.fileChanges[0].changes[0].oldContent).toBe('const foo = foo + foo;');
+    expect(result.fileChanges[0].changes[0].newContent).toBe('const bar = bar + bar;');
+  });
+
+  it('應該在沒有 context 時分別處理每個操作', () => {
+    const operations = [
+      {
+        filePath: '/src/test.ts',
+        oldText: 'foo',
+        newText: 'bar',
+        range: { start: { line: 1, column: 7 }, end: { line: 1, column: 10 } },
+      },
+      {
+        filePath: '/src/test.ts',
+        oldText: 'foo',
+        newText: 'bar',
+        range: { start: { line: 1, column: 13 }, end: { line: 1, column: 16 } },
+      },
+    ];
+    const originalContents = new Map([['/src/test.ts', 'const foo = foo;']]);
+
+    const result = convertRenamePreview(operations, [], originalContents);
+
+    expect(result.fileChanges).toHaveLength(1);
+    // 沒有 context 時，每個操作單獨處理
+    expect(result.fileChanges[0].changes).toHaveLength(2);
+  });
+});
