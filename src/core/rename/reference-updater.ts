@@ -16,7 +16,7 @@ import { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
 
 /**
  * 引用更新器類別

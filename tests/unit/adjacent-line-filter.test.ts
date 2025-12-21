@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SymbolReferenceType } from '@core/shared/symbol-finder.js';
+import { SymbolReferenceType } from '@core/shared/symbol-finder/index.js';
 
 /** 模擬的符號位置 */
 interface SymbolLocation {

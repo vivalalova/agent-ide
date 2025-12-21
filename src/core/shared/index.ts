@@ -10,4 +10,4 @@ export * from './indexing/index.js';
 export * from './dependency-graph/index.js';
 
 // 符號查找
-export * from './symbol-finder.js';
+export * from './symbol-finder/index.js';

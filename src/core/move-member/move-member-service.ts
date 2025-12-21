@@ -15,7 +15,7 @@ import {
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
-import { SymbolFinder } from '../shared/symbol-finder.js';
+import { SymbolFinder } from '../shared/symbol-finder/index.js';
 
 /**
  * Move Member Service
