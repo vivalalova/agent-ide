@@ -38,11 +38,9 @@ pnpm test:e2e -- --run -t "應該分析專案"
 
 ```
 src/
+├── shared/               # 🌐 全專案共用（types、errors、utils）
 ├── core/                 # 核心模組（對應 CLI 命令）
-│   ├── shared/           # 共享層
-│   │   ├── indexing/     # 索引引擎（1000檔/秒、查詢<10ms）
-│   │   ├── dependency-graph/  # 依賴圖資料結構
-│   │   └── symbol-finder.ts   # 符號搜尋器
+│   ├── shared/           # core 內共享層（indexing、dependency-graph、symbol-finder）
 │   ├── cycles/           # 循環依賴檢測（Tarjan）
 │   ├── impact/           # 影響分析（BFS）
 │   ├── find-references/  # 符號引用搜尋
@@ -54,11 +52,28 @@ src/
 │   ├── move-member/      # 成員移動（方法/類別/函式）
 │   ├── deadcode/         # Dead code 檢測與移除
 │   └── patterns/         # 設計模式
-├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage（IFileSystem抽象）、Formatters
-├── plugins/              # TS（Compiler API）、JS（Babel）
+├── infrastructure/       # Parser框架、Cache（L1/L2/L3）、Storage、Formatters
+├── plugins/              # 語言 Parser
+│   ├── shared/           # 🔌 plugins 專用共用（identifier、path、memory-monitor）
+│   ├── typescript/       # TS Parser（Compiler API）
+│   └── javascript/       # JS Parser（Babel）
 ├── interfaces/           # CLI（Unix哲學/JSON輸出）
 └── application/          # 服務層、DI容器
 ```
+
+### Shared 目錄分類
+
+| 目錄 | 路徑別名 | 用途 | 使用者 |
+|------|----------|------|--------|
+| `src/shared/` | `@shared/*` | 全專案共用型別、錯誤、工具 | 全部模組 |
+| `src/core/shared/` | `@core/shared/*` | core 模組共用基礎設施 | core 模組 |
+| `src/plugins/shared/` | `@plugins/shared/*` | plugins 專用工具 | typescript/javascript parser |
+
+**放置原則**：
+- 只被單一模組使用 → 放該模組內
+- 被多個 plugins 使用 → `plugins/shared/`
+- 被 core + plugins 使用 → `src/shared/`
+- 被 core 模組間共用 → `core/shared/`
 
 ### Core 目錄設計原則
 
