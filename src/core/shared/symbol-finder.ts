@@ -1072,23 +1072,47 @@ export class SymbolFinder {
   }
 
   /**
-   * 分割參數（考慮巢狀括號）
+   * 分割參數（考慮巢狀括號和字串字面值）
+   * 正確處理字串內的逗號，避免誤分割
    */
   private splitArguments(argsString: string): string[] {
     const result: string[] = [];
     let current = '';
     let depth = 0;
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTemplate = false;
 
-    for (const char of argsString) {
-      if (char === '(' || char === '[' || char === '{') {
-        depth++;
-        current += char;
-      } else if (char === ')' || char === ']' || char === '}') {
-        depth--;
-        current += char;
-      } else if (char === ',' && depth === 0) {
-        result.push(current);
-        current = '';
+    for (let i = 0; i < argsString.length; i++) {
+      const char = argsString[i];
+      const prevChar = i > 0 ? argsString[i - 1] : '';
+
+      // 處理字串字面值狀態（跳過轉義字元）
+      if (prevChar !== '\\') {
+        if (char === '\'' && !inDoubleQuote && !inTemplate) {
+          inSingleQuote = !inSingleQuote;
+        } else if (char === '"' && !inSingleQuote && !inTemplate) {
+          inDoubleQuote = !inDoubleQuote;
+        } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+          inTemplate = !inTemplate;
+        }
+      }
+
+      const inString = inSingleQuote || inDoubleQuote || inTemplate;
+
+      if (!inString) {
+        if (char === '(' || char === '[' || char === '{') {
+          depth++;
+          current += char;
+        } else if (char === ')' || char === ']' || char === '}') {
+          depth--;
+          current += char;
+        } else if (char === ',' && depth === 0) {
+          result.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
       } else {
         current += char;
       }
