@@ -33,7 +33,6 @@ import {
 } from '../../shared/types/index.js';
 import {
   TypeScriptAST,
-  TypeScriptASTNode,
   TypeScriptSymbol,
   DEFAULT_COMPILER_OPTIONS,
   TypeScriptParseError,
@@ -42,12 +41,26 @@ import {
   tsPositionToPosition,
   positionToTsPosition,
   tsNodeToRange,
-  getNodeName,
   isValidIdentifier
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
-import { MemoryMonitor, type Disposable, withMemoryMonitoring } from '@shared/utils/memory-monitor.js';
+import { MemoryMonitor, type Disposable } from '@shared/utils/memory-monitor.js';
+
+// 導入拆分的工具模組
+import {
+  findNodeAtPosition,
+  isRenameableNode,
+  isDefinitionNode,
+  getIdentifierFromSymbolNode,
+  getDefinitionKind
+} from './node-utils.js';
+import { isReferenceToSymbol, getReferenceType } from './reference-finder.js';
+import {
+  createLanguageServiceHost,
+  createLanguageService,
+  type FileEntry
+} from './language-service-host.js';
 
 /**
  * TypeScript Parser 實作
@@ -63,7 +76,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   private compilerOptions: ts.CompilerOptions;
   private languageService: ts.LanguageService | null = null;
   private languageServiceHost: ts.LanguageServiceHost | null = null;
-  private files: Map<string, { version: number; content: string }> = new Map();
+  private files: Map<string, FileEntry> = new Map();
 
   constructor(compilerOptions?: ts.CompilerOptions) {
     this.symbolExtractor = createSymbolExtractor();
@@ -231,19 +244,19 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const symbolName = typedSymbol.name;
 
     // 獲取符號的標識符節點
-    const symbolIdentifier = this.getIdentifierFromSymbolNode(typedSymbol.tsNode);
+    const symbolIdentifier = getIdentifierFromSymbolNode(typedSymbol.tsNode);
     if (!symbolIdentifier) {
       return references;
     }
 
     // 使用 TypeScript 原生的節點遍歷，收集所有標識符
     const collectIdentifiers = (node: ts.Node): void => {
-      // 🚨 過濾：跳過字串字面值
+      // 過濾：跳過字串字面值
       if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
         return; // 不處理子節點
       }
 
-      // 🚨 過濾：跳過模板字串
+      // 過濾：跳過模板字串
       if (ts.isTemplateExpression(node)) {
         // 只處理模板表達式中的插值部分，跳過字串部分
         node.templateSpans.forEach(span => {
@@ -254,13 +267,13 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
       if (ts.isIdentifier(node) && node.text === symbolName) {
         // 檢查這個標識符是否真的引用了我們的符號
-        if (this.isReferenceToSymbol(node, typedSymbol)) {
+        if (isReferenceToSymbol(node, typedSymbol)) {
           const location = {
             filePath: typedAst.tsSourceFile.fileName,
             range: tsNodeToRange(node, typedAst.tsSourceFile)
           };
 
-          const referenceType = this.getReferenceType(node, typedSymbol);
+          const referenceType = getReferenceType(node, typedSymbol);
 
           references.push({
             symbol,
@@ -297,7 +310,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
 
     // 查找位置上的節點
-    const node = this.findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
+    const node = findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
     if (!node) {
       throw new Error('在指定位置找不到符號');
     }
@@ -307,8 +320,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     if (ts.isIdentifier(node)) {
       targetIdentifier = node;
-    } else if (this.isRenameableNode(node)) {
-      targetIdentifier = this.getIdentifierFromSymbolNode(node);
+    } else if (isRenameableNode(node)) {
+      targetIdentifier = getIdentifierFromSymbolNode(node);
     }
 
     if (!targetIdentifier) {
@@ -362,7 +375,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const typedAst = ast as TypeScriptAST;
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
 
-    const node = this.findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
+    const node = findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
     if (!node) {
       return null;
     }
@@ -373,13 +386,13 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
 
     // 如果當前節點本身就是定義，返回它
-    if (this.isDefinitionNode(node)) {
+    if (isDefinitionNode(node)) {
       const location = {
         filePath: typedAst.tsSourceFile.fileName,
         range: tsNodeToRange(node, typedAst.tsSourceFile)
       };
 
-      return createDefinition(location, this.getDefinitionKind(node));
+      return createDefinition(location, getDefinitionKind(node) as DefinitionKind);
     }
 
     // 如果是標識符，查找它的定義
@@ -581,6 +594,15 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return abstractTypes.includes(symbol.type);
   }
 
+  /**
+   * 判斷檔案是否為測試檔案
+   */
+  isTestFile(filePath: string): boolean {
+    return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
+           filePath.includes('/__tests__/') ||
+           filePath.includes('/__mocks__/');
+  }
+
   // 私有輔助方法
 
   private validateInput(code: string, filePath: string): void {
@@ -619,309 +641,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   private getLanguageFromFilePath(filePath: string): string {
     const ext = filePath.substring(filePath.lastIndexOf('.'));
     return ext === '.tsx' ? 'tsx' : 'typescript';
-  }
-
-  private getSyntacticDiagnostics(sourceFile: ts.SourceFile): ts.Diagnostic[] {
-    // 對於獨立的 SourceFile，我們跳過語法診斷檢查
-    // 在實際專案中，這通常由 Program 提供
-    return [];
-  }
-
-  private findNodeAtPosition(sourceFile: ts.SourceFile, position: number): ts.Node | undefined {
-    function findNode(node: ts.Node): ts.Node | undefined {
-      if (position >= node.getStart(sourceFile) && position < node.getEnd()) {
-        // 先檢查子節點
-        for (const child of node.getChildren(sourceFile)) {
-          const result = findNode(child);
-          if (result) {
-            return result;
-          }
-        }
-        // 如果子節點中沒找到，返回當前節點
-        return node;
-      }
-      return undefined;
-    }
-
-    return findNode(sourceFile);
-  }
-
-  private isReferenceToSymbol(node: ts.Node, symbol: TypeScriptSymbol): boolean {
-    if (!ts.isIdentifier(node)) {
-      return false;
-    }
-
-    const name = node.text;
-    if (name !== symbol.name) {
-      return false;
-    }
-
-    // 找到符號的標識符節點
-    const symbolIdentifier = this.getIdentifierFromSymbolNode(symbol.tsNode);
-    if (!symbolIdentifier) {
-      return false;
-    }
-
-    // 檢查是否為相同符號的引用
-    // 1. 如果是符號的定義位置本身
-    if (node === symbolIdentifier) {
-      return true;
-    }
-
-    // 2. 對於型別宣告（類別、介面、型別別名等），檢查是否在型別位置使用
-    if (ts.isClassDeclaration(symbol.tsNode) ||
-        ts.isInterfaceDeclaration(symbol.tsNode) ||
-        ts.isTypeAliasDeclaration(symbol.tsNode) ||
-        ts.isEnumDeclaration(symbol.tsNode)) {
-      // 對於型別，只要名稱相同就是引用（在同一個檔案中）
-      if (node.getSourceFile() === symbolIdentifier.getSourceFile()) {
-        return true;
-      }
-    }
-
-    // 3. 檢查是否在同一個檔案中
-    if (node.getSourceFile() !== symbolIdentifier.getSourceFile()) {
-      return false;
-    }
-
-    // 4. 對於變數、函式和方法，使用作用域檢查
-    const symbolScope = this.getScopeContainer(symbolIdentifier);
-    const nodeScope = this.getScopeContainer(node);
-
-    // 檢查是否在相同作用域或符號的子作用域內
-    if (nodeScope === symbolScope || this.isInScopeChain(node, symbolScope)) {
-      // 檢查是否被遮蔽（同名變數在更內層作用域）
-      if (!this.isShadowed(node, symbolIdentifier)) {
-        return true;
-      }
-    }
-
-    // 5. 對於頂層函式和變數，放寬檢查條件
-    // 如果符號在頂層作用域（SourceFile），則同一檔案中所有同名標識符都可能是引用
-    if (ts.isSourceFile(symbolScope) && !this.isShadowed(node, symbolIdentifier)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  private getIdentifierFromSymbolNode(node: ts.Node): ts.Identifier | null {
-    // 如果本身就是 Identifier，直接返回
-    if (ts.isIdentifier(node)) {
-      return node;
-    }
-
-    // 對於變數宣告，標識符在 name 屬性中
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於函式宣告，標識符在 name 屬性中
-    if (ts.isFunctionDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於類別宣告
-    if (ts.isClassDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於方法宣告
-    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於屬性宣告
-    if (ts.isPropertyDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於參數
-    if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於介面宣告
-    if (ts.isInterfaceDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於型別別名宣告
-    if (ts.isTypeAliasDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於列舉宣告
-    if (ts.isEnumDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於命名空間宣告
-    if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於 Get/Set 存取器
-    if ((ts.isGetAccessor(node) || ts.isSetAccessor(node)) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於型別參數（泛型）
-    if (ts.isTypeParameterDeclaration(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於介面/型別的屬性簽名
-    if (ts.isPropertySignature(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    // 對於方法簽名
-    if (ts.isMethodSignature(node) && ts.isIdentifier(node.name)) {
-      return node.name;
-    }
-
-    return null;
-  }
-
-  private getNodeScope(node: ts.Node): string {
-    let current = node.parent;
-    while (current) {
-      if (ts.isFunctionDeclaration(current) ||
-          ts.isMethodDeclaration(current) ||
-          ts.isArrowFunction(current) ||
-          ts.isFunctionExpression(current)) {
-        return `function_${current.pos}_${current.end}`;
-      }
-      if (ts.isBlock(current) && current.parent &&
-          (ts.isIfStatement(current.parent) ||
-           ts.isForStatement(current.parent) ||
-           ts.isWhileStatement(current.parent))) {
-        return `block_${current.pos}_${current.end}`;
-      }
-      current = current.parent;
-    }
-    return 'global';
-  }
-
-  private isInSameScope(node: ts.Node, symbolNode: ts.Node): boolean {
-    // 找到符號定義所在的作用域
-    let symbolScope = symbolNode.parent;
-    while (symbolScope && !this.isScopeNode(symbolScope)) {
-      symbolScope = symbolScope.parent;
-    }
-
-    // 檢查節點是否在該作用域內
-    let currentScope = node.parent;
-    while (currentScope) {
-      if (currentScope === symbolScope) {
-        return true;
-      }
-      currentScope = currentScope.parent;
-    }
-
-    return false;
-  }
-
-  private isScopeNode(node: ts.Node): boolean {
-    return ts.isFunctionDeclaration(node) ||
-           ts.isMethodDeclaration(node) ||
-           ts.isArrowFunction(node) ||
-           ts.isFunctionExpression(node) ||
-           ts.isBlock(node) ||
-           ts.isSourceFile(node);
-  }
-
-  private getReferenceType(node: ts.Node, symbol: TypeScriptSymbol): ReferenceType {
-    // 找到符號的標識符節點
-    const symbolIdentifier = this.getIdentifierFromSymbolNode(symbol.tsNode);
-
-    // 如果是符號的原始定義位置
-    if (node === symbolIdentifier) {
-      return ReferenceType.Definition;
-    }
-
-    // 檢查是否為宣告（例如函式參數、變數宣告等）
-    if (this.isDeclarationNode(node.parent)) {
-      return ReferenceType.Declaration;
-    }
-
-    // 檢查是否在 import 語句內
-    if (this.isInImportStatement(node)) {
-      return ReferenceType.Import;
-    }
-
-    // 否則為使用
-    return ReferenceType.Usage;
-  }
-
-  /**
-   * 檢查節點是否位於 import 語句內
-   */
-  private isInImportStatement(node: ts.Node): boolean {
-    let current = node.parent;
-    while (current) {
-      if (ts.isImportDeclaration(current) || ts.isImportEqualsDeclaration(current)) {
-        return true;
-      }
-      current = current.parent;
-    }
-    return false;
-  }
-
-  private isRenameableNode(node: ts.Node): boolean {
-    return (
-      ts.isIdentifier(node) ||
-      ts.isClassDeclaration(node) ||
-      ts.isInterfaceDeclaration(node) ||
-      ts.isFunctionDeclaration(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isMethodDeclaration(node) ||
-      ts.isPropertyDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node) ||
-      ts.isModuleDeclaration(node) ||
-      ts.isParameter(node) ||
-      ts.isGetAccessor(node) ||
-      ts.isSetAccessor(node) ||
-      ts.isTypeParameterDeclaration(node) ||
-      ts.isPropertySignature(node) ||
-      ts.isMethodSignature(node)
-    );
-  }
-
-  private isDefinitionNode(node: ts.Node): boolean {
-    return (
-      ts.isClassDeclaration(node) ||
-      ts.isInterfaceDeclaration(node) ||
-      ts.isFunctionDeclaration(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isMethodDeclaration(node) ||
-      ts.isPropertyDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node)
-    );
-  }
-
-  private isDeclarationNode(node: ts.Node): boolean {
-    return (
-      ts.isParameter(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isBindingElement(node)
-    );
-  }
-
-  private getDefinitionKind(node: ts.Node): any {
-    if (ts.isClassDeclaration(node)) {return 'class';}
-    if (ts.isInterfaceDeclaration(node)) {return 'interface';}
-    if (ts.isFunctionDeclaration(node)) {return 'function';}
-    if (ts.isMethodDeclaration(node)) {return 'method';}
-    if (ts.isVariableDeclaration(node)) {return 'variable';}
-    if (ts.isPropertyDeclaration(node)) {return 'variable';}
-    if (ts.isTypeAliasDeclaration(node)) {return 'type';}
-    if (ts.isEnumDeclaration(node)) {return 'enum';}
-    if (ts.isModuleDeclaration(node)) {return 'module';}
-    return 'variable';
   }
 
   private symbolTypeToDefinitionKind(symbolType: any): DefinitionKind {
@@ -967,7 +686,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       const typedSymbol = symbol as TypeScriptSymbol;
 
       // 獲取符號的標識符節點
-      const identifier = this.getIdentifierFromSymbolNode(typedSymbol.tsNode);
+      const identifier = getIdentifierFromSymbolNode(typedSymbol.tsNode);
       if (!identifier) {
         continue;
       }
@@ -989,22 +708,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return bestMatch;
   }
 
-  private isPositionInRange(position: Position, range: Range): boolean {
-    if (position.line < range.start.line || position.line > range.end.line) {
-      return false;
-    }
-
-    if (position.line === range.start.line && position.column < range.start.column) {
-      return false;
-    }
-
-    if (position.line === range.end.line && position.column > range.end.column) {
-      return false;
-    }
-
-    return true;
-  }
-
   /**
    * 初始化 Language Service
    */
@@ -1019,67 +722,14 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     this.updateFile(sourceFile.fileName, sourceFile.text);
 
     // 建立 Language Service Host
-    this.languageServiceHost = {
-      getScriptFileNames: () => {
-        const fileNames = Array.from(this.files.keys());
-        // 確保包含當前檔案
-        if (!fileNames.includes(sourceFile.fileName)) {
-          fileNames.push(sourceFile.fileName);
-        }
-        return fileNames;
-      },
-      getScriptVersion: (fileName) => {
-        const file = this.files.get(fileName);
-        return file ? String(file.version) : '0';
-      },
-      getScriptSnapshot: (fileName) => {
-        const file = this.files.get(fileName);
-        if (file) {
-          return ts.ScriptSnapshot.fromString(file.content);
-        }
-        // 嘗試讀取實際檔案
-        try {
-          const content = ts.sys.readFile(fileName);
-          if (content) {
-            return ts.ScriptSnapshot.fromString(content);
-          }
-        } catch {
-          // 忽略錯誤
-        }
-        return undefined;
-      },
-      getCurrentDirectory: () => process.cwd(),
-      getCompilationSettings: () => ({
-        ...this.compilerOptions,
-        // 確保啟用必要的選項
-        allowNonTsExtensions: true,
-        noResolve: false,
-        noLib: false,
-        lib: this.compilerOptions.lib || ['lib.es2020.d.ts']
-      }),
-      getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
-      fileExists: (fileName) => {
-        return this.files.has(fileName) || (ts.sys.fileExists ? ts.sys.fileExists(fileName) : false);
-      },
-      readFile: (fileName) => {
-        const file = this.files.get(fileName);
-        if (file) {
-          return file.content;
-        }
-        return ts.sys.readFile ? ts.sys.readFile(fileName) : undefined;
-      },
-      readDirectory: ts.sys.readDirectory ? ts.sys.readDirectory : () => [],
-      getDirectories: ts.sys.getDirectories ? ts.sys.getDirectories : () => [],
-      directoryExists: ts.sys.directoryExists ? ts.sys.directoryExists : () => false,
-      realpath: ts.sys.realpath ? ts.sys.realpath : (path) => path,
-      getNewLine: () => '\n'
-    };
+    this.languageServiceHost = createLanguageServiceHost({
+      files: this.files,
+      compilerOptions: this.compilerOptions,
+      currentFileName: sourceFile.fileName
+    });
 
     // 建立 Language Service
-    this.languageService = ts.createLanguageService(
-      this.languageServiceHost,
-      ts.createDocumentRegistry()
-    );
+    this.languageService = createLanguageService(this.languageServiceHost);
   }
 
   /**
@@ -1101,7 +751,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 取得符號在檔案中的位置
    */
   private getSymbolPosition(symbol: TypeScriptSymbol, sourceFile: ts.SourceFile): number | undefined {
-    const identifier = this.getIdentifierFromSymbolNode(symbol.tsNode);
+    const identifier = getIdentifierFromSymbolNode(symbol.tsNode);
     if (!identifier) {
       return undefined;
     }
@@ -1117,94 +767,5 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
     const program = this.languageService.getProgram();
     return program?.getSourceFile(fileName);
-  }
-
-  /**
-   * 取得節點的作用域容器
-   */
-  private getScopeContainer(node: ts.Node): ts.Node {
-    let current = node.parent;
-    while (current) {
-      if (ts.isFunctionDeclaration(current) ||
-          ts.isFunctionExpression(current) ||
-          ts.isArrowFunction(current) ||
-          ts.isMethodDeclaration(current) ||
-          ts.isConstructorDeclaration(current) ||
-          ts.isBlock(current) ||
-          ts.isSourceFile(current)) {
-        return current;
-      }
-      current = current.parent;
-    }
-    return node.getSourceFile();
-  }
-
-  /**
-   * 檢查節點是否在指定作用域鏈內
-   */
-  private isInScopeChain(node: ts.Node, scopeContainer: ts.Node): boolean {
-    let current = node.parent;
-    while (current) {
-      if (current === scopeContainer) {
-        return true;
-      }
-      current = current.parent;
-    }
-    return false;
-  }
-
-  /**
-   * 檢查符號是否被遮蔽
-   */
-  private isShadowed(node: ts.Node, originalIdentifier: ts.Identifier): boolean {
-    const name = originalIdentifier.text;
-    let current = node.parent;
-
-    // 從 node 向上遍歷到 originalIdentifier 的作用域
-    while (current && current !== originalIdentifier.parent) {
-      // 檢查當前作用域是否有同名的宣告
-      if (ts.isFunctionDeclaration(current) ||
-          ts.isFunctionExpression(current) ||
-          ts.isArrowFunction(current) ||
-          ts.isMethodDeclaration(current)) {
-        // 檢查參數
-        if (current.parameters) {
-          for (const param of current.parameters) {
-            if (ts.isIdentifier(param.name) && param.name.text === name) {
-              return true; // 被參數遮蔽
-            }
-          }
-        }
-      }
-
-      // 檢查區塊作用域中的宣告
-      if (ts.isBlock(current)) {
-        for (const statement of current.statements) {
-          if (ts.isVariableStatement(statement)) {
-            for (const decl of statement.declarationList.declarations) {
-              if (ts.isIdentifier(decl.name) && decl.name.text === name) {
-                // 確認這個宣告在 node 之前
-                if (decl.pos < node.pos) {
-                  return true; // 被區域變數遮蔽
-                }
-              }
-            }
-          }
-        }
-      }
-
-      current = current.parent;
-    }
-
-    return false;
-  }
-
-  /**
-   * 判斷檔案是否為測試檔案
-   */
-  isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
-           filePath.includes('/__tests__/') ||
-           filePath.includes('/__mocks__/');
   }
 }
