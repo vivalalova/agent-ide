@@ -878,12 +878,22 @@ export class ChangeSignatureService {
    * 建立錯誤結果
    */
   private createErrorResult(code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
+    // 錯誤情況下必須提供佔位簽名資訊
+    const emptyRange = { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } };
+    const emptyLocation = { filePath: '', range: emptyRange };
+    const emptySignature: FunctionSignature = {
+      name: '',
+      parameters: [],
+      location: emptyLocation,
+      isMethod: false,
+      modifiers: []
+    };
     return {
       success: false,
       error: message,
-      originalSignature: null as any,
-      newSignature: null as any,
-      definitionUpdate: null as any,
+      originalSignature: emptySignature,
+      newSignature: emptySignature,
+      definitionUpdate: { filePath: '', originalCode: '', newCode: '', location: emptyLocation },
       callSiteUpdates: [],
       executed: false,
       stats: {

@@ -76,7 +76,7 @@ export class IndexEngine {
   /**
    * 驗證配置
    */
-  private validateConfig(config: any): void {
+  private validateConfig(config: Partial<IndexConfig>): void {
     // 檢查配置物件
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('索引配置必須是物件');
@@ -115,7 +115,7 @@ export class IndexEngine {
   /**
    * 索引整個專案
    */
-  async indexProject(projectPath?: string | any): Promise<void> {
+  async indexProject(projectPath?: string): Promise<void> {
     let workspacePath: string;
 
     // 如果沒有傳入參數，使用配置中的路徑
@@ -139,8 +139,8 @@ export class IndexEngine {
       if (!stat.isDirectory) {
         throw new Error('索引路徑必須是目錄');
       }
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
         throw new Error('路徑不存在');
       }
       throw error;

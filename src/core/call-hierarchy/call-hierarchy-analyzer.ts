@@ -9,6 +9,7 @@ import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
+import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 /** Outgoing 呼叫資訊（目標函數呼叫了誰） */
 export interface OutgoingCall {
@@ -252,8 +253,7 @@ export class CallHierarchyAnalyzer {
 
     try {
       const ast = await parser.parse(content, filePath);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sourceFile = (ast as any).tsSourceFile as ts.SourceFile | undefined;
+      const sourceFile = (ast as TypeScriptAST).tsSourceFile;
 
       if (!sourceFile) {
         return outgoing;
@@ -412,8 +412,7 @@ export class CallHierarchyAnalyzer {
 
     try {
       const ast = await parser.parse(content, filePath);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sourceFile = (ast as any).tsSourceFile as ts.SourceFile | undefined;
+      const sourceFile = (ast as TypeScriptAST).tsSourceFile;
 
       if (!sourceFile) {
         return results;

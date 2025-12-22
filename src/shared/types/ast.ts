@@ -11,7 +11,7 @@ import { Range, Position, isPositionInRange } from '@shared/types/core.js';
 export interface ASTNode {
   readonly type: string;
   readonly range: Range;
-  readonly properties: Record<string, any>;
+  readonly properties: Record<string, unknown>;
   readonly children: readonly ASTNode[];
   readonly parent?: ASTNode;
 }
@@ -22,7 +22,7 @@ export interface ASTNode {
 export interface ASTMetadata {
   readonly language: string;
   readonly version: string;
-  readonly parserOptions: Record<string, any>;
+  readonly parserOptions: Record<string, unknown>;
   readonly parseTime: number; // 解析時間（毫秒）
   readonly nodeCount: number; // 節點總數
 }
@@ -42,7 +42,7 @@ export interface AST {
 export function createASTNode(
   type: string,
   range: Range,
-  properties: Record<string, any> = {},
+  properties: Record<string, unknown> = {},
   children: ASTNode[] = []
 ): ASTNode {
   if (!type.trim()) {
@@ -78,7 +78,7 @@ export function createASTNode(
 export function createASTMetadata(
   language: string,
   version: string,
-  parserOptions: Record<string, any> = {},
+  parserOptions: Record<string, unknown> = {},
   parseTime: number = 0,
   nodeCount: number = 0
 ): ASTMetadata {
@@ -295,12 +295,17 @@ function findNodesByTypeRecursive(node: ASTNode, type: string, result: ASTNode[]
   }
 }
 
+/** 可修改 parent 屬性的 ASTNode 型別（用於設定 parent 關係） */
+interface MutableASTNode extends ASTNode {
+  parent?: ASTNode;
+}
+
 /**
  * 遞歸設定節點的 parent 關係
  */
 function setParentRelationships(node: ASTNode, parent?: ASTNode): void {
   // 設定當前節點的 parent
-  (node as any).parent = parent;
+  (node as MutableASTNode).parent = parent;
 
   // 遞歸設定所有子節點的 parent
   for (const child of node.children) {

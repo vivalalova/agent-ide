@@ -13,6 +13,7 @@ import {
   ConflictInfo,
   ConflictType,
   RenameSummary,
+  ScopeAnalysisResult,
   createRenameOperation,
   createConflictInfo
 } from './types.js';
@@ -407,8 +408,9 @@ export class RenameEngine {
 
   /**
    * 檢測命名衝突
+   * @param scope 作用域資訊（預留參數，未來可用於更精確的衝突檢測）
    */
-  detectConflicts(newName: string, scope: any): ConflictInfo[] {
+  detectConflicts(newName: string, _scope?: ScopeAnalysisResult): ConflictInfo[] {
     const conflicts: ConflictInfo[] = [];
 
     // 檢查保留字
