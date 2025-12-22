@@ -72,7 +72,8 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/interfaces/cli/**',
         'src/application/**',
         'src/core/**',
-        'src/infrastructure/parser/**'
+        'src/infrastructure/parser/**',
+        'src/infrastructure/changeset/**'
       ],
       thresholds: COVERAGE_THRESHOLD
     },

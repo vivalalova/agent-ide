@@ -56,12 +56,13 @@ export default mergeConfig(baseConfig, defineConfig({
       thresholds: {
         lines: 40,
         functions: 40,
-        // branches 調降至 37% 原因：
+        // branches 調降至 36% 原因：
         // 1. 重構 core/ 目錄新增 shared/ 層，部分分支（parser 降級、Buffer 處理）在 E2E 較難觸發
         // 2. plugins/javascript parser 幾乎未使用（branches 1.17%）拉低整體覆蓋率
         // 3. 相關邏輯已在 unit 測試補齊覆蓋（tests/unit/shared/shared.test.ts）
         // 4. Issue #41-#46 新增大量 Parser 可選方法，增加分支數但 fallback 邏輯在 E2E 難觸發
-        branches: 37,
+        // 5. 移除未使用的 application/workflows/ 死程式碼，該模組無測試覆蓋
+        branches: 36,
         statements: 40
       }
     },

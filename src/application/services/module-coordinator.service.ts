@@ -24,7 +24,6 @@ import type {
   RenameOperation,
   RenameResult,
   MoveResult,
-  CodeChange,
   ErrorContext
 } from '../types.js';
 
@@ -92,69 +91,19 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   }
 
   /**
-   * 分析並重構
+   * @deprecated 使用 CLI 命令取代
    */
   async analyzeAndRefactor(filePath: string, options: RefactorOptions): Promise<RefactorResult> {
-    const context: ErrorContext = {
-      module: 'module-coordinator',
-      operation: 'analyzeAndRefactor',
-      parameters: { filePath, options },
-      timestamp: new Date()
-    };
-
-    try {
-      // 執行重構操作
-      const changes: CodeChange[] = [];
-      const success = true;
-
-      switch (options.type) {
-      case 'rename':
-        // TODO: 需要重構以使用 RenameEngine.generateChangeset + ChangeApplicator
-        // 原本的 rename() 方法已移除，改用 Changeset 架構
-        throw new ModuleCoordinatorError(
-          'Rename via ModuleCoordinator is deprecated. Use CLI rename command instead.',
-          { refactorType: options.type, filePath }
-        );
-
-      default:
-        throw new ModuleCoordinatorError(
-          `不支援的重構類型: ${options.type}`,
-          { refactorType: options.type }
-        );
-      }
-
-      // 發送模組協調事件
-      await this.emitModuleEvent('refactor-completed', {
-        filePath,
-        refactorType: options.type,
-        success,
-        changesCount: changes.length
-      });
-
-      return {
-        success,
-        changes,
-        preview: options.preview ? this.generatePreview(changes) : undefined
-      };
-
-    } catch (error) {
-      const handledError = await this.errorHandler.handle(error as Error, context);
-
-      return {
-        success: false,
-        changes: [],
-        error: handledError
-      };
-    }
+    throw new ModuleCoordinatorError(
+      `Refactor via ModuleCoordinator is deprecated. Use CLI commands instead.`,
+      { refactorType: options.type, filePath }
+    );
   }
 
   /**
-   * 批次重新命名操作
    * @deprecated 使用 CLI rename 命令取代
    */
   async batchRename(_operations: RenameOperation[]): Promise<RenameResult[]> {
-    // TODO: 需要重構以使用 RenameEngine.generateChangeset + ChangeApplicator
-    // 原本的 rename() 方法已移除，改用 Changeset 架構
     throw new ModuleCoordinatorError(
       'BatchRename via ModuleCoordinator is deprecated. Use CLI rename command instead.'
     );
@@ -298,18 +247,4 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     }
   }
 
-  /**
-   * 生成預覽內容
-   */
-  private generatePreview(changes: CodeChange[]): string {
-    if (changes.length === 0) {
-      return '無變更';
-    }
-
-    const previews = changes.map(change =>
-      `檔案: ${change.filePath}\n變更:\n${change.newContent.slice(0, 200)}...`
-    );
-
-    return previews.join('\n\n');
-  }
 }
