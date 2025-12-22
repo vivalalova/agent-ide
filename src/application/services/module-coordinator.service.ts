@@ -105,40 +105,16 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     try {
       // 執行重構操作
       const changes: CodeChange[] = [];
-      let success = true;
+      const success = true;
 
       switch (options.type) {
       case 'rename':
-        if (options.selection && options.newName) {
-          try {
-            const renameResult = await this.renameEngine.rename({
-
-              symbol: {} as unknown as Parameters<typeof this.renameEngine.rename>[0]['symbol'],
-              newName: options.newName,
-              filePaths: [filePath],
-              position: {
-                line: options.selection.start.line,
-                column: options.selection.start.column,
-                offset: 0
-              }
-            });
-            if (renameResult.success && renameResult.operations) {
-              changes.push(...renameResult.operations.map((op) => ({
-                filePath: op.filePath,
-                oldContent: op.oldText,
-                newContent: op.newText,
-                range: op.range
-              })));
-            } else {
-              success = false;
-            }
-          } catch {
-            success = false;
-          }
-        } else {
-          success = false;
-        }
-        break;
+        // TODO: 需要重構以使用 RenameEngine.generateChangeset + ChangeApplicator
+        // 原本的 rename() 方法已移除，改用 Changeset 架構
+        throw new ModuleCoordinatorError(
+          'Rename via ModuleCoordinator is deprecated. Use CLI rename command instead.',
+          { refactorType: options.type, filePath }
+        );
 
       default:
         throw new ModuleCoordinatorError(
@@ -174,68 +150,14 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
   /**
    * 批次重新命名操作
+   * @deprecated 使用 CLI rename 命令取代
    */
-  async batchRename(operations: RenameOperation[]): Promise<RenameResult[]> {
-    const results: RenameResult[] = [];
-
-    for (const operation of operations) {
-      const context: ErrorContext = {
-        module: 'module-coordinator',
-        operation: 'batchRename',
-        parameters: { operation },
-        timestamp: new Date()
-      };
-
-      try {
-        const renameResult = await this.renameEngine.rename({
-
-          symbol: {} as unknown as Parameters<typeof this.renameEngine.rename>[0]['symbol'],
-          newName: operation.newName,
-          filePaths: [operation.filePath],
-          position: operation.position
-        });
-
-        // 確保 renameResult 符合預期格式
-        if (renameResult && typeof renameResult === 'object') {
-          results.push({
-            success: renameResult.success,
-            filesChanged: renameResult.affectedFiles.length,
-            changes: renameResult.operations.map((op) => ({
-              filePath: op.filePath,
-              oldContent: op.oldText,
-              newContent: op.newText,
-              range: op.range
-            }))
-          });
-        } else {
-          results.push({
-            success: false,
-            filesChanged: 0,
-            changes: [],
-            error: new ModuleCoordinatorError('重新命名操作返回無效結果')
-          });
-        }
-
-      } catch (error) {
-        const handledError = await this.errorHandler.handle(error as Error, context);
-
-        results.push({
-          success: false,
-          filesChanged: 0,
-          changes: [],
-          error: handledError
-        });
-      }
-    }
-
-    // 發送批次操作完成事件
-    await this.emitModuleEvent('batch-rename-completed', {
-      totalOperations: operations.length,
-      successCount: results.filter(r => r.success).length,
-      failureCount: results.filter(r => !r.success).length
-    });
-
-    return results;
+  async batchRename(_operations: RenameOperation[]): Promise<RenameResult[]> {
+    // TODO: 需要重構以使用 RenameEngine.generateChangeset + ChangeApplicator
+    // 原本的 rename() 方法已移除，改用 Changeset 架構
+    throw new ModuleCoordinatorError(
+      'BatchRename via ModuleCoordinator is deprecated. Use CLI rename command instead.'
+    );
   }
 
   /**

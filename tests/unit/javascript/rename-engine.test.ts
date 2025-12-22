@@ -226,36 +226,26 @@ describe('JavaScript RenameEngine', () => {
   // MARK: - 錯誤處理
 
   describe('錯誤處理', () => {
-    it('rename: 空名稱應該拋出錯誤', async () => {
+    it('validateRename: 空名稱應該拋出錯誤', async () => {
       await memfs.fromJSON({ '/test/file.js': 'const test = 1;' });
 
       const symbol = createTestSymbol('test');
-      await expect(renameEngine.rename({
+      await expect(renameEngine.validateRename({
         symbol,
         newName: '',
         filePaths: ['/test/file.js']
       })).rejects.toThrow('新名稱不能為空');
     });
 
-    it('rename: 空白名稱應該拋出錯誤', async () => {
+    it('validateRename: 空白名稱應該拋出錯誤', async () => {
       await memfs.fromJSON({ '/test/file.js': 'const test = 1;' });
 
       const symbol = createTestSymbol('test');
-      await expect(renameEngine.rename({
+      await expect(renameEngine.validateRename({
         symbol,
         newName: '   ',
         filePaths: ['/test/file.js']
       })).rejects.toThrow('新名稱不能為空');
-    });
-
-    it('rename: 空檔案路徑應該拋出錯誤', async () => {
-      const symbol = createTestSymbol('test');
-
-      await expect(renameEngine.rename({
-        symbol,
-        newName: 'newName',
-        filePaths: []
-      })).rejects.toThrow('必須指定至少一個檔案路徑');
     });
 
     it('validateRename: 空檔案路徑應該拋出錯誤', async () => {

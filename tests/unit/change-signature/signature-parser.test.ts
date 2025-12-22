@@ -127,7 +127,7 @@ describe('SignatureParser', () => {
 
     it('formatSignature 回傳 null 時應 fallback', async () => {
       // Given
-      const code = `const add = (a: number, b: number): number => a + b;`;
+      const code = 'const add = (a: number, b: number): number => a + b;';
       const files = { '/math.ts': code };
       const parser = createMockParser({
         formatSignature: vi.fn().mockReturnValue(null)
@@ -198,71 +198,71 @@ describe('SignatureParser', () => {
     it.each([
       {
         scenario: '一般函數宣告',
-        code: `function greet(name: string): string { return name; }`,
+        code: 'function greet(name: string): string { return name; }',
         functionName: 'greet',
         expectedParams: ['name']
       },
       {
         scenario: 'export 函數',
-        code: `export function greet(name: string): void {}`,
+        code: 'export function greet(name: string): void {}',
         functionName: 'greet',
         expectedParams: ['name'],
         expectedModifiers: ['export']
       },
       {
         scenario: 'async 函數',
-        code: `async function fetchData(url: string): Promise<string> {}`,
+        code: 'async function fetchData(url: string): Promise<string> {}',
         functionName: 'fetchData',
         expectedParams: ['url'],
         expectedModifiers: ['async']
       },
       {
         scenario: 'export async 函數',
-        code: `export async function processData(data: Data): Promise<Result> {}`,
+        code: 'export async function processData(data: Data): Promise<Result> {}',
         functionName: 'processData',
         expectedParams: ['data'],
         expectedModifiers: ['export', 'async']
       },
       {
         scenario: '箭頭函式',
-        code: `const add = (a: number, b: number): number => a + b;`,
+        code: 'const add = (a: number, b: number): number => a + b;',
         functionName: 'add',
         expectedParams: ['a', 'b']
       },
       {
         scenario: 'export 箭頭函式',
-        code: `export const multiply = (x: number, y: number) => x * y;`,
+        code: 'export const multiply = (x: number, y: number) => x * y;',
         functionName: 'multiply',
         expectedParams: ['x', 'y'],
         expectedModifiers: ['export']
       },
       {
         scenario: '多參數函數',
-        code: `function createUser(name: string, age: number, email: string): User {}`,
+        code: 'function createUser(name: string, age: number, email: string): User {}',
         functionName: 'createUser',
         expectedParams: ['name', 'age', 'email']
       },
       {
         scenario: '無參數函數',
-        code: `function getTimestamp(): number { return Date.now(); }`,
+        code: 'function getTimestamp(): number { return Date.now(); }',
         functionName: 'getTimestamp',
         expectedParams: []
       },
       {
         scenario: '可選參數',
-        code: `function greet(name?: string): string { return name ?? 'World'; }`,
+        code: 'function greet(name?: string): string { return name ?? \'World\'; }',
         functionName: 'greet',
         expectedParams: ['name']
       },
       {
         scenario: '預設值參數',
-        code: `function greet(name: string = 'World'): string { return name; }`,
+        code: 'function greet(name: string = \'World\'): string { return name; }',
         functionName: 'greet',
         expectedParams: ['name']
       },
       {
         scenario: 'rest 參數',
-        code: `function sum(...numbers: number[]): number { return 0; }`,
+        code: 'function sum(...numbers: number[]): number { return 0; }',
         functionName: 'sum',
         expectedParams: ['numbers']
       }
@@ -358,7 +358,7 @@ describe('SignatureParser', () => {
   describe('JavaScript 解析', () => {
     it('JS 檔案應移除型別資訊', async () => {
       // Given
-      const code = `function greet(name) { return 'Hello ' + name; }`;
+      const code = 'function greet(name) { return \'Hello \' + name; }';
       const files = { '/test.js': code };
       const parserRegistry = createMockParserRegistry(null);
       const fileSystem = createMockFileSystem(files);
@@ -380,7 +380,7 @@ describe('SignatureParser', () => {
   describe('函數找不到', () => {
     it('函數名稱不存在應回傳 null', async () => {
       // Given
-      const code = `function foo() {}`;
+      const code = 'function foo() {}';
       const files = { '/test.ts': code };
       const parserRegistry = createMockParserRegistry(null);
       const fileSystem = createMockFileSystem(files);

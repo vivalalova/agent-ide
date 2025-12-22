@@ -5,11 +5,9 @@
 
 import {
   RenameOptions,
-  RenameResult,
   RenameOperation,
   RenamePreview,
   ValidationResult,
-  BatchRenameResult,
   ConflictInfo,
   ConflictType,
   RenameSummary,
@@ -35,7 +33,6 @@ const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
  * 使用 Parser 的 AST 分析進行精確的符號重命名
  */
 export class RenameEngine {
-  private readonly renameHistory = new Map<string, RenameResult>();
   private readonly reservedKeywords = new Set([
     'function', 'var', 'let', 'const', 'if', 'else', 'for', 'while',
     'do', 'switch', 'case', 'break', 'continue', 'return', 'try',
@@ -98,82 +95,6 @@ export class RenameEngine {
     }
 
     return references;
-  }
-
-  /**
-   * 執行重新命名操作
-   */
-  async rename(options: RenameOptions): Promise<RenameResult> {
-    // 驗證選項
-    this.validateOptions(options);
-
-    // 先驗證重新命名的有效性
-    const validation = await this.validateRename(options);
-    if (!validation.isValid) {
-      return {
-        success: false,
-        operations: [],
-        affectedFiles: [],
-        renameId: '',
-        errors: validation.errors || ['重新命名驗證失敗']
-      };
-    }
-
-    try {
-      // 使用 updateCrossFileReferences 來處理跨檔案重新命名（與 preview 共用相同邏輯）
-      const updateResult = await this.referenceUpdater.updateCrossFileReferences(
-        options.symbol,
-        options.newName,
-        Array.from(options.filePaths)
-      );
-
-      if (!updateResult.success) {
-        return {
-          success: false,
-          operations: [],
-          affectedFiles: [],
-          renameId: '',
-          errors: updateResult.errors || ['重新命名更新失敗']
-        };
-      }
-
-      // 轉換 UpdatedFile 到 RenameOperation
-      const operations: RenameOperation[] = [];
-      const affectedFiles: string[] = [];
-
-      for (const updatedFile of updateResult.updatedFiles) {
-        affectedFiles.push(updatedFile.filePath);
-        for (const change of updatedFile.changes) {
-          operations.push(createRenameOperation(
-            updatedFile.filePath,
-            change.oldText,
-            change.newText,
-            change.range
-          ));
-        }
-      }
-
-      const renameId = this.generateRenameId();
-      const result: RenameResult = {
-        success: true,
-        operations,
-        affectedFiles,
-        renameId
-      };
-
-      // 儲存到歷史記錄
-      this.renameHistory.set(renameId, result);
-
-      return result;
-    } catch (error) {
-      return {
-        success: false,
-        operations: [],
-        affectedFiles: [],
-        renameId: '',
-        errors: [error instanceof Error ? error.message : String(error)]
-      };
-    }
   }
 
   /**
@@ -355,103 +276,6 @@ export class RenameEngine {
   }
 
   /**
-   * 批次重新命名操作
-   */
-  async batchRename(operations: RenameOperation[]): Promise<BatchRenameResult> {
-    const results: RenameResult[] = [];
-    const errors: string[] = [];
-    let totalOps = 0;
-
-    try {
-      // 使用 ReferenceUpdater 批次處理操作
-      const updateResult = await this.referenceUpdater.applyRenameOperations(operations);
-
-      if (!updateResult.success) {
-        return {
-          success: false,
-          results: [],
-          totalOperations: operations.length,
-          errors: updateResult.errors || ['批次重新命名失敗']
-        };
-      }
-
-      // 為每個更新的檔案建立 RenameResult
-      const fileOperationsMap = new Map<string, RenameOperation[]>();
-
-      // 按檔案分組操作
-      for (const operation of operations) {
-        const fileOps = fileOperationsMap.get(operation.filePath) || [];
-        fileOps.push(operation);
-        fileOperationsMap.set(operation.filePath, fileOps);
-      }
-
-      // 為每組操作建立結果
-      for (const [filePath, fileOps] of Array.from(fileOperationsMap.entries())) {
-        const renameId = this.generateRenameId();
-        const result: RenameResult = {
-          success: true,
-          operations: fileOps,
-          affectedFiles: [filePath],
-          renameId
-        };
-
-        results.push(result);
-        this.renameHistory.set(renameId, result);
-        totalOps += fileOps.length;
-      }
-
-      return {
-        success: true,
-        results,
-        totalOperations: totalOps
-      };
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      return {
-        success: false,
-        results: [],
-        totalOperations: operations.length,
-        errors
-      };
-    }
-  }
-
-  /**
-   * 撤銷重新命名操作
-   */
-  async undo(renameId: string): Promise<void> {
-    if (!this.renameHistory.has(renameId)) {
-      throw new Error(`找不到重新命名操作 ID: ${renameId}`);
-    }
-
-    const originalResult = this.renameHistory.get(renameId)!;
-
-    try {
-      // 建立反向操作來撤銷變更
-      const undoOperations: RenameOperation[] = originalResult.operations.map(op =>
-        createRenameOperation(
-          op.filePath,
-          op.newText, // 交換新舊文字
-          op.oldText,
-          op.range
-        )
-      );
-
-      // 執行撤銷操作
-      const undoResult = await this.referenceUpdater.applyRenameOperations(undoOperations);
-
-      if (!undoResult.success) {
-        throw new Error(`撤銷操作失敗: ${undoResult.errors?.join(', ') || '未知錯誤'}`);
-      }
-
-      // 從歷史記錄中移除
-      this.renameHistory.delete(renameId);
-    } catch (error) {
-      throw new Error(`撤銷重新命名操作失敗: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
    * 檢測命名衝突
    * @param scope 作用域資訊（預留參數，未來可用於更精確的衝突檢測）
    */
@@ -480,85 +304,6 @@ export class RenameEngine {
     // 這需要 AST 和更多上下文資訊，目前先簡化實作
 
     return conflicts;
-  }
-
-  /**
-   * 執行跨檔案重新命名
-   */
-  async renameAcrossFiles(
-    symbol: Symbol,
-    newName: string,
-    projectFiles: string[]
-  ): Promise<RenameResult> {
-    try {
-      // 先驗證重新命名的有效性
-      const options = { symbol, newName, filePaths: projectFiles };
-      const validation = await this.validateRename(options);
-
-      if (!validation.isValid) {
-        return {
-          success: false,
-          operations: [],
-          affectedFiles: [],
-          renameId: '',
-          errors: validation.errors || ['跨檔案重新命名驗證失敗']
-        };
-      }
-
-      // 使用 ReferenceUpdater 處理跨檔案更新
-      const updateResult = await this.referenceUpdater.updateCrossFileReferences(
-        symbol,
-        newName,
-        projectFiles
-      );
-
-      if (!updateResult.success) {
-        return {
-          success: false,
-          operations: [],
-          affectedFiles: [],
-          renameId: '',
-          errors: updateResult.errors || ['跨檔案重新命名更新失敗']
-        };
-      }
-
-      // 轉換結果
-      const operations: RenameOperation[] = [];
-      const affectedFiles: string[] = [];
-
-      for (const updatedFile of updateResult.updatedFiles) {
-        affectedFiles.push(updatedFile.filePath);
-        for (const change of updatedFile.changes) {
-          operations.push(createRenameOperation(
-            updatedFile.filePath,
-            change.oldText,
-            change.newText,
-            change.range
-          ));
-        }
-      }
-
-      const renameId = this.generateRenameId();
-      const result: RenameResult = {
-        success: true,
-        operations,
-        affectedFiles,
-        renameId
-      };
-
-      // 儲存到歷史記錄
-      this.renameHistory.set(renameId, result);
-
-      return result;
-    } catch (error) {
-      return {
-        success: false,
-        operations: [],
-        affectedFiles: [],
-        renameId: '',
-        errors: [error instanceof Error ? error.message : String(error)]
-      };
-    }
   }
 
   /**
@@ -598,10 +343,4 @@ export class RenameEngine {
     return UNICODE_IDENTIFIER_PATTERN.test(name);
   }
 
-  /**
-   * 產生重新命名 ID
-   */
-  private generateRenameId(): string {
-    return `rename_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
 }
