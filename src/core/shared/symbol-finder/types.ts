@@ -83,3 +83,53 @@ export interface SymbolDefinition {
   readonly signature?: string;
   readonly documentation?: string;
 }
+
+/**
+ * 符號唯一識別鍵
+ * 用於區分不同作用域的同名符號（如 Dog.bark vs Car.bark）
+ */
+export interface SymbolKey {
+  /** 符號名稱 */
+  readonly name: string;
+  /** 所屬容器（類別、介面等）*/
+  readonly containerName: string | undefined;
+  /** 定義檔案路徑 */
+  readonly filePath: string;
+  /** 定義行號（用於同檔案同容器內的區分）*/
+  readonly line: number;
+}
+
+/**
+ * 將 Symbol 轉換為 SymbolKey
+ */
+export function symbolToKey(symbol: Symbol): SymbolKey {
+  return {
+    name: symbol.name,
+    containerName: symbol.scope?.name,
+    filePath: symbol.location.filePath,
+    line: symbol.location.range.start.line
+  };
+}
+
+/**
+ * 將 SymbolKey 序列化為字串（用於 Map 鍵）
+ * 格式：filePath:line:containerName:name
+ */
+export function serializeSymbolKey(key: SymbolKey): string {
+  return `${key.filePath}:${key.line}:${key.containerName ?? ''}:${key.name}`;
+}
+
+/**
+ * 將序列化字串反序列化為 SymbolKey
+ */
+export function deserializeSymbolKey(serialized: string): SymbolKey {
+  const parts = serialized.split(':');
+  // 格式：filePath:line:containerName:name
+  // filePath 可能包含 ':'，所以從後往前解析
+  const name = parts.pop()!;
+  const containerName = parts.pop() || undefined;
+  const line = parseInt(parts.pop()!, 10);
+  const filePath = parts.join(':');
+
+  return { name, containerName, filePath, line };
+}

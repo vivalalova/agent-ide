@@ -11,7 +11,11 @@ export {
   type CallSite,
   type CallSiteArgument,
   type ClassMember,
-  type SymbolDefinition
+  type SymbolDefinition,
+  type SymbolKey,
+  symbolToKey,
+  serializeSymbolKey,
+  deserializeSymbolKey
 } from './types.js';
 
 // 主類別

@@ -15,7 +15,9 @@ import {
   type SymbolReference,
   type CallSite,
   type ClassMember,
-  type SymbolDefinition
+  type SymbolDefinition,
+  symbolToKey,
+  serializeSymbolKey
 } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
@@ -85,20 +87,45 @@ export class SymbolFinder {
   }
 
   /**
-   * 批次查找符號的引用（一次遍歷所有檔案，減少重複解析）
+   * 批次查找符號的引用（使用完整 Symbol 資訊，可區分同名符號）
+   *
    * 時間複雜度：O(M x N)，M=檔案數，N=符號數
    * 優化點：M 次檔案讀取/解析（一次遍歷 M 檔查找 N 符號），
    * 而非 N x M 次（N 符號各遍歷 M 檔）
+   *
+   * @param symbols 要查找的符號陣列（包含完整的作用域資訊）
+   * @param projectFiles 專案檔案列表
+   * @returns Map<序列化的SymbolKey, 引用列表>，可使用 deserializeSymbolKey 還原
+   *
+   * @example
+   * ```typescript
+   * const results = await finder.findReferencesMultiple(symbols, files);
+   * for (const symbol of symbols) {
+   *   const key = serializeSymbolKey(symbolToKey(symbol));
+   *   const refs = results.get(key) ?? [];
+   * }
+   * ```
    */
   async findReferencesMultiple(
-    symbolNames: ReadonlySet<string>,
+    symbols: ReadonlyArray<Symbol>,
     projectFiles: readonly string[]
   ): Promise<Map<string, SymbolReference[]>> {
     const results = new Map<string, SymbolReference[]>();
 
-    // 初始化結果 Map
-    for (const name of symbolNames) {
-      results.set(name, []);
+    // 建立 symbolKey -> symbol 的對應，用於後續精確匹配
+    const symbolKeyMap = new Map<string, Symbol>();
+    for (const symbol of symbols) {
+      const key = serializeSymbolKey(symbolToKey(symbol));
+      results.set(key, []);
+      symbolKeyMap.set(key, symbol);
+    }
+
+    // 同時建立 name -> symbols 的對應，用於快速過濾
+    const symbolsByName = new Map<string, Symbol[]>();
+    for (const symbol of symbols) {
+      const existing = symbolsByName.get(symbol.name) || [];
+      existing.push(symbol);
+      symbolsByName.set(symbol.name, existing);
     }
 
     // 一次遍歷所有檔案
@@ -109,50 +136,71 @@ export class SymbolFinder {
       }
 
       const parser = this.getParser(filePath);
-      if (!parser) {
-        // 降級到文字匹配
-        this.textMatcher.findReferencesMultipleByText(filePath, content, symbolNames, results);
-        continue;
-      }
+      const lines = content.split('\n');
 
-      try {
-        const ast = await parser.parse(content, filePath);
+      // 對每個目標符號查找引用
+      for (const [key, symbol] of symbolKeyMap) {
+        const containerName = symbol.scope?.name;
 
-        // 對每個目標符號查找引用
-        for (const symbolName of symbolNames) {
-          const dummySymbol: Symbol = {
-            name: symbolName,
-            type: SymbolType.Variable,
-            location: {
-              filePath,
-              range: {
-                start: { line: 1, column: 1, offset: undefined },
-                end: { line: 1, column: 1, offset: undefined }
-              }
-            },
-            scope: undefined,
-            modifiers: []
-          };
+        // 優先使用 findScopedReferences（精確匹配作用域）
+        if (parser && typeof parser.findScopedReferences === 'function') {
+          const scopedRefs = parser.findScopedReferences(content, symbol.name, { className: containerName });
 
-          const references = await parser.findReferences(ast, dummySymbol);
-          const refs = results.get(symbolName);
-          if (!refs) {
+          if (scopedRefs) {
+            const refs = results.get(key)!;
+            for (const ref of scopedRefs) {
+              const lineIndex = ref.location.range.start.line - 1;
+              const context = lineIndex >= 0 && lineIndex < lines.length
+                ? lines[lineIndex]
+                : undefined;
+
+              refs.push({
+                symbolName: symbol.name,
+                location: { filePath, range: ref.location.range },
+                type: this.scopedReferenceKindToType(ref.kind),
+                context,
+                containerName: ref.containerName,
+                isMethodCall: ref.kind === ScopedReferenceKind.Call
+              });
+            }
             continue;
           }
-
-          for (const ref of references) {
-            refs.push({
-              symbolName,
-              location: ref.location,
-              type: ref.type === 'definition'
-                ? SymbolReferenceType.Definition
-                : SymbolReferenceType.Usage
-            });
-          }
         }
-      } catch {
-        // Parser 失敗，降級到文字匹配
-        this.textMatcher.findReferencesMultipleByText(filePath, content, symbolNames, results);
+
+        // Fallback：使用完整符號資訊查找
+        if (parser) {
+          try {
+            const ast = await parser.parse(content, filePath);
+            const references = await parser.findReferences(ast, symbol);
+
+            const refs = results.get(key)!;
+            for (const ref of references) {
+              const lineIndex = ref.location.range.start.line - 1;
+              const context = lineIndex >= 0 && lineIndex < lines.length
+                ? lines[lineIndex]
+                : undefined;
+
+              refs.push({
+                symbolName: symbol.name,
+                location: ref.location,
+                type: ref.type === 'definition'
+                  ? SymbolReferenceType.Definition
+                  : SymbolReferenceType.Usage,
+                context
+              });
+            }
+          } catch {
+            // Parser 失敗，降級到文字匹配
+            const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
+            const refs = results.get(key)!;
+            refs.push(...textRefs);
+          }
+        } else {
+          // 無 Parser，使用文字匹配
+          const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
+          const refs = results.get(key)!;
+          refs.push(...textRefs);
+        }
       }
     }
 
