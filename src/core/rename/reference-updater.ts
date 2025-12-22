@@ -524,7 +524,7 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       this.fileCache.set(filePath, content);
       return content;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

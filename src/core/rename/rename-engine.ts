@@ -58,7 +58,7 @@ export class RenameEngine {
   async findReferences(
     filePaths: string[],
     symbol: Symbol,
-    position?: { line: number; column: number }
+    _position?: { line: number; column: number }
   ): Promise<Array<{ filePath: string; line: number; column: number; text: string }>> {
     const references: Array<{ filePath: string; line: number; column: number; text: string }> = [];
 
@@ -286,7 +286,7 @@ export class RenameEngine {
         conflicts: validation.conflicts,
         summary
       };
-    } catch (error) {
+    } catch {
       // 發生錯誤時回傳基本預覽
       const operation = createRenameOperation(
         options.symbol.location.filePath,
