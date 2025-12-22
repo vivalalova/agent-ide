@@ -206,8 +206,9 @@ describe('CLI 整合測試', () => {
   // ========================================
 
   describe('Error Handling', () => {
-    it('move - 目標路徑已存在應失敗', () => {
-      const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils" "${SAMPLE_PROJECT}/src/models" --path "${SAMPLE_PROJECT}" --format json`);
+    it('move - 目標檔案已存在應失敗', () => {
+      // 移動 index.ts 到已存在的 user-model.ts
+      const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/index.ts" "${SAMPLE_PROJECT}/src/models/user-model.ts" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(false);
     });
 
