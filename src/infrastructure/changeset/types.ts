@@ -9,7 +9,11 @@ import type { Range } from '@shared/types/core.js';
  * 文字替換操作 - 統一的變更基本單位
  */
 export interface TextEdit {
-  /** 要替換的範圍 */
+  /**
+   * 要替換的範圍
+   * 使用 1-based 索引（行號和列號都從 1 開始）
+   * 與 TypeScript AST 的 0-based 索引不同，轉換時需要 +1
+   */
   readonly range: Range;
   /** 新的文字內容 */
   readonly newText: string;

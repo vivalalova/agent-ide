@@ -56,14 +56,14 @@ export class ChangeApplicator {
           errors.push(`文字變更失敗 [${textChange.filePath}]: ${message}`);
 
           if (rollbackOnError) {
-            await this.rollback(backups);
+            const rollbackErrors = await this.rollback(backups);
             return {
               success: false,
               modifiedFiles: [],
               createdFiles: [],
               deletedFiles: [],
               movedFiles: [],
-              errors
+              errors: [...errors, ...rollbackErrors]
             };
           }
         }
@@ -97,14 +97,14 @@ export class ChangeApplicator {
           errors.push(`檔案操作失敗 [${operation.type}]: ${message}`);
 
           if (rollbackOnError) {
-            await this.rollback(backups);
+            const rollbackErrors = await this.rollback(backups);
             return {
               success: false,
               modifiedFiles: [],
               createdFiles: [],
               deletedFiles: [],
               movedFiles: [],
-              errors
+              errors: [...errors, ...rollbackErrors]
             };
           }
         }
@@ -123,7 +123,8 @@ export class ChangeApplicator {
       errors.push(`應用變更時發生未預期錯誤: ${message}`);
 
       if (rollbackOnError && backups.length > 0) {
-        await this.rollback(backups);
+        const rollbackErrors = await this.rollback(backups);
+        errors.push(...rollbackErrors);
       }
 
       return {
@@ -355,11 +356,20 @@ export class ChangeApplicator {
   /**
    * 計算指定位置的字元偏移量
    * @param lines 行陣列
-   * @param line 行號（從 1 開始）
-   * @param column 列號（從 1 開始）
+   * @param line 行號（1-based，從 1 開始）
+   * @param column 列號（1-based，從 1 開始）
    * @returns 字元偏移量
+   * @throws Error 當行號或列號無效時
    */
   private calculateOffset(lines: string[], line: number, column: number): number {
+    // 驗證參數
+    if (line < 1) {
+      throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
+    }
+    if (column < 1) {
+      throw new Error(`無效的列號: ${column}，列號必須 >= 1（1-based 索引）`);
+    }
+
     let offset = 0;
 
     // 累加前面所有行的長度
@@ -448,8 +458,11 @@ export class ChangeApplicator {
    * 回滾所有變更
    * 反向遍歷備份，恢復原始狀態
    * @param backups 備份列表
+   * @returns 回滾過程中發生的錯誤列表
    */
-  private async rollback(backups: readonly BackupEntry[]): Promise<void> {
+  private async rollback(backups: readonly BackupEntry[]): Promise<readonly string[]> {
+    const rollbackErrors: string[] = [];
+
     // 反向遍歷備份
     for (let i = backups.length - 1; i >= 0; i--) {
       const backup = backups[i];
@@ -489,9 +502,12 @@ export class ChangeApplicator {
           }
         }
       } catch (error) {
-        // 回滾時發生錯誤，記錄但繼續處理其他項目
-        console.error(`回滾失敗 [${backup.filePath}]:`, error);
+        // 回滾時發生錯誤，收集錯誤並繼續處理其他項目
+        const message = error instanceof Error ? error.message : String(error);
+        rollbackErrors.push(`回滾失敗 [${backup.filePath}]: ${message}`);
       }
     }
+
+    return rollbackErrors;
   }
 }
