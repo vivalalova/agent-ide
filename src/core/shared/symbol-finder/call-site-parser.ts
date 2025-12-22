@@ -3,6 +3,7 @@
  * 負責解析函式呼叫點及其參數
  */
 
+import * as ts from 'typescript';
 import type { CallSite, CallSiteArgument } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 
@@ -19,8 +20,204 @@ export class CallSiteParser {
 
   /**
    * 查找檔案中的函式呼叫點
+   * 使用 TypeScript AST 進行精確解析，正確處理字串、註解中的括號
    */
   findCallSitesInFile(
+    filePath: string,
+    content: string,
+    functionName: string
+  ): CallSite[] {
+    const callSites: CallSite[] = [];
+
+    try {
+      // 使用 TypeScript 解析程式碼
+      const sourceFile = ts.createSourceFile(
+        filePath,
+        content,
+        ts.ScriptTarget.Latest,
+        true
+      );
+
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node)) {
+          const callInfo = this.extractCallExpressionInfo(node, sourceFile, functionName);
+          if (callInfo) {
+            callSites.push({
+              functionName,
+              location: {
+                filePath,
+                range: callInfo.range
+              },
+              arguments: callInfo.arguments,
+              isMethodCall: callInfo.isMethodCall,
+              receiver: callInfo.receiver
+            });
+          }
+        }
+
+        ts.forEachChild(node, visit);
+      };
+
+      visit(sourceFile);
+    } catch {
+      // AST 解析失敗，fallback 到正則匹配（保留向後相容）
+      return this.findCallSitesInFileFallback(filePath, content, functionName);
+    }
+
+    return callSites;
+  }
+
+  /**
+   * 從 CallExpression 節點提取呼叫資訊
+   */
+  private extractCallExpressionInfo(
+    node: ts.CallExpression,
+    sourceFile: ts.SourceFile,
+    targetName: string
+  ): {
+    range: { start: { line: number; column: number; offset: undefined }; end: { line: number; column: number; offset: undefined } };
+    arguments: CallSiteArgument[];
+    isMethodCall: boolean;
+    receiver?: string;
+  } | null {
+    const expr = node.expression;
+    let calleeName: string;
+    let isMethodCall = false;
+    let receiver: string | undefined;
+
+    if (ts.isIdentifier(expr)) {
+      calleeName = expr.text;
+    } else if (ts.isPropertyAccessExpression(expr)) {
+      calleeName = expr.name.text;
+      isMethodCall = true;
+      receiver = expr.expression.getText(sourceFile);
+    } else {
+      // 不支援的呼叫類型
+      return null;
+    }
+
+    // 檢查是否為目標函式
+    if (calleeName !== targetName) {
+      return null;
+    }
+
+    // 檢查是否為函式定義（排除）
+    if (this.isPartOfFunctionDefinition(node, sourceFile)) {
+      return null;
+    }
+
+    // 提取位置資訊
+    const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+
+    // 提取參數
+    const args = this.extractArgumentsFromCallExpression(node, sourceFile);
+
+    return {
+      range: {
+        start: { line: start.line + 1, column: start.character + 1, offset: undefined },
+        end: { line: end.line + 1, column: end.character + 1, offset: undefined }
+      },
+      arguments: args,
+      isMethodCall,
+      receiver
+    };
+  }
+
+  /**
+   * 從 CallExpression 提取參數列表
+   * 使用 AST 精確解析，正確處理字串中的括號和逗號
+   */
+  private extractArgumentsFromCallExpression(
+    node: ts.CallExpression,
+    sourceFile: ts.SourceFile
+  ): CallSiteArgument[] {
+    const args: CallSiteArgument[] = [];
+
+    for (let i = 0; i < node.arguments.length; i++) {
+      const arg = node.arguments[i];
+      const start = sourceFile.getLineAndCharacterOfPosition(arg.getStart(sourceFile));
+      const end = sourceFile.getLineAndCharacterOfPosition(arg.getEnd());
+
+      // 檢查是否為具名參數（物件屬性簡寫或物件字面量）
+      let name: string | undefined;
+      let value = arg.getText(sourceFile);
+
+      // 處理 { key: value } 或 key = value 形式的具名參數
+      if (ts.isPropertyAssignment(arg) && ts.isIdentifier(arg.name)) {
+        name = arg.name.text;
+        value = arg.initializer.getText(sourceFile);
+      } else if (ts.isBinaryExpression(arg) && arg.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        if (ts.isIdentifier(arg.left)) {
+          name = arg.left.text;
+          value = arg.right.getText(sourceFile);
+        }
+      }
+
+      args.push({
+        index: i,
+        name,
+        value: value.trim(),
+        range: {
+          start: { line: start.line + 1, column: start.character + 1, offset: undefined },
+          end: { line: end.line + 1, column: end.character + 1, offset: undefined }
+        }
+      });
+    }
+
+    return args;
+  }
+
+  /**
+   * 檢查呼叫是否為函式定義的一部分（需排除）
+   */
+  private isPartOfFunctionDefinition(node: ts.CallExpression, sourceFile: ts.SourceFile): boolean {
+    // 向上遍歷父節點，檢查是否在函式宣告中
+    let current: ts.Node = node;
+
+    while (current.parent) {
+      const parent = current.parent;
+
+      // 如果父節點是函式宣告且呼叫不在函式體內，則是定義的一部分
+      if (ts.isFunctionDeclaration(parent) && parent.name) {
+        // 檢查呼叫是否在函式體內
+        if (parent.body && this.nodeContains(parent.body, node, sourceFile)) {
+          return false; // 在函式體內，是真正的呼叫
+        }
+        return true; // 不在函式體內，是定義的一部分
+      }
+
+      // 方法定義
+      if (ts.isMethodDeclaration(parent)) {
+        if (parent.body && this.nodeContains(parent.body, node, sourceFile)) {
+          return false;
+        }
+        return true;
+      }
+
+      current = parent;
+    }
+
+    return false;
+  }
+
+  /**
+   * 檢查容器節點是否包含目標節點
+   */
+  private nodeContains(container: ts.Node, target: ts.Node, sourceFile: ts.SourceFile): boolean {
+    const containerStart = container.getStart(sourceFile);
+    const containerEnd = container.getEnd();
+    const targetStart = target.getStart(sourceFile);
+    const targetEnd = target.getEnd();
+
+    return targetStart >= containerStart && targetEnd <= containerEnd;
+  }
+
+  /**
+   * Fallback：使用正則表達式查找呼叫點（當 AST 解析失敗時）
+   * 保留原有邏輯以維持向後相容
+   */
+  private findCallSitesInFileFallback(
     filePath: string,
     content: string,
     functionName: string
@@ -225,6 +422,7 @@ export class CallSiteParser {
 
   /**
    * 分割參數（考慮巢狀括號）
+   * 注意：此方法無法正確處理字串中的括號，僅作為 fallback 使用
    */
   splitArguments(argsString: string): string[] {
     const result: string[] = [];

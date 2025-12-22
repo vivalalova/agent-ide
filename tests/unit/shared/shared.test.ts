@@ -767,7 +767,7 @@ function testFunc() {}`;
     });
 
     it('應該排除類別方法定義（有返回類型）', async () => {
-      const fileContent = '  testFunc(): string { return ""; }';
+      const fileContent = 'class MyClass { testFunc(): string { return ""; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -777,7 +777,7 @@ function testFunc() {}`;
     });
 
     it('應該排除類別方法定義（有大括號）', async () => {
-      const fileContent = '  testFunc() { return 1; }';
+      const fileContent = 'class MyClass { testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -787,7 +787,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 static 方法定義', async () => {
-      const fileContent = 'static testFunc() { return 1; }';
+      const fileContent = 'class MyClass { static testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -797,7 +797,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 private 方法定義', async () => {
-      const fileContent = 'private testFunc() { return 1; }';
+      const fileContent = 'class MyClass { private testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -807,7 +807,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 public 方法定義', async () => {
-      const fileContent = 'public testFunc() { return 1; }';
+      const fileContent = 'class MyClass { public testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -817,7 +817,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 protected 方法定義', async () => {
-      const fileContent = 'protected testFunc() { return 1; }';
+      const fileContent = 'class MyClass { protected testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -827,7 +827,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 get accessor 定義', async () => {
-      const fileContent = 'get testFunc() { return 1; }';
+      const fileContent = 'class MyClass { get testFunc() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -837,7 +837,7 @@ function testFunc() {}`;
     });
 
     it('應該排除 set accessor 定義', async () => {
-      const fileContent = 'set testFunc(v: number) { this.x = v; }';
+      const fileContent = 'class MyClass { set testFunc(v: number) { this.x = v; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 

@@ -323,7 +323,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
 
   describe('排除類別方法定義', () => {
     it('應該排除有返回類型的方法定義', async () => {
-      const fileContent = '  foo(): string { return ""; }';
+      const fileContent = 'class MyClass { foo(): string { return ""; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -333,7 +333,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除有大括號的方法定義', async () => {
-      const fileContent = '  foo() { return 1; }';
+      const fileContent = 'class MyClass { foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -343,7 +343,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 static 方法定義', async () => {
-      const fileContent = 'static foo() { return 1; }';
+      const fileContent = 'class MyClass { static foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -353,7 +353,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 private 方法定義', async () => {
-      const fileContent = 'private foo() { return 1; }';
+      const fileContent = 'class MyClass { private foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -363,7 +363,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 public 方法定義', async () => {
-      const fileContent = 'public foo() { return 1; }';
+      const fileContent = 'class MyClass { public foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -373,7 +373,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 protected 方法定義', async () => {
-      const fileContent = 'protected foo() { return 1; }';
+      const fileContent = 'class MyClass { protected foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -383,7 +383,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 get accessor 定義', async () => {
-      const fileContent = 'get foo() { return 1; }';
+      const fileContent = 'class MyClass { get foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -393,7 +393,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 set accessor 定義', async () => {
-      const fileContent = 'set foo(v: number) { this.x = v; }';
+      const fileContent = 'class MyClass { set foo(v: number) { this.x = v; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -403,7 +403,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除帶參數類型的方法定義', async () => {
-      const fileContent = '  foo(a: number, b: string): void { }';
+      const fileContent = 'class MyClass { foo(a: number, b: string): void { } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -506,13 +506,15 @@ const y = foo();`;
 
   describe('邊界條件', () => {
     it('應該處理找不到匹配右括號的情況', async () => {
+      // TypeScript AST parser 具有錯誤恢復能力，會嘗試解析不完整語法
+      // 對於 'foo(' 這種不完整呼叫，parser 仍能識別為 CallExpression
       const fileContent = 'foo(';  // 不完整的呼叫
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
       const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
 
-      // 即使括號不匹配，仍應該識別為呼叫
+      // TypeScript parser 的錯誤恢復機制會識別不完整的呼叫
       expect(result).toHaveLength(1);
     });
 
@@ -534,6 +536,54 @@ const y = foo();`;
       const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
 
       expect(result[0].arguments).toHaveLength(3);
+    });
+
+    it('應該正確處理字串中包含括號的參數', async () => {
+      const fileContent = 'foo("(test)", "a,b");';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(2);
+      expect(result[0].arguments[0].value).toBe('"(test)"');
+      expect(result[0].arguments[1].value).toBe('"a,b"');
+    });
+
+    it('應該正確處理模板字串中的括號', async () => {
+      const fileContent = 'foo(`text (${bar()}) end`);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
+      // 模板字串應該被正確解析
+      expect(result[0].arguments[0].value).toContain('bar()');
+    });
+
+    it('應該正確處理註解中的括號', async () => {
+      const fileContent = 'foo(/* comment with ) paren */ x);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
+    });
+
+    it('應該正確處理正則表達式中的括號', async () => {
+      const fileContent = 'foo(/\\(test\\)/);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
     });
 
     it('應該處理檔案不存在的情況', async () => {
