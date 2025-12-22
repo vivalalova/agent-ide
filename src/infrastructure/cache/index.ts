@@ -25,7 +25,14 @@ export {
   type CacheStrategy
 } from './strategies.js';
 
-// 型別定義
+// 型別定義（先 import 再 re-export）
+import type {
+  CacheOptions,
+  CacheStats,
+  CacheManagerOptions
+} from './types.js';
+import { EvictionStrategy } from './types.js';
+
 export {
   // 核心型別
   type CacheItem,
@@ -84,7 +91,7 @@ export const DEFAULT_MANAGER_OPTIONS = {
 /**
  * 工廠函式：建立預設配置的 MemoryCache
  */
-export function createMemoryCache<K, V>(options?: any) {
+export function createMemoryCache<K, V>(options?: Partial<CacheOptions>) {
   const { MemoryCache } = require('./memory-cache');
   return new MemoryCache({ ...DEFAULT_CACHE_OPTIONS, ...options });
 }
@@ -92,7 +99,7 @@ export function createMemoryCache<K, V>(options?: any) {
 /**
  * 工廠函式：建立預設配置的 CacheManager
  */
-export function createCacheManager(options?: any) {
+export function createCacheManager(options?: Partial<CacheManagerOptions>) {
   const { CacheManager } = require('./cache-manager');
   return new CacheManager({ ...DEFAULT_MANAGER_OPTIONS, ...options });
 }
@@ -103,7 +110,7 @@ export function createCacheManager(options?: any) {
 export function createLRUCache<K, V>(maxSize: number = 1000) {
   return createMemoryCache<K, V>({
     maxSize,
-    evictionStrategy: 'lru',
+    evictionStrategy: EvictionStrategy.LRU,
     enableStats: true
   });
 }
@@ -115,7 +122,7 @@ export function createTTLCache<K, V>(defaultTTL: number, maxSize: number = 1000)
   return createMemoryCache<K, V>({
     maxSize,
     defaultTTL,
-    evictionStrategy: 'ttl',
+    evictionStrategy: EvictionStrategy.TTL,
     enableStats: true
   });
 }
@@ -125,11 +132,11 @@ export function createTTLCache<K, V>(defaultTTL: number, maxSize: number = 1000)
  */
 export function createHighPerformanceCache<K, V>(options?: {
   maxSize?: number;
-  strategy?: any;
+  strategy?: typeof EvictionStrategy[keyof typeof EvictionStrategy];
 }) {
   return createMemoryCache<K, V>({
     maxSize: options?.maxSize ?? 10000,
-    evictionStrategy: options?.strategy ?? 'lru',
+    evictionStrategy: options?.strategy ?? EvictionStrategy.LRU,
     enableStats: false, // 停用統計以獲得更好效能
     cleanupInterval: 300000 // 5分鐘清理一次
   });
@@ -166,7 +173,7 @@ export class CacheUtils {
   /**
    * 合併多個快取統計
    */
-  static mergeStats(statsArray: any[]): any {
+  static mergeStats(statsArray: CacheStats[]): CacheStats {
     if (statsArray.length === 0) {
       return {
         totalRequests: 0,
@@ -203,21 +210,21 @@ export class CacheUtils {
   /**
    * 產生快取鍵的雜湊值
    */
-  static hashKey(key: any): string {
+  static hashKey(key: unknown): string {
     if (typeof key === 'string') {return key;}
     if (typeof key === 'number') {return key.toString();}
 
     try {
       return JSON.stringify(key);
     } catch {
-      return key.toString();
+      return String(key);
     }
   }
 
   /**
    * 驗證快取配置的合理性
    */
-  static validateCacheOptions(options: any): string[] {
+  static validateCacheOptions(options: Partial<CacheOptions>): string[] {
     const warnings: string[] = [];
 
     if (options.maxSize && options.maxSize <= 0) {
@@ -240,20 +247,25 @@ export class CacheUtils {
   }
 }
 
+/** 快取實例介面 */
+interface CacheInstance {
+  getStats(): CacheStats;
+}
+
 /**
  * 快取效能監控器
  */
 export class CacheMonitor {
-  private readonly caches = new Map<string, any>();
+  private readonly caches = new Map<string, CacheInstance>();
 
-  constructor(_manager?: any) {
+  constructor(_manager?: unknown) {
     // manager 參數保留以備未來使用
   }
 
   /**
    * 監控單一快取
    */
-  addCache(name: string, cache: any): void {
+  addCache(name: string, cache: CacheInstance): void {
     this.caches.set(name, cache);
   }
 
@@ -270,7 +282,7 @@ export class CacheMonitor {
   getPerformanceReport(): {
     caches: Array<{
       name: string;
-      stats: any;
+      stats: CacheStats;
       healthScore: number;
     }>;
     overall: {
@@ -303,7 +315,7 @@ export class CacheMonitor {
   /**
    * 計算快取健康評分（0-100）
    */
-  private calculateHealthScore(stats: any): number {
+  private calculateHealthScore(stats: CacheStats): number {
 
     // 命中率影響 (40%)
     const hitRateScore = stats.hitRate * 40;

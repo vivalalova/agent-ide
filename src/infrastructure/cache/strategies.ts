@@ -66,7 +66,8 @@ export class LRUStrategy<K, V> implements CacheStrategy<K, V> {
   }
 
   clear(): void {
-    this.head = this.tail = undefined as any;
+    this.head = undefined;
+    this.tail = undefined;
     this.nodes.clear();
   }
 

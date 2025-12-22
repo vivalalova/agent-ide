@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { glob as globby } from 'glob';
+import { glob as globby, type GlobOptions as GlobbyOptions } from 'glob';
 import {
   DirectoryEntry,
   FileStats,
@@ -12,6 +12,12 @@ import {
   AtomicWriteOptions,
 } from './types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+
+/** Node.js 系統錯誤介面 */
+interface NodeSystemError extends Error {
+  code?: string;
+  path?: string;
+}
 
 /**
  * 檔案系統操作類別
@@ -29,12 +35,13 @@ export class FileSystem implements IFileSystem {
         return await fs.readFile(filePath, encoding);
       }
       return await fs.readFile(filePath);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new FileNotFoundError(filePath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(filePath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(filePath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(filePath, nodeError);
       }
       throw error;
     }
@@ -57,9 +64,10 @@ export class FileSystem implements IFileSystem {
         // 直接寫入
         await fs.writeFile(filePath, content, { encoding: options?.encoding });
       }
-    } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new PermissionError(filePath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(filePath, nodeError);
       }
       throw error;
     }
@@ -101,12 +109,13 @@ export class FileSystem implements IFileSystem {
   async appendFile(filePath: string, content: string | Buffer): Promise<void> {
     try {
       await fs.appendFile(filePath, content);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new FileNotFoundError(filePath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(filePath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(filePath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(filePath, nodeError);
       }
       throw error;
     }
@@ -118,12 +127,13 @@ export class FileSystem implements IFileSystem {
   async deleteFile(filePath: string): Promise<void> {
     try {
       await fs.unlink(filePath);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new FileNotFoundError(filePath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(filePath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(filePath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(filePath, nodeError);
       }
       throw error;
     }
@@ -135,13 +145,14 @@ export class FileSystem implements IFileSystem {
   async createDirectory(dirPath: string, recursive = false): Promise<void> {
     try {
       await fs.mkdir(dirPath, { recursive });
-    } catch (error: any) {
-      if (error.code === 'EEXIST') {
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'EEXIST') {
         // 目錄已存在，不是錯誤
         return;
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(dirPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(dirPath, nodeError);
       }
       throw error;
     }
@@ -170,12 +181,13 @@ export class FileSystem implements IFileSystem {
       }
 
       return result;
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new DirectoryNotFoundError(dirPath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new DirectoryNotFoundError(dirPath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(dirPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(dirPath, nodeError);
       }
       throw error;
     }
@@ -191,15 +203,16 @@ export class FileSystem implements IFileSystem {
       } else {
         await fs.rmdir(dirPath);
       }
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new DirectoryNotFoundError(dirPath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new DirectoryNotFoundError(dirPath, nodeError);
       }
-      if (error.code === 'ENOTEMPTY') {
-        throw new DirectoryNotEmptyError(dirPath, error);
+      if (nodeError.code === 'ENOTEMPTY') {
+        throw new DirectoryNotEmptyError(dirPath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(dirPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(dirPath, nodeError);
       }
       throw error;
     }
@@ -234,12 +247,13 @@ export class FileSystem implements IFileSystem {
         uid: stats.uid,
         gid: stats.gid,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        throw new FileNotFoundError(targetPath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(targetPath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(targetPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(targetPath, nodeError);
       }
       throw error;
     }
@@ -290,12 +304,13 @@ export class FileSystem implements IFileSystem {
       await this.createDirectory(destDir, true);
 
       await fs.copyFile(srcPath, destPath);
-    } catch (error: any) {
-      if (error.code === 'ENOENT' && error.path === srcPath) {
-        throw new FileNotFoundError(srcPath, error);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'ENOENT' && nodeError.path === srcPath) {
+        throw new FileNotFoundError(srcPath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(error.path || srcPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(nodeError.path || srcPath, nodeError);
       }
       throw error;
     }
@@ -311,18 +326,19 @@ export class FileSystem implements IFileSystem {
       await this.createDirectory(destDir, true);
 
       await fs.rename(srcPath, destPath);
-    } catch (error: any) {
-      if (error.code === 'EXDEV') {
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'EXDEV') {
         // 跨裝置移動，使用複製+刪除
         await this.copyFile(srcPath, destPath);
         await this.deleteFile(srcPath);
         return;
       }
-      if (error.code === 'ENOENT') {
-        throw new FileNotFoundError(srcPath, error);
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(srcPath, nodeError);
       }
-      if (error.code === 'EACCES') {
-        throw new PermissionError(error.path || srcPath, error);
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(nodeError.path || srcPath, nodeError);
       }
       throw error;
     }
@@ -332,19 +348,18 @@ export class FileSystem implements IFileSystem {
    * Glob 搜尋檔案
    */
   async glob(pattern: string, options: GlobOptions = {}): Promise<string[]> {
-    try {
-      const results = await globby(pattern, {
-        cwd: options.cwd,
-        ignore: options.ignore,
-        dot: options.dot,
-        absolute: options.absolute,
-        // 移除不支援的選項
-        ...(options.followSymlinks && { followSymbolicLinks: options.followSymlinks }),
-      } as any);
+    const globbyOptions: GlobbyOptions = {
+      cwd: options.cwd,
+      ignore: options.ignore,
+      dot: options.dot,
+      absolute: options.absolute,
+    };
 
-      return results.sort();
-    } catch (error) {
-      throw error;
+    if (options.followSymlinks) {
+      globbyOptions.follow = options.followSymlinks;
     }
+
+    const results = await globby(pattern, globbyOptions);
+    return (results as string[]).sort();
   }
 }

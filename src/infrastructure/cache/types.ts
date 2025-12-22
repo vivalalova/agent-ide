@@ -37,9 +37,9 @@ export interface CacheOptions {
   /** 自動清理間隔（毫秒） */
   cleanupInterval?: number;
   /** 序列化函式 */
-  serialize?: (value: any) => string;
+  serialize?: (value: SerializableValue) => string;
   /** 反序列化函式 */
-  deserialize?: (value: string) => any;
+  deserialize?: (value: string) => SerializableValue;
 }
 
 /**
@@ -117,7 +117,7 @@ export interface CacheEvent<K, V> {
   /** 事件發生時間 */
   timestamp: number;
   /** 額外的事件元資料 */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -160,7 +160,7 @@ export interface WarmupConfig {
   /** 是否啟用預熱 */
   enabled: boolean;
   /** 預熱資料來源 */
-  dataSource?: () => Promise<Map<any, any>>;
+  dataSource?: () => Promise<Map<unknown, unknown>>;
   /** 預熱策略 */
   strategy?: 'eager' | 'lazy';
   /** 預熱完成回調 */
