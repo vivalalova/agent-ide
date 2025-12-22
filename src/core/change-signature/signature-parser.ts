@@ -1,6 +1,11 @@
 /**
  * 簽名解析器
  * 從程式碼中提取函式簽名
+ *
+ * 此模組使用 Parser AST 精確解析函數簽章，正確處理：
+ * - 字串中的逗號/括號（如 `fn(a = "(", b)`）
+ * - 模板字面值中的特殊字元
+ * - 複雜泛型巢狀（如 `Map<K, Fn<V>>`）
  */
 
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
@@ -41,8 +46,181 @@ export class SignatureParser {
 
   /**
    * 解析 TypeScript 函式簽名
+   * 優先使用 Parser AST 精確解析，fallback 到正則表達式
    */
   private parseTypeScriptSignature(content: string, filePath: string, functionName: string): FunctionSignature | null {
+    // 優先嘗試 AST 解析
+    const astResult = this.parseWithAST(content, filePath, functionName);
+    if (astResult) {
+      return astResult;
+    }
+
+    // Fallback 到正則表達式解析
+    return this.parseWithRegex(content, filePath, functionName);
+  }
+
+  /**
+   * 使用 Parser AST 精確解析函數簽章
+   * 正確處理字串中的逗號/括號、複雜泛型巢狀
+   */
+  private parseWithAST(content: string, filePath: string, functionName: string): FunctionSignature | null {
+    const extension = this.getFileExtension(filePath);
+    const parser = this.parserRegistry.getParser(extension);
+
+    if (!parser?.formatSignature) {
+      return null;
+    }
+
+    // 先用正則找到函數行號
+    const lineNumber = this.findFunctionLineNumber(content, functionName);
+    if (lineNumber === null) {
+      return null;
+    }
+
+    const signature = parser.formatSignature(content, functionName, lineNumber);
+    if (!signature) {
+      return null;
+    }
+
+    const lines = content.split('\n');
+
+    // 從 AST 簽章轉換為 ParameterDefinition
+    const parameters: ParameterDefinition[] = signature.parameters.map((param, index) => ({
+      name: param.name,
+      type: param.type !== 'any' ? param.type : undefined,
+      defaultValue: param.defaultValue,
+      optional: param.optional,
+      rest: param.name.startsWith('...'),
+      range: {
+        start: { line: lineNumber, column: index * 10, offset: undefined },
+        end: { line: lineNumber, column: index * 10 + param.name.length, offset: undefined }
+      }
+    }));
+
+    // 計算結束位置
+    const endLine = this.findFunctionEndLineWithAST(content, filePath, functionName, lineNumber)
+      ?? this.findFunctionEndLine(lines, lineNumber - 1);
+
+    // 解析函數元資訊（修飾符、是否方法）
+    const { modifiers, isMethod, matchIndex, column } = this.extractFunctionMetadata(content, functionName);
+
+    return {
+      name: functionName,
+      parameters,
+      returnType: signature.returnType !== 'void' ? signature.returnType : undefined,
+      location: {
+        filePath,
+        range: {
+          start: { line: lineNumber, column: column + 1, offset: matchIndex },
+          end: { line: endLine + 1, column: 1, offset: undefined }
+        }
+      },
+      isMethod,
+      className: isMethod ? this.findEnclosingClass(content, matchIndex) : undefined,
+      modifiers
+    };
+  }
+
+  /**
+   * 使用 Parser AST 找到函數結束行
+   */
+  private findFunctionEndLineWithAST(
+    content: string,
+    filePath: string,
+    functionName: string,
+    _startLine: number
+  ): number | null {
+    const extension = this.getFileExtension(filePath);
+    const parser = this.parserRegistry.getParser(extension);
+
+    if (!parser?.getFullDeclarationRange) {
+      return null;
+    }
+
+    const range = parser.getFullDeclarationRange(content, functionName, 'function', _startLine);
+    return range ? range.end.line : null;
+  }
+
+  /**
+   * 找到函數的行號（用於 AST 解析）
+   */
+  private findFunctionLineNumber(content: string, functionName: string): number | null {
+    const patterns = [
+      // function 宣告
+      new RegExp(`^(\\s*)(export\\s+)?(async\\s+)?function\\s+${this.escapeRegex(functionName)}\\s*`, 'm'),
+      // 箭頭函式
+      new RegExp(`^(\\s*)(export\\s+)?(const|let|var)\\s+${this.escapeRegex(functionName)}\\s*`, 'm'),
+      // class 方法
+      new RegExp(`^(\\s*)(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${this.escapeRegex(functionName)}\\s*[(<]`, 'm'),
+    ];
+
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const matchIndex = content.indexOf(match[0]);
+        const newlinesInMatch = (match[1] || '').split('\n').length - 1;
+        return content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 提取函數元資訊（修飾符、是否方法等）
+   */
+  private extractFunctionMetadata(content: string, functionName: string): {
+    modifiers: string[];
+    isMethod: boolean;
+    matchIndex: number;
+    column: number;
+  } {
+    const patterns = [
+      // function 宣告
+      { pattern: new RegExp(`^(\\s*)(export\\s+)?(async\\s+)?function\\s+${this.escapeRegex(functionName)}`, 'm'), type: 'function' },
+      // 箭頭函式
+      { pattern: new RegExp(`^(\\s*)(export\\s+)?(const|let|var)\\s+${this.escapeRegex(functionName)}\\s*(?::\\s*[^=]+)?\\s*=\\s*(async\\s+)?`, 'm'), type: 'arrow' },
+      // class 方法
+      { pattern: new RegExp(`^(\\s*)(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${this.escapeRegex(functionName)}`, 'm'), type: 'method' },
+    ];
+
+    for (const { pattern, type } of patterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const matchIndex = content.indexOf(match[0]);
+        const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
+        const modifiers: string[] = [];
+        let isMethod = false;
+
+        switch (type) {
+          case 'function':
+            if (match[2]) { modifiers.push('export'); }
+            if (match[3]) { modifiers.push('async'); }
+            break;
+          case 'arrow':
+            if (match[2]) { modifiers.push('export'); }
+            if (match[4]) { modifiers.push('async'); }
+            break;
+          case 'method':
+            isMethod = true;
+            if (match[2]) { modifiers.push(match[2]); }
+            if (match[3]) { modifiers.push('static'); }
+            if (match[4]) { modifiers.push('async'); }
+            break;
+        }
+
+        return { modifiers, isMethod, matchIndex, column };
+      }
+    }
+
+    return { modifiers: [], isMethod: false, matchIndex: 0, column: 0 };
+  }
+
+  /**
+   * 使用正則表達式解析函數簽章（Fallback）
+   * 當 AST 解析不可用時使用
+   */
+  private parseWithRegex(content: string, filePath: string, functionName: string): FunctionSignature | null {
     const lines = content.split('\n');
 
     // 匹配各種函式定義模式
@@ -118,8 +296,8 @@ export class SignatureParser {
           returnType = match[7]?.trim();
         }
 
-        // 解析參數
-        const parameters = this.parseTypeScriptParameters(paramsString, lineNumber, column + match[0].indexOf('(') + 1);
+        // 解析參數（使用 fallback 方法）
+        const parameters = this.parseParametersWithRegex(paramsString, lineNumber, column + match[0].indexOf('(') + 1);
 
         // 計算結束位置
         const endLine = this.findFunctionEndLine(lines, lineNumber - 1);
@@ -168,9 +346,11 @@ export class SignatureParser {
   }
 
   /**
-   * 解析 TypeScript 參數列表
+   * 使用正則表達式解析參數列表（Fallback）
+   * 注意：此方法無法正確處理字串中的逗號/括號
+   * 如：`fn(a = "(", b)` 會被錯誤分割
    */
-  private parseTypeScriptParameters(paramsString: string, baseLine: number, baseColumn: number): ParameterDefinition[] {
+  private parseParametersWithRegex(paramsString: string, baseLine: number, baseColumn: number): ParameterDefinition[] {
     if (!paramsString.trim()) {
       return [];
     }
@@ -218,7 +398,14 @@ export class SignatureParser {
   }
 
   /**
-   * 分割參數字串（考慮泛型和巢狀）
+   * 分割參數字串（Fallback 方法）
+   * 使用括號計數分割，僅考慮泛型和巢狀
+   *
+   * 警告：此方法無法正確處理：
+   * - 字串中的逗號/括號（如 `fn(a = "(", b)`）
+   * - 模板字面值中的特殊字元
+   *
+   * 優先使用 AST 解析（parseWithAST）
    */
   private splitParameters(paramsString: string): string[] {
     const result: string[] = [];
@@ -248,7 +435,10 @@ export class SignatureParser {
   }
 
   /**
-   * 找到函式結束行
+   * 找到函式結束行（Fallback 方法）
+   * 使用大括號計數法，無法處理字串/註解中的括號
+   *
+   * 優先使用 findFunctionEndLineWithAST
    */
   private findFunctionEndLine(lines: string[], startLine: number): number {
     let depth = 0;
