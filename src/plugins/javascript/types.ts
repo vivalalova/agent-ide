@@ -15,7 +15,7 @@ import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.j
 import type { CodeEdit } from '@infrastructure/parser/types.js';
 import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
 import * as babel from '@babel/types';
-import type { ParseResult } from '@babel/parser';
+import type { ParseResult, ParserPlugin as BabelParserPlugin } from '@babel/parser';
 
 // Re-export 共用函數供外部使用
 export { isRelativePath };
@@ -63,41 +63,13 @@ export interface JavaScriptParseOptions {
   readonly ranges?: boolean;
   readonly tokens?: boolean;
   readonly preserveComments?: boolean;
-  readonly plugins?: BabelPlugin[];
+  readonly plugins?: BabelParserPlugin[];
 }
 
 /**
- * Babel 插件類型
+ * Babel 插件類型（使用 Babel parser 原生型別）
  */
-export type BabelPlugin =
-  | 'jsx'
-  | 'typescript'
-  | 'decorators'
-  | 'classProperties'
-  | 'classPrivateProperties'
-  | 'classPrivateMethods'
-  | 'classStaticBlock'
-  | 'privateIn'
-  | 'functionBind'
-  | 'asyncGenerators'
-  | 'bigInt'
-  | 'decorators-legacy'
-  | 'doExpressions'
-  | 'dynamicImport'
-  | 'exportDefaultFrom'
-  | 'exportNamespaceFrom'
-  | 'functionSent'
-  | 'importMeta'
-  | 'nullishCoalescingOperator'
-  | 'numericSeparator'
-  | 'objectRestSpread'
-  | 'optionalCatchBinding'
-  | 'optionalChaining'
-  | 'partialApplication'
-  | 'throwExpressions'
-  | 'topLevelAwait'
-  | 'v8intrinsic'
-  | [string, any];
+export type BabelPlugin = BabelParserPlugin;
 
 /**
  * 預設的 JavaScript 解析選項
@@ -187,19 +159,27 @@ export const BABEL_SYMBOL_TYPE_MAP: Partial<Record<string, SymbolType>> = {
 };
 
 /**
- * 位置轉換工具函式
+ * 具有 index 屬性的 Babel 位置（用於 offset 計算）
  */
+interface BabelPositionWithIndex {
+  line: number;
+  column: number;
+  index?: number;
+}
+
 export function babelLocationToPosition(location: babel.SourceLocation): Range {
+  const start = location.start as BabelPositionWithIndex;
+  const end = location.end as BabelPositionWithIndex;
   return {
     start: {
-      line: location.start.line - 1, // Babel 使用 1-based 行號，我們使用 0-based
-      column: location.start.column,
-      offset: (location.start as any).index || 0
+      line: start.line - 1, // Babel 使用 1-based 行號，我們使用 0-based
+      column: start.column,
+      offset: start.index ?? 0
     },
     end: {
-      line: location.end.line - 1,
-      column: location.end.column,
-      offset: (location.end as any).index || 0
+      line: end.line - 1,
+      column: end.column,
+      offset: end.index ?? 0
     }
   };
 }
@@ -340,7 +320,7 @@ export function createJavaScriptASTNode(
     end: { line: 0, column: 0, offset: 0 }
   };
 
-  const properties: Record<string, any> = {
+  const properties: Record<string, string | boolean | babel.Comment[] | null | undefined> = {
     nodeType: babelNode.type,
     leadingComments: babelNode.leadingComments,
     trailingComments: babelNode.trailingComments,
@@ -370,7 +350,8 @@ export function createJavaScriptASTNode(
   const childKeys = babel.VISITOR_KEYS[babelNode.type];
   if (childKeys) {
     for (const key of childKeys) {
-      const child = (babelNode as any)[key];
+      // Babel 節點的屬性是動態的，需要用索引存取
+      const child = (babelNode as unknown as Record<string, unknown>)[key];
       if (Array.isArray(child)) {
         for (const item of child) {
           if (babel.isNode(item)) {
@@ -394,7 +375,7 @@ export function createJavaScriptASTNode(
 
   // 設定父子關係
   children.forEach(child => {
-    (child as any).parent = node;
+    (child as JavaScriptASTNode & { parent?: JavaScriptASTNode }).parent = node;
   });
 
   return node;

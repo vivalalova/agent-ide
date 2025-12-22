@@ -16,7 +16,7 @@ import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 
 // Handle both ESM and CJS module formats
-const traverse = (babelTraverse as any).default || babelTraverse;
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
 /**
  * 引用分析結果

@@ -14,7 +14,7 @@ import {
 } from '@plugins/shared/index.js';
 
 // Handle both ESM and CJS module formats
-const traverse = (babelTraverse as any).default || babelTraverse;
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
 /**
  * JavaScript 設計模式分析器

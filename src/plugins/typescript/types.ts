@@ -234,20 +234,24 @@ export function getNodeModifiers(node: ts.Node): string[] {
 }
 
 /**
- * 獲取節點的名稱
+ * 具有 name 屬性的節點型別
  */
+interface NodeWithName extends ts.Node {
+  name?: ts.Identifier | ts.StringLiteral | ts.PropertyName;
+}
+
 export function getNodeName(node: ts.Node): string | undefined {
   if (ts.isIdentifier(node)) {
     return node.text;
   }
 
-  if ('name' in node && node.name) {
-    const nameNode = node.name as ts.Node;
-    if (ts.isIdentifier(nameNode)) {
-      return nameNode.text;
+  const namedNode = node as NodeWithName;
+  if (namedNode.name) {
+    if (ts.isIdentifier(namedNode.name)) {
+      return namedNode.name.text;
     }
-    if (ts.isStringLiteral(nameNode)) {
-      return nameNode.text;
+    if (ts.isStringLiteral(namedNode.name)) {
+      return namedNode.name.text;
     }
   }
 
@@ -366,7 +370,7 @@ export function createTypeScriptASTNode(
 ): TypeScriptASTNode {
   const type = SYNTAX_KIND_MAP[tsNode.kind] || ts.SyntaxKind[tsNode.kind];
   const range = tsNodeToRange(tsNode, sourceFile);
-  const properties: Record<string, any> = {
+  const properties: Record<string, string | number | string[] | undefined> = {
     kind: tsNode.kind,
     syntaxKind: ts.SyntaxKind[tsNode.kind],
     flags: tsNode.flags
@@ -415,7 +419,7 @@ export function createTypeScriptASTNode(
 
   // 設定父子關係
   children.forEach(child => {
-    (child as any).parent = node;
+    (child as TypeScriptASTNode & { parent?: TypeScriptASTNode }).parent = node;
   });
 
   return node;

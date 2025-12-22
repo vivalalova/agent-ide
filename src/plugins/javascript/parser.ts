@@ -8,7 +8,7 @@ import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
 
 // Handle both ESM and CJS module formats
-const traverse = (babelTraverse as any).default || babelTraverse;
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 import {
   ParserPlugin,
   CodeEdit,
@@ -106,7 +106,7 @@ export class JavaScriptParser implements ParserPlugin {
       const options = this.getParseOptionsForFile(filePath);
 
       // 使用 Babel parser 解析程式碼
-      const babelAST = babelParse(code, options as any);
+      const babelAST = babelParse(code, options);
 
       // 建立我們的 AST 結構
       const rootNode = createJavaScriptASTNode(babelAST, filePath);
@@ -675,7 +675,7 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private isReferenceToSymbol(
-    path: any, // Babel traverse path
+    path: NodePath<babel.Identifier>,
     symbol: JavaScriptSymbol
   ): boolean {
     // 檢查名稱是否相同且在合理的作用域內，過濾字串和屬性名
@@ -725,7 +725,7 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private getReferenceType(
-    path: any, // Babel traverse path
+    path: NodePath<babel.Identifier>,
     symbol: JavaScriptSymbol
   ): ReferenceType {
     const node = path.node;
@@ -736,11 +736,14 @@ export class JavaScriptParser implements ParserPlugin {
     }
 
     // 檢查是否為宣告上下文
-    if (path.isReferencedIdentifier()) {
+    // 使用 Babel 的 path.isReferencedIdentifier 方法
+
+    const anyPath = path as NodePath<babel.Node>;
+    if (anyPath.isReferencedIdentifier()) {
       return ReferenceType.Usage;
     }
 
-    if (path.isBindingIdentifier()) {
+    if (anyPath.isBindingIdentifier()) {
       return ReferenceType.Declaration;
     }
 
