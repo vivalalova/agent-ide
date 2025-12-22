@@ -85,84 +85,102 @@ function convertEditsToLineChanges(
   const originalLines = originalContent.split('\n');
   const changes: LineChange[] = [];
 
-  // 處理跨行的編輯（刪除多行或插入多行）
-  const processedLines = new Set<number>();
+  // 1. 分離單行編輯和跨行編輯，並按行號分組單行編輯
+  const singleLineEditsByLine = new Map<number, TextEdit[]>();
+  const multiLineEdits: TextEdit[] = [];
 
   for (const edit of edits) {
+    const startLine = edit.range.start.line;
+    const endLine = edit.range.end.line;
+
+    if (startLine === endLine) {
+      // 單行編輯：按行號分組
+      if (!singleLineEditsByLine.has(startLine)) {
+        singleLineEditsByLine.set(startLine, []);
+      }
+      singleLineEditsByLine.get(startLine)!.push(edit);
+    } else {
+      // 跨行編輯：單獨處理
+      multiLineEdits.push(edit);
+    }
+  }
+
+  // 2. 處理單行編輯（一次處理同行所有編輯）
+  for (const [lineNum, lineEdits] of singleLineEditsByLine) {
+    const originalLine = originalLines[lineNum - 1] ?? '';
+    const newLine = applyEditsToLine(originalLine, lineEdits);
+
+    // 只在內容真的改變時記錄
+    if (originalLine !== newLine) {
+      changes.push({
+        line: lineNum,
+        oldContent: originalLine,
+        newContent: newLine
+      });
+    }
+  }
+
+  // 3. 處理跨行編輯
+  const processedLines = new Set<number>(singleLineEditsByLine.keys());
+
+  for (const edit of multiLineEdits) {
     const startLine = edit.range.start.line;
     const endLine = edit.range.end.line;
     const startCol = edit.range.start.column;
     const endCol = edit.range.end.column;
 
-    // 跳過已處理的行
+    // 跳過已處理的行（避免與單行編輯衝突）
     if (processedLines.has(startLine)) {
       continue;
     }
 
-    // 單行編輯
-    if (startLine === endLine) {
-      const originalLine = originalLines[startLine - 1] ?? '';
-      const newLine = applyEditsToLine(originalLine, [edit]);
+    // 跨行編輯：刪除多行並插入新內容
+    for (let lineNum = startLine; lineNum <= endLine && lineNum <= originalLines.length; lineNum++) {
+      const lineContent = originalLines[lineNum - 1] ?? '';
 
-      // 只在內容真的改變時記錄
-      if (originalLine !== newLine) {
+      if (lineNum === startLine) {
+        // 第一行：保留 startCol 之前的部分 + 新內容
+        const prefix = lineContent.substring(0, startCol - 1);
+        const newContent = prefix + edit.newText;
         changes.push({
-          line: startLine,
-          oldContent: originalLine,
-          newContent: newLine
+          line: lineNum,
+          oldContent: lineContent,
+          newContent: newContent.split('\n')[0] ?? ''
         });
-        processedLines.add(startLine);
-      }
-    } else {
-      // 跨行編輯：刪除多行並插入新內容
-      // 收集所有被刪除的行
-      for (let lineNum = startLine; lineNum <= endLine && lineNum <= originalLines.length; lineNum++) {
-        const lineContent = originalLines[lineNum - 1] ?? '';
 
-        if (lineNum === startLine) {
-          // 第一行：保留 startCol 之前的部分 + 新內容
-          const prefix = lineContent.substring(0, startCol - 1);
-          const newContent = prefix + edit.newText;
+        // 處理新增的多行
+        const newLines = newContent.split('\n');
+        for (let i = 1; i < newLines.length; i++) {
           changes.push({
-            line: lineNum,
-            oldContent: lineContent,
-            newContent: newContent.split('\n')[0] ?? ''
-          });
-
-          // 處理新增的多行
-          const newLines = newContent.split('\n');
-          for (let i = 1; i < newLines.length; i++) {
-            changes.push({
-              line: lineNum + i,
-              oldContent: null,
-              newContent: newLines[i]
-            });
-          }
-        } else if (lineNum === endLine) {
-          // 最後一行：保留 endCol 之後的部分
-          const suffix = lineContent.substring(endCol - 1);
-          if (suffix) {
-            // 將 suffix 附加到上一個新增行
-            const lastChange = changes[changes.length - 1];
-            if (lastChange && lastChange.newContent !== null) {
-              lastChange.newContent += suffix;
-            }
-          }
-          changes.push({
-            line: lineNum,
-            oldContent: lineContent,
-            newContent: null
-          });
-        } else {
-          // 中間行：完全刪除
-          changes.push({
-            line: lineNum,
-            oldContent: lineContent,
-            newContent: null
+            line: lineNum + i,
+            oldContent: null,
+            newContent: newLines[i]
           });
         }
-        processedLines.add(lineNum);
+      } else if (lineNum === endLine) {
+        // 最後一行：保留 endCol 之後的部分
+        const suffix = lineContent.substring(endCol - 1);
+        if (suffix) {
+          // 將 suffix 附加到上一個新增行
+          const lastChange = changes[changes.length - 1];
+          if (lastChange && lastChange.newContent !== null) {
+            lastChange.newContent += suffix;
+          }
+        }
+        changes.push({
+          line: lineNum,
+          oldContent: lineContent,
+          newContent: null
+        });
+      } else {
+        // 中間行：完全刪除
+        changes.push({
+          line: lineNum,
+          oldContent: lineContent,
+          newContent: null
+        });
       }
+      processedLines.add(lineNum);
     }
   }
 
