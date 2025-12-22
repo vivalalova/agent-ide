@@ -75,31 +75,3 @@ export {
   batch
 } from './async.js';
 
-/**
- * 工具函式分類命名空間
- *
- * 如果你偏好使用命名空間的方式來組織工具函式，
- * 可以使用以下匯入方式：
- *
- * @example
- * ```typescript
- * import { StringUtils, ArrayUtils } from './index.js';
- *
- * const result = StringUtils.camelCase('hello-world');
- * const chunks = ArrayUtils.chunk([1, 2, 3, 4], 2);
- * ```
- */
-
-import * as StringUtils from '@plugins/shared/utils/string.js';
-import * as ArrayUtils from '@plugins/shared/utils/array.js';
-import * as PathUtils from '@plugins/shared/utils/path.js';
-import * as ObjectUtils from '@plugins/shared/utils/object.js';
-import * as AsyncUtils from '@plugins/shared/utils/async.js';
-
-export {
-  StringUtils,
-  ArrayUtils,
-  PathUtils,
-  ObjectUtils,
-  AsyncUtils
-};

@@ -106,9 +106,9 @@ CLI: find-references → @core/find-references/index.ts → @core/shared/symbol-
         ▼
 ┌────────────────────────────────────────────┐
 │  第一層：shared/（三個獨立模組，無互依賴）   │
-│  ┌──────────┐ ┌─────────┐ ┌─────────────┐ │
-│  │ indexing │ │ dep-gph │ │symbol-finder│ │
-│  └──────────┘ └─────────┘ └─────────────┘ │
+│  ┌───────────┐ ┌─────────┐ ┌──────────────┐ │
+│  │ indexing/ │ │ dep-gph │ │symbol-finder/│ │
+│  └───────────┘ └─────────┘ └──────────────┘ │
 │  （dep-gph = dependency-graph/）           │
 │        ↓           ↓            ↓         │
 │     @infrastructure + @shared/types       │
