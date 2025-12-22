@@ -121,6 +121,7 @@ const createMockDependencies = (
     getAllIndexedFiles: vi
       .fn()
       .mockReturnValue(overrides.indexedFiles ?? []),
+    getFileSymbols: vi.fn().mockResolvedValue([]),
     indexProject: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn(),
   } as unknown as IndexEngine;
