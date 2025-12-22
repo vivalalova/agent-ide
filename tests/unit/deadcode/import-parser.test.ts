@@ -78,14 +78,14 @@ describe('ImportParser - Parser AST 解析', () => {
         moduleSpecifier: './utils',
         isTypeOnly: false,
         namedImports: [{ name: 'foo' }],
-        rawStatement: "import { foo } from './utils';"
+        rawStatement: 'import { foo } from \'./utils\';'
       }];
 
       mockParser.getImportDeclarations = vi.fn().mockReturnValue(mockDeclarations);
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import { foo } from './utils';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import { foo } from \'./utils\';', '/test/file.ts');
 
       expect(mockParser.getImportDeclarations).toHaveBeenCalled();
       expect(result).toHaveLength(1);
@@ -100,14 +100,14 @@ describe('ImportParser - Parser AST 解析', () => {
         isTypeOnly: false,
         defaultImport: '_',
         namedImports: [],
-        rawStatement: "import _ from 'lodash';"
+        rawStatement: 'import _ from \'lodash\';'
       }];
 
       mockParser.getImportDeclarations = vi.fn().mockReturnValue(mockDeclarations);
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import _ from 'lodash';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import _ from \'lodash\';', '/test/file.ts');
 
       expect(result).toHaveLength(1);
       expect(result[0].hasDefault).toBe(true);
@@ -122,14 +122,14 @@ describe('ImportParser - Parser AST 解析', () => {
         isTypeOnly: false,
         namespaceImport: '_',
         namedImports: [],
-        rawStatement: "import * as _ from 'lodash';"
+        rawStatement: 'import * as _ from \'lodash\';'
       }];
 
       mockParser.getImportDeclarations = vi.fn().mockReturnValue(mockDeclarations);
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import * as _ from 'lodash';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import * as _ from \'lodash\';', '/test/file.ts');
 
       expect(result).toHaveLength(1);
       expect(result[0].isNamespace).toBe(true);
@@ -146,14 +146,14 @@ describe('ImportParser - Parser AST 解析', () => {
           { name: 'foo', alias: 'bar' },
           { name: 'baz' }
         ],
-        rawStatement: "import { foo as bar, baz } from './utils';"
+        rawStatement: 'import { foo as bar, baz } from \'./utils\';'
       }];
 
       mockParser.getImportDeclarations = vi.fn().mockReturnValue(mockDeclarations);
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import { foo as bar, baz } from './utils';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import { foo as bar, baz } from \'./utils\';', '/test/file.ts');
 
       expect(result).toHaveLength(1);
       expect(result[0].symbols).toHaveLength(2);
@@ -168,7 +168,7 @@ describe('ImportParser - Parser AST 解析', () => {
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import { foo } from './utils';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import { foo } from \'./utils\';', '/test/file.ts');
 
       expect(mockParser.getImportDeclarations).toHaveBeenCalled();
       expect(result).toHaveLength(1);
@@ -180,7 +180,7 @@ describe('ImportParser - Parser AST 解析', () => {
       mockParserRegistry = createMockParserRegistry(mockParser);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import { foo } from './utils';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import { foo } from \'./utils\';', '/test/file.ts');
 
       expect(result).toHaveLength(1);
       expect(result[0].symbols[0].name).toBe('foo');
@@ -190,7 +190,7 @@ describe('ImportParser - Parser AST 解析', () => {
       mockParserRegistry = createMockParserRegistry(null);
       importParser = new ImportParser(mockParserRegistry);
 
-      const result = importParser.parseImportStatements("import { foo } from './utils';", '/test/file.ts');
+      const result = importParser.parseImportStatements('import { foo } from \'./utils\';', '/test/file.ts');
 
       expect(result).toHaveLength(1);
       expect(result[0].symbols[0].name).toBe('foo');
@@ -214,37 +214,37 @@ describe('ImportParser - Fallback 字串解析', () => {
     it.each<FallbackParseTestCase>([
       {
         scenario: 'named import 單一符號',
-        content: "import { foo } from './utils';",
+        content: 'import { foo } from \'./utils\';',
         expectedCount: 1,
         expectedSymbols: ['foo']
       },
       {
         scenario: 'named import 多個符號',
-        content: "import { foo, bar, baz } from './utils';",
+        content: 'import { foo, bar, baz } from \'./utils\';',
         expectedCount: 1,
         expectedSymbols: ['foo', 'bar', 'baz']
       },
       {
         scenario: 'default import',
-        content: "import lodash from 'lodash';",
+        content: 'import lodash from \'lodash\';',
         expectedCount: 1,
         expectedSymbols: ['lodash']
       },
       {
         scenario: 'namespace import',
-        content: "import * as utils from './utils';",
+        content: 'import * as utils from \'./utils\';',
         expectedCount: 1,
         expectedSymbols: ['utils']
       },
       {
         scenario: 'default + named import',
-        content: "import React, { useState, useEffect } from 'react';",
+        content: 'import React, { useState, useEffect } from \'react\';',
         expectedCount: 1,
         expectedSymbols: ['React', 'useState', 'useEffect']
       },
       {
         scenario: 'type import',
-        content: "import type { User } from './types';",
+        content: 'import type { User } from \'./types\';',
         expectedCount: 1,
         expectedSymbols: ['User']
       }
@@ -259,7 +259,7 @@ describe('ImportParser - Fallback 字串解析', () => {
     });
 
     it('應該正確解析 as 別名', () => {
-      const content = "import { foo as bar, baz as qux } from './utils';";
+      const content = 'import { foo as bar, baz as qux } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       expect(result).toHaveLength(1);
@@ -271,14 +271,14 @@ describe('ImportParser - Fallback 字串解析', () => {
     });
 
     it('應該跳過 side-effect import', () => {
-      const content = "import './polyfill';";
+      const content = 'import \'./polyfill\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       expect(result).toHaveLength(0);
     });
 
     it('應該跳過 type-only 的 named import', () => {
-      const content = "import { type User, Config } from './types';";
+      const content = 'import { type User, Config } from \'./types\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       expect(result).toHaveLength(1);
@@ -320,7 +320,7 @@ describe('ImportParser - Fallback 字串解析', () => {
       for (let i = 0; i < 25; i++) {
         lines.push(`  symbol${i},`);
       }
-      lines.push("} from './utils';");
+      lines.push('} from \'./utils\';');
       const content = lines.join('\n');
 
       const result = importParser.parseImportStatements(content, '/test/file.ts');
@@ -367,7 +367,7 @@ function test() {}`;
     });
 
     it('應該正確處理不同引號類型', () => {
-      const contentSingle = "import { foo } from './utils';";
+      const contentSingle = 'import { foo } from \'./utils\';';
       const contentDouble = 'import { bar } from "./utils";';
 
       const result1 = importParser.parseImportStatements(contentSingle, '/test/file.ts');
@@ -378,14 +378,14 @@ function test() {}`;
     });
 
     it('應該處理 export from 語句（不應識別為 import）', () => {
-      const content = "export { foo } from './utils';";
+      const content = 'export { foo } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       expect(result).toHaveLength(0);
     });
 
     it('應該處理 import 後面沒有 from 的不完整語句', () => {
-      const content = "import { foo }";
+      const content = 'import { foo }';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       // 不完整的 import 不應被解析
@@ -396,7 +396,7 @@ function test() {}`;
   describe('特殊符號名稱', () => {
     it('應該處理數字開頭的別名（不合法但可能出現）', () => {
       // 這不是合法的 JS，但解析器應該不會崩潰
-      const content = "import { foo as 123invalid } from './utils';";
+      const content = 'import { foo as 123invalid } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       // 解析器應該能處理或跳過
@@ -404,14 +404,14 @@ function test() {}`;
     });
 
     it('應該處理 Unicode 符號名稱', () => {
-      const content = "import { } from './utils';";
+      const content = 'import { } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       expect(result).toHaveLength(0);
     });
 
     it('應該處理只有空白的 named import', () => {
-      const content = "import {   } from './utils';";
+      const content = 'import {   } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.ts');
 
       // 空的 named import 不應產生符號
@@ -423,7 +423,7 @@ function test() {}`;
 
   describe('getFileExtension 方法', () => {
     it('應該正確處理無副檔名的檔案', () => {
-      const content = "import { foo } from './utils';";
+      const content = 'import { foo } from \'./utils\';';
       // 內部會呼叫 getFileExtension 來取得 parser
       const result = importParser.parseImportStatements(content, '/test/Makefile');
 
@@ -432,7 +432,7 @@ function test() {}`;
     });
 
     it('應該正確處理多個點的檔案名', () => {
-      const content = "import { foo } from './utils';";
+      const content = 'import { foo } from \'./utils\';';
       const result = importParser.parseImportStatements(content, '/test/file.test.ts');
 
       expect(result).toHaveLength(1);

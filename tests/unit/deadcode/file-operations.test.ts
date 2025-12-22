@@ -81,7 +81,7 @@ function createImportCleanup(
   return {
     filePath,
     range,
-    originalImport: "import { foo } from './utils';",
+    originalImport: 'import { foo } from \'./utils\';',
     unusedSymbols: ['foo'],
     cleanupType,
     newImport
@@ -154,7 +154,7 @@ describe('FileOperationsHandler', () => {
     it('應該正確分類 import cleanup 操作', () => {
       const importCleanups = [
         createImportCleanup('/file.ts', createRange(1, 1), 'delete'),
-        createImportCleanup('/file.ts', createRange(2, 2), 'partial', "import { bar } from './utils';")
+        createImportCleanup('/file.ts', createRange(2, 2), 'partial', 'import { bar } from \'./utils\';')
       ];
       const preview = createPreview([], importCleanups);
 
@@ -193,7 +193,7 @@ describe('FileOperationsHandler', () => {
     });
 
     it('應該套用 partial import cleanup', async () => {
-      const fileContent = "import { foo, bar } from './utils';\nconst x = 1;";
+      const fileContent = 'import { foo, bar } from \'./utils\';\nconst x = 1;';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
       handler = new FileOperationsHandler(mockFileSystem);
 
@@ -201,7 +201,7 @@ describe('FileOperationsHandler', () => {
         {
           range: createRange(1, 1),
           type: 'import-partial',
-          newContent: "import { bar } from './utils';"
+          newContent: 'import { bar } from \'./utils\';'
         }
       ];
 
@@ -209,7 +209,7 @@ describe('FileOperationsHandler', () => {
 
       expect(result.cleanedImports).toBe(1);
       const writeCall = (mockFileSystem.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(writeCall[1]).toContain("import { bar } from './utils';");
+      expect(writeCall[1]).toContain('import { bar } from \'./utils\';');
     });
 
     it('應該從後往前排序操作避免位置偏移', async () => {
@@ -245,7 +245,7 @@ describe('FileOperationsHandler', () => {
     });
 
     it('應該保留原始縮排', async () => {
-      const fileContent = "  import { foo } from './utils';\n  const x = 1;";
+      const fileContent = '  import { foo } from \'./utils\';\n  const x = 1;';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
       handler = new FileOperationsHandler(mockFileSystem);
 
@@ -253,14 +253,14 @@ describe('FileOperationsHandler', () => {
         {
           range: createRange(1, 1),
           type: 'import-partial',
-          newContent: "import { bar } from './utils';"
+          newContent: 'import { bar } from \'./utils\';'
         }
       ];
 
       await handler.applyFileOperations('/test.ts', operations);
 
       const writeCall = (mockFileSystem.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(writeCall[1]).toContain("  import { bar } from './utils';");
+      expect(writeCall[1]).toContain('  import { bar } from \'./utils\';');
     });
 
     it('當檔案無法讀取時應拋出錯誤', async () => {

@@ -693,7 +693,7 @@ describe('convertDeadCodeRemovalPreview', () => {
         {
           filePath: '/src/b.ts',
           range: { start: { line: 1, column: 1 }, end: { line: 1, column: 30 } },
-          originalImport: "import { unused } from './a';",
+          originalImport: 'import { unused } from \'./a\';',
           unusedSymbols: ['unused'],
           cleanupType: 'delete' as const,
         },
@@ -707,12 +707,12 @@ describe('convertDeadCodeRemovalPreview', () => {
         importsCleanedUp: 1,
       },
     };
-    const originalContents = new Map([['/src/b.ts', "import { unused } from './a';\nconst x = 1;"]]);
+    const originalContents = new Map([['/src/b.ts', 'import { unused } from \'./a\';\nconst x = 1;']]);
 
     const result = convertDeadCodeRemovalPreview(preview, originalContents);
 
     expect(result.fileChanges).toHaveLength(1);
-    expect(result.fileChanges[0].changes[0].oldContent).toBe("import { unused } from './a';");
+    expect(result.fileChanges[0].changes[0].oldContent).toBe('import { unused } from \'./a\';');
     expect(result.fileChanges[0].changes[0].newContent).toBeNull();
     expect(result.operationDescription).toContain('cleaned up 1 import');
   });
@@ -725,10 +725,10 @@ describe('convertDeadCodeRemovalPreview', () => {
         {
           filePath: '/src/c.ts',
           range: { start: { line: 1, column: 1 }, end: { line: 1, column: 40 } },
-          originalImport: "import { used, unused } from './a';",
+          originalImport: 'import { used, unused } from \'./a\';',
           unusedSymbols: ['unused'],
           cleanupType: 'partial' as const,
-          newImport: "import { used } from './a';",
+          newImport: 'import { used } from \'./a\';',
         },
       ],
       affectedFiles: ['/src/c.ts'],
@@ -740,13 +740,13 @@ describe('convertDeadCodeRemovalPreview', () => {
         importsCleanedUp: 1,
       },
     };
-    const originalContents = new Map([['/src/c.ts', "import { used, unused } from './a';\nused();"]]);
+    const originalContents = new Map([['/src/c.ts', 'import { used, unused } from \'./a\';\nused();']]);
 
     const result = convertDeadCodeRemovalPreview(preview, originalContents);
 
     expect(result.fileChanges).toHaveLength(1);
-    expect(result.fileChanges[0].changes[0].oldContent).toBe("import { used, unused } from './a';");
-    expect(result.fileChanges[0].changes[0].newContent).toBe("import { used } from './a';");
+    expect(result.fileChanges[0].changes[0].oldContent).toBe('import { used, unused } from \'./a\';');
+    expect(result.fileChanges[0].changes[0].newContent).toBe('import { used } from \'./a\';');
   });
 
   it('應該合併同一檔案的刪除和 import 清理操作', () => {
@@ -765,7 +765,7 @@ describe('convertDeadCodeRemovalPreview', () => {
         {
           filePath: '/src/d.ts',
           range: { start: { line: 1, column: 1 }, end: { line: 1, column: 30 } },
-          originalImport: "import { helper } from './b';",
+          originalImport: 'import { helper } from \'./b\';',
           unusedSymbols: ['helper'],
           cleanupType: 'delete' as const,
         },
@@ -779,7 +779,7 @@ describe('convertDeadCodeRemovalPreview', () => {
         importsCleanedUp: 1,
       },
     };
-    const originalContents = new Map([['/src/d.ts', "import { helper } from './b';\nline2\nline3\nline4\nconst unused = 1;"]]);
+    const originalContents = new Map([['/src/d.ts', 'import { helper } from \'./b\';\nline2\nline3\nline4\nconst unused = 1;']]);
 
     const result = convertDeadCodeRemovalPreview(preview, originalContents);
 

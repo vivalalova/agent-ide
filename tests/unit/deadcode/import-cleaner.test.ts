@@ -124,8 +124,8 @@ describe('ImportCleaner', () => {
 
     it('應該處理多個檔案', async () => {
       const files = {
-        '/file1.ts': "import { foo } from './utils';\nfunction foo() {}",
-        '/file2.ts': "import { bar } from './utils';\nfunction bar() {}"
+        '/file1.ts': 'import { foo } from \'./utils\';\nfunction foo() {}',
+        '/file2.ts': 'import { bar } from \'./utils\';\nfunction bar() {}'
       };
       mockFileSystem = createMockFileSystem(files);
       importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
@@ -157,7 +157,7 @@ export function main() {}`;
         moduleSpecifier: './utils',
         isTypeOnly: false,
         namedImports: [{ name: 'unusedFunc' }],
-        rawStatement: "import { unusedFunc } from './utils';"
+        rawStatement: 'import { unusedFunc } from \'./utils\';'
       }]);
 
       const result = await importCleaner.analyzeImportCleanups(removals);
@@ -181,7 +181,7 @@ usedFunc();`;
         moduleSpecifier: './utils',
         isTypeOnly: false,
         namedImports: [{ name: 'usedFunc' }],
-        rawStatement: "import { usedFunc } from './utils';"
+        rawStatement: 'import { usedFunc } from \'./utils\';'
       }]);
 
       const result = await importCleaner.analyzeImportCleanups(removals);
@@ -202,7 +202,7 @@ function unused() {}`;
         moduleSpecifier: './utils',
         isTypeOnly: false,
         namedImports: [{ name: 'used' }, { name: 'unused' }],
-        rawStatement: "import { used, unused } from './utils';"
+        rawStatement: 'import { used, unused } from \'./utils\';'
       }]);
 
       importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
@@ -236,7 +236,7 @@ function unused() {}`;
     it('應該產生只有 named imports 的語句', () => {
       // 直接測試 generatePartialImport
       const stmt = {
-        statement: "import { a, b, c } from './utils';",
+        statement: 'import { a, b, c } from \'./utils\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 35, offset: 34 } },
         symbols: [
           { name: 'a' },
@@ -250,12 +250,12 @@ function unused() {}`;
       // 使用 private 方法測試
       const result = (importCleaner as never)['generatePartialImport'](stmt, ['a', 'c']);
 
-      expect(result).toBe("import { a, c } from './utils';");
+      expect(result).toBe('import { a, c } from \'./utils\';');
     });
 
     it('應該保留別名資訊', () => {
       const stmt = {
-        statement: "import { foo as bar, baz } from './utils';",
+        statement: 'import { foo as bar, baz } from \'./utils\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 42, offset: 41 } },
         symbols: [
           { name: 'foo', alias: 'bar' },
@@ -267,12 +267,12 @@ function unused() {}`;
 
       const result = (importCleaner as never)['generatePartialImport'](stmt, ['bar']);
 
-      expect(result).toBe("import { foo as bar } from './utils';");
+      expect(result).toBe('import { foo as bar } from \'./utils\';');
     });
 
     it('應該保留 default import', () => {
       const stmt = {
-        statement: "import React, { useState, useEffect } from 'react';",
+        statement: 'import React, { useState, useEffect } from \'react\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 50, offset: 49 } },
         symbols: [
           { name: 'React', isDefault: true },
@@ -285,12 +285,12 @@ function unused() {}`;
 
       const result = (importCleaner as never)['generatePartialImport'](stmt, ['React', 'useState']);
 
-      expect(result).toBe("import React, { useState } from 'react';");
+      expect(result).toBe('import React, { useState } from \'react\';');
     });
 
     it('當只有 default import 保留時應產生簡化語句', () => {
       const stmt = {
-        statement: "import React, { useState } from 'react';",
+        statement: 'import React, { useState } from \'react\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 40, offset: 39 } },
         symbols: [
           { name: 'React', isDefault: true },
@@ -302,12 +302,12 @@ function unused() {}`;
 
       const result = (importCleaner as never)['generatePartialImport'](stmt, ['React']);
 
-      expect(result).toBe("import React from 'react';");
+      expect(result).toBe('import React from \'react\';');
     });
 
     it('應該對 namespace import 返回 null', () => {
       const stmt = {
-        statement: "import * as utils from './utils';",
+        statement: 'import * as utils from \'./utils\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 33, offset: 32 } },
         symbols: [{ name: 'utils', isNamespace: true }],
         hasDefault: false,
@@ -321,7 +321,7 @@ function unused() {}`;
 
     it('當沒有符號需要保留時應返回 null', () => {
       const stmt = {
-        statement: "import { a, b } from './utils';",
+        statement: 'import { a, b } from \'./utils\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 31, offset: 30 } },
         symbols: [{ name: 'a' }, { name: 'b' }],
         hasDefault: false,
@@ -335,7 +335,7 @@ function unused() {}`;
 
     it('應該保留 type import 關鍵字', () => {
       const stmt = {
-        statement: "import type { User, Admin } from './types';",
+        statement: 'import type { User, Admin } from \'./types\';',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 43, offset: 42 } },
         symbols: [{ name: 'User' }, { name: 'Admin' }],
         hasDefault: false,
@@ -344,12 +344,12 @@ function unused() {}`;
 
       const result = (importCleaner as never)['generatePartialImport'](stmt, ['User']);
 
-      expect(result).toBe("import type { User } from './types';");
+      expect(result).toBe('import type { User } from \'./types\';');
     });
 
     it('當 from 路徑無法解析時應返回 null', () => {
       const stmt = {
-        statement: "import { a } invalid syntax",
+        statement: 'import { a } invalid syntax',
         range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 27, offset: 26 } },
         symbols: [{ name: 'a' }],
         hasDefault: false,

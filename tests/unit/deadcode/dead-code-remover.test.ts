@@ -232,7 +232,7 @@ function bar() {}`;
   describe('preview - Import 清理', () => {
     it('當 cleanupImports 為 true 時應該分析 import', async () => {
       mockFileSystem = createMockFileSystem({
-        '/test.ts': "import { unused } from './utils';\nfunction unused() {}"
+        '/test.ts': 'import { unused } from \'./utils\';\nfunction unused() {}'
       });
       remover = new DeadCodeRemover(mockFileSystem, mockParserRegistry, {
         cleanupImports: true
@@ -243,7 +243,7 @@ function bar() {}`;
         moduleSpecifier: './utils',
         isTypeOnly: false,
         namedImports: [{ name: 'unused' }],
-        rawStatement: "import { unused } from './utils';"
+        rawStatement: 'import { unused } from \'./utils\';'
       }]);
 
       const items = [createDeadCodeItem('unused', SymbolType.Function, '/test.ts', 2)];
@@ -255,7 +255,7 @@ function bar() {}`;
 
     it('當 cleanupImports 為 false 時應該跳過 import 分析', async () => {
       mockFileSystem = createMockFileSystem({
-        '/test.ts': "import { unused } from './utils';\nfunction unused() {}"
+        '/test.ts': 'import { unused } from \'./utils\';\nfunction unused() {}'
       });
       remover = new DeadCodeRemover(mockFileSystem, mockParserRegistry, {
         cleanupImports: false
