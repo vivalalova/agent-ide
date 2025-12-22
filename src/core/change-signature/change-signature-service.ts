@@ -6,6 +6,8 @@
 import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { Changeset } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { SignatureParser } from './signature-parser.js';
 import {
   type ChangeSignatureOptions,
@@ -113,6 +115,86 @@ export class ChangeSignatureService {
         filesAffected: affectedFiles.size
       }
     };
+  }
+
+  /**
+   * 生成參數簽名變更的 Changeset
+   * 使用 preview 模式收集變更，轉換為統一的 Changeset 格式
+   *
+   * @param options - 變更選項（強制使用 preview 模式）
+   * @returns Changeset 物件
+   */
+  async generateChangeset(options: ChangeSignatureOptions): Promise<Changeset> {
+    const builder = createChangesetBuilder().forCommand('change-signature');
+
+    // 使用現有邏輯（preview 模式）收集變更
+    const result = await this.changeSignature({
+      ...options,
+      preview: true
+    });
+
+    if (!result.success) {
+      return builder
+        .addError(result.error ?? 'Change signature failed')
+        .withDescription(result.error ?? 'Change signature failed')
+        .build();
+    }
+
+    // 轉換 definitionUpdate
+    const { filePath, originalCode, newCode, location } = result.definitionUpdate;
+
+    // 計算原始行的長度（用於確定替換範圍結束位置）
+    const originalLineLength = originalCode.length;
+    const endColumn = location.range.start.column + originalLineLength;
+
+    builder.addTextChange(filePath, [{
+      range: {
+        start: location.range.start,
+        end: { ...location.range.start, column: endColumn }
+      },
+      newText: newCode,
+      description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
+    }], 'modify');
+
+    // 轉換 callSiteUpdates
+    // 按檔案分組，合併同一檔案的多個變更
+    const updatesByFile = new Map<string, CallSiteUpdate[]>();
+    for (const update of result.callSiteUpdates) {
+      const existing = updatesByFile.get(update.filePath);
+      if (existing) {
+        existing.push(update);
+      } else {
+        updatesByFile.set(update.filePath, [update]);
+      }
+    }
+
+    for (const [updateFilePath, updates] of updatesByFile) {
+      // 跳過與 definitionUpdate 同一檔案（避免重複）
+      // 已經在上面處理過了，呼叫點和定義可能在同一行
+      const edits = updates.map(update => {
+        const callOriginalLength = update.originalCode.length;
+        const callEndColumn = update.location.range.start.column + callOriginalLength;
+        return {
+          range: {
+            start: update.location.range.start,
+            end: { ...update.location.range.start, column: callEndColumn }
+          },
+          newText: update.newCode,
+          description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
+        };
+      });
+
+      builder.addTextChange(updateFilePath, edits, 'modify');
+    }
+
+    // 設定描述
+    const originalParams = result.originalSignature.parameters.map(p => p.name).join(', ');
+    const newParams = result.newSignature.parameters.map(p => p.name).join(', ');
+    builder.withDescription(
+      `Changed signature of ${result.originalSignature.name}: (${originalParams}) -> (${newParams})`
+    );
+
+    return builder.build();
   }
 
   /**

@@ -24,6 +24,8 @@ import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
+import type { Changeset } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -307,6 +309,49 @@ export class RenameEngine {
         }
       };
     }
+  }
+
+  /**
+   * 生成重命名的 Changeset
+   * 不執行實際寫入，只計算變更
+   *
+   * 即使驗證失敗（如保留字衝突），仍會返回 success: true 並附帶 warnings，
+   * 讓命令層可以顯示衝突資訊和預覽結果。
+   *
+   * @param options 重命名選項
+   * @returns Changeset 物件（包含所有變更資訊）
+   */
+  async generateChangeset(options: RenameOptions): Promise<Changeset> {
+    // 1. 驗證（收集衝突但不阻止繼續處理）
+    const validation = await this.validateRename(options);
+
+    // 2. 使用 collectRenameChanges 收集變更
+    const fileChanges = await this.referenceUpdater.collectRenameChanges(
+      options.symbol,
+      options.newName,
+      Array.from(options.filePaths)
+    );
+
+    // 3. 轉換為 Changeset
+    const builder = createChangesetBuilder()
+      .forCommand('rename')
+      .withDescription(`Renamed '${options.symbol.name}' to '${options.newName}'`);
+
+    for (const { filePath, changes } of fileChanges) {
+      const edits = changes.map(change => ({
+        range: change.range,
+        newText: change.newText,
+        description: `Rename ${change.oldText} → ${change.newText}`
+      }));
+      builder.addTextChange(filePath, edits, 'rename');
+    }
+
+    // 4. 加入驗證衝突為警告（格式：type:message，方便解析）
+    for (const conflict of validation.conflicts) {
+      builder.addWarning(`${conflict.type}:${conflict.message}`);
+    }
+
+    return builder.build();
   }
 
   /**

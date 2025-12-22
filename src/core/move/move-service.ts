@@ -5,6 +5,8 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
+import type { Changeset, TextEdit } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig } from './types.js';
 
@@ -154,6 +156,143 @@ export class MoveService {
         error: error instanceof Error ? error.message : 'Unknown error',
         message: `移動失敗: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+    }
+  }
+
+  /**
+   * 生成移動的 Changeset
+   * 不執行實際移動，只計算變更
+   *
+   * @param operation - 移動操作
+   * @param options - 移動選項
+   * @returns Changeset 物件
+   */
+  async generateChangeset(operation: MoveOperation, options: MoveOptions = {}): Promise<Changeset> {
+    const { source, target, updateImports = true } = operation;
+    const { projectRoot = process.cwd() } = options;
+
+    const builder = createChangesetBuilder()
+      .forCommand('move')
+      .withDescription(`Moved '${path.basename(source)}' to '${path.basename(target)}'`);
+
+    try {
+      // 驗證路徑（只讀驗證，不建立目錄）
+      await this.validatePathsForChangeset(source, target);
+
+      // 收集 import 更新（不執行）
+      const pathUpdates: PathUpdate[] = [];
+      if (updateImports) {
+        const isDirectory = await this.fileSystem.isDirectory(source);
+
+        if (isDirectory) {
+          // 目錄移動：處理目錄內所有檔案
+          const filesInDir = await this.getFilesInDirectory(source);
+
+          for (const filePath of filesInDir) {
+            const relativePath = path.relative(source, filePath);
+            const newFilePath = path.join(target, relativePath);
+
+            // 更新其他檔案對目錄內檔案的引用
+            const affectedFiles = await this.findAffectedFiles(filePath, projectRoot);
+            for (const affectedFile of affectedFiles) {
+              const updates = await this.calculatePathUpdates(affectedFile, filePath, newFilePath);
+              pathUpdates.push(...updates);
+            }
+
+            // 更新目錄內檔案的內部 import
+            const internalUpdates = await this.calculateMovedFileInternalUpdates(filePath, newFilePath);
+            pathUpdates.push(...internalUpdates);
+          }
+        } else {
+          // 單一檔案移動
+          const affectedFiles = await this.findAffectedFiles(source, projectRoot);
+
+          for (const filePath of affectedFiles) {
+            const updates = await this.calculatePathUpdates(filePath, source, target);
+            pathUpdates.push(...updates);
+          }
+
+          // 更新被移動檔案內部的 import
+          const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
+          pathUpdates.push(...movedFileInternalUpdates);
+        }
+      }
+
+      // 轉換 pathUpdates 為 TextEdit，按檔案分組
+      // 注意：對於被移動檔案的內部更新，filePath 是 target，但需要從 source 讀取內容
+      const grouped = new Map<string, PathUpdate[]>();
+      for (const update of pathUpdates) {
+        const list = grouped.get(update.filePath) ?? [];
+        list.push(update);
+        grouped.set(update.filePath, list);
+      }
+
+      for (const [filePath, updates] of grouped) {
+        // 判斷是否為被移動檔案的內部更新
+        // 可能是單檔移動（filePath === target）或目錄移動（filePath 以 target 開頭）
+        const isMovedFile = filePath === target || filePath.startsWith(target + path.sep);
+        // 計算原始檔案路徑
+        let readPath = filePath;
+        if (isMovedFile) {
+          if (filePath === target) {
+            // 單檔移動
+            readPath = source;
+          } else {
+            // 目錄移動：將 target 前綴替換為 source
+            const relativePath = filePath.slice(target.length);
+            readPath = source + relativePath;
+          }
+        }
+        const content = await this.fileSystem.readFile(readPath, 'utf-8') as string;
+        const lines = content.split('\n');
+
+        const edits: TextEdit[] = updates.map(update => {
+          const lineIndex = update.line - 1;
+          const lineContent = lines[lineIndex] ?? '';
+          const startCol = lineContent.indexOf(update.oldImport) + 1;
+          const endCol = startCol + update.oldImport.length;
+
+          return {
+            range: {
+              start: { line: update.line, column: startCol, offset: undefined },
+              end: { line: update.line, column: endCol, offset: undefined }
+            },
+            newText: update.newImport,
+            description: `Update import: ${update.oldImport} → ${update.newImport}`
+          };
+        });
+
+        // 對於被移動檔案，使用原始路徑來建立 TextChange（轉換器會從該路徑讀取）
+        // 實際的檔案移動由 fileOperations 處理
+        builder.addTextChange(readPath, edits, 'modify');
+      }
+
+      // 新增檔案移動操作
+      builder.addFileMove(source, target);
+
+      return builder.build();
+    } catch (error) {
+      return builder
+        .addError(error instanceof Error ? error.message : String(error))
+        .build();
+    }
+  }
+
+  /**
+   * 驗證路徑（只讀版本，用於 generateChangeset）
+   * 不建立任何目錄，只做驗證
+   */
+  private async validatePathsForChangeset(source: string, target: string): Promise<void> {
+    // 檢查來源是否存在
+    const sourceExists = await this.fileSystem.exists(source);
+    if (!sourceExists) {
+      throw new Error(`來源路徑不存在: ${source}`);
+    }
+
+    // 檢查目標是否已存在
+    const targetExists = await this.fileSystem.exists(target);
+    if (targetExists) {
+      throw new Error(`目標路徑已存在: ${target}`);
     }
   }
 

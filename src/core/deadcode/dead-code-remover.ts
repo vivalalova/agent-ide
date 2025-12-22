@@ -6,6 +6,8 @@
 import { minimatch } from 'minimatch';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { Changeset } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -90,6 +92,61 @@ export class DeadCodeRemover {
         errors: [error instanceof Error ? error.message : String(error)]
       };
     }
+  }
+
+  /**
+   * 生成死代碼刪除的 Changeset
+   * @param deadCodeItems 待刪除的死代碼項目
+   * @returns Changeset 變更集
+   */
+  async generateChangeset(deadCodeItems: readonly DeadCodeItem[]): Promise<Changeset> {
+    const builder = createChangesetBuilder()
+      .forCommand('deadcode');
+
+    // 使用現有的 preview 邏輯收集變更
+    const preview = await this.preview(deadCodeItems);
+
+    if (!preview.success) {
+      return builder
+        .addError(preview.errors?.join(', ') ?? 'Preview failed')
+        .build();
+    }
+
+    // 轉換 removals 為 TextEdit
+    for (const removal of preview.removals) {
+      builder.addTextChange(removal.filePath, [{
+        range: removal.range,
+        newText: '',
+        description: `Remove ${removal.symbolType}: ${removal.symbolName}`
+      }], 'delete');
+    }
+
+    // 轉換 importCleanups 為 TextEdit
+    for (const cleanup of preview.importCleanups) {
+      const newText = cleanup.cleanupType === 'partial' && cleanup.newImport
+        ? cleanup.newImport
+        : '';
+      builder.addTextChange(cleanup.filePath, [{
+        range: cleanup.range,
+        newText,
+        description: cleanup.cleanupType === 'delete'
+          ? `Remove import: ${cleanup.unusedSymbols.join(', ')}`
+          : `Clean import: ${cleanup.unusedSymbols.join(', ')}`
+      }], cleanup.cleanupType === 'delete' ? 'delete' : 'modify');
+    }
+
+    // 設定描述
+    const { totalRemovals, importsCleanedUp } = preview.summary;
+    builder.withDescription(
+      `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
+    );
+
+    // 加入警告
+    for (const warning of preview.warnings ?? []) {
+      builder.addWarning(warning);
+    }
+
+    return builder.build();
   }
 
   /**
