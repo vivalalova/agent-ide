@@ -289,6 +289,12 @@ export class ChangeApplicator {
       return content;
     }
 
+    // 空內容特殊處理：所有 edit 的位置都視為插入到開頭
+    // 這是因為對空內容而言，任何位置的插入都等同於從頭開始
+    if (content === '') {
+      return edits.map(e => e.newText).join('');
+    }
+
     // 將內容分割成行（保留換行符）
     const lines = this.splitLines(content);
 

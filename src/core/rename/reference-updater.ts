@@ -38,6 +38,7 @@ export class ReferenceUpdater {
 
   /**
    * 更新所有引用
+   * @deprecated 請改用 collectRenameChanges() + ChangeApplicator
    */
   async updateReferences(
     symbol: Symbol,
@@ -77,6 +78,7 @@ export class ReferenceUpdater {
 
   /**
    * 批次執行重新命名操作
+   * @deprecated 請改用 collectRenameChanges() + ChangeApplicator
    */
   async applyRenameOperations(operations: RenameOperation[]): Promise<UpdateResult> {
     const updatedFiles: UpdatedFile[] = [];
@@ -332,6 +334,7 @@ export class ReferenceUpdater {
 
   /**
    * 處理跨檔案引用
+   * @deprecated 請改用 collectRenameChanges() + ChangeApplicator
    */
   async updateCrossFileReferences(
     symbol: Symbol,
