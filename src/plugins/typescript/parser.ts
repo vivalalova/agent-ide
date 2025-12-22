@@ -527,12 +527,13 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     this.dependencyAnalyzer = null as unknown as TypeScriptDependencyAnalyzer;
 
-    // 多次觸發垃圾收集以確保記憶體完全釋放
-    if (typeof global !== 'undefined' && 'gc' in global && typeof global.gc === 'function') {
-      // 進行多次垃圾回收以確保釋放所有 TypeScript 相關資源
-      for (let i = 0; i < 3; i++) {
-        global.gc();
-      }
+    // V8 的 GC 會自動處理記憶體管理
+    // 只在開發環境且有 --expose-gc 時觸發一次（用於除錯）
+    if (process.env.NODE_ENV === 'development'
+        && typeof global !== 'undefined'
+        && 'gc' in global
+        && typeof global.gc === 'function') {
+      global.gc();
     }
   }
 
