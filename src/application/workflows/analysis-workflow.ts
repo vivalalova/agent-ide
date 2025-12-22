@@ -540,7 +540,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行索引建立
    */
-  private async performIndexing(target: string, options: any): Promise<any> {
+  private async performIndexing(target: string, _options: Required<AnalysisWorkflowInput['options']>): Promise<AnalysisWorkflowContext['indexResult']> {
     // 模擬索引建立
     await this.sleep(100);
 
@@ -555,7 +555,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行複雜度分析
    */
-  private async performComplexityAnalysis(target: string, indexResult: any): Promise<any> {
+  private async performComplexityAnalysis(target: string, _indexResult: AnalysisWorkflowContext['indexResult']): Promise<AnalysisWorkflowContext['complexityResult']> {
     await this.sleep(200);
 
     return {
@@ -573,7 +573,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行依賴分析
    */
-  private async performDependencyAnalysis(target: string, indexResult: any): Promise<any> {
+  private async performDependencyAnalysis(_target: string, _indexResult: AnalysisWorkflowContext['indexResult']): Promise<AnalysisWorkflowContext['dependencyResult']> {
     await this.sleep(150);
 
     return {
@@ -587,7 +587,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行品質分析
    */
-  private async performQualityAnalysis(target: string, indexResult: any): Promise<any> {
+  private async performQualityAnalysis(_target: string, _indexResult: AnalysisWorkflowContext['indexResult']): Promise<AnalysisWorkflowContext['qualityResult']> {
     await this.sleep(250);
 
     return {
@@ -600,7 +600,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行死代碼檢測
    */
-  private async performDeadCodeDetection(target: string, indexResult: any): Promise<any> {
+  private async performDeadCodeDetection(_target: string, _indexResult: AnalysisWorkflowContext['indexResult']): Promise<AnalysisWorkflowContext['deadCodeResult']> {
     await this.sleep(180);
 
     return {
@@ -613,7 +613,7 @@ export class AnalysisWorkflow extends BaseWorkflow<AnalysisWorkflowContext, Anal
   /**
    * 執行重複代碼檢測
    */
-  private async performDuplicationDetection(target: string, indexResult: any): Promise<any> {
+  private async performDuplicationDetection(_target: string, _indexResult: AnalysisWorkflowContext['indexResult']): Promise<AnalysisWorkflowContext['duplicationResult']> {
     await this.sleep(220);
 
     return {

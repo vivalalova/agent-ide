@@ -13,7 +13,7 @@ import { EventPriority } from '@application/events/event-types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { MoveService } from '@core/move/move-service.js';
 import { ImpactAnalyzer } from '@core/impact/index.js';
-import { IndexEngine } from '@core/shared/indexing/index-engine.js';
+import { IndexEngine, type IndexConfig } from '@core/shared/indexing/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
@@ -82,7 +82,10 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
     this.impactAnalyzer = new ImpactAnalyzer(this.fileSystem);
-    this.indexEngine = new IndexEngine({} as any, this.fileSystem);
+
+
+
+    this.indexEngine = new IndexEngine({} as unknown as IndexConfig, this.fileSystem);
 
     // 註冊所有模組
     this.registerModules();
@@ -109,7 +112,8 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
         if (options.selection && options.newName) {
           try {
             const renameResult = await this.renameEngine.rename({
-              symbol: {} as any,
+
+              symbol: {} as unknown as Parameters<typeof this.renameEngine.rename>[0]['symbol'],
               newName: options.newName,
               filePaths: [filePath],
               position: {
@@ -184,7 +188,8 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
       try {
         const renameResult = await this.renameEngine.rename({
-          symbol: {} as any,
+
+          symbol: {} as unknown as Parameters<typeof this.renameEngine.rename>[0]['symbol'],
           newName: operation.newName,
           filePaths: [operation.filePath],
           position: operation.position

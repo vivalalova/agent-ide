@@ -186,7 +186,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
     workflowState: WorkflowState
   ): Promise<WorkflowResult<T>> {
     const startTime = Date.now();
-    let lastResult: any = workflow.context;
+    let lastResult: unknown = workflow.context;
 
     try {
       workflowState.status = WorkflowStatus.Running;
@@ -285,7 +285,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
       return {
         workflowId: workflow.id,
         status: WorkflowStatus.Completed,
-        result: lastResult,
+        result: lastResult as T,
         executedSteps: [...workflowState.executedSteps],
         duration: Date.now() - startTime
       };
@@ -347,7 +347,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
    */
   private async executeStep(
     step: WorkflowStep,
-    context: any,
+    context: unknown,
     workflowId: string
   ): Promise<StepResult> {
     let attemptCount = 0;
@@ -432,7 +432,7 @@ export class WorkflowEngineService implements IWorkflowEngine {
     workflowId: string,
     eventType: 'started' | 'paused' | 'resumed' | 'completed' | 'failed' | 'step-completed',
     stepId?: string,
-    data?: any
+    data?: unknown
   ): Promise<void> {
     try {
       await this.eventBus.emit({

@@ -224,8 +224,8 @@ export class CacheCoordinatorService implements ICacheCoordinator {
   /**
    * 轉換策略為快取選項
    */
-  private convertStrategyToCacheOptions(strategy: CacheStrategy): any {
-    const options: any = {};
+  private convertStrategyToCacheOptions(strategy: CacheStrategy): Record<string, unknown> {
+    const options: Record<string, unknown> = {};
 
     switch (strategy.type) {
     case 'lru':
@@ -253,7 +253,7 @@ export class CacheCoordinatorService implements ICacheCoordinator {
   /**
    * 發布快取事件
    */
-  private async publishCacheEvent(eventType: string, data: any): Promise<void> {
+  private async publishCacheEvent(eventType: string, data: Record<string, unknown>): Promise<void> {
     const event: BaseEvent = {
       type: 'cache-event',
       timestamp: new Date(),
