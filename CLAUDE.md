@@ -44,7 +44,7 @@ src/
 │   ├── move-member/      # 成員移動
 │   └── deadcode/         # Dead code 檢測
 ├── shared/               # types/ | errors/
-├── infrastructure/       # Parser框架、Cache、Storage、Formatters
+├── infrastructure/       # Parser框架、Cache、Storage、Formatters、Changeset
 ├── plugins/              # typescript/ | javascript/ Parser
 ├── interfaces/           # CLI
 └── application/          # DI容器
@@ -133,11 +133,53 @@ agent-ide move-member <sourceFile> <memberName> --target-file <file>
 | 查詢類 | `outputHandler.outputQuery(result, format)` | extends `QueryResult` |
 | 變更類 | `outputHandler.outputMutation(input, format)` | `PreviewInput` |
 
-### 新增命令步驟
+### Changeset 架構（變更類命令）
+
+所有變更類命令（rename、move、deadcode、change-signature、move-member）統一使用：
+
+```text
+CLI Command → Core.generateChangeset() → ChangeApplicator.apply() → IFileSystem
+                        ↓
+              convertChangesetToPreviewInput() → outputMutation()
+```
+
+**核心型別**（`infrastructure/changeset/`）：
+
+| 型別 | 說明 |
+|-----|------|
+| `Changeset` | 統一的變更集（textChanges + fileOperations） |
+| `ChangeApplicator` | 統一寫入入口（備份→寫入→回滾） |
+| `ChangesetBuilder` | 流式建構器 |
+
+**命令實作模式**：
+
+```typescript
+// 1. 生成 Changeset（不寫入）
+const changeset = await engine.generateChangeset(options);
+
+// 2. 轉換為 PreviewInput
+const previewInput = await convertChangesetToPreviewInput(changeset, fileSystem);
+
+// 3. dry-run 或執行
+if (dryRun) {
+  outputHandler.outputMutation(previewInput, format);
+} else {
+  const result = await applicator.apply(changeset, { atomic: true, rollbackOnError: true });
+  // ...
+}
+```
+
+### 新增查詢類命令步驟
 
 1. `infrastructure/formatters/query-types.ts`：加 `QueryCommand` enum + 結果介面
 2. `infrastructure/formatters/query-formatter.ts`：加 `toSummary()` case
 3. 命令使用 `outputHandler.outputQuery(result, format)`
+
+### 新增變更類命令步驟
+
+1. Core 模組新增 `generateChangeset()` 方法
+2. 命令使用 `ChangeApplicator` + `convertChangesetToPreviewInput`
+3. 輸出使用 `outputHandler.outputMutation()`
 
 ## 開發流程
 
