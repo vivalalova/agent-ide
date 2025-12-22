@@ -11,7 +11,7 @@ import {
   type DeadCodeDetectionResult
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { convertDeadCodeRemovalPreview } from '@infrastructure/formatters/preview-converter.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import {
   createUnifiedOutputHandler,
   parseOutputFormat,
@@ -91,8 +91,10 @@ async function handleDeadCodeCommand(
     throw new Error('不支援的輸出格式');
   }
 
-  if (format !== OutputFormat.Json) {
-    console.log('🔍 檢測並準備刪除 Dead Code...');
+  const isJsonFormat = format === OutputFormat.Json;
+
+  if (!isJsonFormat) {
+    console.log('   檢測並準備刪除 Dead Code...');
   }
 
   const projectPath = options.path || process.cwd();
@@ -115,7 +117,7 @@ async function handleDeadCodeCommand(
     // 索引專案
     await indexEngine.indexProject(projectPath);
 
-    // 1. 先執行 dead code 檢測
+    // 1. 執行 dead code 檢測
     const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);
 
     if (!detectionResult.success) {
@@ -125,8 +127,8 @@ async function handleDeadCodeCommand(
     }
 
     if (detectionResult.items.length === 0) {
-      if (format !== OutputFormat.Json) {
-        console.log('✅ 沒有檢測到 dead code');
+      if (!isJsonFormat) {
+        console.log('   沒有檢測到 dead code');
       } else {
         console.log(JSON.stringify({ success: true, message: '沒有檢測到 dead code', removals: [] }));
       }
@@ -135,7 +137,6 @@ async function handleDeadCodeCommand(
 
     // 2. 建立 DeadCodeRemover
     // 區分 --exclude 參數中的檔案模式和符號名稱
-    // 包含 /、*、? 或以 . 開頭的視為檔案模式，其餘為符號名稱
     const excludePatterns = options.exclude || [];
     const excludeFiles = excludePatterns.filter(p =>
       p.includes('/') || p.includes('*') || p.includes('?') || p.startsWith('.')
@@ -154,21 +155,22 @@ async function handleDeadCodeCommand(
       }
     );
 
-    // 3. 產生預覽
-    const preview = await remover.preview(detectionResult.items);
+    // 3. 使用新的 Changeset 流程
+    const changeset = await remover.generateChangeset(detectionResult.items);
 
-    if (!preview.success) {
-      outputHandler.outputError(`預覽失敗: ${preview.errors?.join(', ')}`, format);
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'deadcode');
       process.exitCode = 1;
       return;
     }
 
-    if (preview.removals.length === 0) {
-      if (format !== OutputFormat.Json) {
-        console.log('✅ 符合條件的 dead code 已被過濾（信心度或排除規則）');
-        if (preview.warnings && preview.warnings.length > 0) {
-          console.log('\n⚠️  警告:');
-          for (const warning of preview.warnings) {
+    // 無變更時的處理
+    if (changeset.textChanges.length === 0) {
+      if (!isJsonFormat) {
+        console.log('   符合條件的 dead code 已被過濾（排除規則）');
+        if (changeset.warnings && changeset.warnings.length > 0) {
+          console.log('\n   警告:');
+          for (const warning of changeset.warnings) {
             console.log(`   ${warning}`);
           }
         }
@@ -176,50 +178,55 @@ async function handleDeadCodeCommand(
         console.log(JSON.stringify({
           success: true,
           message: '符合條件的 dead code 已被過濾',
-          warnings: preview.warnings,
+          warnings: changeset.warnings,
           removals: []
         }));
       }
       return;
     }
 
-    // 4. 讀取原始檔案內容
-    const originalContents = new Map<string, string>();
-    for (const filePath of preview.affectedFiles) {
-      const content = await context.fileSystem.readFile(filePath, 'utf-8');
-      originalContents.set(filePath, typeof content === 'string' ? content : content.toString('utf-8'));
+    // 4. 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // 5. Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      if (!isJsonFormat) {
+        console.log('\n   移除 --dry-run 實際執行刪除');
+      }
+      return;
     }
 
-    // 5. 轉換為 PreviewInput
-    const previewInput = convertDeadCodeRemovalPreview(preview, originalContents);
+    // 6. 應用變更（帶回滾）
+    if (!isJsonFormat) {
+      console.log('   執行刪除...');
+    }
 
-    // 6. 輸出或執行
-    const isDryRun = options.dryRun === true;
+    const applicator = new ChangeApplicator(context.fileSystem);
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
+    });
 
-    if (isDryRun) {
-      // Dry-run 模式：只輸出預覽
+    if (result.success) {
       outputHandler.outputMutation(previewInput, format);
 
-      if (format !== OutputFormat.Json) {
-        console.log('\n💡 移除 --dry-run 實際執行刪除');
+      if (!isJsonFormat) {
+        const totalRemovals = changeset.textChanges
+          .flatMap(tc => tc.edits)
+          .filter(e => e.description?.startsWith('Remove ')).length;
+        const importsCleanedUp = changeset.textChanges
+          .flatMap(tc => tc.edits)
+          .filter(e => e.description?.includes('import')).length;
+
+        console.log(`\n   已刪除 ${totalRemovals} 個 dead code`);
+        if (importsCleanedUp > 0) {
+          console.log(`   並清理 ${importsCleanedUp} 個未使用的 import`);
+        }
       }
     } else {
-      // 實際執行刪除
-      const result = await remover.execute(preview);
-
-      if (result.success) {
-        outputHandler.outputMutation(previewInput, format);
-
-        if (format !== OutputFormat.Json) {
-          console.log(`\n✅ 已刪除 ${preview.summary.totalRemovals} 個 dead code`);
-          if (preview.summary.importsCleanedUp > 0) {
-            console.log(`   並清理 ${preview.summary.importsCleanedUp} 個未使用的 import`);
-          }
-        }
-      } else {
-        outputHandler.outputError(result.errors?.join(', ') || '刪除失敗', format);
-        process.exitCode = 1;
-      }
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'deadcode');
+      process.exitCode = 1;
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

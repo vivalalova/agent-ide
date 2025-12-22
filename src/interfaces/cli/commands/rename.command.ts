@@ -9,7 +9,7 @@ import { IndexEngine } from '@core/shared/indexing/index-engine.js';
 import { createIndexConfig } from '@core/shared/indexing/types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { convertRenamePreview } from '@infrastructure/formatters/index.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -148,92 +148,49 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     const targetSymbol = searchResults[0].symbol;
 
-    // 2. Dry-run 預覽變更
-    if (options.dryRun) {
-      try {
-        const allProjectFiles = await getAllProjectFiles(workspacePath, context);
+    // 取得所有專案檔案
+    const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
-        const preview = await renameEngine.previewRename({
-          symbol: targetSymbol,
-          newName: to,
-          filePaths: allProjectFiles
-        });
+    // 2. 使用新的 Changeset 流程
+    const applicator = new ChangeApplicator(context.fileSystem);
 
-        // 讀取受影響檔案的原始內容
-        const originalContents = new Map<string, string>();
-        for (const filePath of preview.affectedFiles) {
-          try {
-            const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
-            originalContents.set(filePath, content);
-          } catch {
-            // 忽略無法讀取的檔案
-          }
-        }
+    // 生成 Changeset
+    const changeset = await renameEngine.generateChangeset({
+      symbol: targetSymbol,
+      newName: to,
+      filePaths: allProjectFiles
+    });
 
-        // 轉換為統一的 PreviewInput 格式
-        const previewInput = convertRenamePreview(
-          preview.operations,
-          preview.conflicts,
-          originalContents,
-          { oldName: from, newName: to }
-        );
-
-        // 使用統一輸出處理器
-        outputHandler.outputMutation(previewInput, format);
-        return;
-      } catch (previewError) {
-        const errorMsg = previewError instanceof Error ? previewError.message : String(previewError);
-        outputHandler.outputError(`預覽失敗: ${errorMsg}`, format, 'rename');
-        process.exitCode = 1;
-        return;
-      }
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'rename');
+      process.exitCode = 1;
+      return;
     }
 
-    // 3. 執行重新命名（處理跨檔案引用）
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // 3. Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 4. 執行重新命名（處理跨檔案引用）
     if (!isJsonFormat) {
       console.log('   執行重新命名...');
     }
 
-    // 取得所有專案檔案（使用與 preview 相同的邏輯）
-    const allProjectFiles = await getAllProjectFiles(workspacePath, context);
-
-    // 先預覽變更
-    const preview = await renameEngine.previewRename({
-      symbol: targetSymbol,
-      newName: to,
-      filePaths: allProjectFiles
+    // 應用變更（帶回滾）
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
     });
 
-    // 讀取受影響檔案的原始內容（用於輸出）
-    const originalContents = new Map<string, string>();
-    for (const filePath of preview.affectedFiles) {
-      try {
-        const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
-        originalContents.set(filePath, content);
-      } catch {
-        // 忽略無法讀取的檔案
-      }
-    }
-
-    // 使用 renameEngine 執行重新命名
-    const renameResult = await renameEngine.rename({
-      symbol: targetSymbol,
-      newName: to,
-      filePaths: allProjectFiles
-    });
-
-    if (renameResult.success) {
-      // 轉換為統一的 PreviewInput 格式並輸出
-      const previewInput = convertRenamePreview(
-        preview.operations,
-        preview.conflicts,
-        originalContents,
-        { oldName: from, newName: to }
-      );
+    if (result.success) {
       outputHandler.outputMutation(previewInput, format);
     } else {
-      const errorMsg = renameResult.errors?.join(', ') || '重新命名失敗';
-      outputHandler.outputError(errorMsg, format, 'rename');
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'rename');
       process.exitCode = 1;
     }
     } finally {

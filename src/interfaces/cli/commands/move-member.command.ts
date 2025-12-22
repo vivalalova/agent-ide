@@ -5,12 +5,10 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveMemberService, MoveTargetType, MemberType, type MoveMemberSuccessResult } from '@core/move-member/index.js';
+import { MoveMemberService, MoveTargetType, MemberType } from '@core/move-member/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { createPreviewFormatter } from '@infrastructure/formatters/preview-formatter.js';
-import { PreviewCommand, PreviewFormat, type PreviewInput, type LineChange } from '@infrastructure/formatters/types.js';
-import { calculateLineChanges } from '@infrastructure/formatters/diff-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Move Member 命令選項 */
@@ -92,9 +90,9 @@ async function handleMoveMemberCommand(
       : MoveTargetType.ExistingFile;
 
     if (!isJsonFormat) {
-      console.log(`📦 移動成員: ${memberName}`);
-      console.log(`📁 來源: ${path.relative(projectRoot, sourceFilePath)}`);
-      console.log(`📁 目標: ${path.relative(projectRoot, targetFilePath)}`);
+      console.log(`   移動成員: ${memberName}`);
+      console.log(`   來源: ${path.relative(projectRoot, sourceFilePath)}`);
+      console.log(`   目標: ${path.relative(projectRoot, targetFilePath)}`);
     }
 
     // 取得 ParserRegistry（單例）
@@ -106,8 +104,8 @@ async function handleMoveMemberCommand(
       context.fileSystem
     );
 
-    // 執行 Move Member
-    const result = await moveMemberService.moveMember({
+    // 準備 MoveMember 選項
+    const moveMemberOptions = {
       sourceFile: sourceFilePath,
       memberName,
       memberType,
@@ -118,43 +116,48 @@ async function handleMoveMemberCommand(
         className: options.targetClass
       },
       projectRoot,
-      preview: options.dryRun,
       updateReferences: options.updateRefs,
       keepReexport: options.keepReexport
+    };
+
+    // 生成 Changeset
+    const changeset = await moveMemberService.generateChangeset(moveMemberOptions);
+
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'move-member');
+      process.exitCode = 1;
+      return;
+    }
+
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 執行變更
+    if (!isJsonFormat) {
+      console.log('   執行移動...');
+    }
+
+    const applicator = new ChangeApplicator(context.fileSystem);
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
     });
 
     if (result.success) {
-      if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          member: {
-            name: result.member.name,
-            type: result.member.type,
-            className: result.member.className
-          },
-          sourceFileChange: {
-            filePath: result.sourceFileChange.filePath
-          },
-          targetFileChange: {
-            filePath: result.targetFileChange.filePath,
-            isNewFile: result.targetFileChange.isNewFile
-          },
-          referenceUpdates: result.referenceUpdates.length,
-          executed: result.executed,
-          stats: result.stats
-        }, null, 2));
-      } else if (format === OutputFormat.Diff) {
-        printDiffOutput(result, projectRoot);
-      } else {
-        printSummaryOutput(result, projectRoot);
-      }
+      outputHandler.outputMutation(previewInput, format);
     } else {
-      outputHandler.outputError(result.error || '未知錯誤', format);
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'move-member');
       process.exitCode = 1;
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputHandler.outputError(errorMsg, format);
+    outputHandler.outputError(errorMsg, format, 'move-member');
     process.exitCode = 1;
   }
 }
@@ -174,86 +177,5 @@ function parseMemberType(typeStr: string): MemberType | undefined {
     'enum': MemberType.Enum
   };
   return typeMap[typeStr.toLowerCase()];
-}
-
-/**
- * 印出 diff 輸出
- * 使用統一的 PreviewFormatter 生成實際的程式碼差異
- */
-function printDiffOutput(result: MoveMemberSuccessResult, projectRoot: string): void {
-  const previewInput = convertToPreviewInput(result, projectRoot);
-  const formatter = createPreviewFormatter({ color: process.stdout.isTTY ?? false });
-  const previewResult = formatter.createPreview(previewInput);
-  const output = formatter.format(previewResult, PreviewFormat.Diff);
-
-  console.log(output);
-  console.log('');
-  console.log(result.executed ? '✅ 變更已執行' : '🔍 預覽模式');
-}
-
-/**
- * 將 MoveMemberSuccessResult 轉換為 PreviewInput
- */
-function convertToPreviewInput(result: MoveMemberSuccessResult, projectRoot: string): PreviewInput {
-  const fileChanges: PreviewInput['fileChanges'] = [];
-
-  // 來源檔案變更（移除成員）
-  const sourceChanges = calculateLineChanges(
-    result.sourceFileChange.originalCode,
-    result.sourceFileChange.newCode
-  );
-  fileChanges.push({
-    filePath: path.relative(projectRoot, result.sourceFileChange.filePath),
-    originalContent: result.sourceFileChange.originalCode,
-    changes: sourceChanges
-  });
-
-  // 目標檔案變更（加入成員）
-  const targetOriginal = result.targetFileChange.originalCode ?? '';
-  const targetChanges = calculateLineChanges(
-    targetOriginal,
-    result.targetFileChange.newCode
-  );
-  fileChanges.push({
-    filePath: path.relative(projectRoot, result.targetFileChange.filePath),
-    originalContent: targetOriginal,
-    changes: targetChanges
-  });
-
-  // 引用更新
-  for (const refUpdate of result.referenceUpdates) {
-    const refChanges: LineChange[] = [{
-      line: refUpdate.location.range.start.line,
-      oldContent: refUpdate.originalImport,
-      newContent: refUpdate.newImport
-    }];
-    fileChanges.push({
-      filePath: path.relative(projectRoot, refUpdate.filePath),
-      originalContent: refUpdate.originalImport,
-      changes: refChanges
-    });
-  }
-
-  return {
-    command: PreviewCommand.Move,
-    success: true,
-    fileChanges,
-    operationDescription: `移動成員 '${result.member.name}' (${result.member.type})`
-  };
-}
-
-/**
- * 印出摘要輸出
- */
-function printSummaryOutput(result: MoveMemberSuccessResult, projectRoot: string): void {
-  console.log('\n✅ 成員移動成功!');
-  console.log(`📦 成員: ${result.member.name} (${result.member.type})`);
-  console.log(`📁 從: ${path.relative(projectRoot, result.sourceFileChange.filePath)}`);
-  console.log(`📁 到: ${path.relative(projectRoot, result.targetFileChange.filePath)}`);
-  console.log(`📊 更新了 ${result.stats.referencesUpdated} 個引用，影響 ${result.stats.filesAffected} 個檔案`);
-
-  if (!result.executed) {
-    console.log('\n🔍 預覽模式 - 執行時移除 --dry-run');
-  }
 }
 

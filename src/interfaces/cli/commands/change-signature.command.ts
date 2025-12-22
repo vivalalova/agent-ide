@@ -8,11 +8,10 @@ import * as path from 'path';
 import {
   ChangeSignatureService,
   SignatureChangeType,
-  type SignatureChange,
-  type FunctionSignature,
-  type ChangeSignatureResult
+  type SignatureChange
 } from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -85,8 +84,8 @@ async function handleChangeSignatureCommand(
     }
 
     if (!isJsonFormat) {
-      console.log(`🔧 修改函式簽名: ${functionName}`);
-      console.log(`📁 檔案: ${path.relative(process.cwd(), filePath)}`);
+      console.log(`   修改函式簽名: ${functionName}`);
+      console.log(`   檔案: ${path.relative(process.cwd(), filePath)}`);
     }
 
     // 取得 ParserRegistry（單例）
@@ -98,47 +97,51 @@ async function handleChangeSignatureCommand(
       context.fileSystem
     );
 
-    // 執行 Change Signature
-    const result = await changeSignatureService.changeSignature({
+    // 使用新的 Changeset 流程
+    const applicator = new ChangeApplicator(context.fileSystem);
+
+    // 生成 Changeset
+    const changeset = await changeSignatureService.generateChangeset({
       filePath,
       functionName,
       changes,
-      projectRoot,
-      preview: options.dryRun
+      projectRoot
+    });
+
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'change-signature');
+      process.exitCode = 1;
+      return;
+    }
+
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 執行變更（帶回滾）
+    if (!isJsonFormat) {
+      console.log('   執行變更...');
+    }
+
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
     });
 
     if (result.success) {
-      if (isJsonFormat) {
-        console.log(JSON.stringify({
-          success: true,
-          originalSignature: formatSignatureForJson(result.originalSignature),
-          newSignature: formatSignatureForJson(result.newSignature),
-          definitionUpdate: {
-            filePath: result.definitionUpdate.filePath,
-            originalCode: result.definitionUpdate.originalCode,
-            newCode: result.definitionUpdate.newCode
-          },
-          callSiteUpdates: result.callSiteUpdates.map(u => ({
-            filePath: u.filePath,
-            originalCode: u.originalCode,
-            newCode: u.newCode,
-            line: u.location.range.start.line
-          })),
-          executed: result.executed,
-          stats: result.stats
-        }));
-      } else if (format === OutputFormat.Diff) {
-        printDiffOutput(result, projectRoot);
-      } else {
-        printSummaryOutput(result, projectRoot);
-      }
+      outputHandler.outputMutation(previewInput, format);
     } else {
-      outputHandler.outputError(result.error || '未知錯誤', format);
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'change-signature');
       process.exitCode = 1;
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputHandler.outputError(errorMsg, format);
+    outputHandler.outputError(errorMsg, format, 'change-signature');
     process.exitCode = 1;
   }
 }
@@ -258,79 +261,3 @@ function parseAddParameter(param: string): SignatureChange | null {
     callSiteValue: defaultValue
   };
 }
-
-/**
- * 格式化簽名為 JSON
- */
-function formatSignatureForJson(signature: FunctionSignature): object {
-  return {
-    name: signature.name,
-    parameters: signature.parameters.map((p) => ({
-      name: p.name,
-      type: p.type,
-      optional: p.optional,
-      defaultValue: p.defaultValue
-    })),
-    returnType: signature.returnType,
-    isMethod: signature.isMethod,
-    className: signature.className,
-    modifiers: signature.modifiers
-  };
-}
-
-/**
- * 印出 diff 輸出
- */
-function printDiffOutput(result: ChangeSignatureResult, projectRoot: string): void {
-  console.log('\n📝 定義變更:');
-  console.log(`--- ${path.relative(projectRoot, result.definitionUpdate.filePath)}`);
-  console.log(`+++ ${path.relative(projectRoot, result.definitionUpdate.filePath)}`);
-  console.log(`- ${result.definitionUpdate.originalCode}`);
-  console.log(`+ ${result.definitionUpdate.newCode}`);
-
-  if (result.callSiteUpdates.length > 0) {
-    console.log('\n📞 呼叫點變更:');
-    for (const update of result.callSiteUpdates) {
-      console.log(`\n--- ${path.relative(projectRoot, update.filePath)}:${update.location.range.start.line}`);
-      console.log(`- ${update.originalCode.trim()}`);
-      console.log(`+ ${update.newCode.trim()}`);
-    }
-  }
-
-  console.log('\n' + (result.executed ? '✅ 變更已執行' : '🔍 預覽模式（使用 --dry-run）'));
-  console.log(`📊 統計: ${result.stats.callSitesUpdated} 個呼叫點, ${result.stats.filesAffected} 個檔案`);
-}
-
-/**
- * 印出摘要輸出
- */
-function printSummaryOutput(result: ChangeSignatureResult, projectRoot: string): void {
-  console.log('\n✅ 簽名修改成功!');
-  console.log(`📝 原始: ${formatSignatureString(result.originalSignature)}`);
-  console.log(`📝 新的: ${formatSignatureString(result.newSignature)}`);
-  console.log(`📊 更新了 ${result.stats.callSitesUpdated} 個呼叫點，影響 ${result.stats.filesAffected} 個檔案`);
-
-  if (!result.executed) {
-    console.log('\n🔍 預覽模式 - 執行時移除 --dry-run');
-  }
-}
-
-/**
- * 格式化簽名字串
- */
-function formatSignatureString(signature: FunctionSignature): string {
-  const params = signature.parameters.map((p) => {
-    let str = p.name;
-    if (p.optional && !p.defaultValue) {str += '?';}
-    if (p.type) {str += `: ${p.type}`;}
-    if (p.defaultValue) {str += ` = ${p.defaultValue}`;}
-    return str;
-  }).join(', ');
-
-  let result = `${signature.name}(${params})`;
-  if (signature.returnType) {
-    result += `: ${signature.returnType}`;
-  }
-  return result;
-}
-
