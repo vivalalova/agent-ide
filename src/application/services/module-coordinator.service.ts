@@ -13,7 +13,6 @@ import { EventPriority } from '@application/events/event-types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { MoveService } from '@core/move/move-service.js';
 import { ImpactAnalyzer } from '@core/impact/index.js';
-import { IndexEngine, type IndexConfig } from '@core/shared/indexing/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
@@ -60,7 +59,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
   private readonly impactAnalyzer: ImpactAnalyzer;
-  private readonly indexEngine: IndexEngine;
   private readonly fileSystem: IFileSystem;
 
   constructor(
@@ -81,10 +79,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
     this.impactAnalyzer = new ImpactAnalyzer(this.fileSystem);
-
-
-
-    this.indexEngine = new IndexEngine({} as unknown as IndexConfig, this.fileSystem);
 
     // 註冊所有模組
     this.registerModules();
@@ -208,7 +202,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private registerModules(): void {
     const moduleConfigs = [
       { id: 'dependency', name: 'dependency', instance: this.impactAnalyzer },
-      { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
       { id: 'rename', name: 'rename', instance: this.renameEngine }
     ];
