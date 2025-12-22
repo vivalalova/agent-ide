@@ -143,14 +143,15 @@ export class ChangeSignatureService {
     // 轉換 definitionUpdate
     const { filePath, originalCode, newCode, location } = result.definitionUpdate;
 
-    // 計算原始行的長度（用於確定替換範圍結束位置）
+    // originalCode 和 newCode 都是完整的一行內容
+    // 因此 range 應該從行首（column 1）開始，到行尾結束
+    const lineNumber = location.range.start.line;
     const originalLineLength = originalCode.length;
-    const endColumn = location.range.start.column + originalLineLength;
 
     builder.addTextChange(filePath, [{
       range: {
-        start: location.range.start,
-        end: { ...location.range.start, column: endColumn }
+        start: { line: lineNumber, column: 1, offset: undefined },
+        end: { line: lineNumber, column: originalLineLength + 1, offset: undefined }
       },
       newText: newCode,
       description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
@@ -172,12 +173,14 @@ export class ChangeSignatureService {
       // 跳過與 definitionUpdate 同一檔案（避免重複）
       // 已經在上面處理過了，呼叫點和定義可能在同一行
       const edits = updates.map(update => {
+        // originalCode 和 newCode 都是完整的一行內容
+        // 因此 range 應該從行首（column 1）開始，到行尾結束
+        const lineStart = update.location.range.start.line;
         const callOriginalLength = update.originalCode.length;
-        const callEndColumn = update.location.range.start.column + callOriginalLength;
         return {
           range: {
-            start: update.location.range.start,
-            end: { ...update.location.range.start, column: callEndColumn }
+            start: { line: lineStart, column: 1, offset: undefined },
+            end: { line: lineStart, column: callOriginalLength + 1, offset: undefined }
           },
           newText: update.newCode,
           description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`

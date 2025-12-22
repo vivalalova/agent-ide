@@ -176,9 +176,9 @@ describe('CLI 整合測試', () => {
     it('change-signature - 參數重構後仍可編譯', () => {
       const result = runCLI(`${CLI} change-signature "${SAMPLE_PROJECT}/src/services/user-service.ts" createUser --add "options:object={}@2" --format json`);
       expect(result.success).toBe(true);
-      expect(result.callSiteUpdates).toBeDefined();
-      expect(Array.isArray(result.callSiteUpdates)).toBe(true);
-      expect(result.callSiteUpdates.length).toBeGreaterThan(0);
+      expect(result.files).toBeDefined();
+      expect(Array.isArray(result.files)).toBe(true);
+      expect(result.files.length).toBeGreaterThan(0);
       verifyTypecheck(SAMPLE_PROJECT);
     });
 

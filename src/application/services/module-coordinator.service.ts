@@ -95,7 +95,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
    */
   async analyzeAndRefactor(filePath: string, options: RefactorOptions): Promise<RefactorResult> {
     throw new ModuleCoordinatorError(
-      `Refactor via ModuleCoordinator is deprecated. Use CLI commands instead.`,
+      'Refactor via ModuleCoordinator is deprecated. Use CLI commands instead.',
       { refactorType: options.type, filePath }
     );
   }
