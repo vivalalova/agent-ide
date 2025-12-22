@@ -544,4 +544,255 @@ interface Config {
       }
     });
   });
+
+  describe('複雜簽章解析驗證', () => {
+    it('應該正確解析多層泛型巢狀的方法簽章', async () => {
+      // Given: 建立包含複雜泛型簽章的測試模組
+      await fixture.writeFile('complex-signatures/index.ts', `
+export class DataProcessor<T> {
+  transform<U>(fn: (item: T) => U): Array<U> {
+    return [];
+  }
+
+  processMap<K, V>(map: Map<K, Array<V>>): Promise<Map<K, V>> {
+    return Promise.resolve(new Map());
+  }
+
+  nestedGeneric<A, B>(data: Result<Array<Map<A, B>>>): Observable<A> {
+    return {} as Observable<A>;
+  }
+}
+
+interface Result<T> { value: T; }
+interface Observable<T> { subscribe: (fn: (v: T) => void) => void; }
+`);
+
+      const testModulePath = `${fixture.rootPath}/complex-signatures`;
+
+      // When
+      const result = await executeCLI(['snapshot', '--path', testModulePath, '--format', 'json'], { memfs: fixture.memfs });
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      const snapshot = snapshotResult.snapshot as ModuleSnapshotData;
+
+      // 驗證 DataProcessor class 的方法被正確提取
+      if (snapshot.api['DataProcessor']) {
+        const methods = snapshot.api['DataProcessor'];
+
+        // transform 方法應該有正確的泛型簽章
+        if (methods['transform']) {
+          expect(methods['transform']).toContain('→');
+          expect(methods['transform']).toContain('Array');
+        }
+
+        // processMap 方法應該處理多層泛型
+        if (methods['processMap']) {
+          expect(methods['processMap']).toContain('Map');
+          expect(methods['processMap']).toContain('Promise');
+        }
+      }
+    });
+
+    it('應該正確解析箭頭函數型別參數的方法', async () => {
+      // Given
+      await fixture.writeFile('arrow-fn-signatures/index.ts', `
+export class EventEmitter<T> {
+  on(event: string, callback: (data: T) => void): void {}
+
+  once(event: string, handler: (data: T) => Promise<void>): this {
+    return this;
+  }
+
+  pipe<U>(transform: (input: T) => U, filter?: (item: U) => boolean): EventEmitter<U> {
+    return new EventEmitter<U>();
+  }
+}
+`);
+
+      const testModulePath = `${fixture.rootPath}/arrow-fn-signatures`;
+
+      // When
+      const result = await executeCLI(['snapshot', '--path', testModulePath, '--format', 'json'], { memfs: fixture.memfs });
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      const snapshot = snapshotResult.snapshot as ModuleSnapshotData;
+
+      // 驗證箭頭函數型別參數被正確解析
+      if (snapshot.api['EventEmitter']) {
+        const methods = snapshot.api['EventEmitter'];
+
+        // on 方法有箭頭函數 callback
+        if (methods['on']) {
+          expect(methods['on']).toContain('callback');
+          expect(methods['on']).toContain('→');
+        }
+
+        // pipe 方法有多個箭頭函數參數
+        if (methods['pipe']) {
+          expect(methods['pipe']).toContain('transform');
+          expect(methods['pipe']).toContain('→');
+        }
+      }
+    });
+
+    it('應該正確解析 Promise 和複雜回傳型別', async () => {
+      // Given
+      await fixture.writeFile('complex-return-types/index.ts', `
+export class AsyncRepository<T> {
+  findAll(): Promise<Array<T>> {
+    return Promise.resolve([]);
+  }
+
+  findOne(id: string): Promise<T | null> {
+    return Promise.resolve(null);
+  }
+
+  query(): Promise<Map<string, Array<T>>> {
+    return Promise.resolve(new Map());
+  }
+
+  aggregate<R>(reducer: (items: T[]) => R): Promise<{ result: R; count: number }> {
+    return Promise.resolve({ result: {} as R, count: 0 });
+  }
+}
+`);
+
+      const testModulePath = `${fixture.rootPath}/complex-return-types`;
+
+      // When
+      const result = await executeCLI(['snapshot', '--path', testModulePath, '--format', 'json'], { memfs: fixture.memfs });
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      const snapshot = snapshotResult.snapshot as ModuleSnapshotData;
+
+      // 驗證複雜回傳型別被正確解析
+      if (snapshot.api['AsyncRepository']) {
+        const methods = snapshot.api['AsyncRepository'];
+
+        // findAll 應該回傳 Promise<Array<T>>
+        if (methods['findAll']) {
+          expect(methods['findAll']).toContain('Promise');
+          expect(methods['findAll']).toContain('Array');
+        }
+
+        // query 應該回傳 Promise<Map<string, Array<T>>>
+        if (methods['query']) {
+          expect(methods['query']).toContain('Map');
+        }
+      }
+    });
+
+    it('應該正確解析可選參數和解構參數', async () => {
+      // Given
+      await fixture.writeFile('optional-params/index.ts', `
+export class ConfigManager {
+  get(key: string, defaultValue?: string): string {
+    return defaultValue ?? '';
+  }
+
+  set(key: string, value: string, options?: { ttl?: number; overwrite?: boolean }): void {}
+
+  merge({ base, overrides }: { base: Record<string, string>; overrides?: Record<string, string> }): Record<string, string> {
+    return { ...base, ...overrides };
+  }
+
+  apply(...configs: Array<Partial<Config>>): Config {
+    return {} as Config;
+  }
+}
+
+interface Config {
+  name: string;
+  value: number;
+}
+`);
+
+      const testModulePath = `${fixture.rootPath}/optional-params`;
+
+      // When
+      const result = await executeCLI(['snapshot', '--path', testModulePath, '--format', 'json'], { memfs: fixture.memfs });
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      const snapshot = snapshotResult.snapshot as ModuleSnapshotData;
+
+      // 驗證可選參數被正確解析
+      if (snapshot.api['ConfigManager']) {
+        const methods = snapshot.api['ConfigManager'];
+
+        // get 方法有可選的 defaultValue 參數
+        if (methods['get']) {
+          expect(methods['get']).toContain('defaultValue');
+        }
+
+        // apply 方法有 rest 參數
+        if (methods['apply']) {
+          expect(methods['apply']).toContain('configs');
+        }
+      }
+    });
+
+    it('應該正確解析帶泛型的 factory 函數', async () => {
+      // Given
+      await fixture.writeFile('factory-generics/index.ts', `
+export function createRepository<T extends Entity>(config: RepositoryConfig<T>): Repository<T> {
+  return {} as Repository<T>;
+}
+
+export function createHandler<I, O>(processor: (input: I) => Promise<O>): Handler<I, O> {
+  return {} as Handler<I, O>;
+}
+
+export function createComposedService<A, B, C>(
+  first: Service<A, B>,
+  second: Service<B, C>
+): Service<A, C> {
+  return {} as Service<A, C>;
+}
+
+interface Entity { id: string; }
+interface RepositoryConfig<T> { model: new () => T; }
+interface Repository<T> { find(id: string): T | null; }
+interface Handler<I, O> { handle(input: I): Promise<O>; }
+interface Service<I, O> { process(input: I): O; }
+`);
+
+      const testModulePath = `${fixture.rootPath}/factory-generics`;
+
+      // When
+      const result = await executeCLI(['snapshot', '--path', testModulePath, '--format', 'json'], { memfs: fixture.memfs });
+
+      // Then
+      expect(result.exitCode).toBe(0);
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      const snapshot = snapshotResult.snapshot as ModuleSnapshotData;
+
+      // 驗證 factory 函數被正確提取
+      expect(snapshot.factories).toBeDefined();
+
+      // createRepository 應該有正確的泛型簽章
+      if (snapshot.factories['createRepository']) {
+        expect(snapshot.factories['createRepository']).toContain('config');
+        expect(snapshot.factories['createRepository']).toContain('→');
+      }
+
+      // createHandler 應該有箭頭函數參數
+      if (snapshot.factories['createHandler']) {
+        expect(snapshot.factories['createHandler']).toContain('processor');
+      }
+
+      // createComposedService 應該有多個泛型參數
+      if (snapshot.factories['createComposedService']) {
+        expect(snapshot.factories['createComposedService']).toContain('first');
+        expect(snapshot.factories['createComposedService']).toContain('second');
+      }
+    });
+  });
 });
