@@ -5,7 +5,13 @@
 
 import type { Command } from 'commander';
 import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
-import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder/index.js';
+import {
+  createSymbolFinder,
+  SymbolReferenceType,
+  symbolToKey,
+  serializeSymbolKey,
+  type SymbolReference
+} from '@core/shared/symbol-finder/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   QueryCommand,
@@ -101,8 +107,25 @@ async function handleFindReferencesCommand(
     // 建立 SymbolFinder 查找所有引用
     const parserRegistry = ParserRegistry.getInstance();
     const symbolFinder = createSymbolFinder(parserRegistry, context.fileSystem);
-    const refsMap = await symbolFinder.findReferencesMultiple(new Set([symbolName]), filePaths);
-    const refs = refsMap.get(symbolName) ?? [];
+
+    // 收集所有引用（包括所有同名符號的定義）
+    let refs: SymbolReference[] = [];
+
+    if (symbolResults.length > 0) {
+      // 有找到定義：使用完整 Symbol 資訊查找引用
+      const symbols = symbolResults.map(r => r.symbol);
+      const refsMap = await symbolFinder.findReferencesMultiple(symbols, filePaths);
+
+      // 合併所有同名符號的引用
+      for (const symbol of symbols) {
+        const key = serializeSymbolKey(symbolToKey(symbol));
+        const symbolRefs = refsMap.get(key) ?? [];
+        refs.push(...symbolRefs);
+      }
+    } else {
+      // 無定義：使用作用域感知查找（fallback）
+      refs = await symbolFinder.findScopedReferences(symbolName, filePaths);
+    }
 
     // 轉換為輸出格式
     const references: ReferenceItem[] = refs.map(ref => ({

@@ -4,8 +4,14 @@
  */
 
 import type { Symbol, SymbolType } from '@shared/types/symbol.js';
+import { isSameLine } from '@shared/types/index.js';
 import type { IndexEngine } from '@core/shared/indexing/index.js';
-import { createSymbolFinder, SymbolReferenceType } from '@core/shared/symbol-finder/index.js';
+import {
+  createSymbolFinder,
+  SymbolReferenceType,
+  symbolToKey,
+  serializeSymbolKey
+} from '@core/shared/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
@@ -69,12 +75,9 @@ export class DeadCodeDetector {
       // 過濾要檢測的符號（排除不需要的）
       const symbolsToCheck = targetSymbols.filter(s => !this.shouldExclude(s));
 
-      // 收集所有符號名稱
-      const symbolNames = new Set(symbolsToCheck.map(s => s.name));
-
-      // 批次查找所有符號的引用
+      // 批次查找所有符號的引用（使用完整 Symbol 資訊，可區分同名符號）
       // 優化：M 次檔案讀取（一次遍歷 M 檔查找 N 符號），而非 N×M 次（N 符號各遍歷 M 檔）
-      const allReferences = await symbolFinder.findReferencesMultiple(symbolNames, filePaths);
+      const allReferences = await symbolFinder.findReferencesMultiple(symbolsToCheck, filePaths);
 
       // 建立 class → members 映射，用於判斷 class 是否有成員被使用
       const classMembersMap = this.buildClassMembersMap(symbolsToCheck);
@@ -83,7 +86,9 @@ export class DeadCodeDetector {
       const symbolUsageMap = new Map<Symbol, SymbolUsageInfo>();
 
       for (const symbol of symbolsToCheck) {
-        const references = allReferences.get(symbol.name) ?? [];
+        // 使用 SymbolKey 作為鍵，確保同名符號（如 Dog.bark vs Car.bark）不會合併
+        const symbolKey = serializeSymbolKey(symbolToKey(symbol));
+        const references = allReferences.get(symbolKey) ?? [];
 
         // 分析引用：過濾掉定義位置本身
         const symbolLine = symbol.location.range.start.line;
@@ -91,15 +96,11 @@ export class DeadCodeDetector {
 
         const usageRefs = references.filter(ref => {
           // 排除定義位置
-          // 注意：symbol 使用 0-indexed 行號，但文字匹配降級方法可能使用 1-indexed
-          // 因此同時檢查精確匹配和 +1 偏移
           const refLine = ref.location.range.start.line;
 
-          // 定義位置過濾：同檔案、同行（考慮 0/1-indexed 差異）
-          // 由於 symbol 位置指向宣告起點，而 reference 位置指向識別符，
-          // 我們不比對 column，只比對行號
+          // 定義位置過濾：同檔案、同行（使用 isSameLine 處理 0/1-indexed 差異）
           const isDefinitionLine = ref.location.filePath === symbolFile
-            && (refLine === symbolLine || refLine === symbolLine + 1);
+            && isSameLine(refLine, symbolLine);
 
           if (isDefinitionLine) {
             return false;
@@ -152,7 +153,8 @@ export class DeadCodeDetector {
             }
           }
 
-          const references = allReferences.get(symbol.name) ?? [];
+          const deadSymbolKey = serializeSymbolKey(symbolToKey(symbol));
+          const references = allReferences.get(deadSymbolKey) ?? [];
           deadItems.push({
             name: symbol.name,
             type: symbol.type,
@@ -188,17 +190,26 @@ export class DeadCodeDetector {
   }
 
 /**
-   * 收集所有符號
+   * 收集所有符號（優先使用 IndexEngine 快取）
    */
   private async collectAllSymbols(filePaths: readonly string[]): Promise<{ symbols: Symbol[]; skippedFiles: number }> {
     const allSymbols: Symbol[] = [];
     let skippedFiles = 0;
 
     for (const filePath of filePaths) {
-      const parser = this.getParser(filePath);
-      if (!parser) {continue;}
-
       try {
+        // 優先從 IndexEngine 的 symbolIndex 讀取（已在 indexProject 時建立）
+        const cachedSymbols = await this.indexEngine.getFileSymbols(filePath);
+
+        if (cachedSymbols.length > 0) {
+          allSymbols.push(...cachedSymbols);
+          continue;
+        }
+
+        // Fallback：重新解析（用於 IndexEngine 無資料時）
+        const parser = this.getParser(filePath);
+        if (!parser) {continue;}
+
         const content = await this.readFile(filePath);
         if (!content) {continue;}
 
@@ -209,7 +220,7 @@ export class DeadCodeDetector {
         skippedFiles++;
         if (this.options.verbose) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.warn(`⚠️  跳過檔案 ${filePath}: ${errorMessage}`);
+          console.warn(`Warning: 跳過檔案 ${filePath}: ${errorMessage}`);
         }
       }
     }
