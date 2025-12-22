@@ -37,7 +37,9 @@ const result = calculate(10, 5);
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.originalSignature.name).toBe('calculate');
+        // 使用新的 PreviewResult 格式驗證（change-signature 映射到 refactor）
+        expect(output.command).toBe('refactor');
+        expect(output.files.length).toBeGreaterThan(0);
       }
     });
 
@@ -84,7 +86,8 @@ const c = add(5, 6);
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(3);
+        // 使用新的 PreviewResult 格式：summary.totalChanges 代表變更數
+        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(3);
       }
     });
   });
@@ -369,7 +372,8 @@ ${calls}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(65);
+        // 使用新的 PreviewResult 格式：summary.totalChanges 代表變更數
+        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(65);
       }
     });
   });
@@ -633,10 +637,11 @@ ${calls}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
+        // 使用新的 PreviewResult 格式
         // 20 個呼叫點（函式定義不算）
-        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(19);
+        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(19);
         // 所有更新都在同一檔案
-        expect(output.stats.filesAffected).toBe(1);
+        expect(output.summary.totalFiles).toBe(1);
       }
     });
 
@@ -674,10 +679,11 @@ const b${i}_3 = sharedCalc(${i * 10 + 3}, 'z');
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
+        // 使用新的 PreviewResult 格式
         // 5 呼叫在 main.ts + 15 呼叫在 5 個 caller 檔案
-        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(20);
+        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(20);
         // 1 個 main.ts + 5 個 caller 檔案
-        expect(output.stats.filesAffected).toBe(6);
+        expect(output.summary.totalFiles).toBe(6);
       }
     });
 
@@ -707,10 +713,11 @@ ${calls}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
+        // 使用新的 PreviewResult 格式
         // 應有 90 個呼叫點
-        expect(output.stats.callSitesUpdated).toBeGreaterThanOrEqual(90);
+        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(90);
         // 只有 4 個檔案（1 個 target + 3 個 consumer）
-        expect(output.stats.filesAffected).toBe(4);
+        expect(output.summary.totalFiles).toBe(4);
       }
     });
   });
