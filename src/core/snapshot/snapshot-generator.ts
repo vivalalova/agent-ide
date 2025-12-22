@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/shared/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
-import type { PatternInfo } from '@infrastructure/parser/index.js';
+import type { PatternInfo, FormattedSignature } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
 import { SnapshotScope, isProjectSnapshot } from './types.js';
@@ -163,10 +163,45 @@ export class SnapshotGenerator {
       // 使用 Parser 識別 factory 模式
       const factoryPatterns = await this.identifyFactoryPatterns(modulePath);
 
-      return this.buildModuleSnapshot(relativePath, symbols, modulePath, factoryPatterns);
+      // 預載入所有檔案內容（供 formatSignatureWithParser 使用）
+      const fileContents = await this.loadFileContents(modulePath);
+
+      return this.buildModuleSnapshot(relativePath, symbols, modulePath, factoryPatterns, fileContents);
     } finally {
       indexEngine.dispose();
     }
+  }
+
+  /**
+   * 載入模組目錄下所有檔案內容
+   */
+  private async loadFileContents(modulePath: string): Promise<Map<string, string>> {
+    const contents = new Map<string, string>();
+    const supportedExtensions = ParserRegistry.getInstance().getSupportedExtensions();
+
+    try {
+      const entries = await this.fileSystem.readDirectory(modulePath);
+
+      for (const entry of entries) {
+        if (entry.isDirectory) { continue; }
+
+        const ext = path.extname(entry.name);
+        if (!supportedExtensions.includes(ext)) { continue; }
+
+        const filePath = path.join(modulePath, entry.name);
+        try {
+          const content = await this.fileSystem.readFile(filePath);
+          const codeString = typeof content === 'string' ? content : content.toString('utf-8');
+          contents.set(filePath, codeString);
+        } catch {
+          // 忽略單一檔案的讀取錯誤
+        }
+      }
+    } catch {
+      // 忽略目錄讀取錯誤
+    }
+
+    return contents;
   }
 
   /**
@@ -271,12 +306,14 @@ export class SnapshotGenerator {
   /**
    * 建構模組快照
    * @param factoryPatterns Parser 識別的 factory 模式（優先使用，若為空則 fallback 到名稱比對）
+   * @param fileContents 檔案內容 Map（供 Parser 簽章解析使用）
    */
   private buildModuleSnapshot(
     moduleName: string,
     symbols: Symbol[],
     _modulePath: string,
-    factoryPatterns: Map<string, PatternInfo> = new Map()
+    factoryPatterns: Map<string, PatternInfo> = new Map(),
+    fileContents: Map<string, string> = new Map()
   ): ModuleSnapshot {
     // 轉型為 ExtendedSymbol 以存取 signature 和 typeInfo
     const extendedSymbols = symbols as ExtendedSymbol[];
@@ -293,7 +330,7 @@ export class SnapshotGenerator {
 
     // 處理 class
     for (const cls of classes) {
-      const methods = this.getClassMethods(cls, extendedSymbols);
+      const methods = this.getClassMethods(cls, extendedSymbols, fileContents);
       if (Object.keys(methods).length > 0) {
         api[cls.name] = methods;
       }
@@ -315,10 +352,10 @@ export class SnapshotGenerator {
 
       if (parserPattern) {
         // Parser 識別為 factory（語義分析）
-        factories[func.name] = this.formatFunctionSignature(func);
+        factories[func.name] = this.formatSymbolSignature(func, fileContents);
       } else if (factoryPatterns.size === 0 && func.name.startsWith('create')) {
         // Fallback：Parser 未提供任何結果時，使用名稱比對（向後相容）
-        factories[func.name] = this.formatFunctionSignature(func);
+        factories[func.name] = this.formatSymbolSignature(func, fileContents);
       }
     }
 
@@ -344,7 +381,11 @@ export class SnapshotGenerator {
   /**
    * 取得 class 的方法
    */
-  private getClassMethods(cls: ExtendedSymbol, allSymbols: ExtendedSymbol[]): Record<string, string> {
+  private getClassMethods(
+    cls: ExtendedSymbol,
+    allSymbols: ExtendedSymbol[],
+    fileContents: Map<string, string>
+  ): Record<string, string> {
     const methods: Record<string, string> = {};
 
     // 找出屬於此 class 的方法
@@ -357,7 +398,7 @@ export class SnapshotGenerator {
     );
 
     for (const method of classMethods) {
-      methods[method.name] = this.formatMethodSignature(method);
+      methods[method.name] = this.formatSymbolSignature(method, fileContents);
     }
 
     return methods;
@@ -383,25 +424,67 @@ export class SnapshotGenerator {
   }
 
   /**
-   * 格式化方法簽章
+   * 格式化符號簽章（方法或函數）
+   * 優先使用 Parser AST 解析，fallback 到 simplifySignature
+   * @param fileContents 檔案內容 Map（供 Parser 使用）
    */
-  private formatMethodSignature(method: ExtendedSymbol): string {
-    // 優先使用 Parser 提取的完整簽章
-    if (method.signature) {
-      return this.simplifySignature(method.signature);
+  private formatSymbolSignature(
+    symbol: ExtendedSymbol,
+    fileContents: Map<string, string>
+  ): string {
+    // 優先使用 Parser AST 解析簽章
+    const filePath = symbol.location?.filePath;
+    const line = symbol.location?.range?.start?.line;
+    const code = filePath ? fileContents.get(filePath) : undefined;
+
+    if (filePath && line !== undefined && code) {
+      const parserResult = this.formatSignatureWithParser(filePath, symbol.name, line, code);
+      if (parserResult) {
+        return parserResult;
+      }
+    }
+
+    // Fallback：使用 IndexEngine 提取的簽章
+    if (symbol.signature) {
+      return this.simplifySignature(symbol.signature);
     }
     return '() → unknown';
   }
 
   /**
-   * 格式化函數簽章
+   * 使用 Parser AST 格式化簽章
+   * @param filePath 檔案路徑（用於選擇 Parser）
+   * @param symbolName 符號名稱
+   * @param line 行號（1-based）
+   * @param code 檔案內容
+   * @returns 格式化後的簽章字串，如果無法解析則返回 null（fallback 到 simplifySignature）
    */
-  private formatFunctionSignature(func: ExtendedSymbol): string {
-    // 優先使用 Parser 提取的完整簽章
-    if (func.signature) {
-      return this.simplifySignature(func.signature);
-    }
-    return '() → unknown';
+  private formatSignatureWithParser(
+    filePath: string,
+    symbolName: string,
+    line: number,
+    code: string
+  ): string | null {
+    const ext = path.extname(filePath);
+    const parser = ParserRegistry.getInstance().getParser(ext);
+
+    if (!parser?.formatSignature) { return null; }
+
+    const sig: FormattedSignature | null = parser.formatSignature(code, symbolName, line);
+    if (!sig) { return null; }
+
+    // 轉換 FormattedSignature → 簡化字串
+    const params = sig.parameters
+      .map(p => {
+        let str = p.name;
+        if (p.optional && !p.defaultValue) { str += '?'; }
+        if (p.type && p.type !== 'any') { str += `: ${p.type}`; }
+        if (p.defaultValue) { str += ` = ${p.defaultValue}`; }
+        return str;
+      })
+      .join(', ');
+
+    return params ? `(${params}) → ${sig.returnType}` : `() → ${sig.returnType}`;
   }
 
   /**
