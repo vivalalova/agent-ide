@@ -105,7 +105,7 @@ export class OutputFormatter {
   /**
    * 格式化統計資訊
    */
-  formatStats(stats: Record<string, any>): string {
+  formatStats(stats: Record<string, unknown>): string {
     switch (this.format) {
     case OutputFormat.Markdown:
       return this.formatMarkdownStats(stats);
@@ -126,7 +126,7 @@ export class OutputFormatter {
   /**
    * 格式化成功訊息
    */
-  formatSuccess(message: string, details?: any): string {
+  formatSuccess(message: string, details?: Record<string, unknown>): string {
     switch (this.format) {
     case OutputFormat.Markdown:
       return `✅ ${message}${details ? '\n' + this.formatStats(details) : ''}`;
@@ -219,7 +219,7 @@ export class OutputFormatter {
     return lines.join('\n');
   }
 
-  private formatMarkdownStats(stats: Record<string, any>): string {
+  private formatMarkdownStats(stats: Record<string, unknown>): string {
     const entries = Object.entries(stats);
     if (entries.length === 0) {
       return '_無統計資訊_';
@@ -227,7 +227,7 @@ export class OutputFormatter {
     return entries.map(([key, value]) => `- **${key}**: ${value}`).join('\n');
   }
 
-  private formatPlainStats(stats: Record<string, any>): string {
+  private formatPlainStats(stats: Record<string, unknown>): string {
     const entries = Object.entries(stats);
     if (entries.length === 0) {
       return '(無統計資訊)';

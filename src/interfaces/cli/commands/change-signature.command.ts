@@ -5,7 +5,13 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { ChangeSignatureService, SignatureChangeType, type SignatureChange } from '@core/change-signature/index.js';
+import {
+  ChangeSignatureService,
+  SignatureChangeType,
+  type SignatureChange,
+  type FunctionSignature,
+  type ChangeSignatureResult
+} from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -256,10 +262,10 @@ function parseAddParameter(param: string): SignatureChange | null {
 /**
  * 格式化簽名為 JSON
  */
-function formatSignatureForJson(signature: any): object {
+function formatSignatureForJson(signature: FunctionSignature): object {
   return {
     name: signature.name,
-    parameters: signature.parameters.map((p: any) => ({
+    parameters: signature.parameters.map((p) => ({
       name: p.name,
       type: p.type,
       optional: p.optional,
@@ -275,7 +281,7 @@ function formatSignatureForJson(signature: any): object {
 /**
  * 印出 diff 輸出
  */
-function printDiffOutput(result: any, projectRoot: string): void {
+function printDiffOutput(result: ChangeSignatureResult, projectRoot: string): void {
   console.log('\n📝 定義變更:');
   console.log(`--- ${path.relative(projectRoot, result.definitionUpdate.filePath)}`);
   console.log(`+++ ${path.relative(projectRoot, result.definitionUpdate.filePath)}`);
@@ -298,7 +304,7 @@ function printDiffOutput(result: any, projectRoot: string): void {
 /**
  * 印出摘要輸出
  */
-function printSummaryOutput(result: any, projectRoot: string): void {
+function printSummaryOutput(result: ChangeSignatureResult, projectRoot: string): void {
   console.log('\n✅ 簽名修改成功!');
   console.log(`📝 原始: ${formatSignatureString(result.originalSignature)}`);
   console.log(`📝 新的: ${formatSignatureString(result.newSignature)}`);
@@ -312,8 +318,8 @@ function printSummaryOutput(result: any, projectRoot: string): void {
 /**
  * 格式化簽名字串
  */
-function formatSignatureString(signature: any): string {
-  const params = signature.parameters.map((p: any) => {
+function formatSignatureString(signature: FunctionSignature): string {
+  const params = signature.parameters.map((p) => {
     let str = p.name;
     if (p.optional && !p.defaultValue) {str += '?';}
     if (p.type) {str += `: ${p.type}`;}

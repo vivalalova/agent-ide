@@ -6,6 +6,7 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '@core/move/move-service.js';
+import type { MoveResult, PathUpdate } from '@core/move/types.js';
 import { convertMovePreview } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -184,14 +185,14 @@ async function handleMoveCommand(
 async function handleDryRunOutput(
   source: string,
   target: string,
-  result: any,
+  result: MoveResult,
   format: OutputFormat,
   outputHandler: ReturnType<typeof createUnifiedOutputHandler>,
   context: CommandContext
 ): Promise<void> {
   // 讀取受影響檔案的原始內容
   const originalContents = new Map<string, string>();
-  const affectedFiles = new Set<string>(result.pathUpdates.map((u: any) => u.filePath as string));
+  const affectedFiles = new Set<string>(result.pathUpdates.map((u) => u.filePath));
 
   for (const filePath of affectedFiles) {
     try {
@@ -212,7 +213,7 @@ async function handleDryRunOutput(
 /**
  * 印出成功訊息
  */
-function printSuccess(source: string, target: string, result: any, isJsonFormat: boolean): void {
+function printSuccess(source: string, target: string, result: MoveResult, isJsonFormat: boolean): void {
   if (isJsonFormat) {
     console.log(JSON.stringify({
       success: true,
@@ -228,9 +229,9 @@ function printSuccess(source: string, target: string, result: any, isJsonFormat:
 
     if (result.pathUpdates.length > 0) {
       console.log('   影響的檔案:');
-      const fileGroups = new Map<string, any[]>();
+      const fileGroups = new Map<string, PathUpdate[]>();
 
-      result.pathUpdates.forEach((update: any) => {
+      result.pathUpdates.forEach((update) => {
         if (!fileGroups.has(update.filePath)) {
           fileGroups.set(update.filePath, []);
         }
@@ -239,7 +240,7 @@ function printSuccess(source: string, target: string, result: any, isJsonFormat:
 
       for (const [filePath, updates] of fileGroups) {
         console.log(`      ${path.relative(process.cwd(), filePath)}:`);
-        updates.forEach((update: any) => {
+        updates.forEach((update) => {
           console.log(`      第 ${update.line} 行: "${path.basename(source)}"   "${path.basename(target)}"`);
         });
       }
