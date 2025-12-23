@@ -492,7 +492,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     // 清理 Language Service Manager
     if (this.languageServiceManager && 'dispose' in this.languageServiceManager) {
-      this.languageServiceManager.dispose();
+      await this.languageServiceManager.dispose();
     }
 
     this.languageServiceManager = null as unknown as ILanguageServiceManager;
