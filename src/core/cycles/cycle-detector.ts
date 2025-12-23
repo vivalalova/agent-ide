@@ -11,7 +11,7 @@ import type {
   CycleStatistics,
   CycleFixSuggestion
 } from './types.js';
-import { calculateCycleSeverity } from './types.js';
+import { CycleSeverity, CyclePriority, calculateCycleSeverity } from './types.js';
 
 /**
  * Tarjan 算法的節點狀態
@@ -305,17 +305,28 @@ export class CycleDetector {
         totalCycles: 0,
         averageCycleLength: 0,
         maxCycleLength: 0,
-        cyclesBySeverity: { low: 0, medium: 0, high: 0 }
+        cyclesBySeverity: {
+          [CycleSeverity.LOW]: 0,
+          [CycleSeverity.MEDIUM]: 0,
+          [CycleSeverity.HIGH]: 0
+        }
       };
     }
 
     const totalLength = cycles.reduce((sum, cycle) => sum + cycle.length, 0);
     const maxLength = Math.max(...cycles.map(cycle => cycle.length));
 
-    const severityCount = cycles.reduce((acc, cycle) => {
-      acc[cycle.severity]++;
-      return acc;
-    }, { low: 0, medium: 0, high: 0 });
+    const severityCount = cycles.reduce(
+      (acc, cycle) => {
+        acc[cycle.severity]++;
+        return acc;
+      },
+      {
+        [CycleSeverity.LOW]: 0,
+        [CycleSeverity.MEDIUM]: 0,
+        [CycleSeverity.HIGH]: 0
+      }
+    );
 
     return {
       totalCycles: cycles.length,
@@ -334,24 +345,24 @@ export class CycleDetector {
     return cycles.map(cycle => {
       let strategy = '';
       let description = '';
-      let priority: 'high' | 'medium' | 'low' = 'low';
+      let priority: CyclePriority = CyclePriority.LOW;
 
       if (cycle.length === 1) {
         strategy = 'remove_self_reference';
         description = '移除自我引用，檢查是否真的需要';
-        priority = 'low';
+        priority = CyclePriority.LOW;
       } else if (cycle.length === 2) {
         strategy = 'extract_common_dependency';
         description = '提取共同依賴到第三個模組';
-        priority = cycle.severity === 'high' ? 'high' : 'medium';
+        priority = cycle.severity === CycleSeverity.HIGH ? CyclePriority.HIGH : CyclePriority.MEDIUM;
       } else if (cycle.length <= 5) {
         strategy = 'dependency_inversion';
         description = '使用依賴倒置原則，引入介面或抽象層';
-        priority = cycle.severity === 'high' ? 'high' : 'medium';
+        priority = cycle.severity === CycleSeverity.HIGH ? CyclePriority.HIGH : CyclePriority.MEDIUM;
       } else {
         strategy = 'architectural_refactoring';
         description = '需要重新設計架構，考慮拆分模組';
-        priority = 'high';
+        priority = CyclePriority.HIGH;
       }
 
       return {
