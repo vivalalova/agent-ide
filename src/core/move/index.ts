@@ -4,8 +4,13 @@
  */
 
 // 核心服務
-export { MoveService } from './move-service.js';
+export { MoveService, MoveOperationError } from './move-service.js';
 export { ImportResolver } from './import-resolver.js';
+
+// 內部模組（供進階使用）
+export { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
+export { FileScanner } from './file-scanner.js';
+export { PathCalculator } from './path-calculator.js';
 
 // 型別定義
 export type {

@@ -5,10 +5,25 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { ChangesetCommand, TextEditOperationType, type Changeset, type TextEdit } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import {
+  ChangesetCommand,
+  TextEditOperationType,
+  type Changeset,
+  type TextEdit,
+  createChangesetBuilder
+} from '@infrastructure/changeset/index.js';
 import { ImportResolver } from './import-resolver.js';
-import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig, MoveError as MoveErrorType, createMoveError } from './types.js';
+import { PathCalculator } from './path-calculator.js';
+import { PathUtils } from './path-utils.js';
+import type {
+  MoveOperation,
+  MoveOptions,
+  MoveResult,
+  PathUpdate,
+  ImportResolverConfig,
+  MoveError as MoveErrorType
+} from './types.js';
+import { createMoveError } from './types.js';
 
 /**
  * 移動操作錯誤類別
@@ -34,17 +49,12 @@ export class MoveOperationError extends Error {
 }
 
 /**
- * 支援的檔案副檔名
+ * 檔案移動服務類別
  */
-const ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue'] as const;
-
-/**
- * 排除的目錄模式
- */
-const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.build'] as const;
-
 export class MoveService {
-  private importResolver: ImportResolver;
+  private readonly importResolver: ImportResolver;
+  private readonly pathCalculator: PathCalculator;
+  private readonly pathUtils: PathUtils;
 
   constructor(
     private readonly fileSystem: IFileSystem,
@@ -61,6 +71,8 @@ export class MoveService {
       };
       this.importResolver = new ImportResolver(defaultConfig);
     }
+    this.pathCalculator = new PathCalculator(this.fileSystem, this.importResolver);
+    this.pathUtils = new PathUtils(this.importResolver);
   }
 
   /**
@@ -79,9 +91,9 @@ export class MoveService {
       // 檢查是否為目錄
       const isDirectory = await this.fileSystem.isDirectory(source);
 
-      // 2. 收集需要更新的檔案（使用共用方法）
+      // 2. 收集需要更新的檔案
       const pathUpdates = updateImports
-        ? await this.calculatePathUpdatesInternal(source, target, isDirectory, projectRoot)
+        ? await this.pathCalculator.calculatePathUpdatesInternal(source, target, isDirectory, projectRoot)
         : [];
 
       // 3. 預覽模式
@@ -185,56 +197,6 @@ export class MoveService {
   }
 
   /**
-   * 計算路徑更新的內部共用方法
-   * 用於 moveFile() 和 generateChangeset() 共用
-   */
-  private async calculatePathUpdatesInternal(
-    source: string,
-    target: string,
-    isDirectory: boolean,
-    projectRoot: string
-  ): Promise<PathUpdate[]> {
-    const pathUpdates: PathUpdate[] = [];
-
-    if (isDirectory) {
-      // 目錄移動：處理目錄內所有檔案
-      const filesInDir = await this.getFilesInDirectory(source);
-
-      for (const filePath of filesInDir) {
-        // 計算檔案在目錄內的相對路徑
-        const relativePath = path.relative(source, filePath);
-        const newFilePath = path.join(target, relativePath);
-
-        // 更新其他檔案對目錄內檔案的引用
-        const affectedFiles = await this.findAffectedFiles(filePath, projectRoot);
-        for (const affectedFile of affectedFiles) {
-          const updates = await this.calculatePathUpdates(affectedFile, filePath, newFilePath);
-          pathUpdates.push(...updates);
-        }
-
-        // 更新目錄內檔案的內部 import
-        const internalUpdates = await this.calculateMovedFileInternalUpdates(filePath, newFilePath);
-        pathUpdates.push(...internalUpdates);
-      }
-    } else {
-      // 單一檔案移動
-      // 更新其他檔案對被移動檔案的引用
-      const affectedFiles = await this.findAffectedFiles(source, projectRoot);
-
-      for (const filePath of affectedFiles) {
-        const updates = await this.calculatePathUpdates(filePath, source, target);
-        pathUpdates.push(...updates);
-      }
-
-      // 更新被移動檔案內部的 import（在移動前處理）
-      const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
-      pathUpdates.push(...movedFileInternalUpdates);
-    }
-
-    return pathUpdates;
-  }
-
-  /**
    * 執行回滾操作
    */
   private async performRollback(currentPath: string, originalPath: string, isDirectory: boolean): Promise<void> {
@@ -268,9 +230,9 @@ export class MoveService {
       // 檢查是否為目錄
       const isDirectory = await this.fileSystem.isDirectory(source);
 
-      // 收集 import 更新（使用共用方法）
+      // 收集 import 更新
       const pathUpdates = updateImports
-        ? await this.calculatePathUpdatesInternal(source, target, isDirectory, projectRoot)
+        ? await this.pathCalculator.calculatePathUpdatesInternal(source, target, isDirectory, projectRoot)
         : [];
 
       // 轉換 pathUpdates 為 TextEdit，按檔案分組
@@ -424,357 +386,6 @@ export class MoveService {
   }
 
   /**
-   * 找出受影響的檔案
-   */
-  private async findAffectedFiles(movedPath: string, projectRoot: string): Promise<string[]> {
-    const affectedFiles: string[] = [];
-    const files = await this.getAllProjectFiles(projectRoot);
-
-    for (const file of files) {
-      // 跳過被移動的檔案本身（處理不同的路徑格式）
-      const normalizedFile = path.normalize(file);
-      const normalizedMovedPath = path.normalize(movedPath);
-
-      if (normalizedFile === normalizedMovedPath) {continue;}
-
-      const hasReference = await this.fileReferencesPath(file, movedPath);
-      if (hasReference) {
-        affectedFiles.push(file);
-      }
-    }
-
-    return affectedFiles;
-  }
-
-  /**
-   * 獲取專案中的所有檔案
-   */
-  private async getAllProjectFiles(projectRoot: string): Promise<string[]> {
-    const files: string[] = [];
-
-    const walkDir = async (dir: string): Promise<void> => {
-      try {
-        const entries = await this.fileSystem.readDirectory(dir);
-
-        for (const entry of entries) {
-          if (entry.isDirectory) {
-            // 跳過排除的目錄
-            if (EXCLUDE_PATTERNS.some(pattern => entry.name.includes(pattern))) {
-              continue;
-            }
-            await walkDir(entry.path);
-          } else if (entry.isFile) {
-            // 只包含支援的副檔名
-            if (ALLOWED_EXTENSIONS.some(ext => entry.name.endsWith(ext))) {
-              files.push(entry.path);
-            }
-          }
-        }
-      } catch {
-        // 忽略無法存取的目錄
-      }
-    };
-
-    await walkDir(projectRoot);
-    return files;
-  }
-
-  /**
-   * 獲取目錄內的所有檔案（遞迴）
-   */
-  private async getFilesInDirectory(dirPath: string): Promise<string[]> {
-    const files: string[] = [];
-
-    const walkDir = async (dir: string): Promise<void> => {
-      try {
-        const entries = await this.fileSystem.readDirectory(dir);
-
-        for (const entry of entries) {
-          if (entry.isDirectory) {
-            await walkDir(entry.path);
-          } else if (entry.isFile) {
-            if (ALLOWED_EXTENSIONS.some(ext => entry.name.endsWith(ext))) {
-              files.push(entry.path);
-            }
-          }
-        }
-      } catch {
-        // 忽略無法存取的目錄
-      }
-    };
-
-    await walkDir(dirPath);
-    return files;
-  }
-
-  /**
-   * 檢查檔案是否引用了指定路徑
-   */
-  private async fileReferencesPath(filePath: string, targetPath: string): Promise<boolean> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-      const imports = this.importResolver.parseImportStatements(content, filePath);
-
-      for (const importStatement of imports) {
-        // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
-          continue;
-        }
-
-        // 解析 import 路徑並檢查是否指向目標檔案
-        const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
-        if (this.pathsMatch(resolvedPath, targetPath)) {
-          return true;
-        }
-      }
-
-      return false;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * 解析 import 路徑為絕對路徑
-   */
-  private resolveImportPath(importPath: string, fromFile: string): string {
-    if (this.importResolver.isNodeModuleImport(importPath)) {
-      return importPath; // Node 模組不處理
-    }
-
-    if (importPath.startsWith('.')) {
-      // 相對路徑 - 轉換為絕對路徑
-      const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
-      const resolved = path.resolve(fromDir, importPath);
-      // 正規化路徑
-      return path.normalize(resolved);
-    }
-
-    // 嘗試解析別名（如 @/ 開頭的路徑映射）
-    const resolved = this.importResolver.resolvePathAlias(importPath);
-    if (resolved !== importPath) {
-      // 如果解析成功（與原始路徑不同）
-      if (path.isAbsolute(resolved)) {
-        // 絕對路徑直接返回
-        return path.normalize(resolved);
-      }
-      // 非絕對路徑：相對於專案根目錄或 baseUrl
-      // 由於 pathAliases 已經在 move.command.ts 中轉為絕對路徑，這裡應該是絕對路徑
-      // 若仍為相對路徑，則視為相對於當前檔案
-      const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
-      const absoluteResolved = path.resolve(fromDir, resolved);
-      return path.normalize(absoluteResolved);
-    }
-
-    return importPath;
-  }
-
-  /**
-   * 檢查兩個路徑是否指向同一個檔案
-   */
-  private pathsMatch(path1: string, path2: string): boolean {
-    try {
-      // 確保兩個路徑都是絕對路徑並正規化
-      const abs1 = path.isAbsolute(path1)
-        ? path.normalize(path1)
-        : path.normalize(path.resolve(path1));
-      const abs2 = path.isAbsolute(path2)
-        ? path.normalize(path2)
-        : path.normalize(path.resolve(path2));
-
-      // 檢查完全匹配
-      if (abs1 === abs2) {
-        return true;
-      }
-
-      // 檢查去除副檔名後是否匹配（TypeScript/JavaScript 可以省略副檔名）
-      const withoutExt1 = this.removeExtension(abs1);
-      const withoutExt2 = this.removeExtension(abs2);
-
-      return withoutExt1 === withoutExt2;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * 移除檔案副檔名
-   */
-  private removeExtension(filePath: string): string {
-    const ext = path.extname(filePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-    return filePath;
-  }
-
-  /**
-   * 計算路徑更新
-   */
-  private async calculatePathUpdates(filePath: string, oldPath: string, newPath: string): Promise<PathUpdate[]> {
-    const updates: PathUpdate[] = [];
-
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-      const imports = this.importResolver.parseImportStatements(content, filePath);
-
-      for (const importStatement of imports) {
-        // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
-          continue;
-        }
-
-        // 將 oldPath 規範化為絕對路徑以便比較
-        const normalizedOldPath = path.isAbsolute(oldPath)
-          ? path.normalize(oldPath)
-          : path.normalize(path.resolve(oldPath));
-
-        // 計算 import 指向的絕對路徑
-        const resolvedPath = this.resolveImportPath(importStatement.path, filePath);
-
-        // 使用 pathsMatch 檢查是否指向被移動的檔案
-        if (this.pathsMatch(resolvedPath, normalizedOldPath)) {
-          // 計算新的 import 路徑，保留原始路徑類型（別名或相對路徑）
-          const newImportPath = this.calculateNewImportPathPreservingStyle(
-            importStatement.path,
-            filePath,
-            normalizedOldPath,
-            newPath
-          );
-
-          const newImport = importStatement.rawStatement.replace(
-            new RegExp(`(['"\`])${this.escapeRegex(importStatement.path)}\\1`),
-            `$1${newImportPath}$1`
-          );
-
-          updates.push({
-            filePath,
-            line: importStatement.position.line,
-            oldImport: importStatement.rawStatement,
-            newImport
-          });
-        }
-      }
-    } catch (error) {
-      console.warn(`無法處理檔案 ${filePath}:`, error);
-    }
-
-    return updates;
-  }
-
-  /**
-   * 計算被移動檔案內部的 import 更新
-   * 這些更新會在檔案移動後套用
-   */
-  private async calculateMovedFileInternalUpdates(source: string, target: string): Promise<PathUpdate[]> {
-    const updates: PathUpdate[] = [];
-
-    try {
-      const content = await this.fileSystem.readFile(source, 'utf-8') as string;
-      const imports = this.importResolver.parseImportStatements(content, source);
-
-      // 防禦性檢查：確保 imports 是陣列
-      if (!imports || !Array.isArray(imports)) {
-        return updates;
-      }
-
-      for (const importStatement of imports) {
-        // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
-          continue;
-        }
-
-        // 只處理相對路徑的 import
-        if (importStatement.path.startsWith('.')) {
-          // 計算這個 import 當前指向的檔案
-          const sourceDir = path.dirname(source);
-          const currentResolved = path.resolve(sourceDir, importStatement.path);
-
-          // 計算從新位置應該如何 import 這個檔案
-          const newImportPath = this.calculateNewImportPath(target, currentResolved);
-
-          // 如果路徑改變了，加入更新列表
-          if (newImportPath !== importStatement.path) {
-            updates.push({
-              filePath: target, // 注意：這裡是 target，因為更新會在檔案移動後套用
-              line: importStatement.position.line,
-              oldImport: importStatement.rawStatement,
-              newImport: importStatement.rawStatement.replace(
-                new RegExp(`(['"\`])${this.escapeRegex(importStatement.path)}\\1`),
-                `$1${newImportPath}$1`
-              )
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`無法處理被移動檔案的內部 import ${source}:`, error);
-    }
-
-    return updates;
-  }
-
-  /**
-   * 計算新的 import 路徑，保留原始路徑樣式（別名或相對路徑）
-   */
-  private calculateNewImportPathPreservingStyle(
-    originalImportPath: string,
-    fromFile: string,
-    oldFilePath: string,
-    newFilePath: string
-  ): string {
-    // 如果原本是路徑別名，保留別名並更新路徑
-    if (!originalImportPath.startsWith('.') && !originalImportPath.startsWith('/')) {
-      // 檢查是否為路徑別名（精確匹配：alias 本身或 alias/ 開頭）
-      for (const [alias, aliasPath] of Object.entries(this.importResolver.getPathAliases())) {
-        if (originalImportPath === alias || originalImportPath.startsWith(alias + '/')) {
-          const resolvedAliasPath = path.normalize(aliasPath);
-
-          // 計算新檔案相對於別名基礎路徑的相對路徑
-          let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
-          newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
-
-          // 移除副檔名
-          const newExt = path.extname(newRelativeToAlias);
-          if (['.js', '.ts', '.jsx', '.tsx'].includes(newExt)) {
-            newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
-          }
-
-          // 組合新的別名路徑：alias + / + newRelativeToAlias
-          // 如果 alias 本身不以 / 結尾，需要加上
-          const separator = alias.endsWith('/') ? '' : '/';
-          return alias + separator + newRelativeToAlias;
-        }
-      }
-    }
-
-    // 否則使用相對路徑
-    return this.calculateNewImportPath(fromFile, newFilePath);
-  }
-
-  /**
-   * 計算新的 import 路徑
-   */
-  private calculateNewImportPath(fromFile: string, toFile: string): string {
-    const fromDir = path.dirname(fromFile);
-    let relativePath = path.relative(fromDir, toFile);
-
-    // 移除副檔名（如果目標是支援的檔案類型）
-    const ext = path.extname(relativePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
-      relativePath = relativePath.slice(0, -ext.length);
-    }
-
-    // 確保相對路徑以 ./ 或 ../ 開始
-    if (!relativePath.startsWith('.')) {
-      relativePath = './' + relativePath;
-    }
-
-    // 統一使用正斜線
-    return relativePath.replace(/\\/g, '/');
-  }
-
-  /**
    * 應用路徑更新
    */
   private async applyPathUpdates(updates: PathUpdate[]): Promise<void> {
@@ -820,7 +431,7 @@ export class MoveService {
           if (contentNormalized.indexOf(normalizedOldImport) !== -1) {
             newContent = content; // 重置
             newContent = newContent.replace(
-              new RegExp(this.escapeRegex(normalizedOldImport).replace(/\s+/g, '\\s+'), 'g'),
+              new RegExp(this.pathUtils.escapeRegex(normalizedOldImport).replace(/\s+/g, '\\s+'), 'g'),
               update.newImport.replace(/\s+/g, ' ').trim()
             );
           }
@@ -831,12 +442,5 @@ export class MoveService {
     } catch (error) {
       throw new Error(`更新檔案 ${filePath} 失敗: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }
-
-  /**
-   * 跳脫正則表達式特殊字元
-   */
-  private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
