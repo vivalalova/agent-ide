@@ -103,8 +103,14 @@ export class TypeScriptSymbolExtractor {
       const scope = createScope('interface', name, this.getCurrentScope());
       this.scopeStack.push(scope);
       needsRestore = true;
-    } else if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node)) {
-      const name = getNodeName(node) || 'constructor';
+    } else if (
+      ts.isFunctionDeclaration(node)
+      || ts.isMethodDeclaration(node)
+      || ts.isConstructorDeclaration(node)
+      || ts.isArrowFunction(node)
+      || ts.isFunctionExpression(node)
+    ) {
+      const name = getNodeName(node) || (ts.isConstructorDeclaration(node) ? 'constructor' : '<anonymous>');
       const scope = createScope('function', name, this.getCurrentScope());
       this.scopeStack.push(scope);
       needsRestore = true;
