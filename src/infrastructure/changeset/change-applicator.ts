@@ -361,14 +361,27 @@ export class ChangeApplicator {
 
   /**
    * 計算指定位置的字元偏移量
+   *
+   * 座標系統說明：
+   * - line: 行號（1-based），有效範圍 [1, lines.length+1]
+   *   - 1 = 第一行
+   *   - lines.length+1 = 檔案末尾（用於追加內容）
+   * - column: 列號（1-based），有效範圍 [1, 當前行長度+1]
+   *   - 1 = 行首
+   *   - 行長度+1 = 行尾（用於行尾插入）
+   *
+   * 超出範圍的處理：
+   * - line > lines.length: 視為檔案末尾，offset 為檔案總長度
+   * - column > 行長度: 視為行尾，offset 為該行最後一個字元後
+   *
    * @param lines 行陣列
-   * @param line 行號（1-based，從 1 開始）
-   * @param column 列號（1-based，從 1 開始）
+   * @param line 行號（1-based，從 1 開始，允許 lines.length+1 用於檔案末尾插入）
+   * @param column 列號（1-based，從 1 開始，允許行長度+1 用於行尾插入）
    * @returns 字元偏移量
-   * @throws Error 當行號或列號為負數時
+   * @throws Error 當行號 < 1 或列號 < 1 時
    */
   private calculateOffset(lines: string[], line: number, column: number): number {
-    // 驗證基本參數（只檢查負數，允許超出範圍的位置用於插入操作）
+    // 驗證基本參數（只禁止負數，超出範圍允許用於插入操作）
     if (line < 1) {
       throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
     }
