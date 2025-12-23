@@ -3,7 +3,8 @@
  * 使用 find-references 判斷未使用的符號
  */
 
-import type { Symbol, SymbolType } from '@shared/types/symbol.js';
+import type { Symbol } from '@shared/types/symbol.js';
+import { SymbolType } from '@shared/types/symbol.js';
 import { isSameLine } from '@shared/types/index.js';
 import type { IndexEngine } from '@core/shared/indexing/index.js';
 import {
@@ -21,6 +22,25 @@ import type {
   DeadCodeStats
 } from './types.js';
 import { DEFAULT_DEAD_CODE_OPTIONS } from './types.js';
+
+/**
+ * SymbolType 對應的中文標籤
+ * 使用 Record<SymbolType, string> 確保型別安全
+ */
+const SYMBOL_TYPE_LABELS: Record<SymbolType, string> = {
+  [SymbolType.Function]: '函式',
+  [SymbolType.Class]: '類別',
+  [SymbolType.Variable]: '變數',
+  [SymbolType.Interface]: '介面',
+  [SymbolType.Type]: '型別',
+  [SymbolType.Property]: '屬性',
+  [SymbolType.Enum]: '列舉',
+  [SymbolType.Constant]: '常數',
+  [SymbolType.Protocol]: '協定',
+  [SymbolType.Struct]: '結構',
+  [SymbolType.Module]: '模組',
+  [SymbolType.Namespace]: '命名空間'
+};
 
 /**
  * 符號使用資訊
@@ -117,17 +137,14 @@ export class DeadCodeDetector {
       const deadItems: DeadCodeItem[] = [];
 
       for (const symbol of symbolsToCheck) {
-        const { usageRefs, hasExport } = symbolUsageMap.get(symbol)!;
+        const usageInfo = symbolUsageMap.get(symbol);
+        if (!usageInfo) {
+          continue;
+        }
+        const { usageRefs, hasExport } = usageInfo;
 
         // 判斷是否為 public class member（class 內的非 private/protected 成員）
-        // 注意：class 本身不算 "class member"，只有 method/property 才算
-        // - 方法：scope.type === 'function' && scope.parent.type === 'class'
-        // - 屬性：scope.type === 'class' && symbol.type !== 'class'（屬性在 class scope 內，但符號類型不是 class）
-        const isClassMember = (
-          symbol.scope?.parent?.type === 'class'
-          || (symbol.scope?.type === 'class' && symbol.type !== 'class')
-        );
-        const isPublicClassMember = isClassMember
+        const isPublicClassMember = this.isClassMember(symbol)
           && !symbol.modifiers.includes('private')
           && !symbol.modifiers.includes('protected');
 
@@ -193,37 +210,44 @@ export class DeadCodeDetector {
    * 收集所有符號（優先使用 IndexEngine 快取）
    */
   private async collectAllSymbols(filePaths: readonly string[]): Promise<{ symbols: Symbol[]; skippedFiles: number }> {
-    const allSymbols: Symbol[] = [];
-    let skippedFiles = 0;
+    // 平行處理所有檔案，收集符號或記錄錯誤
+    const results = await Promise.all(
+      filePaths.map(async (filePath): Promise<{ symbols: Symbol[]; error: boolean }> => {
+        try {
+          // 優先從 IndexEngine 的 symbolIndex 讀取（已在 indexProject 時建立）
+          const cachedSymbols = await this.indexEngine.getFileSymbols(filePath);
 
-    for (const filePath of filePaths) {
-      try {
-        // 優先從 IndexEngine 的 symbolIndex 讀取（已在 indexProject 時建立）
-        const cachedSymbols = await this.indexEngine.getFileSymbols(filePath);
+          if (cachedSymbols.length > 0) {
+            return { symbols: [...cachedSymbols], error: false };
+          }
 
-        if (cachedSymbols.length > 0) {
-          allSymbols.push(...cachedSymbols);
-          continue;
+          // Fallback：重新解析（用於 IndexEngine 無資料時）
+          const parser = this.getParser(filePath);
+          if (!parser) {
+            return { symbols: [], error: false };
+          }
+
+          const content = await this.readFile(filePath);
+          if (!content) {
+            return { symbols: [], error: false };
+          }
+
+          const ast = await parser.parse(content, filePath);
+          const symbols = await parser.extractSymbols(ast);
+          return { symbols, error: false };
+        } catch (error) {
+          if (this.options.verbose) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.warn(`Warning: 跳過檔案 ${filePath}: ${errorMessage}`);
+          }
+          return { symbols: [], error: true };
         }
+      })
+    );
 
-        // Fallback：重新解析（用於 IndexEngine 無資料時）
-        const parser = this.getParser(filePath);
-        if (!parser) {continue;}
-
-        const content = await this.readFile(filePath);
-        if (!content) {continue;}
-
-        const ast = await parser.parse(content, filePath);
-        const symbols = await parser.extractSymbols(ast);
-        allSymbols.push(...symbols);
-      } catch (error) {
-        skippedFiles++;
-        if (this.options.verbose) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.warn(`Warning: 跳過檔案 ${filePath}: ${errorMessage}`);
-        }
-      }
-    }
+    // 聚合結果
+    const allSymbols = results.flatMap(r => r.symbols);
+    const skippedFiles = results.filter(r => r.error).length;
 
     return { symbols: allSymbols, skippedFiles };
   }
@@ -329,18 +353,7 @@ export class DeadCodeDetector {
    * 取得類型標籤
    */
   private getTypeLabel(type: SymbolType): string {
-    const labels: Record<string, string> = {
-      function: '函式',
-      class: '類別',
-      variable: '變數',
-      interface: '介面',
-      type: '型別',
-      property: '屬性',
-      method: '方法',
-      enum: '列舉',
-      constant: '常數'
-    };
-    return labels[type] || type;
+    return SYMBOL_TYPE_LABELS[type] || type;
   }
 
   /**
@@ -352,11 +365,11 @@ export class DeadCodeDetector {
     startTime: number,
     skippedFiles: number
   ): DeadCodeStats {
-    const byType: Record<string, number> = {};
-
-    for (const item of deadItems) {
-      byType[item.type] = (byType[item.type] || 0) + 1;
-    }
+    // 使用 reduce 聲明式計算各類型數量
+    const byType = deadItems.reduce<Record<string, number>>(
+      (acc, item) => ({ ...acc, [item.type]: (acc[item.type] || 0) + 1 }),
+      {}
+    );
 
     const filesAffected = new Set(deadItems.map(item => item.location.filePath)).size;
 
@@ -413,15 +426,7 @@ export class DeadCodeDetector {
 
     // 第二步：將成員分配到對應的 class
     symbols.forEach(symbol => {
-      // 判斷 parent class 名稱
-      // - 方法：scope.parent.type === 'class'
-      // - 屬性：scope.type === 'class' && symbol.type !== 'class'
-      const parentClassName = symbol.scope?.parent?.type === 'class'
-        ? symbol.scope.parent.name
-        : (symbol.scope?.type === 'class' && symbol.type !== 'class')
-          ? symbol.scope.name
-          : null;
-
+      const parentClassName = this.getParentClassName(symbol);
       if (parentClassName) {
         const key = `${symbol.location.filePath}:${parentClassName}`;
         classMap.get(key)?.push(symbol);
@@ -446,6 +451,34 @@ export class DeadCodeDetector {
       const usageInfo = symbolUsageMap.get(member);
       return usageInfo && usageInfo.usageRefs.length > 0;
     });
+  }
+
+  /**
+   * 判斷符號是否為 class member（方法或屬性）
+   * - 方法：scope.parent.type === 'class'
+   * - 屬性：scope.type === 'class' && symbol.type !== 'class'
+   *
+   * 注意：class 本身不算 "class member"，只有 method/property 才算
+   */
+  private isClassMember(symbol: Symbol): boolean {
+    return (
+      symbol.scope?.parent?.type === 'class'
+      || (symbol.scope?.type === 'class' && symbol.type !== SymbolType.Class)
+    );
+  }
+
+  /**
+   * 取得 class member 的父 class 名稱
+   * @returns 父 class 名稱，若不是 class member 則返回 null
+   */
+  private getParentClassName(symbol: Symbol): string | null {
+    if (symbol.scope?.parent?.type === 'class') {
+      return symbol.scope.parent.name ?? null;
+    }
+    if (symbol.scope?.type === 'class' && symbol.type !== SymbolType.Class) {
+      return symbol.scope.name ?? null;
+    }
+    return null;
   }
 }
 

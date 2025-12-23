@@ -13,13 +13,36 @@ import type {
 } from './types.js';
 
 /**
+ * 檔案操作類型列舉
+ * 排序優先級：import-partial (0) > import-delete (1) > removal (2)
+ */
+export enum FileOperationType {
+  /** 部分 import 清理（替換） */
+  ImportPartial = 'import-partial',
+  /** 完整 import 刪除 */
+  ImportDelete = 'import-delete',
+  /** 符號刪除 */
+  Removal = 'removal'
+}
+
+/**
+ * 檔案操作類型的排序優先級
+ * import 清理優先於符號刪除，確保處理順序穩定
+ */
+const FILE_OPERATION_PRIORITY: Record<FileOperationType, number> = {
+  [FileOperationType.ImportPartial]: 0,
+  [FileOperationType.ImportDelete]: 1,
+  [FileOperationType.Removal]: 2
+};
+
+/**
  * 檔案操作資訊
  */
 export interface FileOperation {
   /** 操作範圍 */
   range: Range;
   /** 操作類型 */
-  type: 'removal' | 'import-delete' | 'import-partial';
+  type: FileOperationType;
   /** 部分清理時的新內容 */
   newContent?: string;
 }
@@ -60,7 +83,7 @@ export class FileOperationsHandler {
 
     // 加入刪除操作
     for (const removal of preview.removals) {
-      addOperation(removal.filePath, { range: removal.range, type: 'removal' });
+      addOperation(removal.filePath, { range: removal.range, type: FileOperationType.Removal });
     }
 
     // 加入 import 清理操作
@@ -68,11 +91,11 @@ export class FileOperationsHandler {
       if (cleanup.cleanupType === 'partial' && cleanup.newImport) {
         addOperation(cleanup.filePath, {
           range: cleanup.range,
-          type: 'import-partial',
+          type: FileOperationType.ImportPartial,
           newContent: cleanup.newImport
         });
       } else {
-        addOperation(cleanup.filePath, { range: cleanup.range, type: 'import-delete' });
+        addOperation(cleanup.filePath, { range: cleanup.range, type: FileOperationType.ImportDelete });
       }
     }
 
@@ -93,11 +116,6 @@ export class FileOperationsHandler {
 
     // 按位置從後往前排序（避免位置偏移）
     // 第三層：type 排序確保穩定性（import 清理優先於符號刪除）
-    const typeOrder: Record<FileOperation['type'], number> = {
-      'import-partial': 0,
-      'import-delete': 1,
-      'removal': 2
-    };
     const sortedOps = [...operations].sort((a, b) => {
       if (a.range.start.line !== b.range.start.line) {
         return b.range.start.line - a.range.start.line;
@@ -105,7 +123,7 @@ export class FileOperationsHandler {
       if (a.range.start.column !== b.range.start.column) {
         return b.range.start.column - a.range.start.column;
       }
-      return typeOrder[a.type] - typeOrder[b.type];
+      return FILE_OPERATION_PRIORITY[a.type] - FILE_OPERATION_PRIORITY[b.type];
     });
 
     let lines = originalContent.split('\n');
@@ -114,11 +132,16 @@ export class FileOperationsHandler {
 
     for (const op of sortedOps) {
       // 邊界檢查：確保索引在有效範圍內
-      const startLine = Math.max(0, Math.min(op.range.start.line - 1, lines.length - 1));
-      const endLine = Math.max(startLine, Math.min(op.range.end.line - 1, lines.length - 1));
+      // 空檔案時 lines.length = 0，需特別處理避免負數索引
+      if (lines.length === 0) {
+        continue;
+      }
+      const maxIndex = lines.length - 1;
+      const startLine = Math.max(0, Math.min(op.range.start.line - 1, maxIndex));
+      const endLine = Math.max(startLine, Math.min(op.range.end.line - 1, maxIndex));
       const deleteCount = endLine - startLine + 1;
 
-      if (op.type === 'import-partial' && op.newContent) {
+      if (op.type === FileOperationType.ImportPartial && op.newContent) {
         // 部分清理：替換而非刪除
         if (startLine < lines.length && deleteCount > 0) {
           // 保留原始縮排
@@ -132,7 +155,7 @@ export class FileOperationsHandler {
           lines.splice(startLine, deleteCount);
         }
 
-        if (op.type === 'removal') {
+        if (op.type === FileOperationType.Removal) {
           removedSymbols++;
         } else {
           cleanedImports++;

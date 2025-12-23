@@ -7,6 +7,27 @@ import type { Range } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
 
+/** 多行 import 的最大行數限制 */
+const MAX_MULTILINE_IMPORT = 20;
+
+/**
+ * Import 語句匹配 Regex 常數
+ */
+const IMPORT_PATTERNS = {
+  /** Namespace import: import * as X from '...' */
+  NAMESPACE: /import\s+\*\s+as\s+(\w+)\s+from/,
+  /** Default import with named: import X, { Y, Z } from '...' */
+  DEFAULT_WITH_NAMED: /import\s+(\w+)\s*,\s*\{([^}]+)\}\s*from/,
+  /** Default import only: import X from '...' */
+  DEFAULT_ONLY: /import\s+(\w+)\s+from\s+['"]/,
+  /** Named import: import { X, Y } from '...' or import type { X } from '...' */
+  NAMED: /import\s+(?:type\s*)?\{([^}]+)\}\s*from/,
+  /** Side-effect import: import '...' */
+  SIDE_EFFECT: /^import\s+['"][^'"]+['"]/,
+  /** As alias: X as Y */
+  AS_ALIAS: /^(\w+)\s+as\s+(\w+)$/
+} as const;
+
 /**
  * Import 語句中的符號資訊
  */
@@ -124,7 +145,6 @@ export class ImportParser {
     let multiLineImport = '';
     let multiLineStartLine = -1;
     let multiLineCount = 0;
-    const MAX_MULTILINE_IMPORT = 20; // 安全限制：最多 20 行
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -188,7 +208,7 @@ export class ImportParser {
     }
 
     // Side-effect import: import '...' (沒有符號)
-    if (trimmedLine.match(/^import\s+['"][^'"]+['"]/)) {
+    if (IMPORT_PATTERNS.SIDE_EFFECT.test(trimmedLine)) {
       return null;
     }
 
@@ -202,7 +222,7 @@ export class ImportParser {
     let isNamespace = false;
 
     // 1. Namespace import: import * as X from '...'
-    const namespaceMatch = trimmedLine.match(/import\s+\*\s+as\s+(\w+)\s+from/);
+    const namespaceMatch = trimmedLine.match(IMPORT_PATTERNS.NAMESPACE);
     if (namespaceMatch) {
       symbols.push({ name: namespaceMatch[1], isNamespace: true });
       isNamespace = true;
@@ -210,7 +230,7 @@ export class ImportParser {
     }
 
     // 2. Default import with named: import X, { Y, Z } from '...'
-    const defaultWithNamedMatch = trimmedLine.match(/import\s+(\w+)\s*,\s*\{([^}]+)\}\s*from/);
+    const defaultWithNamedMatch = trimmedLine.match(IMPORT_PATTERNS.DEFAULT_WITH_NAMED);
     if (defaultWithNamedMatch) {
       hasDefault = true;
       symbols.push({ name: defaultWithNamedMatch[1], isDefault: true });
@@ -219,7 +239,7 @@ export class ImportParser {
     }
 
     // 3. Default import only: import X from '...'
-    const defaultMatch = trimmedLine.match(/import\s+(\w+)\s+from\s+['"]/);
+    const defaultMatch = trimmedLine.match(IMPORT_PATTERNS.DEFAULT_ONLY);
     if (defaultMatch && !trimmedLine.includes('{')) {
       hasDefault = true;
       symbols.push({ name: defaultMatch[1], isDefault: true });
@@ -227,7 +247,7 @@ export class ImportParser {
     }
 
     // 4. Named import: import { X, Y } from '...' or import type { X } from '...'
-    const namedImportMatch = trimmedLine.match(/import\s+(?:type\s*)?\{([^}]+)\}\s*from/);
+    const namedImportMatch = trimmedLine.match(IMPORT_PATTERNS.NAMED);
     if (namedImportMatch) {
       this.parseNamedSymbols(namedImportMatch[1], symbols);
       if (symbols.length > 0) {
@@ -250,7 +270,7 @@ export class ImportParser {
       }
 
       // 處理 as 別名: X as Y
-      const asMatch = part.match(/^(\w+)\s+as\s+(\w+)$/);
+      const asMatch = part.match(IMPORT_PATTERNS.AS_ALIAS);
       if (asMatch) {
         symbols.push({ name: asMatch[1], alias: asMatch[2] });
       } else {
