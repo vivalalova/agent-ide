@@ -101,9 +101,10 @@ export enum MoveStage {
 }
 
 /**
- * 完整的移動操作定義 - 給內部引擎使用
+ * 內部移動操作定義 - 給內部引擎使用
+ * 包含完整的操作資訊（id、timestamp 等）
  */
-export interface FullMoveOperation {
+export interface InternalMoveOperation {
   readonly id: string;
   readonly type: MoveOperationType;
   readonly source: string;
@@ -128,7 +129,7 @@ export interface BatchMoveResult {
  * 移動預覽
  */
 export interface MovePreview {
-  readonly operation: FullMoveOperation;
+  readonly operation: InternalMoveOperation;
   readonly impact: MoveImpact;
   readonly conflicts: readonly PathConflict[];
   readonly affectedFiles: readonly string[];
@@ -300,9 +301,10 @@ export interface ImportResolverConfig {
 }
 
 /**
- * 簡化的移動操作 - 給 MoveService 使用
+ * 移動操作輸入 - 給 MoveService 公開方法使用
+ * 只包含必要的來源/目標路徑
  */
-export interface MoveOperation {
+export interface MoveInput {
   readonly source: string;
   readonly target: string;
   readonly updateImports?: boolean;
@@ -340,13 +342,13 @@ export interface PathUpdate {
 }
 
 /**
- * 建立完整 MoveOperation 的工廠函式
+ * 建立 InternalMoveOperation 的工廠函式
  */
-export function createFullMoveOperation(
+export function createInternalMoveOperation(
   type: MoveOperationType,
   source: string,
   destination: string
-): FullMoveOperation {
+): InternalMoveOperation {
   return {
     id: generateId(),
     type,
@@ -396,9 +398,9 @@ function generateId(): string {
 }
 
 /**
- * 型別守衛 - 檢查是否為完整的 MoveOperation
+ * 型別守衛 - 檢查是否為 InternalMoveOperation
  */
-export function isFullMoveOperation(value: unknown): value is FullMoveOperation {
+export function isInternalMoveOperation(value: unknown): value is InternalMoveOperation {
   if (!value || typeof value !== 'object') {
     return false;
   }

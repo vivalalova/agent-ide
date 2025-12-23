@@ -15,13 +15,13 @@ export { PathCalculator } from './path-calculator.js';
 // 型別定義
 export type {
   // 基本型別
-  MoveOperation,
+  MoveInput,
   MoveOptions,
   MoveResult,
   PathUpdate,
 
-  // 完整移動操作
-  FullMoveOperation,
+  // 內部移動操作
+  InternalMoveOperation,
 
   // 批次操作
   BatchMoveResult,
@@ -65,9 +65,9 @@ export {
 
 // 工具函式
 export {
-  createFullMoveOperation,
+  createInternalMoveOperation,
   createValidationError,
   createMoveError,
-  isFullMoveOperation,
+  isInternalMoveOperation,
   isImportStatement
 } from './types.js';

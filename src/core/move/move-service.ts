@@ -16,7 +16,7 @@ import { ImportResolver } from './import-resolver.js';
 import { PathCalculator } from './path-calculator.js';
 import { PathUtils } from './path-utils.js';
 import type {
-  MoveOperation,
+  MoveInput,
   MoveOptions,
   MoveResult,
   PathUpdate,
@@ -78,7 +78,7 @@ export class MoveService {
   /**
    * 移動檔案或目錄
    */
-  async moveFile(operation: MoveOperation, options: MoveOptions = {}): Promise<MoveResult> {
+  async moveFile(operation: MoveInput, options: MoveOptions = {}): Promise<MoveResult> {
     const { source, target, updateImports = true } = operation;
     const { preview = false, projectRoot = process.cwd() } = options;
     let fileMoved = false;
@@ -211,11 +211,11 @@ export class MoveService {
    * 生成移動的 Changeset
    * 不執行實際移動，只計算變更
    *
-   * @param operation - 移動操作
+   * @param operation - 移動操作輸入
    * @param options - 移動選項
    * @returns Changeset 物件
    */
-  async generateChangeset(operation: MoveOperation, options: MoveOptions = {}): Promise<Changeset> {
+  async generateChangeset(operation: MoveInput, options: MoveOptions = {}): Promise<Changeset> {
     const { source, target, updateImports = true } = operation;
     const { projectRoot = process.cwd() } = options;
 
