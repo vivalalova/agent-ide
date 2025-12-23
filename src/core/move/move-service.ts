@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import type { Changeset, TextEdit } from '@infrastructure/changeset/index.js';
+import { ChangesetCommand, TextEditOperationType, type Changeset, type TextEdit } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { MoveOperation, MoveOptions, MoveResult, PathUpdate, ImportResolverConfig, MoveError as MoveErrorType, createMoveError } from './types.js';
@@ -258,7 +258,7 @@ export class MoveService {
     const { projectRoot = process.cwd() } = options;
 
     const builder = createChangesetBuilder()
-      .forCommand('move')
+      .forCommand(ChangesetCommand.Move)
       .withDescription(`Moved '${path.basename(source)}' to '${path.basename(target)}'`);
 
     try {
@@ -319,7 +319,7 @@ export class MoveService {
 
         // 對於被移動檔案，使用原始路徑來建立 TextChange（轉換器會從該路徑讀取）
         // 實際的檔案移動由 fileOperations 處理
-        builder.addTextChange(readPath, edits, 'modify');
+        builder.addTextChange(readPath, edits, TextEditOperationType.Modify);
       }
 
       // 新增檔案移動操作

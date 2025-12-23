@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
+import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
 
 export class ImportResolver {
@@ -49,7 +49,7 @@ export class ImportResolver {
       const importMatches = line.matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
       for (const match of importMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement('import', importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(ImportStatementType.IMPORT, importPath, lineNumber, match.index || 0, line);
         if (statement) {
           statements.push(statement);
         }
@@ -67,7 +67,7 @@ export class ImportResolver {
             const importPath = fromMatch[1];
             // 使用起始行號和原始多行語句
             const rawStatement = lines.slice(startLineIndex, endLineIndex + 1).join('\n');
-            const statement = this.createImportStatement('export', importPath, startLineIndex + 1, lines[startLineIndex].indexOf('export'), rawStatement);
+            const statement = this.createImportStatement(ImportStatementType.EXPORT, importPath, startLineIndex + 1, lines[startLineIndex].indexOf('export'), rawStatement);
             if (statement) {
               statements.push(statement);
             }
@@ -82,7 +82,7 @@ export class ImportResolver {
       const requireMatches = line.matchAll(/require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
       for (const match of requireMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement('require', importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(ImportStatementType.REQUIRE, importPath, lineNumber, match.index || 0, line);
         if (statement) {
           statements.push(statement);
         }
@@ -92,7 +92,7 @@ export class ImportResolver {
       const dynamicImportMatches = line.matchAll(/import\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
       for (const match of dynamicImportMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement('dynamic_import', importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(ImportStatementType.DYNAMIC_IMPORT, importPath, lineNumber, match.index || 0, line);
         if (statement) {
           statements.push(statement);
         }
@@ -321,7 +321,7 @@ export class ImportResolver {
    * 建立 ImportStatement 物件
    */
   private createImportStatement(
-    type: 'import' | 'require' | 'dynamic_import' | 'export',
+    type: ImportStatementType,
     importPath: string,
     lineNumber: number,
     columnIndex: number,
@@ -333,7 +333,7 @@ export class ImportResolver {
     const pathType = this.determinePathType(importPath);
     const isRelative = pathType === PathType.RELATIVE;
 
-    const importedSymbols = type === 'import' ? this.findImportedSymbols(rawStatement) : undefined;
+    const importedSymbols = type === ImportStatementType.IMPORT ? this.findImportedSymbols(rawStatement) : undefined;
 
     return {
       type,
