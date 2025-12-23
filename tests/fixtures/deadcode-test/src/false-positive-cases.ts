@@ -101,3 +101,85 @@ function helperB() {
 export function useHelpers() {
   return helperA();
 }
+
+// ============================================================================
+// Bug #35 修復: ArrowFunction/FunctionExpression 參數不應被偵測為 dead code
+// ============================================================================
+
+// ❌ 非 DEADCODE: .map() 回呼參數
+export function processItems(items: string[]) {
+  // 所有這些參數都應該被排除：item, index, arr
+  return items.map((item, index, arr) => `${index}: ${item} of ${arr.length}`);
+}
+
+// ❌ 非 DEADCODE: .filter() 回呼參數
+export function filterItems(items: number[]) {
+  // value, index 都應該被排除
+  return items.filter((value, index) => value > index);
+}
+
+// ❌ 非 DEADCODE: .forEach() 回呼參數
+export function logItems(items: string[]) {
+  // item 應該被排除
+  items.forEach(item => {
+    console.log(item);
+  });
+}
+
+// ❌ 非 DEADCODE: 巢狀 arrow function 參數
+export function nestedCallbacks(data: { items: string[] }[]) {
+  // parentItem, parentIndex, childItem, childIndex 都應該被排除
+  return data.map((parentItem, parentIndex) => ({
+    index: parentIndex,
+    children: parentItem.items.map((childItem, childIndex) => `${childIndex}: ${childItem}`)
+  }));
+}
+
+// ❌ 非 DEADCODE: React-like component 參數
+const MyComponent = ({ name, onClick }: { name: string; onClick: () => void }) => {
+  onClick();
+  return name;
+};
+export const renderComponent = () => MyComponent({ name: 'test', onClick: () => {} });
+
+// ============================================================================
+// Bug #36 修復: 繼承方法引用不應被偵測為 dead code
+// ============================================================================
+
+// ❌ 非 DEADCODE: 父類別 protected 方法被子類別透過 this 呼叫
+class BaseService {
+  protected calculateData(input: number): number {
+    return input * 2;
+  }
+
+  protected formatResult(value: number): string {
+    return `Result: ${value}`;
+  }
+}
+
+export class DerivedService extends BaseService {
+  public process(input: number): string {
+    // 這裡呼叫繼承的 protected 方法，不應被偵測為 dead code
+    const calculated = this.calculateData(input);
+    return this.formatResult(calculated);
+  }
+}
+
+// ❌ 非 DEADCODE: 多層繼承
+class GrandparentClass {
+  protected legacyMethod(): string {
+    return 'legacy';
+  }
+}
+
+class ParentClass extends GrandparentClass {
+  protected intermediateMethod(): string {
+    return this.legacyMethod() + ' updated';
+  }
+}
+
+export class ChildClass extends ParentClass {
+  public execute(): string {
+    return this.intermediateMethod();
+  }
+}
