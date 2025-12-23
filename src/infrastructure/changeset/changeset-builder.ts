@@ -82,11 +82,20 @@ export class ChangesetBuilder {
     const existing = this.textChanges.find(tc => tc.filePath === filePath);
 
     if (existing) {
-      // 合併到現有的變更
+      // 合併到現有的變更，去除重複的 edits（根據 range 比對）
       const existingIndex = this.textChanges.indexOf(existing);
+      const deduplicatedEdits = edits.filter(newEdit =>
+        !existing.edits.some(existingEdit =>
+          existingEdit.range.start.line === newEdit.range.start.line
+          && existingEdit.range.start.column === newEdit.range.start.column
+          && existingEdit.range.end.line === newEdit.range.end.line
+          && existingEdit.range.end.column === newEdit.range.end.column
+        )
+      );
+
       this.textChanges[existingIndex] = {
         ...existing,
-        edits: [...existing.edits, ...edits],
+        edits: [...existing.edits, ...deduplicatedEdits],
         operationType: operationType ?? existing.operationType
       };
     } else {
