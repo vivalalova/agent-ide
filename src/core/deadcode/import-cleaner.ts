@@ -3,9 +3,13 @@
  * 負責分析和清理未使用的 import
  */
 
-import type { Range } from '@shared/types/core.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
+import {
+  createSymbolFinder,
+  SymbolReferenceType,
+  type SymbolFinder,
+  type SymbolReference
+} from '@core/shared/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, type ImportStatementInfo } from './import-parser.js';
@@ -17,6 +21,8 @@ export class ImportCleaner {
   private readonly importParser: ImportParser;
   private readonly symbolFinder: SymbolFinder;
   private readonly fileCache = new Map<string, string>();
+  /** 符號引用快取：key = `${filePath}:${symbolName}` */
+  private readonly referenceCache = new Map<string, SymbolReference[]>();
 
   constructor(
     private readonly fileSystem: IFileSystem,
@@ -159,33 +165,84 @@ export class ImportCleaner {
 
   /**
    * 檢查 import 是否仍被使用
-   * 使用 SymbolFinder.findReferencesInFile 進行語義分析
+   * 使用快取的引用結果進行語義分析，避免重複查詢
    */
   private async isImportStillUsed(
     filePath: string,
     symbolName: string,
     removalsInFile: readonly RemovalOperation[]
   ): Promise<boolean> {
-    // 使用 SymbolFinder 查找該檔案中的所有引用
-    const references = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
+    // 使用快取查詢引用，避免 N+1 問題
+    const references = await this.findReferencesWithCache(filePath, symbolName);
 
     // 過濾掉 import 類型的引用（import 語句本身）
     const usageRefs = references.filter(ref => ref.type === SymbolReferenceType.Usage);
 
-    // 過濾掉被刪除程式碼區塊內的引用
+    // 過濾掉被刪除程式碼區塊內的引用（使用二分搜尋優化）
+    const sortedRemovals = this.getSortedRemovalRanges(removalsInFile);
     const remainingRefs = usageRefs.filter(ref => {
       const refLine = ref.location.range.start.line;
-      // 檢查引用是否在任一刪除範圍內
-      for (const removal of removalsInFile) {
-        if (refLine >= removal.range.start.line && refLine <= removal.range.end.line) {
-          return false; // 在刪除範圍內，過濾掉
-        }
-      }
-      return true;
+      return !this.isLineInRemovalRange(refLine, sortedRemovals);
     });
 
     // 如果還有剩餘的使用引用，表示 import 仍需要
     return remainingRefs.length > 0;
+  }
+
+  /**
+   * 使用快取查詢符號引用
+   * 確保每個 (filePath, symbolName) 組合只查詢一次
+   */
+  private async findReferencesWithCache(
+    filePath: string,
+    symbolName: string
+  ): Promise<SymbolReference[]> {
+    const cacheKey = `${filePath}:${symbolName}`;
+
+    if (this.referenceCache.has(cacheKey)) {
+      return this.referenceCache.get(cacheKey)!;
+    }
+
+    const references = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
+    this.referenceCache.set(cacheKey, references);
+    return references;
+  }
+
+  /**
+   * 取得排序後的刪除範圍（用於二分搜尋）
+   */
+  private getSortedRemovalRanges(
+    removals: readonly RemovalOperation[]
+  ): readonly { start: number; end: number }[] {
+    return removals
+      .map(r => ({ start: r.range.start.line, end: r.range.end.line }))
+      .sort((a, b) => a.start - b.start);
+  }
+
+  /**
+   * 使用二分搜尋檢查行號是否在刪除範圍內
+   */
+  private isLineInRemovalRange(
+    line: number,
+    sortedRanges: readonly { start: number; end: number }[]
+  ): boolean {
+    let left = 0;
+    let right = sortedRanges.length - 1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const range = sortedRanges[mid];
+
+      if (line >= range.start && line <= range.end) {
+        return true;
+      } else if (line < range.start) {
+        right = mid - 1;
+      } else {
+        left = mid + 1;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -212,6 +269,7 @@ export class ImportCleaner {
    */
   clearCache(): void {
     this.fileCache.clear();
+    this.referenceCache.clear();
   }
 }
 
