@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { SignatureParser } from './signature-parser.js';
 import {
   type ChangeSignatureOptions,
@@ -26,7 +26,7 @@ import {
   isChangeDefaultValueChange,
   isToggleOptionalChange
 } from './types.js';
-import { SymbolFinder, type CallSite } from '../shared/symbol-finder/index.js';
+import { SymbolFinder, type CallSite } from '@core/shared/symbol-finder/index.js';
 
 /**
  * Change Signature Service
@@ -125,7 +125,7 @@ export class ChangeSignatureService {
    * @returns Changeset 物件
    */
   async generateChangeset(options: ChangeSignatureOptions): Promise<Changeset> {
-    const builder = createChangesetBuilder().forCommand('change-signature');
+    const builder = createChangesetBuilder().forCommand(ChangesetCommand.ChangeSignature);
 
     // 使用現有邏輯（preview 模式）收集變更
     const result = await this.changeSignature({
@@ -155,7 +155,7 @@ export class ChangeSignatureService {
       },
       newText: newCode,
       description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
-    }], 'modify');
+    }], TextEditOperationType.Modify);
 
     // 轉換 callSiteUpdates
     // 按檔案分組，合併同一檔案的多個變更
@@ -187,7 +187,7 @@ export class ChangeSignatureService {
         };
       });
 
-      builder.addTextChange(updateFilePath, edits, 'modify');
+      builder.addTextChange(updateFilePath, edits, TextEditOperationType.Modify);
     }
 
     // 設定描述

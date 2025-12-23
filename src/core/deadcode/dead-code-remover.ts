@@ -7,7 +7,7 @@ import { minimatch } from 'minimatch';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -101,7 +101,7 @@ export class DeadCodeRemover {
    */
   async generateChangeset(deadCodeItems: readonly DeadCodeItem[]): Promise<Changeset> {
     const builder = createChangesetBuilder()
-      .forCommand('deadcode');
+      .forCommand(ChangesetCommand.Deadcode);
 
     // 使用現有的 preview 邏輯收集變更
     const preview = await this.preview(deadCodeItems);
@@ -118,7 +118,7 @@ export class DeadCodeRemover {
         range: removal.range,
         newText: '',
         description: `Remove ${removal.symbolType}: ${removal.symbolName}`
-      }], 'delete');
+      }], TextEditOperationType.Delete);
     }
 
     // 轉換 importCleanups 為 TextEdit
@@ -132,7 +132,7 @@ export class DeadCodeRemover {
         description: cleanup.cleanupType === 'delete'
           ? `Remove import: ${cleanup.unusedSymbols.join(', ')}`
           : `Clean import: ${cleanup.unusedSymbols.join(', ')}`
-      }], cleanup.cleanupType === 'delete' ? 'delete' : 'modify');
+      }], cleanup.cleanupType === 'delete' ? TextEditOperationType.Delete : TextEditOperationType.Modify);
     }
 
     // 設定描述

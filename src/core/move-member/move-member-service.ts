@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { MemberExtractor } from './member-extractor.js';
 import {
   type MoveMemberOptions,
@@ -17,7 +17,7 @@ import {
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
-import { SymbolFinder } from '../shared/symbol-finder/index.js';
+import { SymbolFinder } from '@core/shared/symbol-finder/index.js';
 
 /**
  * Move Member Service
@@ -104,7 +104,7 @@ export class MoveMemberService {
    */
   async generateChangeset(options: MoveMemberOptions): Promise<Changeset> {
     const builder = createChangesetBuilder()
-      .forCommand('move-member');
+      .forCommand(ChangesetCommand.MoveMember);
 
     // 使用 preview 模式收集變更
     const result = await this.moveMember({
@@ -127,7 +127,7 @@ export class MoveMemberService {
       },
       newText: result.sourceFileChange.newCode,
       description: 'Remove member from source file'
-    }], 'modify');
+    }], TextEditOperationType.Modify);
 
     // 轉換 targetFileChange
     if (result.targetFileChange.isNewFile) {
@@ -142,7 +142,7 @@ export class MoveMemberService {
         },
         newText: result.targetFileChange.newCode,
         description: 'Add member to target file'
-      }], 'modify');
+      }], TextEditOperationType.Modify);
     }
 
     // 轉換 referenceUpdates
@@ -151,7 +151,7 @@ export class MoveMemberService {
         range: update.location.range,
         newText: update.newImport,
         description: `Update import: ${update.originalImport} -> ${update.newImport}`
-      }], 'modify');
+      }], TextEditOperationType.Modify);
     }
 
     // 設定描述
