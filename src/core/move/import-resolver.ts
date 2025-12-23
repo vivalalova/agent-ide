@@ -15,6 +15,14 @@ export class ImportResolver {
   }
 
   /**
+   * 取得路徑別名映射
+   * @returns 別名與實際路徑的映射物件
+   */
+  getPathAliases(): Record<string, string> {
+    return this.config.pathAliases;
+  }
+
+  /**
    * 分析 import 語句 (別名，保持向後相容)
    */
   analyzeImports(filePath: string, code: string): ImportStatement[] {

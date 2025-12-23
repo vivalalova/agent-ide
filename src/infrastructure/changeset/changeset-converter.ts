@@ -14,6 +14,34 @@ import { PreviewCommand } from '@infrastructure/formatters/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 /**
+ * 建立修改行的 LineChange
+ * @param line - 1-based 行號
+ * @param oldContent - 原始內容
+ * @param newContent - 新內容
+ */
+function createModifyLineChange(line: number, oldContent: string, newContent: string): LineChange {
+  return { line, oldContent, newContent };
+}
+
+/**
+ * 建立新增行的 LineChange
+ * @param line - 1-based 行號
+ * @param newContent - 新內容
+ */
+function createInsertLineChange(line: number, newContent: string): LineChange {
+  return { line, oldContent: null, newContent };
+}
+
+/**
+ * 建立刪除行的 LineChange
+ * @param line - 1-based 行號
+ * @param oldContent - 原始內容
+ */
+function createDeleteLineChange(line: number, oldContent: string): LineChange {
+  return { line, oldContent, newContent: null };
+}
+
+/**
  * 將 Changeset 命令類型映射到 PreviewCommand
  */
 function mapCommandType(command: Changeset['command']): PreviewCommand {
@@ -69,6 +97,153 @@ function applyEditsToLine(originalLine: string, edits: TextEdit[]): string {
 }
 
 /**
+ * 處理單行編輯
+ * 將同一行的多個編輯操作合併後產生 LineChange
+ * @param lineNum - 1-based 行號
+ * @param lineEdits - 該行的編輯操作列表
+ * @param originalLines - 原始檔案各行
+ * @returns LineChange 或 null（內容未改變時）
+ */
+function processSingleLineEdit(
+  lineNum: number,
+  lineEdits: TextEdit[],
+  originalLines: string[]
+): LineChange | null {
+  // 取得原始行內容（1-based 轉 0-based 索引）
+  const originalLine = originalLines[lineNum - 1] ?? '';
+  // 應用所有編輯產生新內容
+  const newLine = applyEditsToLine(originalLine, lineEdits);
+
+  // 內容未改變時不產生 change
+  if (originalLine === newLine) {
+    return null;
+  }
+
+  return createModifyLineChange(lineNum, originalLine, newLine);
+}
+
+/**
+ * 處理跨行編輯的起始行
+ * 保留 startCol 之前的部分，接上新內容
+ * @param lineNum - 1-based 行號
+ * @param lineContent - 原始行內容
+ * @param startCol - 1-based 起始列號
+ * @param newText - 要插入的新文字
+ * @returns 起始行的 LineChange 陣列（可能包含新增行）
+ */
+function processMultiLineEditStart(
+  lineNum: number,
+  lineContent: string,
+  startCol: number,
+  newText: string
+): LineChange[] {
+  const changes: LineChange[] = [];
+
+  // startCol 是 1-based，substring 是 0-based
+  // 範例：startCol=3 表示從第 3 列開始刪除，保留 0~2（即前 2 個字元）
+  const prefix = lineContent.substring(0, startCol - 1);
+  const newContent = prefix + newText;
+
+  // 起始行：原內容被替換為 prefix + newText 的第一行
+  const newLines = newContent.split('\n');
+  changes.push(createModifyLineChange(lineNum, lineContent, newLines[0] ?? ''));
+
+  // 若 newText 包含換行，後續行為新增行
+  for (let i = 1; i < newLines.length; i++) {
+    changes.push(createInsertLineChange(lineNum + i, newLines[i]));
+  }
+
+  return changes;
+}
+
+/**
+ * 處理跨行編輯的結束行
+ * 保留 endCol 之後的部分，附加到前一個 change
+ * @param lineNum - 1-based 行號
+ * @param lineContent - 原始行內容
+ * @param endCol - 1-based 結束列號（此列開始被刪除）
+ * @param changes - 累積的 changes 陣列（會原地修改）
+ */
+function processMultiLineEditEnd(
+  lineNum: number,
+  lineContent: string,
+  endCol: number,
+  changes: LineChange[]
+): void {
+  // endCol 是 1-based，表示「從第 endCol 列開始被刪除」
+  // 範例：endCol=5 表示刪除第 5 列及之後，保留第 5 列之後的內容
+  // substring(endCol-1) = substring(4) 取得索引 4 開始的字元
+  // 但實際上 endCol 指向「被刪除範圍的結束位置」，該位置的字元應保留
+  // 因此 suffix = lineContent.substring(endCol - 1) 是正確的
+  const suffix = lineContent.substring(endCol - 1);
+
+  // 將 suffix 附加到最後一個有新內容的 change
+  if (suffix) {
+    const lastChange = changes[changes.length - 1];
+    if (lastChange && lastChange.newContent !== null) {
+      lastChange.newContent += suffix;
+    }
+  }
+
+  // 結束行本身被刪除（原內容消失）
+  changes.push(createDeleteLineChange(lineNum, lineContent));
+}
+
+/**
+ * 處理跨行編輯的中間行
+ * 完全刪除該行
+ * @param lineNum - 1-based 行號
+ * @param lineContent - 原始行內容
+ * @returns 刪除行的 LineChange
+ */
+function processMultiLineEditMiddle(lineNum: number, lineContent: string): LineChange {
+  return createDeleteLineChange(lineNum, lineContent);
+}
+
+/**
+ * 處理跨行編輯
+ * 刪除多行並插入新內容
+ * @param edit - 跨行編輯操作
+ * @param originalLines - 原始檔案各行
+ * @param processedLines - 已處理的行號集合（會原地修改）
+ * @returns LineChange 陣列
+ */
+function processMultiLineEdit(
+  edit: TextEdit,
+  originalLines: string[],
+  processedLines: Set<number>
+): LineChange[] {
+  const changes: LineChange[] = [];
+  const { start, end } = edit.range;
+
+  // 跳過起始行已被單行編輯處理的情況
+  if (processedLines.has(start.line)) {
+    return [];
+  }
+
+  // 逐行處理：起始行 → 中間行 → 結束行
+  for (let lineNum = start.line; lineNum <= end.line && lineNum <= originalLines.length; lineNum++) {
+    const lineContent = originalLines[lineNum - 1] ?? '';
+
+    if (lineNum === start.line) {
+      // 起始行：保留 startCol 之前 + 新內容
+      const startChanges = processMultiLineEditStart(lineNum, lineContent, start.column, edit.newText);
+      changes.push(...startChanges);
+    } else if (lineNum === end.line) {
+      // 結束行：保留 endCol 之後，附加到前一個 change
+      processMultiLineEditEnd(lineNum, lineContent, end.column, changes);
+    } else {
+      // 中間行：完全刪除
+      changes.push(processMultiLineEditMiddle(lineNum, lineContent));
+    }
+
+    processedLines.add(lineNum);
+  }
+
+  return changes;
+}
+
+/**
  * 將 TextEdit 列表轉換為 LineChange 列表
  * @param originalContent - 原始檔案內容
  * @param edits - 文字編輯操作列表
@@ -85,106 +260,43 @@ function convertEditsToLineChanges(
   const originalLines = originalContent.split('\n');
   const changes: LineChange[] = [];
 
-  // 1. 分離單行編輯和跨行編輯，並按行號分組單行編輯
+  // 第一步：分類編輯 — 單行編輯按行號分組，跨行編輯獨立收集
   const singleLineEditsByLine = new Map<number, TextEdit[]>();
   const multiLineEdits: TextEdit[] = [];
 
   for (const edit of edits) {
-    const startLine = edit.range.start.line;
-    const endLine = edit.range.end.line;
+    const { line: startLine } = edit.range.start;
+    const { line: endLine } = edit.range.end;
 
     if (startLine === endLine) {
-      // 單行編輯：按行號分組
+      // 單行編輯：同一行可能有多個編輯，按行號分組
       if (!singleLineEditsByLine.has(startLine)) {
         singleLineEditsByLine.set(startLine, []);
       }
       singleLineEditsByLine.get(startLine)!.push(edit);
     } else {
-      // 跨行編輯：單獨處理
+      // 跨行編輯：需特殊處理起始/中間/結束行
       multiLineEdits.push(edit);
     }
   }
 
-  // 2. 處理單行編輯（一次處理同行所有編輯）
+  // 第二步：處理單行編輯 — 同行多編輯合併處理
   for (const [lineNum, lineEdits] of singleLineEditsByLine) {
-    const originalLine = originalLines[lineNum - 1] ?? '';
-    const newLine = applyEditsToLine(originalLine, lineEdits);
-
-    // 只在內容真的改變時記錄
-    if (originalLine !== newLine) {
-      changes.push({
-        line: lineNum,
-        oldContent: originalLine,
-        newContent: newLine
-      });
+    const change = processSingleLineEdit(lineNum, lineEdits, originalLines);
+    if (change) {
+      changes.push(change);
     }
   }
 
-  // 3. 處理跨行編輯
+  // 第三步：處理跨行編輯 — 避免與已處理的單行編輯衝突
   const processedLines = new Set<number>(singleLineEditsByLine.keys());
 
   for (const edit of multiLineEdits) {
-    const startLine = edit.range.start.line;
-    const endLine = edit.range.end.line;
-    const startCol = edit.range.start.column;
-    const endCol = edit.range.end.column;
-
-    // 跳過已處理的行（避免與單行編輯衝突）
-    if (processedLines.has(startLine)) {
-      continue;
-    }
-
-    // 跨行編輯：刪除多行並插入新內容
-    for (let lineNum = startLine; lineNum <= endLine && lineNum <= originalLines.length; lineNum++) {
-      const lineContent = originalLines[lineNum - 1] ?? '';
-
-      if (lineNum === startLine) {
-        // 第一行：保留 startCol 之前的部分 + 新內容
-        const prefix = lineContent.substring(0, startCol - 1);
-        const newContent = prefix + edit.newText;
-        changes.push({
-          line: lineNum,
-          oldContent: lineContent,
-          newContent: newContent.split('\n')[0] ?? ''
-        });
-
-        // 處理新增的多行
-        const newLines = newContent.split('\n');
-        for (let i = 1; i < newLines.length; i++) {
-          changes.push({
-            line: lineNum + i,
-            oldContent: null,
-            newContent: newLines[i]
-          });
-        }
-      } else if (lineNum === endLine) {
-        // 最後一行：保留 endCol 之後的部分
-        const suffix = lineContent.substring(endCol - 1);
-        if (suffix) {
-          // 將 suffix 附加到上一個新增行
-          const lastChange = changes[changes.length - 1];
-          if (lastChange && lastChange.newContent !== null) {
-            lastChange.newContent += suffix;
-          }
-        }
-        changes.push({
-          line: lineNum,
-          oldContent: lineContent,
-          newContent: null
-        });
-      } else {
-        // 中間行：完全刪除
-        changes.push({
-          line: lineNum,
-          oldContent: lineContent,
-          newContent: null
-        });
-      }
-      processedLines.add(lineNum);
-    }
+    const multiChanges = processMultiLineEdit(edit, originalLines, processedLines);
+    changes.push(...multiChanges);
   }
 
-  // 按行號排序
+  // 按行號排序確保輸出順序一致
   return changes.sort((a, b) => a.line - b.line);
 }
 
