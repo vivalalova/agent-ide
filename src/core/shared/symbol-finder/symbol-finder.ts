@@ -140,7 +140,14 @@ export class SymbolFinder {
 
       // 對每個目標符號查找引用
       for (const [key, symbol] of symbolKeyMap) {
-        const containerName = symbol.scope?.name;
+        // 對於 class method，需要使用 class name 作為 containerName
+        // symbol.scope 是 method 的 function scope，其 parent 是 class scope
+        let containerName: string | undefined;
+        if (symbol.scope?.type === 'function' && symbol.scope?.parent?.type === 'class') {
+          containerName = symbol.scope.parent.name;
+        } else {
+          containerName = symbol.scope?.name;
+        }
 
         // 優先使用 findScopedReferences（精確匹配作用域）
         if (parser && typeof parser.findScopedReferences === 'function') {
