@@ -13,10 +13,11 @@ import type {
   DependencyStats,
   ImpactAnalysisResult,
   DependencyQueryOptions,
-  PathResolutionResult,
   ExtendedDependencyAnalysisOptions
 } from './types.js';
-import { Dependency, DependencyType } from '@shared/types/index.js';
+import { PathResolver } from './path-resolver.js';
+import { FileScanner } from './file-scanner.js';
+import { DependencyExtractor } from './dependency-extractor.js';
 
 /**
  * 快取項目
@@ -35,6 +36,9 @@ export class ImpactAnalyzer {
   private cache: Map<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
   private fileSystem: IFileSystem;
+  private pathResolver: PathResolver;
+  private fileScanner: FileScanner;
+  private dependencyExtractor: DependencyExtractor;
 
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
@@ -45,6 +49,15 @@ export class ImpactAnalyzer {
     // 使用預設選項並合併使用者選項
     const defaultOptions = this.createDefaultAnalysisOptions();
     this.options = { ...defaultOptions, ...options };
+
+    // 初始化子模組
+    this.pathResolver = new PathResolver(fileSystem, this.options);
+    this.fileScanner = new FileScanner(fileSystem, this.options);
+    this.dependencyExtractor = new DependencyExtractor(
+      this.options,
+      this.pathResolver,
+      this.fileScanner
+    );
   }
 
   /**
@@ -77,7 +90,10 @@ export class ImpactAnalyzer {
       const content = await this.fileSystem.readFile(normalizedPath, 'utf-8') as string;
       const stat = await this.fileSystem.getStats(normalizedPath);
 
-      const dependencies = await this.extractDependencies(content, normalizedPath);
+      const dependencies = await this.dependencyExtractor.extractDependencies(
+        content,
+        normalizedPath
+      );
 
       const result: FileDependencies = {
         filePath: normalizedPath,
@@ -110,7 +126,7 @@ export class ImpactAnalyzer {
    */
   async analyzeProject(projectPath: string): Promise<ProjectDependencies> {
     const normalizedProjectPath = path.resolve(projectPath);
-    const files = await this.findSourceFiles(normalizedProjectPath);
+    const files = await this.fileScanner.findSourceFiles(normalizedProjectPath);
 
     const fileDependencies: FileDependencies[] = [];
 
@@ -223,7 +239,7 @@ export class ImpactAnalyzer {
     for (const affectedFile of allAffected) {
       // 找出直接測試此檔案的測試檔案
       const dependents = this.getDependents(affectedFile);
-      const tests = dependents.filter(dep => this.isTestFile(dep));
+      const tests = dependents.filter(dep => this.fileScanner.isTestFile(dep));
       testFiles.push(...tests);
     }
 
@@ -268,222 +284,6 @@ export class ImpactAnalyzer {
   }
 
   /**
-   * 從檔案內容中提取依賴關係
-   * @param content 檔案內容
-   * @param filePath 檔案路徑
-   * @returns 依賴列表
-   */
-  private async extractDependencies(content: string, filePath: string): Promise<Dependency[]> {
-    const dependencies: Dependency[] = [];
-    const fileExt = path.extname(filePath);
-
-    try {
-      // 簡單的正則表達式解析（實際應該使用 AST）
-      let importRegex: RegExp;
-
-      switch (fileExt) {
-      case '.ts':
-      case '.tsx':
-      case '.js':
-      case '.jsx':
-        // 支援 import type { ... } 語法
-        importRegex = /import\s+(?:type\s+)?(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
-        break;
-      default:
-        return dependencies; // 不支援的檔案類型
-      }
-
-      let match;
-      while ((match = importRegex.exec(content)) !== null) {
-        const importPath = match[1];
-        const resolvedPath = await this.resolvePath(importPath, filePath);
-
-        if (resolvedPath && this.shouldIncludeDependency(resolvedPath.resolvedPath)) {
-          dependencies.push({
-            path: resolvedPath.resolvedPath, // 使用解析後的絕對路徑
-            type: DependencyType.Import,
-            isRelative: resolvedPath.isRelative,
-            importedSymbols: [] // 簡化實作，實際應該解析 import 語句
-          });
-        }
-      }
-    } catch (error) {
-      // 解析錯誤，回傳空陣列而不拋出錯誤
-      if (this.options.verbose !== false) {
-        console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
-      }
-    }
-
-    return dependencies;
-  }
-
-  /**
-   * 解析路徑
-   * @param importPath 匯入路徑
-   * @param fromFile 來源檔案
-   * @returns 解析結果
-   */
-  private async resolvePath(
-    importPath: string,
-    fromFile: string
-  ): Promise<PathResolutionResult | null> {
-    const isRelative = importPath.startsWith('.') || importPath.startsWith('/');
-
-    // 檢查是否為路徑別名
-    const aliasResult = this.resolvePathAlias(importPath);
-    if (aliasResult) {
-      return this.resolveWithExtensions(aliasResult, false);
-    }
-
-    if (!isRelative && !this.options.includeNodeModules) {
-      return null; // 忽略 node_modules
-    }
-
-    if (isRelative) {
-      const dir = path.dirname(fromFile);
-      const resolvedPath = path.resolve(dir, importPath);
-      return this.resolveWithExtensions(resolvedPath, true);
-    } else {
-      // 非相對路徑（例如 npm 套件）
-      return {
-        resolvedPath: importPath,
-        isRelative: false,
-        exists: true, // 假設存在
-        extension: ''
-      };
-    }
-  }
-
-  /**
-   * 解析路徑別名
-   * @param importPath 匯入路徑
-   * @returns 解析後的絕對路徑，若非路徑別名則回傳 null
-   */
-  private resolvePathAlias(importPath: string): string | null {
-    const pathAliases = this.options.pathAliases;
-    if (!pathAliases || Object.keys(pathAliases).length === 0) {
-      return null;
-    }
-
-    // 按別名長度降序排列，優先匹配較長的別名
-    const sortedAliases = Object.keys(pathAliases).sort((a, b) => b.length - a.length);
-
-    for (const alias of sortedAliases) {
-      // 精確匹配別名（如 @/utils）
-      if (importPath === alias) {
-        return pathAliases[alias];
-      }
-
-      // 匹配別名前綴（如 @/utils/helper 匹配 @/）
-      const aliasPrefix = alias.endsWith('/') ? alias : alias + '/';
-      if (importPath.startsWith(aliasPrefix)) {
-        const relativePart = importPath.slice(aliasPrefix.length);
-        return path.join(pathAliases[alias], relativePart);
-      }
-
-      // 匹配別名前綴（如 @/utils 匹配 @）
-      if (importPath.startsWith(alias + '/')) {
-        const relativePart = importPath.slice(alias.length + 1);
-        return path.join(pathAliases[alias], relativePart);
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * 嘗試常見副檔名解析路徑
-   * @param basePath 基礎路徑
-   * @param isRelative 是否為相對路徑
-   * @returns 解析結果
-   */
-  private async resolveWithExtensions(
-    basePath: string,
-    isRelative: boolean
-  ): Promise<PathResolutionResult> {
-    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
-
-    // 移除 .js/.jsx 副檔名（TypeScript 專案中 import './foo.js' 實際上指向 ./foo.ts）
-    let normalizedPath = basePath;
-    if (basePath.endsWith('.js') || basePath.endsWith('.jsx')) {
-      normalizedPath = basePath.replace(/\.jsx?$/, '');
-    }
-
-    let finalPath = normalizedPath;
-    let exists = false;
-
-    // 先檢查原始路徑是否存在
-    try {
-      if (await this.fileSystem.exists(normalizedPath)) {
-        // 如果是目錄，嘗試解析 index 檔案
-        if (await this.fileSystem.isDirectory(normalizedPath)) {
-          for (const ext of extensions) {
-            const indexPath = path.join(normalizedPath, 'index' + ext);
-            try {
-              if (await this.fileSystem.exists(indexPath)) {
-                return {
-                  resolvedPath: indexPath,
-                  isRelative,
-                  exists: true,
-                  extension: ext
-                };
-              }
-            } catch {
-              // 繼續嘗試
-            }
-          }
-        } else {
-          return {
-            resolvedPath: normalizedPath,
-            isRelative,
-            exists: true,
-            extension: path.extname(normalizedPath)
-          };
-        }
-      }
-    } catch {
-      // 繼續嘗試副檔名
-    }
-
-    // 嘗試常見的副檔名
-    for (const ext of extensions) {
-      const pathWithExt = normalizedPath + ext;
-      try {
-        if (await this.fileSystem.exists(pathWithExt)) {
-          finalPath = pathWithExt;
-          exists = true;
-          break;
-        }
-      } catch {
-        // 繼續嘗試下個副檔名
-      }
-    }
-
-    // 嘗試 index 檔案（針對目錄式匯入）
-    if (!exists) {
-      for (const ext of extensions) {
-        const indexPath = path.join(normalizedPath, 'index' + ext);
-        try {
-          if (await this.fileSystem.exists(indexPath)) {
-            finalPath = indexPath;
-            exists = true;
-            break;
-          }
-        } catch {
-          // 繼續嘗試
-        }
-      }
-    }
-
-    return {
-      resolvedPath: finalPath,
-      isRelative,
-      exists,
-      extension: path.extname(finalPath)
-    };
-  }
-
-  /**
    * 更新依賴圖
    * @param fileDependencies 檔案依賴資訊
    */
@@ -504,136 +304,6 @@ export class ImpactAnalyzer {
       // dep.path 現在已經是解析後的絕對路徑
       this.graph.addDependency(filePath, dep.path);
     }
-  }
-
-  /**
-   * 找出專案中的原始檔案
-   * @param projectPath 專案路徑（可以是檔案或目錄）
-   * @returns 檔案路徑列表
-   */
-  private async findSourceFiles(projectPath: string): Promise<string[]> {
-    const files: string[] = [];
-
-    // 檢查路徑是檔案還是目錄
-    try {
-      const stat = await this.fileSystem.getStats(projectPath);
-
-      // 如果是檔案，直接返回該檔案
-      if (stat.isFile) {
-        if (this.isIncluded(projectPath)) {
-          return [projectPath];
-        }
-        return [];
-      }
-
-      // 如果不是目錄也不是檔案，返回空陣列
-      if (!stat.isDirectory) {
-        return [];
-      }
-    } catch {
-      // 路徑不存在或無法訪問
-      return [];
-    }
-
-    const traverse = async (dir: string, depth = 0) => {
-      if (depth > this.options.maxDepth) {
-        return;
-      }
-
-      try {
-        const entries = await this.fileSystem.readDirectory(dir);
-
-        for (const entry of entries) {
-          // 檢查排除模式
-          if (this.isExcluded(entry.path)) {
-            continue;
-          }
-
-          if (entry.isDirectory) {
-            await traverse(entry.path, depth + 1);
-          } else if (entry.isFile && this.isIncluded(entry.path)) {
-            files.push(entry.path);
-          }
-        }
-      } catch (error) {
-        console.warn(`無法讀取目錄 ${dir}:`, error);
-      }
-    };
-
-    await traverse(projectPath);
-    return files;
-  }
-
-  /**
-   * 檢查檔案是否應該被排除
-   * @param filePath 檔案路徑
-   * @returns 是否排除
-   */
-  private isExcluded(filePath: string): boolean {
-    return this.options.excludePatterns.some(pattern => {
-      return filePath.includes(pattern) || this.matchGlob(filePath, pattern);
-    });
-  }
-
-  /**
-   * 檢查檔案是否應該被包含
-   * @param filePath 檔案路徑
-   * @returns 是否包含
-   */
-  private isIncluded(filePath: string): boolean {
-    return this.options.includePatterns.some(pattern => {
-      return this.matchGlob(filePath, pattern);
-    });
-  }
-
-  /**
-   * 簡單的 glob 模式匹配
-   * @param filePath 檔案路徑
-   * @param pattern glob 模式
-   * @returns 是否匹配
-   */
-  private matchGlob(filePath: string, pattern: string): boolean {
-    // 將 ** 替換為特殊標記，避免與 * 衝突
-    let regexPattern = pattern.replace(/\*\*/g, '<!DOUBLE_STAR!>');
-
-    // 替換單個 *
-    regexPattern = regexPattern.replace(/\*/g, '[^/]*');
-
-    // 替換 **（之前的特殊標記）為匹配任意路徑
-    regexPattern = regexPattern.replace(/<!DOUBLE_STAR!>/g, '.*');
-
-    // 替換 ?
-    regexPattern = regexPattern.replace(/\?/g, '.');
-
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(filePath);
-  }
-
-  /**
-   * 檢查是否應該包含此依賴
-   * @param resolvedPath 解析後的路徑
-   * @returns 是否包含
-   */
-  private shouldIncludeDependency(resolvedPath: string): boolean {
-    if (!this.options.includeNodeModules && resolvedPath.includes('node_modules')) {
-      return false;
-    }
-
-    return !this.isExcluded(resolvedPath);
-  }
-
-  /**
-   * 檢查是否為測試檔案
-   * @param filePath 檔案路徑
-   * @returns 是否為測試檔案
-   */
-  private isTestFile(filePath: string): boolean {
-    const fileName = path.basename(filePath);
-    return fileName.includes('.test.') ||
-           fileName.includes('.spec.') ||
-           filePath.includes('__tests__') ||
-           filePath.includes('/test/') ||
-           filePath.includes('/tests/');
   }
 
   /**
