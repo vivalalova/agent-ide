@@ -28,7 +28,7 @@ import { FileOperationsHandler } from './file-operations.js';
  */
 export class DeadCodeRemover {
   private readonly options: Required<DeadCodeRemovalOptions>;
-  private readonly fileCache = new Map<string, string>();
+  private readonly fileCache = new Map<string, string | null>();
   private readonly rangeExpander: RangeExpander;
   private readonly importCleaner: ImportCleaner;
   private readonly fileOperations: FileOperationsHandler;
@@ -285,6 +285,7 @@ export class DeadCodeRemover {
 
   /**
    * 讀取檔案
+   * 檔案不存在時快取 null，避免重複讀取
    */
   private async readFile(filePath: string): Promise<string | null> {
     if (this.fileCache.has(filePath)) {
@@ -296,9 +297,11 @@ export class DeadCodeRemover {
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
       this.fileCache.set(filePath, contentStr);
       return contentStr;
-    } catch {
-      // 清除可能存在的失敗快取，避免重試時仍返回 null
-      this.fileCache.delete(filePath);
+    } catch (error) {
+      // 檔案不存在時快取 null，避免重複讀取
+      if (error instanceof Error && error.message.includes('ENOENT')) {
+        this.fileCache.set(filePath, null);
+      }
       return null;
     }
   }

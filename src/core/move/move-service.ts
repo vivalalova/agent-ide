@@ -131,16 +131,11 @@ export class MoveService {
             const rollbackErrorMsg = rollbackError instanceof Error ? rollbackError.message : 'Unknown error';
             transactionLog.push(`ROLLBACK_FAILED: ${rollbackErrorMsg}`);
 
-            // 測試環境中靜默處理
-            if (process.env.NODE_ENV !== 'test') {
-              console.error('=== 事務回滾失敗，需要手動恢復 ===');
-              console.error('事務日誌:');
-              transactionLog.forEach(log => console.error(`  ${log}`));
-              console.error('手動恢復步驟:');
-              console.error(`  1. 將 ${target} 移動回 ${source}`);
-              console.error('  2. 檢查並還原以下檔案的 import 變更:');
-              pathUpdates.forEach(u => console.error(`     - ${u.filePath}`));
-            }
+            // 建構詳細的手動恢復指引
+            const manualRecoverySteps = [
+              `將 ${target} 移動回 ${source}`,
+              `檢查並還原以下檔案的 import 變更: ${pathUpdates.map(u => u.filePath).join(', ')}`
+            ];
 
             return {
               success: false,
@@ -148,7 +143,7 @@ export class MoveService {
               target,
               moved: true, // 檔案仍在 target 位置
               pathUpdates,
-              error: `Import 更新失敗且無法回滾: ${errorMessage}。回滾錯誤: ${rollbackErrorMsg}`,
+              error: `Import 更新失敗且無法回滾: ${errorMessage}。回滾錯誤: ${rollbackErrorMsg}。手動恢復步驟: ${manualRecoverySteps.join('; ')}`,
               message: `移動失敗且回滾失敗，需要手動恢復。事務日誌: ${transactionLog.join('; ')}`
             };
           }

@@ -106,6 +106,16 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileCreate(filePath: string, content: string): this {
+    const existing = this.fileOperations.find(
+      op => op.sourcePath === filePath
+    );
+
+    if (existing) {
+      this.warnings.push(
+        `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+      );
+    }
+
     this.fileOperations.push({
       type: 'create',
       sourcePath: filePath,
@@ -121,6 +131,16 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileDelete(filePath: string): this {
+    const existing = this.fileOperations.find(
+      op => op.sourcePath === filePath
+    );
+
+    if (existing) {
+      this.warnings.push(
+        `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+      );
+    }
+
     this.fileOperations.push({
       type: 'delete',
       sourcePath: filePath
@@ -135,6 +155,16 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileMove(sourcePath: string, targetPath: string): this {
+    const existing = this.fileOperations.find(
+      op => op.sourcePath === sourcePath
+    );
+
+    if (existing) {
+      this.warnings.push(
+        `重複的檔案操作: 已存在對 ${sourcePath} 的 ${existing.type} 操作`
+      );
+    }
+
     this.fileOperations.push({
       type: 'move',
       sourcePath,
