@@ -279,8 +279,8 @@ export class CallHierarchyAnalyzer {
                 location: {
                   filePath,
                   range: {
-                    start: { line: callInfo.line, column: callInfo.column, offset: undefined },
-                    end: { line: callInfo.line, column: callInfo.column + callInfo.callee.length, offset: undefined }
+                    start: { line: callInfo.line, column: callInfo.column },
+                    end: { line: callInfo.line, column: callInfo.column + callInfo.callee.length }
                   }
                 },
                 context: callInfo.context,

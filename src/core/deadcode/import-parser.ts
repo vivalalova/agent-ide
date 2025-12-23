@@ -213,8 +213,8 @@ export class ImportParser {
     }
 
     const range: Range = {
-      start: { line: startLine, column: 1, offset: undefined },
-      end: { line: endLine, column: (lines[endLine - 1] || '').length + 1, offset: undefined }
+      start: { line: startLine, column: 1 },
+      end: { line: endLine, column: (lines[endLine - 1] || '').length + 1 }
     };
 
     const symbols: ImportSymbolInfo[] = [];

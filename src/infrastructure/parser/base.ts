@@ -117,8 +117,8 @@ export abstract class BaseParserPlugin implements ParserPlugin {
           location: {
             filePath: '',
             range: {
-              start: { line: 1, column: 1, offset: undefined },
-              end: { line: 1, column: 1, offset: undefined }
+              start: { line: 1, column: 1 },
+              end: { line: 1, column: 1 }
             }
           }
         }],

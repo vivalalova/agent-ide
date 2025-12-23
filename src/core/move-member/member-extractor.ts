@@ -343,8 +343,8 @@ export class MemberExtractor {
       location: {
         filePath,
         range: {
-          start: { line: startLine, column: 1, offset: undefined },
-          end: { line: endLine, column: 1, offset: undefined }
+          start: { line: startLine, column: 1 },
+          end: { line: endLine, column: 1 }
         }
       },
       sourceCode,

@@ -309,8 +309,8 @@ export class MoveService {
 
           return {
             range: {
-              start: { line: update.line, column: startCol, offset: undefined },
-              end: { line: update.line, column: endCol, offset: undefined }
+              start: { line: update.line, column: startCol },
+              end: { line: update.line, column: endCol }
             },
             newText: update.newImport,
             description: `Update import: ${update.oldImport} → ${update.newImport}`

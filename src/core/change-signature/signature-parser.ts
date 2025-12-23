@@ -90,8 +90,8 @@ export class SignatureParser {
       optional: param.optional,
       rest: param.name.startsWith('...'),
       range: {
-        start: { line: lineNumber, column: index * 10, offset: undefined },
-        end: { line: lineNumber, column: index * 10 + param.name.length, offset: undefined }
+        start: { line: lineNumber, column: index * 10 },
+        end: { line: lineNumber, column: index * 10 + param.name.length }
       }
     }));
 
@@ -110,7 +110,7 @@ export class SignatureParser {
         filePath,
         range: {
           start: { line: lineNumber, column: column + 1, offset: matchIndex },
-          end: { line: endLine + 1, column: 1, offset: undefined }
+          end: { line: endLine + 1, column: 1 }
         }
       },
       isMethod,
@@ -308,7 +308,7 @@ export class SignatureParser {
             filePath,
             range: {
               start: { line: lineNumber, column: column + 1, offset: matchIndex },
-              end: { line: endLine + 1, column: 1, offset: undefined }
+              end: { line: endLine + 1, column: 1 }
             }
           },
           isMethod,
@@ -383,8 +383,8 @@ export class SignatureParser {
           optional,
           rest: restMatch,
           range: {
-            start: { line: baseLine, column: currentColumn, offset: undefined },
-            end: { line: baseLine, column: currentColumn + param.length, offset: undefined }
+            start: { line: baseLine, column: currentColumn },
+            end: { line: baseLine, column: currentColumn + param.length }
           }
         });
       }

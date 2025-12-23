@@ -82,7 +82,7 @@ export class DeadCodeDetector {
       const filePaths = indexedFiles.map(f => f.filePath);
 
       // 收集所有符號
-      const { symbols: allSymbols, skippedFiles } = await this.collectAllSymbols(filePaths);
+      const { symbols: allSymbols, skippedFiles, warnings } = await this.collectAllSymbols(filePaths);
 
       // 過濾要檢測的符號類型
       const targetSymbols = allSymbols.filter(s =>
@@ -187,7 +187,8 @@ export class DeadCodeDetector {
       return {
         success: true,
         items: deadItems,
-        stats
+        stats,
+        warnings: warnings.length > 0 ? warnings : undefined
       };
     } catch (error) {
       return {
@@ -209,10 +210,16 @@ export class DeadCodeDetector {
 /**
    * 收集所有符號（優先使用 IndexEngine 快取）
    */
-  private async collectAllSymbols(filePaths: readonly string[]): Promise<{ symbols: Symbol[]; skippedFiles: number }> {
+  private async collectAllSymbols(filePaths: readonly string[]): Promise<{
+    symbols: Symbol[];
+    skippedFiles: number;
+    warnings: string[];
+  }> {
+    const warnings: string[] = [];
+
     // 平行處理所有檔案，收集符號或記錄錯誤
     const results = await Promise.all(
-      filePaths.map(async (filePath): Promise<{ symbols: Symbol[]; error: boolean }> => {
+      filePaths.map(async (filePath): Promise<{ symbols: Symbol[]; error: boolean; warning?: string }> => {
         try {
           // 優先從 IndexEngine 的 symbolIndex 讀取（已在 indexProject 時建立）
           const cachedSymbols = await this.indexEngine.getFileSymbols(filePath);
@@ -236,11 +243,12 @@ export class DeadCodeDetector {
           const symbols = await parser.extractSymbols(ast);
           return { symbols, error: false };
         } catch (error) {
-          if (this.options.verbose) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn(`Warning: 跳過檔案 ${filePath}: ${errorMessage}`);
-          }
-          return { symbols: [], error: true };
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return {
+            symbols: [],
+            error: true,
+            warning: `跳過檔案 ${filePath}: ${errorMessage}`
+          };
         }
       })
     );
@@ -249,7 +257,16 @@ export class DeadCodeDetector {
     const allSymbols = results.flatMap(r => r.symbols);
     const skippedFiles = results.filter(r => r.error).length;
 
-    return { symbols: allSymbols, skippedFiles };
+    // 收集警告訊息（僅在 verbose 模式下記錄）
+    if (this.options.verbose) {
+      for (const result of results) {
+        if (result.warning) {
+          warnings.push(result.warning);
+        }
+      }
+    }
+
+    return { symbols: allSymbols, skippedFiles, warnings };
   }
 
   /**

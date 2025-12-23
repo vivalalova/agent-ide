@@ -166,8 +166,8 @@ export class RangeExpander {
     }
 
     return {
-      start: { line: startLine + 1, column: 1, offset: undefined },
-      end: { line: endLine + 1, column: lines[endLine].length + 1, offset: undefined }
+      start: { line: startLine + 1, column: 1 },
+      end: { line: endLine + 1, column: lines[endLine].length + 1 }
     };
   }
 

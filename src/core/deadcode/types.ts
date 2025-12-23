@@ -47,6 +47,8 @@ export interface DeadCodeDetectionResult {
   readonly stats: DeadCodeStats;
   /** 錯誤訊息（如果有） */
   readonly error?: string;
+  /** 警告訊息（跳過的檔案等） */
+  readonly warnings?: readonly string[];
 }
 
 /**

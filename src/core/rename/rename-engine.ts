@@ -84,14 +84,12 @@ export class RenameEngine {
               });
             }
           });
-        } catch (error) {
-          // 忽略無法讀取的檔案
-          console.debug(`無法讀取檔案 ${filePath}:`, error);
+        } catch {
+          // 忽略無法讀取的檔案，不影響其他檔案的處理
         }
       }
-    } catch (error) {
-      // 備援錯誤處理
-      console.error('查找引用時發生錯誤:', error);
+    } catch {
+      // 忽略錯誤，返回已收集的引用
     }
 
     return references;

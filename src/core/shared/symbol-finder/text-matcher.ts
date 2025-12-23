@@ -30,8 +30,8 @@ export class TextMatcher {
           location: {
             filePath,
             range: {
-              start: { line: lineIndex + 1, column: startColumn, offset: undefined },
-              end: { line: lineIndex + 1, column: startColumn + symbolName.length, offset: undefined }
+              start: { line: lineIndex + 1, column: startColumn },
+              end: { line: lineIndex + 1, column: startColumn + symbolName.length }
             }
           },
           type: SymbolReferenceType.Usage,
@@ -105,8 +105,8 @@ export class TextMatcher {
           location: {
             filePath,
             range: {
-              start: { line: lineIndex + 1, column: startColumn, offset: undefined },
-              end: { line: lineIndex + 1, column: startColumn + symbolName.length, offset: undefined }
+              start: { line: lineIndex + 1, column: startColumn },
+              end: { line: lineIndex + 1, column: startColumn + symbolName.length }
             }
           },
           type: SymbolReferenceType.Usage,
@@ -147,8 +147,8 @@ export class TextMatcher {
             location: {
               filePath,
               range: {
-                start: { line: lineIndex + 1, column: match.index + 1, offset: undefined },
-                end: { line: lineIndex + 1, column: match.index + 1 + symbolName.length, offset: undefined }
+                start: { line: lineIndex + 1, column: match.index + 1 },
+                end: { line: lineIndex + 1, column: match.index + 1 + symbolName.length }
               }
             },
             type: SymbolReferenceType.Usage,

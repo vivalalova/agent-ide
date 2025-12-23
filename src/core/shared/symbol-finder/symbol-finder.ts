@@ -232,8 +232,8 @@ export class SymbolFinder {
         location: {
           filePath,
           range: {
-            start: { line: 1, column: 1, offset: undefined },
-            end: { line: 1, column: 1, offset: undefined }
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 1 }
           }
         },
         scope: undefined,

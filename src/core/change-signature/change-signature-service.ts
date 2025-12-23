@@ -150,8 +150,8 @@ export class ChangeSignatureService {
 
     builder.addTextChange(filePath, [{
       range: {
-        start: { line: lineNumber, column: 1, offset: undefined },
-        end: { line: lineNumber, column: originalLineLength + 1, offset: undefined }
+        start: { line: lineNumber, column: 1 },
+        end: { line: lineNumber, column: originalLineLength + 1 }
       },
       newText: newCode,
       description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
@@ -179,8 +179,8 @@ export class ChangeSignatureService {
         const callOriginalLength = update.originalCode.length;
         return {
           range: {
-            start: { line: lineStart, column: 1, offset: undefined },
-            end: { line: lineStart, column: callOriginalLength + 1, offset: undefined }
+            start: { line: lineStart, column: 1 },
+            end: { line: lineStart, column: callOriginalLength + 1 }
           },
           newText: update.newCode,
           description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`

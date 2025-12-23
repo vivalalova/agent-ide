@@ -160,8 +160,8 @@ export class ReferenceUpdater {
         const endColumn = startColumn + symbolName.length;
 
         const range: Range = {
-          start: { line: lineIndex + 1, column: startColumn, offset: undefined },
-          end: { line: lineIndex + 1, column: endColumn, offset: undefined }
+          start: { line: lineIndex + 1, column: startColumn },
+          end: { line: lineIndex + 1, column: endColumn }
         };
 
         // 簡化的型別判定：檢查是否在註解中

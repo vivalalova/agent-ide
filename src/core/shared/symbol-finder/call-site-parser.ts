@@ -4,6 +4,7 @@
  */
 
 import * as ts from 'typescript';
+import type { Range } from '@shared/types/core.js';
 import type { CallSite, CallSiteArgument } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 
@@ -75,7 +76,7 @@ export class CallSiteParser {
     sourceFile: ts.SourceFile,
     targetName: string
   ): {
-    range: { start: { line: number; column: number; offset: undefined }; end: { line: number; column: number; offset: undefined } };
+    range: Range;
     arguments: CallSiteArgument[];
     isMethodCall: boolean;
     receiver?: string;
@@ -115,8 +116,8 @@ export class CallSiteParser {
 
     return {
       range: {
-        start: { line: start.line + 1, column: start.character + 1, offset: undefined },
-        end: { line: end.line + 1, column: end.character + 1, offset: undefined }
+        start: { line: start.line + 1, column: start.character + 1 },
+        end: { line: end.line + 1, column: end.character + 1 }
       },
       arguments: args,
       isMethodCall,
@@ -159,8 +160,8 @@ export class CallSiteParser {
         name,
         value: value.trim(),
         range: {
-          start: { line: start.line + 1, column: start.character + 1, offset: undefined },
-          end: { line: end.line + 1, column: end.character + 1, offset: undefined }
+          start: { line: start.line + 1, column: start.character + 1 },
+          end: { line: end.line + 1, column: end.character + 1 }
         }
       });
     }
@@ -273,8 +274,8 @@ export class CallSiteParser {
           location: {
             filePath,
             range: {
-              start: { line: lineIndex + 1, column: startColumn, offset: undefined },
-              end: { line: multilineArgs.endLine + 1, column: multilineArgs.endColumn + 1, offset: undefined }
+              start: { line: lineIndex + 1, column: startColumn },
+              end: { line: multilineArgs.endLine + 1, column: multilineArgs.endColumn + 1 }
             }
           },
           arguments: args,
@@ -365,8 +366,8 @@ export class CallSiteParser {
         name: namedMatch ? namedMatch[1] : undefined,
         value: namedMatch ? namedMatch[2].trim() : trimmed,
         range: {
-          start: { line: currentLine, column, offset: undefined },
-          end: { line: currentLine + newlines, column: column + part.length, offset: undefined }
+          start: { line: currentLine, column },
+          end: { line: currentLine + newlines, column: column + part.length }
         }
       });
 

@@ -46,7 +46,7 @@ export class DuplicateParserError extends ParserError {
   constructor(parserName: string, cause?: Error) {
     super(
       `Parser '${parserName}' 已經註冊`,
-      { filePath: '', range: { start: { line: 0, column: 0, offset: undefined }, end: { line: 0, column: 0, offset: undefined } } },
+      { filePath: '', range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } } },
       'DUPLICATE_PARSER_ERROR',
       undefined,
       cause
@@ -61,7 +61,7 @@ export class ParserNotFoundError extends ParserError {
   constructor(identifier: string, identifierType: 'name' | 'extension' | 'language', cause?: Error) {
     super(
       `找不到 ${identifierType === 'name' ? 'Parser' : `支援${identifierType === 'extension' ? '副檔名' : '語言'}`} '${identifier}' 的 Parser`,
-      { filePath: '', range: { start: { line: 0, column: 0, offset: undefined }, end: { line: 0, column: 0, offset: undefined } } },
+      { filePath: '', range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } } },
       'PARSER_NOT_FOUND_ERROR',
       undefined,
       cause
@@ -76,7 +76,7 @@ export class IncompatibleVersionError extends ParserError {
   constructor(parserName: string, expectedVersion: string, actualVersion: string, cause?: Error) {
     super(
       `Parser '${parserName}' 版本不相容：期望 ${expectedVersion}，實際 ${actualVersion}`,
-      { filePath: '', range: { start: { line: 0, column: 0, offset: undefined }, end: { line: 0, column: 0, offset: undefined } } },
+      { filePath: '', range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } } },
       'INCOMPATIBLE_VERSION_ERROR',
       undefined,
       cause
@@ -91,7 +91,7 @@ export class ParserInitializationError extends ParserError {
   constructor(parserName: string, reason: string, cause?: Error) {
     super(
       `Parser '${parserName}' 初始化失敗：${reason}`,
-      { filePath: '', range: { start: { line: 0, column: 0, offset: undefined }, end: { line: 0, column: 0, offset: undefined } } },
+      { filePath: '', range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } } },
       'PARSER_INITIALIZATION_ERROR',
       undefined,
       cause
@@ -106,7 +106,7 @@ export class ParserFactoryError extends ParserError {
   constructor(message: string, cause?: Error) {
     super(
       message,
-      { filePath: '', range: { start: { line: 0, column: 0, offset: undefined }, end: { line: 0, column: 0, offset: undefined } } },
+      { filePath: '', range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } } },
       'PARSER_FACTORY_ERROR',
       undefined,
       cause

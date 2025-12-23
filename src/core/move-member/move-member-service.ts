@@ -409,8 +409,8 @@ export class MoveMemberService {
             location: {
               filePath,
               range: {
-                start: { line: i + 1, column: 1, offset: undefined },
-                end: { line: i + 1, column: line.length + 1, offset: undefined }
+                start: { line: i + 1, column: 1 },
+                end: { line: i + 1, column: line.length + 1 }
               }
             }
           });
