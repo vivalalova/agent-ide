@@ -69,10 +69,13 @@ export class RenameEngine {
           const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
           const lines = content.split('\n');
 
+          // 使用單詞邊界進行精確匹配（快取 RegExp 避免重複編譯）
+          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+
           // 查找所有包含符號名稱的行
           lines.forEach((line, lineIndex) => {
-            // 使用單詞邊界進行精確匹配
-            const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+            // 重置 lastIndex 以便在每行重新匹配
+            regex.lastIndex = 0;
             let match;
 
             while ((match = regex.exec(line)) !== null) {
