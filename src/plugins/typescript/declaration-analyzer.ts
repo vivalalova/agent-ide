@@ -158,6 +158,10 @@ export class DeclarationAnalyzer {
         if (ts.isFunctionDeclaration(node) && node.name?.text === symbolName) {
           return true;
         }
+        // 檢查 class method（MethodDeclaration）
+        if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === symbolName) {
+          return true;
+        }
         // 檢查 arrow function 變數宣告
         if (ts.isVariableStatement(node)) {
           for (const decl of node.declarationList.declarations) {
