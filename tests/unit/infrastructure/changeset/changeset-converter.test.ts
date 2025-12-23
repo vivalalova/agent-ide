@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertChangesetToPreviewInput } from '@infrastructure/changeset/changeset-converter.js';
 import { PreviewCommand } from '@infrastructure/formatters/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { Changeset } from '@infrastructure/changeset/types.js';
+import { ChangesetCommand, FileOperationType, type Changeset } from '@infrastructure/changeset/types.js';
 
 describe('convertChangesetToPreviewInput', () => {
   // MARK: - Test Fixtures
@@ -38,7 +38,7 @@ describe('convertChangesetToPreviewInput', () => {
     textChanges: [],
     fileOperations: [],
     description: 'test',
-    command: 'rename',
+    command: ChangesetCommand.Rename,
     success: true,
     ...overrides
   });
@@ -57,11 +57,11 @@ describe('convertChangesetToPreviewInput', () => {
     }
 
     it.each<CommandMappingTestCase>([
-      { scenario: 'rename', command: 'rename', expected: PreviewCommand.Rename },
-      { scenario: 'move', command: 'move', expected: PreviewCommand.Move },
-      { scenario: 'move-member', command: 'move-member', expected: PreviewCommand.Move },
-      { scenario: 'deadcode', command: 'deadcode', expected: PreviewCommand.DeadCodeRemoval },
-      { scenario: 'change-signature', command: 'change-signature', expected: PreviewCommand.Refactor }
+      { scenario: 'rename', command: ChangesetCommand.Rename, expected: PreviewCommand.Rename },
+      { scenario: 'move', command: ChangesetCommand.Move, expected: PreviewCommand.Move },
+      { scenario: 'move-member', command: ChangesetCommand.MoveMember, expected: PreviewCommand.Move },
+      { scenario: 'deadcode', command: ChangesetCommand.Deadcode, expected: PreviewCommand.DeadCodeRemoval },
+      { scenario: 'change-signature', command: ChangesetCommand.ChangeSignature, expected: PreviewCommand.Refactor }
     ])('應該將 $scenario 映射為 $expected', async ({ command, expected }) => {
       const changeset = createChangeset({ command });
 
@@ -308,7 +308,7 @@ describe('convertChangesetToPreviewInput', () => {
     it('create 操作應轉換為全部新增行', async () => {
       const changeset = createChangeset({
         fileOperations: [{
-          type: 'create',
+          type: FileOperationType.Create,
           sourcePath: '/new.ts',
           targetPath: '/new.ts',
           content: 'line1\nline2'
@@ -329,7 +329,7 @@ describe('convertChangesetToPreviewInput', () => {
 
       const changeset = createChangeset({
         fileOperations: [{
-          type: 'delete',
+          type: FileOperationType.Delete,
           sourcePath: '/old.ts'
         }]
       });
@@ -346,7 +346,7 @@ describe('convertChangesetToPreviewInput', () => {
     it('move 操作應被忽略（由 CLI 層處理）', async () => {
       const changeset = createChangeset({
         fileOperations: [{
-          type: 'move',
+          type: FileOperationType.Move,
           sourcePath: '/old.ts',
           targetPath: '/new.ts'
         }]
@@ -360,7 +360,7 @@ describe('convertChangesetToPreviewInput', () => {
     it('空 content 的 create 應建立空檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [{
-          type: 'create',
+          type: FileOperationType.Create,
           sourcePath: '/empty.ts',
           targetPath: '/empty.ts',
           content: ''

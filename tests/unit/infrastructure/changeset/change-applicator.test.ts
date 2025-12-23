@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChangeApplicator } from '@infrastructure/changeset/change-applicator.js';
 import type { IFileSystem, DirectoryEntry } from '@infrastructure/storage/file-system.interface.js';
-import type { Changeset } from '@infrastructure/changeset/types.js';
+import { ChangesetCommand, FileOperationType, type Changeset } from '@infrastructure/changeset/types.js';
 
 describe('ChangeApplicator', () => {
   // MARK: - Test Fixtures
@@ -38,7 +38,7 @@ describe('ChangeApplicator', () => {
     textChanges: [],
     fileOperations: [],
     description: 'test',
-    command: 'rename',
+    command: ChangesetCommand.Rename,
     success: true,
     ...overrides
   });
@@ -78,7 +78,7 @@ describe('ChangeApplicator', () => {
     it('應該正確回報將被建立的檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'create', sourcePath: '/new.ts', targetPath: '/new.ts', content: '' }
+          { type: FileOperationType.Create, sourcePath: '/new.ts', targetPath: '/new.ts', content: '' }
         ]
       });
 
@@ -90,7 +90,7 @@ describe('ChangeApplicator', () => {
     it('應該正確回報將被刪除的檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'delete', sourcePath: '/old.ts' }
+          { type: FileOperationType.Delete, sourcePath: '/old.ts' }
         ]
       });
 
@@ -102,7 +102,7 @@ describe('ChangeApplicator', () => {
     it('應該正確回報將被移動的檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'move', sourcePath: '/old.ts', targetPath: '/new.ts' }
+          { type: FileOperationType.Move, sourcePath: '/old.ts', targetPath: '/new.ts' }
         ]
       });
 
@@ -219,7 +219,7 @@ describe('ChangeApplicator', () => {
       it('應該建立新檔案', async () => {
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'create',
+            type: FileOperationType.Create,
             sourcePath: '/new.ts',
             targetPath: '/new.ts',
             content: 'new file content'
@@ -238,7 +238,7 @@ describe('ChangeApplicator', () => {
       it('無 content 時應建立空檔案', async () => {
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'create',
+            type: FileOperationType.Create,
             sourcePath: '/new.ts',
             targetPath: '/new.ts'
           }]
@@ -256,7 +256,7 @@ describe('ChangeApplicator', () => {
       it('無 targetPath 時應拋出錯誤', async () => {
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'create',
+            type: FileOperationType.Create,
             sourcePath: '/new.ts'
           }]
         });
@@ -271,7 +271,7 @@ describe('ChangeApplicator', () => {
     describe('delete', () => {
       it('應該刪除檔案', async () => {
         const changeset = createChangeset({
-          fileOperations: [{ type: 'delete', sourcePath: '/old.ts' }]
+          fileOperations: [{ type: FileOperationType.Delete, sourcePath: '/old.ts' }]
         });
 
         await sut.apply(changeset);
@@ -286,7 +286,7 @@ describe('ChangeApplicator', () => {
 
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'move',
+            type: FileOperationType.Move,
             sourcePath: '/old.ts',
             targetPath: '/new.ts'
           }]
@@ -300,7 +300,7 @@ describe('ChangeApplicator', () => {
       it('無 targetPath 時應拋出錯誤', async () => {
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'move',
+            type: FileOperationType.Move,
             sourcePath: '/old.ts'
           }]
         });
@@ -319,7 +319,7 @@ describe('ChangeApplicator', () => {
 
         const changeset = createChangeset({
           fileOperations: [{
-            type: 'move',
+            type: FileOperationType.Move,
             sourcePath: '/old',
             targetPath: '/new'
           }]
@@ -398,8 +398,8 @@ describe('ChangeApplicator', () => {
     it('成功時應回報所有建立的檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'create', sourcePath: '/new1.ts', targetPath: '/new1.ts', content: '' },
-          { type: 'create', sourcePath: '/new2.ts', targetPath: '/new2.ts', content: '' }
+          { type: FileOperationType.Create, sourcePath: '/new1.ts', targetPath: '/new1.ts', content: '' },
+          { type: FileOperationType.Create, sourcePath: '/new2.ts', targetPath: '/new2.ts', content: '' }
         ]
       });
 
@@ -411,8 +411,8 @@ describe('ChangeApplicator', () => {
     it('成功時應回報所有刪除的檔案', async () => {
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'delete', sourcePath: '/old1.ts' },
-          { type: 'delete', sourcePath: '/old2.ts' }
+          { type: FileOperationType.Delete, sourcePath: '/old1.ts' },
+          { type: FileOperationType.Delete, sourcePath: '/old2.ts' }
         ]
       });
 
@@ -426,8 +426,8 @@ describe('ChangeApplicator', () => {
 
       const changeset = createChangeset({
         fileOperations: [
-          { type: 'move', sourcePath: '/a.ts', targetPath: '/b.ts' },
-          { type: 'move', sourcePath: '/c.ts', targetPath: '/d.ts' }
+          { type: FileOperationType.Move, sourcePath: '/a.ts', targetPath: '/b.ts' },
+          { type: FileOperationType.Move, sourcePath: '/c.ts', targetPath: '/d.ts' }
         ]
       });
 
