@@ -111,21 +111,39 @@ export function symbolToKey(symbol: Symbol): SymbolKey {
   };
 }
 
+/** SymbolKey 序列化格式版本（用於未來擴展和向後相容） */
+const SYMBOL_KEY_VERSION = 'v1';
+
 /**
  * 將 SymbolKey 序列化為字串（用於 Map 鍵）
- * 格式：filePath:line:containerName:name
+ * 格式：v1:filePath:line:containerName:name
+ *
+ * 版本控制：當格式需要變更時，更新 SYMBOL_KEY_VERSION 並新增對應的解析邏輯
  */
 export function serializeSymbolKey(key: SymbolKey): string {
-  return `${key.filePath}:${key.line}:${key.containerName ?? ''}:${key.name}`;
+  return `${SYMBOL_KEY_VERSION}:${key.filePath}:${key.line}:${key.containerName ?? ''}:${key.name}`;
 }
 
 /**
  * 將序列化字串反序列化為 SymbolKey
+ * 支援版本控制，可向後相容舊格式
  */
 export function deserializeSymbolKey(serialized: string): SymbolKey {
   const parts = serialized.split(':');
-  // 格式：filePath:line:containerName:name
-  // filePath 可能包含 ':'，所以從後往前解析
+
+  // 檢查版本前綴
+  const version = parts[0];
+  if (version === SYMBOL_KEY_VERSION) {
+    // v1 格式：v1:filePath:line:containerName:name
+    parts.shift(); // 移除版本前綴
+    const name = parts.pop()!;
+    const containerName = parts.pop() || undefined;
+    const line = parseInt(parts.pop()!, 10);
+    const filePath = parts.join(':');
+    return { name, containerName, filePath, line };
+  }
+
+  // 向後相容：舊格式（無版本前綴）filePath:line:containerName:name
   const name = parts.pop()!;
   const containerName = parts.pop() || undefined;
   const line = parseInt(parts.pop()!, 10);

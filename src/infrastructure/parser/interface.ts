@@ -212,13 +212,13 @@ export interface ParserPlugin {
    * 使用 AST 精確解析函數簽章，正確處理複雜泛型巢狀（如 `Map<K, Fn<V>>`）
    * @param code 完整的檔案內容
    * @param functionName 函數名稱
-   * @param line 函數開始行（1-based）
+   * @param line 函數開始行（1-based），可選。若未提供，將找到第一個匹配的函數
    * @returns 格式化後的簽章資訊，如果無法解析則返回 null（fallback 到正則匹配）
    */
   formatSignature?(
     code: string,
     functionName: string,
-    line: number
+    line?: number
   ): FormattedSignature | null;
 
   // ===== 文件註解提取支援 =====
@@ -455,6 +455,8 @@ export interface FormattedSignature {
   returnType: string;
   /** 泛型參數（如果有） */
   typeParameters?: string[];
+  /** 函數起始行號（1-based），當未提供 line 參數時由 AST 解析返回 */
+  startLine?: number;
 }
 
 /**

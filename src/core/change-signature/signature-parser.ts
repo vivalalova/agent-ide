@@ -62,6 +62,8 @@ export class SignatureParser {
   /**
    * 使用 Parser AST 精確解析函數簽章
    * 正確處理字串中的逗號/括號、複雜泛型巢狀
+   *
+   * 效能優化：直接使用 AST 查找函數，不再先用正則找行號
    */
   private parseWithAST(content: string, filePath: string, functionName: string): FunctionSignature | null {
     const extension = this.getFileExtension(filePath);
@@ -71,17 +73,13 @@ export class SignatureParser {
       return null;
     }
 
-    // 先用正則找到函數行號
-    const lineNumber = this.findFunctionLineNumber(content, functionName);
-    if (lineNumber === null) {
+    // 直接用 AST 解析，不需要先用正則找行號（效能優化）
+    const signature = parser.formatSignature(content, functionName);
+    if (!signature || signature.startLine === undefined) {
       return null;
     }
 
-    const signature = parser.formatSignature(content, functionName, lineNumber);
-    if (!signature) {
-      return null;
-    }
-
+    const lineNumber = signature.startLine;
     const lines = content.split('\n');
 
     // 從 AST 簽章轉換為 ParameterDefinition

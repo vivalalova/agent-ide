@@ -804,7 +804,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   formatSignature(
     code: string,
     functionName: string,
-    line: number
+    line?: number
   ): FormattedSignature | null {
     return this.declarationAnalyzer.formatSignature(code, functionName, line);
   }

@@ -327,13 +327,13 @@ export class DeclarationAnalyzer {
    * 使用 TypeScript Compiler API 精確解析，正確處理複雜泛型巢狀
    * @param code 原始程式碼
    * @param functionName 函數名稱
-   * @param line 行號（1-based）
+   * @param line 行號（1-based），可選。若未提供，將找到第一個匹配的函數
    * @returns 格式化簽章或 null
    */
   formatSignature(
     code: string,
     functionName: string,
-    line: number
+    line?: number
   ): FormattedSignature | null {
     try {
       const sourceFile = ts.createSourceFile(
@@ -352,10 +352,14 @@ export class DeclarationAnalyzer {
       const returnType = this.extractReturnType(targetNode, sourceFile);
       const typeParameters = this.extractTypeParameters(targetNode);
 
+      // 計算函數起始行號（1-based）
+      const startLine = sourceFile.getLineAndCharacterOfPosition(targetNode.getStart(sourceFile)).line + 1;
+
       return {
         parameters,
         returnType,
-        typeParameters: typeParameters.length > 0 ? typeParameters : undefined
+        typeParameters: typeParameters.length > 0 ? typeParameters : undefined,
+        startLine
       };
     } catch {
       // 解析失敗，返回 null 讓呼叫端 fallback 到正則匹配
@@ -367,13 +371,13 @@ export class DeclarationAnalyzer {
    * 尋找符合條件的函數節點
    * @param sourceFile TypeScript SourceFile
    * @param functionName 函數名稱
-   * @param targetLine 目標行號（1-based）
+   * @param targetLine 目標行號（1-based），可選。若未提供，將找到第一個匹配的函數
    * @returns 函數節點或 null
    */
   findFunctionNode(
     sourceFile: ts.SourceFile,
     functionName: string,
-    targetLine: number
+    targetLine?: number
   ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null {
     let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null = null;
 
@@ -384,7 +388,7 @@ export class DeclarationAnalyzer {
 
       // 檢查函數宣告
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-        if (isLineMatch(nodeStartLine, targetLine)) {
+        if (targetLine === undefined || isLineMatch(nodeStartLine, targetLine)) {
           result = node;
           return;
         }
@@ -392,7 +396,7 @@ export class DeclarationAnalyzer {
 
       // 檢查方法宣告
       if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
-        if (isLineMatch(nodeStartLine, targetLine)) {
+        if (targetLine === undefined || isLineMatch(nodeStartLine, targetLine)) {
           result = node;
           return;
         }
@@ -404,7 +408,7 @@ export class DeclarationAnalyzer {
           && node.name.text === functionName
           && node.initializer
           && ts.isArrowFunction(node.initializer)) {
-        if (isLineMatch(nodeStartLine, targetLine)) {
+        if (targetLine === undefined || isLineMatch(nodeStartLine, targetLine)) {
           result = node.initializer;
           return;
         }

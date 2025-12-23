@@ -229,6 +229,8 @@ export class CacheManager {
       }
     } catch (error) {
       failed++;
+      // NOTE: 快取預熱失敗為非關鍵錯誤，不影響主程式運行
+      // 使用 console.error 記錄以便偵錯，但不中斷流程
       console.error('Failed to load warmup data:', error);
     }
 
@@ -351,6 +353,8 @@ export class CacheManager {
       try {
         listener(event);
       } catch (error) {
+        // NOTE: 監聽器錯誤為非關鍵錯誤，不影響快取操作
+        // 使用 console.error 記錄以便偵錯，避免中斷事件分發
         console.error('Global cache event listener error:', error);
       }
     }
