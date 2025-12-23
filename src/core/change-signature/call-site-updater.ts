@@ -391,6 +391,14 @@ export class CallSiteUpdater {
 
   /**
    * 取得結束行的尾隨內容（右括號之後的部分）
+   *
+   * @param lines - 檔案行陣列
+   * @param endLine - 結束行索引
+   * @param closeParenColumn - 右括號的列位置（0-based）
+   * @returns 右括號之後的字串內容（如分號、鏈式調用等）
+   *
+   * @remarks
+   * 若 closeParenColumn 超出行長度，會返回空字串
    */
   getTrailingContent(lines: readonly string[], endLine: number, closeParenColumn: number): string {
     const line = lines[endLine];
@@ -399,7 +407,16 @@ export class CallSiteUpdater {
   }
 
   /**
-   * 找到匹配的括號
+   * 找到匹配的右括號位置
+   *
+   * @param line - 要搜尋的行字串
+   * @param openIndex - 左括號 '(' 的位置（0-based）
+   * @returns 匹配右括號的位置（0-based）
+   *
+   * @remarks
+   * - 使用深度計數處理巢狀括號
+   * - 若找不到匹配的右括號（例如多行函式呼叫），返回 `line.length`
+   * - 此函式僅處理單行情況，多行呼叫應使用 `extractMultilineCode`
    */
   private findMatchingParen(line: string, openIndex: number): number {
     let depth = 1;
