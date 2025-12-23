@@ -1,3 +1,7 @@
+## <small>0.8.2 (2025-12-23)</small>
+
+* refactor: 統一 Changeset 架構與多項重構改進 (#53) ([661fa8e](https://github.com/vivalalova/agent-ide/commit/661fa8e)), closes [#53](https://github.com/vivalalova/agent-ide/issues/53) [#53](https://github.com/vivalalova/agent-ide/issues/53) [#53](https://github.com/vivalalova/agent-ide/issues/53) [#53](https://github.com/vivalalova/agent-ide/issues/53)
+
 ## <small>0.8.1 (2025-12-21)</small>
 
 * Merge branch 'fix/deadcode-trivia-line-boundary' ([9881c23](https://github.com/vivalalova/agent-ide/commit/9881c23))
