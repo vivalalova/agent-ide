@@ -4,14 +4,16 @@
  */
 
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type {
-  Changeset,
-  FileTextChange,
-  FileOperation,
-  ApplyResult,
-  ApplyOptions,
-  BackupEntry,
-  TextEdit
+import {
+  FileOperationType,
+  BackupType,
+  type Changeset,
+  type FileTextChange,
+  type FileOperation,
+  type ApplyResult,
+  type ApplyOptions,
+  type BackupEntry,
+  type TextEdit
 } from './types.js';
 
 /**
@@ -75,15 +77,15 @@ export class ChangeApplicator {
           await this.applyFileOperation(operation, atomic);
 
           switch (operation.type) {
-            case 'create':
+            case FileOperationType.Create:
               if (operation.targetPath) {
                 createdFiles.push(operation.targetPath);
               }
               break;
-            case 'delete':
+            case FileOperationType.Delete:
               deletedFiles.push(operation.sourcePath);
               break;
-            case 'move':
+            case FileOperationType.Move:
               if (operation.targetPath) {
                 movedFiles.push({
                   from: operation.sourcePath,
@@ -151,15 +153,15 @@ export class ChangeApplicator {
 
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
-        case 'create':
+        case FileOperationType.Create:
           if (operation.targetPath) {
             createdFiles.push(operation.targetPath);
           }
           break;
-        case 'delete':
+        case FileOperationType.Delete:
           deletedFiles.push(operation.sourcePath);
           break;
-        case 'move':
+        case FileOperationType.Move:
           if (operation.targetPath) {
             movedFiles.push({
               from: operation.sourcePath,
@@ -197,7 +199,7 @@ export class ChangeApplicator {
         backups.push({
           filePath: textChange.filePath,
           originalContent: content as string,
-          type: 'text'
+          type: BackupType.Text
         });
       }
     }
@@ -205,18 +207,18 @@ export class ChangeApplicator {
     // 備份檔案操作
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
-        case 'create':
+        case FileOperationType.Create:
           // 新建檔案：備份為 null（回滾時刪除）
           if (operation.targetPath) {
             backups.push({
               filePath: operation.targetPath,
               originalContent: null,
-              type: 'create'
+              type: BackupType.Create
             });
           }
           break;
 
-        case 'delete': {
+        case FileOperationType.Delete: {
           // 刪除檔案：備份內容
           const exists = await this.fileSystem.exists(operation.sourcePath);
           if (exists) {
@@ -224,13 +226,13 @@ export class ChangeApplicator {
             backups.push({
               filePath: operation.sourcePath,
               originalContent: content as string,
-              type: 'delete'
+              type: BackupType.Delete
             });
           }
           break;
         }
 
-        case 'move': {
+        case FileOperationType.Move: {
           // 移動檔案或目錄：備份來源內容
           const exists = await this.fileSystem.exists(operation.sourcePath);
           if (exists) {
@@ -241,7 +243,7 @@ export class ChangeApplicator {
               backups.push({
                 filePath: operation.sourcePath,
                 originalContent: null, // 目錄不備份內容
-                type: 'move',
+                type: BackupType.Move,
                 targetPath: operation.targetPath
               });
             } else {
@@ -249,7 +251,7 @@ export class ChangeApplicator {
               backups.push({
                 filePath: operation.sourcePath,
                 originalContent: content as string,
-                type: 'move',
+                type: BackupType.Move,
                 targetPath: operation.targetPath
               });
             }
@@ -412,7 +414,7 @@ export class ChangeApplicator {
     atomic: boolean
   ): Promise<void> {
     switch (operation.type) {
-      case 'create':
+      case FileOperationType.Create:
         if (!operation.targetPath) {
           throw new Error('CREATE 操作需要 targetPath');
         }
@@ -423,11 +425,11 @@ export class ChangeApplicator {
         );
         break;
 
-      case 'delete':
+      case FileOperationType.Delete:
         await this.fileSystem.deleteFile(operation.sourcePath);
         break;
 
-      case 'move':
+      case FileOperationType.Move:
         if (!operation.targetPath) {
           throw new Error('MOVE 操作需要 targetPath');
         }
@@ -488,15 +490,15 @@ export class ChangeApplicator {
 
       try {
         switch (backup.type) {
-          case 'text':
-          case 'delete':
+          case BackupType.Text:
+          case BackupType.Delete:
             // 恢復原始內容
             if (backup.originalContent !== null) {
               await this.fileSystem.writeFile(backup.filePath, backup.originalContent);
             }
             break;
 
-          case 'create': {
+          case BackupType.Create: {
             // 刪除新建的檔案
             const exists = await this.fileSystem.exists(backup.filePath);
             if (exists) {
@@ -505,7 +507,7 @@ export class ChangeApplicator {
             break;
           }
 
-          case 'move': {
+          case BackupType.Move: {
             // 將檔案/目錄移回原位置
             if (backup.targetPath) {
               const targetExists = await this.fileSystem.exists(backup.targetPath);

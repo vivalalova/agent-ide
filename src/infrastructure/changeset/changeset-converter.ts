@@ -3,7 +3,7 @@
  * 將 Changeset 轉換為 PreviewInput 格式，用於統一輸出
  */
 
-import type { Changeset, FileTextChange, TextEdit, FileOperation } from './types.js';
+import { ChangesetCommand, FileOperationType, type Changeset, type FileTextChange, type TextEdit, type FileOperation } from './types.js';
 import type {
   PreviewInput,
   FileChangeInput,
@@ -44,16 +44,16 @@ function createDeleteLineChange(line: number, oldContent: string): LineChange {
 /**
  * 將 Changeset 命令類型映射到 PreviewCommand
  */
-function mapCommandType(command: Changeset['command']): PreviewCommand {
+function mapCommandType(command: ChangesetCommand): PreviewCommand {
   switch (command) {
-    case 'rename':
+    case ChangesetCommand.Rename:
       return PreviewCommand.Rename;
-    case 'move':
-    case 'move-member':
+    case ChangesetCommand.Move:
+    case ChangesetCommand.MoveMember:
       return PreviewCommand.Move;
-    case 'deadcode':
+    case ChangesetCommand.Deadcode:
       return PreviewCommand.DeadCodeRemoval;
-    case 'change-signature':
+    case ChangesetCommand.ChangeSignature:
       return PreviewCommand.Refactor;
   }
 }
@@ -353,7 +353,7 @@ async function convertFileOperation(
   fileSystem: IFileSystem
 ): Promise<FileChangeInput | null> {
   switch (operation.type) {
-    case 'create': {
+    case FileOperationType.Create: {
       const content = operation.content ?? '';
       return {
         filePath: operation.targetPath ?? operation.sourcePath,
@@ -362,7 +362,7 @@ async function convertFileOperation(
       };
     }
 
-    case 'delete': {
+    case FileOperationType.Delete: {
       const originalContent = await readOriginalContent(operation.sourcePath, fileSystem);
       return {
         filePath: operation.sourcePath,
@@ -371,7 +371,7 @@ async function convertFileOperation(
       };
     }
 
-    case 'move': {
+    case FileOperationType.Move: {
       // Move 操作由 CLI 層處理，這裡不轉換
       return null;
     }

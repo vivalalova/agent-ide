@@ -6,6 +6,47 @@
 import type { Range } from '@shared/types/core.js';
 
 /**
+ * 文字編輯操作類型
+ */
+export enum TextEditOperationType {
+  Rename = 'rename',
+  Move = 'move',
+  Delete = 'delete',
+  Insert = 'insert',
+  Modify = 'modify'
+}
+
+/**
+ * 檔案操作類型
+ */
+export enum FileOperationType {
+  Create = 'create',
+  Delete = 'delete',
+  Move = 'move'
+}
+
+/**
+ * Changeset 命令類型
+ */
+export enum ChangesetCommand {
+  Rename = 'rename',
+  Move = 'move',
+  Deadcode = 'deadcode',
+  ChangeSignature = 'change-signature',
+  MoveMember = 'move-member'
+}
+
+/**
+ * 備份項目類型
+ */
+export enum BackupType {
+  Text = 'text',
+  Create = 'create',
+  Delete = 'delete',
+  Move = 'move'
+}
+
+/**
  * 文字替換操作 - 統一的變更基本單位
  */
 export interface TextEdit {
@@ -30,7 +71,7 @@ export interface FileTextChange {
   /** 文字編輯操作列表 */
   readonly edits: readonly TextEdit[];
   /** 操作類型（可選） */
-  readonly operationType?: 'rename' | 'move' | 'delete' | 'insert' | 'modify';
+  readonly operationType?: TextEditOperationType;
   /** 額外的元資料（可選） */
   readonly metadata?: Record<string, unknown>;
 }
@@ -40,7 +81,7 @@ export interface FileTextChange {
  */
 export interface FileOperation {
   /** 操作類型 */
-  readonly type: 'create' | 'delete' | 'move';
+  readonly type: FileOperationType;
   /** 來源路徑 */
   readonly sourcePath: string;
   /** 目標路徑（move 和 create 時使用） */
@@ -60,7 +101,7 @@ export interface Changeset {
   /** 變更描述 */
   readonly description: string;
   /** 執行的命令 */
-  readonly command: 'rename' | 'move' | 'deadcode' | 'change-signature' | 'move-member';
+  readonly command: ChangesetCommand;
   /** 是否成功 */
   readonly success: boolean;
   /** 錯誤訊息列表（可選） */
@@ -108,7 +149,7 @@ export interface BackupEntry {
   /** 原始內容（null 表示檔案原本不存在） */
   readonly originalContent: string | null;
   /** 備份類型 */
-  readonly type: 'text' | 'create' | 'delete' | 'move';
+  readonly type: BackupType;
   /** 目標路徑（move 時使用） */
   readonly targetPath?: string;
 }
