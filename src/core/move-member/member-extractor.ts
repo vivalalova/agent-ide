@@ -3,7 +3,6 @@
  * 從程式碼中提取成員定義
  */
 
-import type { Location } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { MemberType, type MemberDefinition } from './types.js';

@@ -11,8 +11,7 @@ import type {
   ICacheCoordinator,
   CacheStrategy,
   CacheStats,
-  ModuleCacheStats,
-  CacheEvent
+  ModuleCacheStats
 } from '../types.js';
 
 /**

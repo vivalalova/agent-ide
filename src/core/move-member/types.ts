@@ -3,7 +3,7 @@
  * 成員移動功能的核心型別
  */
 
-import type { Range, Location } from '@shared/types/core.js';
+import type { Location } from '@shared/types/core.js';
 
 /**
  * 可移動的成員類型
