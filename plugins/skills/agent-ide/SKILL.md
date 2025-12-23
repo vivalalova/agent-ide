@@ -72,14 +72,15 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 ### 變更類命令
 
-| 任務           | 命令                                                                      |
-| -------------- | ------------------------------------------------------------------------- |
-| 重命名符號     | `agent-ide rename --path . --from X --to Y --dry-run`                     |
-| 改參數順序     | `agent-ide change-signature --file f.ts --function fn --reorder "b,a"`    |
-| 加刪參數       | `agent-ide change-signature --file f.ts --function fn --add "c:string"`   |
-| 移動檔案       | `agent-ide move src/old.ts src/new.ts --path . --dry-run`                 |
-| 移動成員       | `agent-ide move-member src/a.ts fn --target-file src/b.ts --dry-run`      |
-| 刪除 Dead code | `agent-ide deadcode --path .`                                             |
+| 任務               | 命令                                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| 重命名符號         | `agent-ide rename --path . --from X --to Y --dry-run`                     |
+| 重命名（同名消歧） | `agent-ide rename --path . --from X --to Y --at src/file.ts:42`           |
+| 改參數順序         | `agent-ide change-signature --file f.ts --function fn --reorder "b,a"`    |
+| 加刪參數           | `agent-ide change-signature --file f.ts --function fn --add "c:string"`   |
+| 移動檔案           | `agent-ide move src/old.ts src/new.ts --path . --dry-run`                 |
+| 移動成員           | `agent-ide move-member src/a.ts fn --target-file src/b.ts --dry-run`      |
+| 刪除 Dead code     | `agent-ide deadcode --path .`                                             |
 
 ### 查詢類命令
 
@@ -108,6 +109,7 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 - `--dry-run` - 預覽變更，不執行
 - `--all` - 顯示所有結果（不只問題）
+- `--at <file:line:column>` - 指定符號位置（rename 專用，用於區分同名符號）
 
 ## 工作流程範例
 

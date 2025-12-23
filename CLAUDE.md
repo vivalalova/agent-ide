@@ -116,10 +116,21 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ### 變更類（支援 --dry-run）
 
 ```bash
-agent-ide rename --path <path> --from <old> --to <new>
+agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
 agent-ide move <source> <target> --path <path>
 agent-ide move-member <sourceFile> <memberName> --target-file <file>
+```
+
+**rename `--at` 參數**：當有多個同名符號時，用 `--at` 精確定位：
+
+```bash
+# 多符號會報錯並列出位置
+agent-ide rename --from userId --to uid
+# ❌ 找到 15 個同名符號，請用 --at 指定位置
+
+# 用 --at 指定 file:line 精確定位
+agent-ide rename --from userId --to uid --at src/user.ts:42
 ```
 
 ## 輸出處理架構
