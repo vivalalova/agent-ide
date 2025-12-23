@@ -506,16 +506,19 @@ export class ChangeApplicator {
           }
 
           case 'move': {
-            // 將檔案移回原位置
-            if (backup.targetPath && backup.originalContent !== null) {
-              // 刪除目標位置的檔案
+            // 將檔案/目錄移回原位置
+            if (backup.targetPath) {
               const targetExists = await this.fileSystem.exists(backup.targetPath);
               if (targetExists) {
-                await this.fileSystem.deleteFile(backup.targetPath);
+                if (backup.originalContent !== null) {
+                  // 檔案移動：刪除目標檔案，恢復原始內容
+                  await this.fileSystem.deleteFile(backup.targetPath);
+                  await this.fileSystem.writeFile(backup.filePath, backup.originalContent);
+                } else {
+                  // 目錄移動：把目錄移回原位置
+                  await this.moveDirectory(backup.targetPath, backup.filePath);
+                }
               }
-
-              // 恢復原始位置的檔案
-              await this.fileSystem.writeFile(backup.filePath, backup.originalContent);
             }
             break;
           }
