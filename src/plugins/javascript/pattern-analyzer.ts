@@ -64,9 +64,10 @@ export class PatternAnalyzer {
       });
 
       return patterns;
-    } catch {
-      // 解析失敗，返回 null 讓呼叫端 fallback 到名稱比對
-      return null;
+    } catch (error) {
+      // 解析失敗，拋出錯誤讓呼叫端處理
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`JavaScript 設計模式分析解析失敗: ${errorMessage}`);
     }
   }
 
