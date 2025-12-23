@@ -365,15 +365,12 @@ export class ChangeApplicator {
    * @param line 行號（1-based，從 1 開始）
    * @param column 列號（1-based，從 1 開始）
    * @returns 字元偏移量
-   * @throws Error 當行號或列號無效時
+   * @throws Error 當行號或列號為負數時
    */
   private calculateOffset(lines: string[], line: number, column: number): number {
-    // 驗證參數
+    // 驗證基本參數（只檢查負數，允許超出範圍的位置用於插入操作）
     if (line < 1) {
       throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
-    }
-    if (line > lines.length) {
-      throw new Error(`行號 ${line} 超出範圍（檔案共 ${lines.length} 行）`);
     }
     if (column < 1) {
       throw new Error(`無效的列號: ${column}，列號必須 >= 1（1-based 索引）`);
@@ -381,14 +378,9 @@ export class ChangeApplicator {
 
     let offset = 0;
 
-    // 累加前面所有行的長度
-    for (let i = 0; i < line - 1; i++) {
+    // 累加前面所有行的長度（使用邊界檢查避免越界）
+    for (let i = 0; i < line - 1 && i < lines.length; i++) {
       offset += lines[i].length;
-    }
-
-    // 驗證列號是否超出該行範圍
-    if (column - 1 > lines[line - 1].length) {
-      throw new Error(`列號 ${column} 超出第 ${line} 行範圍（該行長度：${lines[line - 1].length}）`);
     }
 
     // 加上當前行的列偏移
