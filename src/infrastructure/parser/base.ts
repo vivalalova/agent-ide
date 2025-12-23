@@ -117,8 +117,8 @@ export abstract class BaseParserPlugin implements ParserPlugin {
           location: {
             filePath: '',
             range: {
-              start: { line: 1, column: 1, offset: undefined },
-              end: { line: 1, column: 1, offset: undefined }
+              start: { line: 1, column: 1 },
+              end: { line: 1, column: 1 }
             }
           }
         }],
@@ -218,7 +218,8 @@ export abstract class BaseParserPlugin implements ParserPlugin {
     const message = context ? `${context}: ${error.message}` : error.message;
     this.log('error', message);
 
-    // 可以在這裡添加錯誤報告邏輯
+    // NOTE: 直接輸出 console.error 用於偵錯
+    // Parser 錯誤通常非關鍵（會 fallback 到正則匹配），但需要記錄以便追蹤潛在問題
     console.error(`[${this.name}] ${message}`, error.stack);
   }
 

@@ -6,6 +6,8 @@
 import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { Changeset } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { MemberExtractor } from './member-extractor.js';
 import {
   type MoveMemberOptions,
@@ -15,7 +17,7 @@ import {
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
-import { SymbolFinder } from '../shared/symbol-finder.js';
+import { SymbolFinder } from '../shared/symbol-finder/index.js';
 
 /**
  * Move Member Service
@@ -94,6 +96,71 @@ export class MoveMemberService {
         filesAffected: affectedFiles.size
       }
     };
+  }
+
+  /**
+   * 生成成員移動的 Changeset
+   * 使用 preview 模式收集變更，轉換為統一的 Changeset 格式
+   */
+  async generateChangeset(options: MoveMemberOptions): Promise<Changeset> {
+    const builder = createChangesetBuilder()
+      .forCommand('move-member');
+
+    // 使用 preview 模式收集變更
+    const result = await this.moveMember({
+      ...options,
+      preview: true
+    });
+
+    if (!result.success) {
+      return builder
+        .addError(result.error ?? 'Move member failed')
+        .build();
+    }
+
+    // 轉換 sourceFileChange（整檔替換）
+    const sourceOriginalLines = result.sourceFileChange.originalCode.split('\n');
+    builder.addTextChange(result.sourceFileChange.filePath, [{
+      range: {
+        start: { line: 1, column: 1, offset: 0 },
+        end: { line: sourceOriginalLines.length + 1, column: 1, offset: result.sourceFileChange.originalCode.length }
+      },
+      newText: result.sourceFileChange.newCode,
+      description: 'Remove member from source file'
+    }], 'modify');
+
+    // 轉換 targetFileChange
+    if (result.targetFileChange.isNewFile) {
+      builder.addFileCreate(result.targetFileChange.filePath, result.targetFileChange.newCode);
+    } else {
+      const targetOriginal = result.targetFileChange.originalCode ?? '';
+      const targetOriginalLines = targetOriginal.split('\n');
+      builder.addTextChange(result.targetFileChange.filePath, [{
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: targetOriginalLines.length + 1, column: 1, offset: targetOriginal.length }
+        },
+        newText: result.targetFileChange.newCode,
+        description: 'Add member to target file'
+      }], 'modify');
+    }
+
+    // 轉換 referenceUpdates
+    for (const update of result.referenceUpdates) {
+      builder.addTextChange(update.filePath, [{
+        range: update.location.range,
+        newText: update.newImport,
+        description: `Update import: ${update.originalImport} -> ${update.newImport}`
+      }], 'modify');
+    }
+
+    // 設定描述
+    const relativePath = path.relative(options.projectRoot, options.target.filePath);
+    builder.withDescription(
+      `Moved '${options.memberName}' from '${path.basename(options.sourceFile)}' to '${relativePath}'`
+    );
+
+    return builder.build();
   }
 
   /**
@@ -342,8 +409,8 @@ export class MoveMemberService {
             location: {
               filePath,
               range: {
-                start: { line: i + 1, column: 1, offset: undefined },
-                end: { line: i + 1, column: line.length + 1, offset: undefined }
+                start: { line: i + 1, column: 1 },
+                end: { line: i + 1, column: line.length + 1 }
               }
             }
           });

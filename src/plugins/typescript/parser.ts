@@ -51,7 +51,7 @@ import {
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
-import { MemoryMonitor, type Disposable } from '@shared/utils/memory-monitor.js';
+import { MemoryMonitor, type Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import { TYPESCRIPT_EXCLUDE_PATTERNS, matchesAnyPattern } from '@plugins/shared/index.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
@@ -460,8 +460,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       // 檢查編譯器選項
       const diagnostics = ts.getConfigFileParsingDiagnostics({
         options: this.compilerOptions,
+        fileNames: [],
         errors: []
-      } as any);
+      } as ts.ParsedCommandLine);
 
       if (diagnostics.length > 0) {
         return createValidationFailure([{
@@ -483,6 +484,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
   /**
    * 清理資源
+   * 使用 null as unknown as T 模式釋放資源參考，讓 GC 可以回收記憶體
    */
   async dispose(): Promise<void> {
     // 從記憶體監控器取消註冊
@@ -490,37 +492,48 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     // 清理 Language Service Manager
     if (this.languageServiceManager && 'dispose' in this.languageServiceManager) {
-      this.languageServiceManager.dispose();
+      await this.languageServiceManager.dispose();
     }
-    this.languageServiceManager = null as any;
+
+    this.languageServiceManager = null as unknown as ILanguageServiceManager;
 
     // 清理新模組
-    this.scopeAnalyzer = null as any;
-    this.declarationAnalyzer = null as any;
-    this.patternAnalyzer = null as any;
-    this.referenceFinder = null as any;
+
+    this.scopeAnalyzer = null as unknown as ScopeAnalyzer;
+
+    this.declarationAnalyzer = null as unknown as DeclarationAnalyzer;
+
+    this.patternAnalyzer = null as unknown as PatternAnalyzer;
+
+    this.referenceFinder = null as unknown as ReferenceFinder;
 
     // 清理編譯器選項參考
-    this.compilerOptions = null as any;
+
+    this.compilerOptions = null as unknown as ts.CompilerOptions;
 
     // 清理符號提取器和依賴分析器（如果有 dispose 方法）
-    if (this.symbolExtractor && 'dispose' in this.symbolExtractor && typeof (this.symbolExtractor as any).dispose === 'function') {
-      await (this.symbolExtractor as any).dispose();
+    const symbolExtractorWithDispose = this.symbolExtractor as { dispose?: () => Promise<void> };
+    if (symbolExtractorWithDispose.dispose) {
+      await symbolExtractorWithDispose.dispose();
     }
-    if (this.dependencyAnalyzer && 'dispose' in this.dependencyAnalyzer && typeof (this.dependencyAnalyzer as any).dispose === 'function') {
-      await (this.dependencyAnalyzer as any).dispose();
+    const dependencyAnalyzerWithDispose = this.dependencyAnalyzer as { dispose?: () => Promise<void> };
+    if (dependencyAnalyzerWithDispose.dispose) {
+      await dependencyAnalyzerWithDispose.dispose();
     }
 
     // 清理其他參考
-    this.symbolExtractor = null as any;
-    this.dependencyAnalyzer = null as any;
 
-    // 多次觸發垃圾收集以確保記憶體完全釋放
-    if (typeof global !== 'undefined' && 'gc' in global && typeof global.gc === 'function') {
-      // 進行多次垃圾回收以確保釋放所有 TypeScript 相關資源
-      for (let i = 0; i < 3; i++) {
-        global.gc();
-      }
+    this.symbolExtractor = null as unknown as TypeScriptSymbolExtractor;
+
+    this.dependencyAnalyzer = null as unknown as TypeScriptDependencyAnalyzer;
+
+    // V8 的 GC 會自動處理記憶體管理
+    // 只在開發環境且有 --expose-gc 時觸發一次（用於除錯）
+    if (process.env.NODE_ENV === 'development'
+        && typeof global !== 'undefined'
+        && 'gc' in global
+        && typeof global.gc === 'function') {
+      global.gc();
     }
   }
 
@@ -660,7 +673,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     );
   }
 
-  private getDefinitionKind(node: ts.Node): any {
+  private getDefinitionKind(node: ts.Node): DefinitionKind {
     if (ts.isClassDeclaration(node)) {return 'class';}
     if (ts.isInterfaceDeclaration(node)) {return 'interface';}
     if (ts.isFunctionDeclaration(node)) {return 'function';}
@@ -673,7 +686,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return 'variable';
   }
 
-  private symbolTypeToDefinitionKind(symbolType: any): DefinitionKind {
+  private symbolTypeToDefinitionKind(symbolType: SymbolType): DefinitionKind {
     // 將 SymbolType 映射到 DefinitionKind
     switch (symbolType) {
     case SymbolType.Class:
@@ -699,7 +712,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
   }
 
-  private getReferenceUsageKind(reference: Reference): any {
+  private getReferenceUsageKind(_reference: Reference): 'read' | 'write' | 'call' | 'reference' {
     // 基於上下文判斷使用類型
     return 'reference'; // 簡化實作
   }
@@ -791,7 +804,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   formatSignature(
     code: string,
     functionName: string,
-    line: number
+    line?: number
   ): FormattedSignature | null {
     return this.declarationAnalyzer.formatSignature(code, functionName, line);
   }

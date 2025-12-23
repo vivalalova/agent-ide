@@ -8,7 +8,7 @@ import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
 
 // Handle both ESM and CJS module formats
-const traverse = (babelTraverse as any).default || babelTraverse;
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 import {
   ParserPlugin,
   CodeEdit,
@@ -48,7 +48,6 @@ import {
 } from '@shared/types/index.js';
 import {
   JavaScriptAST,
-  JavaScriptASTNode,
   JavaScriptSymbol,
   JavaScriptParseOptions,
   DEFAULT_PARSE_OPTIONS,
@@ -62,10 +61,20 @@ import {
   getPluginsForFile
 } from './types.js';
 import { JAVASCRIPT_EXCLUDE_PATTERNS, matchesAnyPattern } from '@plugins/shared/index.js';
-import { CodeAnalyzer } from './code-analyzer.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
+
+/**
+ * 符號行索引快取
+ * 用於快速查找特定位置的符號
+ */
+interface SymbolIndexCache {
+  /** 符號列表 */
+  symbols: Symbol[];
+  /** 按行號索引的符號 Map */
+  lineIndex: Map<number, Symbol[]>;
+}
 
 /**
  * JavaScript Parser 實作
@@ -78,18 +87,17 @@ export class JavaScriptParser implements ParserPlugin {
 
   private parseOptions: JavaScriptParseOptions;
 
-  /** 程式碼品質分析器 */
-  private readonly codeAnalyzer: CodeAnalyzer;
   /** 設計模式分析器 */
   private readonly patternAnalyzer: PatternAnalyzer;
   /** 引用查找器 */
   private readonly referenceFinder: ReferenceFinder;
   /** 宣告分析器 */
   private readonly declarationAnalyzer: DeclarationAnalyzer;
+  /** 符號索引快取（以檔案路徑為 key） */
+  private symbolIndexCache: Map<string, SymbolIndexCache> = new Map();
 
   constructor(parseOptions?: Partial<JavaScriptParseOptions>) {
     this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions };
-    this.codeAnalyzer = new CodeAnalyzer();
     this.patternAnalyzer = new PatternAnalyzer();
     this.referenceFinder = new ReferenceFinder();
     this.declarationAnalyzer = new DeclarationAnalyzer();
@@ -106,7 +114,7 @@ export class JavaScriptParser implements ParserPlugin {
       const options = this.getParseOptionsForFile(filePath);
 
       // 使用 Babel parser 解析程式碼
-      const babelAST = babelParse(code, options as any);
+      const babelAST = babelParse(code, options);
 
       // 建立我們的 AST 結構
       const rootNode = createJavaScriptASTNode(babelAST, filePath);
@@ -243,20 +251,20 @@ export class JavaScriptParser implements ParserPlugin {
 
     traverse(typedAst.babelAST, {
       ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
-        this.extractImportDependency(path.node, dependencies, typedAst.sourceFile);
+        this.extractImportDependency(path.node, dependencies);
       },
 
       ExportNamedDeclaration: (path: NodePath<babel.ExportNamedDeclaration>) => {
-        this.extractExportDependency(path.node, dependencies, typedAst.sourceFile);
+        this.extractExportDependency(path.node, dependencies);
       },
 
       ExportAllDeclaration: (path: NodePath<babel.ExportAllDeclaration>) => {
-        this.extractExportDependency(path.node, dependencies, typedAst.sourceFile);
+        this.extractExportDependency(path.node, dependencies);
       },
 
       CallExpression: (path: NodePath<babel.CallExpression>) => {
         // 處理 require() 和動態 import()
-        this.extractCallExpressionDependency(path.node, dependencies, typedAst.sourceFile);
+        this.extractCallExpressionDependency(path.node, dependencies);
       }
     });
 
@@ -359,8 +367,7 @@ export class JavaScriptParser implements ParserPlugin {
    * 清理資源
    */
   async dispose(): Promise<void> {
-    // JavaScript Parser 沒有需要清理的資源
-    // 但提供介面供將來擴展使用
+    this.symbolIndexCache.clear();
   }
 
   /**
@@ -592,12 +599,9 @@ export class JavaScriptParser implements ParserPlugin {
 
   private extractImportDependency(
     node: babel.ImportDeclaration,
-    dependencies: Dependency[],
-    sourceFile: string
+    dependencies: Dependency[]
   ): void {
     const target = node.source.value;
-    const range = this.getNodeRange(node);
-    const location = { filePath: sourceFile, range };
 
     const dependency = createDependency(
       target,
@@ -611,13 +615,10 @@ export class JavaScriptParser implements ParserPlugin {
 
   private extractExportDependency(
     node: babel.ExportNamedDeclaration | babel.ExportAllDeclaration,
-    dependencies: Dependency[],
-    sourceFile: string
+    dependencies: Dependency[]
   ): void {
     if (node.source) {
       const target = node.source.value;
-      const range = this.getNodeRange(node);
-      const location = { filePath: sourceFile, range };
 
       const dependency = createDependency(
         target,
@@ -632,16 +633,13 @@ export class JavaScriptParser implements ParserPlugin {
 
   private extractCallExpressionDependency(
     node: babel.CallExpression,
-    dependencies: Dependency[],
-    sourceFile: string
+    dependencies: Dependency[]
   ): void {
     // 處理 require() 呼叫
     if (babel.isIdentifier(node.callee) && node.callee.name === 'require') {
       const firstArg = node.arguments[0];
       if (babel.isStringLiteral(firstArg)) {
         const target = firstArg.value;
-        const range = this.getNodeRange(node);
-        const location = { filePath: sourceFile, range };
 
         const dependency = createDependency(
           target,
@@ -659,8 +657,6 @@ export class JavaScriptParser implements ParserPlugin {
       const firstArg = node.arguments[0];
       if (babel.isStringLiteral(firstArg)) {
         const target = firstArg.value;
-        const range = this.getNodeRange(node);
-        const location = { filePath: sourceFile, range };
 
         const dependency = createDependency(
           target,
@@ -675,7 +671,7 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private isReferenceToSymbol(
-    path: any, // Babel traverse path
+    path: NodePath<babel.Identifier>,
     symbol: JavaScriptSymbol
   ): boolean {
     // 檢查名稱是否相同且在合理的作用域內，過濾字串和屬性名
@@ -725,7 +721,7 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private getReferenceType(
-    path: any, // Babel traverse path
+    path: NodePath<babel.Identifier>,
     symbol: JavaScriptSymbol
   ): ReferenceType {
     const node = path.node;
@@ -736,11 +732,14 @@ export class JavaScriptParser implements ParserPlugin {
     }
 
     // 檢查是否為宣告上下文
-    if (path.isReferencedIdentifier()) {
+    // 使用 Babel 的 path.isReferencedIdentifier 方法
+
+    const anyPath = path as NodePath<babel.Node>;
+    if (anyPath.isReferencedIdentifier()) {
       return ReferenceType.Usage;
     }
 
-    if (path.isBindingIdentifier()) {
+    if (anyPath.isBindingIdentifier()) {
       return ReferenceType.Declaration;
     }
 
@@ -772,11 +771,58 @@ export class JavaScriptParser implements ParserPlugin {
     }
   }
 
-  private async findSymbolAtPosition(ast: JavaScriptAST, position: Position): Promise<Symbol | null> {
-    const symbols = await this.extractSymbols(ast);
+  /**
+   * 建立或取得符號索引快取
+   * 使用行號索引避免 O(n) 線性搜尋
+   */
+  private async getOrCreateSymbolIndex(ast: JavaScriptAST): Promise<SymbolIndexCache> {
+    const cacheKey = ast.sourceFile;
+    const cached = this.symbolIndexCache.get(cacheKey);
 
-    // 查找包含該位置的符號
+    if (cached) {
+      return cached;
+    }
+
+    const symbols = await this.extractSymbols(ast);
+    const lineIndex = new Map<number, Symbol[]>();
+
+    // 建立行號索引：每個符號可能跨越多行
     for (const symbol of symbols) {
+      const startLine = symbol.location.range.start.line;
+      const endLine = symbol.location.range.end.line;
+
+      for (let line = startLine; line <= endLine; line++) {
+        const existing = lineIndex.get(line) ?? [];
+        existing.push(symbol);
+        lineIndex.set(line, existing);
+      }
+    }
+
+    const cache: SymbolIndexCache = { symbols, lineIndex };
+    this.symbolIndexCache.set(cacheKey, cache);
+
+    return cache;
+  }
+
+  /**
+   * 清除特定檔案的符號索引快取
+   */
+  clearSymbolIndexCache(filePath?: string): void {
+    if (filePath) {
+      this.symbolIndexCache.delete(filePath);
+    } else {
+      this.symbolIndexCache.clear();
+    }
+  }
+
+  private async findSymbolAtPosition(ast: JavaScriptAST, position: Position): Promise<Symbol | null> {
+    const cache = await this.getOrCreateSymbolIndex(ast);
+
+    // 使用行號索引快速查找候選符號
+    const candidates = cache.lineIndex.get(position.line) ?? [];
+
+    // 只在候選符號中搜尋
+    for (const symbol of candidates) {
       if (this.isPositionInRange(position, symbol.location.range)) {
         return symbol;
       }
@@ -811,38 +857,6 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   // ===== 委託給分析器的方法 =====
-
-  async detectUnusedSymbols(ast: AST, allSymbols: Symbol[]): Promise<import('../../infrastructure/parser/analysis-types.js').UnusedCode[]> {
-    return this.codeAnalyzer.detectUnusedSymbols(ast, allSymbols);
-  }
-
-  async analyzeComplexity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ComplexityMetrics> {
-    return this.codeAnalyzer.analyzeComplexity(code, ast);
-  }
-
-  async extractCodeFragments(code: string, filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').CodeFragment[]> {
-    return this.codeAnalyzer.extractCodeFragments(code, filePath);
-  }
-
-  async detectPatterns(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').PatternMatch[]> {
-    return this.codeAnalyzer.detectPatterns(code, ast);
-  }
-
-  async checkTypeSafety(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').TypeSafetyIssue[]> {
-    return this.codeAnalyzer.checkTypeSafety(code, ast);
-  }
-
-  async checkErrorHandling(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').ErrorHandlingIssue[]> {
-    return this.codeAnalyzer.checkErrorHandling(code, ast);
-  }
-
-  async checkSecurity(code: string, ast: AST): Promise<import('../../infrastructure/parser/analysis-types.js').SecurityIssue[]> {
-    return this.codeAnalyzer.checkSecurity(code, ast);
-  }
-
-  async checkNamingConventions(symbols: Symbol[], filePath: string): Promise<import('../../infrastructure/parser/analysis-types.js').NamingIssue[]> {
-    return this.codeAnalyzer.checkNamingConventions(symbols, filePath, SymbolType);
-  }
 
   identifyPatterns(code: string): PatternInfo[] | null {
     return this.patternAnalyzer.identifyPatterns(code);

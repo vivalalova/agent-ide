@@ -39,7 +39,7 @@ export function isFactoryReturnType(typeName: string): boolean {
   const normalizedType = typeName.trim().toLowerCase();
 
   // 排除基本排除型別
-  if (NON_FACTORY_RETURN_TYPES.includes(normalizedType as any)) {
+  if ((NON_FACTORY_RETURN_TYPES as readonly string[]).includes(normalizedType)) {
     return false;
   }
 

@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '@core/move/move-service.js';
-import { convertMovePreview } from '@infrastructure/formatters/index.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -149,24 +149,47 @@ async function handleMoveCommand(
     };
 
     const moveOptions = {
-      preview: options.dryRun,
       projectRoot
     };
 
-    // 執行移動操作
-    const result = await moveService.moveFile(moveOperation, moveOptions);
+    // 使用新的 Changeset 流程
+    const applicator = new ChangeApplicator(context.fileSystem);
+
+    // 生成 Changeset
+    const changeset = await moveService.generateChangeset(moveOperation, moveOptions);
+
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 執行移動操作（帶回滾）
+    if (!isJsonFormat) {
+      console.log('   執行移動...');
+    }
+
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
+    });
 
     if (result.success) {
-      // Dry-run 模式：使用 PreviewFormatter 輸出
-      if (options.dryRun) {
-        await handleDryRunOutput(normalizedSource, normalizedTarget, result, format, outputHandler, context);
-        return;
-      }
-
-      // 實際執行模式
-      printSuccess(source, target, result, isJsonFormat);
+      // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
+      const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
+      printSuccess(normalizedSource, normalizedTarget, totalUpdates, result.movedFiles, isJsonFormat);
     } else {
-      outputHandler.outputError(result.error || '移動失敗', format);
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
@@ -179,69 +202,32 @@ async function handleMoveCommand(
 }
 
 /**
- * 處理 dry-run 輸出
- */
-async function handleDryRunOutput(
-  source: string,
-  target: string,
-  result: any,
-  format: OutputFormat,
-  outputHandler: ReturnType<typeof createUnifiedOutputHandler>,
-  context: CommandContext
-): Promise<void> {
-  // 讀取受影響檔案的原始內容
-  const originalContents = new Map<string, string>();
-  const affectedFiles = new Set<string>(result.pathUpdates.map((u: any) => u.filePath as string));
-
-  for (const filePath of affectedFiles) {
-    try {
-      const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
-      originalContents.set(filePath, content);
-    } catch {
-      // 忽略無法讀取的檔案
-    }
-  }
-
-  // 轉換為統一的 PreviewInput 格式
-  const previewInput = convertMovePreview(source, target, result.pathUpdates, originalContents);
-
-  // 使用統一輸出處理器
-  outputHandler.outputMutation(previewInput, format);
-}
-
-/**
  * 印出成功訊息
  */
-function printSuccess(source: string, target: string, result: any, isJsonFormat: boolean): void {
+function printSuccess(
+  source: string,
+  target: string,
+  totalUpdates: number,
+  movedFiles: ReadonlyArray<{ from: string; to: string }>,
+  isJsonFormat: boolean
+): void {
   if (isJsonFormat) {
     console.log(JSON.stringify({
       success: true,
-      source: result.source,
-      target: result.target,
-      moved: result.moved,
-      pathUpdates: result.pathUpdates,
-      message: result.message
+      source,
+      target,
+      moved: movedFiles.length > 0,
+      pathUpdates: [], // 向後相容：實際更新已應用，這裡僅保留欄位
+      message: `成功移動 ${source} → ${target}，更新了 ${totalUpdates} 個 import`
     }, null, 2));
   } else {
     console.log('   移動成功!');
-    console.log(`   統計: ${result.pathUpdates.length} 個 import 需要更新`);
+    console.log(`   統計: ${totalUpdates} 個 import 已更新`);
 
-    if (result.pathUpdates.length > 0) {
-      console.log('   影響的檔案:');
-      const fileGroups = new Map<string, any[]>();
-
-      result.pathUpdates.forEach((update: any) => {
-        if (!fileGroups.has(update.filePath)) {
-          fileGroups.set(update.filePath, []);
-        }
-        fileGroups.get(update.filePath)!.push(update);
-      });
-
-      for (const [filePath, updates] of fileGroups) {
-        console.log(`      ${path.relative(process.cwd(), filePath)}:`);
-        updates.forEach((update: any) => {
-          console.log(`      第 ${update.line} 行: "${path.basename(source)}"   "${path.basename(target)}"`);
-        });
+    if (movedFiles.length > 0) {
+      console.log('   移動的檔案:');
+      for (const { from, to } of movedFiles) {
+        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
       }
     }
   }

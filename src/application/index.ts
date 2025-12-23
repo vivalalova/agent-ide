@@ -23,14 +23,7 @@ export { ErrorHandlerService } from './services/error-handler.service.js';
 export { SessionManager } from './services/session-manager.service.js';
 export { CacheCoordinatorService } from './services/cache-coordinator.service.js';
 export { ModuleCoordinatorService } from './services/module-coordinator.service.js';
-export { WorkflowEngineService } from './services/workflow-engine.service.js';
 export * from './services/index.js';
-
-// ============= 工作流程 =============
-export { BaseWorkflow } from './workflows/base-workflow.js';
-export { RefactorWorkflow } from './workflows/refactor-workflow.js';
-export { AnalysisWorkflow } from './workflows/analysis-workflow.js';
-export * from './workflows/index.js';
 
 // ============= 型別定義 =============
 export type {
@@ -42,14 +35,6 @@ export type {
   RenameOperation,
   RenameResult,
   MoveResult,
-
-  // 工作流程型別
-  Workflow,
-  WorkflowStep,
-  StepResult,
-  WorkflowResult,
-  WorkflowStatus,
-  WorkflowState,
 
   // 會話管理型別
   Session,
@@ -72,7 +57,6 @@ export type {
 
   // 服務介面
   IModuleCoordinatorService,
-  IWorkflowEngine,
   ISessionManager,
   ICacheCoordinator,
   IErrorHandler,
@@ -81,7 +65,6 @@ export type {
   ApplicationEvent,
   StateChangeEvent,
   ModuleEvent,
-  WorkflowEvent,
   CacheEvent,
   ErrorEvent,
 } from './types.js';
@@ -94,7 +77,6 @@ import { ErrorHandlerService } from '@application/services/error-handler.service
 import { SessionManager } from '@application/services/session-manager.service.js';
 import { CacheCoordinatorService } from '@application/services/cache-coordinator.service.js';
 import { ModuleCoordinatorService } from '@application/services/module-coordinator.service.js';
-import { WorkflowEngineService } from '@application/services/workflow-engine.service.js';
 import { CacheManager } from '@infrastructure/cache/cache-manager.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
@@ -110,7 +92,6 @@ export class ApplicationServices {
   private readonly sessionManager: SessionManager;
   private readonly cacheCoordinator: CacheCoordinatorService;
   private readonly moduleCoordinator: ModuleCoordinatorService;
-  private readonly workflowEngine: WorkflowEngineService;
 
   private constructor(fileSystem: IFileSystem) {
     // 初始化基礎設施
@@ -129,13 +110,6 @@ export class ApplicationServices {
       this.stateManager,
       this.errorHandler,
       fileSystem
-    );
-
-    // 初始化工作流程引擎
-    this.workflowEngine = new WorkflowEngineService(
-      this.eventBus,
-      this.errorHandler,
-      this.stateManager
     );
   }
 
@@ -193,13 +167,6 @@ export class ApplicationServices {
    */
   public getModuleCoordinator(): ModuleCoordinatorService {
     return this.moduleCoordinator;
-  }
-
-  /**
-   * 取得工作流程引擎
-   */
-  public getWorkflowEngine(): WorkflowEngineService {
-    return this.workflowEngine;
   }
 
   /**

@@ -12,7 +12,7 @@ export {
   createSymbolFinder,
   SymbolReferenceType,
   ClassMemberType
-} from '@core/shared/symbol-finder.js';
+} from '@core/shared/symbol-finder/index.js';
 
 export type {
   SymbolReference,
@@ -20,4 +20,4 @@ export type {
   CallSiteArgument,
   ClassMember,
   SymbolDefinition
-} from '@core/shared/symbol-finder.js';
+} from '@core/shared/symbol-finder/index.js';

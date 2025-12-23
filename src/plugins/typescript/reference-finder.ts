@@ -76,7 +76,7 @@ export class ReferenceFinder {
           }
 
           // 判斷引用類型和所屬容器
-          const refInfo = this.analyzeIdentifierReference(node, sourceFile, targetClassName);
+          const refInfo = this.analyzeIdentifierReference(node, sourceFile);
 
           if (refInfo) {
             // 如果指定了 className，過濾不匹配的引用
@@ -117,11 +117,13 @@ export class ReferenceFinder {
   /**
    * 分析標識符引用的詳細資訊
    * 判斷引用類型（讀取/寫入/呼叫）和所屬容器
+   * @param node TypeScript 標識符節點
+   * @param sourceFile 來源檔案
+   * @returns 引用分析結果，如果無法分析則返回 null
    */
   private analyzeIdentifierReference(
     node: ts.Identifier,
-    sourceFile: ts.SourceFile,
-    targetClassName?: string
+    sourceFile: ts.SourceFile
   ): IdentifierReferenceInfo | null {
     const parent = node.parent;
 

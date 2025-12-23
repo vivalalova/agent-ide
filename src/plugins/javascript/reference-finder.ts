@@ -16,7 +16,13 @@ import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 
 // Handle both ESM and CJS module formats
-const traverse = (babelTraverse as any).default || babelTraverse;
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
+
+/** AST 快取最大容量（超過時移除最舊項目） */
+const AST_CACHE_MAX_SIZE = 50;
+
+/** 程式碼雜湊樣本長度（前 N 字元） */
+const CODE_HASH_SAMPLE_LENGTH = 100;
 
 /**
  * 引用分析結果
@@ -28,8 +34,24 @@ interface ReferenceAnalysis {
   containerName?: string;
   /** 是否為方法呼叫 */
   isMethodCall: boolean;
-  /** receiver 類型名稱 */
+  /** Receiver 類型名稱（用於區分不同類別的同名方法，如 dog.bark() 中 dog 的類型為 Dog） */
   receiverType?: string;
+}
+
+/**
+ * 變數類型映射（變數名 -> 類型名）
+ * 用於 receiver 類型推斷快取
+ */
+type VariableTypeMap = Map<string, string>;
+
+/**
+ * AST 快取項目
+ */
+interface ASTCacheEntry {
+  /** 已解析的 AST */
+  ast: babel.File;
+  /** 變數類型映射（變數名 -> new 的類型名） */
+  variableTypes: VariableTypeMap;
 }
 
 /**
@@ -37,6 +59,83 @@ interface ReferenceAnalysis {
  * 使用 Babel 語義分析來精確匹配符號引用
  */
 export class ReferenceFinder {
+  /** AST 快取（程式碼 hash -> 快取項目） */
+  private astCache: Map<string, ASTCacheEntry> = new Map();
+
+  /**
+   * 計算程式碼的雜湊值（用於快取 key）
+   * 使用 djb2 演算法計算雜湊，比簡易長度+前綴更可靠
+   */
+  private computeCodeHash(code: string): string {
+    let hash = 5381;
+    const sampleLength = Math.min(code.length, CODE_HASH_SAMPLE_LENGTH);
+
+    for (let i = 0; i < sampleLength; i++) {
+      hash = ((hash << 5) + hash) + code.charCodeAt(i);
+      hash = hash & hash; // 轉為 32 位元整數
+    }
+
+    // 結合長度確保不同大小的檔案不會碰撞
+    return `${code.length}:${hash >>> 0}`;
+  }
+
+  /**
+   * 取得或建立 AST 快取
+   */
+  private getOrCreateASTCache(code: string): ASTCacheEntry | null {
+    const hash = this.computeCodeHash(code);
+    const cached = this.astCache.get(hash);
+
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const ast = babelParse(code, {
+        sourceType: 'unambiguous',
+        plugins: ['jsx']
+      });
+
+      // 預先建立變數類型映射
+      const variableTypes: VariableTypeMap = new Map();
+
+      traverse(ast, {
+        VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
+          if (babel.isIdentifier(path.node.id)) {
+            const init = path.node.init;
+            if (init && babel.isNewExpression(init)) {
+              if (babel.isIdentifier(init.callee)) {
+                variableTypes.set(path.node.id.name, init.callee.name);
+              }
+            }
+          }
+        }
+      });
+
+      const entry: ASTCacheEntry = { ast, variableTypes };
+      this.astCache.set(hash, entry);
+
+      // 限制快取大小，避免記憶體洩漏
+      if (this.astCache.size > AST_CACHE_MAX_SIZE) {
+        const firstKey = this.astCache.keys().next().value;
+        if (firstKey) {
+          this.astCache.delete(firstKey);
+        }
+      }
+
+      return entry;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 清除 AST 快取
+   */
+  clearCache(): void {
+    this.astCache.clear();
+  }
+
   /**
    * 作用域感知的符號引用查找
    * 使用 Babel 語義分析來精確匹配符號引用，區分不同類別的同名方法
@@ -51,73 +150,71 @@ export class ReferenceFinder {
     symbolName: string,
     options?: ScopedFindReferencesOptions
   ): ScopedReference[] | null {
-    try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx']
-      });
-
-      const references: ScopedReference[] = [];
-      const targetClassName = options?.className;
-      const filePath = 'temp.js';
-
-      traverse(ast, {
-        Identifier: (path: NodePath<babel.Identifier>) => {
-          if (path.node.name !== symbolName) {
-            return;
-          }
-
-          // 過濾：跳過物件屬性的 key（非計算屬性）
-          const parent = path.parent;
-          if (babel.isObjectProperty(parent) && parent.key === path.node && !parent.computed) {
-            return;
-          }
-
-          // 過濾：跳過 import 的原始名稱
-          if (babel.isImportSpecifier(parent) && parent.imported === path.node) {
-            return;
-          }
-
-          // 分析引用詳情
-          const refInfo = this.analyzeIdentifierReference(path, code, targetClassName);
-
-          if (refInfo) {
-            // 如果指定了 className，過濾不匹配的引用
-            if (targetClassName && refInfo.containerName !== targetClassName) {
-              if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-                return;
-              }
-            }
-
-            const location = {
-              filePath,
-              range: this.getNodeRange(path.node)
-            };
-
-            references.push({
-              location,
-              kind: refInfo.kind,
-              isExactMatch: true,
-              containerName: refInfo.containerName
-            });
-          }
-        }
-      });
-
-      return references;
-    } catch {
-      // 解析失敗，返回 null 讓呼叫端 fallback 到手動過濾
+    const cacheEntry = this.getOrCreateASTCache(code);
+    if (!cacheEntry) {
       return null;
     }
+
+    const { ast, variableTypes } = cacheEntry;
+    const references: ScopedReference[] = [];
+    const targetClassName = options?.className;
+    const filePath = 'temp.js';
+
+    traverse(ast, {
+      Identifier: (path: NodePath<babel.Identifier>) => {
+        if (path.node.name !== symbolName) {
+          return;
+        }
+
+        // 過濾：跳過物件屬性的 key（非計算屬性）
+        const parent = path.parent;
+        if (babel.isObjectProperty(parent) && parent.key === path.node && !parent.computed) {
+          return;
+        }
+
+        // 過濾：跳過 import 的原始名稱
+        if (babel.isImportSpecifier(parent) && parent.imported === path.node) {
+          return;
+        }
+
+        // 分析引用詳情（使用快取的變數類型映射）
+        const refInfo = this.analyzeIdentifierReference(path, variableTypes);
+
+        if (refInfo) {
+          // 如果指定了 className，過濾不匹配的引用
+          if (targetClassName && refInfo.containerName !== targetClassName) {
+            if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
+              return;
+            }
+          }
+
+          const location = {
+            filePath,
+            range: this.getNodeRange(path.node)
+          };
+
+          references.push({
+            location,
+            kind: refInfo.kind,
+            isExactMatch: true,
+            containerName: refInfo.containerName
+          });
+        }
+      }
+    });
+
+    return references;
   }
 
   /**
    * 分析 JavaScript 標識符引用的詳細資訊
+   * @param path Babel 標識符節點路徑
+   * @param variableTypes 變數類型映射（來自快取）
+   * @returns 引用分析結果，如果無法分析則返回 null
    */
   private analyzeIdentifierReference(
     path: NodePath<babel.Identifier>,
-    code: string,
-    _targetClassName?: string
+    variableTypes: VariableTypeMap
   ): ReferenceAnalysis | null {
     const parent = path.parent;
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
@@ -137,8 +234,8 @@ export class ReferenceFinder {
         kind = ScopedReferenceKind.Call;
         isMethodCall = true;
 
-        // 嘗試取得 receiver 的類型名稱
-        receiverType = this.inferReceiverType(parent.object, code);
+        // 使用快取的變數類型映射來推斷 receiver 類型
+        receiverType = this.inferReceiverType(parent.object, variableTypes);
       }
     }
 
@@ -165,10 +262,11 @@ export class ReferenceFinder {
 
   /**
    * 推斷 JavaScript receiver 的類型名稱
+   * 使用快取的變數類型映射，避免重複解析 AST
    */
   private inferReceiverType(
     expression: babel.Expression | babel.Super | babel.V8IntrinsicIdentifier,
-    code: string
+    variableTypes: VariableTypeMap
   ): string | undefined {
     // 1. new 表達式：(new Dog()).bark()
     if (babel.isNewExpression(expression)) {
@@ -177,37 +275,9 @@ export class ReferenceFinder {
       }
     }
 
-    // 2. 標識符：需要查找其宣告
+    // 2. 標識符：直接從快取查找類型
     if (babel.isIdentifier(expression)) {
-      const varName = expression.name;
-
-      // 簡單解析：查找 const dog = new Dog()
-      try {
-        const ast = babelParse(code, {
-          sourceType: 'unambiguous',
-          plugins: ['jsx']
-        });
-
-        let result: string | undefined;
-
-        traverse(ast, {
-          VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-            if (result) { return; }
-            if (babel.isIdentifier(path.node.id) && path.node.id.name === varName) {
-              const init = path.node.init;
-              if (init && babel.isNewExpression(init)) {
-                if (babel.isIdentifier(init.callee)) {
-                  result = init.callee.name;
-                }
-              }
-            }
-          }
-        });
-
-        return result;
-      } catch {
-        return undefined;
-      }
+      return variableTypes.get(expression.name);
     }
 
     return undefined;
@@ -215,6 +285,8 @@ export class ReferenceFinder {
 
   /**
    * 查找 JavaScript 標識符所屬的容器名稱
+   * @param path Babel 標識符節點路徑
+   * @returns 容器名稱（類別或函式），如果無法找到則返回 undefined
    */
   private findContainerName(path: NodePath<babel.Identifier>): string | undefined {
     let current: NodePath | null = path.parentPath;

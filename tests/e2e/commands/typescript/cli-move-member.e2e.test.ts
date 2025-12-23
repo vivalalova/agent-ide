@@ -44,7 +44,8 @@ export function existing(): string {
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.name).toBe('helper');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('helper');
       }
     });
 
@@ -68,7 +69,9 @@ export function stay(): number {
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.targetFileChange.isNewFile).toBe(true);
+        expect(output.command).toBe('move');
+        // 新檔案會在 operationDescription 中提及或在 files 中出現
+        expect(output.operationDescription).toContain('toMove');
       }
     });
 
@@ -102,7 +105,8 @@ export function other(): void {}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.referenceUpdates).toBeGreaterThanOrEqual(2);
+        // 使用新格式：summary.totalFiles 表示受影響檔案數（包含 2 個 consumer + source + target）
+        expect(output.summary.totalFiles).toBeGreaterThanOrEqual(2);
       }
     });
   });
@@ -135,7 +139,8 @@ export class Entity {}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('class');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('User');
       }
     });
   });
@@ -166,7 +171,8 @@ export interface BaseDTO {}
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('interface');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('UserDTO');
       }
     });
   });
@@ -191,7 +197,8 @@ export type Base = object;
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('type-alias');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('ID');
       }
     });
   });
@@ -216,7 +223,8 @@ export const VERSION = '1.0.0';
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('constant');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('API_URL');
       }
     });
   });
@@ -248,7 +256,8 @@ export type ID = number;
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('enum');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('Status');
       }
     });
   });
@@ -282,8 +291,8 @@ export class Validator {
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.member.type).toBe('method');
-        expect(output.member.className).toBe('User');
+        expect(output.command).toBe('move');
+        expect(output.operationDescription).toContain('validateEmail');
       }
     });
   });
@@ -435,7 +444,8 @@ export const result${i} = sharedHelper();
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
-        expect(output.stats.filesAffected).toBeGreaterThanOrEqual(60);
+        // 使用新格式：summary.totalFiles 表示受影響檔案數
+        expect(output.summary.totalFiles).toBeGreaterThanOrEqual(60);
       }
     });
   });

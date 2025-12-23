@@ -1,0 +1,507 @@
+/**
+ * ChangeApplicator 測試
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ChangeApplicator } from '@infrastructure/changeset/change-applicator.js';
+import type { IFileSystem, DirectoryEntry } from '@infrastructure/storage/file-system.interface.js';
+import type { Changeset } from '@infrastructure/changeset/types.js';
+
+describe('ChangeApplicator', () => {
+  // MARK: - Test Fixtures
+
+  let mockFileSystem: IFileSystem;
+  let sut: ChangeApplicator;
+
+  const createMockFileSystem = (): IFileSystem => ({
+    exists: vi.fn().mockResolvedValue(true),
+    readFile: vi.fn().mockResolvedValue('original content'),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    deleteFile: vi.fn().mockResolvedValue(undefined),
+    moveFile: vi.fn().mockResolvedValue(undefined),
+    isDirectory: vi.fn().mockResolvedValue(false),
+    createDirectory: vi.fn().mockResolvedValue(undefined),
+    readDirectory: vi.fn().mockResolvedValue([]),
+    deleteDirectory: vi.fn().mockResolvedValue(undefined),
+    getFilePath: vi.fn().mockImplementation((p) => p),
+    getRelativePath: vi.fn().mockImplementation((p) => p),
+    isAbsolutePath: vi.fn().mockReturnValue(true),
+    joinPath: vi.fn().mockImplementation((...paths) => paths.join('/'))
+  });
+
+  const createTestRange = (startLine: number, startCol: number, endLine: number, endCol: number) => ({
+    start: { line: startLine, column: startCol },
+    end: { line: endLine, column: endCol }
+  });
+
+  const createChangeset = (overrides: Partial<Changeset> = {}): Changeset => ({
+    textChanges: [],
+    fileOperations: [],
+    description: 'test',
+    command: 'rename',
+    success: true,
+    ...overrides
+  });
+
+  beforeEach(() => {
+    mockFileSystem = createMockFileSystem();
+    sut = new ChangeApplicator(mockFileSystem);
+  });
+
+  // MARK: - Dry Run
+
+  describe('dry-run 模式', () => {
+    it('應該不實際寫入檔案', async () => {
+      const changeset = createChangeset({
+        textChanges: [{ filePath: '/file.ts', edits: [] }]
+      });
+
+      const result = await sut.apply(changeset, { dryRun: true });
+
+      expect(mockFileSystem.writeFile).not.toHaveBeenCalled();
+      expect(result.success).toBe(true);
+    });
+
+    it('應該正確回報將被修改的檔案', async () => {
+      const changeset = createChangeset({
+        textChanges: [
+          { filePath: '/file1.ts', edits: [] },
+          { filePath: '/file2.ts', edits: [] }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { dryRun: true });
+
+      expect(result.modifiedFiles).toEqual(['/file1.ts', '/file2.ts']);
+    });
+
+    it('應該正確回報將被建立的檔案', async () => {
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'create', sourcePath: '/new.ts', targetPath: '/new.ts', content: '' }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { dryRun: true });
+
+      expect(result.createdFiles).toEqual(['/new.ts']);
+    });
+
+    it('應該正確回報將被刪除的檔案', async () => {
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'delete', sourcePath: '/old.ts' }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { dryRun: true });
+
+      expect(result.deletedFiles).toEqual(['/old.ts']);
+    });
+
+    it('應該正確回報將被移動的檔案', async () => {
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'move', sourcePath: '/old.ts', targetPath: '/new.ts' }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { dryRun: true });
+
+      expect(result.movedFiles).toEqual([{ from: '/old.ts', to: '/new.ts' }]);
+    });
+  });
+
+  // MARK: - 文字變更
+
+  describe('文字變更', () => {
+    it('應該讀取檔案並應用編輯', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('const foo = 1;');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/file.ts',
+          edits: [{ range: createTestRange(1, 7, 1, 10), newText: 'bar' }]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      expect(mockFileSystem.readFile).toHaveBeenCalledWith('/file.ts', 'utf-8');
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'const bar = 1;',
+        { fsync: true }
+      );
+    });
+
+    it('空編輯列表應保持原內容', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('original');
+
+      const changeset = createChangeset({
+        textChanges: [{ filePath: '/file.ts', edits: [] }]
+      });
+
+      await sut.apply(changeset);
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'original',
+        { fsync: true }
+      );
+    });
+
+    it('應該處理多行內容的編輯', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('line1\nline2\nline3');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/file.ts',
+          edits: [{ range: createTestRange(2, 1, 2, 6), newText: 'modified' }]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'line1\nmodified\nline3',
+        { fsync: true }
+      );
+    });
+
+    it('應該從後往前應用多個編輯避免偏移', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('aaa bbb ccc');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/file.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 4), newText: 'xxx' },
+            { range: createTestRange(1, 9, 1, 12), newText: 'zzz' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'xxx bbb zzz',
+        { fsync: true }
+      );
+    });
+
+    it('空內容檔案應正確處理', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/file.ts',
+          edits: [{ range: createTestRange(1, 1, 1, 1), newText: 'new content' }]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'new content',
+        { fsync: true }
+      );
+    });
+  });
+
+  // MARK: - 檔案操作
+
+  describe('檔案操作', () => {
+    describe('create', () => {
+      it('應該建立新檔案', async () => {
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'create',
+            sourcePath: '/new.ts',
+            targetPath: '/new.ts',
+            content: 'new file content'
+          }]
+        });
+
+        await sut.apply(changeset);
+
+        expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+          '/new.ts',
+          'new file content',
+          { fsync: true }
+        );
+      });
+
+      it('無 content 時應建立空檔案', async () => {
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'create',
+            sourcePath: '/new.ts',
+            targetPath: '/new.ts'
+          }]
+        });
+
+        await sut.apply(changeset);
+
+        expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+          '/new.ts',
+          '',
+          { fsync: true }
+        );
+      });
+
+      it('無 targetPath 時應拋出錯誤', async () => {
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'create',
+            sourcePath: '/new.ts'
+          }]
+        });
+
+        const result = await sut.apply(changeset);
+
+        expect(result.success).toBe(false);
+        expect(result.errors?.[0]).toContain('CREATE 操作需要 targetPath');
+      });
+    });
+
+    describe('delete', () => {
+      it('應該刪除檔案', async () => {
+        const changeset = createChangeset({
+          fileOperations: [{ type: 'delete', sourcePath: '/old.ts' }]
+        });
+
+        await sut.apply(changeset);
+
+        expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/old.ts');
+      });
+    });
+
+    describe('move', () => {
+      it('應該移動檔案', async () => {
+        vi.mocked(mockFileSystem.isDirectory).mockResolvedValue(false);
+
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'move',
+            sourcePath: '/old.ts',
+            targetPath: '/new.ts'
+          }]
+        });
+
+        await sut.apply(changeset);
+
+        expect(mockFileSystem.moveFile).toHaveBeenCalledWith('/old.ts', '/new.ts');
+      });
+
+      it('無 targetPath 時應拋出錯誤', async () => {
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'move',
+            sourcePath: '/old.ts'
+          }]
+        });
+
+        const result = await sut.apply(changeset);
+
+        expect(result.success).toBe(false);
+        expect(result.errors?.[0]).toContain('MOVE 操作需要 targetPath');
+      });
+
+      it('目錄移動應遞迴處理', async () => {
+        vi.mocked(mockFileSystem.isDirectory).mockResolvedValue(true);
+        vi.mocked(mockFileSystem.readDirectory).mockResolvedValue([
+          { path: '/old/file.ts', name: 'file.ts', isFile: true, isDirectory: false }
+        ] as DirectoryEntry[]);
+
+        const changeset = createChangeset({
+          fileOperations: [{
+            type: 'move',
+            sourcePath: '/old',
+            targetPath: '/new'
+          }]
+        });
+
+        await sut.apply(changeset);
+
+        expect(mockFileSystem.createDirectory).toHaveBeenCalledWith('/new');
+        expect(mockFileSystem.moveFile).toHaveBeenCalledWith('/old/file.ts', '/new/file.ts');
+        expect(mockFileSystem.deleteDirectory).toHaveBeenCalledWith('/old');
+      });
+    });
+  });
+
+  // MARK: - 備份與回滾
+
+  describe('備份與回滾', () => {
+    it('文字變更失敗時應回滾', async () => {
+      vi.mocked(mockFileSystem.readFile)
+        .mockResolvedValueOnce('backup content')
+        .mockRejectedValueOnce(new Error('讀取失敗'));
+
+      const changeset = createChangeset({
+        textChanges: [
+          { filePath: '/file1.ts', edits: [] },
+          { filePath: '/file2.ts', edits: [] }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { rollbackOnError: true });
+
+      expect(result.success).toBe(false);
+      // 應該嘗試回滾 file1.ts
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/file1.ts', 'backup content');
+    });
+
+    it('rollbackOnError=false 時不應回滾', async () => {
+      vi.mocked(mockFileSystem.readFile)
+        .mockResolvedValueOnce('content1')
+        .mockRejectedValueOnce(new Error('讀取失敗'));
+
+      const changeset = createChangeset({
+        textChanges: [
+          { filePath: '/file1.ts', edits: [] },
+          { filePath: '/file2.ts', edits: [] }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { rollbackOnError: false });
+
+      expect(result.success).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      // 只應該有第一個檔案的寫入，不應有回滾的寫入
+    });
+  });
+
+  // MARK: - 結果回報
+
+  describe('結果回報', () => {
+    it('成功時應回報所有修改的檔案', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('content');
+
+      const changeset = createChangeset({
+        textChanges: [
+          { filePath: '/file1.ts', edits: [] },
+          { filePath: '/file2.ts', edits: [] }
+        ]
+      });
+
+      const result = await sut.apply(changeset);
+
+      expect(result.success).toBe(true);
+      expect(result.modifiedFiles).toEqual(['/file1.ts', '/file2.ts']);
+    });
+
+    it('成功時應回報所有建立的檔案', async () => {
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'create', sourcePath: '/new1.ts', targetPath: '/new1.ts', content: '' },
+          { type: 'create', sourcePath: '/new2.ts', targetPath: '/new2.ts', content: '' }
+        ]
+      });
+
+      const result = await sut.apply(changeset);
+
+      expect(result.createdFiles).toEqual(['/new1.ts', '/new2.ts']);
+    });
+
+    it('成功時應回報所有刪除的檔案', async () => {
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'delete', sourcePath: '/old1.ts' },
+          { type: 'delete', sourcePath: '/old2.ts' }
+        ]
+      });
+
+      const result = await sut.apply(changeset);
+
+      expect(result.deletedFiles).toEqual(['/old1.ts', '/old2.ts']);
+    });
+
+    it('成功時應回報所有移動的檔案', async () => {
+      vi.mocked(mockFileSystem.isDirectory).mockResolvedValue(false);
+
+      const changeset = createChangeset({
+        fileOperations: [
+          { type: 'move', sourcePath: '/a.ts', targetPath: '/b.ts' },
+          { type: 'move', sourcePath: '/c.ts', targetPath: '/d.ts' }
+        ]
+      });
+
+      const result = await sut.apply(changeset);
+
+      expect(result.movedFiles).toEqual([
+        { from: '/a.ts', to: '/b.ts' },
+        { from: '/c.ts', to: '/d.ts' }
+      ]);
+    });
+  });
+
+  // MARK: - atomic 選項
+
+  describe('atomic 選項', () => {
+    it('atomic=true 時應使用 fsync', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('content');
+
+      const changeset = createChangeset({
+        textChanges: [{ filePath: '/file.ts', edits: [] }]
+      });
+
+      await sut.apply(changeset, { atomic: true });
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'content',
+        { fsync: true }
+      );
+    });
+
+    it('atomic=false 時不應使用 fsync', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('content');
+
+      const changeset = createChangeset({
+        textChanges: [{ filePath: '/file.ts', edits: [] }]
+      });
+
+      await sut.apply(changeset, { atomic: false });
+
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/file.ts',
+        'content',
+        { fsync: false }
+      );
+    });
+  });
+
+  // MARK: - 邊界情況
+
+  describe('邊界情況', () => {
+    it('空 changeset 應成功', async () => {
+      const changeset = createChangeset();
+
+      const result = await sut.apply(changeset);
+
+      expect(result.success).toBe(true);
+      expect(result.modifiedFiles).toEqual([]);
+      expect(result.createdFiles).toEqual([]);
+      expect(result.deletedFiles).toEqual([]);
+      expect(result.movedFiles).toEqual([]);
+    });
+
+    it('檔案不存在時備份應處理', async () => {
+      vi.mocked(mockFileSystem.exists).mockResolvedValue(false);
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('');
+
+      const changeset = createChangeset({
+        textChanges: [{ filePath: '/new.ts', edits: [] }]
+      });
+
+      const result = await sut.apply(changeset);
+
+      expect(result.success).toBe(true);
+    });
+  });
+});

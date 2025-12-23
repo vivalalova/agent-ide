@@ -4,7 +4,7 @@
  */
 
 import * as ts from 'typescript';
-import type { Disposable } from '@shared/utils/memory-monitor.js';
+import type { Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import type { TypeScriptSymbol } from './types.js';
 
 /**

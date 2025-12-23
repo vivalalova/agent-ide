@@ -381,7 +381,9 @@ export function helperFunc(): string {
       // dry-run 成功
       expect(dryRunResult.exitCode).toBe(0);
       const dryRunOutput = JSON.parse(dryRunResult.stdout);
-      expect(dryRunOutput.executed).toBe(false);
+      // PreviewResult 格式：dry-run 時 success 為 true 且 command 為 'move'
+      expect(dryRunOutput.success).toBe(true);
+      expect(dryRunOutput.command).toBe('move');
 
       // dry-run 不應建立新檔案
       const newFileExistsAfterDryRun = await fixture.memfs.exists(fixture.getFilePath('src/new-helper.ts'));

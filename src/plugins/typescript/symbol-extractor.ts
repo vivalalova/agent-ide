@@ -248,11 +248,18 @@ export class TypeScriptSymbolExtractor {
   }
 
   /**
+   * 具有可選標記的節點型別
+   */
+  private hasQuestionToken(node: ts.Node): boolean {
+    return 'questionToken' in node && (node as ts.PropertyDeclaration | ts.PropertySignature | ts.ParameterDeclaration).questionToken !== undefined;
+  }
+
+  /**
    * 調整特殊情況的符號
    */
   private adjustSymbolForSpecialCases(node: ts.Node, modifiers: string[]): void {
     // 處理可選屬性
-    if ('questionToken' in node && (node as any).questionToken) {
+    if (this.hasQuestionToken(node)) {
       if (!modifiers.includes('optional')) {
         modifiers.push('optional');
       }
@@ -301,9 +308,17 @@ export class TypeScriptSymbolExtractor {
    * 提取型別資訊
    */
   private extractTypeInfo(node: ts.Node): string | undefined {
-    if ('type' in node && (node as any).type) {
-      const typeNode = (node as any).type as ts.TypeNode;
-      return this.typeNodeToString(typeNode);
+    // 使用 TypeScript 內建的型別護衛檢查節點是否有 type 屬性
+    if (ts.isVariableDeclaration(node)
+        || ts.isParameter(node)
+        || ts.isPropertyDeclaration(node)
+        || ts.isPropertySignature(node)
+        || ts.isFunctionDeclaration(node)
+        || ts.isMethodDeclaration(node)
+        || ts.isMethodSignature(node)) {
+      if (node.type) {
+        return this.typeNodeToString(node.type);
+      }
     }
 
     // 對於變數宣告，嘗試從初始值推斷

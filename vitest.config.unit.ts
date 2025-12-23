@@ -72,7 +72,11 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/interfaces/cli/**',
         'src/application/**',
         'src/core/**',
-        'src/infrastructure/parser/**'
+        'src/infrastructure/parser/**', // Parser 插件基礎架構，透過 E2E 測試覆蓋
+
+        // === 純型別定義檔案（無執行邏輯） ===
+        'src/infrastructure/changeset/types.ts',
+        'src/infrastructure/storage/file-system.interface.ts'
       ],
       thresholds: COVERAGE_THRESHOLD
     },

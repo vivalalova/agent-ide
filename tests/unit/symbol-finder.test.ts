@@ -10,8 +10,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   SymbolFinder,
   SymbolReferenceType,
+  symbolToKey,
+  serializeSymbolKey,
   type SymbolReference
-} from '@core/shared/symbol-finder.js';
+} from '@core/shared/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';
@@ -145,9 +147,13 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
       mockFileSystem = createMockFileSystem(files);
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
-      const mockRefA = createMockReference(createMockSymbol('funcA'), 'usage');
-      const mockRefB = createMockReference(createMockSymbol('funcB'), 'usage');
-      const mockRefC = createMockReference(createMockSymbol('funcC'), 'usage');
+      const symbolA = createMockSymbol('funcA');
+      const symbolB = createMockSymbol('funcB');
+      const symbolC = createMockSymbol('funcC');
+
+      const mockRefA = createMockReference(symbolA, 'usage');
+      const mockRefB = createMockReference(symbolB, 'usage');
+      const mockRefC = createMockReference(symbolC, 'usage');
 
       vi.mocked(mockParser.findReferences).mockImplementation(async (_ast, symbol) => {
         if (symbol.name === 'funcA') {return [mockRefA];}
@@ -156,29 +162,33 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
         return [];
       });
 
-      const symbolNames = new Set(['funcA', 'funcB', 'funcC']);
+      const symbols = [symbolA, symbolB, symbolC];
       const projectFiles = ['/test/main.ts', '/test/helper.ts', '/test/utils.ts'];
 
-      const result = await symbolFinder.findReferencesMultiple(symbolNames, projectFiles);
+      const result = await symbolFinder.findReferencesMultiple(symbols, projectFiles);
 
       expect(result.size).toBe(3);
-      expect(result.has('funcA')).toBe(true);
-      expect(result.has('funcB')).toBe(true);
-      expect(result.has('funcC')).toBe(true);
+      expect(result.has(serializeSymbolKey(symbolToKey(symbolA)))).toBe(true);
+      expect(result.has(serializeSymbolKey(symbolToKey(symbolB)))).toBe(true);
+      expect(result.has(serializeSymbolKey(symbolToKey(symbolC)))).toBe(true);
     });
 
     it('應該為每個符號初始化空陣列', async () => {
       vi.mocked(mockParser.findReferences).mockResolvedValue([]);
 
+      const sym1 = createMockSymbol('sym1');
+      const sym2 = createMockSymbol('sym2');
+      const sym3 = createMockSymbol('sym3');
+
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['sym1', 'sym2', 'sym3']),
+        [sym1, sym2, sym3],
         ['/test/file.ts']
       );
 
       expect(result.size).toBe(3);
-      expect(result.get('sym1')).toEqual([]);
-      expect(result.get('sym2')).toEqual([]);
-      expect(result.get('sym3')).toEqual([]);
+      expect(result.get(serializeSymbolKey(symbolToKey(sym1)))).toEqual([]);
+      expect(result.get(serializeSymbolKey(symbolToKey(sym2)))).toEqual([]);
+      expect(result.get(serializeSymbolKey(symbolToKey(sym3)))).toEqual([]);
     });
 
     it('應該累積多個檔案的引用結果', async () => {
@@ -190,16 +200,17 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
       mockFileSystem = createMockFileSystem(files);
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
-      const mockRef = createMockReference(createMockSymbol('myFunc'), 'usage');
+      const myFuncSymbol = createMockSymbol('myFunc');
+      const mockRef = createMockReference(myFuncSymbol, 'usage');
       vi.mocked(mockParser.findReferences).mockResolvedValue([mockRef]);
 
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['myFunc']),
+        [myFuncSymbol],
         ['/test/file1.ts', '/test/file2.ts', '/test/file3.ts']
       );
 
       // 每個檔案都會回傳一個 reference
-      expect(result.get('myFunc')?.length).toBe(3);
+      expect(result.get(serializeSymbolKey(symbolToKey(myFuncSymbol)))?.length).toBe(3);
     });
 
     it('應該跳過無法讀取的檔案', async () => {
@@ -210,31 +221,33 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
       mockFileSystem = createMockFileSystem(files);
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
-      const mockRef = createMockReference(createMockSymbol('funcA'), 'usage');
+      const funcASymbol = createMockSymbol('funcA');
+      const mockRef = createMockReference(funcASymbol, 'usage');
       vi.mocked(mockParser.findReferences).mockResolvedValue([mockRef]);
 
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['funcA']),
+        [funcASymbol],
         ['/test/valid.ts', '/test/invalid.ts']
       );
 
-      expect(result.get('funcA')?.length).toBe(1);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcASymbol)))?.length).toBe(1);
     });
 
     it('應該正確區分 definition 和 usage 類型', async () => {
       mockFileSystem = createMockFileSystem({ '/test/file.ts': 'function foo() {} foo();' });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
-      const defRef = createMockReference(createMockSymbol('foo'), 'definition');
-      const usageRef = createMockReference(createMockSymbol('foo'), 'usage');
+      const fooSymbol = createMockSymbol('foo');
+      const defRef = createMockReference(fooSymbol, 'definition');
+      const usageRef = createMockReference(fooSymbol, 'usage');
       vi.mocked(mockParser.findReferences).mockResolvedValue([defRef, usageRef]);
 
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['foo']),
+        [fooSymbol],
         ['/test/file.ts']
       );
 
-      const refs = result.get('foo') || [];
+      const refs = result.get(serializeSymbolKey(symbolToKey(fooSymbol))) || [];
       expect(refs.some(r => r.type === SymbolReferenceType.Definition)).toBe(true);
       expect(refs.some(r => r.type === SymbolReferenceType.Usage)).toBe(true);
     });
@@ -253,8 +266,12 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
 
       const readFileSpy = vi.mocked(mockFileSystem.readFile);
 
+      const sym1 = createMockSymbol('sym1');
+      const sym2 = createMockSymbol('sym2');
+      const sym3 = createMockSymbol('sym3');
+
       await symbolFinder.findReferencesMultiple(
-        new Set(['sym1', 'sym2', 'sym3']),
+        [sym1, sym2, sym3],
         Object.keys(files)
       );
 
@@ -323,7 +340,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
 
   describe('排除類別方法定義', () => {
     it('應該排除有返回類型的方法定義', async () => {
-      const fileContent = '  foo(): string { return ""; }';
+      const fileContent = 'class MyClass { foo(): string { return ""; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -333,7 +350,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除有大括號的方法定義', async () => {
-      const fileContent = '  foo() { return 1; }';
+      const fileContent = 'class MyClass { foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -343,7 +360,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 static 方法定義', async () => {
-      const fileContent = 'static foo() { return 1; }';
+      const fileContent = 'class MyClass { static foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -353,7 +370,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 private 方法定義', async () => {
-      const fileContent = 'private foo() { return 1; }';
+      const fileContent = 'class MyClass { private foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -363,7 +380,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 public 方法定義', async () => {
-      const fileContent = 'public foo() { return 1; }';
+      const fileContent = 'class MyClass { public foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -373,7 +390,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 protected 方法定義', async () => {
-      const fileContent = 'protected foo() { return 1; }';
+      const fileContent = 'class MyClass { protected foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -383,7 +400,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 get accessor 定義', async () => {
-      const fileContent = 'get foo() { return 1; }';
+      const fileContent = 'class MyClass { get foo() { return 1; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -393,7 +410,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除 set accessor 定義', async () => {
-      const fileContent = 'set foo(v: number) { this.x = v; }';
+      const fileContent = 'class MyClass { set foo(v: number) { this.x = v; } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -403,7 +420,7 @@ describe('SymbolFinder - findCallSitesInFile 邊界測試', () => {
     });
 
     it('應該排除帶參數類型的方法定義', async () => {
-      const fileContent = '  foo(a: number, b: string): void { }';
+      const fileContent = 'class MyClass { foo(a: number, b: string): void { } }';
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
@@ -506,13 +523,15 @@ const y = foo();`;
 
   describe('邊界條件', () => {
     it('應該處理找不到匹配右括號的情況', async () => {
+      // TypeScript AST parser 具有錯誤恢復能力，會嘗試解析不完整語法
+      // 對於 'foo(' 這種不完整呼叫，parser 仍能識別為 CallExpression
       const fileContent = 'foo(';  // 不完整的呼叫
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
       const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
 
-      // 即使括號不匹配，仍應該識別為呼叫
+      // TypeScript parser 的錯誤恢復機制會識別不完整的呼叫
       expect(result).toHaveLength(1);
     });
 
@@ -534,6 +553,54 @@ const y = foo();`;
       const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
 
       expect(result[0].arguments).toHaveLength(3);
+    });
+
+    it('應該正確處理字串中包含括號的參數', async () => {
+      const fileContent = 'foo("(test)", "a,b");';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(2);
+      expect(result[0].arguments[0].value).toBe('"(test)"');
+      expect(result[0].arguments[1].value).toBe('"a,b"');
+    });
+
+    it('應該正確處理模板字串中的括號', async () => {
+      const fileContent = 'foo(`text (${bar()}) end`);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
+      // 模板字串應該被正確解析
+      expect(result[0].arguments[0].value).toContain('bar()');
+    });
+
+    it('應該正確處理註解中的括號', async () => {
+      const fileContent = 'foo(/* comment with ) paren */ x);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
+    });
+
+    it('應該正確處理正則表達式中的括號', async () => {
+      const fileContent = 'foo(/\\(test\\)/);';
+      mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+
+      const result = await symbolFinder.findCallSitesInFile('/test/file.ts', 'foo');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toHaveLength(1);
     });
 
     it('應該處理檔案不存在的情況', async () => {
@@ -590,14 +657,17 @@ describe('SymbolFinder - 文字匹配降級', () => {
 
       vi.mocked(mockParser.parse).mockRejectedValue(new Error('Parse error'));
 
+      const funcA = createMockSymbol('funcA');
+      const funcB = createMockSymbol('funcB');
+
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['funcA', 'funcB']),
+        [funcA, funcB],
         ['/test/file.ts']
       );
 
       expect(result.size).toBe(2);
-      expect(result.get('funcA')?.length).toBeGreaterThan(0);
-      expect(result.get('funcB')?.length).toBeGreaterThan(0);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcA)))?.length).toBeGreaterThan(0);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcB)))?.length).toBeGreaterThan(0);
     });
 
     it('當沒有 parser 時應降級到文字匹配', async () => {
@@ -606,14 +676,17 @@ describe('SymbolFinder - 文字匹配降級', () => {
       mockParserRegistry = createMockParserRegistry(null);
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
+      const funcA = createMockSymbol('funcA');
+      const funcB = createMockSymbol('funcB');
+
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['funcA', 'funcB']),
+        [funcA, funcB],
         ['/test/file.unknown']
       );
 
       expect(result.size).toBe(2);
-      expect(result.get('funcA')?.length).toBeGreaterThan(0);
-      expect(result.get('funcB')?.length).toBeGreaterThan(0);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcA)))?.length).toBeGreaterThan(0);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcB)))?.length).toBeGreaterThan(0);
     });
   });
 
@@ -741,13 +814,16 @@ line3 foo`;
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
+      const funcA = createMockSymbol('funcA');
+      const funcB = createMockSymbol('funcB');
+
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['funcA', 'funcB']),
+        [funcA, funcB],
         ['/test/file.ts']
       );
 
-      expect(result.get('funcA')).toHaveLength(2);
-      expect(result.get('funcB')).toHaveLength(1);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcA)))).toHaveLength(2);
+      expect(result.get(serializeSymbolKey(symbolToKey(funcB)))).toHaveLength(1);
     });
 
     it('應該處理符號在結果 Map 中不存在的情況', async () => {
@@ -755,13 +831,15 @@ line3 foo`;
       mockFileSystem = createMockFileSystem({ '/test/file.ts': fileContent });
       symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
 
+      const funcA = createMockSymbol('funcA');
+
       // 這個測試確保當 results.get(symbolName) 返回 undefined 時不會出錯
       const result = await symbolFinder.findReferencesMultiple(
-        new Set(['funcA']),
+        [funcA],
         ['/test/file.ts']
       );
 
-      expect(result.get('funcA')).toBeDefined();
+      expect(result.get(serializeSymbolKey(symbolToKey(funcA)))).toBeDefined();
     });
   });
 });

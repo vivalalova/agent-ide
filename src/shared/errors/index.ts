@@ -39,7 +39,7 @@ interface ErrorOptions {
   filePath?: string;
   operation?: string;
   field?: string;
-  value?: any;
+  value?: unknown;
   configPath?: string;
   expectedType?: string;
   syntaxElement?: string;

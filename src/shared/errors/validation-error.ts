@@ -9,13 +9,13 @@ import { BaseError } from '@shared/errors/base-error.js';
  */
 export class ValidationError extends BaseError {
   public readonly field: string;
-  public readonly value?: any;
+  public readonly value?: unknown;
 
   constructor(
     message: string,
     field: string,
     code: string = 'VALIDATION_ERROR',
-    value?: any,
+    value?: unknown,
     cause?: Error
   ) {
     super(code, message, { field, value }, cause);

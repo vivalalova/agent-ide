@@ -176,9 +176,9 @@ describe('CLI 整合測試', () => {
     it('change-signature - 參數重構後仍可編譯', () => {
       const result = runCLI(`${CLI} change-signature "${SAMPLE_PROJECT}/src/services/user-service.ts" createUser --add "options:object={}@2" --format json`);
       expect(result.success).toBe(true);
-      expect(result.callSiteUpdates).toBeDefined();
-      expect(Array.isArray(result.callSiteUpdates)).toBe(true);
-      expect(result.callSiteUpdates.length).toBeGreaterThan(0);
+      expect(result.files).toBeDefined();
+      expect(Array.isArray(result.files)).toBe(true);
+      expect(result.files.length).toBeGreaterThan(0);
       verifyTypecheck(SAMPLE_PROJECT);
     });
 
@@ -206,8 +206,9 @@ describe('CLI 整合測試', () => {
   // ========================================
 
   describe('Error Handling', () => {
-    it('move - 目標路徑已存在應失敗', () => {
-      const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils" "${SAMPLE_PROJECT}/src/models" --path "${SAMPLE_PROJECT}" --format json`);
+    it('move - 目標檔案已存在應失敗', () => {
+      // 移動 index.ts 到已存在的 user-model.ts
+      const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/index.ts" "${SAMPLE_PROJECT}/src/models/user-model.ts" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(false);
     });
 

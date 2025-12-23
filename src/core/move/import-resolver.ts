@@ -5,13 +5,21 @@
 
 import * as path from 'path';
 import { ImportStatement, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
-import { Position, createPosition, createRange } from '@shared/types/core.js';
+import { createPosition, createRange } from '@shared/types/core.js';
 
 export class ImportResolver {
   private readonly config: ImportResolverConfig;
 
   constructor(config: ImportResolverConfig) {
     this.config = config;
+  }
+
+  /**
+   * 取得路徑別名映射
+   * @returns 別名與實際路徑的映射物件
+   */
+  getPathAliases(): Record<string, string> {
+    return this.config.pathAliases;
   }
 
   /**

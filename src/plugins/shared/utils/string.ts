@@ -169,16 +169,19 @@ export function escapeRegExp(str: string): string {
  * @param variables 變數物件
  * @returns 替換後的字串
  */
-export function template(template: string, variables: Record<string, any>): string {
-  if (!template) {return '';}
+export function template(templateStr: string, variables: Record<string, unknown>): string {
+  if (!templateStr) {return '';}
 
-  return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+  return templateStr.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
     const trimmedKey = key.trim();
 
     // 支援巢狀物件存取，如 user.name
-    const value = trimmedKey.split('.').reduce((obj: any, prop: string) => {
-      return obj?.[prop];
-    }, variables);
+    const value = trimmedKey.split('.').reduce((obj: unknown, prop: string) => {
+      if (obj !== null && typeof obj === 'object') {
+        return (obj as Record<string, unknown>)[prop];
+      }
+      return undefined;
+    }, variables as unknown);
 
     return value !== undefined ? String(value) : match;
   });

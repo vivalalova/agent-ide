@@ -13,7 +13,6 @@ import { EventPriority } from '@application/events/event-types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { MoveService } from '@core/move/move-service.js';
 import { ImpactAnalyzer } from '@core/impact/index.js';
-import { IndexEngine } from '@core/shared/indexing/index-engine.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
 import type {
@@ -24,7 +23,6 @@ import type {
   RenameOperation,
   RenameResult,
   MoveResult,
-  CodeChange,
   ErrorContext
 } from '../types.js';
 
@@ -61,7 +59,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private readonly renameEngine: RenameEngine;
   private readonly moveService: MoveService;
   private readonly impactAnalyzer: ImpactAnalyzer;
-  private readonly indexEngine: IndexEngine;
   private readonly fileSystem: IFileSystem;
 
   constructor(
@@ -82,155 +79,28 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     this.renameEngine = new RenameEngine();
     this.moveService = new MoveService(this.fileSystem);
     this.impactAnalyzer = new ImpactAnalyzer(this.fileSystem);
-    this.indexEngine = new IndexEngine({} as any, this.fileSystem);
 
     // 註冊所有模組
     this.registerModules();
   }
 
   /**
-   * 分析並重構
+   * @deprecated 使用 CLI 命令取代
    */
   async analyzeAndRefactor(filePath: string, options: RefactorOptions): Promise<RefactorResult> {
-    const context: ErrorContext = {
-      module: 'module-coordinator',
-      operation: 'analyzeAndRefactor',
-      parameters: { filePath, options },
-      timestamp: new Date()
-    };
-
-    try {
-      // 執行重構操作
-      const changes: CodeChange[] = [];
-      let success = true;
-
-      switch (options.type) {
-      case 'rename':
-        if (options.selection && options.newName) {
-          try {
-            const renameResult = await this.renameEngine.rename({
-              symbol: {} as any,
-              newName: options.newName,
-              filePaths: [filePath],
-              position: {
-                line: options.selection.start.line,
-                column: options.selection.start.column,
-                offset: 0
-              }
-            });
-            if (renameResult.success && renameResult.operations) {
-              changes.push(...renameResult.operations.map((op) => ({
-                filePath: op.filePath,
-                oldContent: op.oldText,
-                newContent: op.newText,
-                range: op.range
-              })));
-            } else {
-              success = false;
-            }
-          } catch {
-            success = false;
-          }
-        } else {
-          success = false;
-        }
-        break;
-
-      default:
-        throw new ModuleCoordinatorError(
-          `不支援的重構類型: ${options.type}`,
-          { refactorType: options.type }
-        );
-      }
-
-      // 發送模組協調事件
-      await this.emitModuleEvent('refactor-completed', {
-        filePath,
-        refactorType: options.type,
-        success,
-        changesCount: changes.length
-      });
-
-      return {
-        success,
-        changes,
-        preview: options.preview ? this.generatePreview(changes) : undefined
-      };
-
-    } catch (error) {
-      const handledError = await this.errorHandler.handle(error as Error, context);
-
-      return {
-        success: false,
-        changes: [],
-        error: handledError
-      };
-    }
+    throw new ModuleCoordinatorError(
+      'Refactor via ModuleCoordinator is deprecated. Use CLI commands instead.',
+      { refactorType: options.type, filePath }
+    );
   }
 
   /**
-   * 批次重新命名操作
+   * @deprecated 使用 CLI rename 命令取代
    */
-  async batchRename(operations: RenameOperation[]): Promise<RenameResult[]> {
-    const results: RenameResult[] = [];
-
-    for (const operation of operations) {
-      const context: ErrorContext = {
-        module: 'module-coordinator',
-        operation: 'batchRename',
-        parameters: { operation },
-        timestamp: new Date()
-      };
-
-      try {
-        const renameResult = await this.renameEngine.rename({
-          symbol: {} as any,
-          newName: operation.newName,
-          filePaths: [operation.filePath],
-          position: operation.position
-        });
-
-        // 確保 renameResult 符合預期格式
-        if (renameResult && typeof renameResult === 'object') {
-          results.push({
-            success: renameResult.success,
-            filesChanged: renameResult.affectedFiles.length,
-            changes: renameResult.operations.map((op) => ({
-              filePath: op.filePath,
-              oldContent: op.oldText,
-              newContent: op.newText,
-              range: op.range
-            }))
-          });
-        } else {
-          results.push({
-            success: false,
-            filesChanged: 0,
-            changes: [],
-            error: new ModuleCoordinatorError('重新命名操作返回無效結果')
-          });
-        }
-
-      } catch (error) {
-        const handledError = await this.errorHandler.handle(error as Error, context);
-
-        results.push({
-          success: false,
-          filesChanged: 0,
-          changes: [],
-          error: handledError
-        });
-      }
-    }
-
-    // 發送批次操作完成事件
-    await this.emitModuleEvent('batch-rename-completed', {
-      totalOperations: operations.length,
-      successCount: results.filter(r => r.success).length,
-      failureCount: results.filter(r => !r.success).length
-    });
-
-    return results;
+  async batchRename(_operations: RenameOperation[]): Promise<RenameResult[]> {
+    throw new ModuleCoordinatorError(
+      'BatchRename via ModuleCoordinator is deprecated. Use CLI rename command instead.'
+    );
   }
 
   /**
@@ -332,7 +202,6 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
   private registerModules(): void {
     const moduleConfigs = [
       { id: 'dependency', name: 'dependency', instance: this.impactAnalyzer },
-      { id: 'indexing', name: 'indexing', instance: this.indexEngine },
       { id: 'move', name: 'move', instance: this.moveService },
       { id: 'rename', name: 'rename', instance: this.renameEngine }
     ];
@@ -371,18 +240,4 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
     }
   }
 
-  /**
-   * 生成預覽內容
-   */
-  private generatePreview(changes: CodeChange[]): string {
-    if (changes.length === 0) {
-      return '無變更';
-    }
-
-    const previews = changes.map(change =>
-      `檔案: ${change.filePath}\n變更:\n${change.newContent.slice(0, 200)}...`
-    );
-
-    return previews.join('\n\n');
-  }
 }

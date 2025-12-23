@@ -706,6 +706,25 @@ describe('QueryFormatter', () => {
 
       expect(summary).toContain('... 還有 5 個');
     });
+
+    it('應該顯示跳過檔案警告', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [],
+        byType: {},
+        filesAffected: 0,
+        scanTime: 100,
+        skippedFiles: 3,
+        summary: { totalScanned: 50 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('跳過檔案: 3 個');
+      expect(summary).toContain('解析失敗');
+    });
   });
 
   describe('formatSnapshotSummary', () => {
@@ -770,6 +789,69 @@ describe('QueryFormatter', () => {
       expect(summary).toContain('模組數: 2');
       expect(summary).toContain('src/core/indexing');
       expect(summary).toContain('src/core/dependency');
+    });
+
+    it('應該格式化增量快照（有 baseVersion）', () => {
+      const incrementalSnapshot = {
+        version: 'v2',
+        baseVersion: 'v1',
+        delta: {
+          added: {
+            modules: { 'new-module': { module: 'new-module', api: { NewClass: {} }, factories: {}, types: {}, private: {} } },
+            symbols: [{ type: 'function', module: 'core', name: 'newFunc' }]
+          },
+          modified: {
+            modules: ['modified-module'],
+            symbols: [{ type: 'class', module: 'core', name: 'ModifiedClass' }]
+          },
+          removed: {
+            modules: ['deleted-module'],
+            symbols: [{ type: 'variable', module: 'util', name: 'oldVar' }]
+          }
+        }
+      };
+
+      const result: SnapshotResult = {
+        command: QueryCommand.Snapshot,
+        success: true,
+        summary: {},
+        snapshotType: 'incremental',
+        snapshot: incrementalSnapshot
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('增量快照');
+      expect(summary).toContain('Version: v2');
+      expect(summary).toContain('基準版本: v1');
+      expect(summary).toContain('新增: 1 個模組, 1 個符號');
+      expect(summary).toContain('修改: 1 個模組, 1 個符號');
+      expect(summary).toContain('刪除: 1 個模組, 1 個符號');
+    });
+
+    it('應該格式化增量快照（無 baseVersion，初始快照）', () => {
+      const incrementalSnapshot = {
+        version: 'v1',
+        baseVersion: null,
+        delta: {
+          added: { modules: {}, symbols: [] },
+          modified: { modules: [], symbols: [] },
+          removed: { modules: [], symbols: [] }
+        }
+      };
+
+      const result: SnapshotResult = {
+        command: QueryCommand.Snapshot,
+        success: true,
+        summary: {},
+        snapshotType: 'incremental',
+        snapshot: incrementalSnapshot
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('(初始快照)');
+      expect(summary).toContain('沒有變更');
     });
   });
 

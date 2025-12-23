@@ -60,61 +60,6 @@ export interface MoveResult {
   error?: BaseError;
 }
 
-// ============= 工作流程引擎型別 =============
-
-export interface Workflow<T = unknown> {
-  id: string;
-  name: string;
-  steps: WorkflowStep[];
-  context?: T;
-  metadata?: Record<string, unknown>;
-}
-
-export interface WorkflowStep {
-  id: string;
-  name: string;
-  execute: (context: unknown) => Promise<StepResult>;
-  rollback?: (context: unknown) => Promise<void>;
-  canRetry?: boolean;
-  maxRetries?: number;
-}
-
-export interface StepResult {
-  success: boolean;
-  data?: unknown;
-  error?: BaseError;
-  nextStepId?: string;
-}
-
-export interface WorkflowResult<T = unknown> {
-  workflowId: string;
-  status: WorkflowStatus;
-  result?: T;
-  error?: BaseError;
-  executedSteps: string[];
-  duration: number;
-}
-
-export enum WorkflowStatus {
-  Pending = 'pending',
-  Running = 'running',
-  Paused = 'paused',
-  Completed = 'completed',
-  Failed = 'failed',
-  Cancelled = 'cancelled'
-}
-
-export interface WorkflowState {
-  workflowId: string;
-  status: WorkflowStatus;
-  currentStepId?: string;
-  executedSteps: string[];
-  context: unknown;
-  startTime: Date;
-  endTime?: Date;
-  error?: BaseError;
-}
-
 // ============= 會話管理型別 =============
 
 export interface Session {
@@ -241,14 +186,6 @@ export interface IModuleCoordinatorService {
   getModuleStatus(): Promise<ModuleStatus[]>;
 }
 
-export interface IWorkflowEngine {
-  execute<T>(workflow: Workflow<T>): Promise<WorkflowResult<T>>;
-  pause(workflowId: string): Promise<void>;
-  resume<T>(workflowId: string): Promise<WorkflowResult<T>>;
-  rollback(workflowId: string, stepId?: string): Promise<void>;
-  getStatus(workflowId: string): Promise<WorkflowStatus>;
-}
-
 export interface ISessionManager {
   createSession(userId?: string): Promise<Session>;
   getSession(sessionId: string): Promise<Session | null>;
@@ -297,16 +234,6 @@ export interface ModuleEvent extends ApplicationEvent {
     moduleId: string;
     eventType: string;
     data: unknown;
-  };
-}
-
-export interface WorkflowEvent extends ApplicationEvent {
-  type: 'workflow-event';
-  payload: {
-    workflowId: string;
-    eventType: 'started' | 'paused' | 'resumed' | 'completed' | 'failed' | 'step-completed';
-    stepId?: string;
-    data?: unknown;
   };
 }
 

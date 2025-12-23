@@ -4,15 +4,17 @@
  * @param visited 已訪問的物件（用於處理循環引用）
  * @returns 深度複製後的物件
  */
-export function deepClone<T>(obj: T, visited = new WeakMap()): T {
+export function deepClone<T>(obj: T, visited = new WeakMap<object, unknown>()): T {
   // 處理基本型別
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
 
   // 處理循環引用
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- WeakMap 需要 object 型別，泛型 T 可能不滿足
   if (visited.has(obj as any)) {
-    return visited.get(obj as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 同上
+    return visited.get(obj as any) as T;
   }
 
   // 處理日期
@@ -27,7 +29,8 @@ export function deepClone<T>(obj: T, visited = new WeakMap()): T {
 
   // 處理陣列
   if (Array.isArray(obj)) {
-    const clonedArray: any[] = [];
+    const clonedArray: unknown[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- WeakMap 需要 object 型別
     visited.set(obj as any, clonedArray);
 
     for (let i = 0; i < obj.length; i++) {
@@ -39,10 +42,12 @@ export function deepClone<T>(obj: T, visited = new WeakMap()): T {
 
   // 處理物件
   const clonedObj = {} as T;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- WeakMap 需要 object 型別
   visited.set(obj as any, clonedObj);
 
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態物件屬性賦值
       (clonedObj as any)[key] = deepClone(obj[key], visited);
     }
   }
@@ -56,6 +61,7 @@ export function deepClone<T>(obj: T, visited = new WeakMap()): T {
  * @param sources 來源物件
  * @returns 合併後的物件
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型約束需要 any 以接受任意物件結構
 export function deepMerge<T extends Record<string, any>>(target: T, ...sources: Partial<T>[]): T {
   if (!sources.length) {return target;}
 
@@ -71,14 +77,15 @@ export function deepMerge<T extends Record<string, any>>(target: T, ...sources: 
 /**
  * 輔助函式：合併兩個物件
  */
-function mergeObjects(target: any, source: any): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態物件合併需要 any
+function mergeObjects(target: Record<string, any>, source: Record<string, any>): void {
   for (const key in source) {
     if (Object.prototype.hasOwnProperty.call(source, key)) {
       const sourceValue = source[key];
       const targetValue = target[key];
 
       if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
-        mergeObjects(targetValue, sourceValue);
+        mergeObjects(targetValue as Record<string, unknown>, sourceValue as Record<string, unknown>);
       } else {
         target[key] = deepClone(sourceValue);
       }
@@ -89,7 +96,7 @@ function mergeObjects(target: any, source: any): void {
 /**
  * 檢查是否為純物件
  */
-function isPlainObject(obj: any): boolean {
+function isPlainObject(obj: unknown): obj is Record<string, unknown> {
   return obj !== null &&
          typeof obj === 'object' &&
          !Array.isArray(obj) &&
@@ -103,6 +110,7 @@ function isPlainObject(obj: any): boolean {
  * @param keys 要選取的屬性鍵值
  * @returns 包含指定屬性的新物件
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型約束需要 any 以接受任意物件結構
 export function pick<T extends Record<string, any>, K extends keyof T>(
   obj: T,
   keys: K[]
@@ -124,6 +132,7 @@ export function pick<T extends Record<string, any>, K extends keyof T>(
  * @param keys 要排除的屬性鍵值
  * @returns 排除指定屬性後的新物件
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型約束需要 any 以接受任意物件結構
 export function omit<T extends Record<string, any>, K extends keyof T>(
   obj: T,
   keys: K[]
@@ -145,7 +154,7 @@ export function omit<T extends Record<string, any>, K extends keyof T>(
  * @param value 待檢查的值
  * @returns 是否為空
  */
-export function isEmpty(value: any): boolean {
+export function isEmpty(value: unknown): boolean {
   if (value == null) {return true;}
 
   if (typeof value === 'string' || Array.isArray(value)) {
@@ -169,7 +178,7 @@ export function isEmpty(value: any): boolean {
  * @param b 第二個值
  * @returns 是否相等
  */
-export function isEqual(a: any, b: any): boolean {
+export function isEqual(a: unknown, b: unknown): boolean {
   if (a === b) {return true;}
 
   if (a == null || b == null) {return a === b;}
@@ -199,14 +208,16 @@ export function isEqual(a: any, b: any): boolean {
 
   // 處理物件
   if (typeof a === 'object' && typeof b === 'object') {
-    const keysA = Object.keys(a);
-    const keysB = Object.keys(b);
+    const objA = a as Record<string, unknown>;
+    const objB = b as Record<string, unknown>;
+    const keysA = Object.keys(objA);
+    const keysB = Object.keys(objB);
 
     if (keysA.length !== keysB.length) {return false;}
 
     for (const key of keysA) {
       if (!keysB.includes(key)) {return false;}
-      if (!isEqual(a[key], b[key])) {return false;}
+      if (!isEqual(objA[key], objB[key])) {return false;}
     }
 
     return true;
@@ -221,11 +232,13 @@ export function isEqual(a: any, b: any): boolean {
  * @param path 屬性路徑（支援點記法和陣列索引）
  * @param value 要設定的值
  */
-export function set(obj: any, path: string, value: any): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑存取需要 any
+export function set(obj: Record<string, any>, path: string, value: unknown): void {
   if (!path) {return;}
 
   const keys = parsePath(path);
-  let current = obj;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑遍歷需要 any
+  let current: any = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
@@ -251,11 +264,13 @@ export function set(obj: any, path: string, value: any): void {
  * @param defaultValue 預設值
  * @returns 屬性值或預設值
  */
-export function get(obj: any, path: string, defaultValue?: any): any {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑存取需要 any
+export function get(obj: Record<string, any>, path: string, defaultValue?: unknown): unknown {
   if (!path) {return obj;}
 
   const keys = parsePath(path);
-  let current = obj;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑遍歷需要 any
+  let current: any = obj;
 
   for (const key of keys) {
     if (current == null || !(key in current)) {
@@ -273,11 +288,13 @@ export function get(obj: any, path: string, defaultValue?: any): any {
  * @param path 屬性路徑
  * @returns 是否存在該屬性
  */
-export function has(obj: any, path: string): boolean {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑存取需要 any
+export function has(obj: Record<string, any>, path: string): boolean {
   if (!path) {return false;}
 
   const keys = parsePath(path);
-  let current = obj;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑遍歷需要 any
+  let current: any = obj;
 
   for (const key of keys) {
     if (current == null || !(key in current)) {
@@ -307,6 +324,7 @@ function parsePath(path: string): string[] {
  * @param mapper 映射函式
  * @returns 映射後的新物件
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型約束需要 any 以接受任意物件結構
 export function mapValues<T extends Record<string, any>, R>(
   obj: T,
   mapper: (value: T[keyof T], key: keyof T) => R

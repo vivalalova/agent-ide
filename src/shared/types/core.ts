@@ -9,7 +9,7 @@
 export interface Position {
   readonly line: number;    // 行號（從 1 開始）
   readonly column: number;  // 列號（從 1 開始）
-  readonly offset: number | undefined; // 字元偏移（從 0 開始，可選）
+  readonly offset?: number; // 字元偏移（從 0 開始，可選）
 }
 
 /**

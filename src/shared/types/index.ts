@@ -11,6 +11,9 @@ export * from './symbol.js';
 // AST 相關型別
 export * from './ast.js';
 
+// 行號工具函數
+export { isSameLine, toOneBased, toZeroBased } from './line-number.js';
+
 // 重新匯出常用型別以便於使用
 export type {
   Position,

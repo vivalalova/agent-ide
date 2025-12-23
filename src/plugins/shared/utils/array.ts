@@ -15,18 +15,23 @@ export function chunk<T>(array: T[], size: number): T[][] {
 }
 
 /**
+ * 巢狀陣列型別
+ */
+type NestedArray<T> = (T | NestedArray<T>)[];
+
+/**
  * 扁平化陣列，支援多層巢狀
  * @param array 待扁平化的陣列
  * @returns 扁平化後的陣列
  */
-export function flatten<T = any>(array: any[]): T[] {
+export function flatten<T>(array: NestedArray<T>): T[] {
   const result: T[] = [];
 
   for (const item of array) {
     if (Array.isArray(item)) {
-      result.push(...flatten<T>(item));
+      result.push(...flatten<T>(item as NestedArray<T>));
     } else {
-      result.push(item);
+      result.push(item as T);
     }
   }
 

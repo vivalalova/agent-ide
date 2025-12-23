@@ -200,7 +200,8 @@ export class MemoryCache<K, V> {
       this.stats.memoryUsage = 0;
     }
 
-    this.emitEvent(CacheEventType.CLEAR, undefined as any);
+
+    this.emitEvent(CacheEventType.CLEAR, undefined as unknown as K);
   }
 
   /**

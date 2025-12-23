@@ -14,7 +14,7 @@ import {
   isSubPath,
   toUnixPath,
   toWindowsPath
-} from '@shared/utils/path.js';
+} from '@plugins/shared/utils/path.js';
 
 // Object utilities
 import {
@@ -28,7 +28,7 @@ import {
   get,
   has,
   mapValues
-} from '@shared/utils/object.js';
+} from '@plugins/shared/utils/object.js';
 
 // String utilities
 import {
@@ -43,7 +43,7 @@ import {
   escapeRegExp,
   template,
   slugify
-} from '@shared/utils/string.js';
+} from '@plugins/shared/utils/string.js';
 
 // Array utilities
 import {
@@ -57,7 +57,7 @@ import {
   sortBy,
   shuffle,
   compact
-} from '@shared/utils/array.js';
+} from '@plugins/shared/utils/array.js';
 
 // Async utilities
 import {
@@ -71,7 +71,7 @@ import {
   race,
   queue,
   batch
-} from '@shared/utils/async.js';
+} from '@plugins/shared/utils/async.js';
 
 // Memory monitor
 import {
@@ -79,7 +79,7 @@ import {
   getFormattedMemoryReport,
   withMemoryMonitoring,
   type Disposable
-} from '@shared/utils/memory-monitor.js';
+} from '@plugins/shared/utils/memory-monitor.js';
 
 // ============================================
 // Path Utilities Tests

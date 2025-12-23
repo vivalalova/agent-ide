@@ -14,7 +14,7 @@ interface RetryOptions {
   maxAttempts: number;
   delay?: number;
   exponentialBackoff?: boolean;
-  shouldRetry?: (error: any) => boolean;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 /**
@@ -29,7 +29,7 @@ export async function retry<T>(
 ): Promise<T> {
   const { maxAttempts, delay = 1000, exponentialBackoff = false, shouldRetry } = options;
 
-  let lastError: any;
+  let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -84,6 +84,7 @@ export function timeout<T>(
  * @param immediate 是否立即執行
  * @returns 防抖後的函式
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型函式型別需要 any 以接受任意參數
 export function debounce<T extends (...args: any[]) => any>(
   fn: T,
   delay: number,
@@ -120,6 +121,7 @@ export function debounce<T extends (...args: any[]) => any>(
  * @param delay 節流間隔（毫秒）
  * @returns 節流後的函式
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型函式型別需要 any 以接受任意參數
 export function throttle<T extends (...args: any[]) => any>(
   fn: T,
   delay: number

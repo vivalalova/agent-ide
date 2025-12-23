@@ -3,7 +3,6 @@
  * 從程式碼中提取成員定義
  */
 
-import type { Location } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { MemberType, type MemberDefinition } from './types.js';
@@ -344,8 +343,8 @@ export class MemberExtractor {
       location: {
         filePath,
         range: {
-          start: { line: startLine, column: 1, offset: undefined },
-          end: { line: endLine, column: 1, offset: undefined }
+          start: { line: startLine, column: 1 },
+          end: { line: endLine, column: 1 }
         }
       },
       sourceCode,

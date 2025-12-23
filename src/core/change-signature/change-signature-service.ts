@@ -6,6 +6,8 @@
 import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { Changeset } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { SignatureParser } from './signature-parser.js';
 import {
   type ChangeSignatureOptions,
@@ -24,7 +26,7 @@ import {
   isChangeDefaultValueChange,
   isToggleOptionalChange
 } from './types.js';
-import { SymbolFinder, type CallSite } from '../shared/symbol-finder.js';
+import { SymbolFinder, type CallSite } from '../shared/symbol-finder/index.js';
 
 /**
  * Change Signature Service
@@ -113,6 +115,89 @@ export class ChangeSignatureService {
         filesAffected: affectedFiles.size
       }
     };
+  }
+
+  /**
+   * 生成參數簽名變更的 Changeset
+   * 使用 preview 模式收集變更，轉換為統一的 Changeset 格式
+   *
+   * @param options - 變更選項（強制使用 preview 模式）
+   * @returns Changeset 物件
+   */
+  async generateChangeset(options: ChangeSignatureOptions): Promise<Changeset> {
+    const builder = createChangesetBuilder().forCommand('change-signature');
+
+    // 使用現有邏輯（preview 模式）收集變更
+    const result = await this.changeSignature({
+      ...options,
+      preview: true
+    });
+
+    if (!result.success) {
+      return builder
+        .addError(result.error ?? 'Change signature failed')
+        .withDescription(result.error ?? 'Change signature failed')
+        .build();
+    }
+
+    // 轉換 definitionUpdate
+    const { filePath, originalCode, newCode, location } = result.definitionUpdate;
+
+    // originalCode 和 newCode 都是完整的一行內容
+    // 因此 range 應該從行首（column 1）開始，到行尾結束
+    const lineNumber = location.range.start.line;
+    const originalLineLength = originalCode.length;
+
+    builder.addTextChange(filePath, [{
+      range: {
+        start: { line: lineNumber, column: 1 },
+        end: { line: lineNumber, column: originalLineLength + 1 }
+      },
+      newText: newCode,
+      description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
+    }], 'modify');
+
+    // 轉換 callSiteUpdates
+    // 按檔案分組，合併同一檔案的多個變更
+    const updatesByFile = new Map<string, CallSiteUpdate[]>();
+    for (const update of result.callSiteUpdates) {
+      const existing = updatesByFile.get(update.filePath);
+      if (existing) {
+        existing.push(update);
+      } else {
+        updatesByFile.set(update.filePath, [update]);
+      }
+    }
+
+    for (const [updateFilePath, updates] of updatesByFile) {
+      // 跳過與 definitionUpdate 同一檔案（避免重複）
+      // 已經在上面處理過了，呼叫點和定義可能在同一行
+      const edits = updates.map(update => {
+        // originalCode 和 newCode 都是完整的一行內容
+        // 因此 range 應該從行首（column 1）開始，到行尾結束
+        const lineStart = update.location.range.start.line;
+        const callOriginalLength = update.originalCode.length;
+        return {
+          range: {
+            start: { line: lineStart, column: 1 },
+            end: { line: lineStart, column: callOriginalLength + 1 }
+          },
+          newText: update.newCode,
+          description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
+        };
+      });
+
+      builder.addTextChange(updateFilePath, edits, 'modify');
+    }
+
+    // 設定描述
+    const originalParams = result.originalSignature.parameters.map(p => p.name).join(', ');
+    const newParams = result.newSignature.parameters.map(p => p.name).join(', ');
+    builder.withDescription(
+      `Changed signature of ${result.originalSignature.name}: (${originalParams}) -> (${newParams})`
+    );
+
+    return builder.build();
   }
 
   /**
@@ -878,12 +963,22 @@ export class ChangeSignatureService {
    * 建立錯誤結果
    */
   private createErrorResult(code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
+    // 錯誤情況下必須提供佔位簽名資訊
+    const emptyRange = { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } };
+    const emptyLocation = { filePath: '', range: emptyRange };
+    const emptySignature: FunctionSignature = {
+      name: '',
+      parameters: [],
+      location: emptyLocation,
+      isMethod: false,
+      modifiers: []
+    };
     return {
       success: false,
       error: message,
-      originalSignature: null as any,
-      newSignature: null as any,
-      definitionUpdate: null as any,
+      originalSignature: emptySignature,
+      newSignature: emptySignature,
+      definitionUpdate: { filePath: '', originalCode: '', newCode: '', location: emptyLocation },
       callSiteUpdates: [],
       executed: false,
       stats: {
