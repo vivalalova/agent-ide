@@ -47,7 +47,7 @@ export class MemberExtractor {
       return null;
     }
 
-    const extension = this.fileUtils.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
 
     switch (extension) {
       case '.ts':
@@ -121,7 +121,7 @@ export class MemberExtractor {
       return [];
     }
 
-    const extension = this.fileUtils.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
 
     switch (extension) {
       case '.ts':

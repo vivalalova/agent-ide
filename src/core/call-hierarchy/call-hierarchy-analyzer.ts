@@ -9,7 +9,7 @@ import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
-import { createFileUtils, type FileUtils } from '@core/foundations/index.js';
+import { createFileUtils, FileUtils } from '@core/foundations/index.js';
 import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 /** Outgoing 呼叫資訊（目標函數呼叫了誰） */
@@ -249,7 +249,7 @@ export class CallHierarchyAnalyzer {
       return outgoing;
     }
 
-    const parser = this.parserRegistry.getParser(this.fileUtils.getFileExtension(filePath));
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (!parser) {
       return outgoing;
     }
@@ -408,7 +408,7 @@ export class CallHierarchyAnalyzer {
       return results;
     }
 
-    const parser = this.parserRegistry.getParser(this.fileUtils.getFileExtension(filePath));
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (!parser) {
       return results;
     }

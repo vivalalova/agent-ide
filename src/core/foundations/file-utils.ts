@@ -31,7 +31,7 @@ export class FileUtils {
   }
 
   /**
-   * 取得檔案副檔名（靜態方法）
+   * 取得檔案副檔名
    * @param filePath 檔案路徑
    * @returns 副檔名（含點號），無副檔名返回空字串
    */
@@ -41,18 +41,9 @@ export class FileUtils {
   }
 
   /**
-   * 取得檔案副檔名（實例方法，內部調用靜態方法）
-   * @param filePath 檔案路徑
-   * @returns 副檔名（含點號），無副檔名返回空字串
-   */
-  getFileExtension(filePath: string): string {
-    return FileUtils.getFileExtension(filePath);
-  }
-
-  /**
    * 取得對應的 Parser
    * @param filePath 檔案路徑
-   * @returns Parser 實例，不支援的副檔名會拋出錯誤
+   * @returns Parser 實例，不支援的副檔名返回 undefined
    */
   getParser(filePath: string) {
     const extension = FileUtils.getFileExtension(filePath);
@@ -62,7 +53,7 @@ export class FileUtils {
   /**
    * 檢查是否為 TypeScript 檔案
    */
-  isTypeScript(filePath: string): boolean {
+  static isTypeScript(filePath: string): boolean {
     const ext = FileUtils.getFileExtension(filePath);
     return ext === '.ts' || ext === '.tsx';
   }
@@ -70,7 +61,7 @@ export class FileUtils {
   /**
    * 檢查是否為 JavaScript 檔案
    */
-  isJavaScript(filePath: string): boolean {
+  static isJavaScript(filePath: string): boolean {
     const ext = FileUtils.getFileExtension(filePath);
     return ext === '.js' || ext === '.jsx';
   }
@@ -78,8 +69,8 @@ export class FileUtils {
   /**
    * 檢查是否為支援的語言
    */
-  isSupportedLanguage(filePath: string): boolean {
-    return this.isTypeScript(filePath) || this.isJavaScript(filePath);
+  static isSupportedLanguage(filePath: string): boolean {
+    return FileUtils.isTypeScript(filePath) || FileUtils.isJavaScript(filePath);
   }
 }
 

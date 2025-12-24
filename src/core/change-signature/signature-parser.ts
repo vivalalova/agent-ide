@@ -35,7 +35,7 @@ export class SignatureParser {
       return null;
     }
 
-    const extension = this.fileUtils.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
 
     switch (extension) {
       case '.ts':
@@ -71,7 +71,7 @@ export class SignatureParser {
    * 效能優化：直接使用 AST 查找函數，不再先用正則找行號
    */
   private parseWithAST(content: string, filePath: string, functionName: string): FunctionSignature | null {
-    const extension = this.fileUtils.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
     const parser = this.parserRegistry.getParser(extension);
 
     if (!parser?.formatSignature) {
@@ -133,7 +133,7 @@ export class SignatureParser {
     functionName: string,
     _startLine: number
   ): number | null {
-    const extension = this.fileUtils.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
     const parser = this.parserRegistry.getParser(extension);
 
     if (!parser?.getFullDeclarationRange) {
