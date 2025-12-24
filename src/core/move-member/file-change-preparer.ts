@@ -9,13 +9,30 @@ import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange 
 import { MoveTargetType } from './types.js';
 
 /**
+ * Import 類型
+ */
+enum ImportType {
+  Named = 'named',
+  Namespace = 'namespace',
+  Default = 'default'
+}
+
+/**
+ * Import 符號資訊
+ */
+interface ImportSymbolInfo {
+  modulePath: string;
+  type: ImportType;
+}
+
+/**
  * 來源檔案的符號資訊
  */
 interface SourceSymbolInfo {
   /** 本地定義的 export 符號 */
   localExports: Set<string>;
-  /** import 的符號對應的來源 { symbolName -> modulePath } */
-  importedSymbols: Map<string, string>;
+  /** import 的符號對應的來源 { symbolName -> ImportSymbolInfo } */
+  importedSymbols: Map<string, ImportSymbolInfo>;
 }
 
 /**
@@ -189,7 +206,10 @@ export class FileChangePreparer {
     targetFile: string
   ): Promise<string> {
     const symbolInfo = this.analyzeSourceSymbols(sourceContent);
-    const neededImports: Map<string, Set<string>> = new Map(); // modulePath -> Set<symbolName>
+
+    // 按 modulePath 和 importType 分組
+    // key: `${modulePath}::${importType}`, value: Set<symbolName>
+    const neededImports: Map<string, { modulePath: string; type: ImportType; symbols: Set<string> }> = new Map();
 
     // 分析成員依賴的符號
     for (const dep of member.dependencies) {
@@ -197,27 +217,44 @@ export class FileChangePreparer {
       if (dep === member.name) { continue; }
 
       if (symbolInfo.localExports.has(dep)) {
-        // 依賴來自來源檔案的本地 export，需要從來源檔案 import
+        // 依賴來自來源檔案的本地 export，需要從來源檔案 import（使用 named import）
         const relativePath = this.calculateRelativePath(targetFile, sourceFile);
-        if (!neededImports.has(relativePath)) {
-          neededImports.set(relativePath, new Set());
+        const key = `${relativePath}::${ImportType.Named}`;
+        if (!neededImports.has(key)) {
+          neededImports.set(key, { modulePath: relativePath, type: ImportType.Named, symbols: new Set() });
         }
-        neededImports.get(relativePath)!.add(dep);
+        neededImports.get(key)!.symbols.add(dep);
       } else if (symbolInfo.importedSymbols.has(dep)) {
-        // 依賴來自外部模組，保持原本的 import 路徑
-        const originalModulePath = symbolInfo.importedSymbols.get(dep)!;
-        if (!neededImports.has(originalModulePath)) {
-          neededImports.set(originalModulePath, new Set());
+        // 依賴來自外部模組，保持原本的 import 類型
+        const importInfo = symbolInfo.importedSymbols.get(dep)!;
+        const key = `${importInfo.modulePath}::${importInfo.type}`;
+        if (!neededImports.has(key)) {
+          neededImports.set(key, { modulePath: importInfo.modulePath, type: importInfo.type, symbols: new Set() });
         }
-        neededImports.get(originalModulePath)!.add(dep);
+        neededImports.get(key)!.symbols.add(dep);
       }
     }
 
     // 生成 import 語句
     const importLines: string[] = [];
-    for (const [modulePath, symbols] of neededImports) {
-      const symbolList = Array.from(symbols).sort().join(', ');
-      importLines.push(`import { ${symbolList} } from '${modulePath}';`);
+    for (const { modulePath, type, symbols } of neededImports.values()) {
+      const symbolList = Array.from(symbols).sort();
+
+      switch (type) {
+        case ImportType.Namespace:
+          // import * as name from 'module' - 只取第一個符號作為 namespace 名稱
+          importLines.push(`import * as ${symbolList[0]} from '${modulePath}';`);
+          break;
+        case ImportType.Default:
+          // import name from 'module' - 只取第一個符號作為 default 名稱
+          importLines.push(`import ${symbolList[0]} from '${modulePath}';`);
+          break;
+        case ImportType.Named:
+        default:
+          // import { A, B } from 'module'
+          importLines.push(`import { ${symbolList.join(', ')} } from '${modulePath}';`);
+          break;
+      }
     }
 
     return importLines.join('\n');
@@ -228,7 +265,7 @@ export class FileChangePreparer {
    */
   private analyzeSourceSymbols(content: string): SourceSymbolInfo {
     const localExports = new Set<string>();
-    const importedSymbols = new Map<string, string>();
+    const importedSymbols = new Map<string, ImportSymbolInfo>();
 
     // 分析 import 語句
     // import { A, B } from 'module'
@@ -239,7 +276,7 @@ export class FileChangePreparer {
       const modulePath = match[2];
       for (const symbol of symbols) {
         if (symbol) {
-          importedSymbols.set(symbol, modulePath);
+          importedSymbols.set(symbol, { modulePath, type: ImportType.Named });
         }
       }
     }
@@ -247,7 +284,16 @@ export class FileChangePreparer {
     // 分析 import * as name from 'module'
     const namespaceImportPattern = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
     while ((match = namespaceImportPattern.exec(content)) !== null) {
-      importedSymbols.set(match[1], match[2]);
+      importedSymbols.set(match[1], { modulePath: match[2], type: ImportType.Namespace });
+    }
+
+    // 分析 import name from 'module' (default import)
+    const defaultImportPattern = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
+    while ((match = defaultImportPattern.exec(content)) !== null) {
+      // 排除已經被 namespace import 捕獲的（避免重複）
+      if (!importedSymbols.has(match[1])) {
+        importedSymbols.set(match[1], { modulePath: match[2], type: ImportType.Default });
+      }
     }
 
     // 分析本地 export
