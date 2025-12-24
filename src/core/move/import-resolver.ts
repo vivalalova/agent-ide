@@ -23,6 +23,14 @@ export class ImportResolver {
   }
 
   /**
+   * 取得 baseUrl 設定
+   * @returns baseUrl 絕對路徑，若無設定則返回 undefined
+   */
+  getBaseUrl(): string | undefined {
+    return this.config.baseUrl;
+  }
+
+  /**
    * 分析 import 語句 (別名，保持向後相容)
    */
   analyzeImports(filePath: string, code: string): ImportStatement[] {
@@ -309,6 +317,18 @@ export class ImportResolver {
     // 檢查是否為路徑別名（必須精確匹配或以 alias/ 開始）
     for (const alias of Object.keys(this.config.pathAliases)) {
       if (importPath === alias || importPath.startsWith(alias + '/')) {
+        return false;
+      }
+    }
+
+    // 檢查是否為 baseUrl 相對路徑（如 src/utils）
+    // TypeScript 允許在設定 baseUrl 時使用非 ./ 開頭的路徑
+    if (this.config.baseUrl) {
+      // 如果路徑包含 /，且第一段是常見的專案目錄名稱，視為 baseUrl 相對路徑
+      const firstSegment = importPath.split('/')[0];
+      // 常見的專案源碼目錄
+      const projectDirs = ['src', 'lib', 'app', 'source', 'packages', 'modules'];
+      if (projectDirs.includes(firstSegment)) {
         return false;
       }
     }

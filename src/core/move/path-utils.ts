@@ -64,14 +64,21 @@ export class PathUtils {
       return path.normalize(absoluteResolved);
     }
 
+    // 嘗試解析 baseUrl 相對路徑（如 src/utils）
+    const baseUrl = this.importResolver.getBaseUrl();
+    if (baseUrl) {
+      const absoluteResolved = path.resolve(baseUrl, importPath);
+      return path.normalize(absoluteResolved);
+    }
+
     return importPath;
   }
 
   /**
    * 檢查兩個路徑是否指向同一個檔案
    *
-   * @param path1 - 第一個路徑
-   * @param path2 - 第二個路徑
+   * @param path1 - 第一個路徑（可能是目錄，如 import from '@/utils' 解析為 /path/utils）
+   * @param path2 - 第二個路徑（通常是完整檔案路徑，如 /path/utils/index.ts）
    * @returns 是否指向同一檔案
    */
   pathsMatch(path1: string, path2: string): boolean {
@@ -93,7 +100,21 @@ export class PathUtils {
       const withoutExt1 = this.removeExtension(abs1);
       const withoutExt2 = this.removeExtension(abs2);
 
-      return withoutExt1 === withoutExt2;
+      if (withoutExt1 === withoutExt2) {
+        return true;
+      }
+
+      // 處理目錄 import 指向 index 檔案的情況
+      // 如 import from '@/utils' 解析為 /path/utils，實際指向 /path/utils/index.ts
+      const indexBasename = path.basename(withoutExt2);
+      if (indexBasename === 'index') {
+        const dirPath = path.dirname(withoutExt2);
+        if (withoutExt1 === dirPath) {
+          return true;
+        }
+      }
+
+      return false;
     } catch {
       return false;
     }
@@ -140,7 +161,7 @@ export class PathUtils {
   }
 
   /**
-   * 計算新的 import 路徑，保留原始路徑樣式（別名或相對路徑）
+   * 計算新的 import 路徑，保留原始路徑樣式（別名、baseUrl 相對路徑或相對路徑）
    *
    * @param originalImportPath - 原始 import 路徑
    * @param fromFile - import 所在的檔案
@@ -154,9 +175,9 @@ export class PathUtils {
     _oldFilePath: string,
     newFilePath: string
   ): string {
-    // 如果原本是路徑別名，保留別名並更新路徑
+    // 如果原本是路徑別名或 baseUrl 相對路徑，保留樣式
     if (!originalImportPath.startsWith('.') && !originalImportPath.startsWith('/')) {
-      // 檢查是否為路徑別名（精確匹配：alias 本身或 alias/ 開頭）
+      // 1. 檢查是否為路徑別名（精確匹配：alias 本身或 alias/ 開頭）
       for (const [alias, aliasPath] of Object.entries(this.importResolver.getPathAliases())) {
         if (originalImportPath === alias || originalImportPath.startsWith(alias + '/')) {
           const resolvedAliasPath = path.normalize(aliasPath);
@@ -176,6 +197,22 @@ export class PathUtils {
           const separator = alias.endsWith('/') ? '' : '/';
           return alias + separator + newRelativeToAlias;
         }
+      }
+
+      // 2. 檢查是否為 baseUrl 相對路徑（如 src/utils）
+      const baseUrl = this.importResolver.getBaseUrl();
+      if (baseUrl) {
+        // 保留原始的 baseUrl 相對路徑格式
+        let newRelativeToBaseUrl = path.relative(baseUrl, path.normalize(newFilePath));
+        newRelativeToBaseUrl = newRelativeToBaseUrl.replace(/\\/g, '/');
+
+        // 移除副檔名
+        const newExt = path.extname(newRelativeToBaseUrl);
+        if (REMOVABLE_EXTENSIONS.includes(newExt)) {
+          newRelativeToBaseUrl = newRelativeToBaseUrl.slice(0, -newExt.length);
+        }
+
+        return newRelativeToBaseUrl;
       }
     }
 

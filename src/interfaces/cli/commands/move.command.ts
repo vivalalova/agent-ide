@@ -132,12 +132,13 @@ async function handleMoveCommand(
       return;
     }
 
-    // 讀取 tsconfig.json 路徑別名
-    const pathAliases = await loadPathAliases(projectRoot, context);
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context);
 
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
-      pathAliases,
+      pathAliases: tsconfigPathConfig.pathAliases,
+      baseUrl: tsconfigPathConfig.baseUrl,
       supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
       includeNodeModules: false
     });
@@ -234,20 +235,32 @@ function printSuccess(
 }
 
 
+/** tsconfig 路徑設定 */
+interface TsconfigPathConfig {
+  pathAliases: Record<string, string>;
+  baseUrl?: string;
+}
+
 /**
- * 讀取 tsconfig.json 路徑別名
+ * 讀取 tsconfig.json 路徑設定（包含 paths 和 baseUrl）
  */
-async function loadPathAliases(
+async function loadTsconfigPathConfig(
   projectRoot: string,
   context: CommandContext
-): Promise<Record<string, string>> {
-  const pathAliases: Record<string, string> = {};
+): Promise<TsconfigPathConfig> {
+  const config: TsconfigPathConfig = { pathAliases: {} };
 
   try {
     const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
     const tsconfigContent = await context.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
     const tsconfig = JSON.parse(tsconfigContent);
 
+    // 解析 baseUrl
+    if (tsconfig.compilerOptions?.baseUrl) {
+      config.baseUrl = path.resolve(projectRoot, tsconfig.compilerOptions.baseUrl);
+    }
+
+    // 解析 paths
     if (tsconfig.compilerOptions?.paths) {
       const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
       const basePath = path.resolve(projectRoot, baseUrl);
@@ -258,13 +271,13 @@ async function loadPathAliases(
           const cleanAlias = alias.replace(/\/\*$/, '');
           const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
           // 轉換為絕對路徑
-          pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
+          config.pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
         }
       }
     }
   } catch {
-    // tsconfig.json 不存在或解析失敗，使用空的路徑別名
+    // tsconfig.json 不存在或解析失敗，使用空設定
   }
 
-  return pathAliases;
+  return config;
 }
