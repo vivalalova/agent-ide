@@ -305,7 +305,9 @@ export class ReferenceUpdater {
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
 
-      if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+      // 跳過 node_modules、build 輸出目錄和隱藏目錄
+      const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
+      if (skipDirs.includes(entry.name) || entry.name.startsWith('.')) {
         continue;
       }
 
