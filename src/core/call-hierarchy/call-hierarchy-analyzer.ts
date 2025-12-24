@@ -9,6 +9,7 @@ import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
+import { createFileUtils, type FileUtils } from '@core/shared/index.js';
 import type { TypeScriptAST } from '@plugins/typescript/types.js';
 
 /** Outgoing 呼叫資訊（目標函數呼叫了誰） */
@@ -50,12 +51,14 @@ export interface CallHierarchyData {
  */
 export class CallHierarchyAnalyzer {
   private readonly symbolFinder: SymbolFinder;
+  private readonly fileUtils: FileUtils;
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
     this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
   }
 
   /**
@@ -241,12 +244,12 @@ export class CallHierarchyAnalyzer {
     const outgoing: OutgoingCall[] = [];
     const visited = new Set<string>();
 
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return outgoing;
     }
 
-    const parser = this.parserRegistry.getParser(this.getExtension(filePath));
+    const parser = this.parserRegistry.getParser(this.fileUtils.getFileExtension(filePath));
     if (!parser) {
       return outgoing;
     }
@@ -400,12 +403,12 @@ export class CallHierarchyAnalyzer {
       return results;
     }
 
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return results;
     }
 
-    const parser = this.parserRegistry.getParser(this.getExtension(filePath));
+    const parser = this.parserRegistry.getParser(this.fileUtils.getFileExtension(filePath));
     if (!parser) {
       return results;
     }
@@ -547,7 +550,7 @@ export class CallHierarchyAnalyzer {
     await Promise.all(
       Array.from(fileGroups.entries()).map(async ([filePath, linesSet]) => {
         try {
-          const content = await this.readFile(filePath);
+          const content = await this.fileUtils.readFile(filePath);
           if (!content) {
             return;
           }
@@ -570,26 +573,6 @@ export class CallHierarchyAnalyzer {
     );
 
     return results;
-  }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
 }
 

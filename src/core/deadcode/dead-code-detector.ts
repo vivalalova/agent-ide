@@ -13,6 +13,7 @@ import {
   symbolToKey,
   serializeSymbolKey
 } from '@core/shared/symbol-finder/index.js';
+import { FileUtils, createFileUtils } from '@core/shared/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
@@ -60,6 +61,7 @@ interface SymbolUsageInfo {
  */
 export class DeadCodeDetector {
   private readonly options: Required<DeadCodeDetectorOptions>;
+  private readonly fileUtils: FileUtils;
 
   constructor(
     private readonly indexEngine: IndexEngine,
@@ -68,6 +70,7 @@ export class DeadCodeDetector {
     options?: DeadCodeDetectorOptions
   ) {
     this.options = { ...DEFAULT_DEAD_CODE_OPTIONS, ...options };
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
   }
 
   /**
@@ -229,12 +232,12 @@ export class DeadCodeDetector {
           }
 
           // Fallback：重新解析（用於 IndexEngine 無資料時）
-          const parser = this.getParser(filePath);
+          const parser = this.fileUtils.getParser(filePath);
           if (!parser) {
             return { symbols: [], error: false };
           }
 
-          const content = await this.readFile(filePath);
+          const content = await this.fileUtils.readFile(filePath);
           if (!content) {
             return { symbols: [], error: false };
           }
@@ -400,33 +403,6 @@ export class DeadCodeDetector {
     };
   }
 
-  /**
-   * 取得 Parser
-   */
-  private getParser(filePath: string) {
-    const extension = this.getFileExtension(filePath);
-    return this.parserRegistry.getParser(extension);
-  }
-
-  /**
-   * 取得副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
-  }
-
-  /**
-   * 讀取檔案
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
 
   /**
    * 建立 class → members 映射

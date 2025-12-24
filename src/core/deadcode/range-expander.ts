@@ -6,6 +6,7 @@
 import type { Range } from '@shared/types/core.js';
 import type { SymbolType } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { FileUtils } from '@core/shared/index.js';
 
 /**
  * 範圍擴展器
@@ -26,7 +27,7 @@ export class RangeExpander {
     filePath: string
   ): Range {
     // 1. 優先嘗試使用 Parser 的 getFullDeclarationRange 方法
-    const parser = this.parserRegistry.getParser(this.getFileExtension(filePath));
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (parser?.getFullDeclarationRange) {
       const parserRange = parser.getFullDeclarationRange(
         content,
@@ -194,14 +195,6 @@ export class RangeExpander {
     result = result.replace(/`(?:[^`\\]|\\.)*`/g, '""');
 
     return result;
-  }
-
-  /**
-   * 從檔案路徑取得副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot === -1 ? '' : filePath.substring(lastDot);
   }
 }
 

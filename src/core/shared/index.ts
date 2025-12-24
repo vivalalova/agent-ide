@@ -11,3 +11,6 @@ export * from './dependency-graph/index.js';
 
 // 符號查找
 export * from './symbol-finder/index.js';
+
+// 檔案工具
+export * from './file-utils.js';

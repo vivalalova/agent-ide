@@ -21,6 +21,7 @@ import {
 } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
+import { createFileUtils, type FileUtils } from '../file-utils.js';
 
 /**
  * 符號查找器
@@ -28,6 +29,7 @@ import { CallSiteParser } from './call-site-parser.js';
 export class SymbolFinder {
   private readonly textMatcher: TextMatcher;
   private readonly callSiteParser: CallSiteParser;
+  private readonly fileUtils: FileUtils;
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
@@ -35,18 +37,19 @@ export class SymbolFinder {
   ) {
     this.textMatcher = new TextMatcher();
     this.callSiteParser = new CallSiteParser();
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
   }
 
   /**
    * 查找符號定義
    */
   async findDefinition(filePath: string, symbolName: string): Promise<SymbolDefinition | null> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return null;
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return null;
     }
@@ -130,12 +133,12 @@ export class SymbolFinder {
 
     // 一次遍歷所有檔案
     for (const filePath of projectFiles) {
-      const content = await this.readFile(filePath);
+      const content = await this.fileUtils.readFile(filePath);
       if (!content) {
         continue;
       }
 
-      const parser = this.getParser(filePath);
+      const parser = this.fileUtils.getParser(filePath);
       const lines = content.split('\n');
 
       // 對每個目標符號查找引用
@@ -218,12 +221,12 @@ export class SymbolFinder {
    * 查找檔案中的符號引用
    */
   async findReferencesInFile(filePath: string, symbolName: string): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       // 降級到文字匹配
       return this.textMatcher.findReferencesByText(filePath, content, symbolName);
@@ -285,12 +288,12 @@ export class SymbolFinder {
    * @returns 符號引用陣列
    */
   async findReferencesInFileWithSymbol(filePath: string, symbol: Symbol): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       // 降級到文字匹配（但會過濾字串和註解）
       return this.textMatcher.findReferencesByTextFiltered(filePath, content, symbol.name);
@@ -371,12 +374,12 @@ export class SymbolFinder {
     symbolName: string,
     options?: ScopedFindReferencesOptions
   ): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
 
     // 優先使用 Parser 的 findScopedReferences 方法
     if (parser && typeof parser.findScopedReferences === 'function') {
@@ -454,12 +457,12 @@ export class SymbolFinder {
    * 查找檔案中的函式呼叫點
    */
   async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return [];
     }
@@ -479,12 +482,12 @@ export class SymbolFinder {
    * 查找類別成員
    */
   async findClassMembers(filePath: string, className: string): Promise<ClassMember[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return [];
     }
@@ -521,34 +524,6 @@ export class SymbolFinder {
     } catch {
       return [];
     }
-  }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 取得對應的 Parser
-   */
-  private getParser(filePath: string) {
-    const extension = this.getFileExtension(filePath);
-    return this.parserRegistry.getParser(extension);
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
 
   /**

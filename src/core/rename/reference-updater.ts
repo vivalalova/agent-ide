@@ -13,7 +13,7 @@ import { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder } from '@core/shared/symbol-finder/index.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/shared/index.js';
 
 /**
  * 引用更新器類別
@@ -23,6 +23,7 @@ export class ReferenceUpdater {
   private readonly fileCache = new Map<string, string>();
   private readonly fileSystem: IFileSystem;
   private readonly symbolFinder?: SymbolFinder;
+  private readonly fileUtils?: FileUtils;
 
   constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
@@ -30,6 +31,7 @@ export class ReferenceUpdater {
 
     if (parserRegistry) {
       this.symbolFinder = createSymbolFinder(parserRegistry, this.fileSystem);
+      this.fileUtils = createFileUtils(this.fileSystem, parserRegistry);
     }
   }
 
@@ -286,10 +288,23 @@ export class ReferenceUpdater {
       return this.fileCache.get(filePath)!;
     }
 
-    try {
-      // 使用注入的 fileSystem 讀取檔案
-      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+    // 優先使用 FileUtils，降級使用 fileSystem
+    const content = this.fileUtils
+      ? await this.fileUtils.readFile(filePath)
+      : await this.readFileFallback(filePath);
+
+    if (content) {
       this.fileCache.set(filePath, content);
+    }
+    return content;
+  }
+
+  /**
+   * 降級檔案讀取方法（當 FileUtils 不可用時）
+   */
+  private async readFileFallback(filePath: string): Promise<string | null> {
+    try {
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       return content;
     } catch {
       return null;
