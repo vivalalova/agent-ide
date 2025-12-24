@@ -138,17 +138,15 @@ export class LFUStrategy<K, V> implements CacheStrategy<K, V> {
   }
 
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined {
-    let minFrequency = Infinity;
-    let keyToEvict: K | undefined;
-
-    for (const [key, item] of items.entries()) {
-      if (item.accessCount < minFrequency) {
-        minFrequency = item.accessCount;
-        keyToEvict = key;
-      }
-    }
-
-    return keyToEvict;
+    // 使用 reduce 一次遍歷找出最小 accessCount 的 key
+    return Array.from(items.entries()).reduce<K | undefined>(
+      (minKey, [key, item]) => {
+        if (!minKey) {return key;}
+        const minItem = items.get(minKey);
+        return minItem && item.accessCount < minItem.accessCount ? key : minKey;
+      },
+      undefined
+    );
   }
 
   clear(): void {
@@ -158,6 +156,7 @@ export class LFUStrategy<K, V> implements CacheStrategy<K, V> {
 
 /**
  * FIFO (First In First Out) 策略實作
+ * 利用 Map 保證插入順序特性，O(1) 選擇淘汰 key
  */
 export class FIFOStrategy<K, V> implements CacheStrategy<K, V> {
   readonly name = EvictionStrategy.FIFO;
@@ -175,17 +174,8 @@ export class FIFOStrategy<K, V> implements CacheStrategy<K, V> {
   }
 
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined {
-    let earliestTime = Infinity;
-    let keyToEvict: K | undefined;
-
-    for (const [key, item] of items.entries()) {
-      if (item.createdAt < earliestTime) {
-        earliestTime = item.createdAt;
-        keyToEvict = key;
-      }
-    }
-
-    return keyToEvict;
+    // Map 保證插入順序，第一個 key 即為最早插入的項目 - O(1)
+    return items.keys().next().value;
   }
 
   clear(): void {
@@ -257,11 +247,19 @@ export class RandomStrategy<K, V> implements CacheStrategy<K, V> {
   }
 
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined {
-    const keys = Array.from(items.keys());
-    if (keys.length === 0) {return undefined;}
+    if (items.size === 0) {return undefined;}
 
-    const randomIndex = Math.floor(Math.random() * keys.length);
-    return keys[randomIndex];
+    // 使用 iterator 隨機選擇，不建立中間陣列
+    const randomIndex = Math.floor(Math.random() * items.size);
+    let currentIndex = 0;
+    for (const key of items.keys()) {
+      if (currentIndex === randomIndex) {
+        return key;
+      }
+      currentIndex++;
+    }
+
+    return undefined;
   }
 
   clear(): void {

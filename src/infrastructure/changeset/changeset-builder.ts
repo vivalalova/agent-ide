@@ -33,6 +33,9 @@ export class ChangesetBuilder {
   /** 檔案操作列表 */
   private fileOperations: FileOperation[] = [];
 
+  /** 已處理的檔案路徑，用於 O(1) 查詢重複操作 */
+  private processedPaths = new Set<string>();
+
   /** 變更描述 */
   private description = '';
 
@@ -83,14 +86,17 @@ export class ChangesetBuilder {
 
     if (existing) {
       // 合併到現有的變更，去除重複的 edits（根據 range 比對）
-      const deduplicatedEdits = edits.filter(newEdit =>
-        !existing.edits.some(existingEdit =>
-          existingEdit.range.start.line === newEdit.range.start.line
-          && existingEdit.range.start.column === newEdit.range.start.column
-          && existingEdit.range.end.line === newEdit.range.end.line
-          && existingEdit.range.end.column === newEdit.range.end.column
+      // 使用 Set 基於 range hash 快速查詢 - O(n) 取代 O(n²)
+      const existingRanges = new Set(
+        existing.edits.map(edit =>
+          `${edit.range.start.line}:${edit.range.start.column}-${edit.range.end.line}:${edit.range.end.column}`
         )
       );
+
+      const deduplicatedEdits = edits.filter(newEdit => {
+        const rangeKey = `${newEdit.range.start.line}:${newEdit.range.start.column}-${newEdit.range.end.line}:${newEdit.range.end.column}`;
+        return !existingRanges.has(rangeKey);
+      });
 
       this.textChangesMap.set(filePath, {
         ...existing,
@@ -116,14 +122,15 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileCreate(filePath: string, content: string): this {
-    const existing = this.fileOperations.find(
-      op => op.sourcePath === filePath
-    );
-
-    if (existing) {
-      this.warnings.push(
-        `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+    if (this.processedPaths.has(filePath)) {
+      const existing = this.fileOperations.find(
+        op => op.sourcePath === filePath
       );
+      if (existing) {
+        this.warnings.push(
+          `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+        );
+      }
     }
 
     this.fileOperations.push({
@@ -132,6 +139,7 @@ export class ChangesetBuilder {
       targetPath: filePath,
       content
     });
+    this.processedPaths.add(filePath);
     return this;
   }
 
@@ -141,20 +149,22 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileDelete(filePath: string): this {
-    const existing = this.fileOperations.find(
-      op => op.sourcePath === filePath
-    );
-
-    if (existing) {
-      this.warnings.push(
-        `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+    if (this.processedPaths.has(filePath)) {
+      const existing = this.fileOperations.find(
+        op => op.sourcePath === filePath
       );
+      if (existing) {
+        this.warnings.push(
+          `重複的檔案操作: 已存在對 ${filePath} 的 ${existing.type} 操作`
+        );
+      }
     }
 
     this.fileOperations.push({
       type: FileOperationType.Delete,
       sourcePath: filePath
     });
+    this.processedPaths.add(filePath);
     return this;
   }
 
@@ -165,14 +175,15 @@ export class ChangesetBuilder {
    * @returns this - 支援鏈式調用
    */
   addFileMove(sourcePath: string, targetPath: string): this {
-    const existing = this.fileOperations.find(
-      op => op.sourcePath === sourcePath
-    );
-
-    if (existing) {
-      this.warnings.push(
-        `重複的檔案操作: 已存在對 ${sourcePath} 的 ${existing.type} 操作`
+    if (this.processedPaths.has(sourcePath)) {
+      const existing = this.fileOperations.find(
+        op => op.sourcePath === sourcePath
       );
+      if (existing) {
+        this.warnings.push(
+          `重複的檔案操作: 已存在對 ${sourcePath} 的 ${existing.type} 操作`
+        );
+      }
     }
 
     this.fileOperations.push({
@@ -180,6 +191,7 @@ export class ChangesetBuilder {
       sourcePath,
       targetPath
     });
+    this.processedPaths.add(sourcePath);
     return this;
   }
 
