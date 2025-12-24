@@ -18,8 +18,11 @@ import { babelLocationToPosition } from './types.js';
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
-/** AST 快取最大容量（超過時移除最舊項目） */
-const AST_CACHE_MAX_SIZE = 50;
+/** AST 快取最大容量（位元組）- 50MB */
+const AST_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+
+/** 每個 AST 節點估算的平均大小（位元組） */
+const ESTIMATED_BYTES_PER_NODE = 100;
 
 /** 程式碼雜湊樣本長度（前 N 字元） */
 const CODE_HASH_SAMPLE_LENGTH = 100;
@@ -52,6 +55,8 @@ interface ASTCacheEntry {
   ast: babel.File;
   /** 變數類型映射（變數名 -> new 的類型名） */
   variableTypes: VariableTypeMap;
+  /** 估算的 AST 大小（位元組） */
+  estimatedSize: number;
 }
 
 /**
@@ -59,8 +64,11 @@ interface ASTCacheEntry {
  * 使用 Babel 語義分析來精確匹配符號引用
  */
 export class ReferenceFinder {
-  /** AST 快取（程式碼 hash -> 快取項目） */
+  /** AST 快取（程式碼 hash -> 快取項目），使用 Map 保持插入順序實現 LRU */
   private astCache: Map<string, ASTCacheEntry> = new Map();
+
+  /** 當前快取大小估算（位元組） */
+  private currentCacheBytes = 0;
 
   /**
    * 計算程式碼的雜湊值（用於快取 key）
@@ -80,7 +88,7 @@ export class ReferenceFinder {
   }
 
   /**
-   * 取得或建立 AST 快取
+   * 取得或建立 AST 快取（僅解析 AST，不做 traverse）
    */
   private getOrCreateASTCache(code: string): ASTCacheEntry | null {
     const hash = this.computeCodeHash(code);
@@ -96,32 +104,14 @@ export class ReferenceFinder {
         plugins: ['jsx']
       });
 
-      // 預先建立變數類型映射
+      // 僅建立空的 variableTypes，在 findScopedReferences 中一併收集
       const variableTypes: VariableTypeMap = new Map();
 
-      traverse(ast, {
-        VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-          if (babel.isIdentifier(path.node.id)) {
-            const init = path.node.init;
-            if (init && babel.isNewExpression(init)) {
-              if (babel.isIdentifier(init.callee)) {
-                variableTypes.set(path.node.id.name, init.callee.name);
-              }
-            }
-          }
-        }
-      });
+      // 估算 AST 大小
+      const estimatedSize = this.estimateASTSize(ast);
 
-      const entry: ASTCacheEntry = { ast, variableTypes };
-      this.astCache.set(hash, entry);
-
-      // 限制快取大小，避免記憶體洩漏
-      if (this.astCache.size > AST_CACHE_MAX_SIZE) {
-        const firstKey = this.astCache.keys().next().value;
-        if (firstKey) {
-          this.astCache.delete(firstKey);
-        }
-      }
+      const entry: ASTCacheEntry = { ast, variableTypes, estimatedSize };
+      this.addToCache(hash, entry);
 
       return entry;
     } catch {
@@ -130,10 +120,48 @@ export class ReferenceFinder {
   }
 
   /**
+   * 估算 AST 大小（位元組）
+   * 透過計算節點數量來估算，避免使用 JSON.stringify（太慢）
+   */
+  private estimateASTSize(ast: babel.File): number {
+    let nodeCount = 0;
+    traverse(ast, {
+      enter() {
+        nodeCount++;
+      }
+    });
+    return nodeCount * ESTIMATED_BYTES_PER_NODE;
+  }
+
+  /**
+   * 將項目加入快取（基於大小的 LRU 策略）
+   */
+  private addToCache(hash: string, entry: ASTCacheEntry): void {
+    // 如果超過限制，移除最舊項目直到有足夠空間
+    while (
+      this.currentCacheBytes + entry.estimatedSize > AST_CACHE_MAX_BYTES
+      && this.astCache.size > 0
+    ) {
+      const firstKey = this.astCache.keys().next().value;
+      if (firstKey) {
+        const removed = this.astCache.get(firstKey);
+        if (removed) {
+          this.currentCacheBytes -= removed.estimatedSize;
+        }
+        this.astCache.delete(firstKey);
+      }
+    }
+
+    this.astCache.set(hash, entry);
+    this.currentCacheBytes += entry.estimatedSize;
+  }
+
+  /**
    * 清除 AST 快取
    */
   clearCache(): void {
     this.astCache.clear();
+    this.currentCacheBytes = 0;
   }
 
   /**
@@ -160,7 +188,20 @@ export class ReferenceFinder {
     const targetClassName = options?.className;
     const filePath = 'temp.js';
 
+    // 檢查是否需要建立 variableTypes（首次遍歷時一併收集）
+    const needsBuildVariableTypes = variableTypes.size === 0;
+
+    // 單次遍歷：同時建立 variableTypes 和收集引用
     traverse(ast, {
+      VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
+        // 僅在首次需要時收集變數類型
+        if (needsBuildVariableTypes && babel.isIdentifier(path.node.id)) {
+          const init = path.node.init;
+          if (init && babel.isNewExpression(init) && babel.isIdentifier(init.callee)) {
+            variableTypes.set(path.node.id.name, init.callee.name);
+          }
+        }
+      },
       Identifier: (path: NodePath<babel.Identifier>) => {
         if (path.node.name !== symbolName) {
           return;

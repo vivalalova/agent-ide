@@ -95,6 +95,7 @@ export class SymbolIndex {
 
   /**
    * 移除檔案的所有符號
+   * 直接批次清理各索引，避免逐一呼叫 removeSymbol 的 N+1 問題
    */
   async removeFileSymbols(filePath: string): Promise<void> {
     const fileEntries = this.symbolsByFile.get(filePath);
@@ -102,11 +103,51 @@ export class SymbolIndex {
       return;
     }
 
-    // 從所有索引中移除該檔案的符號
-    for (const entry of fileEntries) {
-      await this.removeSymbol(entry.symbol.name, filePath);
+    // 收集該檔案所有符號名稱，用於批次移除
+    const symbolNames = new Set(fileEntries.map(entry => entry.symbol.name));
+
+    // 從名稱索引中批次移除
+    for (const symbolName of symbolNames) {
+      const nameEntries = this.symbolsByName.get(symbolName);
+      if (nameEntries) {
+        const idx = nameEntries.findIndex(entry =>
+          entry.fileInfo.filePath === filePath
+        );
+        if (idx !== -1) {
+          nameEntries.splice(idx, 1);
+          if (nameEntries.length === 0) {
+            this.symbolsByName.delete(symbolName);
+          }
+        }
+      }
     }
 
+    // 從類型索引中批次移除（遍歷所有類型，移除屬於該檔案的項目）
+    for (const [type, entries] of this.symbolsByType) {
+      // 反向遍歷以安全地使用 splice
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].fileInfo.filePath === filePath) {
+          entries.splice(i, 1);
+        }
+      }
+      if (entries.length === 0) {
+        this.symbolsByType.delete(type);
+      }
+    }
+
+    // 從作用域索引中批次移除
+    for (const [scopeKey, entries] of this.symbolsByScope) {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].fileInfo.filePath === filePath) {
+          entries.splice(i, 1);
+        }
+      }
+      if (entries.length === 0) {
+        this.symbolsByScope.delete(scopeKey);
+      }
+    }
+
+    // 最後移除檔案索引
     this.symbolsByFile.delete(filePath);
     this.lastUpdated = new Date();
   }
@@ -319,45 +360,44 @@ export class SymbolIndex {
 
   /**
    * 從其他索引中移除符號
+   * 使用 findIndex + splice 避免 O(n^2) 的 filter 重建陣列
    */
   private removeFromOtherIndexes(symbolName: string, filePath: string): void {
     // 從類型索引中移除
     for (const [type, entries] of this.symbolsByType) {
-      const filtered = entries.filter(entry =>
-        entry.fileInfo.filePath !== filePath ||
-        entry.symbol.name !== symbolName
+      const idx = entries.findIndex(entry =>
+        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
       );
-
-      if (filtered.length === 0) {
-        this.symbolsByType.delete(type);
-      } else {
-        this.symbolsByType.set(type, filtered);
+      if (idx !== -1) {
+        entries.splice(idx, 1);
+        if (entries.length === 0) {
+          this.symbolsByType.delete(type);
+        }
       }
     }
 
     // 從檔案索引中移除
     const fileEntries = this.symbolsByFile.get(filePath);
     if (fileEntries) {
-      const filtered = fileEntries.filter(entry => entry.symbol.name !== symbolName);
-
-      if (filtered.length === 0) {
-        this.symbolsByFile.delete(filePath);
-      } else {
-        this.symbolsByFile.set(filePath, filtered);
+      const idx = fileEntries.findIndex(entry => entry.symbol.name === symbolName);
+      if (idx !== -1) {
+        fileEntries.splice(idx, 1);
+        if (fileEntries.length === 0) {
+          this.symbolsByFile.delete(filePath);
+        }
       }
     }
 
     // 從作用域索引中移除
     for (const [scopeKey, entries] of this.symbolsByScope) {
-      const filtered = entries.filter(entry =>
-        entry.fileInfo.filePath !== filePath ||
-        entry.symbol.name !== symbolName
+      const idx = entries.findIndex(entry =>
+        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
       );
-
-      if (filtered.length === 0) {
-        this.symbolsByScope.delete(scopeKey);
-      } else {
-        this.symbolsByScope.set(scopeKey, filtered);
+      if (idx !== -1) {
+        entries.splice(idx, 1);
+        if (entries.length === 0) {
+          this.symbolsByScope.delete(scopeKey);
+        }
       }
     }
   }

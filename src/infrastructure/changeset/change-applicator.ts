@@ -297,9 +297,6 @@ export class ChangeApplicator {
       return edits.map(e => e.newText).join('');
     }
 
-    // 將內容分割成行（保留換行符）
-    const lines = this.splitLines(content);
-
     // 按位置從後往前排序（避免位置偏移）
     const sortedEdits = [...edits].sort((a, b) => {
       // 先比較行號
@@ -310,7 +307,11 @@ export class ChangeApplicator {
       return b.range.start.column - a.range.start.column;
     });
 
-    // 依序應用編輯
+    // 只分割一次，用於計算 offset
+    const lines = this.splitLines(content);
+    let result = content;
+
+    // 依序應用編輯（直接在字串上操作，避免重複 join/split）
     for (const edit of sortedEdits) {
       const { range, newText } = edit;
 
@@ -318,20 +319,11 @@ export class ChangeApplicator {
       const startOffset = this.calculateOffset(lines, range.start.line, range.start.column);
       const endOffset = this.calculateOffset(lines, range.end.line, range.end.column);
 
-      // 重新組合內容（使用 join 重建原始字串）
-      const fullContent = lines.join('');
-
-      // 替換指定範圍
-      const before = fullContent.substring(0, startOffset);
-      const after = fullContent.substring(endOffset);
-
-      // 更新行陣列
-      const newFullContent = before + newText + after;
-      lines.length = 0;
-      lines.push(...this.splitLines(newFullContent));
+      // 直接在字串上替換指定範圍
+      result = result.substring(0, startOffset) + newText + result.substring(endOffset);
     }
 
-    return lines.join('');
+    return result;
   }
 
   /**
@@ -340,25 +332,12 @@ export class ChangeApplicator {
    * @returns 行陣列
    */
   private splitLines(content: string): string[] {
-    const result: string[] = [];
-    let current = '';
-
-    for (let i = 0; i < content.length; i++) {
-      const char = content[i];
-      current += char;
-
-      if (char === '\n') {
-        result.push(current);
-        current = '';
-      }
-    }
-
-    // 處理最後一行（可能沒有換行符）
-    if (current.length > 0) {
-      result.push(current);
-    }
-
-    return result;
+    if (!content) {return [];}
+    const lines = content.split('\n');
+    // 保留換行符（除了最後一行）
+    return lines.map((line, i) =>
+      i < lines.length - 1 ? line + '\n' : line
+    ).filter(line => line.length > 0 || lines.length === 1);
   }
 
   /**

@@ -233,6 +233,7 @@ export class IndexEngine {
 
   /**
    * 清除已不存在的檔案索引
+   * 使用 Promise.all 批次處理，避免 N+1 問題
    */
   private async cleanupStaleIndexEntries(currentFiles: string[]): Promise<void> {
     // 取得所有已索引的檔案
@@ -244,17 +245,11 @@ export class IndexEngine {
       .map(fileInfo => fileInfo.filePath)
       .filter(filePath => !currentFilesSet.has(filePath));
 
-    // 從索引中移除這些過期的檔案
-    for (const stalePath of staleFiles) {
-      // 先從符號索引中移除該檔案的符號
-      const symbols = this.fileIndex.getFileSymbols(stalePath);
-      for (const symbol of symbols) {
-        await this.symbolIndex.removeSymbol(symbol.name, stalePath);
-      }
-
-      // 再從檔案索引中移除
+    // 批次移除過期檔案（使用已優化的 removeFileSymbols）
+    await Promise.all(staleFiles.map(async stalePath => {
+      await this.symbolIndex.removeFileSymbols(stalePath);
       await this.fileIndex.removeFile(stalePath);
-    }
+    }));
   }
 
   /**
