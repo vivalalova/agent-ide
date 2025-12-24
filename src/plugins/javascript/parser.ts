@@ -69,6 +69,7 @@ import {
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
+import { createHash } from 'node:crypto';
 
 /**
  * 符號行索引快取
@@ -79,6 +80,8 @@ interface SymbolIndexCache {
   symbols: Symbol[];
   /** 按行號索引的符號 Map */
   lineIndex: Map<number, Symbol[]>;
+  /** 內容雜湊（用於驗證快取有效性） */
+  contentHash: string;
 }
 
 /**
@@ -106,6 +109,14 @@ export class JavaScriptParser implements ParserPlugin {
     this.patternAnalyzer = new PatternAnalyzer();
     this.referenceFinder = new ReferenceFinder();
     this.declarationAnalyzer = new DeclarationAnalyzer();
+  }
+
+  /**
+   * 計算程式碼內容的 hash
+   * 用於快取驗證
+   */
+  private computeContentHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex');
   }
 
   /**
@@ -759,12 +770,15 @@ export class JavaScriptParser implements ParserPlugin {
   /**
    * 建立或取得符號索引快取
    * 使用行號索引避免 O(n) 線性搜尋
+   * 快取基於 filePath + content hash，避免內容變更後使用舊快取
    */
   private async getOrCreateSymbolIndex(ast: JavaScriptAST): Promise<SymbolIndexCache> {
     const cacheKey = ast.sourceFile;
+    const contentHash = this.computeContentHash(ast.sourceCode);
     const cached = this.symbolIndexCache.get(cacheKey);
 
-    if (cached) {
+    // 驗證快取：檔案存在且 hash 相同
+    if (cached && cached.contentHash === contentHash) {
       return cached;
     }
 
@@ -783,7 +797,7 @@ export class JavaScriptParser implements ParserPlugin {
       }
     }
 
-    const cache: SymbolIndexCache = { symbols, lineIndex };
+    const cache: SymbolIndexCache = { symbols, lineIndex, contentHash };
     this.symbolIndexCache.set(cacheKey, cache);
 
     return cache;

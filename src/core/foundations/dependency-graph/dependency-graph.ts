@@ -274,9 +274,8 @@ export class DependencyGraph {
     let cycleFiles: string[] | undefined;
 
     if (hasCycle) {
-      cycleFiles = Array.from(this.nodes).filter(node =>
-        !result.includes(node)
-      );
+      const resultSet = new Set(result);
+      cycleFiles = Array.from(this.nodes).filter(node => !resultSet.has(node));
     }
 
     return {

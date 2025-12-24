@@ -98,19 +98,46 @@ export class FileScanner {
    * @returns 受影響的檔案路徑列表
    */
   async findAffectedFiles(movedPath: string, projectRoot: string): Promise<string[]> {
-    const affectedFiles: string[] = [];
     const files = await this.getAllProjectFiles(projectRoot);
+    const normalizedMovedPath = path.normalize(movedPath);
 
-    for (const file of files) {
-      // 跳過被移動的檔案本身（處理不同的路徑格式）
+    // 過濾出需要檢查的檔案（排除被移動的檔案本身）
+    const filesToCheck = files.filter(file => {
       const normalizedFile = path.normalize(file);
-      const normalizedMovedPath = path.normalize(movedPath);
+      return normalizedFile !== normalizedMovedPath;
+    });
 
-      if (normalizedFile === normalizedMovedPath) {
+    // 並行讀取所有檔案內容
+    const fileContents = await Promise.all(
+      filesToCheck.map(async file => {
+        try {
+          const content = await this.fileSystem.readFile(file, 'utf-8') as string;
+          return { file, content };
+        } catch {
+          return { file, content: null };
+        }
+      })
+    );
+
+    // 批次檢查引用
+    const affectedFiles: string[] = [];
+    for (const { file, content } of fileContents) {
+      if (content === null) {
         continue;
       }
 
-      const hasReference = await this.fileReferencesPath(file, movedPath);
+      const imports = this.importResolver.parseImportStatements(content, file);
+      const hasReference = imports.some(importStatement => {
+        // 跳過 node_modules
+        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+          return false;
+        }
+
+        // 解析 import 路徑並檢查是否指向目標檔案
+        const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, file);
+        return this.pathUtils.pathsMatch(resolvedPath, movedPath);
+      });
+
       if (hasReference) {
         affectedFiles.push(file);
       }

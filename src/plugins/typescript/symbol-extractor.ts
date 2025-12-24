@@ -24,6 +24,14 @@ import {
 } from './types.js';
 
 /**
+ * 遍歷上下文（避免重複向上遍歷檢查）
+ */
+interface VisitContext {
+  /** 是否在 ObjectLiteral 內 */
+  insideObjectLiteral: boolean;
+}
+
+/**
  * TypeScript 符號提取器類別
  */
 export class TypeScriptSymbolExtractor {
@@ -43,32 +51,41 @@ export class TypeScriptSymbolExtractor {
     const globalScope = createScope('global');
     this.scopeStack.push(globalScope);
 
-    // 遍歷 AST 提取符號
-    this.visitNode(ast.root);
+    // 遍歷 AST 提取符號（初始 context）
+    const initialContext: VisitContext = { insideObjectLiteral: false };
+    this.visitNode(ast.root, initialContext);
 
     return [...this.symbols];
   }
 
   /**
    * 遞歸訪問 AST 節點
+   * @param node - 當前節點
+   * @param context - 遍歷上下文（避免重複向上遍歷）
    */
-  private visitNode(node: TypeScriptASTNode): void {
+  private visitNode(node: TypeScriptASTNode, context: VisitContext): void {
     const tsNode = node.tsNode;
 
     // 處理作用域變化
     const scopeChange = this.handleScopeChange(tsNode);
 
+    // 更新 context：檢查當前節點是否為 ObjectLiteral
+    const isObjectLiteral = ts.isObjectLiteralExpression(tsNode);
+    const childContext: VisitContext = {
+      insideObjectLiteral: context.insideObjectLiteral || isObjectLiteral
+    };
+
     // 提取符號
     if (isSymbolDeclaration(tsNode)) {
-      const symbol = this.extractSymbolFromNode(tsNode);
+      const symbol = this.extractSymbolFromNode(tsNode, context);
       if (symbol) {
         this.symbols.push(symbol);
       }
     }
 
-    // 遞歸處理子節點
+    // 遞歸處理子節點（傳遞更新後的 context）
     for (const child of node.children) {
-      this.visitNode(child as TypeScriptASTNode);
+      this.visitNode(child as TypeScriptASTNode, childContext);
     }
 
     // 恢復作用域
@@ -131,8 +148,10 @@ export class TypeScriptSymbolExtractor {
 
   /**
    * 從節點提取符號
+   * @param node - TypeScript AST 節點
+   * @param context - 遍歷上下文（直接使用，避免重複遍歷）
    */
-  private extractSymbolFromNode(node: ts.Node): TypeScriptSymbol | null {
+  private extractSymbolFromNode(node: ts.Node, context: VisitContext): TypeScriptSymbol | null {
     const name = getNodeName(node);
     if (!name) {
       return null;
@@ -144,8 +163,8 @@ export class TypeScriptSymbolExtractor {
     }
 
     // Bug #34 修復：排除物件字面值中的方法和屬性
-    // 物件字面值中的 MethodDeclaration 和屬性是物件的一部分，不應該被當作獨立符號
-    if (this.isInsideObjectLiteral(node)) {
+    // 使用傳遞的 context 判斷，避免重複向上遍歷
+    if (context.insideObjectLiteral) {
       return null;
     }
 
@@ -433,27 +452,6 @@ export class TypeScriptSymbolExtractor {
           ts.isArrowFunction(parent) ||
           ts.isFunctionExpression(parent)) {
         return true;
-      }
-      parent = parent.parent;
-    }
-    return false;
-  }
-
-  /**
-   * Bug #34 修復：檢查節點是否在物件字面值中
-   * 物件字面值中的 MethodDeclaration 和屬性不應被當作獨立符號
-   */
-  private isInsideObjectLiteral(node: ts.Node): boolean {
-    let parent = node.parent;
-    while (parent) {
-      if (ts.isObjectLiteralExpression(parent)) {
-        return true;
-      }
-      // 遇到 class 或 function 宣告則停止（類別內的方法不算物件字面值）
-      if (ts.isClassDeclaration(parent) ||
-          ts.isFunctionDeclaration(parent) ||
-          ts.isSourceFile(parent)) {
-        return false;
       }
       parent = parent.parent;
     }

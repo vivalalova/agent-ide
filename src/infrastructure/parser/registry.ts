@@ -137,26 +137,22 @@ export class ParserRegistry {
     // 註冊到主表
     this.parsers.set(plugin.name, parserInfo);
 
-    // 建立副檔名索引
+    // 建立副檔名索引（使用二元搜尋插入）
     for (const extension of plugin.supportedExtensions) {
       if (!this.extensionMap.has(extension)) {
         this.extensionMap.set(extension, []);
       }
       const extensionParsers = this.extensionMap.get(extension)!;
-      extensionParsers.push(parserInfo);
-      // 按優先級排序（高優先級在前）
-      extensionParsers.sort((a, b) => b.priority - a.priority);
+      this.insertSorted(extensionParsers, parserInfo);
     }
 
-    // 建立語言索引
+    // 建立語言索引（使用二元搜尋插入）
     for (const language of plugin.supportedLanguages) {
       if (!this.languageMap.has(language)) {
         this.languageMap.set(language, []);
       }
       const languageParsers = this.languageMap.get(language)!;
-      languageParsers.push(parserInfo);
-      // 按優先級排序（高優先級在前）
-      languageParsers.sort((a, b) => b.priority - a.priority);
+      this.insertSorted(languageParsers, parserInfo);
     }
   }
 
@@ -357,6 +353,29 @@ export class ParserRegistry {
   }
 
   // ===== 內部工具方法 =====
+
+  /**
+   * 使用二元搜尋找到插入位置並插入（按優先級降序排列）
+   * @param array 已排序的陣列（高優先級在前）
+   * @param item 要插入的項目
+   */
+  private insertSorted(array: ParserInfo[], item: ParserInfo): void {
+    let left = 0;
+    let right = array.length;
+
+    // 二元搜尋找到插入位置
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (array[mid].priority > item.priority) {
+        left = mid + 1;
+      } else {
+        right = mid;
+      }
+    }
+
+    // 在找到的位置插入
+    array.splice(left, 0, item);
+  }
 
   /**
    * 檢查註冊中心是否已被清理

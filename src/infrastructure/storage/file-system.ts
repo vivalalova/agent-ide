@@ -168,15 +168,25 @@ export class FileSystem implements IFileSystem {
 
       for (const entry of entries) {
         const entryPath = path.join(dirPath, entry.name);
-        const stats = await this.safeGetStats(entryPath);
+
+        // 直接使用 dirent 的 isFile/isDirectory，無需額外 stat
+        // 若需要 size/modifiedTime，僅在需要時才呼叫 stat
+        let size: number | undefined;
+        let modifiedTime: Date | undefined;
+
+        if (entry.isFile()) {
+          const stats = await this.safeGetStats(entryPath);
+          size = stats?.size;
+          modifiedTime = stats?.modifiedTime;
+        }
 
         result.push({
           name: entry.name,
           path: entryPath,
           isFile: entry.isFile(),
           isDirectory: entry.isDirectory(),
-          size: stats?.size,
-          modifiedTime: stats?.modifiedTime,
+          size,
+          modifiedTime,
         });
       }
 

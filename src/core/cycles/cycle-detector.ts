@@ -247,18 +247,18 @@ export class CycleDetector {
     let complexity = 0;
     const cycleSet = new Set(cycleNodes);
 
-    // 計算循環內部的連接密度
+    // 合併計算：單次遍歷同時處理內部依賴和外部依賴者
     for (const node of cycleNodes) {
       const dependencies = graph.getDependencies(node);
+      const dependents = graph.getDependents(node);
+
+      // 計算內部依賴
       const internalDeps = dependencies.filter(dep => cycleSet.has(dep));
       complexity += internalDeps.length;
-    }
 
-    // 計算外部連接
-    for (const node of cycleNodes) {
-      const allDependents = graph.getDependents(node);
-      const externalDependents = allDependents.filter(dep => !cycleSet.has(dep));
-      complexity += externalDependents.length * 0.5; // 外部連接權重較低
+      // 計算外部依賴者（外部連接權重較低）
+      const externalDependents = dependents.filter(dep => !cycleSet.has(dep));
+      complexity += externalDependents.length * 0.5;
     }
 
     return Math.round(complexity);

@@ -27,8 +27,8 @@ import {
  * ```
  */
 export class ChangesetBuilder {
-  /** 文字變更列表 */
-  private textChanges: FileTextChange[] = [];
+  /** 文字變更 Map（filePath → FileTextChange），加速查詢 */
+  private textChangesMap = new Map<string, FileTextChange>();
 
   /** 檔案操作列表 */
   private fileOperations: FileOperation[] = [];
@@ -79,11 +79,10 @@ export class ChangesetBuilder {
     edits: TextEdit[],
     operationType?: FileTextChange['operationType']
   ): this {
-    const existing = this.textChanges.find(tc => tc.filePath === filePath);
+    const existing = this.textChangesMap.get(filePath);
 
     if (existing) {
       // 合併到現有的變更，去除重複的 edits（根據 range 比對）
-      const existingIndex = this.textChanges.indexOf(existing);
       const deduplicatedEdits = edits.filter(newEdit =>
         !existing.edits.some(existingEdit =>
           existingEdit.range.start.line === newEdit.range.start.line
@@ -93,14 +92,14 @@ export class ChangesetBuilder {
         )
       );
 
-      this.textChanges[existingIndex] = {
+      this.textChangesMap.set(filePath, {
         ...existing,
         edits: [...existing.edits, ...deduplicatedEdits],
         operationType: operationType ?? existing.operationType
-      };
+      });
     } else {
       // 新增變更
-      this.textChanges.push({
+      this.textChangesMap.set(filePath, {
         filePath,
         edits,
         operationType
@@ -210,7 +209,7 @@ export class ChangesetBuilder {
    */
   build(): Changeset {
     return {
-      textChanges: this.textChanges,
+      textChanges: Array.from(this.textChangesMap.values()),
       fileOperations: this.fileOperations,
       description: this.description,
       command: this.command,
