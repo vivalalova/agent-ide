@@ -178,45 +178,48 @@ export class SignatureParser {
     matchIndex: number;
     column: number;
   } {
-    const patterns = [
+    // 合併正則：捕獲所有可能模式的群組
+    const escapedName = this.escapeRegex(functionName);
+    const combinedPattern = new RegExp(
+      '^(\\s*)(?:' +
       // function 宣告
-      { pattern: new RegExp(`^(\\s*)(export\\s+)?(async\\s+)?function\\s+${this.escapeRegex(functionName)}`, 'm'), type: 'function' },
+      `(export\\s+)?(async\\s+)?function\\s+${escapedName}|` +
       // 箭頭函式
-      { pattern: new RegExp(`^(\\s*)(export\\s+)?(const|let|var)\\s+${this.escapeRegex(functionName)}\\s*(?::\\s*[^=]+)?\\s*=\\s*(async\\s+)?`, 'm'), type: 'arrow' },
+      `(export\\s+)?(const|let|var)\\s+${escapedName}\\s*(?::\\s*[^=]+)?\\s*=\\s*(async\\s+)?|` +
       // class 方法
-      { pattern: new RegExp(`^(\\s*)(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${this.escapeRegex(functionName)}`, 'm'), type: 'method' },
-    ];
+      `(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${escapedName}` +
+      ')',
+      'm'
+    );
 
-    for (const { pattern, type } of patterns) {
-      const match = content.match(pattern);
-      if (match) {
-        const matchIndex = content.indexOf(match[0]);
-        const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
-        const modifiers: string[] = [];
-        let isMethod = false;
-
-        switch (type) {
-          case 'function':
-            if (match[2]) { modifiers.push('export'); }
-            if (match[3]) { modifiers.push('async'); }
-            break;
-          case 'arrow':
-            if (match[2]) { modifiers.push('export'); }
-            if (match[4]) { modifiers.push('async'); }
-            break;
-          case 'method':
-            isMethod = true;
-            if (match[2]) { modifiers.push(match[2]); }
-            if (match[3]) { modifiers.push('static'); }
-            if (match[4]) { modifiers.push('async'); }
-            break;
-        }
-
-        return { modifiers, isMethod, matchIndex, column };
-      }
+    const match = content.match(combinedPattern);
+    if (!match) {
+      return { modifiers: [], isMethod: false, matchIndex: 0, column: 0 };
     }
 
-    return { modifiers: [], isMethod: false, matchIndex: 0, column: 0 };
+    const matchIndex = content.indexOf(match[0]);
+    const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
+    const modifiers: string[] = [];
+    let isMethod = false;
+
+    // 根據哪個群組匹配來判斷類型
+    if (match[0].includes('function')) {
+      // function 宣告：match[2]=export, match[3]=async
+      if (match[2]) { modifiers.push('export'); }
+      if (match[3]) { modifiers.push('async'); }
+    } else if (match[0].includes('=>') || match[5]) {
+      // 箭頭函式：match[4]=export, match[5]=const/let/var, match[6]=async
+      if (match[4]) { modifiers.push('export'); }
+      if (match[6]) { modifiers.push('async'); }
+    } else {
+      // class 方法：match[7]=public/private/protected, match[8]=static, match[9]=async
+      isMethod = true;
+      if (match[7]) { modifiers.push(match[7]); }
+      if (match[8]) { modifiers.push('static'); }
+      if (match[9]) { modifiers.push('async'); }
+    }
+
+    return { modifiers, isMethod, matchIndex, column };
   }
 
   /**
@@ -225,105 +228,76 @@ export class SignatureParser {
    */
   private parseWithRegex(content: string, filePath: string, functionName: string): FunctionSignature | null {
     const lines = content.split('\n');
+    const escapedName = this.escapeRegex(functionName);
 
-    // 匹配各種函式定義模式
-    const patterns = [
+    // 合併三個模式為單一正則表達式
+    const combinedPattern = new RegExp(
+      '^(\\s*)(?:' +
       // function name(params): returnType
-      new RegExp(`^(\\s*)(export\\s+)?(async\\s+)?function\\s+${this.escapeRegex(functionName)}\\s*(<[^>]*>)?\\s*\\(([^)]*)\\)\\s*(?::\\s*([^{]+))?\\s*\\{?`, 'm'),
+      `(export\\s+)?(async\\s+)?function\\s+${escapedName}\\s*(<[^>]*>)?\\s*\\(([^)]*)\\)\\s*(?::\\s*([^{]+))?\\s*\\{?|` +
       // const name = (params): returnType =>
-      new RegExp(`^(\\s*)(export\\s+)?(const|let|var)\\s+${this.escapeRegex(functionName)}\\s*(?::\\s*[^=]+)?\\s*=\\s*(async\\s+)?\\(([^)]*)\\)\\s*(?::\\s*([^=]+))?\\s*=>`, 'm'),
+      `(export\\s+)?(const|let|var)\\s+${escapedName}\\s*(?::\\s*[^=]+)?\\s*=\\s*(async\\s+)?\\(([^)]*)\\)\\s*(?::\\s*([^=]+))?\\s*=>|` +
       // class method: name(params): returnType
-      new RegExp(`^(\\s*)(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${this.escapeRegex(functionName)}\\s*(<[^>]*>)?\\s*\\(([^)]*)\\)\\s*(?::\\s*([^{]+))?\\s*\\{?`, 'm'),
-    ];
+      `(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${escapedName}\\s*(<[^>]*>)?\\s*\\(([^)]*)\\)\\s*(?::\\s*([^{]+))?\\s*\\{?` +
+      ')',
+      'm'
+    );
 
-    for (const pattern of patterns) {
-      const match = content.match(pattern);
-      if (match) {
-        const matchIndex = content.indexOf(match[0]);
-
-        /**
-         * 行號計算邏輯說明：
-         *
-         * 問題背景：
-         * 正則表達式使用 'm' 多行模式，^ 會匹配每行開頭而非僅字串開頭。
-         * 當 match[1]（前導空白群組）跨越多行時，matchIndex 指向的是
-         * 匹配「開始」的位置，但實際的函式定義可能在後面幾行。
-         *
-         * 範例：
-         * ```
-         * // Line 1: 空行
-         * // Line 2: 空行
-         *    function foo() {}  // Line 3: 函式定義
-         * ```
-         * 若 match[1] = "\n\n   "（包含2個換行），matchIndex 可能指向 Line 1，
-         * 但函式實際在 Line 3。
-         *
-         * 計算公式：
-         * 1. content.substring(0, matchIndex).split('\n').length
-         *    → 取得匹配「起始位置」的行號
-         * 2. newlinesInMatch = match[1] 中的換行數
-         *    → 補償前導空白中包含的行數偏移
-         * 3. 最終行號 = 起始行號 + 換行偏移量
-         */
-        const newlinesInMatch = (match[1] || '').split('\n').length - 1;
-        const lineNumber = content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
-
-        // 計算欄位：取 match[1] 最後一行的長度（即最後一個換行後的空白數）
-        const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
-
-        // 根據不同模式提取參數和修飾符
-        let paramsString: string;
-        let returnType: string | undefined;
-        const modifiers: string[] = [];
-        let isMethod = false;
-
-        if (match[0].includes('function')) {
-          // function 宣告
-          if (match[2]) {modifiers.push('export');}
-          if (match[3]) {modifiers.push('async');}
-          paramsString = match[5] || '';
-          returnType = match[6]?.trim();
-        } else if (match[0].includes('=>')) {
-          // 箭頭函式
-          if (match[2]) {modifiers.push('export');}
-          if (match[4]) {modifiers.push('async');}
-          paramsString = match[5] || '';
-          returnType = match[6]?.trim();
-        } else {
-          // 類別方法
-          isMethod = true;
-          if (match[2]) {modifiers.push(match[2]);}
-          if (match[3]) {modifiers.push('static');}
-          if (match[4]) {modifiers.push('async');}
-          paramsString = match[6] || '';
-          returnType = match[7]?.trim();
-        }
-
-        // 解析參數（使用 fallback 方法）
-        const parameters = this.parseParametersWithRegex(paramsString, lineNumber, column + match[0].indexOf('(') + 1);
-
-        // 計算結束位置
-        const endLine = this.findFunctionEndLine(lines, lineNumber - 1);
-
-        return {
-          name: functionName,
-          parameters,
-          returnType: returnType?.replace(/\s*\{?\s*$/, ''),
-          location: {
-            filePath,
-            range: {
-              start: { line: lineNumber, column: column + 1, offset: matchIndex },
-              end: { line: endLine + 1, column: 1 }
-            }
-          },
-          isMethod,
-          className: isMethod ? this.findEnclosingClass(content, matchIndex) : undefined,
-          modifiers
-        };
-      }
+    const match = content.match(combinedPattern);
+    if (!match) {
+      return null;
     }
 
-    return null;
+    const matchIndex = content.indexOf(match[0]);
+    const newlinesInMatch = (match[1] || '').split('\n').length - 1;
+    const lineNumber = content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
+    const column = (match[1] || '').replace(/^[\s\S]*\n/, '').length;
+
+    let paramsString: string;
+    let returnType: string | undefined;
+    const modifiers: string[] = [];
+    let isMethod = false;
+
+    if (match[0].includes('function')) {
+      // function 宣告：match[2]=export, match[3]=async, match[5]=params, match[6]=returnType
+      if (match[2]) { modifiers.push('export'); }
+      if (match[3]) { modifiers.push('async'); }
+      paramsString = match[5] || '';
+      returnType = match[6]?.trim();
+    } else if (match[0].includes('=>')) {
+      // 箭頭函式：match[7]=export, match[9]=async, match[10]=params, match[11]=returnType
+      if (match[7]) { modifiers.push('export'); }
+      if (match[9]) { modifiers.push('async'); }
+      paramsString = match[10] || '';
+      returnType = match[11]?.trim();
+    } else {
+      // 類別方法：match[12]=public/private/protected, match[13]=static, match[14]=async, match[16]=params, match[17]=returnType
+      isMethod = true;
+      if (match[12]) { modifiers.push(match[12]); }
+      if (match[13]) { modifiers.push('static'); }
+      if (match[14]) { modifiers.push('async'); }
+      paramsString = match[16] || '';
+      returnType = match[17]?.trim();
+    }
+
+    const parameters = this.parseParametersWithRegex(paramsString, lineNumber, column + match[0].indexOf('(') + 1);
+    const endLine = this.findFunctionEndLine(lines, lineNumber - 1);
+
+    return {
+      name: functionName,
+      parameters,
+      returnType: returnType?.replace(/\s*\{?\s*$/, ''),
+      location: {
+        filePath,
+        range: {
+          start: { line: lineNumber, column: column + 1, offset: matchIndex },
+          end: { line: endLine + 1, column: 1 }
+        }
+      },
+      isMethod,
+      className: isMethod ? this.findEnclosingClass(content, matchIndex) : undefined,
+      modifiers
+    };
   }
 
   /**

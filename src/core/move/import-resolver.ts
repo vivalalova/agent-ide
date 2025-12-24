@@ -9,9 +9,11 @@ import { createPosition, createRange } from '@shared/types/core.js';
 
 export class ImportResolver {
   private readonly config: ImportResolverConfig;
+  private readonly aliasKeys: string[];
 
   constructor(config: ImportResolverConfig) {
     this.config = config;
+    this.aliasKeys = Object.keys(config.pathAliases);
   }
 
   /**
@@ -314,8 +316,8 @@ export class ImportResolver {
       return false;
     }
 
-    // 檢查是否為路徑別名（必須精確匹配或以 alias/ 開始）
-    for (const alias of Object.keys(this.config.pathAliases)) {
+    // 檢查是否為路徑別名（使用快取的 aliasKeys）
+    for (const alias of this.aliasKeys) {
       if (importPath === alias || importPath.startsWith(alias + '/')) {
         return false;
       }
@@ -375,8 +377,8 @@ export class ImportResolver {
       return PathType.RELATIVE;
     }
 
-    // 檢查是否為路徑別名
-    for (const alias of Object.keys(this.config.pathAliases)) {
+    // 檢查是否為路徑別名（使用快取的 aliasKeys）
+    for (const alias of this.aliasKeys) {
       if (importPath.startsWith(alias)) {
         return PathType.ALIAS;
       }

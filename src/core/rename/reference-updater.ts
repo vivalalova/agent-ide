@@ -336,38 +336,17 @@ export class ReferenceUpdater {
 
   /**
    * 查找行中所有字串的區間
+   * 使用正則一次性找出所有字串區間，避免逐字元遍歷
    * @returns 字串區間陣列 [start, end]
    */
   private findStringRanges(line: string): Array<[number, number]> {
     const ranges: Array<[number, number]> = [];
-    let inSingleQuote = false;
-    let inDoubleQuote = false;
-    let startPos = -1;
+    // 匹配單引號或雙引號字串（支援轉義）
+    const stringPattern = /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g;
 
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      const prevChar = i > 0 ? line[i - 1] : '';
-
-      // 跳過轉義字符
-      if (prevChar === '\\') {
-        continue;
-      }
-
-      if (char === '\'' && !inDoubleQuote) {
-        if (!inSingleQuote) {
-          startPos = i;
-        } else {
-          ranges.push([startPos, i]);
-        }
-        inSingleQuote = !inSingleQuote;
-      } else if (char === '"' && !inSingleQuote) {
-        if (!inDoubleQuote) {
-          startPos = i;
-        } else {
-          ranges.push([startPos, i]);
-        }
-        inDoubleQuote = !inDoubleQuote;
-      }
+    let match;
+    while ((match = stringPattern.exec(line)) !== null) {
+      ranges.push([match.index, match.index + match[0].length - 1]);
     }
 
     return ranges;
