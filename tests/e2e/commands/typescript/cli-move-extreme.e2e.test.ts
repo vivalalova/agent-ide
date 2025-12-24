@@ -91,10 +91,10 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
   describe('Edge Cases - 路徑解析與異常處理', () => {
     it('應該處理移動被多層嵌套引用的核心檔案', async () => {
       // Create intermediate directories
-      await fixture.writeFile('src/core/shared/types/.gitkeep', '');
+      await fixture.writeFile('src/core/foundations/types/.gitkeep', '');
 
       const source = path.join(fixture.rootPath, 'src/types/common.ts');
-      const target = path.join(fixture.rootPath, 'src/core/shared/types/common.ts');
+      const target = path.join(fixture.rootPath, 'src/core/foundations/types/common.ts');
 
       const result = await executeCLI(
         ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],

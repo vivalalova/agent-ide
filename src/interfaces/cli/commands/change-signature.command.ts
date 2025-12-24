@@ -70,9 +70,10 @@ async function handleChangeSignatureCommand(
   const isJsonFormat = format === OutputFormat.Json;
 
   try {
-    // 解析檔案路徑（如果是絕對路徑則直接使用，否則從 cwd 解析）
-    const filePath = path.isAbsolute(file) ? file : path.resolve(process.cwd(), file);
+    // 解析專案根目錄和檔案路徑
     const projectRoot = options.path ? path.resolve(process.cwd(), options.path) : process.cwd();
+    // 檔案路徑相對於 projectRoot 解析（與其他命令一致）
+    const filePath = path.isAbsolute(file) ? file : path.resolve(projectRoot, file);
 
     // 解析變更操作
     const changes = parseChanges(options);

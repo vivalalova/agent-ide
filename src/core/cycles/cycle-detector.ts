@@ -3,7 +3,7 @@
  * 使用 Tarjan 算法檢測強連通分量和循環依賴
  */
 
-import type { DependencyGraph } from '@core/shared/dependency-graph/index.js';
+import type { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import type {
   CircularDependency,
   StronglyConnectedComponent,

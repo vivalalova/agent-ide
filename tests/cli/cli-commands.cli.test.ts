@@ -195,7 +195,8 @@ describe('CLI 整合測試', () => {
     });
 
     it('move-member - 成員移動後仍可編譯', () => {
-      const result = runCLI(`${CLI} move-member "${SAMPLE_PROJECT}/src/utils/string-utils.ts" capitalize --target-file "${SAMPLE_PROJECT}/src/utils/array-utils.ts" --format json`);
+      // 使用 source:line 格式觸發成員移動（capitalize 在第 5 行）
+      const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils/string-utils.ts:5" "${SAMPLE_PROJECT}/src/utils/array-utils.ts" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
       verifyTypecheck(SAMPLE_PROJECT);
     });

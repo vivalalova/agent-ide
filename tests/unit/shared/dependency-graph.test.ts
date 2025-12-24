@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DependencyGraph, type SerializedGraph } from '@core/shared/dependency-graph/index.js';
+import { DependencyGraph, type SerializedGraph } from '@core/foundations/dependency-graph/index.js';
 
 // ============================================================================
 // DependencyGraph Tests

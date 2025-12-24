@@ -5,8 +5,8 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { IndexEngine } from '@core/shared/indexing/index-engine.js';
-import { createIndexConfig } from '@core/shared/indexing/types.js';
+import { IndexEngine } from '@core/foundations/indexing/index-engine.js';
+import { createIndexConfig } from '@core/foundations/indexing/types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';

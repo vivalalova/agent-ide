@@ -3,7 +3,7 @@
  * 包含檔案索引、符號索引、查詢結果等型別
  */
 
-import type { Symbol, Dependency, Location } from '@shared/types/index.js';
+import type { Symbol, Dependency } from '@shared/types/index.js';
 
 /**
  * CLI 命令共用的索引配置常數
@@ -13,7 +13,17 @@ export const CLI_INDEX_DEFAULTS = {
   /** 支援的程式語言副檔名 */
   includeExtensions: ['.ts', '.tsx', '.js', '.jsx'] as const,
   /** 排除的目錄模式 */
-  excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'] as const,
+  excludePatterns: [
+    'node_modules/**',
+    'dist/**',
+    '.git/**',
+    'build/**',
+    'coverage/**',
+    'public/**',
+    'out/**',
+    '.next/**',
+    '.nuxt/**'
+  ] as const,
   /** CLI 命令不需要持久化索引 */
   enablePersistence: false
 } as const;

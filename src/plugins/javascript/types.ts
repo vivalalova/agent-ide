@@ -7,12 +7,9 @@ import type {
   ASTNode,
   Position,
   Range,
-  Symbol,
-  Reference,
-  Dependency
-} from '../../shared/types/index.js';
-import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.js';
-import type { CodeEdit } from '@infrastructure/parser/types.js';
+  Symbol
+} from '@shared/types/index.js';
+import { SymbolType } from '@shared/types/index.js';
 import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult, ParserPlugin as BabelParserPlugin } from '@babel/parser';

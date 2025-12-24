@@ -83,6 +83,24 @@ export default [
       'no-redeclare': 'warn', // 重複宣告調整為警告
       'no-control-regex': 'warn', // 控制字元正則表達式調整為警告
 
+      // 禁止跨模組相對路徑 import（必須用 @core, @infrastructure, @shared 路徑映射）
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: ['../../core/*', '../../../core/*', '../../../../core/*'],
+            message: '請使用 @core/* 路徑映射'
+          },
+          {
+            group: ['../../infrastructure/*', '../../../infrastructure/*', '../../../../infrastructure/*'],
+            message: '請使用 @infrastructure/* 路徑映射'
+          },
+          {
+            group: ['../../shared/*', '../../../shared/*', '../../../../shared/*'],
+            message: '請使用 @shared/* 路徑映射'
+          }
+        ]
+      }],
+
       // 自定義規則
       'custom/no-fs-in-core': 'error',
       'custom/no-default-instance-in-constructor': 'error',

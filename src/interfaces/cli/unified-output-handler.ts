@@ -8,11 +8,11 @@ import {
   PreviewFormat,
   type PreviewResult,
   type PreviewInput
-} from '../../infrastructure/formatters/index.js';
+} from '@infrastructure/formatters/index.js';
 import {
   createQueryFormatter,
   QueryFormat
-} from '../../infrastructure/formatters/query-formatter.js';
+} from '@infrastructure/formatters/query-formatter.js';
 import type { QueryResult } from '@infrastructure/formatters/query-types.js';
 
 /** 統一輸出格式 */

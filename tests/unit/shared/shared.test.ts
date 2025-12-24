@@ -9,7 +9,7 @@ import {
   createSymbolFinder,
   symbolToKey,
   serializeSymbolKey
-} from '@core/shared/symbol-finder/index.js';
+} from '@core/foundations/symbol-finder/index.js';
 import {
   CallHierarchyAnalyzer,
   createCallHierarchyAnalyzer,

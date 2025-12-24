@@ -11,26 +11,31 @@
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { FunctionSignature, ParameterDefinition } from './types.js';
+import { FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * 簽名解析器
  */
 export class SignatureParser {
+  private readonly fileUtils: FileUtils;
+
   constructor(
     private readonly parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
-  ) {}
+  ) {
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
+  }
 
   /**
    * 解析函式簽名
    */
   async parseSignature(filePath: string, functionName: string): Promise<FunctionSignature | null> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return null;
     }
 
-    const extension = this.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
 
     switch (extension) {
       case '.ts':
@@ -66,7 +71,7 @@ export class SignatureParser {
    * 效能優化：直接使用 AST 查找函數，不再先用正則找行號
    */
   private parseWithAST(content: string, filePath: string, functionName: string): FunctionSignature | null {
-    const extension = this.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
     const parser = this.parserRegistry.getParser(extension);
 
     if (!parser?.formatSignature) {
@@ -128,7 +133,7 @@ export class SignatureParser {
     functionName: string,
     _startLine: number
   ): number | null {
-    const extension = this.getFileExtension(filePath);
+    const extension = FileUtils.getFileExtension(filePath);
     const parser = this.parserRegistry.getParser(extension);
 
     if (!parser?.getFullDeclarationRange) {
@@ -475,26 +480,6 @@ export class SignatureParser {
     }
 
     return undefined;
-  }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
   }
 
   /**

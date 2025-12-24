@@ -19,12 +19,13 @@ import type {
   CallSiteUpdate
 } from './types.js';
 import { ChangeSignatureErrorCode } from './types.js';
-import { SymbolFinder } from '@core/shared/symbol-finder/index.js';
+import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * Change Signature Service
  */
 export class ChangeSignatureService {
+  private readonly fileUtils: FileUtils;
   private readonly signatureParser: SignatureParser;
   private readonly symbolFinder: SymbolFinder;
   private readonly validator: SignatureValidator;
@@ -35,11 +36,12 @@ export class ChangeSignatureService {
     private readonly parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
     this.signatureParser = new SignatureParser(parserRegistry, fileSystem);
     this.symbolFinder = new SymbolFinder(parserRegistry, fileSystem);
     this.validator = new SignatureValidator();
     this.transformer = new SignatureTransformer();
-    this.callSiteUpdater = new CallSiteUpdater(fileSystem);
+    this.callSiteUpdater = new CallSiteUpdater(fileSystem, parserRegistry);
   }
 
   /**
@@ -207,7 +209,7 @@ export class ChangeSignatureService {
     originalSignature: FunctionSignature,
     newSignature: FunctionSignature
   ): Promise<{ filePath: string; originalCode: string; newCode: string; location: typeof originalSignature.location }> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       throw new Error(`無法讀取檔案: ${filePath}`);
     }
@@ -270,7 +272,7 @@ export class ChangeSignatureService {
 
     // 套用到每個檔案
     for (const [filePath, updates] of fileUpdates) {
-      let content = await this.readFile(filePath);
+      let content = await this.fileUtils.readFile(filePath);
       if (!content) { continue; }
 
       // 從後往前替換，避免行號偏移
@@ -288,8 +290,7 @@ export class ChangeSignatureService {
    * 生成參數字串
    */
   private generateParameterString(signature: FunctionSignature, filePath: string): string {
-    const extension = this.getFileExtension(filePath);
-    const isTypeScript = extension === '.ts' || extension === '.tsx';
+    const isTypeScript = FileUtils.isTypeScript(filePath);
 
     return signature.parameters.map(param => {
       let result = '';
@@ -349,8 +350,9 @@ export class ChangeSignatureService {
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
 
-      // 跳過 node_modules 和隱藏目錄
-      if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+      // 跳過 node_modules、build 輸出目錄和隱藏目錄
+      const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
+      if (skipDirs.includes(entry.name) || entry.name.startsWith('.')) {
         continue;
       }
 
@@ -366,28 +368,7 @@ export class ChangeSignatureService {
    * 檢查是否為支援的檔案類型
    */
   private isSupportedFile(filename: string): boolean {
-    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
-    return supportedExtensions.some(ext => filename.endsWith(ext));
-  }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
+    return FileUtils.isSupportedLanguage(filename);
   }
 
   /**

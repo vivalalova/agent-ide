@@ -4,6 +4,7 @@
  */
 
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type {
   FunctionSignature,
   SignatureChange,
@@ -15,7 +16,8 @@ import {
   isReorderParametersChange
 } from './types.js';
 import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
-import type { CallSite } from '@core/shared/symbol-finder/index.js';
+import type { CallSite } from '@core/foundations/symbol-finder/index.js';
+import { FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * 呼叫風格資訊
@@ -44,7 +46,14 @@ interface ParameterMappingInfo {
  * 處理呼叫點的參數更新
  */
 export class CallSiteUpdater {
-  constructor(private readonly fileSystem: IFileSystem) {}
+  private readonly fileUtils: FileUtils;
+
+  constructor(
+    private readonly fileSystem: IFileSystem,
+    parserRegistry: ParserRegistry
+  ) {
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
+  }
 
   /**
    * 生成呼叫點更新
@@ -77,7 +86,7 @@ export class CallSiteUpdater {
 
     // 批次讀取所有不重複的檔案並處理
     for (const [filePath, fileCallSites] of callSitesByFile) {
-      const content = await this.readFile(filePath);
+      const content = await this.fileUtils.readFile(filePath);
       if (!content) { continue; }
 
       const lines = content.split('\n');
@@ -435,23 +444,14 @@ export class CallSiteUpdater {
     }
     return line.length;
   }
-
-  /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
 }
 
 /**
  * 建立 CallSiteUpdater 實例
  */
-export function createCallSiteUpdater(fileSystem: IFileSystem): CallSiteUpdater {
-  return new CallSiteUpdater(fileSystem);
+export function createCallSiteUpdater(
+  fileSystem: IFileSystem,
+  parserRegistry: ParserRegistry
+): CallSiteUpdater {
+  return new CallSiteUpdater(fileSystem, parserRegistry);
 }

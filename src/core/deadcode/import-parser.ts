@@ -6,6 +6,7 @@
 import type { Range } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
+import { FileUtils } from '@core/foundations/index.js';
 
 /** 多行 import 的最大行數限制 */
 const MAX_MULTILINE_IMPORT = 20;
@@ -86,7 +87,7 @@ export class ImportParser {
    * @returns ImportStatementInfo[] 如果成功，null 如果 Parser 不支援或解析失敗
    */
   private parseImportStatementsWithParser(content: string, filePath: string): ImportStatementInfo[] | null {
-    const parser = this.parserRegistry.getParser(this.getFileExtension(filePath));
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (!parser?.getImportDeclarations) {
       return null;
     }
@@ -116,8 +117,8 @@ export class ImportParser {
       symbols.push({ name: decl.namespaceImport, isNamespace: true });
     }
 
-    // 處理 named imports
-    for (const named of decl.namedImports) {
+    // 處理 named imports（防禦性檢查：decl.namedImports 可能為 undefined）
+    for (const named of decl.namedImports ?? []) {
       symbols.push({
         name: named.name,
         alias: named.alias
@@ -280,14 +281,6 @@ export class ImportParser {
         }
       }
     }
-  }
-
-  /**
-   * 從檔案路徑取得副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot === -1 ? '' : filePath.substring(lastDot);
   }
 }
 

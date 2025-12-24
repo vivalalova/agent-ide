@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CycleDetector } from '@core/cycles/index.js';
-import { DependencyGraph } from '@core/shared/dependency-graph/index.js';
+import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 
 // ============================================================================
 // CycleDetector Tests

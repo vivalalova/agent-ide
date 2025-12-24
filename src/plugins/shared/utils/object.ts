@@ -155,7 +155,7 @@ export function omit<T extends Record<string, any>, K extends keyof T>(
  * @returns 是否為空
  */
 export function isEmpty(value: unknown): boolean {
-  if (value == null) {return true;}
+  if (value === null || value === undefined) {return true;}
 
   if (typeof value === 'string' || Array.isArray(value)) {
     return value.length === 0;
@@ -181,7 +181,7 @@ export function isEmpty(value: unknown): boolean {
 export function isEqual(a: unknown, b: unknown): boolean {
   if (a === b) {return true;}
 
-  if (a == null || b == null) {return a === b;}
+  if (a === null || a === undefined || b === null || b === undefined) {return a === b;}
 
   if (typeof a !== typeof b) {return false;}
 
@@ -244,7 +244,7 @@ export function set(obj: Record<string, any>, path: string, value: unknown): voi
     const key = keys[i];
     const nextKey = keys[i + 1];
 
-    if (!(key in current) || current[key] == null) {
+    if (!(key in current) || current[key] === null || current[key] === undefined) {
       // 如果下一個鍵是數字，建立陣列，否則建立物件
       current[key] = /^\d+$/.test(nextKey) ? [] : {};
     }
@@ -273,7 +273,7 @@ export function get(obj: Record<string, any>, path: string, defaultValue?: unkno
   let current: any = obj;
 
   for (const key of keys) {
-    if (current == null || !(key in current)) {
+    if (current === null || current === undefined || !(key in current)) {
       return defaultValue;
     }
     current = current[key];
@@ -297,7 +297,7 @@ export function has(obj: Record<string, any>, path: string): boolean {
   let current: any = obj;
 
   for (const key of keys) {
-    if (current == null || !(key in current)) {
+    if (current === null || current === undefined || !(key in current)) {
       return false;
     }
     current = current[key];

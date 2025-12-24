@@ -28,3 +28,6 @@ export {
   isValidUnicodeIdentifier,
   matchesAnyPattern
 } from './parser-helpers.js';
+
+// 驗證邏輯
+export { validateParserInput, validateRenameInput } from './validators.js';

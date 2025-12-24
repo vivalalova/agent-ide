@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { DependencyGraph } from '@core/shared/dependency-graph/index.js';
+import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
 import type {
   FileDependencies,

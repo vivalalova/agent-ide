@@ -177,14 +177,6 @@ export async function race<T>(tasks: (() => Promise<T>)[]): Promise<T | undefine
   const promises = tasks.map(task => task());
   return Promise.race(promises);
 }
-
-/**
- * 佇列執行選項
- */
-interface QueueOptions {
-  concurrency?: number;
-}
-
 /**
  * 限制並行數量的佇列執行
  * @param tasks 任務陣列

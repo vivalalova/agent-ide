@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DependencyGraph } from '@core/shared/dependency-graph/index.js';
+import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector, calculateCycleSeverity, createDefaultCycleDetectionOptions, isCircularDependency, type CircularDependency } from '@core/cycles/index.js';
 import {
   createDefaultAnalysisOptions,

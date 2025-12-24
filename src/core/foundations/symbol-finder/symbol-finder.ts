@@ -21,6 +21,7 @@ import {
 } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
+import { createFileUtils, type FileUtils } from '../file-utils.js';
 
 /**
  * 符號查找器
@@ -28,6 +29,7 @@ import { CallSiteParser } from './call-site-parser.js';
 export class SymbolFinder {
   private readonly textMatcher: TextMatcher;
   private readonly callSiteParser: CallSiteParser;
+  private readonly fileUtils: FileUtils;
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
@@ -35,18 +37,19 @@ export class SymbolFinder {
   ) {
     this.textMatcher = new TextMatcher();
     this.callSiteParser = new CallSiteParser();
+    this.fileUtils = createFileUtils(fileSystem, parserRegistry);
   }
 
   /**
    * 查找符號定義
    */
   async findDefinition(filePath: string, symbolName: string): Promise<SymbolDefinition | null> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return null;
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return null;
     }
@@ -130,12 +133,12 @@ export class SymbolFinder {
 
     // 一次遍歷所有檔案
     for (const filePath of projectFiles) {
-      const content = await this.readFile(filePath);
+      const content = await this.fileUtils.readFile(filePath);
       if (!content) {
         continue;
       }
 
-      const parser = this.getParser(filePath);
+      const parser = this.fileUtils.getParser(filePath);
       const lines = content.split('\n');
 
       // 對每個目標符號查找引用
@@ -218,58 +221,7 @@ export class SymbolFinder {
    * 查找檔案中的符號引用
    */
   async findReferencesInFile(filePath: string, symbolName: string): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
-    if (!content) {
-      return [];
-    }
-
-    const parser = this.getParser(filePath);
-    if (!parser) {
-      // 降級到文字匹配
-      return this.textMatcher.findReferencesByText(filePath, content, symbolName);
-    }
-
-    try {
-      const ast = await parser.parse(content, filePath);
-
-      // 建立虛擬符號用於查找
-      const dummySymbol: Symbol = {
-        name: symbolName,
-        type: SymbolType.Variable,
-        location: {
-          filePath,
-          range: {
-            start: { line: 1, column: 1 },
-            end: { line: 1, column: 1 }
-          }
-        },
-        scope: undefined,
-        modifiers: []
-      };
-
-      const references = await parser.findReferences(ast, dummySymbol);
-      const lines = content.split('\n');
-
-      return references.map(ref => {
-        const lineIndex = ref.location.range.start.line - 1;
-        // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
-        const context = lineIndex >= 0 && lineIndex < lines.length
-          ? lines[lineIndex]
-          : undefined;
-
-        return {
-          symbolName,
-          location: ref.location,
-          type: ref.type === 'definition'
-            ? SymbolReferenceType.Definition
-            : SymbolReferenceType.Usage,
-          context
-        };
-      });
-    } catch {
-      // Parser 失敗，降級到文字匹配
-      return this.textMatcher.findReferencesByText(filePath, content, symbolName);
-    }
+    return this.findReferencesInFileCore(filePath, symbolName, { filtered: false });
   }
 
   /**
@@ -285,44 +237,7 @@ export class SymbolFinder {
    * @returns 符號引用陣列
    */
   async findReferencesInFileWithSymbol(filePath: string, symbol: Symbol): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
-    if (!content) {
-      return [];
-    }
-
-    const parser = this.getParser(filePath);
-    if (!parser) {
-      // 降級到文字匹配（但會過濾字串和註解）
-      return this.textMatcher.findReferencesByTextFiltered(filePath, content, symbol.name);
-    }
-
-    try {
-      const ast = await parser.parse(content, filePath);
-
-      // 使用完整符號資訊進行查找
-      const references = await parser.findReferences(ast, symbol);
-      const lines = content.split('\n');
-
-      return references.map(ref => {
-        const lineIndex = ref.location.range.start.line - 1;
-        // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
-        const context = lineIndex >= 0 && lineIndex < lines.length
-          ? lines[lineIndex]
-          : undefined;
-
-        return {
-          symbolName: symbol.name,
-          location: ref.location,
-          type: ref.type === 'definition'
-            ? SymbolReferenceType.Definition
-            : SymbolReferenceType.Usage,
-          context
-        };
-      });
-    } catch {
-      // Parser 失敗，降級到文字匹配
-      return this.textMatcher.findReferencesByTextFiltered(filePath, content, symbol.name);
-    }
+    return this.findReferencesInFileCore(filePath, symbol, { filtered: true });
   }
 
   /**
@@ -371,46 +286,11 @@ export class SymbolFinder {
     symbolName: string,
     options?: ScopedFindReferencesOptions
   ): Promise<SymbolReference[]> {
-    const content = await this.readFile(filePath);
-    if (!content) {
-      return [];
-    }
-
-    const parser = this.getParser(filePath);
-
-    // 優先使用 Parser 的 findScopedReferences 方法
-    if (parser && typeof parser.findScopedReferences === 'function') {
-      const scopedRefs = parser.findScopedReferences(content, symbolName, options);
-
-      if (scopedRefs) {
-        const lines = content.split('\n');
-
-        return scopedRefs.map(ref => {
-          const lineIndex = ref.location.range.start.line - 1;
-          const context = lineIndex >= 0 && lineIndex < lines.length
-            ? lines[lineIndex]
-            : undefined;
-
-          // 轉換 ScopedReferenceKind 到 SymbolReferenceType
-          const type = this.scopedReferenceKindToType(ref.kind);
-
-          return {
-            symbolName,
-            location: {
-              filePath,
-              range: ref.location.range
-            },
-            type,
-            context,
-            containerName: ref.containerName,
-            isMethodCall: ref.kind === ScopedReferenceKind.Call
-          };
-        });
-      }
-    }
-
-    // Fallback：使用原有的文字匹配（帶過濾）
-    return this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName);
+    return this.findReferencesInFileCore(filePath, symbolName, {
+      scoped: true,
+      scopeOptions: options,
+      filtered: true
+    });
   }
 
   /**
@@ -454,12 +334,12 @@ export class SymbolFinder {
    * 查找檔案中的函式呼叫點
    */
   async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return [];
     }
@@ -479,12 +359,12 @@ export class SymbolFinder {
    * 查找類別成員
    */
   async findClassMembers(filePath: string, className: string): Promise<ClassMember[]> {
-    const content = await this.readFile(filePath);
+    const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
     }
 
-    const parser = this.getParser(filePath);
+    const parser = this.fileUtils.getParser(filePath);
     if (!parser) {
       return [];
     }
@@ -524,34 +404,6 @@ export class SymbolFinder {
   }
 
   /**
-   * 讀取檔案內容
-   */
-  private async readFile(filePath: string): Promise<string | null> {
-    try {
-      const content = await this.fileSystem.readFile(filePath, 'utf-8');
-      return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 取得對應的 Parser
-   */
-  private getParser(filePath: string) {
-    const extension = this.getFileExtension(filePath);
-    return this.parserRegistry.getParser(extension);
-  }
-
-  /**
-   * 取得檔案副檔名
-   */
-  private getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
-  }
-
-  /**
    * 轉換 ScopedReferenceKind 到 SymbolReferenceType
    */
   private scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
@@ -562,6 +414,133 @@ export class SymbolFinder {
       case ScopedReferenceKind.Read:
       default:
         return SymbolReferenceType.Usage;
+    }
+  }
+
+  /**
+   * 將 Parser 引用結果轉換為 SymbolReference
+   *
+   * @param ref Parser 返回的引用資訊
+   * @param symbolName 符號名稱
+   * @param filePath 檔案路徑
+   * @param lines 檔案內容按行分割
+   * @returns 標準化的 SymbolReference
+   */
+  private convertParserRefToSymbolReference(
+    ref: { location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }; type: string },
+    symbolName: string,
+    filePath: string,
+    lines: string[]
+  ): SymbolReference {
+    const lineIndex = ref.location.range.start.line - 1;
+    const context = lineIndex >= 0 && lineIndex < lines.length
+      ? lines[lineIndex]
+      : undefined;
+
+    return {
+      symbolName,
+      location: ref.location,
+      type: ref.type === 'definition'
+        ? SymbolReferenceType.Definition
+        : SymbolReferenceType.Usage,
+      context
+    };
+  }
+
+  /**
+   * 內部共用：在單一檔案中查找引用的核心邏輯
+   *
+   * 統一處理：
+   * 1. 讀取檔案內容
+   * 2. 獲取 Parser
+   * 3. AST 解析或降級到文字匹配
+   * 4. 將結果轉換為 SymbolReference
+   *
+   * @param filePath 檔案路徑
+   * @param symbolOrName 符號物件或符號名稱
+   * @param options 選項
+   * @returns 符號引用陣列
+   */
+  private async findReferencesInFileCore(
+    filePath: string,
+    symbolOrName: string | Symbol,
+    options?: {
+      /** 是否使用 findScopedReferences（作用域感知） */
+      scoped?: boolean;
+      /** findScopedReferences 選項 */
+      scopeOptions?: ScopedFindReferencesOptions;
+      /** 是否使用 filtered 文字匹配（過濾字串和註解） */
+      filtered?: boolean;
+    }
+  ): Promise<SymbolReference[]> {
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const symbolName = typeof symbolOrName === 'string' ? symbolOrName : symbolOrName.name;
+    const symbol = typeof symbolOrName === 'string' ? null : symbolOrName;
+    const parser = this.fileUtils.getParser(filePath);
+    const lines = content.split('\n');
+    const useFiltered = options?.filtered ?? false;
+
+    // 無 Parser 時降級到文字匹配
+    if (!parser) {
+      return useFiltered
+        ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
+        : this.textMatcher.findReferencesByText(filePath, content, symbolName);
+    }
+
+    // 作用域感知模式：優先使用 findScopedReferences
+    if (options?.scoped && typeof parser.findScopedReferences === 'function') {
+      const scopedRefs = parser.findScopedReferences(content, symbolName, options.scopeOptions);
+
+      if (scopedRefs) {
+        return scopedRefs.map(ref => {
+          const lineIndex = ref.location.range.start.line - 1;
+          const context = lineIndex >= 0 && lineIndex < lines.length
+            ? lines[lineIndex]
+            : undefined;
+
+          return {
+            symbolName,
+            location: { filePath, range: ref.location.range },
+            type: this.scopedReferenceKindToType(ref.kind),
+            context,
+            containerName: ref.containerName,
+            isMethodCall: ref.kind === ScopedReferenceKind.Call
+          };
+        });
+      }
+    }
+
+    // AST 模式：使用 parser.findReferences
+    try {
+      const ast = await parser.parse(content, filePath);
+
+      // 建立符號（若傳入的是字串則建立虛擬符號）
+      const targetSymbol: Symbol = symbol ?? {
+        name: symbolName,
+        type: SymbolType.Variable,
+        location: {
+          filePath,
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 1 }
+          }
+        },
+        scope: undefined,
+        modifiers: []
+      };
+
+      const references = await parser.findReferences(ast, targetSymbol);
+
+      return references.map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
+    } catch {
+      // Parser 失敗，降級到文字匹配
+      return useFiltered
+        ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
+        : this.textMatcher.findReferencesByText(filePath, content, symbolName);
     }
   }
 
