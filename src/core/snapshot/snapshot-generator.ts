@@ -7,18 +7,18 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/shared/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
-import type { PatternInfo, FormattedSignature } from '@infrastructure/parser/index.js';
+import type { PatternInfo } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
 import { SnapshotScope, isProjectSnapshot } from './types.js';
 import { SnapshotCacheManager } from './snapshot-cache.js';
 import type { IncrementalSnapshot, SnapshotDelta } from './snapshot-cache.js';
-
-/** 擴展 Symbol 型別，包含 Parser 額外資訊 */
-interface ExtendedSymbol extends Symbol {
-  readonly signature?: string;
-  readonly typeInfo?: string;
-}
+import {
+  identifyFactoryPatterns,
+  isFactory,
+  formatSymbolSignature,
+  type ExtendedSymbol
+} from './utils/index.js';
 
 /**
  * Snapshot 產生器
@@ -161,7 +161,7 @@ export class SnapshotGenerator {
       const relativePath = path.basename(modulePath);
 
       // 使用 Parser 識別 factory 模式
-      const factoryPatterns = await this.identifyFactoryPatterns(modulePath);
+      const factoryPatterns = await identifyFactoryPatterns(modulePath, this.fileSystem);
 
       // 預載入所有檔案內容（供 formatSignatureWithParser 使用）
       const fileContents = await this.loadFileContents(modulePath);
@@ -202,49 +202,6 @@ export class SnapshotGenerator {
     }
 
     return contents;
-  }
-
-  /**
-   * 使用 Parser 識別模組內的 factory 模式
-   */
-  private async identifyFactoryPatterns(modulePath: string): Promise<Map<string, PatternInfo>> {
-    const factoryMap = new Map<string, PatternInfo>();
-
-    try {
-      const entries = await this.fileSystem.readDirectory(modulePath);
-
-      for (const entry of entries) {
-        if (entry.isDirectory) { continue; }
-
-        const ext = path.extname(entry.name);
-        if (!['.ts', '.js', '.tsx', '.jsx'].includes(ext)) { continue; }
-
-        const filePath = path.join(modulePath, entry.name);
-        const parser = ParserRegistry.getInstance().getParser(ext);
-
-        if (!parser || !parser.identifyPatterns) { continue; }
-
-        try {
-          const content = await this.fileSystem.readFile(filePath);
-          const codeString = typeof content === 'string' ? content : content.toString('utf-8');
-          const patterns = parser.identifyPatterns(codeString);
-
-          if (patterns) {
-            for (const pattern of patterns) {
-              if (pattern.type === 'factory') {
-                factoryMap.set(pattern.symbolName, pattern);
-              }
-            }
-          }
-        } catch {
-          // 忽略單一檔案的解析錯誤，繼續處理其他檔案
-        }
-      }
-    } catch {
-      // 忽略目錄讀取錯誤，返回空 Map（fallback 到名稱比對）
-    }
-
-    return factoryMap;
   }
 
   /**
@@ -348,14 +305,8 @@ export class SnapshotGenerator {
     // 處理 factory 函數
     // 優先使用 Parser 語義分析的結果，若無則 fallback 到名稱比對
     for (const func of functions) {
-      const parserPattern = factoryPatterns.get(func.name);
-
-      if (parserPattern) {
-        // Parser 識別為 factory（語義分析）
-        factories[func.name] = this.formatSymbolSignature(func, fileContents);
-      } else if (factoryPatterns.size === 0 && func.name.startsWith('create')) {
-        // Fallback：Parser 未提供任何結果時，使用名稱比對（向後相容）
-        factories[func.name] = this.formatSymbolSignature(func, fileContents);
+      if (isFactory(func.name, factoryPatterns)) {
+        factories[func.name] = formatSymbolSignature(func, fileContents);
       }
     }
 
@@ -398,7 +349,7 @@ export class SnapshotGenerator {
     );
 
     for (const method of classMethods) {
-      methods[method.name] = this.formatSymbolSignature(method, fileContents);
+      methods[method.name] = formatSymbolSignature(method, fileContents);
     }
 
     return methods;
@@ -421,150 +372,6 @@ export class SnapshotGenerator {
     }
 
     return fields;
-  }
-
-  /**
-   * 格式化符號簽章（方法或函數）
-   * 優先使用 Parser AST 解析，fallback 到 simplifySignature
-   * @param fileContents 檔案內容 Map（供 Parser 使用）
-   */
-  private formatSymbolSignature(
-    symbol: ExtendedSymbol,
-    fileContents: Map<string, string>
-  ): string {
-    // 優先使用 Parser AST 解析簽章
-    const filePath = symbol.location?.filePath;
-    const line = symbol.location?.range?.start?.line;
-    const code = filePath ? fileContents.get(filePath) : undefined;
-
-    if (filePath && line !== undefined && code) {
-      const parserResult = this.formatSignatureWithParser(filePath, symbol.name, line, code);
-      if (parserResult) {
-        return parserResult;
-      }
-    }
-
-    // Fallback：使用 IndexEngine 提取的簽章
-    if (symbol.signature) {
-      return this.simplifySignature(symbol.signature);
-    }
-    return '() → unknown';
-  }
-
-  /**
-   * 使用 Parser AST 格式化簽章
-   * @param filePath 檔案路徑（用於選擇 Parser）
-   * @param symbolName 符號名稱
-   * @param line 行號（1-based）
-   * @param code 檔案內容
-   * @returns 格式化後的簽章字串，如果無法解析則返回 null（fallback 到 simplifySignature）
-   */
-  private formatSignatureWithParser(
-    filePath: string,
-    symbolName: string,
-    line: number,
-    code: string
-  ): string | null {
-    const ext = path.extname(filePath);
-    const parser = ParserRegistry.getInstance().getParser(ext);
-
-    if (!parser?.formatSignature) { return null; }
-
-    const sig: FormattedSignature | null = parser.formatSignature(code, symbolName, line);
-    if (!sig) { return null; }
-
-    // 轉換 FormattedSignature → 簡化字串
-    const params = sig.parameters
-      .map(p => {
-        let str = p.name;
-        if (p.optional && !p.defaultValue) { str += '?'; }
-        if (p.type && p.type !== 'any') { str += `: ${p.type}`; }
-        if (p.defaultValue) { str += ` = ${p.defaultValue}`; }
-        return str;
-      })
-      .join(', ');
-
-    return params ? `(${params}) → ${sig.returnType}` : `() → ${sig.returnType}`;
-  }
-
-  /**
-   * 簡化簽章格式（移除函數名稱，保留參數和回傳型別）
-   * 使用括號平衡算法處理巢狀泛型
-   */
-  private simplifySignature(signature: string): string {
-    // 使用括號平衡算法找到參數列表的開始和結束位置
-    const result = this.parseSignatureWithBalancing(signature);
-    if (result) {
-      return result;
-    }
-
-    // Fallback：原始正則邏輯（向後相容）
-    const match = signature.match(/^[^(]*\(([^)]*)\)(?:\s*:\s*(.+))?$/);
-    if (match) {
-      const params = match[1].trim();
-      const returnType = match[2]?.trim() || 'void';
-      return params ? `(${params}) → ${returnType}` : `() → ${returnType}`;
-    }
-    return signature;
-  }
-
-  /**
-   * 使用括號平衡算法解析簽章
-   * 正確處理巢狀泛型（如 Map<K, Fn<V>>）
-   */
-  private parseSignatureWithBalancing(signature: string): string | null {
-    // 找到第一個 '(' 的位置（跳過泛型參數 '<...>'）
-    let depth = 0;
-    let parenStart = -1;
-
-    for (let i = 0; i < signature.length; i++) {
-      const char = signature[i];
-      if (char === '<') {
-        depth++;
-      } else if (char === '>') {
-        depth--;
-      } else if (char === '(' && depth === 0) {
-        parenStart = i;
-        break;
-      }
-    }
-
-    if (parenStart === -1) {
-      return null;
-    }
-
-    // 從 parenStart 開始，使用括號平衡找到對應的 ')'
-    depth = 0;
-    let parenEnd = -1;
-
-    for (let i = parenStart; i < signature.length; i++) {
-      const char = signature[i];
-      if (char === '(' || char === '<' || char === '{' || char === '[') {
-        depth++;
-      } else if (char === ')' || char === '>' || char === '}' || char === ']') {
-        depth--;
-        if (depth === 0 && char === ')') {
-          parenEnd = i;
-          break;
-        }
-      }
-    }
-
-    if (parenEnd === -1) {
-      return null;
-    }
-
-    // 提取參數和回傳型別
-    const params = signature.substring(parenStart + 1, parenEnd).trim();
-    const afterParen = signature.substring(parenEnd + 1).trim();
-
-    // 解析回傳型別（跳過 ':' 後的部分）
-    let returnType = 'void';
-    if (afterParen.startsWith(':')) {
-      returnType = afterParen.substring(1).trim();
-    }
-
-    return params ? `(${params}) → ${returnType}` : `() → ${returnType}`;
   }
 
   /**
