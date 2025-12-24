@@ -9,6 +9,16 @@ import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange 
 import { MoveTargetType } from './types.js';
 
 /**
+ * 來源檔案的符號資訊
+ */
+interface SourceSymbolInfo {
+  /** 本地定義的 export 符號 */
+  localExports: Set<string>;
+  /** import 的符號對應的來源 { symbolName -> modulePath } */
+  importedSymbols: Map<string, string>;
+}
+
+/**
  * File Change Preparer
  * 負責準備來源檔案和目標檔案的程式碼變更
  */
@@ -79,14 +89,24 @@ export class FileChangePreparer {
       memberCode = 'export ' + memberCode;
     }
 
+    // 分析成員依賴並生成需要的 import
+    const sourceContent = await this.readFile(options.sourceFile);
+    const dependencyImports = sourceContent
+      ? await this.generateDependencyImports(
+          member,
+          sourceContent,
+          options.sourceFile,
+          target.filePath
+        )
+      : '';
+
     // 自動判斷檔案是否存在
     const content = await this.readFile(target.filePath);
     const isNewFile = content === null;
 
     if (isNewFile) {
       // 新檔案：生成完整的檔案內容
-      const imports = this.generateImports(member);
-      const newCode = imports + (imports ? '\n\n' : '') + memberCode + '\n';
+      const newCode = dependencyImports + (dependencyImports ? '\n\n' : '') + memberCode + '\n';
 
       return {
         filePath: target.filePath,
@@ -110,19 +130,175 @@ export class FileChangePreparer {
       insertLine = lines.length;
     }
 
-    const newLines = [
-      ...lines.slice(0, insertLine),
-      '',
-      memberCode,
-      ...lines.slice(insertLine)
-    ];
+    // 現有檔案：將 import 插入到檔案開頭（在現有 import 之後）
+    let finalCode: string;
+    if (dependencyImports) {
+      const importInsertLine = this.findImportInsertPosition(lines);
+      const newLines = [
+        ...lines.slice(0, importInsertLine),
+        dependencyImports,
+        ...lines.slice(importInsertLine, insertLine),
+        '',
+        memberCode,
+        ...lines.slice(insertLine)
+      ];
+      finalCode = newLines.join('\n');
+    } else {
+      const newLines = [
+        ...lines.slice(0, insertLine),
+        '',
+        memberCode,
+        ...lines.slice(insertLine)
+      ];
+      finalCode = newLines.join('\n');
+    }
 
     return {
       filePath: target.filePath,
       originalCode: content,
-      newCode: newLines.join('\n'),
+      newCode: finalCode,
       isNewFile: false
     };
+  }
+
+  /**
+   * 找到 import 插入位置（在最後一個 import 之後）
+   */
+  private findImportInsertPosition(lines: string[]): number {
+    let lastImportLine = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('import ') || line.startsWith('import{')) {
+        lastImportLine = i + 1;
+      }
+      // 遇到非 import、非空行、非註解，停止搜尋
+      if (line && !line.startsWith('import') && !line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*')) {
+        break;
+      }
+    }
+    return lastImportLine;
+  }
+
+  /**
+   * 生成成員依賴的 import
+   */
+  private async generateDependencyImports(
+    member: MemberDefinition,
+    sourceContent: string,
+    sourceFile: string,
+    targetFile: string
+  ): Promise<string> {
+    const symbolInfo = this.analyzeSourceSymbols(sourceContent);
+    const neededImports: Map<string, Set<string>> = new Map(); // modulePath -> Set<symbolName>
+
+    // 分析成員依賴的符號
+    for (const dep of member.dependencies) {
+      // 跳過成員自己的名稱
+      if (dep === member.name) { continue; }
+
+      if (symbolInfo.localExports.has(dep)) {
+        // 依賴來自來源檔案的本地 export，需要從來源檔案 import
+        const relativePath = this.calculateRelativePath(targetFile, sourceFile);
+        if (!neededImports.has(relativePath)) {
+          neededImports.set(relativePath, new Set());
+        }
+        neededImports.get(relativePath)!.add(dep);
+      } else if (symbolInfo.importedSymbols.has(dep)) {
+        // 依賴來自外部模組，保持原本的 import 路徑
+        const originalModulePath = symbolInfo.importedSymbols.get(dep)!;
+        if (!neededImports.has(originalModulePath)) {
+          neededImports.set(originalModulePath, new Set());
+        }
+        neededImports.get(originalModulePath)!.add(dep);
+      }
+    }
+
+    // 生成 import 語句
+    const importLines: string[] = [];
+    for (const [modulePath, symbols] of neededImports) {
+      const symbolList = Array.from(symbols).sort().join(', ');
+      importLines.push(`import { ${symbolList} } from '${modulePath}';`);
+    }
+
+    return importLines.join('\n');
+  }
+
+  /**
+   * 分析來源檔案的符號（本地 export 和 import）
+   */
+  private analyzeSourceSymbols(content: string): SourceSymbolInfo {
+    const localExports = new Set<string>();
+    const importedSymbols = new Map<string, string>();
+
+    // 分析 import 語句
+    // import { A, B } from 'module'
+    const importPattern = /import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = importPattern.exec(content)) !== null) {
+      const symbols = match[1].split(',').map(s => s.trim().split(' as ')[0].trim());
+      const modulePath = match[2];
+      for (const symbol of symbols) {
+        if (symbol) {
+          importedSymbols.set(symbol, modulePath);
+        }
+      }
+    }
+
+    // 分析 import * as name from 'module'
+    const namespaceImportPattern = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
+    while ((match = namespaceImportPattern.exec(content)) !== null) {
+      importedSymbols.set(match[1], match[2]);
+    }
+
+    // 分析本地 export
+    // export const/let/var NAME
+    const exportVarPattern = /export\s+(?:const|let|var)\s+(\w+)/g;
+    while ((match = exportVarPattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export function NAME
+    const exportFuncPattern = /export\s+(?:async\s+)?function\s+(\w+)/g;
+    while ((match = exportFuncPattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export class NAME
+    const exportClassPattern = /export\s+(?:abstract\s+)?class\s+(\w+)/g;
+    while ((match = exportClassPattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export interface NAME
+    const exportInterfacePattern = /export\s+interface\s+(\w+)/g;
+    while ((match = exportInterfacePattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export type NAME
+    const exportTypePattern = /export\s+type\s+(\w+)/g;
+    while ((match = exportTypePattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export enum NAME
+    const exportEnumPattern = /export\s+enum\s+(\w+)/g;
+    while ((match = exportEnumPattern.exec(content)) !== null) {
+      localExports.add(match[1]);
+    }
+
+    // export { A, B }（命名 re-export）
+    const exportListPattern = /export\s+\{([^}]+)\}(?!\s+from)/g;
+    while ((match = exportListPattern.exec(content)) !== null) {
+      const symbols = match[1].split(',').map(s => s.trim().split(' as ')[0].trim());
+      for (const symbol of symbols) {
+        if (symbol) {
+          localExports.add(symbol);
+        }
+      }
+    }
+
+    return { localExports, importedSymbols };
   }
 
   /**
@@ -162,22 +338,6 @@ export class FileChangePreparer {
     }
 
     return -1;
-  }
-
-  /**
-   * 生成 import 陳述
-   * 注意：不應該 import 成員自身，因為成員已經被移動到新檔案
-   */
-  private generateImports(_member: MemberDefinition): string {
-    // 新檔案不需要從來源檔案 import 任何東西
-    // 因為：
-    // 1. 成員自身已經被複製到新檔案，不需要 import
-    // 2. 成員的依賴應該從原本的 import 路徑導入，而不是從來源檔案
-    // 3. 實際的依賴（如型別）應該透過分析原始檔案的 import 來決定
-    //
-    // 目前暫時不生成任何 import，因為這需要更複雜的依賴分析
-    // 未來可以改進：分析成員使用的型別和函式，從原始檔案的 import 中提取
-    return '';
   }
 
   /**

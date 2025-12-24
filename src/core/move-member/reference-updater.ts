@@ -56,7 +56,11 @@ export class ReferenceUpdater {
         if (!importPathMatch) {continue;}
 
         // 解析 import 路徑為絕對路徑並比較
-        const resolvedImportPath = this.resolveImportPathToAbsolute(importPathMatch, filePath);
+        const resolvedImportPath = this.resolveImportPathToAbsolute(
+          importPathMatch,
+          filePath,
+          options.projectRoot
+        );
         const normalizedSourceFile = path.normalize(options.sourceFile);
 
         // 比較路徑（考慮副檔名）
@@ -183,20 +187,40 @@ export class ReferenceUpdater {
 
   /**
    * 解析 import 路徑為絕對路徑
+   *
+   * @param importPath import 語句中的路徑
+   * @param fromFile 包含 import 語句的檔案路徑
+   * @param projectRoot 專案根目錄（用於解析路徑別名）
    */
-  private resolveImportPathToAbsolute(importPath: string, fromFile: string): string {
+  private resolveImportPathToAbsolute(
+    importPath: string,
+    fromFile: string,
+    projectRoot?: string
+  ): string {
     if (importPath.startsWith('.')) {
       // 相對路徑
       const fromDir = path.dirname(fromFile);
       return path.normalize(path.resolve(fromDir, importPath));
     }
-    // 非相對路徑（可能是 node_modules 或路徑別名）
-    // 目前只處理相對路徑，其他情況返回原路徑
+
+    // 處理常見的路徑別名（src/*, @/*）
+    if (projectRoot) {
+      // src/* -> {projectRoot}/src/*
+      if (importPath.startsWith('src/')) {
+        return path.normalize(path.join(projectRoot, importPath));
+      }
+      // @/* -> {projectRoot}/src/* (常見配置)
+      if (importPath.startsWith('@/')) {
+        return path.normalize(path.join(projectRoot, 'src', importPath.slice(2)));
+      }
+    }
+
+    // 非相對路徑且無法解析（可能是 node_modules）
     return importPath;
   }
 
   /**
-   * 比較兩個路徑是否指向同一檔案（考慮副檔名）
+   * 比較兩個路徑是否指向同一檔案（考慮副檔名和 index.ts）
    */
   private pathsMatch(path1: string, path2: string): boolean {
     const normalized1 = path.normalize(path1);
@@ -211,7 +235,20 @@ export class ReferenceUpdater {
     const withoutExt1 = this.removeExtension(normalized1);
     const withoutExt2 = this.removeExtension(normalized2);
 
-    return withoutExt1 === withoutExt2;
+    if (withoutExt1 === withoutExt2) {
+      return true;
+    }
+
+    // 處理目錄 -> index.ts 對應
+    // 例如 src/utils 應該匹配 src/utils/index.ts
+    if (withoutExt2.endsWith('/index') && withoutExt1 === path.dirname(withoutExt2)) {
+      return true;
+    }
+    if (withoutExt1.endsWith('/index') && withoutExt2 === path.dirname(withoutExt1)) {
+      return true;
+    }
+
+    return false;
   }
 
   /**

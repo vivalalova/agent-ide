@@ -417,15 +417,34 @@ export class MemberExtractor {
 
   /**
    * 找到陳述句結尾
+   *
+   * 處理多行箭頭函式：追蹤括號深度，避免將參數預設值的 `=` 誤判為語句結束
    */
   private findStatementEnd(lines: string[], startLine: number): number {
+    let parenDepth = 0;
+
     for (let i = startLine; i < lines.length; i++) {
       const line = lines[i];
-      if (line.includes(';') || (line.includes('=') && !line.includes('=>') && i > startLine)) {
-        return i;
+
+      // 追蹤括號深度
+      for (const char of line) {
+        if (char === '(') { parenDepth++; }
+        else if (char === ')') { parenDepth--; }
       }
-      // 檢查是否是多行箭頭函式或物件
-      if (line.includes('{')) {
+
+      // 只有括號外的 `;` 或 `=` 才是語句結束
+      if (parenDepth === 0) {
+        if (line.includes(';')) {
+          return i;
+        }
+        // 非箭頭函式的賦值（且不是起始行）
+        if (line.includes('=') && !line.includes('=>') && i > startLine) {
+          return i;
+        }
+      }
+
+      // 檢查是否是多行箭頭函式或物件（括號必須已閉合）
+      if (parenDepth === 0 && line.includes('{')) {
         return this.findBlockEnd(lines, i);
       }
     }
@@ -487,14 +506,27 @@ export class MemberExtractor {
    */
   private extractDependencies(sourceCode: string): string[] {
     const dependencies: string[] = [];
+    const keywords = new Set([
+      'if', 'else', 'while', 'for', 'switch', 'case', 'break', 'continue',
+      'function', 'async', 'await', 'return', 'new', 'typeof', 'instanceof',
+      'const', 'let', 'var', 'class', 'interface', 'type', 'enum', 'export',
+      'import', 'from', 'default', 'true', 'false', 'null', 'undefined',
+      'this', 'super', 'extends', 'implements', 'static', 'readonly', 'private',
+      'public', 'protected', 'abstract', 'get', 'set', 'in', 'of', 'as', 'is'
+    ]);
+    const basicTypes = new Set([
+      'string', 'number', 'boolean', 'void', 'any', 'unknown', 'never',
+      'null', 'undefined', 'object', 'symbol', 'bigint', 'Array', 'Object',
+      'String', 'Number', 'Boolean', 'Function', 'Promise', 'Map', 'Set'
+    ]);
+
+    let match;
 
     // 提取型別引用
     const typePattern = /:\s*(\w+)(?:<|;|\s|,|\))/g;
-    let match;
     while ((match = typePattern.exec(sourceCode)) !== null) {
       const typeName = match[1];
-      // 排除基本類型
-      if (!['string', 'number', 'boolean', 'void', 'any', 'unknown', 'never', 'null', 'undefined'].includes(typeName)) {
+      if (!basicTypes.has(typeName) && !keywords.has(typeName)) {
         dependencies.push(typeName);
       }
     }
@@ -503,9 +535,27 @@ export class MemberExtractor {
     const callPattern = /(\w+)\s*\(/g;
     while ((match = callPattern.exec(sourceCode)) !== null) {
       const funcName = match[1];
-      // 排除關鍵字
-      if (!['if', 'while', 'for', 'switch', 'function', 'async', 'await', 'return', 'new', 'typeof', 'instanceof'].includes(funcName)) {
+      if (!keywords.has(funcName) && !basicTypes.has(funcName)) {
         dependencies.push(funcName);
+      }
+    }
+
+    // 提取變數/常數引用（賦值右側、運算子右側、比較右側）
+    // 匹配 = IDENTIFIER, > IDENTIFIER, < IDENTIFIER 等
+    const varRefPattern = /[=><+\-*/%&|!]\s*([A-Z][A-Z0-9_]*)\b/g;
+    while ((match = varRefPattern.exec(sourceCode)) !== null) {
+      const varName = match[1];
+      if (!keywords.has(varName) && !basicTypes.has(varName)) {
+        dependencies.push(varName);
+      }
+    }
+
+    // 提取作為比較對象的識別符
+    const comparisonPattern = /\b([A-Z][A-Z0-9_]*)\s*[=!<>]/g;
+    while ((match = comparisonPattern.exec(sourceCode)) !== null) {
+      const varName = match[1];
+      if (!keywords.has(varName) && !basicTypes.has(varName)) {
+        dependencies.push(varName);
       }
     }
 
