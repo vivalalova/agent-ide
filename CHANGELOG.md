@@ -1,3 +1,22 @@
+## <small>0.9.1 (2025-12-24)</small>
+
+* merge: refactor/file-utils - FileUtils 靜態化與 CLI 修復 ([e32bdf1](https://github.com/vivalalova/agent-ide/commit/e32bdf1))
+* fix: [Lint 修正] 清理 23 個 lint 警告 ([f357c89](https://github.com/vivalalova/agent-ide/commit/f357c89))
+* fix: change-signature 相對路徑解析修正 ([2080ce7](https://github.com/vivalalova/agent-ide/commit/2080ce7))
+* fix: deadcode 大專案處理錯誤修復 ([9e1b028](https://github.com/vivalalova/agent-ide/commit/9e1b028))
+* fix: 排除 dist/build 目錄避免修改編譯輸出 ([510a3c1](https://github.com/vivalalova/agent-ide/commit/510a3c1))
+* fix: 更新 CLI 測試使用新的 move 命令格式 ([ac496f5](https://github.com/vivalalova/agent-ide/commit/ac496f5))
+* refactor: FileUtils 全面靜態化 ([8c2c844](https://github.com/vivalalova/agent-ide/commit/8c2c844))
+* refactor: QueryFormatter 拆分為策略模式 ([84b1016](https://github.com/vivalalova/agent-ide/commit/84b1016))
+* refactor: 拆分 member-extractor 為模組化結構 ([fbd8948](https://github.com/vivalalova/agent-ide/commit/fbd8948))
+* refactor: 拆分 snapshot-generator 為模組化結構 ([e300d15](https://github.com/vivalalova/agent-ide/commit/e300d15))
+* refactor: 提取 Parser 共享驗證邏輯 ([bfd1d21](https://github.com/vivalalova/agent-ide/commit/bfd1d21))
+* refactor: 提取 SymbolFinder 共用核心邏輯 ([35efe1e](https://github.com/vivalalova/agent-ide/commit/35efe1e))
+* refactor: 提取共享 FileUtils 消除重複代碼 ([67b46e0](https://github.com/vivalalova/agent-ide/commit/67b46e0))
+* refactor: 重命名 core/shared → core/foundations ([989fdeb](https://github.com/vivalalova/agent-ide/commit/989fdeb))
+* chore: 加強模組化 ESLint 規則 ([35e3f54](https://github.com/vivalalova/agent-ide/commit/35e3f54))
+* docs: 更新 README 命令表 ([7a6c37b](https://github.com/vivalalova/agent-ide/commit/7a6c37b))
+
 ## 0.9.0 (2025-12-24)
 
 * Merge branch 'refactor/optimization' ([61ec51f](https://github.com/vivalalova/agent-ide/commit/61ec51f))
