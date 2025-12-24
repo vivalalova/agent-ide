@@ -279,11 +279,28 @@ export class SnapshotGenerator {
     const types: Record<string, string> = {};
     const privateInfo: Record<string, PrivateInfo> = {};
 
-    // 分類符號
-    const classes = extendedSymbols.filter(s => s.type === SymbolType.Class);
-    const functions = extendedSymbols.filter(s => s.type === SymbolType.Function);
-    const interfaces = extendedSymbols.filter(s => s.type === SymbolType.Interface);
-    const typeAliases = extendedSymbols.filter(s => s.type === SymbolType.Type);
+    // 單次遍歷分類符號
+    const classes: ExtendedSymbol[] = [];
+    const functions: ExtendedSymbol[] = [];
+    const interfaces: ExtendedSymbol[] = [];
+    const typeAliases: ExtendedSymbol[] = [];
+
+    for (const s of extendedSymbols) {
+      switch (s.type) {
+        case SymbolType.Class:
+          classes.push(s);
+          break;
+        case SymbolType.Function:
+          functions.push(s);
+          break;
+        case SymbolType.Interface:
+          interfaces.push(s);
+          break;
+        case SymbolType.Type:
+          typeAliases.push(s);
+          break;
+      }
+    }
 
     // 處理 class
     for (const cls of classes) {

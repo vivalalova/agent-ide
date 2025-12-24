@@ -423,20 +423,31 @@ export async function convertChangesetToPreviewInput(
   changeset: Changeset,
   fileSystem: IFileSystem
 ): Promise<PreviewInput> {
+  // 批次處理文字變更
+  const textChangePromises = changeset.textChanges.map(tc =>
+    convertFileTextChange(tc, fileSystem)
+  );
+
+  // 批次處理檔案操作
+  const fileOpPromises = changeset.fileOperations.map(op =>
+    convertFileOperation(op, fileSystem)
+  );
+
+  // 並行執行所有 I/O
+  const [textResults, opResults] = await Promise.all([
+    Promise.all(textChangePromises),
+    Promise.all(fileOpPromises)
+  ]);
+
   const fileChanges: FileChangeInput[] = [];
 
-  // 轉換文字變更
-  for (const textChange of changeset.textChanges) {
-    const converted = await convertFileTextChange(textChange, fileSystem);
-    // 只加入有實際變更的檔案
+  for (const converted of textResults) {
     if (converted.changes.length > 0) {
       fileChanges.push(converted);
     }
   }
 
-  // 轉換檔案操作
-  for (const operation of changeset.fileOperations) {
-    const converted = await convertFileOperation(operation, fileSystem);
+  for (const converted of opResults) {
     if (converted !== null && converted.changes.length > 0) {
       fileChanges.push(converted);
     }

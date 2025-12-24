@@ -216,12 +216,43 @@ export class MemoryCache<K, V> {
    */
   mget(keys: K[]): Map<K, V> {
     const result = new Map<K, V>();
+    const startTime = Date.now();
+    let hits = 0;
+    let misses = 0;
 
     for (const key of keys) {
-      const value = this.get(key);
-      if (value !== undefined) {
-        result.set(key, value);
+      const item = this.cache.get(key);
+
+      if (!item || this.isExpired(item)) {
+        misses++;
+        if (item && this.isExpired(item)) {
+          this.delete(key);
+          if (this.options.enableStats) {
+            this.stats.expirations++;
+          }
+          this.emitEvent(CacheEventType.EXPIRE, key, item.value);
+        }
+        continue;
       }
+
+      // 更新存取資訊
+      item.lastAccessedAt = Date.now();
+      item.accessCount++;
+      this.strategy.onAccess(key, item);
+
+      result.set(key, item.value);
+      hits++;
+      this.emitEvent(CacheEventType.HIT, key, item.value);
+      this.emitEvent(CacheEventType.GET, key, item.value);
+    }
+
+    // 批次更新統計
+    if (this.options.enableStats) {
+      this.stats.totalRequests += keys.length;
+      this.stats.hits += hits;
+      this.stats.misses += misses;
+      this.updateHitRate();
+      this.updateAverageAccessTime(Date.now() - startTime);
     }
 
     return result;
@@ -279,11 +310,24 @@ export class MemoryCache<K, V> {
   }
 
   /**
-   * 計算值的大小（簡單估算）
+   * 計算值的大小（快速估算）
    */
   private calculateSize(value: V): number {
+    // 快速估算：根據類型估算大小
+    if (value === null || value === undefined) {
+      return 8;
+    }
+
+    const type = typeof value;
+    if (type === 'number') {return 8;}
+    if (type === 'boolean') {return 4;}
+    if (type === 'string') {return (value as unknown as string).length * 2;}
+
+    // 對物件使用 JSON.stringify（只在需要精確大小時）
+    // 但限制大小計算的開銷
     try {
-      return JSON.stringify(value).length * 2; // 每個字元約 2 位元組
+      const str = JSON.stringify(value);
+      return str.length * 2;
     } catch {
       return 100; // 預設大小
     }

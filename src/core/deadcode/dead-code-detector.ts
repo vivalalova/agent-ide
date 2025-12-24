@@ -408,22 +408,31 @@ export class DeadCodeDetector {
    * 用於判斷 class 是否有成員被使用
    */
   private buildClassMembersMap(symbols: readonly Symbol[]): Map<string, Symbol[]> {
-    // 第一步：收集所有 class 符號（以 filePath:className 為 key）
-    const classMap = symbols
-      .filter(s => s.type === 'class')
-      .reduce((map, s) => {
-        map.set(`${s.location.filePath}:${s.name}`, []);
-        return map;
-      }, new Map<string, Symbol[]>());
+    const classMap = new Map<string, Symbol[]>();
 
-    // 第二步：將成員分配到對應的 class
-    symbols.forEach(symbol => {
+    // 單次遍歷：同時建立 class 鍵和分配成員
+    for (const symbol of symbols) {
+      if (symbol.type === 'class') {
+        // 初始化 class 鍵（確保即使無成員也有對應項）
+        const key = `${symbol.location.filePath}:${symbol.name}`;
+        if (!classMap.has(key)) {
+          classMap.set(key, []);
+        }
+      }
+
+      // 分配成員到對應 class
       const parentClassName = this.getParentClassName(symbol);
       if (parentClassName) {
         const key = `${symbol.location.filePath}:${parentClassName}`;
-        classMap.get(key)?.push(symbol);
+        const members = classMap.get(key);
+        if (members) {
+          members.push(symbol);
+        } else {
+          // class 可能在後面才遍歷到，先建立空陣列
+          classMap.set(key, [symbol]);
+        }
       }
-    });
+    }
 
     return classMap;
   }
