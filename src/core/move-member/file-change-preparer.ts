@@ -261,84 +261,92 @@ export class FileChangePreparer {
   }
 
   /**
+   * 解析符號列表（處理 as 別名）
+   * "A, B as C, D" → ["A", "B", "D"]
+   */
+  private parseSymbolList(symbolListStr: string): string[] {
+    return symbolListStr
+      .split(',')
+      .map(s => {
+        const trimmed = s.trim();
+        const asIndex = trimmed.indexOf(' as ');
+        return asIndex !== -1 ? trimmed.slice(0, asIndex).trim() : trimmed;
+      })
+      .filter(s => s.length > 0);
+  }
+
+  /**
    * 分析來源檔案的符號（本地 export 和 import）
+   * 使用單一複合正則表達式，一次遍歷完成所有分析
    */
   private analyzeSourceSymbols(content: string): SourceSymbolInfo {
     const localExports = new Set<string>();
     const importedSymbols = new Map<string, ImportSymbolInfo>();
 
-    // 分析 import 語句
-    // import { A, B } from 'module'
-    const importPattern = /import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
+    // 複合正則：匹配所有 import 和 export 語句
+    const combinedPattern = new RegExp(
+      // import { A, B } from 'module'
+      'import\\s+\\{([^}]+)\\}\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
+      // import * as name from 'module'
+      'import\\s+\\*\\s+as\\s+(\\w+)\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
+      // import name from 'module' (default)
+      'import\\s+(\\w+)\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
+      // export const/let/var NAME
+      'export\\s+(?:const|let|var)\\s+(\\w+)|' +
+      // export [async] function NAME
+      'export\\s+(?:async\\s+)?function\\s+(\\w+)|' +
+      // export [abstract] class NAME
+      'export\\s+(?:abstract\\s+)?class\\s+(\\w+)|' +
+      // export interface NAME
+      'export\\s+interface\\s+(\\w+)|' +
+      // export type NAME
+      'export\\s+type\\s+(\\w+)|' +
+      // export enum NAME
+      'export\\s+enum\\s+(\\w+)|' +
+      // export { A, B }（不帶 from）
+      'export\\s+\\{([^}]+)\\}(?!\\s+from)',
+      'g'
+    );
+
     let match;
-    while ((match = importPattern.exec(content)) !== null) {
-      const symbols = match[1].split(',').map(s => s.trim().split(' as ')[0].trim());
-      const modulePath = match[2];
-      for (const symbol of symbols) {
-        if (symbol) {
+    while ((match = combinedPattern.exec(content)) !== null) {
+      if (match[1] !== undefined) {
+        // import { A, B } from 'module'
+        const symbols = this.parseSymbolList(match[1]);
+        const modulePath = match[2];
+        for (const symbol of symbols) {
           importedSymbols.set(symbol, { modulePath, type: ImportType.Named });
         }
-      }
-    }
-
-    // 分析 import * as name from 'module'
-    const namespaceImportPattern = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
-    while ((match = namespaceImportPattern.exec(content)) !== null) {
-      importedSymbols.set(match[1], { modulePath: match[2], type: ImportType.Namespace });
-    }
-
-    // 分析 import name from 'module' (default import)
-    const defaultImportPattern = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
-    while ((match = defaultImportPattern.exec(content)) !== null) {
-      // 排除已經被 namespace import 捕獲的（避免重複）
-      if (!importedSymbols.has(match[1])) {
-        importedSymbols.set(match[1], { modulePath: match[2], type: ImportType.Default });
-      }
-    }
-
-    // 分析本地 export
-    // export const/let/var NAME
-    const exportVarPattern = /export\s+(?:const|let|var)\s+(\w+)/g;
-    while ((match = exportVarPattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export function NAME
-    const exportFuncPattern = /export\s+(?:async\s+)?function\s+(\w+)/g;
-    while ((match = exportFuncPattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export class NAME
-    const exportClassPattern = /export\s+(?:abstract\s+)?class\s+(\w+)/g;
-    while ((match = exportClassPattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export interface NAME
-    const exportInterfacePattern = /export\s+interface\s+(\w+)/g;
-    while ((match = exportInterfacePattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export type NAME
-    const exportTypePattern = /export\s+type\s+(\w+)/g;
-    while ((match = exportTypePattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export enum NAME
-    const exportEnumPattern = /export\s+enum\s+(\w+)/g;
-    while ((match = exportEnumPattern.exec(content)) !== null) {
-      localExports.add(match[1]);
-    }
-
-    // export { A, B }（命名 re-export）
-    const exportListPattern = /export\s+\{([^}]+)\}(?!\s+from)/g;
-    while ((match = exportListPattern.exec(content)) !== null) {
-      const symbols = match[1].split(',').map(s => s.trim().split(' as ')[0].trim());
-      for (const symbol of symbols) {
-        if (symbol) {
+      } else if (match[3] !== undefined) {
+        // import * as name from 'module'
+        importedSymbols.set(match[3], { modulePath: match[4], type: ImportType.Namespace });
+      } else if (match[5] !== undefined) {
+        // import name from 'module' (default)
+        if (!importedSymbols.has(match[5])) {
+          importedSymbols.set(match[5], { modulePath: match[6], type: ImportType.Default });
+        }
+      } else if (match[7] !== undefined) {
+        // export const/let/var
+        localExports.add(match[7]);
+      } else if (match[8] !== undefined) {
+        // export function
+        localExports.add(match[8]);
+      } else if (match[9] !== undefined) {
+        // export class
+        localExports.add(match[9]);
+      } else if (match[10] !== undefined) {
+        // export interface
+        localExports.add(match[10]);
+      } else if (match[11] !== undefined) {
+        // export type
+        localExports.add(match[11]);
+      } else if (match[12] !== undefined) {
+        // export enum
+        localExports.add(match[12]);
+      } else if (match[13] !== undefined) {
+        // export { A, B }
+        const symbols = this.parseSymbolList(match[13]);
+        for (const symbol of symbols) {
           localExports.add(symbol);
         }
       }
