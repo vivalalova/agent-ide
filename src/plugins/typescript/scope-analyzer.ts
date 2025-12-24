@@ -16,6 +16,12 @@ import type { TypeScriptSymbol } from './types.js';
  */
 export class ScopeAnalyzer {
   /**
+   * 節點作用域容器快取
+   * 使用 WeakMap 避免記憶體洩漏，當節點被 GC 時自動清理
+   */
+  private readonly scopeContainerCache = new WeakMap<ts.Node, ts.Node>();
+
+  /**
    * 從符號節點取得標識符
    */
   public getIdentifierFromSymbolNode(node: ts.Node): ts.Identifier | null {
@@ -126,25 +132,19 @@ export class ScopeAnalyzer {
   }
 
   /**
-   * 檢查節點是否與符號在相同作用域
+   * 檢查節點是否與符號在相同作用域（使用快取）
    */
   public isInSameScope(node: ts.Node, symbolNode: ts.Node): boolean {
-    // 找到符號定義所在的作用域
-    let symbolScope = symbolNode.parent;
-    while (symbolScope && !this.isScopeNode(symbolScope)) {
-      symbolScope = symbolScope.parent;
+    // 使用快取的 getScopeContainer
+    const symbolScope = this.getScopeContainer(symbolNode);
+    const nodeScope = this.getScopeContainer(node);
+
+    // 檢查是否為相同作用域或在作用域鏈中
+    if (nodeScope === symbolScope) {
+      return true;
     }
 
-    // 檢查節點是否在該作用域內
-    let currentScope = node.parent;
-    while (currentScope) {
-      if (currentScope === symbolScope) {
-        return true;
-      }
-      currentScope = currentScope.parent;
-    }
-
-    return false;
+    return this.isInScopeChain(node, symbolScope);
   }
 
   /**
@@ -270,9 +270,16 @@ export class ScopeAnalyzer {
   }
 
   /**
-   * 取得節點的作用域容器
+   * 取得節點的作用域容器（帶快取）
    */
   public getScopeContainer(node: ts.Node): ts.Node {
+    // 檢查快取
+    const cached = this.scopeContainerCache.get(node);
+    if (cached) {
+      return cached;
+    }
+
+    // 向上遍歷尋找作用域容器
     let current = node.parent;
     while (current) {
       if (
@@ -284,11 +291,17 @@ export class ScopeAnalyzer {
         || ts.isBlock(current)
         || ts.isSourceFile(current)
       ) {
+        // 快取結果
+        this.scopeContainerCache.set(node, current);
         return current;
       }
       current = current.parent;
     }
-    return node.getSourceFile();
+
+    // 回退到 SourceFile
+    const sourceFile = node.getSourceFile();
+    this.scopeContainerCache.set(node, sourceFile);
+    return sourceFile;
   }
 
   /**

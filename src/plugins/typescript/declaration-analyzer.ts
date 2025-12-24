@@ -21,10 +21,45 @@ import { isLineMatch } from '@plugins/shared/index.js';
  */
 export class DeclarationAnalyzer {
   /**
+   * SourceFile 快取
+   * key: code 的 hash（長度 + 前後各 100 字元）
+   * value: SourceFile
+   */
+  private readonly sourceFileCache = new Map<string, ts.SourceFile>();
+
+  /**
    * 建立宣告分析器實例
    * @param compilerOptions TypeScript 編譯器選項
    */
   constructor(private readonly compilerOptions?: ts.CompilerOptions) {}
+
+  /**
+   * 取得或建立 SourceFile（帶快取）
+   * @param code 原始程式碼
+   * @returns SourceFile
+   */
+  private getOrCreateSourceFile(code: string): ts.SourceFile {
+    // 使用簡單的 hash：長度 + 前 100 字元 + 後 100 字元
+    const hash = `${code.length}_${code.slice(0, 100)}_${code.slice(-100)}`;
+
+    // 檢查快取
+    const cached = this.sourceFileCache.get(hash);
+    if (cached) {
+      return cached;
+    }
+
+    // 建立新的 SourceFile
+    const sourceFile = ts.createSourceFile(
+      'temp.ts',
+      code,
+      this.compilerOptions?.target || ts.ScriptTarget.ES2020,
+      true
+    );
+
+    // 快取並返回
+    this.sourceFileCache.set(hash, sourceFile);
+    return sourceFile;
+  }
 
   /**
    * 取得完整宣告範圍（包含前導註解）
@@ -41,12 +76,7 @@ export class DeclarationAnalyzer {
     startLine: number
   ): Range | null {
     try {
-      const sourceFile = ts.createSourceFile(
-        'temp.ts',
-        code,
-        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
-        true
-      );
+      const sourceFile = this.getOrCreateSourceFile(code);
 
       const targetNode = this.findDeclarationNode(sourceFile, symbolName, symbolType, startLine);
       if (!targetNode) {
@@ -223,12 +253,7 @@ export class DeclarationAnalyzer {
    */
   getImportDeclarations(code: string): ImportDeclaration[] | null {
     try {
-      const sourceFile = ts.createSourceFile(
-        'temp.ts',
-        code,
-        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
-        true
-      );
+      const sourceFile = this.getOrCreateSourceFile(code);
 
       const declarations: ImportDeclaration[] = [];
 
@@ -340,12 +365,7 @@ export class DeclarationAnalyzer {
     line?: number
   ): FormattedSignature | null {
     try {
-      const sourceFile = ts.createSourceFile(
-        'temp.ts',
-        code,
-        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
-        true
-      );
+      const sourceFile = this.getOrCreateSourceFile(code);
 
       const targetNode = this.findFunctionNode(sourceFile, functionName, line);
       if (!targetNode) {
@@ -512,12 +532,7 @@ export class DeclarationAnalyzer {
     line: number
   ): Documentation | null {
     try {
-      const sourceFile = ts.createSourceFile(
-        'temp.ts',
-        code,
-        this.compilerOptions?.target || ts.ScriptTarget.ES2020,
-        true
-      );
+      const sourceFile = this.getOrCreateSourceFile(code);
 
       const targetNode = this.findDeclarationNode(sourceFile, symbolName, symbolType, line);
       if (!targetNode) {

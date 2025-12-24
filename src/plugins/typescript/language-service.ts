@@ -65,6 +65,22 @@ export interface ILanguageServiceManager extends Disposable {
  * 管理 TypeScript Language Service 生命週期
  */
 export class LanguageServiceManager implements ILanguageServiceManager {
+  /**
+   * 共享的 DocumentRegistry（靜態單例）
+   * 所有 LanguageServiceManager 實例共享，減少記憶體佔用
+   */
+  private static documentRegistry: ts.DocumentRegistry | null = null;
+
+  /**
+   * 取得或建立共享的 DocumentRegistry
+   */
+  private static getDocumentRegistry(): ts.DocumentRegistry {
+    if (!LanguageServiceManager.documentRegistry) {
+      LanguageServiceManager.documentRegistry = ts.createDocumentRegistry();
+    }
+    return LanguageServiceManager.documentRegistry;
+  }
+
   private _languageService: ts.LanguageService | null = null;
   private _languageServiceHost: ts.LanguageServiceHost | null = null;
   private _files: Map<string, FileInfo> = new Map();
@@ -102,10 +118,10 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     // 建立 Language Service Host
     this._languageServiceHost = this.createLanguageServiceHost(sourceFile);
 
-    // 建立 Language Service
+    // 建立 Language Service（使用共享的 DocumentRegistry）
     this._languageService = ts.createLanguageService(
       this._languageServiceHost,
-      ts.createDocumentRegistry()
+      LanguageServiceManager.getDocumentRegistry()
     );
   }
 
