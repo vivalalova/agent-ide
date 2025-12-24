@@ -29,17 +29,17 @@ pnpm install && pnpm build && npm link
 
 ### CLI Commands
 
-| Command            | Description                              | Output Formats      |
-| ------------------ | ---------------------------------------- | ------------------- |
-| `rename`           | Rename symbols and update references     | json, summary, diff |
-| `change-signature` | Modify function signatures               | json, summary, diff |
-| `move`             | Move files and update imports            | json, summary, diff |
-| `move-member`      | Move members between files               | json, summary, diff |
-| `cycles`           | Detect circular dependencies             | json, summary       |
-| `impact`           | Analyze file impact range                | json, summary       |
-| `snapshot`         | Generate module/project snapshots for AI | json, summary       |
-| `find-references`  | Find symbol definitions and references   | json, summary       |
-| `call-hierarchy`   | Analyze function call hierarchy          | json, summary       |
+| Command            | Description                                                      | Output Formats      |
+| ------------------ | ---------------------------------------------------------------- | ------------------- |
+| `rename`           | Rename symbols and update references (`--at` for disambiguation) | json, summary, diff |
+| `change-signature` | Modify function signatures                                       | json, summary, diff |
+| `move`             | Move files/members and update imports (`path:line` for members)  | json, summary, diff |
+| `deadcode`         | Detect and remove unused code                                    | json, summary, diff |
+| `cycles`           | Detect circular dependencies                                     | json, summary       |
+| `impact`           | Analyze file impact range                                        | json, summary       |
+| `snapshot`         | Generate module/project snapshots for AI                         | json, summary       |
+| `find-references`  | Find symbol definitions and references                           | json, summary       |
+| `call-hierarchy`   | Analyze function call hierarchy                                  | json, summary       |
 
 ## 📖 Documentation
 
