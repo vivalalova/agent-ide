@@ -14,12 +14,10 @@ import type {
   FileInfo,
   SymbolSearchResult,
   SearchOptions,
-  IndexProgress,
   BatchIndexOptions
 } from './types.js';
 import {
   createFileInfo,
-  createSearchOptions,
   shouldIndexFile,
   calculateProgress
 } from './types.js';

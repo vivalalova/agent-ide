@@ -4,7 +4,7 @@
  */
 
 import { Location, Position, Range } from '@shared/types/core.js';
-import { Symbol, Scope } from '@shared/types/symbol.js';
+import { Symbol } from '@shared/types/symbol.js';
 
 /**
  * 重新命名選項

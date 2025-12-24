@@ -3,7 +3,7 @@
  * 包含檔案索引、符號索引、查詢結果等型別
  */
 
-import type { Symbol, Dependency, Location } from '@shared/types/index.js';
+import type { Symbol, Dependency } from '@shared/types/index.js';
 
 /**
  * CLI 命令共用的索引配置常數

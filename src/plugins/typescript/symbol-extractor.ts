@@ -10,7 +10,6 @@ import type {
 } from '@shared/types/index.js';
 import {
   SymbolType,
-  createSymbol,
   createScope
 } from '@shared/types/index.js';
 import {
