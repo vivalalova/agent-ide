@@ -17,6 +17,7 @@ import {
   isChangeDefaultValueChange,
   isToggleOptionalChange
 } from './types.js';
+import { resolveParameterIndex } from './utils.js';
 
 /**
  * Signature Transformer
@@ -48,7 +49,7 @@ export class SignatureTransformer {
       }
 
       if (isRemoveParameterChange(change)) {
-        const index = this.resolveParameterIndex(parameters, change.parameterNameOrIndex);
+        const index = resolveParameterIndex(parameters, change.parameterNameOrIndex);
         if (index >= 0) {
           parameters.splice(index, 1);
         }
@@ -57,7 +58,7 @@ export class SignatureTransformer {
       if (isReorderParametersChange(change)) {
         const newParams: ParameterDefinition[] = [];
         for (const nameOrIndex of change.newOrder) {
-          const index = this.resolveParameterIndex(parameters, nameOrIndex);
+          const index = resolveParameterIndex(parameters, nameOrIndex);
           if (index >= 0) {
             newParams.push(parameters[index]);
           }
@@ -66,21 +67,21 @@ export class SignatureTransformer {
       }
 
       if (isChangeParameterTypeChange(change)) {
-        const index = this.resolveParameterIndex(parameters, change.parameterNameOrIndex);
+        const index = resolveParameterIndex(parameters, change.parameterNameOrIndex);
         if (index >= 0) {
           parameters[index] = { ...parameters[index], type: change.newType };
         }
       }
 
       if (isRenameParameterChange(change)) {
-        const index = this.resolveParameterIndex(parameters, change.parameterNameOrIndex);
+        const index = resolveParameterIndex(parameters, change.parameterNameOrIndex);
         if (index >= 0) {
           parameters[index] = { ...parameters[index], name: change.newName };
         }
       }
 
       if (isChangeDefaultValueChange(change)) {
-        const index = this.resolveParameterIndex(parameters, change.parameterNameOrIndex);
+        const index = resolveParameterIndex(parameters, change.parameterNameOrIndex);
         if (index >= 0) {
           parameters[index] = {
             ...parameters[index],
@@ -91,7 +92,7 @@ export class SignatureTransformer {
       }
 
       if (isToggleOptionalChange(change)) {
-        const index = this.resolveParameterIndex(parameters, change.parameterNameOrIndex);
+        const index = resolveParameterIndex(parameters, change.parameterNameOrIndex);
         if (index >= 0) {
           parameters[index] = { ...parameters[index], optional: change.optional };
         }
@@ -102,16 +103,6 @@ export class SignatureTransformer {
       ...signature,
       parameters
     };
-  }
-
-  /**
-   * 解析參數索引
-   */
-  private resolveParameterIndex(parameters: readonly ParameterDefinition[], nameOrIndex: string | number): number {
-    if (typeof nameOrIndex === 'number') {
-      return nameOrIndex >= 0 && nameOrIndex < parameters.length ? nameOrIndex : -1;
-    }
-    return parameters.findIndex(p => p.name === nameOrIndex);
   }
 }
 

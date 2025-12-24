@@ -10,6 +10,9 @@ export { SignatureValidator, createSignatureValidator } from './signature-valida
 export { SignatureTransformer, createSignatureTransformer } from './signature-transformer.js';
 export { CallSiteUpdater, createCallSiteUpdater } from './call-site-updater.js';
 
+// 工具函式
+export { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
+
 // 型別定義
 export type {
   ParameterDefinition,

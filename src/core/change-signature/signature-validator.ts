@@ -19,6 +19,7 @@ import {
   isChangeDefaultValueChange,
   isToggleOptionalChange
 } from './types.js';
+import { resolveParameterIndex } from './utils.js';
 
 /**
  * Signature Validator
@@ -132,7 +133,7 @@ export class SignatureValidator {
     // 根據新順序建立參數列表
     const reorderedParams: ParameterDefinition[] = [];
     for (const nameOrIndex of newOrder) {
-      const index = this.resolveParameterIndex(signature.parameters, nameOrIndex);
+      const index = resolveParameterIndex(signature.parameters, nameOrIndex);
       if (index >= 0) {
         reorderedParams.push(signature.parameters[index]);
       }
@@ -172,16 +173,6 @@ export class SignatureValidator {
       return signature.parameters[nameOrIndex]?.name;
     }
     return signature.parameters.find(p => p.name === nameOrIndex)?.name;
-  }
-
-  /**
-   * 解析參數索引
-   */
-  resolveParameterIndex(parameters: readonly ParameterDefinition[], nameOrIndex: string | number): number {
-    if (typeof nameOrIndex === 'number') {
-      return nameOrIndex >= 0 && nameOrIndex < parameters.length ? nameOrIndex : -1;
-    }
-    return parameters.findIndex(p => p.name === nameOrIndex);
   }
 }
 

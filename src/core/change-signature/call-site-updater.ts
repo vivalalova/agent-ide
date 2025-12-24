@@ -6,7 +6,6 @@
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {
   FunctionSignature,
-  ParameterDefinition,
   SignatureChange,
   CallSiteUpdate
 } from './types.js';
@@ -15,6 +14,7 @@ import {
   isRemoveParameterChange,
   isReorderParametersChange
 } from './types.js';
+import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
 import type { CallSite } from '@core/shared/symbol-finder/index.js';
 
 /**
@@ -209,7 +209,7 @@ export class CallSiteUpdater {
           const param = originalSignature.parameters[originalIndex];
           if (param && (param.optional || param.defaultValue)) {
             // 標記為需要填入 undefined（如果後面有非空參數）
-            result[newIndex] = '\0OMITTED\0';
+            result[newIndex] = OMITTED_PARAMETER_MARKER;
           }
         }
       }
@@ -237,7 +237,7 @@ export class CallSiteUpdater {
 
     // 找到最後一個非空參數的索引
     for (let i = result.length - 1; i >= 0; i--) {
-      if (result[i] !== '' && result[i] !== '\0OMITTED\0') {
+      if (result[i] !== '' && result[i] !== OMITTED_PARAMETER_MARKER) {
         lastNonEmptyIndex = i;
         break;
       }
@@ -245,7 +245,7 @@ export class CallSiteUpdater {
 
     // 建立最終結果
     for (let i = 0; i <= lastNonEmptyIndex; i++) {
-      if (result[i] === '\0OMITTED\0') {
+      if (result[i] === OMITTED_PARAMETER_MARKER) {
         // 省略的可選參數，但後面有其他參數，需要填入 undefined
         processedResult.push('undefined');
       } else if (result[i] === '') {
@@ -280,8 +280,8 @@ export class CallSiteUpdater {
     // 處理每個變更
     for (const change of changes) {
       if (isRemoveParameterChange(change)) {
-        const index = this.resolveParameterIndex(
-          currentParams.map(p => ({ name: p.name } as ParameterDefinition)),
+        const index = resolveParameterIndex(
+          currentParams.map(p => ({ name: p.name })),
           change.parameterNameOrIndex
         );
         if (index >= 0) {
@@ -292,8 +292,8 @@ export class CallSiteUpdater {
       if (isReorderParametersChange(change)) {
         const newOrder: typeof currentParams = [];
         for (const nameOrIndex of change.newOrder) {
-          const index = this.resolveParameterIndex(
-            currentParams.map(p => ({ name: p.name } as ParameterDefinition)),
+          const index = resolveParameterIndex(
+            currentParams.map(p => ({ name: p.name })),
             nameOrIndex
           );
           if (index >= 0) {
@@ -348,6 +348,12 @@ export class CallSiteUpdater {
 
   /**
    * 檢測呼叫風格
+   *
+   * @remarks
+   * 限制說明：
+   * - trailingComma 檢測使用簡單的 `endsWith(',')` 邏輯
+   * - 若參數值本身以逗號結尾（如字串 `"foo,"`），可能產生誤判
+   * - 此情況較罕見，目前接受此限制
    */
   detectCallStyle(
     lines: readonly string[],
@@ -365,7 +371,7 @@ export class CallSiteUpdater {
     const indentMatch = secondLine.match(/^(\s*)/);
     const indent = indentMatch ? indentMatch[1] : '  ';
 
-    // 檢測是否有尾隨逗號
+    // 檢測是否有尾隨逗號（簡單啟發式，可能誤判字串內容結尾的逗號）
     const lastArgLine = lines[endLine - 1] || lines[endLine];
     const trailingComma = lastArgLine.trimEnd().endsWith(',');
 
@@ -428,16 +434,6 @@ export class CallSiteUpdater {
       }
     }
     return line.length;
-  }
-
-  /**
-   * 解析參數索引
-   */
-  private resolveParameterIndex(parameters: readonly (Pick<ParameterDefinition, 'name'>)[], nameOrIndex: string | number): number {
-    if (typeof nameOrIndex === 'number') {
-      return nameOrIndex >= 0 && nameOrIndex < parameters.length ? nameOrIndex : -1;
-    }
-    return parameters.findIndex(p => p.name === nameOrIndex);
   }
 
   /**
