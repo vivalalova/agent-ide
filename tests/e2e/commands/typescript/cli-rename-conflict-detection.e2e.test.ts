@@ -153,7 +153,7 @@ describe('CLI rename conflict-detection - 衝突檢測與多符號消歧', () =>
       { scenario: '包含逗號', identifier: 'User,Address', expectedBehavior: 'conflict' },
       { scenario: '包含句號', identifier: 'User.Address', expectedBehavior: 'conflict' },
       // 引號
-      { scenario: '包含單引號', identifier: "User'Address", expectedBehavior: 'conflict' },
+      { scenario: '包含單引號', identifier: 'User\'Address', expectedBehavior: 'conflict' },
       { scenario: '包含雙引號', identifier: 'User"Address', expectedBehavior: 'conflict' },
       { scenario: '包含反引號', identifier: 'User`Address', expectedBehavior: 'conflict' },
     ];

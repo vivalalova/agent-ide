@@ -216,13 +216,13 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
           const symbolColumn = result.symbol.location.range.start.column;
 
           // 檔案路徑必須匹配
-          if (symbolPath !== location.filePath) return false;
+          if (symbolPath !== location.filePath) {return false;}
 
           // 行號匹配（如果指定）
-          if (location.line !== undefined && symbolLine !== location.line) return false;
+          if (location.line !== undefined && symbolLine !== location.line) {return false;}
 
           // 列號匹配（如果指定）
-          if (location.column !== undefined && symbolColumn !== location.column) return false;
+          if (location.column !== undefined && symbolColumn !== location.column) {return false;}
 
           return true;
         });

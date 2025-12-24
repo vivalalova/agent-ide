@@ -247,8 +247,8 @@ describe('CLI rename - 基於 sample-project fixture', () => {
 
       // When: 執行 rename
       const args = ['rename', '--path', fixture.rootPath, '--format', 'json'];
-      if (from) args.push('--from', from);
-      if (to) args.push('--to', to);
+      if (from) {args.push('--from', from);}
+      if (to) {args.push('--to', to);}
 
       const result = await executeCLI(args, { memfs: fixture.memfs });
 
