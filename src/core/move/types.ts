@@ -33,9 +33,78 @@ export enum PathType {
 }
 
 /**
- * 完整的移動操作定義 - 給內部引擎使用
+ * 路徑衝突類型
  */
-export interface FullMoveOperation {
+export enum PathConflictType {
+  FILE_EXISTS = 'file_exists',
+  DIRECTORY_EXISTS = 'directory_exists',
+  PERMISSION_DENIED = 'permission_denied'
+}
+
+/**
+ * 驗證錯誤類型
+ */
+export enum ValidationErrorType {
+  SOURCE_NOT_FOUND = 'source_not_found',
+  DESTINATION_EXISTS = 'destination_exists',
+  PERMISSION_DENIED = 'permission_denied',
+  INVALID_PATH = 'invalid_path'
+}
+
+/**
+ * 驗證警告類型
+ */
+export enum ValidationWarningType {
+  MANY_FILES_AFFECTED = 'many_files_affected',
+  POTENTIAL_BREAKING_CHANGE = 'potential_breaking_change',
+  EXTERNAL_DEPENDENCY = 'external_dependency'
+}
+
+/**
+ * 移動錯誤類型
+ */
+export enum MoveErrorType {
+  FILE_SYSTEM = 'file_system',
+  IMPORT_UPDATE = 'import_update',
+  VALIDATION = 'validation',
+  ROLLBACK = 'rollback'
+}
+
+/**
+ * 回滾操作類型
+ */
+export enum RollbackOperationType {
+  MOVE_FILE = 'move_file',
+  RESTORE_CONTENT = 'restore_content',
+  REVERT_IMPORT = 'revert_import'
+}
+
+/**
+ * Import 語句類型
+ */
+export enum ImportStatementType {
+  IMPORT = 'import',
+  REQUIRE = 'require',
+  DYNAMIC_IMPORT = 'dynamic_import',
+  EXPORT = 'export'
+}
+
+/**
+ * 移動進度階段
+ */
+export enum MoveStage {
+  VALIDATION = 'validation',
+  PREPARATION = 'preparation',
+  MOVING = 'moving',
+  UPDATING_IMPORTS = 'updating_imports',
+  CLEANUP = 'cleanup'
+}
+
+/**
+ * 內部移動操作定義 - 給內部引擎使用
+ * 包含完整的操作資訊（id、timestamp 等）
+ */
+export interface InternalMoveOperation {
   readonly id: string;
   readonly type: MoveOperationType;
   readonly source: string;
@@ -60,7 +129,7 @@ export interface BatchMoveResult {
  * 移動預覽
  */
 export interface MovePreview {
-  readonly operation: FullMoveOperation;
+  readonly operation: InternalMoveOperation;
   readonly impact: MoveImpact;
   readonly conflicts: readonly PathConflict[];
   readonly affectedFiles: readonly string[];
@@ -81,7 +150,7 @@ export interface MoveImpact {
  * 路徑衝突
  */
 export interface PathConflict {
-  readonly type: 'file_exists' | 'directory_exists' | 'permission_denied';
+  readonly type: PathConflictType;
   readonly path: string;
   readonly description: string;
 }
@@ -121,7 +190,7 @@ export interface ValidationResult {
  * 驗證錯誤
  */
 export interface ValidationError {
-  readonly type: 'source_not_found' | 'destination_exists' | 'permission_denied' | 'invalid_path';
+  readonly type: ValidationErrorType;
   readonly message: string;
   readonly path?: string;
 }
@@ -130,7 +199,7 @@ export interface ValidationError {
  * 驗證警告
  */
 export interface ValidationWarning {
-  readonly type: 'many_files_affected' | 'potential_breaking_change' | 'external_dependency';
+  readonly type: ValidationWarningType;
   readonly message: string;
   readonly details?: unknown;
 }
@@ -139,7 +208,7 @@ export interface ValidationWarning {
  * 移動錯誤
  */
 export interface MoveError {
-  readonly type: 'file_system' | 'import_update' | 'validation' | 'rollback';
+  readonly type: MoveErrorType;
   readonly message: string;
   readonly filePath?: string;
   readonly originalError?: Error;
@@ -158,7 +227,7 @@ export interface RollbackInfo {
  * 回滾操作
  */
 export interface RollbackOperation {
-  readonly type: 'move_file' | 'restore_content' | 'revert_import';
+  readonly type: RollbackOperationType;
   readonly source: string;
   readonly destination: string;
   readonly originalContent?: string;
@@ -168,7 +237,7 @@ export interface RollbackOperation {
  * Import 語句的解析結果
  */
 export interface ImportStatement {
-  readonly type: 'import' | 'require' | 'dynamic_import' | 'export';
+  readonly type: ImportStatementType;
   readonly path: string;
   readonly pathType: PathType;
   readonly position: Position;
@@ -204,7 +273,7 @@ export interface MoveEngineConfig {
  */
 export interface MoveProgress {
   readonly operationId: string;
-  readonly stage: 'validation' | 'preparation' | 'moving' | 'updating_imports' | 'cleanup';
+  readonly stage: MoveStage;
   readonly progress: number; // 0-100
   readonly currentFile?: string;
   readonly message?: string;
@@ -232,9 +301,10 @@ export interface ImportResolverConfig {
 }
 
 /**
- * 簡化的移動操作 - 給 MoveService 使用
+ * 移動操作輸入 - 給 MoveService 公開方法使用
+ * 只包含必要的來源/目標路徑
  */
-export interface MoveOperation {
+export interface MoveInput {
   readonly source: string;
   readonly target: string;
   readonly updateImports?: boolean;
@@ -272,13 +342,13 @@ export interface PathUpdate {
 }
 
 /**
- * 建立完整 MoveOperation 的工廠函式
+ * 建立 InternalMoveOperation 的工廠函式
  */
-export function createFullMoveOperation(
+export function createInternalMoveOperation(
   type: MoveOperationType,
   source: string,
   destination: string
-): FullMoveOperation {
+): InternalMoveOperation {
   return {
     id: generateId(),
     type,
@@ -292,7 +362,7 @@ export function createFullMoveOperation(
  * 建立 ValidationError 的工廠函式
  */
 export function createValidationError(
-  type: ValidationError['type'],
+  type: ValidationErrorType,
   message: string,
   path?: string
 ): ValidationError {
@@ -307,7 +377,7 @@ export function createValidationError(
  * 建立 MoveError 的工廠函式
  */
 export function createMoveError(
-  type: MoveError['type'],
+  type: MoveErrorType,
   message: string,
   filePath?: string,
   originalError?: Error
@@ -328,9 +398,9 @@ function generateId(): string {
 }
 
 /**
- * 型別守衛 - 檢查是否為完整的 MoveOperation
+ * 型別守衛 - 檢查是否為 InternalMoveOperation
  */
-export function isFullMoveOperation(value: unknown): value is FullMoveOperation {
+export function isInternalMoveOperation(value: unknown): value is InternalMoveOperation {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -357,7 +427,7 @@ export function isImportStatement(value: unknown): value is ImportStatement {
   const obj = value as Record<string, unknown>;
 
   return (
-    ['import', 'require', 'dynamic_import'].includes(obj.type as string) &&
+    Object.values(ImportStatementType).includes(obj.type as ImportStatementType) &&
     typeof obj.path === 'string' &&
     Object.values(PathType).includes(obj.pathType as PathType) &&
     typeof obj.position === 'object' &&

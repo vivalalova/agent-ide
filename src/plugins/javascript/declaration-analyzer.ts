@@ -78,6 +78,16 @@ export class DeclarationAnalyzer {
               }
             }
           }
+        },
+
+        // 處理 class method（ClassMethod）
+        ClassMethod: (path: NodePath<babel.ClassMethod>) => {
+          if (symbolType === 'function' && babel.isIdentifier(path.node.key) && path.node.key.name === symbolName) {
+            if (this.isNodeLineMatch(path.node, startLine)) {
+              targetNode = path.node;
+              path.stop();
+            }
+          }
         }
       });
 

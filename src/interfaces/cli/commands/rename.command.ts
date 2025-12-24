@@ -21,8 +21,71 @@ interface RenameOptions {
   newName?: string;
   to?: string;
   path: string;
+  at?: string;
   dryRun?: boolean;
   format: string;
+}
+
+/** 解析後的位置資訊 */
+interface ParsedLocation {
+  filePath: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * 解析 --at 參數 (file:line:column 格式)
+ * 支援格式：
+ * - src/file.ts
+ * - src/file.ts:42
+ * - src/file.ts:42:10
+ */
+function parseAtLocation(at: string, basePath: string): ParsedLocation {
+  // 從後往前找冒號，因為 Windows 路徑可能有 C: 開頭
+  const parts = at.split(':');
+
+  // 檢查最後兩個部分是否為數字
+  let filePath: string;
+  let line: number | undefined;
+  let column: number | undefined;
+
+  if (parts.length >= 3) {
+    const lastPart = parts[parts.length - 1];
+    const secondLastPart = parts[parts.length - 2];
+
+    if (/^\d+$/.test(lastPart) && /^\d+$/.test(secondLastPart)) {
+      // file:line:column
+      column = parseInt(lastPart, 10);
+      line = parseInt(secondLastPart, 10);
+      filePath = parts.slice(0, -2).join(':');
+    } else if (/^\d+$/.test(lastPart)) {
+      // file:line (Windows path like C:\path:42)
+      line = parseInt(lastPart, 10);
+      filePath = parts.slice(0, -1).join(':');
+    } else {
+      // 全部都是路徑
+      filePath = at;
+    }
+  } else if (parts.length === 2) {
+    const lastPart = parts[parts.length - 1];
+    if (/^\d+$/.test(lastPart)) {
+      // file:line
+      line = parseInt(lastPart, 10);
+      filePath = parts[0];
+    } else {
+      // Windows path like C:\path
+      filePath = at;
+    }
+  } else {
+    filePath = at;
+  }
+
+  // 轉換為絕對路徑
+  if (!path.isAbsolute(filePath)) {
+    filePath = path.resolve(basePath, filePath);
+  }
+
+  return { filePath, line, column };
 }
 
 /**
@@ -38,6 +101,7 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
     .option('-n, --new-name <name>', '新名稱')
     .option('-o, --to <name>', '新名稱（--new-name 的別名）')
     .option('-p, --path <path>', '檔案或目錄路徑', '.')
+    .option('-a, --at <location>', '指定符號位置 (file:line:column)，用於區分同名符號')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
     .action(async (options: RenameOptions) => {
@@ -139,14 +203,79 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       return;
     }
 
-    if (searchResults.length > 1 && !isJsonFormat) {
-      console.log('   找到多個符號，使用第一個:');
-      searchResults.forEach((result, index) => {
-        console.log(`   ${index + 1}. ${result.symbol.name} 在 ${result.symbol.location.filePath}:${result.symbol.location.range.start.line}`);
-      });
-    }
+    // 2. 處理多符號情況
+    let targetSymbol;
 
-    const targetSymbol = searchResults[0].symbol;
+    if (searchResults.length > 1) {
+      // 有指定 --at 時，過濾到指定位置
+      if (options.at) {
+        const location = parseAtLocation(options.at, workspacePath);
+        const filtered = searchResults.filter(result => {
+          const symbolPath = result.symbol.location.filePath;
+          const symbolLine = result.symbol.location.range.start.line;
+          const symbolColumn = result.symbol.location.range.start.column;
+
+          // 檔案路徑必須匹配
+          if (symbolPath !== location.filePath) {return false;}
+
+          // 行號匹配（如果指定）
+          if (location.line !== undefined && symbolLine !== location.line) {return false;}
+
+          // 列號匹配（如果指定）
+          if (location.column !== undefined && symbolColumn !== location.column) {return false;}
+
+          return true;
+        });
+
+        if (filtered.length === 0) {
+          const locationStr = options.at;
+          outputHandler.outputError(
+            `在指定位置 "${locationStr}" 找不到符號 "${from}"`,
+            format,
+            'rename'
+          );
+          process.exitCode = 1;
+          return;
+        }
+
+        if (filtered.length > 1) {
+          // 同一位置還有多個（理論上不太可能，但以防萬一）
+          const lines = filtered.map((result, index) => {
+            const loc = result.symbol.location;
+            const relPath = path.relative(workspacePath, loc.filePath);
+            return `   ${index + 1}. ${relPath}:${loc.range.start.line}:${loc.range.start.column}`;
+          });
+          outputHandler.outputError(
+            `找到 ${filtered.length} 個符號 "${from}" 在指定位置，請更精確指定：\n\n${lines.join('\n')}`,
+            format,
+            'rename'
+          );
+          process.exitCode = 1;
+          return;
+        }
+
+        targetSymbol = filtered[0].symbol;
+      } else {
+        // 沒有指定 --at，報錯並列出所有符號
+        const lines = searchResults.map((result, index) => {
+          const loc = result.symbol.location;
+          const relPath = path.relative(workspacePath, loc.filePath);
+          const symbolType = result.symbol.type || 'symbol';
+          return `   ${index + 1}. ${relPath}:${loc.range.start.line}:${loc.range.start.column}  (${symbolType})`;
+        });
+
+        outputHandler.outputError(
+          `找到 ${searchResults.length} 個同名符號 "${from}"，請用 --at 指定位置：\n\n${lines.join('\n')}\n\n` +
+          `用法: agent-ide rename --from ${from} --to ${to} --at <file:line:column>`,
+          format,
+          'rename'
+        );
+        process.exitCode = 1;
+        return;
+      }
+    } else {
+      targetSymbol = searchResults[0].symbol;
+    }
 
     // 取得所有專案檔案
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);

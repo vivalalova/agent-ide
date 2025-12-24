@@ -83,7 +83,11 @@ export class ReferenceFinder {
             if (targetClassName && refInfo.containerName !== targetClassName) {
               // 只有當引用確實是方法呼叫且 receiverType 不匹配時才過濾
               if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-                return;
+                // 但如果 receiverType === containerName，表示是 this.method() 呼叫
+                // 這種情況可能是子類呼叫繼承自父類的方法，不應該過濾
+                if (refInfo.receiverType !== refInfo.containerName) {
+                  return;
+                }
               }
             }
 
@@ -236,7 +240,13 @@ export class ReferenceFinder {
       }
     }
 
-    // 3. 如果是屬性存取：this.dog.bark()（較複雜，暫不處理）
+    // 3. 如果是 this 關鍵字：this.method()
+    // 向上查找所屬的 class，返回 class 名稱
+    if (expression.kind === ts.SyntaxKind.ThisKeyword) {
+      return this.findContainerName(expression);
+    }
+
+    // 4. 如果是屬性存取：this.dog.bark()（較複雜，暫不處理）
 
     return undefined;
   }

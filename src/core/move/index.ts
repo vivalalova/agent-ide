@@ -4,19 +4,25 @@
  */
 
 // 核心服務
-export { MoveService } from './move-service.js';
+export { MoveService, MoveOperationError } from './move-service.js';
 export { ImportResolver } from './import-resolver.js';
+
+// 內部模組（供進階使用）
+export { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
+export { FileScanner } from './file-scanner.js';
+export { PathCalculator } from './path-calculator.js';
+export { parseMoveTarget, hasPositionInfo, type ParsedPath } from './path-parser.js';
 
 // 型別定義
 export type {
   // 基本型別
-  MoveOperation,
+  MoveInput,
   MoveOptions,
   MoveResult,
   PathUpdate,
 
-  // 完整移動操作
-  FullMoveOperation,
+  // 內部移動操作
+  InternalMoveOperation,
 
   // 批次操作
   BatchMoveResult,
@@ -60,9 +66,9 @@ export {
 
 // 工具函式
 export {
-  createFullMoveOperation,
+  createInternalMoveOperation,
   createValidationError,
   createMoveError,
-  isFullMoveOperation,
+  isInternalMoveOperation,
   isImportStatement
 } from './types.js';

@@ -611,4 +611,125 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       }
     });
   });
+
+  describe('ArrowFunction/FunctionExpression scope 修復（Bug #35）', () => {
+    it('.map() 回呼參數不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 找到 false-positive-cases.ts
+      const targetFile = output.files?.find((f: { filePath: string }) =>
+        f.filePath.includes('false-positive-cases.ts')
+      );
+
+      if (targetFile) {
+        const allDeletedContent = targetFile.hunks
+          .flatMap((h: { lines: Array<{ type: string; content: string }> }) =>
+            h.lines
+              .filter((l: { type: string }) => l.type === 'delete')
+              .map((l: { content: string }) => l.content)
+          )
+          .join('\n');
+
+        // 這些 .map()/.filter()/.forEach() 回呼參數都不應被刪除
+        expect(allDeletedContent).not.toContain('parentItem');
+        expect(allDeletedContent).not.toContain('parentIndex');
+        expect(allDeletedContent).not.toContain('childItem');
+        expect(allDeletedContent).not.toContain('childIndex');
+      }
+    });
+
+    it('巢狀 arrow function 參數不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 收集所有被刪除的內容
+      const allDeletedContent: string[] = [];
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              allDeletedContent.push(line.content);
+            }
+          }
+        }
+      }
+      const deletedText = allDeletedContent.join('\n');
+
+      // nestedCallbacks 函式的參數不應被刪除
+      expect(deletedText).not.toContain('nestedCallbacks');
+    });
+  });
+
+  describe('繼承方法引用修復（Bug #36）', () => {
+    it('父類別 protected 方法被子類別透過 this 呼叫時不應被標記為 dead code', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 收集所有被刪除的方法名稱
+      const deletedMethods = new Set<string>();
+      for (const file of output.files ?? []) {
+        for (const hunk of file.hunks ?? []) {
+          for (const line of hunk.lines ?? []) {
+            if (line.type === 'delete') {
+              // 提取方法名稱
+              const methodMatches = line.content.matchAll(/(?:protected|private|public)?\s*(\w+)\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{/g);
+              for (const match of methodMatches) {
+                deletedMethods.add(match[1]);
+              }
+            }
+          }
+        }
+      }
+
+      // BaseService 的 protected 方法被 DerivedService 透過 this 呼叫
+      expect(deletedMethods.has('calculateData')).toBe(false);
+      expect(deletedMethods.has('formatResult')).toBe(false);
+
+      // 多層繼承的 protected 方法
+      expect(deletedMethods.has('legacyMethod')).toBe(false);
+      expect(deletedMethods.has('intermediateMethod')).toBe(false);
+    });
+
+    it('DerivedService 和 ChildClass 應該可以正常使用繼承的方法', async () => {
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      const output = JSON.parse(result.stdout);
+
+      // 找到 false-positive-cases.ts
+      const targetFile = output.files?.find((f: { filePath: string }) =>
+        f.filePath.includes('false-positive-cases.ts')
+      );
+
+      if (targetFile) {
+        const allDeletedContent = targetFile.hunks
+          .flatMap((h: { lines: Array<{ type: string; content: string }> }) =>
+            h.lines
+              .filter((l: { type: string }) => l.type === 'delete')
+              .map((l: { content: string }) => l.content)
+          )
+          .join('\n');
+
+        // 這些繼承相關的類別和方法不應被刪除
+        expect(allDeletedContent).not.toContain('BaseService');
+        expect(allDeletedContent).not.toContain('GrandparentClass');
+        expect(allDeletedContent).not.toContain('ParentClass');
+      }
+    });
+  });
 });

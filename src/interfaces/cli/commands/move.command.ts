@@ -1,11 +1,15 @@
 /**
  * Move 命令
  * 移動檔案或目錄並更新 import 路徑
+ * 支援成員移動（透過 source:line 格式）
  */
 
 import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '@core/move/move-service.js';
+import { parseMoveTarget, hasPositionInfo } from '@core/move/path-parser.js';
+import { MoveMemberService, MoveTargetType } from '@core/move-member/index.js';
+import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -18,6 +22,10 @@ interface MoveOptions {
   updateImports: boolean;
   dryRun?: boolean;
   format: string;
+  /** 成員移動：目標類別 */
+  targetClass?: string;
+  /** 成員移動：保留 re-export */
+  keepReexport?: boolean;
 }
 
 /**
@@ -26,7 +34,7 @@ interface MoveOptions {
 export function setupMoveCommand(program: Command, context: CommandContext): void {
   program
     .command('move [source] [target]')
-    .description('移動檔案或目錄')
+    .description('移動檔案、目錄或成員（source:line 格式觸發成員移動）')
     .option('-s, --source <path>', '來源路徑')
     .option('-t, --target <path>', '目標路徑')
     .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
@@ -34,6 +42,9 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
     .option('--no-update-imports', '不更新 import 路徑')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
+    // 成員移動選項
+    .option('--target-class <name>', '目標類別名稱（成員移動用）')
+    .option('--keep-reexport', '保留原位置的 re-export（成員移動用）')
     .action(async (sourceArg, targetArg, options: MoveOptions) => {
       // 支援兩種語法：
       // 1. move <source> <target> (位置參數)
@@ -50,7 +61,16 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
         return;
       }
 
-      await handleMoveCommand(source, target, options, context);
+      // 解析路徑格式，判斷是檔案移動還是成員移動
+      const parsedSource = parseMoveTarget(source);
+
+      if (hasPositionInfo(parsedSource)) {
+        // 成員移動模式
+        await handleMoveMemberCommand(source, target, options, context);
+      } else {
+        // 檔案移動模式
+        await handleMoveCommand(source, target, options, context);
+      }
     });
 }
 
@@ -132,12 +152,13 @@ async function handleMoveCommand(
       return;
     }
 
-    // 讀取 tsconfig.json 路徑別名
-    const pathAliases = await loadPathAliases(projectRoot, context);
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context);
 
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
-      pathAliases,
+      pathAliases: tsconfigPathConfig.pathAliases,
+      baseUrl: tsconfigPathConfig.baseUrl,
       supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
       includeNodeModules: false
     });
@@ -234,20 +255,32 @@ function printSuccess(
 }
 
 
+/** tsconfig 路徑設定 */
+interface TsconfigPathConfig {
+  pathAliases: Record<string, string>;
+  baseUrl?: string;
+}
+
 /**
- * 讀取 tsconfig.json 路徑別名
+ * 讀取 tsconfig.json 路徑設定（包含 paths 和 baseUrl）
  */
-async function loadPathAliases(
+async function loadTsconfigPathConfig(
   projectRoot: string,
   context: CommandContext
-): Promise<Record<string, string>> {
-  const pathAliases: Record<string, string> = {};
+): Promise<TsconfigPathConfig> {
+  const config: TsconfigPathConfig = { pathAliases: {} };
 
   try {
     const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
     const tsconfigContent = await context.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
     const tsconfig = JSON.parse(tsconfigContent);
 
+    // 解析 baseUrl
+    if (tsconfig.compilerOptions?.baseUrl) {
+      config.baseUrl = path.resolve(projectRoot, tsconfig.compilerOptions.baseUrl);
+    }
+
+    // 解析 paths
     if (tsconfig.compilerOptions?.paths) {
       const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
       const basePath = path.resolve(projectRoot, baseUrl);
@@ -258,13 +291,129 @@ async function loadPathAliases(
           const cleanAlias = alias.replace(/\/\*$/, '');
           const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
           // 轉換為絕對路徑
-          pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
+          config.pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
         }
       }
     }
   } catch {
-    // tsconfig.json 不存在或解析失敗，使用空的路徑別名
+    // tsconfig.json 不存在或解析失敗，使用空設定
   }
 
-  return pathAliases;
+  return config;
+}
+
+/**
+ * 處理成員移動命令
+ * 當 source 包含位置資訊時（如 file.ts:25）觸發
+ */
+async function handleMoveMemberCommand(
+  source: string,
+  target: string,
+  options: MoveOptions,
+  context: CommandContext
+): Promise<void> {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  const isJsonFormat = format === OutputFormat.Json;
+  const projectRoot = options.path || process.cwd();
+
+  try {
+    // 解析 source 和 target 路徑
+    const parsedSource = parseMoveTarget(source);
+    const parsedTarget = parseMoveTarget(target);
+
+    // 解析為絕對路徑
+    const sourceFilePath = path.isAbsolute(parsedSource.filePath)
+      ? parsedSource.filePath
+      : path.resolve(projectRoot, parsedSource.filePath);
+    const targetFilePath = path.isAbsolute(parsedTarget.filePath)
+      ? parsedTarget.filePath
+      : path.resolve(projectRoot, parsedTarget.filePath);
+
+    if (!isJsonFormat) {
+      console.log(`   移動成員: ${path.relative(projectRoot, sourceFilePath)}:${parsedSource.line}`);
+      console.log(`   目標: ${path.relative(projectRoot, targetFilePath)}`);
+    }
+
+    // 取得 ParserRegistry（單例）
+    const parserRegistry = ParserRegistry.getInstance();
+
+    // 建立服務
+    const moveMemberService = new MoveMemberService(
+      parserRegistry,
+      context.fileSystem
+    );
+
+    // 決定目標類型
+    const targetType = options.targetClass
+      ? MoveTargetType.ExistingClass
+      : MoveTargetType.ExistingFile;
+
+    // 準備 MoveMember 選項
+    const moveMemberOptions = {
+      sourceFile: sourceFilePath,
+      sourcePosition: {
+        line: parsedSource.line!,
+        column: parsedSource.column
+      },
+      target: {
+        type: targetType,
+        filePath: targetFilePath,
+        className: options.targetClass,
+        insertPosition: parsedTarget.line // 若 target 帶行號，作為插入位置
+      },
+      projectRoot,
+      updateReferences: options.updateImports,
+      keepReexport: options.keepReexport
+    };
+
+    // 生成 Changeset
+    const changeset = await moveMemberService.generateChangeset(moveMemberOptions);
+
+    if (!changeset.success) {
+      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'move');
+      process.exitCode = 1;
+      return;
+    }
+
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+
+    // Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 執行變更
+    if (!isJsonFormat) {
+      console.log('   執行移動...');
+    }
+
+    const applicator = new ChangeApplicator(context.fileSystem);
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
+    });
+
+    if (result.success) {
+      outputHandler.outputMutation(previewInput, format);
+    } else {
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'move');
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputHandler.outputError(errorMsg, format, 'move');
+    process.exitCode = 1;
+  }
 }

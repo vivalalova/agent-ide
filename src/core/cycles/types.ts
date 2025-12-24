@@ -3,12 +3,30 @@
  */
 
 /**
+ * 循環依賴嚴重程度
+ */
+export enum CycleSeverity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
+}
+
+/**
+ * 循環修復優先級
+ */
+export enum CyclePriority {
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low'
+}
+
+/**
  * 循環依賴資訊
  */
 export interface CircularDependency {
   readonly cycle: readonly string[];
   readonly length: number;
-  readonly severity: 'low' | 'medium' | 'high';
+  readonly severity: CycleSeverity;
 }
 
 /**
@@ -46,7 +64,7 @@ export interface CycleStatistics {
   readonly totalCycles: number;
   readonly averageCycleLength: number;
   readonly maxCycleLength: number;
-  readonly cyclesBySeverity: Record<string, number>;
+  readonly cyclesBySeverity: Record<CycleSeverity, number>;
 }
 
 /**
@@ -56,7 +74,7 @@ export interface CycleFixSuggestion {
   readonly cycle: readonly string[];
   readonly strategy: string;
   readonly description: string;
-  readonly priority: 'high' | 'medium' | 'low';
+  readonly priority: CyclePriority;
 }
 
 /**
@@ -73,14 +91,14 @@ export function createDefaultCycleDetectionOptions(): CycleDetectionOptions {
 /**
  * 計算循環依賴嚴重程度
  */
-export function calculateCycleSeverity(cycleLength: number): 'low' | 'medium' | 'high' {
+export function calculateCycleSeverity(cycleLength: number): CycleSeverity {
   if (cycleLength <= 3) {
-    return 'low';
+    return CycleSeverity.LOW;
   }
   if (cycleLength <= 6) {
-    return 'medium';
+    return CycleSeverity.MEDIUM;
   }
-  return 'high';
+  return CycleSeverity.HIGH;
 }
 
 /**
@@ -92,7 +110,7 @@ export function isCircularDependency(value: unknown): value is CircularDependenc
   }
 
   const obj = value as Record<string, unknown>;
-  const validSeverities = ['low', 'medium', 'high'];
+  const validSeverities = Object.values(CycleSeverity) as string[];
 
   return (
     Array.isArray(obj.cycle) &&

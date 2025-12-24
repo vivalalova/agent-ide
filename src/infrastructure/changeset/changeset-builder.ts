@@ -3,11 +3,13 @@
  * 提供流式 API 建構變更集
  */
 
-import type {
-  Changeset,
-  FileTextChange,
-  FileOperation,
-  TextEdit
+import {
+  FileOperationType,
+  ChangesetCommand,
+  type Changeset,
+  type FileTextChange,
+  type FileOperation,
+  type TextEdit
 } from './types.js';
 
 /**
@@ -35,7 +37,7 @@ export class ChangesetBuilder {
   private description = '';
 
   /** 命令類型 */
-  private command: Changeset['command'] = 'rename';
+  private command: ChangesetCommand = ChangesetCommand.Rename;
 
   /** 錯誤訊息列表 */
   private errors: string[] = [];
@@ -48,7 +50,7 @@ export class ChangesetBuilder {
    * @param command - 命令類型
    * @returns this - 支援鏈式調用
    */
-  forCommand(command: Changeset['command']): this {
+  forCommand(command: ChangesetCommand): this {
     this.command = command;
     return this;
   }
@@ -80,11 +82,20 @@ export class ChangesetBuilder {
     const existing = this.textChanges.find(tc => tc.filePath === filePath);
 
     if (existing) {
-      // 合併到現有的變更
+      // 合併到現有的變更，去除重複的 edits（根據 range 比對）
       const existingIndex = this.textChanges.indexOf(existing);
+      const deduplicatedEdits = edits.filter(newEdit =>
+        !existing.edits.some(existingEdit =>
+          existingEdit.range.start.line === newEdit.range.start.line
+          && existingEdit.range.start.column === newEdit.range.start.column
+          && existingEdit.range.end.line === newEdit.range.end.line
+          && existingEdit.range.end.column === newEdit.range.end.column
+        )
+      );
+
       this.textChanges[existingIndex] = {
         ...existing,
-        edits: [...existing.edits, ...edits],
+        edits: [...existing.edits, ...deduplicatedEdits],
         operationType: operationType ?? existing.operationType
       };
     } else {
@@ -117,7 +128,7 @@ export class ChangesetBuilder {
     }
 
     this.fileOperations.push({
-      type: 'create',
+      type: FileOperationType.Create,
       sourcePath: filePath,
       targetPath: filePath,
       content
@@ -142,7 +153,7 @@ export class ChangesetBuilder {
     }
 
     this.fileOperations.push({
-      type: 'delete',
+      type: FileOperationType.Delete,
       sourcePath: filePath
     });
     return this;
@@ -166,7 +177,7 @@ export class ChangesetBuilder {
     }
 
     this.fileOperations.push({
-      type: 'move',
+      type: FileOperationType.Move,
       sourcePath,
       targetPath
     });

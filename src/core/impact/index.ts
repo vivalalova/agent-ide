@@ -7,6 +7,9 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ExtendedDependencyAnalysisOptions } from './types.js';
 
 export { ImpactAnalyzer };
+export { PathResolver } from './path-resolver.js';
+export { FileScanner } from './file-scanner.js';
+export { DependencyExtractor } from './dependency-extractor.js';
 
 export type {
   FileDependencies,

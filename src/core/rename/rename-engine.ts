@@ -22,7 +22,7 @@ import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import type { Changeset } from '@infrastructure/changeset/index.js';
+import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
@@ -69,10 +69,13 @@ export class RenameEngine {
           const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
           const lines = content.split('\n');
 
+          // 使用單詞邊界進行精確匹配（快取 RegExp 避免重複編譯）
+          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+
           // 查找所有包含符號名稱的行
           lines.forEach((line, lineIndex) => {
-            // 使用單詞邊界進行精確匹配
-            const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+            // 重置 lastIndex 以便在每行重新匹配
+            regex.lastIndex = 0;
             let match;
 
             while ((match = regex.exec(line)) !== null) {
@@ -253,7 +256,7 @@ export class RenameEngine {
 
     // 3. 轉換為 Changeset
     const builder = createChangesetBuilder()
-      .forCommand('rename')
+      .forCommand(ChangesetCommand.Rename)
       .withDescription(`Renamed '${options.symbol.name}' to '${options.newName}'`);
 
     for (const { filePath, changes } of fileChanges) {
@@ -262,7 +265,7 @@ export class RenameEngine {
         newText: change.newText,
         description: `Rename ${change.oldText} → ${change.newText}`
       }));
-      builder.addTextChange(filePath, edits, 'rename');
+      builder.addTextChange(filePath, edits, TextEditOperationType.Rename);
     }
 
     // 4. 加入驗證衝突為警告（格式：type:message，方便解析）
@@ -275,9 +278,15 @@ export class RenameEngine {
 
   /**
    * 檢測命名衝突
-   * @param scope 作用域資訊（預留參數，未來可用於更精確的衝突檢測）
+   * @param newName 新名稱
+   * @param scope 作用域資訊（用於檢測作用域衝突）
+   * @param originalSymbolName 原始符號名稱（可選，用於排除自身）
    */
-  detectConflicts(newName: string, _scope?: ScopeAnalysisResult): ConflictInfo[] {
+  detectConflicts(
+    newName: string,
+    scope?: ScopeAnalysisResult,
+    originalSymbolName?: string
+  ): ConflictInfo[] {
     const conflicts: ConflictInfo[] = [];
 
     // 檢查保留字
@@ -298,8 +307,39 @@ export class RenameEngine {
       ));
     }
 
-    // TODO: 使用 ScopeAnalyzer 檢查作用域衝突
-    // 這需要 AST 和更多上下文資訊，目前先簡化實作
+    // 使用 ScopeAnalyzer 檢查作用域衝突
+    if (scope) {
+      // 檢查當前作用域中是否有同名符號（排除原始符號自身）
+      const conflictingSymbol = scope.symbols.find(
+        s => s.name === newName && s.name !== originalSymbolName
+      );
+
+      if (conflictingSymbol) {
+        conflicts.push(createConflictInfo(
+          ConflictType.NameCollision,
+          `'${newName}' 在當前作用域中已存在`,
+          conflictingSymbol.location
+        ));
+      }
+
+      // 檢查父作用域是否有同名符號（會導致遮蔽）
+      let parentScope = scope.parent;
+      while (parentScope) {
+        const shadowedSymbol = parentScope.symbols.find(
+          s => s.name === newName && s.name !== originalSymbolName
+        );
+
+        if (shadowedSymbol) {
+          conflicts.push(createConflictInfo(
+            ConflictType.ScopeConflict,
+            `'${newName}' 會遮蔽外層作用域中的同名變數`,
+            shadowedSymbol.location
+          ));
+          break; // 只報告最近的遮蔽
+        }
+        parentScope = parentScope.parent;
+      }
+    }
 
     return conflicts;
   }

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ChangesetBuilder, createChangesetBuilder } from '@infrastructure/changeset/changeset-builder.js';
-import type { Changeset } from '@infrastructure/changeset/types.js';
+import { ChangesetCommand, FileOperationType, TextEditOperationType, type Changeset } from '@infrastructure/changeset/types.js';
 
 describe('ChangesetBuilder', () => {
   // MARK: - Test Fixtures
@@ -32,11 +32,11 @@ describe('ChangesetBuilder', () => {
     }
 
     it.each<ForCommandTestCase>([
-      { scenario: 'rename', command: 'rename' },
-      { scenario: 'move', command: 'move' },
-      { scenario: 'deadcode', command: 'deadcode' },
-      { scenario: 'change-signature', command: 'change-signature' },
-      { scenario: 'move-member', command: 'move-member' }
+      { scenario: 'rename', command: ChangesetCommand.Rename },
+      { scenario: 'move', command: ChangesetCommand.Move },
+      { scenario: 'deadcode', command: ChangesetCommand.Deadcode },
+      { scenario: 'change-signature', command: ChangesetCommand.ChangeSignature },
+      { scenario: 'move-member', command: ChangesetCommand.MoveMember }
     ])('應該設定命令類型為 $scenario', ({ command }) => {
       const changeset = createChangesetBuilder()
         .forCommand(command)
@@ -47,7 +47,7 @@ describe('ChangesetBuilder', () => {
 
     it('應該支援鏈式調用', () => {
       const builder = createChangesetBuilder();
-      const result = builder.forCommand('rename');
+      const result = builder.forCommand(ChangesetCommand.Rename);
 
       expect(result).toBe(builder);
     });
@@ -114,28 +114,28 @@ describe('ChangesetBuilder', () => {
 
     it('應該保留操作類型', () => {
       const changeset = createChangesetBuilder()
-        .addTextChange('/file.ts', [], 'rename')
+        .addTextChange('/file.ts', [], TextEditOperationType.Rename)
         .build();
 
-      expect(changeset.textChanges[0].operationType).toBe('rename');
+      expect(changeset.textChanges[0].operationType).toBe(TextEditOperationType.Rename);
     });
 
     it('合併時新的操作類型應覆蓋舊的', () => {
       const changeset = createChangesetBuilder()
-        .addTextChange('/file.ts', [], 'rename')
-        .addTextChange('/file.ts', [], 'modify')
+        .addTextChange('/file.ts', [], TextEditOperationType.Rename)
+        .addTextChange('/file.ts', [], TextEditOperationType.Modify)
         .build();
 
-      expect(changeset.textChanges[0].operationType).toBe('modify');
+      expect(changeset.textChanges[0].operationType).toBe(TextEditOperationType.Modify);
     });
 
     it('合併時若未指定操作類型應保留舊的', () => {
       const changeset = createChangesetBuilder()
-        .addTextChange('/file.ts', [], 'rename')
+        .addTextChange('/file.ts', [], TextEditOperationType.Rename)
         .addTextChange('/file.ts', [])
         .build();
 
-      expect(changeset.textChanges[0].operationType).toBe('rename');
+      expect(changeset.textChanges[0].operationType).toBe(TextEditOperationType.Rename);
     });
 
     it('不同檔案應分開存放', () => {
@@ -153,6 +153,71 @@ describe('ChangesetBuilder', () => {
 
       expect(result).toBe(builder);
     });
+
+    // MARK: - Edit 去重
+
+    it('合併時應去除重複的 edit（相同 range）', () => {
+      const duplicateRange = createTestRange(1, 1, 1, 10);
+      const edit1 = { range: duplicateRange, newText: 'foo', description: 'first' };
+      const edit2 = { range: duplicateRange, newText: 'foo', description: 'duplicate' };
+
+      const changeset = createChangesetBuilder()
+        .addTextChange('/file.ts', [edit1])
+        .addTextChange('/file.ts', [edit2])
+        .build();
+
+      // 應該只有一個 edit（第一個），重複的被過濾
+      expect(changeset.textChanges[0].edits).toHaveLength(1);
+      expect(changeset.textChanges[0].edits[0].description).toBe('first');
+    });
+
+    it('不同 range 的 edit 應保留', () => {
+      const edit1 = { range: createTestRange(1, 1, 1, 10), newText: 'foo' };
+      const edit2 = { range: createTestRange(2, 1, 2, 10), newText: 'bar' };
+
+      const changeset = createChangesetBuilder()
+        .addTextChange('/file.ts', [edit1])
+        .addTextChange('/file.ts', [edit2])
+        .build();
+
+      expect(changeset.textChanges[0].edits).toHaveLength(2);
+    });
+
+    it('跨批次添加相同 range 的 edit 應被去重', () => {
+      const sameRange = createTestRange(5, 1, 6, 20);
+      const edits = [
+        { range: sameRange, newText: '', description: 'Remove: first' },
+        { range: sameRange, newText: '', description: 'Remove: second' },
+        { range: sameRange, newText: '', description: 'Remove: third' },
+        { range: sameRange, newText: '', description: 'Remove: fourth' }
+      ];
+
+      const changeset = createChangesetBuilder()
+        .addTextChange('/file.ts', edits.slice(0, 2))
+        .addTextChange('/file.ts', edits.slice(2, 4))
+        .build();
+
+      // 去重邏輯說明：
+      // - 同一批次內的重複不會被去重（第一批 [0,1] 直接加入，edits = [0,1]）
+      // - 跨批次時會檢查已存在的 edits，相同 range 的會被過濾
+      // - 第二批 [2,3] 與 edit[0] 的 range 相同，都被過濾
+      // 結果：2 個 edit（來自第一批）
+      expect(changeset.textChanges[0].edits).toHaveLength(2);
+    });
+
+    it('range 的任一欄位不同則不視為重複', () => {
+      const edit1 = { range: createTestRange(1, 1, 1, 10), newText: 'a' };
+      const edit2 = { range: createTestRange(1, 2, 1, 10), newText: 'b' }; // start.column 不同
+      const edit3 = { range: createTestRange(1, 1, 2, 10), newText: 'c' }; // end.line 不同
+      const edit4 = { range: createTestRange(1, 1, 1, 11), newText: 'd' }; // end.column 不同
+
+      const changeset = createChangesetBuilder()
+        .addTextChange('/file.ts', [edit1])
+        .addTextChange('/file.ts', [edit2, edit3, edit4])
+        .build();
+
+      expect(changeset.textChanges[0].edits).toHaveLength(4);
+    });
   });
 
   // MARK: - addFileCreate
@@ -165,7 +230,7 @@ describe('ChangesetBuilder', () => {
 
       expect(changeset.fileOperations).toHaveLength(1);
       expect(changeset.fileOperations[0]).toEqual({
-        type: 'create',
+        type: FileOperationType.Create,
         sourcePath: '/new/file.ts',
         targetPath: '/new/file.ts',
         content: 'console.log("hello");'
@@ -198,7 +263,7 @@ describe('ChangesetBuilder', () => {
 
       expect(changeset.fileOperations).toHaveLength(1);
       expect(changeset.fileOperations[0]).toEqual({
-        type: 'delete',
+        type: FileOperationType.Delete,
         sourcePath: '/old/file.ts'
       });
     });
@@ -221,7 +286,7 @@ describe('ChangesetBuilder', () => {
 
       expect(changeset.fileOperations).toHaveLength(1);
       expect(changeset.fileOperations[0]).toEqual({
-        type: 'move',
+        type: FileOperationType.Move,
         sourcePath: '/old/path.ts',
         targetPath: '/new/path.ts'
       });
@@ -332,7 +397,7 @@ describe('ChangesetBuilder', () => {
     it('預設命令類型應為 rename', () => {
       const changeset = createChangesetBuilder().build();
 
-      expect(changeset.command).toBe('rename');
+      expect(changeset.command).toBe(ChangesetCommand.Rename);
     });
 
     it('預設描述應為空字串', () => {
@@ -347,7 +412,7 @@ describe('ChangesetBuilder', () => {
   describe('完整流程', () => {
     it('應該支援完整的鏈式建構', () => {
       const changeset = createChangesetBuilder()
-        .forCommand('rename')
+        .forCommand(ChangesetCommand.Rename)
         .withDescription('重命名 foo 為 bar')
         .addTextChange('/src/file.ts', [
           { range: createTestRange(1, 1, 1, 4), newText: 'bar' }
@@ -358,7 +423,7 @@ describe('ChangesetBuilder', () => {
         .addWarning('有 10 個引用需要手動檢查')
         .build();
 
-      expect(changeset.command).toBe('rename');
+      expect(changeset.command).toBe(ChangesetCommand.Rename);
       expect(changeset.description).toBe('重命名 foo 為 bar');
       expect(changeset.textChanges).toHaveLength(2);
       expect(changeset.success).toBe(true);
@@ -367,7 +432,7 @@ describe('ChangesetBuilder', () => {
 
     it('應該支援複雜的檔案操作組合', () => {
       const changeset = createChangesetBuilder()
-        .forCommand('move')
+        .forCommand(ChangesetCommand.Move)
         .withDescription('移動並重構模組')
         .addFileMove('/old/module.ts', '/new/module.ts')
         .addTextChange('/src/consumer.ts', [

@@ -6,6 +6,12 @@
 // 核心服務
 export { ChangeSignatureService, createChangeSignatureService } from './change-signature-service.js';
 export { SignatureParser, createSignatureParser } from './signature-parser.js';
+export { SignatureValidator, createSignatureValidator } from './signature-validator.js';
+export { SignatureTransformer, createSignatureTransformer } from './signature-transformer.js';
+export { CallSiteUpdater, createCallSiteUpdater } from './call-site-updater.js';
+
+// 工具函式
+export { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
 
 // 型別定義
 export type {

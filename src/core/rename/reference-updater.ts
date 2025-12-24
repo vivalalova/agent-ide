@@ -145,9 +145,13 @@ export class ReferenceUpdater {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
 
+    // 快取 RegExp 避免重複編譯
+    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
-      const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+      // 重置 lastIndex 以便在每行重新匹配
+      regex.lastIndex = 0;
       let match;
 
       while ((match = regex.exec(line)) !== null) {
