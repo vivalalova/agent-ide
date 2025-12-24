@@ -45,6 +45,52 @@ export class MemberExtractor {
   }
 
   /**
+   * 提取指定位置的成員
+   * 找到包含該位置的最小成員定義
+   *
+   * @param filePath 檔案路徑
+   * @param line 行號（1-based）
+   * @param column 欄位（1-based，可選）
+   */
+  async extractMemberAtPosition(
+    filePath: string,
+    line: number,
+    column?: number
+  ): Promise<MemberDefinition | null> {
+    const members = await this.listMembers(filePath);
+    if (members.length === 0) {
+      return null;
+    }
+
+    // 找到包含該行的所有成員
+    const containingMembers = members.filter(m => {
+      const start = m.location.range.start.line;
+      const end = m.location.range.end.line;
+      return line >= start && line <= end;
+    });
+
+    if (containingMembers.length === 0) {
+      return null;
+    }
+
+    // 如果只有一個，直接返回
+    if (containingMembers.length === 1) {
+      return containingMembers[0];
+    }
+
+    // 多個成員時，選擇範圍最小的（最內層）
+    // 但優先選擇非類別的成員（避免選到整個類別而不是類別內的方法）
+    const nonClassMembers = containingMembers.filter(m => m.type !== MemberType.Class);
+    const candidates = nonClassMembers.length > 0 ? nonClassMembers : containingMembers;
+
+    return candidates.reduce((smallest, current) => {
+      const smallestSize = smallest.location.range.end.line - smallest.location.range.start.line;
+      const currentSize = current.location.range.end.line - current.location.range.start.line;
+      return currentSize < smallestSize ? current : smallest;
+    });
+  }
+
+  /**
    * 列出檔案中的所有成員
    */
   async listMembers(filePath: string, className?: string): Promise<MemberDefinition[]> {
@@ -247,53 +293,64 @@ export class MemberExtractor {
     const members: MemberDefinition[] = [];
     const lines = classSource.split('\n');
 
+    // 跳過類別宣告行，只提取類別內部的成員
+    const firstBraceIndex = classSource.indexOf('{');
+    if (firstBraceIndex === -1) {
+      return members;
+    }
+    const classBody = classSource.substring(firstBraceIndex + 1);
+    const bodyStartLine = classSource.substring(0, firstBraceIndex).split('\n').length;
+
+    // 類別內部的 lines（從 { 之後開始）
+    const bodyLines = classBody.split('\n');
+
     // 方法
     const methodPattern = /^\s*(public|private|protected)?\s*(static)?\s*(async)?\s*(\w+)\s*\([^)]*\)/gm;
     let match;
-    while ((match = methodPattern.exec(classSource)) !== null) {
+    while ((match = methodPattern.exec(classBody)) !== null) {
       // 跳過 constructor
       if (match[4] === 'constructor') {continue;}
 
-      const relativeLineNumber = classSource.substring(0, match.index).split('\n').length;
-      const lineNumber = classStartLine + relativeLineNumber - 1;
-      const endLine = this.findBlockEndInClass(lines, relativeLineNumber - 1);
-      const sourceCode = lines.slice(relativeLineNumber - 1, endLine + 1).join('\n');
+      const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
+      const lineNumber = classStartLine + bodyStartLine - 1 + relativeLineNumber - 1;
+      const endLine = this.findBlockEndInClass(bodyLines, relativeLineNumber - 1);
+      const sourceCode = bodyLines.slice(relativeLineNumber - 1, endLine + 1).join('\n');
 
       members.push(this.createMember(
         match[4],
         MemberType.Method,
         filePath,
         lineNumber,
-        classStartLine + endLine,
+        classStartLine + bodyStartLine - 1 + endLine,
         sourceCode,
         className,
         this.extractModifiers(match[0]),
-        this.extractDocumentation(lines, relativeLineNumber - 1),
+        this.extractDocumentation(bodyLines, relativeLineNumber - 1),
         this.extractDependencies(sourceCode)
       ));
     }
 
     // 屬性
     const propertyPattern = /^\s*(public|private|protected)?\s*(static)?\s*(readonly)?\s*(\w+)\s*[?:]?\s*[^(]/gm;
-    while ((match = propertyPattern.exec(classSource)) !== null) {
+    while ((match = propertyPattern.exec(classBody)) !== null) {
       // 跳過方法和 constructor
-      if (classSource.substring(match.index).match(/^\s*\w+\s*\(/)) {continue;}
+      if (classBody.substring(match.index).match(/^\s*\w+\s*\(/)) {continue;}
 
-      const relativeLineNumber = classSource.substring(0, match.index).split('\n').length;
-      const lineNumber = classStartLine + relativeLineNumber - 1;
-      const endLine = this.findStatementEnd(lines, relativeLineNumber - 1);
-      const sourceCode = lines.slice(relativeLineNumber - 1, endLine + 1).join('\n');
+      const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
+      const lineNumber = classStartLine + bodyStartLine - 1 + relativeLineNumber - 1;
+      const endLine = this.findStatementEnd(bodyLines, relativeLineNumber - 1);
+      const sourceCode = bodyLines.slice(relativeLineNumber - 1, endLine + 1).join('\n');
 
       members.push(this.createMember(
         match[4],
         MemberType.Property,
         filePath,
         lineNumber,
-        classStartLine + endLine,
+        classStartLine + bodyStartLine - 1 + endLine,
         sourceCode,
         className,
         this.extractModifiers(match[0]),
-        this.extractDocumentation(lines, relativeLineNumber - 1),
+        this.extractDocumentation(bodyLines, relativeLineNumber - 1),
         this.extractDependencies(sourceCode)
       ));
     }

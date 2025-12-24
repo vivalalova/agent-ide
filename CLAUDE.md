@@ -119,7 +119,19 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
 agent-ide move <source> <target> --path <path>
-agent-ide move-member <sourceFile> <memberName> --target-file <file>
+```
+
+**move 位置格式**：source 帶位置時自動切換為成員移動模式：
+
+```bash
+# 檔案移動
+agent-ide move src/old.ts src/new.ts --path .
+
+# 成員移動（source 帶位置）
+agent-ide move src/utils.ts:25 src/helpers.ts --path .
+
+# 成員移動（指定插入位置）
+agent-ide move src/utils.ts:25 src/helpers.ts:10 --path .
 ```
 
 **rename `--at` 參數**：當有多個同名符號時，用 `--at` 精確定位：

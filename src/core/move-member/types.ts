@@ -76,17 +76,33 @@ export interface MoveTarget {
 }
 
 /**
+ * 來源位置（用於 by-position 定位）
+ */
+export interface SourcePosition {
+  /** 行號（1-based） */
+  readonly line: number;
+  /** 欄位（1-based，可選） */
+  readonly column?: number;
+}
+
+/**
  * Move Member 選項
+ *
+ * 支援兩種定位方式：
+ * 1. by-name：使用 memberName + memberType + sourceClassName
+ * 2. by-position：使用 sourcePosition（優先於 by-name）
  */
 export interface MoveMemberOptions {
   /** 來源檔案路徑 */
   readonly sourceFile: string;
-  /** 成員名稱 */
-  readonly memberName: string;
+  /** 成員名稱（by-name 模式必須） */
+  readonly memberName?: string;
   /** 成員類型（可選，用於區分同名成員） */
   readonly memberType?: MemberType;
   /** 所屬類別（若為類別成員） */
   readonly sourceClassName?: string;
+  /** 來源位置（by-position 模式，優先於 memberName） */
+  readonly sourcePosition?: SourcePosition;
   /** 移動目標 */
   readonly target: MoveTarget;
   /** 專案根目錄 */

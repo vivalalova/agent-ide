@@ -15,6 +15,7 @@ export type {
   MemberDefinition,
   MoveTarget,
   MoveMemberOptions,
+  SourcePosition,
   ReferenceUpdate,
   MoveMemberResult,
   MoveMemberSuccessResult,

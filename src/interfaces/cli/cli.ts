@@ -10,7 +10,6 @@ import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import {
   setupMoveCommand,
-  setupMoveMemberCommand,
   setupRenameCommand,
   setupChangeSignatureCommand,
   setupCyclesCommand,
@@ -130,7 +129,6 @@ export class AgentIdeCLI {
     setupRenameCommand(this.program, context);
     setupChangeSignatureCommand(this.program, context);
     setupMoveCommand(this.program, context);
-    setupMoveMemberCommand(this.program, context);
 
     // Query 命令
     setupCyclesCommand(this.program, context);

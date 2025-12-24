@@ -43,18 +43,33 @@ export class MoveMemberService {
    * 執行 Move Member
    */
   async moveMember(options: MoveMemberOptions): Promise<MoveMemberResult> {
-    // 1. 提取成員
-    const member = await this.memberExtractor.extractMember(
-      options.sourceFile,
-      options.memberName,
-      options.memberType,
-      options.sourceClassName
-    );
+    // 1. 提取成員（支援 by-position 或 by-name）
+    let member: MemberDefinition | null = null;
+
+    if (options.sourcePosition) {
+      // by-position 模式
+      member = await this.memberExtractor.extractMemberAtPosition(
+        options.sourceFile,
+        options.sourcePosition.line,
+        options.sourcePosition.column
+      );
+    } else if (options.memberName) {
+      // by-name 模式
+      member = await this.memberExtractor.extractMember(
+        options.sourceFile,
+        options.memberName,
+        options.memberType,
+        options.sourceClassName
+      );
+    }
 
     if (!member) {
+      const positionInfo = options.sourcePosition
+        ? `行 ${options.sourcePosition.line}` + (options.sourcePosition.column ? `:${options.sourcePosition.column}` : '')
+        : options.memberName;
       return this.createErrorResult(
         MoveMemberErrorCode.MemberNotFound,
-        `找不到成員: ${options.memberName}`
+        `找不到成員: ${positionInfo}`
       );
     }
 
@@ -161,8 +176,10 @@ export class MoveMemberService {
 
     // 設定描述
     const relativePath = path.relative(options.projectRoot, options.target.filePath);
+    const memberInfo = options.memberName
+      ?? (options.sourcePosition ? `line ${options.sourcePosition.line}` : 'member');
     builder.withDescription(
-      `Moved '${options.memberName}' from '${path.basename(options.sourceFile)}' to '${relativePath}'`
+      `Moved '${memberInfo}' from '${path.basename(options.sourceFile)}' to '${relativePath}'`
     );
 
     return builder.build();

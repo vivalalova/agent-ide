@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員、改參數、循環依賴檢測、影響分析、專案快照（支援增量快照）、符號引用搜尋、呼叫層次分析、dead code 檢測與刪除。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、增量快照追蹤變更、deadcode 自動清理未使用程式碼、結構化 JSON 輸出。支援 TS/JS/Swift
+description: 程式碼重構與分析 CLI 工具。以下情境優先使用：重命名符號、移動檔案/成員（統一 move 命令，source 帶位置自動切換成員模式）、改參數、循環依賴檢測、影響分析、專案快照（支援增量快照）、符號引用搜尋、呼叫層次分析、dead code 檢測與刪除。優點：自動更新所有引用零遺漏、snapshot 節省 ~91% token、增量快照追蹤變更、deadcode 自動清理未使用程式碼、結構化 JSON 輸出。支援 TS/JS
 ---
 
 # Agent IDE
@@ -16,8 +16,7 @@ description: 程式碼重構與分析 CLI 工具。以下情境優先使用：�
 | 了解專案/模組結構 | `snapshot` | 節省 ~91% token，無需逐檔讀取 |
 | 重命名變數/函數/類別 | `rename` | 自動更新所有引用，零遺漏 |
 | 修改函式參數 | `change-signature` | 自動更新所有呼叫點 |
-| 移動/重組檔案 | `move` | 自動更新 import 路徑 |
-| 移動方法/函式/類別 | `move-member` | 語義級移動，自動更新引用 |
+| 移動檔案/成員 | `move` | 自動更新 import 路徑（支援檔案或成員移動） |
 | 循環依賴檢測 | `cycles` | 即時檢測循環依賴 |
 | 影響分析 | `impact` | 分析修改影響範圍 |
 | 符號引用搜尋 | `find-references` | 精確找出定義和所有引用 |
@@ -59,8 +58,7 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 |------|------|------|
 | [rename](references/rename.md) | 符號重命名 | 變更類 |
 | [change-signature](references/change-signature.md) | 函式簽章修改 | 變更類 |
-| [move](references/move.md) | 檔案移動 + import 更新 | 變更類 |
-| [move-member](references/move-member.md) | 成員移動（方法/類別等） | 變更類 |
+| [move](references/move.md) | 檔案/成員移動 + import 更新 | 變更類 |
 | [cycles](references/deps.md) | 循環依賴檢測 | 查詢類 |
 | [impact](references/deps.md) | 影響分析 | 查詢類 |
 | [snapshot](references/snapshot.md) | 模組/專案快照 | 查詢類 |
@@ -79,7 +77,8 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 改參數順序         | `agent-ide change-signature --file f.ts --function fn --reorder "b,a"`    |
 | 加刪參數           | `agent-ide change-signature --file f.ts --function fn --add "c:string"`   |
 | 移動檔案           | `agent-ide move src/old.ts src/new.ts --path . --dry-run`                 |
-| 移動成員           | `agent-ide move-member src/a.ts fn --target-file src/b.ts --dry-run`      |
+| 移動成員           | `agent-ide move src/a.ts:25 src/b.ts --path . --dry-run`                  |
+| 移動成員（指定位置） | `agent-ide move src/a.ts:25 src/b.ts:10 --path . --dry-run`             |
 | 刪除 Dead code     | `agent-ide deadcode --path .`                                             |
 
 ### 查詢類命令
