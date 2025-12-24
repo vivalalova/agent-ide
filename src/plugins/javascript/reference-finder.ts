@@ -121,16 +121,15 @@ export class ReferenceFinder {
 
   /**
    * 估算 AST 大小（位元組）
-   * 透過計算節點數量來估算，避免使用 JSON.stringify（太慢）
+   * 使用 program.body 數量估算，避免完整遍歷
+   * 估算公式：頂層語句數 * 平均節點深度 * 每節點位元組
    */
   private estimateASTSize(ast: babel.File): number {
-    let nodeCount = 0;
-    traverse(ast, {
-      enter() {
-        nodeCount++;
-      }
-    });
-    return nodeCount * ESTIMATED_BYTES_PER_NODE;
+    // 平均每個頂層語句包含約 20 個節點（經驗估算）
+    const AVERAGE_NODES_PER_STATEMENT = 20;
+    const topLevelStatements = ast.program.body.length;
+    const estimatedNodeCount = topLevelStatements * AVERAGE_NODES_PER_STATEMENT;
+    return estimatedNodeCount * ESTIMATED_BYTES_PER_NODE;
   }
 
   /**

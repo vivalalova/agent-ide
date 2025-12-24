@@ -234,16 +234,19 @@ export class ImpactAnalyzer {
   getAffectedTests(filePath: string): string[] {
     const normalizedPath = path.resolve(filePath);
     const allAffected = [normalizedPath, ...this.getImpactedFiles(normalizedPath)];
-    const testFiles: string[] = [];
+    const testFiles = new Set<string>(); // 使用 Set 直接收集，避免最後去重
 
     for (const affectedFile of allAffected) {
       // 找出直接測試此檔案的測試檔案
       const dependents = this.getDependents(affectedFile);
-      const tests = dependents.filter(dep => this.fileScanner.isTestFile(dep));
-      testFiles.push(...tests);
+      for (const dep of dependents) {
+        if (this.fileScanner.isTestFile(dep)) {
+          testFiles.add(dep);
+        }
+      }
     }
 
-    return [...new Set(testFiles)]; // 去重
+    return [...testFiles];
   }
 
   /**
@@ -255,10 +258,13 @@ export class ImpactAnalyzer {
     const totalFiles = allNodes.length;
     const totalDependencies = this.graph.getEdgeCount();
 
+    // 使用 graph 內部資料直接計算最大依賴數，避免重複呼叫 getDependencies()
     let maxDependencies = 0;
     for (const node of allNodes) {
-      const deps = this.getDependencies(node);
-      maxDependencies = Math.max(maxDependencies, deps.length);
+      const depsCount = this.graph.getDependencies(node).length;
+      if (depsCount > maxDependencies) {
+        maxDependencies = depsCount;
+      }
     }
 
     const averageDependencies = totalFiles > 0 ? totalDependencies / totalFiles : 0;

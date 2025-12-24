@@ -23,8 +23,8 @@ import {
  */
 export function generatePreviewResult(input: PreviewInput, contextLines: number = 3): PreviewResult {
   const files: FileChange[] = input.fileChanges.map(fc => generateFileChange(fc, contextLines));
-  const baseSummary = calculateSummary(files);
-  const fileSummaries = generateFileSummaries(files, getDefaultChangeType(input.command));
+  // 單次遍歷同時計算總統計和檔案級統計
+  const { baseSummary, fileSummaries } = calculateSummaryAndFileSummaries(files, getDefaultChangeType(input.command));
 
   // 擴展 summary 以包含 rename 專用欄位
   const conflictCount = input.conflicts?.length ?? 0;
@@ -264,57 +264,52 @@ function formatHunkHeader(oldStart: number, oldCount: number, newStart: number, 
 }
 
 /**
- * 計算變更統計摘要
+ * 單次遍歷同時計算總統計和檔案級統計
  */
-function calculateSummary(files: FileChange[]): PreviewSummary {
+function calculateSummaryAndFileSummaries(
+  files: FileChange[],
+  defaultChangeType: string
+): { baseSummary: PreviewSummary; fileSummaries: FileChangeSummary[] } {
   let totalChanges = 0;
-  let additions = 0;
-  let deletions = 0;
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  const fileSummaries: FileChangeSummary[] = [];
 
-  files.forEach(file => {
-    file.hunks.forEach(hunk => {
-      hunk.lines.forEach(line => {
+  for (const file of files) {
+    let fileAdditions = 0;
+    let fileDeletions = 0;
+
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
         if (line.type === ChangeLineType.Add) {
-          additions++;
+          fileAdditions++;
+          totalAdditions++;
           totalChanges++;
         } else if (line.type === ChangeLineType.Delete) {
-          deletions++;
+          fileDeletions++;
+          totalDeletions++;
           totalChanges++;
         }
-      });
-    });
-  });
+      }
+    }
 
-  return {
-    totalFiles: files.length,
-    totalChanges,
-    additions,
-    deletions
-  };
-}
-
-/**
- * 從 FileChange 生成檔案變更摘要列表
- */
-function generateFileSummaries(files: FileChange[], defaultChangeType: string): FileChangeSummary[] {
-  return files.map(file => {
-    let additions = 0;
-    let deletions = 0;
-
-    file.hunks.forEach(hunk => {
-      hunk.lines.forEach(line => {
-        if (line.type === ChangeLineType.Add) {additions++;}
-        if (line.type === ChangeLineType.Delete) {deletions++;}
-      });
-    });
-
-    return {
+    fileSummaries.push({
       filePath: file.filePath,
       changeType: defaultChangeType,
-      additions,
-      deletions
-    };
-  });
+      additions: fileAdditions,
+      deletions: fileDeletions
+    });
+  }
+
+  return {
+    baseSummary: {
+      totalFiles: files.length,
+      totalChanges,
+      additions: totalAdditions,
+      deletions: totalDeletions
+    },
+    fileSummaries
+  };
 }
 
 /**

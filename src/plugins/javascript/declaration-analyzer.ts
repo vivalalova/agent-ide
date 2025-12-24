@@ -3,7 +3,7 @@
  * 負責解析宣告範圍、import 宣告、函數簽章和 JSDoc 文件
  */
 
-import { parse as babelParse } from '@babel/parser';
+import { parse as babelParse, type ParserOptions } from '@babel/parser';
 import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
 
@@ -20,11 +20,72 @@ import { isLineMatch, parseJSDocContent } from '@plugins/shared/index.js';
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
+/** AST 快取項目 */
+interface ASTCacheEntry {
+  /** 已解析的 AST */
+  ast: babel.File;
+  /** 程式碼雜湊 */
+  hash: string;
+}
+
 /**
  * JavaScript 宣告分析器
  * 提供宣告範圍、import 解析、函數簽章和 JSDoc 文件提取功能
  */
 export class DeclarationAnalyzer {
+  /** AST 快取（hash -> AST） */
+  private astCache: Map<string, ASTCacheEntry> = new Map();
+
+  /** 最大快取項目數 */
+  private static readonly MAX_CACHE_SIZE = 10;
+
+  /**
+   * 計算程式碼雜湊（簡易版本）
+   */
+  private computeHash(code: string): string {
+    return `${code.length}:${code.substring(0, 100)}`;
+  }
+
+  /**
+   * 解析並快取 AST
+   */
+  private parseWithCache(
+    code: string,
+    options: ParserOptions
+  ): babel.File | null {
+    const hash = this.computeHash(code);
+
+    // 檢查快取
+    const cached = this.astCache.get(hash);
+    if (cached) {
+      return cached.ast;
+    }
+
+    try {
+      const ast = babelParse(code, options);
+
+      // LRU 策略：超過限制時移除最舊項目
+      if (this.astCache.size >= DeclarationAnalyzer.MAX_CACHE_SIZE) {
+        const firstKey = this.astCache.keys().next().value;
+        if (firstKey) {
+          this.astCache.delete(firstKey);
+        }
+      }
+
+      this.astCache.set(hash, { ast, hash });
+      return ast;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 清除 AST 快取
+   */
+  clearCache(): void {
+    this.astCache.clear();
+  }
+
   /**
    * 取得符號的完整宣告範圍（包含前導註解）
    * @param code - 原始程式碼
@@ -39,12 +100,17 @@ export class DeclarationAnalyzer {
     symbolType: string,
     startLine: number
   ): Range | null {
+    const ast = this.parseWithCache(code, {
+      sourceType: 'unambiguous',
+      plugins: ['jsx'],
+      attachComment: true
+    });
+
+    if (!ast) {
+      return null;
+    }
+
     try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx'],
-        attachComment: true
-      });
 
       let targetNode: babel.Node | null = null;
 
@@ -143,27 +209,27 @@ export class DeclarationAnalyzer {
    * @returns import 宣告陣列或 null
    */
   getImportDeclarations(code: string): ImportDeclaration[] | null {
-    try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx']
-      });
+    const ast = this.parseWithCache(code, {
+      sourceType: 'unambiguous',
+      plugins: ['jsx']
+    });
 
-      const declarations: ImportDeclaration[] = [];
-
-      traverse(ast, {
-        ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
-          const decl = this.parseBabelImportDeclaration(path.node, code);
-          if (decl) {
-            declarations.push(decl);
-          }
-        }
-      });
-
-      return declarations;
-    } catch {
+    if (!ast) {
       return null;
     }
+
+    const declarations: ImportDeclaration[] = [];
+
+    traverse(ast, {
+      ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
+        const decl = this.parseBabelImportDeclaration(path.node, code);
+        if (decl) {
+          declarations.push(decl);
+        }
+      }
+    });
+
+    return declarations;
   }
 
   /**
@@ -179,56 +245,56 @@ export class DeclarationAnalyzer {
     functionName: string,
     line: number
   ): FormattedSignature | null {
-    try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx']
-      });
+    const ast = this.parseWithCache(code, {
+      sourceType: 'unambiguous',
+      plugins: ['jsx']
+    });
 
-      let foundParams: babel.Node[] | null = null;
-
-      traverse(ast, {
-        FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-          if (path.node.id?.name === functionName && this.isNodeLineMatch(path.node, line)) {
-            foundParams = path.node.params;
-            path.stop();
-          }
-        },
-
-        VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-          if (babel.isIdentifier(path.node.id)
-              && path.node.id.name === functionName
-              && path.node.init
-              && (babel.isArrowFunctionExpression(path.node.init) || babel.isFunctionExpression(path.node.init))
-              && this.isNodeLineMatch(path.node, line)) {
-            foundParams = path.node.init.params;
-            path.stop();
-          }
-        },
-
-        ClassMethod: (path: NodePath<babel.ClassMethod>) => {
-          if (babel.isIdentifier(path.node.key)
-              && path.node.key.name === functionName
-              && this.isNodeLineMatch(path.node, line)) {
-            foundParams = path.node.params;
-            path.stop();
-          }
-        }
-      });
-
-      if (!foundParams) {
-        return null;
-      }
-
-      const parameters = this.extractBabelParametersFromAny(foundParams, code);
-
-      return {
-        parameters,
-        returnType: 'any'
-      };
-    } catch {
+    if (!ast) {
       return null;
     }
+
+    let foundParams: babel.Node[] | null = null;
+
+    traverse(ast, {
+      FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
+        if (path.node.id?.name === functionName && this.isNodeLineMatch(path.node, line)) {
+          foundParams = path.node.params;
+          path.stop();
+        }
+      },
+
+      VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
+        if (babel.isIdentifier(path.node.id)
+            && path.node.id.name === functionName
+            && path.node.init
+            && (babel.isArrowFunctionExpression(path.node.init) || babel.isFunctionExpression(path.node.init))
+            && this.isNodeLineMatch(path.node, line)) {
+          foundParams = path.node.init.params;
+          path.stop();
+        }
+      },
+
+      ClassMethod: (path: NodePath<babel.ClassMethod>) => {
+        if (babel.isIdentifier(path.node.key)
+            && path.node.key.name === functionName
+            && this.isNodeLineMatch(path.node, line)) {
+          foundParams = path.node.params;
+          path.stop();
+        }
+      }
+    });
+
+    if (!foundParams) {
+      return null;
+    }
+
+    const parameters = this.extractBabelParametersFromAny(foundParams, code);
+
+    return {
+      parameters,
+      returnType: 'any'
+    };
   }
 
   /**
@@ -245,78 +311,78 @@ export class DeclarationAnalyzer {
     symbolType: string,
     line: number
   ): Documentation | null {
-    try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx'],
-        attachComment: true
-      });
+    const ast = this.parseWithCache(code, {
+      sourceType: 'unambiguous',
+      plugins: ['jsx'],
+      attachComment: true
+    });
 
-      let targetNode: babel.Node | null = null;
+    if (!ast) {
+      return null;
+    }
 
-      traverse(ast, {
-        FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-          if (symbolType === 'function' && path.node.id?.name === symbolName) {
-            if (this.isNodeLineMatch(path.node, line)) {
-              targetNode = path.node;
-              path.stop();
-            }
+    let targetNode: babel.Node | null = null;
+
+    traverse(ast, {
+      FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
+        if (symbolType === 'function' && path.node.id?.name === symbolName) {
+          if (this.isNodeLineMatch(path.node, line)) {
+            targetNode = path.node;
+            path.stop();
           }
-        },
+        }
+      },
 
-        ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
-          if (symbolType === 'class' && path.node.id?.name === symbolName) {
-            if (this.isNodeLineMatch(path.node, line)) {
-              targetNode = path.node;
-              path.stop();
-            }
+      ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
+        if (symbolType === 'class' && path.node.id?.name === symbolName) {
+          if (this.isNodeLineMatch(path.node, line)) {
+            targetNode = path.node;
+            path.stop();
           }
-        },
+        }
+      },
 
-        VariableDeclaration: (path: NodePath<babel.VariableDeclaration>) => {
-          if (symbolType === 'variable' || symbolType === 'constant' || symbolType === 'function') {
-            for (const decl of path.node.declarations) {
-              if (babel.isIdentifier(decl.id) && decl.id.name === symbolName) {
-                if (this.isNodeLineMatch(path.node, line)) {
-                  targetNode = path.node;
-                  path.stop();
-                }
+      VariableDeclaration: (path: NodePath<babel.VariableDeclaration>) => {
+        if (symbolType === 'variable' || symbolType === 'constant' || symbolType === 'function') {
+          for (const decl of path.node.declarations) {
+            if (babel.isIdentifier(decl.id) && decl.id.name === symbolName) {
+              if (this.isNodeLineMatch(path.node, line)) {
+                targetNode = path.node;
+                path.stop();
               }
             }
           }
         }
-      });
-
-      if (!targetNode) {
-        return null;
       }
+    });
 
-      const node = targetNode as babel.Node;
-      const leadingComments = node.leadingComments;
-      if (!leadingComments || leadingComments.length === 0) {
-        return null;
-      }
-
-      // 尋找 JSDoc 註解（以 /** 開頭）
-      const jsDocComment = leadingComments.find(
-        (comment: babel.Comment) => comment.type === 'CommentBlock' && comment.value.startsWith('*')
-      );
-
-      if (!jsDocComment) {
-        return null;
-      }
-
-      const rawText = `/*${jsDocComment.value}*/`;
-      const { description, tags } = parseJSDocContent(jsDocComment.value);
-
-      return {
-        rawText,
-        description,
-        tags
-      };
-    } catch {
+    if (!targetNode) {
       return null;
     }
+
+    const node = targetNode as babel.Node;
+    const leadingComments = node.leadingComments;
+    if (!leadingComments || leadingComments.length === 0) {
+      return null;
+    }
+
+    // 尋找 JSDoc 註解（以 /** 開頭）
+    const jsDocComment = leadingComments.find(
+      (comment: babel.Comment) => comment.type === 'CommentBlock' && comment.value.startsWith('*')
+    );
+
+    if (!jsDocComment) {
+      return null;
+    }
+
+    const rawText = `/*${jsDocComment.value}*/`;
+    const { description, tags } = parseJSDocContent(jsDocComment.value);
+
+    return {
+      rawText,
+      description,
+      tags
+    };
   }
 
   /**

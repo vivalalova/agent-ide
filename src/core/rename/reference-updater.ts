@@ -152,17 +152,23 @@ export class ReferenceUpdater {
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
+      // 預先標記字串和註解區間
+      const stringRanges = this.findStringRanges(line);
+      const commentStart = this.findCommentStart(line);
+
       // 重置 lastIndex 以便在每行重新匹配
       regex.lastIndex = 0;
       let match;
 
       while ((match = regex.exec(line)) !== null) {
-        // 跳過字串字面值內的匹配
-        if (this.isInString(line, match.index)) {
+        const matchPos = match.index;
+
+        // O(1) 檢查是否在字串或註解內
+        if (this.isPositionInRanges(matchPos, stringRanges) || (commentStart !== -1 && matchPos >= commentStart)) {
           continue;
         }
 
-        const startColumn = match.index + 1;
+        const startColumn = matchPos + 1;
         const endColumn = startColumn + symbolName.length;
 
         const range: Range = {
@@ -171,7 +177,7 @@ export class ReferenceUpdater {
         };
 
         // 簡化的型別判定：檢查是否在註解中
-        const type = this.isInComment(line, match.index) ? 'comment' : 'usage';
+        const type = (commentStart !== -1 && matchPos >= commentStart) ? 'comment' : 'usage';
 
         references.push({
           symbolName,
@@ -312,36 +318,33 @@ export class ReferenceUpdater {
   }
 
   /**
-   * 檢查是否在註解中
+   * 查找行中註解的起始位置
+   * @returns 註解起始位置，若無註解返回 -1
    */
-  private isInComment(line: string, position: number): boolean {
-    const beforePosition = line.substring(0, position);
+  private findCommentStart(line: string): number {
+    // 檢查單行註解（// 或 #）
+    const slashCommentPos = line.indexOf('//');
+    const hashCommentPos = line.indexOf('#');
 
-    // 檢查單行註解
-    if (beforePosition.includes('//')) {
-      return true;
-    }
+    // 檢查多行註解起始
+    const blockCommentPos = line.indexOf('/*');
 
-    // Python 單行註解
-    if (beforePosition.includes('#')) {
-      return true;
-    }
-
-    // 檢查多行註解（簡化處理）
-    const openComment = beforePosition.lastIndexOf('/*');
-    const closeComment = beforePosition.lastIndexOf('*/');
-
-    return openComment !== -1 && (closeComment === -1 || openComment > closeComment);
+    // 返回最早出現的註解位置
+    const positions = [slashCommentPos, hashCommentPos, blockCommentPos].filter(p => p !== -1);
+    return positions.length > 0 ? Math.min(...positions) : -1;
   }
 
   /**
-   * 檢查位置是否在字串字面值內
+   * 查找行中所有字串的區間
+   * @returns 字串區間陣列 [start, end]
    */
-  private isInString(line: string, position: number): boolean {
+  private findStringRanges(line: string): Array<[number, number]> {
+    const ranges: Array<[number, number]> = [];
     let inSingleQuote = false;
     let inDoubleQuote = false;
+    let startPos = -1;
 
-    for (let i = 0; i < position; i++) {
+    for (let i = 0; i < line.length; i++) {
       const char = line[i];
       const prevChar = i > 0 ? line[i - 1] : '';
 
@@ -351,13 +354,33 @@ export class ReferenceUpdater {
       }
 
       if (char === '\'' && !inDoubleQuote) {
+        if (!inSingleQuote) {
+          startPos = i;
+        } else {
+          ranges.push([startPos, i]);
+        }
         inSingleQuote = !inSingleQuote;
       } else if (char === '"' && !inSingleQuote) {
+        if (!inDoubleQuote) {
+          startPos = i;
+        } else {
+          ranges.push([startPos, i]);
+        }
         inDoubleQuote = !inDoubleQuote;
       }
     }
 
-    return inSingleQuote || inDoubleQuote;
+    return ranges;
+  }
+
+  /**
+   * 檢查位置是否在指定區間內
+   * @param position 位置
+   * @param ranges 區間陣列
+   * @returns 是否在區間內
+   */
+  private isPositionInRanges(position: number, ranges: Array<[number, number]>): boolean {
+    return ranges.some(([start, end]) => position > start && position < end);
   }
 
   /**

@@ -44,21 +44,8 @@ export class QueryFormatter {
 
   constructor(options: Partial<QueryFormatterOptions> = {}) {
     this.color = options.color ?? false;
-    this.strategies = this.initializeStrategies();
-  }
-
-  /**
-   * 初始化策略 Map
-   */
-  private initializeStrategies(): Map<QueryCommand, IQueryStrategy> {
-    return new Map<QueryCommand, IQueryStrategy>([
-      [QueryCommand.Search, new SearchFormatter(this.color)],
-      [QueryCommand.Deps, new DepsFormatter(this.color)],
-      [QueryCommand.Analyze, new AnalyzeFormatter(this.color)],
-      [QueryCommand.Snapshot, new SnapshotFormatter(this.color)],
-      [QueryCommand.FindReferences, new FindReferencesFormatter(this.color)],
-      [QueryCommand.CallHierarchy, new CallHierarchyFormatter(this.color)]
-    ]);
+    // 延遲初始化：建構時不建立策略實例
+    this.strategies = new Map();
   }
 
   /**
@@ -104,10 +91,44 @@ export class QueryFormatter {
   }
 
   /**
-   * 取得策略（型別安全）
+   * 取得策略（延遲初始化）
    */
   private getStrategy<T extends QueryResult>(command: QueryCommand): IQueryStrategy<T> {
-    return this.strategies.get(command) as IQueryStrategy<T>;
+    // 檢查快取
+    let strategy = this.strategies.get(command);
+    if (strategy) {
+      return strategy as IQueryStrategy<T>;
+    }
+
+    // 首次使用時才建立對應的策略實例
+    switch (command) {
+      case QueryCommand.Search:
+        strategy = new SearchFormatter(this.color);
+        break;
+      case QueryCommand.Deps:
+        strategy = new DepsFormatter(this.color);
+        break;
+      case QueryCommand.Analyze:
+        strategy = new AnalyzeFormatter(this.color);
+        break;
+      case QueryCommand.Snapshot:
+        strategy = new SnapshotFormatter(this.color);
+        break;
+      case QueryCommand.FindReferences:
+        strategy = new FindReferencesFormatter(this.color);
+        break;
+      case QueryCommand.CallHierarchy:
+        strategy = new CallHierarchyFormatter(this.color);
+        break;
+      default: {
+        // Exhaustive check
+        const _exhaustiveCheck: never = command;
+        throw new Error(`Unknown command: ${_exhaustiveCheck}`);
+      }
+    }
+
+    this.strategies.set(command, strategy);
+    return strategy as IQueryStrategy<T>;
   }
 
   /**

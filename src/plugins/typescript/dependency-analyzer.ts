@@ -24,6 +24,11 @@ import {
  * TypeScript 依賴分析器類別
  */
 export class TypeScriptDependencyAnalyzer {
+  /** 三斜線指令正則（class 級別快取） */
+  private static readonly TRIPLE_SLASH_REGEX = /\/\/\/\s*<(reference|amd-module)\s+([^>]+)>/g;
+  private static readonly PATH_ATTR_REGEX = /path\s*=\s*["']([^"']+)["']/;
+  private static readonly TYPES_ATTR_REGEX = /types\s*=\s*["']([^"']+)["']/;
+
   private dependencies: Dependency[] = [];
   private sourceFile!: ts.SourceFile;
 
@@ -271,21 +276,22 @@ export class TypeScriptDependencyAnalyzer {
 
   /**
    * 提取三斜線指令依賴
+   * 使用 class 級別快取的正則，避免重複編譯
    */
   private extractTripleSlashDirectives(): void {
     const fullText = this.sourceFile.getFullText();
 
-    // 提取三斜線指令
-    const tripleSlashRegex = /\/\/\/\s*<(reference|amd-module)\s+([^>]+)>/g;
+    // 使用 class 級別快取的正則
+    TypeScriptDependencyAnalyzer.TRIPLE_SLASH_REGEX.lastIndex = 0; // 重置 lastIndex（因為是全域正則）
     let match;
 
-    while ((match = tripleSlashRegex.exec(fullText)) !== null) {
+    while ((match = TypeScriptDependencyAnalyzer.TRIPLE_SLASH_REGEX.exec(fullText)) !== null) {
       const directive = match[1];
       const attributes = match[2];
 
       if (directive === 'reference') {
-        const pathMatch = /path\s*=\s*["']([^"']+)["']/.exec(attributes);
-        const typesMatch = /types\s*=\s*["']([^"']+)["']/.exec(attributes);
+        const pathMatch = TypeScriptDependencyAnalyzer.PATH_ATTR_REGEX.exec(attributes);
+        const typesMatch = TypeScriptDependencyAnalyzer.TYPES_ATTR_REGEX.exec(attributes);
 
         if (pathMatch) {
           const path = pathMatch[1];
