@@ -60,7 +60,12 @@ import {
   getImportedSymbols,
   getPluginsForFile
 } from './types.js';
-import { JAVASCRIPT_EXCLUDE_PATTERNS, matchesAnyPattern } from '@plugins/shared/index.js';
+import {
+  JAVASCRIPT_EXCLUDE_PATTERNS,
+  matchesAnyPattern,
+  validateParserInput,
+  validateRenameInput
+} from '@plugins/shared/index.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -107,7 +112,7 @@ export class JavaScriptParser implements ParserPlugin {
    * 解析 JavaScript 程式碼
    */
   async parse(code: string, filePath: string): Promise<AST> {
-    this.validateInput(code, filePath);
+    validateParserInput(code, filePath);
 
     try {
       // 根據檔案類型調整解析選項
@@ -275,7 +280,7 @@ export class JavaScriptParser implements ParserPlugin {
    * 重新命名符號
    */
   async rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]> {
-    this.validateRenameInput(newName);
+    validateRenameInput(newName, 'JavaScript', isValidIdentifier);
 
     const typedAst = ast as JavaScriptAST;
 
@@ -397,26 +402,6 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   // 私有輔助方法
-
-  private validateInput(code: string, filePath: string): void {
-    if (!code.trim()) {
-      throw new Error('程式碼內容不能為空');
-    }
-
-    if (!filePath.trim()) {
-      throw new Error('檔案路徑不能為空');
-    }
-  }
-
-  private validateRenameInput(newName: string): void {
-    if (!newName.trim()) {
-      throw new Error('新名稱不能為空');
-    }
-
-    if (!isValidIdentifier(newName)) {
-      throw new Error('新名稱必須是有效的 JavaScript 識別符');
-    }
-  }
 
   private getParseOptionsForFile(filePath: string): JavaScriptParseOptions {
     const options = { ...this.parseOptions };

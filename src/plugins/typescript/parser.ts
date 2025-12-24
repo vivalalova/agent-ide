@@ -52,7 +52,12 @@ import {
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
 import { MemoryMonitor, type Disposable } from '@plugins/shared/utils/memory-monitor.js';
-import { TYPESCRIPT_EXCLUDE_PATTERNS, matchesAnyPattern } from '@plugins/shared/index.js';
+import {
+  TYPESCRIPT_EXCLUDE_PATTERNS,
+  matchesAnyPattern,
+  validateParserInput,
+  validateRenameInput
+} from '@plugins/shared/index.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -95,7 +100,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 解析 TypeScript 程式碼
    */
   async parse(code: string, filePath: string): Promise<AST> {
-    this.validateInput(code, filePath);
+    validateParserInput(code, filePath);
 
     let program: ts.Program | null = null;
     try {
@@ -316,7 +321,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 重新命名符號
    */
   async rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]> {
-    this.validateRenameInput(newName);
+    validateRenameInput(newName, 'TypeScript', isValidIdentifier);
 
     const typedAst = ast as TypeScriptAST;
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
@@ -573,26 +578,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   // 私有輔助方法
-
-  private validateInput(code: string, filePath: string): void {
-    if (!code.trim()) {
-      throw new Error('程式碼內容不能為空');
-    }
-
-    if (!filePath.trim()) {
-      throw new Error('檔案路徑不能為空');
-    }
-  }
-
-  private validateRenameInput(newName: string): void {
-    if (!newName.trim()) {
-      throw new Error('新名稱不能為空');
-    }
-
-    if (!isValidIdentifier(newName)) {
-      throw new Error('新名稱必須是有效的 TypeScript 識別符');
-    }
-  }
 
   private getScriptKind(filePath: string): ts.ScriptKind {
     const ext = filePath.substring(filePath.lastIndexOf('.'));
