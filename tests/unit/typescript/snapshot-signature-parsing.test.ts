@@ -10,7 +10,7 @@ import type { DirectoryEntry } from '@infrastructure/storage/types.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
 
 // Mock IndexEngine
-vi.mock('@core/shared/indexing/index.js', () => ({
+vi.mock('@core/foundations/indexing/index.js', () => ({
   IndexEngine: class MockIndexEngine {
     constructor() { }
     async indexProject() { }

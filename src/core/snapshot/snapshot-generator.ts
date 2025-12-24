@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { IndexEngine, createIndexConfig } from '@core/shared/indexing/index.js';
+import { IndexEngine, createIndexConfig } from '@core/foundations/indexing/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PatternInfo } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';

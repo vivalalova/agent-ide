@@ -32,7 +32,7 @@ pnpm test:unit -- --run tests/unit/example.test.ts
 ```text
 src/
 ├── core/                 # 核心模組（對應 CLI 命令）
-│   ├── shared/           # indexing/ | dependency-graph/ | symbol-finder/
+│   ├── foundations/      # indexing/ | dependency-graph/ | symbol-finder/ | file-utils
 │   ├── cycles/           # 循環依賴（Tarjan）
 │   ├── impact/           # 影響分析（BFS）
 │   ├── find-references/  # 符號引用
@@ -43,7 +43,7 @@ src/
 │   ├── move/             # 檔案移動
 │   ├── move-member/      # 成員移動
 │   └── deadcode/         # Dead code 檢測
-├── shared/               # types/ | errors/
+├── shared/               # types/ | errors/（全域共用）
 ├── infrastructure/       # Parser框架、Cache、Storage、Formatters、Changeset
 ├── plugins/              # typescript/ | javascript/ Parser
 ├── interfaces/           # CLI
@@ -53,17 +53,18 @@ src/
 ### Core 設計原則
 
 - **CLI 對應**：`core/<module>/` 對應 CLI 命令
-- **shared/ 層**：多命令共用基礎設施（indexing、dependency-graph、symbol-finder）
+- **foundations/ 層**：核心內部共用基礎設施（indexing、dependency-graph、symbol-finder、file-utils）
+- **shared/ 層**：全域共用（types、errors）- 與 `core/foundations/` 區分
 - **re-export 規則**：僅 `index.ts` barrel export 允許
 
 ### 依賴層級
 
 ```text
-第三層：impact（依賴 cycles + shared）
+第三層：impact（依賴 cycles + foundations）
     ↓
 第二層：cycles, find-references, call-hierarchy, snapshot, rename, deadcode, move, move-member, change-signature
     ↓
-第一層：shared/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
+第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
 
 ## 測試規範

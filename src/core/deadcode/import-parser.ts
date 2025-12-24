@@ -6,7 +6,7 @@
 import type { Range } from '@shared/types/core.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
-import { FileUtils } from '@core/shared/index.js';
+import { FileUtils } from '@core/foundations/index.js';
 
 /** 多行 import 的最大行數限制 */
 const MAX_MULTILINE_IMPORT = 20;

@@ -16,8 +16,8 @@ import {
   isReorderParametersChange
 } from './types.js';
 import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
-import type { CallSite } from '@core/shared/symbol-finder/index.js';
-import { FileUtils, createFileUtils } from '@core/shared/index.js';
+import type { CallSite } from '@core/foundations/symbol-finder/index.js';
+import { FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * 呼叫風格資訊

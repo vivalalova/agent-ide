@@ -19,7 +19,7 @@ import type {
   CallSiteUpdate
 } from './types.js';
 import { ChangeSignatureErrorCode } from './types.js';
-import { SymbolFinder, FileUtils, createFileUtils } from '@core/shared/index.js';
+import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * Change Signature Service

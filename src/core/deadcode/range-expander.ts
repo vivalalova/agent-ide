@@ -6,7 +6,7 @@
 import type { Range } from '@shared/types/core.js';
 import type { SymbolType } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { FileUtils } from '@core/shared/index.js';
+import { FileUtils } from '@core/foundations/index.js';
 
 /**
  * 範圍擴展器

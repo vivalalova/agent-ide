@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,

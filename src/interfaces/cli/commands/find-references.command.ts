@@ -4,14 +4,14 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/shared/indexing/index.js';
+import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
   symbolToKey,
   serializeSymbolKey,
   type SymbolReference
-} from '@core/shared/symbol-finder/index.js';
+} from '@core/foundations/symbol-finder/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   QueryCommand,

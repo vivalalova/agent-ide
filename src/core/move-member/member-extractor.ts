@@ -5,7 +5,7 @@
 
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { FileUtils } from '@core/shared/file-utils.js';
+import { FileUtils } from '@core/foundations/file-utils.js';
 import { MemberType, type MemberDefinition } from './types.js';
 import {
   extractTypeScriptMember,

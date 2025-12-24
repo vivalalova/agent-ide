@@ -6,14 +6,14 @@
 import type { Symbol } from '@shared/types/symbol.js';
 import { SymbolType } from '@shared/types/symbol.js';
 import { isSameLine } from '@shared/types/index.js';
-import type { IndexEngine } from '@core/shared/indexing/index.js';
+import type { IndexEngine } from '@core/foundations/indexing/index.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
   symbolToKey,
   serializeSymbolKey
-} from '@core/shared/symbol-finder/index.js';
-import { FileUtils, createFileUtils } from '@core/shared/index.js';
+} from '@core/foundations/symbol-finder/index.js';
+import { FileUtils, createFileUtils } from '@core/foundations/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type {

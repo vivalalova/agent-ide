@@ -13,7 +13,7 @@ import { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/shared/index.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * 引用更新器類別
@@ -53,7 +53,7 @@ export class ReferenceUpdater {
       try {
         const refs = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
 
-        // 轉換 SymbolFinder 的 SymbolReference (@core/shared/symbol-finder)
+        // 轉換 SymbolFinder 的 SymbolReference (@core/foundations/symbol-finder)
         // 為本地型別 SymbolReference (@core/rename/types)
         // 兩者差異：
         // - SymbolFinder 版本：{ symbolName, location: Location, type: SymbolReferenceType, context? }

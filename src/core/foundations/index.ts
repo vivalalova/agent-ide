@@ -1,6 +1,10 @@
 /**
- * Core 共享元件
- * 提供跨子模組共用的工具類別和型別
+ * Core Foundations
+ * 核心模組內部共用基礎設施
+ *
+ * 與 @shared/ (全域 types/errors) 區分：
+ * - @core/foundations/: 核心業務邏輯共用工具
+ * - @shared/: 全專案共用的型別和錯誤定義
  */
 
 // 索引引擎

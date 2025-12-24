@@ -11,7 +11,7 @@
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { FunctionSignature, ParameterDefinition } from './types.js';
-import { FileUtils, createFileUtils } from '@core/shared/index.js';
+import { FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
  * 簽名解析器

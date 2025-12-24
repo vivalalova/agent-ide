@@ -13,7 +13,7 @@ import {
   symbolToKey,
   serializeSymbolKey,
   type SymbolReference
-} from '@core/shared/symbol-finder/index.js';
+} from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';

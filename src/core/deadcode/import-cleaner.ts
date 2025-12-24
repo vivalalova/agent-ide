@@ -9,7 +9,7 @@ import {
   SymbolReferenceType,
   type SymbolFinder,
   type SymbolReference
-} from '@core/shared/symbol-finder/index.js';
+} from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, type ImportStatementInfo } from './import-parser.js';
