@@ -9,7 +9,7 @@ import {
   DuplicateParserError,
   ParserNotFoundError,
   ParserInitializationError
-} from '../../shared/errors/index.js';
+} from '@shared/errors/index.js';
 
 /**
  * Parser 資訊

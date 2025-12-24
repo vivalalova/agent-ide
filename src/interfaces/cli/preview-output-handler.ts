@@ -8,7 +8,7 @@ import {
   PreviewFormat,
   type PreviewResult,
   type PreviewInput
-} from '../../infrastructure/formatters/index.js';
+} from '@infrastructure/formatters/index.js';
 
 /** CLI 輸出格式選項 */
 export enum OutputFormatOption {
