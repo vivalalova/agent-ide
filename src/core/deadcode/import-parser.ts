@@ -117,8 +117,8 @@ export class ImportParser {
       symbols.push({ name: decl.namespaceImport, isNamespace: true });
     }
 
-    // 處理 named imports
-    for (const named of decl.namedImports) {
+    // 處理 named imports（防禦性檢查：decl.namedImports 可能為 undefined）
+    for (const named of decl.namedImports ?? []) {
       symbols.push({
         name: named.name,
         alias: named.alias

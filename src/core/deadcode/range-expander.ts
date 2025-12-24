@@ -67,7 +67,16 @@ export class RangeExpander {
     symbolType: SymbolType
   ): Range {
     const lines = content.split('\n');
+
+    // 防禦性檢查：確保行號在有效範圍內
+    if (lines.length === 0 || range.start.line < 1 || range.end.line < 1) {
+      return range; // 返回原始範圍，避免錯誤
+    }
+
     let startLine = range.start.line - 1; // 轉為 0-based
+
+    // 確保 startLine 在有效範圍內
+    startLine = Math.max(0, Math.min(startLine, lines.length - 1));
 
     // 向上擴展：包含 JSDoc 註解和裝飾器
     while (startLine > 0) {
@@ -107,6 +116,9 @@ export class RangeExpander {
 
     // 向下擴展：確保包含完整的結尾
     let endLine = range.end.line - 1;
+
+    // 確保 endLine 在有效範圍內
+    endLine = Math.max(0, Math.min(endLine, lines.length - 1));
 
     // 對於 class/function，需要找到對應的結尾括號
     if (symbolType === 'class' || symbolType === 'function') {
@@ -162,13 +174,16 @@ export class RangeExpander {
     }
 
     // 包含後續空行（最多一行）
-    if (endLine < lines.length - 1 && lines[endLine + 1].trim() === '') {
+    if (endLine < lines.length - 1 && lines[endLine + 1]?.trim() === '') {
       endLine++;
     }
 
+    // 確保最終 endLine 仍在有效範圍內
+    endLine = Math.max(0, Math.min(endLine, lines.length - 1));
+
     return {
       start: { line: startLine + 1, column: 1 },
-      end: { line: endLine + 1, column: lines[endLine].length + 1 }
+      end: { line: endLine + 1, column: (lines[endLine]?.length ?? 0) + 1 }
     };
   }
 
