@@ -28,13 +28,8 @@ export interface ParsedPath {
  * @returns 解析後的路徑資訊
  */
 export function parseMoveTarget(input: string): ParsedPath {
-  // Windows 路徑處理：C:\path\to\file.ts:25:10
-  // 先檢查是否以磁碟機代號開頭（A-Z:）
-  const pathPart = input;
-  const positionPart = '';
-
   // 找最後一個可能是行號的 `:數字` 模式
-  // 從後往前找，避免錯誤解析 Windows 磁碟機代號
+  // 從後往前找，避免錯誤解析 Windows 磁碟機代號（如 C:\path）
   const parts = input.split(':');
 
   if (parts.length === 1) {

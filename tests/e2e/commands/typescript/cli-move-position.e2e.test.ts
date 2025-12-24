@@ -363,6 +363,86 @@ export enum Role {
     });
   });
 
+  describe('Bug 修復測試', () => {
+    it('應該只移動指定的函式，不影響其他函式', async () => {
+      await fixture.writeFile('src/utils.ts', `export function add(a: number, b: number): number {
+  return a + b;
+}
+
+export function subtract(a: number, b: number): number {
+  return a - b;
+}
+
+export function multiply(a: number, b: number): number {
+  return a * b;
+}
+`);
+
+      await fixture.writeFile('src/math.ts', `export function divide(a: number, b: number): number {
+  return a / b;
+}
+`);
+
+      // multiply 函式在第 9 行
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/utils.ts')}:9`, fixture.getFilePath('src/math.ts'), '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      // 來源檔案應該仍保留 add 和 subtract
+      const sourceContent = await fixture.memfs.readFile(fixture.getFilePath('src/utils.ts'), 'utf-8');
+      expect(sourceContent).toContain('function add');
+      expect(sourceContent).toContain('function subtract');
+      expect(sourceContent).not.toContain('function multiply');
+
+      // 目標檔案應該只有 divide 和 multiply，不應有 subtract
+      const targetContent = await fixture.memfs.readFile(fixture.getFilePath('src/math.ts'), 'utf-8');
+      expect(targetContent).toContain('function divide');
+      expect(targetContent).toContain('function multiply');
+      expect(targetContent).not.toContain('function subtract');
+    });
+
+    it('應該只更新被移動成員的 import，不影響同來源的其他成員', async () => {
+      await fixture.writeFile('src/source.ts', `export function A(): string {
+  return 'A';
+}
+
+export function B(): string {
+  return 'B';
+}
+
+export function C(): string {
+  return 'C';
+}
+`);
+
+      await fixture.writeFile('src/consumer.ts', `import { A, B, C } from './source';
+
+export function useAll(): string {
+  return A() + B() + C();
+}
+`);
+
+      await fixture.writeFile('src/target.ts', `export function existing(): void {}
+`);
+
+      // B 函式在第 5 行
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/source.ts')}:5`, fixture.getFilePath('src/target.ts'), '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      // consumer 應該更新 import：A, C 仍從 source，B 從 target
+      const consumerContent = await fixture.memfs.readFile(fixture.getFilePath('src/consumer.ts'), 'utf-8');
+      expect(consumerContent).toContain('A');
+      expect(consumerContent).toContain('C');
+    });
+  });
+
   describe('引用更新', () => {
     it('應該自動更新引用', async () => {
       await fixture.writeFile('src/utils.ts', `export function utility(): string {
