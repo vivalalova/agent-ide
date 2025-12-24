@@ -183,7 +183,7 @@ describe('ChangesetBuilder', () => {
       expect(changeset.textChanges[0].edits).toHaveLength(2);
     });
 
-    it('多次添加相同 range 的 edit 應只保留第一個', () => {
+    it('跨批次添加相同 range 的 edit 應被去重', () => {
       const sameRange = createTestRange(5, 1, 6, 20);
       const edits = [
         { range: sameRange, newText: '', description: 'Remove: first' },
@@ -197,9 +197,11 @@ describe('ChangesetBuilder', () => {
         .addTextChange('/file.ts', edits.slice(2, 4))
         .build();
 
-      // 應該只有 2 個（第一批的去重後 1 個 + 第二批都是重複所以 0 個 = 錯誤）
-      // 實際上：第一批 [0,1] 加入，edits = [0,1]，第二批 [2,3] 檢查時都跟 [0] 重複，所以不加入
-      // 結果應該是 2 個：edit[0] 和 edit[1]
+      // 去重邏輯說明：
+      // - 同一批次內的重複不會被去重（第一批 [0,1] 直接加入，edits = [0,1]）
+      // - 跨批次時會檢查已存在的 edits，相同 range 的會被過濾
+      // - 第二批 [2,3] 與 edit[0] 的 range 相同，都被過濾
+      // 結果：2 個 edit（來自第一批）
       expect(changeset.textChanges[0].edits).toHaveLength(2);
     });
 
