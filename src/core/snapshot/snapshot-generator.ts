@@ -35,10 +35,10 @@ export class SnapshotGenerator {
    * 產生快照
    */
   async generate(targetPath: string): Promise<SnapshotResult> {
-    const scope = await this.detectScope(targetPath);
+    const { scope, scanFromSrc } = await this.detectScope(targetPath);
 
     if (scope === SnapshotScope.Project) {
-      return this.generateProjectSnapshot(targetPath);
+      return this.generateProjectSnapshot(targetPath, scanFromSrc);
     }
 
     return this.generateModuleSnapshot(targetPath);
@@ -115,8 +115,9 @@ export class SnapshotGenerator {
 
   /**
    * 偵測範圍（module 或 project）
+   * @returns scope 和是否需要從 src 子目錄掃描
    */
-  private async detectScope(targetPath: string): Promise<SnapshotScope> {
+  private async detectScope(targetPath: string): Promise<{ scope: SnapshotScope; scanFromSrc: boolean }> {
     // 檢查是否有 package.json（專案根目錄）
     const packageJsonPath = path.join(targetPath, 'package.json');
     const hasPackageJson = await this.fileSystem.exists(packageJsonPath);
@@ -126,7 +127,7 @@ export class SnapshotGenerator {
       const srcPath = path.join(targetPath, 'src');
       const hasSrc = await this.fileSystem.exists(srcPath);
       if (hasSrc) {
-        return SnapshotScope.Project;
+        return { scope: SnapshotScope.Project, scanFromSrc: true };
       }
     }
 
@@ -135,11 +136,53 @@ export class SnapshotGenerator {
     const hasIndex = await this.fileSystem.exists(indexPath);
 
     if (hasIndex) {
-      return SnapshotScope.Module;
+      return { scope: SnapshotScope.Module, scanFromSrc: false };
+    }
+
+    // Issue #59: 檢查子目錄是否包含模組（有 index.ts 的目錄）
+    const hasSubModules = await this.hasModulesInSubdirectories(targetPath);
+    if (hasSubModules) {
+      return { scope: SnapshotScope.Project, scanFromSrc: false };
     }
 
     // 預設為模組
-    return SnapshotScope.Module;
+    return { scope: SnapshotScope.Module, scanFromSrc: false };
+  }
+
+  /**
+   * 檢查目錄是否包含子模組（遞迴檢查子目錄是否有 index.ts）
+   */
+  private async hasModulesInSubdirectories(dirPath: string): Promise<boolean> {
+    const exists = await this.fileSystem.exists(dirPath);
+    if (!exists) { return false; }
+
+    const entries = await this.fileSystem.readDirectory(dirPath);
+
+    for (const entry of entries) {
+      if (!entry.isDirectory || entry.name.startsWith('.') || entry.name === 'node_modules') {
+        continue;
+      }
+
+      const subDirPath = path.join(dirPath, entry.name);
+      const subEntries = await this.fileSystem.readDirectory(subDirPath);
+
+      // 檢查子目錄是否有 index.ts
+      const hasIndex = subEntries.some(e =>
+        e.name === 'index.ts' || e.name === 'index.js'
+      );
+
+      if (hasIndex) {
+        return true;
+      }
+
+      // 遞迴檢查更深層的子目錄
+      const hasDeepModules = await this.hasModulesInSubdirectories(subDirPath);
+      if (hasDeepModules) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -206,18 +249,27 @@ export class SnapshotGenerator {
 
   /**
    * 產生專案快照
+   * @param projectPath 專案路徑
+   * @param scanFromSrc 是否從 src 子目錄掃描（true: package.json + src 模式，false: 直接掃描當前目錄）
    */
-  private async generateProjectSnapshot(projectPath: string): Promise<ProjectSnapshot> {
+  private async generateProjectSnapshot(
+    projectPath: string,
+    scanFromSrc: boolean = true
+  ): Promise<ProjectSnapshot> {
     const projectName = path.basename(projectPath);
     const modules: Record<string, ModuleSnapshot> = {};
 
-    // 找出所有模組目錄
-    const srcPath = path.join(projectPath, 'src');
-    const modulesDirs = await this.findModuleDirs(srcPath);
+    // 決定掃描起點：從 src 子目錄或從當前目錄
+    const scanPath = scanFromSrc
+      ? path.join(projectPath, 'src')
+      : projectPath;
+
+    const modulesDirs = await this.findModuleDirs(scanPath);
 
     for (const moduleDir of modulesDirs) {
       const moduleSnapshot = await this.generateModuleSnapshot(moduleDir);
-      const relativePath = path.relative(projectPath, moduleDir);
+      // 相對路徑基於掃描起點
+      const relativePath = path.relative(scanPath, moduleDir);
       modules[relativePath] = moduleSnapshot;
     }
 
