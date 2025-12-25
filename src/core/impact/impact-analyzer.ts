@@ -25,7 +25,11 @@ import { DependencyExtractor } from './dependency-extractor.js';
 interface CacheEntry {
   data: FileDependencies;
   lastModified: Date;
+  lastAccessed: number; // 用於 LRU 淘汰
 }
+
+/** 快取最大條目數（防止記憶體無限增長） */
+const MAX_CACHE_SIZE = 1000;
 
 /**
  * 影響分析器類別
@@ -78,6 +82,8 @@ export class ImpactAnalyzer {
       try {
         const stat = await this.fileSystem.getStats(normalizedPath);
         if (stat.modifiedTime <= cacheEntry.lastModified) {
+          // 更新 LRU 時間戳
+          cacheEntry.lastAccessed = Date.now();
           return cacheEntry.data;
         }
       } catch {
@@ -101,10 +107,12 @@ export class ImpactAnalyzer {
         lastModified: stat.modifiedTime
       };
 
-      // 更新快取
+      // 更新快取（帶 LRU 淘汰）
+      this.evictIfNeeded();
       this.cache.set(normalizedPath, {
         data: result,
-        lastModified: stat.modifiedTime
+        lastModified: stat.modifiedTime,
+        lastAccessed: Date.now()
       });
 
       // 更新依賴圖
@@ -368,5 +376,29 @@ export class ImpactAnalyzer {
       direction: 'dependencies',
       ...options
     };
+  }
+
+  /**
+   * LRU 快取淘汰：當快取超過上限時，刪除最久未使用的項目
+   */
+  private evictIfNeeded(): void {
+    if (this.cache.size < MAX_CACHE_SIZE) {
+      return;
+    }
+
+    // 找出最久未使用的項目並刪除
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, entry] of this.cache) {
+      if (entry.lastAccessed < oldestTime) {
+        oldestTime = entry.lastAccessed;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      this.cache.delete(oldestKey);
+    }
   }
 }
