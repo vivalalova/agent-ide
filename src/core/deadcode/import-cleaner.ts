@@ -7,12 +7,12 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import {
   createSymbolFinder,
   SymbolReferenceType,
-  type SymbolFinder,
-  type SymbolReference
+  type SymbolFinder
 } from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, type ImportStatementInfo } from './import-parser.js';
+import type { DeadCodeCacheService } from './shared-cache.js';
 
 /**
  * Import 清理器
@@ -20,13 +20,11 @@ import { ImportParser, type ImportStatementInfo } from './import-parser.js';
 export class ImportCleaner {
   private readonly importParser: ImportParser;
   private readonly symbolFinder: SymbolFinder;
-  private readonly fileCache = new Map<string, string>();
-  /** 符號引用快取：key = `${filePath}:${symbolName}` */
-  private readonly referenceCache = new Map<string, SymbolReference[]>();
 
   constructor(
     private readonly fileSystem: IFileSystem,
-    parserRegistry: ParserRegistry
+    parserRegistry: ParserRegistry,
+    private readonly cacheService: DeadCodeCacheService
   ) {
     this.importParser = new ImportParser(parserRegistry);
     this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
@@ -190,21 +188,20 @@ export class ImportCleaner {
   }
 
   /**
-   * 使用快取查詢符號引用
+   * 使用共用快取查詢符號引用
    * 確保每個 (filePath, symbolName) 組合只查詢一次
    */
   private async findReferencesWithCache(
     filePath: string,
     symbolName: string
-  ): Promise<SymbolReference[]> {
-    const cacheKey = `${filePath}:${symbolName}`;
-
-    if (this.referenceCache.has(cacheKey)) {
-      return this.referenceCache.get(cacheKey)!;
+  ): Promise<import('@core/foundations/symbol-finder/index.js').SymbolReference[]> {
+    const cached = this.cacheService.getReferences(filePath, symbolName);
+    if (cached) {
+      return cached;
     }
 
     const references = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
-    this.referenceCache.set(cacheKey, references);
+    this.cacheService.setReferences(filePath, symbolName, references);
     return references;
   }
 
@@ -246,30 +243,22 @@ export class ImportCleaner {
   }
 
   /**
-   * 讀取檔案
+   * 讀取檔案（使用共用快取）
    */
   private async readFile(filePath: string): Promise<string | null> {
-    if (this.fileCache.has(filePath)) {
-      return this.fileCache.get(filePath)!;
+    const cached = this.cacheService.getFile(filePath);
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
-      this.fileCache.set(filePath, contentStr);
+      this.cacheService.setFile(filePath, contentStr);
       return contentStr;
     } catch {
-      this.fileCache.delete(filePath);
       return null;
     }
-  }
-
-  /**
-   * 清除快取
-   */
-  clearCache(): void {
-    this.fileCache.clear();
-    this.referenceCache.clear();
   }
 }
 
@@ -278,7 +267,8 @@ export class ImportCleaner {
  */
 export function createImportCleaner(
   fileSystem: IFileSystem,
-  parserRegistry: ParserRegistry
+  parserRegistry: ParserRegistry,
+  cacheService: DeadCodeCacheService
 ): ImportCleaner {
-  return new ImportCleaner(fileSystem, parserRegistry);
+  return new ImportCleaner(fileSystem, parserRegistry, cacheService);
 }

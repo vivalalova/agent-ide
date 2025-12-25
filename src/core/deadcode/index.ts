@@ -5,6 +5,7 @@
 
 export { DeadCodeDetector, createDeadCodeDetector } from './dead-code-detector.js';
 export { DeadCodeRemover, createDeadCodeRemover } from './dead-code-remover.js';
+export { DeadCodeCacheService, createDeadCodeCacheService } from './shared-cache.js';
 export type {
   DeadCodeItem,
   DeadCodeDetectorOptions,

@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ImportCleaner } from '@core/deadcode/import-cleaner.js';
+import { DeadCodeCacheService } from '@core/deadcode/shared-cache.js';
 import type { RemovalOperation } from '@core/deadcode/types.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ParserPlugin, ImportDeclaration } from '@infrastructure/parser/interface.js';
@@ -97,12 +98,14 @@ describe('ImportCleaner', () => {
   let mockFileSystem: IFileSystem;
   let mockParserRegistry: ParserRegistry;
   let mockParser: ParserPlugin;
+  let cacheService: DeadCodeCacheService;
 
   beforeEach(() => {
     mockParser = createMockParser();
     mockParserRegistry = createMockParserRegistry(mockParser);
     mockFileSystem = createMockFileSystem({});
-    importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+    cacheService = new DeadCodeCacheService();
+    importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
   });
 
   describe('analyzeImportCleanups - 基本功能', () => {
@@ -128,7 +131,8 @@ describe('ImportCleaner', () => {
         '/file2.ts': 'import { bar } from \'./utils\';\nfunction bar() {}'
       };
       mockFileSystem = createMockFileSystem(files);
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       const removals = [
         createRemovalOperation('/file1.ts', 'foo'),
@@ -147,7 +151,8 @@ describe('ImportCleaner', () => {
       const fileContent = `import { unusedFunc } from './utils';
 export function main() {}`;
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       const removals = [createRemovalOperation('/test.ts', 'unusedFunc')];
 
@@ -171,7 +176,8 @@ export function main() {}`;
       const fileContent = `import { usedFunc } from './utils';
 usedFunc();`;
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       // 刪除的符號不是 import 的符號
       const removals = [createRemovalOperation('/test.ts', 'otherFunc')];
@@ -205,7 +211,8 @@ function unused() {}`;
         rawStatement: 'import { used, unused } from \'./utils\';'
       }]);
 
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       // Mock isImportStillUsed 在建立 instance 之後
       vi.spyOn(importCleaner as never, 'isImportStillUsed' as never)
@@ -230,7 +237,8 @@ function unused() {}`;
   describe('generatePartialImport - 產生部分 import', () => {
     beforeEach(() => {
       mockFileSystem = createMockFileSystem({ '/test.ts': '' });
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
     });
 
     it('應該產生只有 named imports 的語句', () => {
@@ -366,13 +374,14 @@ function unused() {}`;
     it('應該能清除快取', async () => {
       const files = { '/test.ts': 'content' };
       mockFileSystem = createMockFileSystem(files);
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       // 讀取一次觸發快取
       await importCleaner.analyzeImportCleanups([createRemovalOperation('/test.ts', 'foo')]);
 
-      // 清除快取
-      importCleaner.clearCache();
+      // 清除快取（透過 cacheService）
+      cacheService.clear();
 
       // 再次分析應該重新讀取
       await importCleaner.analyzeImportCleanups([createRemovalOperation('/test.ts', 'foo')]);
@@ -384,7 +393,8 @@ function unused() {}`;
     it('應該使用快取避免重複讀取', async () => {
       const files = { '/test.ts': 'content' };
       mockFileSystem = createMockFileSystem(files);
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       // 讀取兩次
       await importCleaner.analyzeImportCleanups([createRemovalOperation('/test.ts', 'foo')]);
@@ -403,7 +413,8 @@ function unused() {}`;
         readFile: vi.fn().mockResolvedValue(bufferContent)
       } as unknown as IFileSystem;
 
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       const removals = [createRemovalOperation('/test.ts', 'foo')];
       const result = await importCleaner.analyzeImportCleanups(removals);
@@ -414,7 +425,8 @@ function unused() {}`;
 
     it('應該處理讀取失敗並清除快取', async () => {
       mockFileSystem = createMockFileSystem({});
-      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry);
+      cacheService = new DeadCodeCacheService();
+      importCleaner = new ImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
       const removals = [createRemovalOperation('/nonexistent.ts', 'foo')];
       const result = await importCleaner.analyzeImportCleanups(removals);
@@ -431,8 +443,9 @@ describe('createImportCleaner', () => {
     const { createImportCleaner } = await import('@core/deadcode/import-cleaner.js');
     const mockFileSystem = createMockFileSystem({});
     const mockParserRegistry = createMockParserRegistry(null);
+    const cacheService = new DeadCodeCacheService();
 
-    const cleaner = createImportCleaner(mockFileSystem, mockParserRegistry);
+    const cleaner = createImportCleaner(mockFileSystem, mockParserRegistry, cacheService);
 
     expect(cleaner).toBeInstanceOf(ImportCleaner);
   });
