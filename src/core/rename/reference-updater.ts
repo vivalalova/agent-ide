@@ -17,13 +17,22 @@ import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, 
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 /**
+ * 檔案快取項目
+ * 包含內容和修改時間，用於失效檢查
+ */
+interface FileCacheEntry {
+  content: string;
+  modifiedTime: Date;
+}
+
+/**
  * 引用更新器類別
  * 使用 SymbolFinder 進行精確的 AST 分析
  * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class ReferenceUpdater {
-  /** 檔案內容快取，LRU 由 MemoryCache 自動處理 */
-  private readonly fileCache: MemoryCache<string, string> = createLRUCache(200);
+  /** 檔案內容快取，包含修改時間用於失效檢查 */
+  private readonly fileCache: MemoryCache<string, FileCacheEntry> = createLRUCache(200);
   private readonly fileSystem: IFileSystem;
   private readonly symbolFinder?: SymbolFinder;
   private readonly fileUtils?: FileUtils;
@@ -291,20 +300,38 @@ export class ReferenceUpdater {
 
   /**
    * 取得檔案內容
+   * 使用 modifiedTime 進行快取失效檢查
    */
   private async getFileContent(filePath: string): Promise<string | null> {
-    if (this.fileCache.has(filePath)) {
-      return this.fileCache.get(filePath)!;
+    const cached = this.fileCache.get(filePath);
+
+    if (cached) {
+      // 檢查快取是否仍有效
+      try {
+        const stat = await this.fileSystem.getStats(filePath);
+        if (stat.modifiedTime <= cached.modifiedTime) {
+          return cached.content;
+        }
+      } catch {
+        // getStats 失敗，快取無效
+      }
     }
 
-    // 優先使用 FileUtils，降級使用 fileSystem
+    // 重新讀取檔案
     const content = this.fileUtils
       ? await this.fileUtils.readFile(filePath)
       : await this.readFileFallback(filePath);
 
     if (content) {
-      this.fileCache.set(filePath, content);
+      // 取得 modifiedTime 並快取
+      try {
+        const stat = await this.fileSystem.getStats(filePath);
+        this.fileCache.set(filePath, { content, modifiedTime: stat.modifiedTime });
+      } catch {
+        // 無法取得 stat 時不快取（下次會重新讀取）
+      }
     }
+
     return content;
   }
 
