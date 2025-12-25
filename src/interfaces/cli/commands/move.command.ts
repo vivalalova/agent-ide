@@ -13,6 +13,7 @@ import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 
 /** Move 命令選項 */
 interface MoveOptions {
@@ -152,8 +153,8 @@ async function handleMoveCommand(
       return;
     }
 
-    // 讀取 tsconfig.json 路徑設定（paths + baseUrl）
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context);
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
 
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
@@ -255,82 +256,6 @@ function printSuccess(
 }
 
 
-/** tsconfig 路徑設定 */
-interface TsconfigPathConfig {
-  pathAliases: Record<string, string>;
-  baseUrl?: string;
-}
-
-/**
- * 向上查找 tsconfig.json
- * 從指定目錄開始，逐層向上查找直到找到 tsconfig.json 或到達根目錄
- */
-async function findTsconfigUp(
-  startDir: string,
-  context: CommandContext
-): Promise<{ tsconfigPath: string; tsconfigDir: string } | null> {
-  let currentDir = path.resolve(startDir);
-  const root = path.parse(currentDir).root;
-
-  while (currentDir !== root) {
-    const tsconfigPath = path.join(currentDir, 'tsconfig.json');
-    if (await context.fileSystem.exists(tsconfigPath)) {
-      return { tsconfigPath, tsconfigDir: currentDir };
-    }
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {break;}
-    currentDir = parentDir;
-  }
-  return null;
-}
-
-/**
- * 讀取 tsconfig.json 路徑設定（包含 paths 和 baseUrl）
- * 會向上查找 tsconfig.json，以支援 --path 指向子目錄的情況
- */
-async function loadTsconfigPathConfig(
-  projectRoot: string,
-  context: CommandContext
-): Promise<TsconfigPathConfig> {
-  const config: TsconfigPathConfig = { pathAliases: {} };
-
-  try {
-    // 向上查找 tsconfig.json
-    const found = await findTsconfigUp(projectRoot, context);
-    if (!found) {
-      return config;
-    }
-
-    const { tsconfigPath, tsconfigDir } = found;
-    const tsconfigContent = await context.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
-    const tsconfig = JSON.parse(tsconfigContent);
-
-    // 解析 baseUrl（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.baseUrl) {
-      config.baseUrl = path.resolve(tsconfigDir, tsconfig.compilerOptions.baseUrl);
-    }
-
-    // 解析 paths（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.paths) {
-      const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-      const basePath = path.resolve(tsconfigDir, baseUrl);
-
-      for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-        if (Array.isArray(paths) && paths.length > 0) {
-          // 移除 /* 後綴
-          const cleanAlias = alias.replace(/\/\*$/, '');
-          const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
-          // 轉換為絕對路徑
-          config.pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
-        }
-      }
-    }
-  } catch {
-    // tsconfig.json 不存在或解析失敗，使用空設定
-  }
-
-  return config;
-}
 
 /**
  * 處理成員移動命令
