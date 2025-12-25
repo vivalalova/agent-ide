@@ -2,7 +2,8 @@
  * FindReferences 命令格式化策略
  */
 
-import { type FindReferencesResult, type ReferenceItem } from '../query-types.js';
+import { type FindReferencesResult } from '../query-types.js';
+import { groupByFile, formatLimitedList } from '../utils/index.js';
 import { BaseFormatter, Colors } from './base-formatter.js';
 
 /**
@@ -36,34 +37,22 @@ export class FindReferencesFormatter extends BaseFormatter<FindReferencesResult>
       lines.push('');
       lines.push('引用列表:');
 
-      const byFile = this.groupReferencesByFile(result.references);
+      const byFile = groupByFile(result.references);
 
       for (const [file, refs] of byFile) {
         lines.push(`  ${this.colorize(file, Colors.cyan)}`);
-        refs.slice(0, 10).forEach(ref => {
-          const typeIcon = this.getReferenceTypeIcon(ref.type);
-          lines.push(`    ${typeIcon} L${ref.line}: ${ref.context.trim()}`);
-        });
-        if (refs.length > 10) {
-          lines.push(`    ... 還有 ${refs.length - 10} 個引用`);
-        }
+        lines.push(...formatLimitedList({
+          items: refs,
+          formatItem: ref => {
+            const typeIcon = this.getReferenceTypeIcon(ref.type);
+            return `${typeIcon} L${ref.line}: ${ref.context.trim()}`;
+          },
+          overflowUnit: '引用'
+        }));
       }
     }
 
     return lines.join('\n');
-  }
-
-  /**
-   * 按檔案分組引用
-   */
-  private groupReferencesByFile(references: ReferenceItem[]): Map<string, ReferenceItem[]> {
-    const byFile = new Map<string, ReferenceItem[]>();
-    references.forEach(ref => {
-      const list = byFile.get(ref.file) || [];
-      list.push(ref);
-      byFile.set(ref.file, list);
-    });
-    return byFile;
   }
 
   /**
