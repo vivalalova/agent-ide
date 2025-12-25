@@ -74,8 +74,32 @@ export class ChangeSignatureService {
     const newSignature = this.transformer.applyChangesToSignature(originalSignature, options.changes);
 
     // 4. 取得所有呼叫點
-    const projectFiles = options.targetFiles ?? await this.getProjectFiles(options.projectRoot);
-    const callSites = await this.symbolFinder.findCallSites(options.functionName, projectFiles);
+    // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
+    let effectiveProjectRoot = options.projectRoot;
+    if (path.isAbsolute(options.filePath) && !options.filePath.startsWith(effectiveProjectRoot)) {
+      effectiveProjectRoot = path.dirname(options.filePath);
+      // 嘗試向上找到 package.json 所在目錄
+      let searchDir = effectiveProjectRoot;
+      while (searchDir !== path.dirname(searchDir)) {
+        const packageJsonPath = path.join(searchDir, 'package.json');
+        try {
+          const exists = await this.fileSystem.exists(packageJsonPath);
+          if (exists) {
+            effectiveProjectRoot = searchDir;
+            break;
+          }
+        } catch {
+          // 忽略錯誤，繼續向上搜索
+        }
+        searchDir = path.dirname(searchDir);
+      }
+    }
+
+    const projectFiles = options.targetFiles ?? await this.getProjectFiles(effectiveProjectRoot);
+
+    // 只查找獨立函式呼叫（非 method call）
+    const allCallSites = await this.symbolFinder.findCallSites(options.functionName, projectFiles);
+    const callSites = allCallSites.filter(cs => !cs.isMethodCall);
 
     // 5. 生成定義更新
     const definitionUpdate = await this.generateDefinitionUpdate(
