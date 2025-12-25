@@ -63,11 +63,13 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 改參數順序           | `agent-ide change-signature --file f.ts --function fn --reorder "b,a"`  |
 | 加刪參數             | `agent-ide change-signature --file f.ts --function fn --add "c:string"` |
 | 移動檔案             | `agent-ide move src/old.ts src/new.ts --path . --dry-run`               |
+| 移動多檔案（glob）   | `agent-ide move "src/utils/*.ts" src/lib/ --path . --dry-run`           |
 | 移動成員             | `agent-ide move src/a.ts:25 src/b.ts --path . --dry-run`                |
 | 移動成員（指定位置） | `agent-ide move src/a.ts:25 src/b.ts:10 --path . --dry-run`             |
 | 刪除 Dead code       | `agent-ide deadcode --path .`                                           |
 
 > ⚠️ **目錄移動**：遵循 `mv` 行為，目標已存在時會嵌套（`move a b` → `b/a/`）
+> ⚠️ **Glob 移動**：支援 `*.ts`、`**/*.ts` 等模式，多檔案時目標必須是目錄（以 `/` 結尾或已存在的目錄）
 
 ### 查詢類命令
 
