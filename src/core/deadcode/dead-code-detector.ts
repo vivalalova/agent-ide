@@ -6,6 +6,7 @@
 import type { Symbol } from '@shared/types/symbol.js';
 import { SymbolType } from '@shared/types/symbol.js';
 import { isSameLine } from '@shared/types/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index.js';
 import {
   createSymbolFinder,
@@ -205,7 +206,7 @@ export class DeadCodeDetector {
           scanTime: Date.now() - startTime,
           skippedFiles: 0
         },
-        error: error instanceof Error ? error.message : String(error)
+        error: getErrorMessage(error)
       };
     }
   }
@@ -246,7 +247,7 @@ export class DeadCodeDetector {
           const symbols = await parser.extractSymbols(ast);
           return { symbols, error: false };
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage = getErrorMessage(error);
           return {
             symbols: [],
             error: true,

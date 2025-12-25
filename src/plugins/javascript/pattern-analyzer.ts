@@ -12,6 +12,7 @@ import {
   calculateFactoryConfidence,
   createFactoryPatternInfo
 } from '@plugins/shared/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -66,7 +67,7 @@ export class PatternAnalyzer {
       return patterns;
     } catch (error) {
       // 解析失敗，拋出錯誤讓呼叫端處理
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       throw new Error(`JavaScript 設計模式分析解析失敗: ${errorMessage}`);
     }
   }

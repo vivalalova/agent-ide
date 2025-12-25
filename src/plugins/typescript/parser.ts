@@ -58,6 +58,7 @@ import {
   validateParserInput,
   validateRenameInput
 } from '@plugins/shared/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -159,7 +160,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       if (error instanceof TypeScriptParseError) {
         throw error;
       }
-      throw createParseError(`解析失敗: ${error instanceof Error ? error.message : String(error)}`);
+      throw createParseError(`解析失敗: ${getErrorMessage(error)}`);
     } finally {
       // 最終清理，確保 Program 被釋放
       if (program) {
@@ -481,7 +482,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     } catch (error) {
       return createValidationFailure([{
         code: 'TS_VALIDATION_ERROR',
-        message: `驗證失敗: ${error instanceof Error ? error.message : String(error)}`,
+        message: `驗證失敗: ${getErrorMessage(error)}`,
         location: { filePath: '', range: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } } }
       }]);
     }

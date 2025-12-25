@@ -41,7 +41,10 @@ import {
   createASTMetadata,
   ReferenceType,
   SymbolType,
-  DependencyType,
+  DependencyType
+} from '@shared/types/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
+import {
   createSymbol,
   createReference,
   createDependency
@@ -159,7 +162,7 @@ export class JavaScriptParser implements ParserPlugin {
       }
 
       // 包裝 Babel 解析錯誤
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       throw createParseError(`解析失敗: ${errorMessage}`, error instanceof Error ? error : undefined);
     }
   }
@@ -369,7 +372,7 @@ export class JavaScriptParser implements ParserPlugin {
     } catch (error) {
       return createValidationFailure([{
         code: 'BABEL_UNAVAILABLE',
-        message: `Babel 解析器不可用: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Babel 解析器不可用: ${getErrorMessage(error)}`,
         location: {
           filePath: '',
           range: {

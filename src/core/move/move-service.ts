@@ -12,6 +12,7 @@ import {
   type TextEdit,
   createChangesetBuilder
 } from '@infrastructure/changeset/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathCalculator } from './path-calculator.js';
 import { PathUtils } from './path-utils.js';
@@ -290,7 +291,7 @@ export class MoveService {
       return builder.build();
     } catch (error) {
       return builder
-        .addError(error instanceof Error ? error.message : String(error))
+        .addError(getErrorMessage(error))
         .build();
     }
   }

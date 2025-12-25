@@ -11,6 +11,7 @@ import { ParserRegistry } from '@infrastructure/parser/index.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import type { ParseTask, ParseResult } from '../types.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 // Worker 初始化（每個 Worker 執行一次）
 const registry = ParserRegistry.getInstance();
@@ -64,7 +65,7 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
       errors: []
     } as ParseResult;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     return {
       filePath,
       symbols: [],

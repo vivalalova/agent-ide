@@ -15,6 +15,7 @@ import {
   type BackupEntry,
   type TextEdit
 } from './types.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
  * 變更應用器
@@ -54,7 +55,7 @@ export class ChangeApplicator {
           await this.applyTextChange(textChange, atomic);
           modifiedFiles.push(textChange.filePath);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getErrorMessage(error);
           errors.push(`文字變更失敗 [${textChange.filePath}]: ${message}`);
 
           if (rollbackOnError) {
@@ -95,7 +96,7 @@ export class ChangeApplicator {
               break;
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getErrorMessage(error);
           errors.push(`檔案操作失敗 [${operation.type}]: ${message}`);
 
           if (rollbackOnError) {
@@ -121,7 +122,7 @@ export class ChangeApplicator {
         errors: errors.length > 0 ? errors : undefined
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       errors.push(`應用變更時發生未預期錯誤: ${message}`);
 
       if (rollbackOnError && backups.length > 0) {
@@ -506,7 +507,7 @@ export class ChangeApplicator {
         }
       } catch (error) {
         // 回滾時發生錯誤，收集錯誤並繼續處理其他項目
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         rollbackErrors.push(`回滾失敗 [${backup.filePath}]: ${message}`);
       }
     }
