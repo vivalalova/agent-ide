@@ -9,14 +9,16 @@ import type { TypeScriptSymbol } from './types.js';
 
 /**
  * 檔案資訊
+ * 注意：因 TypeScript Language Service Host 需要迭代所有檔案名稱，
+ * 無法使用 MemoryCache（不支援 .keys() 迭代），保留 Map + 手動 LRU
  */
 interface FileInfo {
   version: number;
   content: string;
-  lastAccessed: number; // 用於 LRU 淘汰
+  lastAccessed: number;
 }
 
-/** 檔案快取最大條目數（防止記憶體無限增長） */
+/** 檔案快取最大條目數 */
 const MAX_FILES_CACHE_SIZE = 200;
 
 /**

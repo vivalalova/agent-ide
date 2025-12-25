@@ -14,15 +14,7 @@ import type {
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch } from '@plugins/shared/index.js';
-
-/** SourceFile 快取條目 */
-interface SourceFileCacheEntry {
-  sourceFile: ts.SourceFile;
-  lastAccessed: number;
-}
-
-/** 快取最大條目數（防止記憶體無限增長） */
-const MAX_CACHE_SIZE = 100;
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 /**
  * 宣告分析器類別
@@ -30,11 +22,11 @@ const MAX_CACHE_SIZE = 100;
  */
 export class DeclarationAnalyzer {
   /**
-   * SourceFile 快取（帶 LRU 淘汰機制）
+   * SourceFile 快取（使用 MemoryCache 自動 LRU 淘汰）
    * key: code 的 hash（長度 + 前後各 100 字元）
-   * value: SourceFileCacheEntry
+   * value: ts.SourceFile
    */
-  private readonly sourceFileCache = new Map<string, SourceFileCacheEntry>();
+  private readonly sourceFileCache: MemoryCache<string, ts.SourceFile> = createLRUCache(100);
 
   /**
    * 建立宣告分析器實例
@@ -43,7 +35,7 @@ export class DeclarationAnalyzer {
   constructor(private readonly compilerOptions?: ts.CompilerOptions) {}
 
   /**
-   * 取得或建立 SourceFile（帶 LRU 快取）
+   * 取得或建立 SourceFile（使用 MemoryCache 自動 LRU）
    * @param code 原始程式碼
    * @returns SourceFile
    */
@@ -51,11 +43,10 @@ export class DeclarationAnalyzer {
     // 使用簡單的 hash：長度 + 前 100 字元 + 後 100 字元
     const hash = `${code.length}_${code.slice(0, 100)}_${code.slice(-100)}`;
 
-    // 檢查快取
+    // 檢查快取（MemoryCache 自動更新 lastAccessedAt）
     const cached = this.sourceFileCache.get(hash);
     if (cached) {
-      cached.lastAccessed = Date.now();
-      return cached.sourceFile;
+      return cached;
     }
 
     // 建立新的 SourceFile
@@ -66,38 +57,9 @@ export class DeclarationAnalyzer {
       true
     );
 
-    // LRU 淘汰
-    this.evictIfNeeded();
-
-    // 快取並返回
-    this.sourceFileCache.set(hash, {
-      sourceFile,
-      lastAccessed: Date.now()
-    });
+    // 快取並返回（MemoryCache 自動處理 LRU 淘汰）
+    this.sourceFileCache.set(hash, sourceFile);
     return sourceFile;
-  }
-
-  /**
-   * LRU 快取淘汰：當快取超過上限時，刪除最久未使用的項目
-   */
-  private evictIfNeeded(): void {
-    if (this.sourceFileCache.size < MAX_CACHE_SIZE) {
-      return;
-    }
-
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [key, entry] of this.sourceFileCache) {
-      if (entry.lastAccessed < oldestTime) {
-        oldestTime = entry.lastAccessed;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.sourceFileCache.delete(oldestKey);
-    }
   }
 
   /**

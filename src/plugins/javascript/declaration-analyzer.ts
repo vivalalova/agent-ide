@@ -16,28 +16,19 @@ import type {
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch, parseJSDocContent } from '@plugins/shared/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
-/** AST 快取項目 */
-interface ASTCacheEntry {
-  /** 已解析的 AST */
-  ast: babel.File;
-  /** 程式碼雜湊 */
-  hash: string;
-}
-
 /**
  * JavaScript 宣告分析器
  * 提供宣告範圍、import 解析、函數簽章和 JSDoc 文件提取功能
+ * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class DeclarationAnalyzer {
-  /** AST 快取（hash -> AST） */
-  private astCache: Map<string, ASTCacheEntry> = new Map();
-
-  /** 最大快取項目數 */
-  private static readonly MAX_CACHE_SIZE = 10;
+  /** AST 快取（hash -> AST），LRU 由 MemoryCache 自動處理 */
+  private readonly astCache: MemoryCache<string, babel.File> = createLRUCache(10);
 
   /**
    * 計算程式碼雜湊（簡易版本）
@@ -48,6 +39,7 @@ export class DeclarationAnalyzer {
 
   /**
    * 解析並快取 AST
+   * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
   private parseWithCache(
     code: string,
@@ -55,24 +47,15 @@ export class DeclarationAnalyzer {
   ): babel.File | null {
     const hash = this.computeHash(code);
 
-    // 檢查快取
+    // 檢查快取（MemoryCache.get() 自動更新 lastAccessedAt）
     const cached = this.astCache.get(hash);
     if (cached) {
-      return cached.ast;
+      return cached;
     }
 
     try {
       const ast = babelParse(code, options);
-
-      // LRU 策略：超過限制時移除最舊項目
-      if (this.astCache.size >= DeclarationAnalyzer.MAX_CACHE_SIZE) {
-        const firstKey = this.astCache.keys().next().value;
-        if (firstKey) {
-          this.astCache.delete(firstKey);
-        }
-      }
-
-      this.astCache.set(hash, { ast, hash });
+      this.astCache.set(hash, ast); // MemoryCache 自動處理 LRU 淘汰
       return ast;
     } catch {
       return null;

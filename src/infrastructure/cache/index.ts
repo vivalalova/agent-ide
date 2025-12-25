@@ -11,8 +11,11 @@
  */
 
 // 核心類別
-export { MemoryCache } from './memory-cache.js';
-export { CacheManager, type GlobalStats, type BatchOperationResult } from './cache-manager.js';
+import { MemoryCache } from './memory-cache.js';
+import { CacheManager, type GlobalStats, type BatchOperationResult } from './cache-manager.js';
+
+// Re-export 核心類別
+export { MemoryCache, CacheManager, type GlobalStats, type BatchOperationResult };
 
 // 策略相關
 export {
@@ -62,20 +65,20 @@ export {
 } from './types.js';
 
 // 常用的預設配置
-export const DEFAULT_CACHE_OPTIONS = {
+export const DEFAULT_CACHE_OPTIONS: Partial<CacheOptions> = {
   maxSize: 1000,
   maxMemory: 50 * 1024 * 1024, // 50MB
   defaultTTL: 0, // 永不過期
-  evictionStrategy: 'lru',
+  evictionStrategy: EvictionStrategy.LRU,
   enableStats: false,
   cleanupInterval: 60000 // 1分鐘
 };
 
-export const DEFAULT_MANAGER_OPTIONS = {
+export const DEFAULT_MANAGER_OPTIONS: Partial<CacheManagerOptions> = {
   enableGlobalStats: false,
   warmupConfig: {
     enabled: false,
-    strategy: 'lazy'
+    strategy: 'lazy' as const
   },
   persistenceConfig: {
     enabled: false,
@@ -92,15 +95,13 @@ export const DEFAULT_MANAGER_OPTIONS = {
  * 工廠函式：建立預設配置的 MemoryCache
  */
 export function createMemoryCache<K, V>(options?: Partial<CacheOptions>) {
-  const { MemoryCache } = require('./memory-cache');
-  return new MemoryCache({ ...DEFAULT_CACHE_OPTIONS, ...options });
+  return new MemoryCache<K, V>({ ...DEFAULT_CACHE_OPTIONS, ...options });
 }
 
 /**
  * 工廠函式：建立預設配置的 CacheManager
  */
 export function createCacheManager(options?: Partial<CacheManagerOptions>) {
-  const { CacheManager } = require('./cache-manager');
   return new CacheManager({ ...DEFAULT_MANAGER_OPTIONS, ...options });
 }
 

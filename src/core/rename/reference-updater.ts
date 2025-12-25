@@ -14,13 +14,16 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 /**
  * 引用更新器類別
  * 使用 SymbolFinder 進行精確的 AST 分析
+ * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class ReferenceUpdater {
-  private readonly fileCache = new Map<string, string>();
+  /** 檔案內容快取，LRU 由 MemoryCache 自動處理 */
+  private readonly fileCache: MemoryCache<string, string> = createLRUCache(200);
   private readonly fileSystem: IFileSystem;
   private readonly symbolFinder?: SymbolFinder;
   private readonly fileUtils?: FileUtils;

@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
 import type {
@@ -20,16 +21,12 @@ import { FileScanner } from './file-scanner.js';
 import { DependencyExtractor } from './dependency-extractor.js';
 
 /**
- * 快取項目
+ * 快取項目（僅保留業務需要的欄位，LRU 由 MemoryCache 處理）
  */
 interface CacheEntry {
   data: FileDependencies;
   lastModified: Date;
-  lastAccessed: number; // 用於 LRU 淘汰
 }
-
-/** 快取最大條目數（防止記憶體無限增長） */
-const MAX_CACHE_SIZE = 1000;
 
 /**
  * 影響分析器類別
@@ -37,7 +34,7 @@ const MAX_CACHE_SIZE = 1000;
 export class ImpactAnalyzer {
   private graph: DependencyGraph;
   private cycleDetector: CycleDetector;
-  private cache: Map<string, CacheEntry>;
+  private cache: MemoryCache<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
   private fileSystem: IFileSystem;
   private pathResolver: PathResolver;
@@ -47,7 +44,7 @@ export class ImpactAnalyzer {
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
-    this.cache = new Map();
+    this.cache = createLRUCache<string, CacheEntry>(1000);
     this.fileSystem = fileSystem;
 
     // 使用預設選項並合併使用者選項
@@ -82,8 +79,7 @@ export class ImpactAnalyzer {
       try {
         const stat = await this.fileSystem.getStats(normalizedPath);
         if (stat.modifiedTime <= cacheEntry.lastModified) {
-          // 更新 LRU 時間戳
-          cacheEntry.lastAccessed = Date.now();
+          // MemoryCache 自動更新 lastAccessedAt
           return cacheEntry.data;
         }
       } catch {
@@ -107,12 +103,10 @@ export class ImpactAnalyzer {
         lastModified: stat.modifiedTime
       };
 
-      // 更新快取（帶 LRU 淘汰）
-      this.evictIfNeeded();
+      // 更新快取（MemoryCache 自動處理 LRU 淘汰）
       this.cache.set(normalizedPath, {
         data: result,
-        lastModified: stat.modifiedTime,
-        lastAccessed: Date.now()
+        lastModified: stat.modifiedTime
       });
 
       // 更新依賴圖
@@ -378,27 +372,4 @@ export class ImpactAnalyzer {
     };
   }
 
-  /**
-   * LRU 快取淘汰：當快取超過上限時，刪除最久未使用的項目
-   */
-  private evictIfNeeded(): void {
-    if (this.cache.size < MAX_CACHE_SIZE) {
-      return;
-    }
-
-    // 找出最久未使用的項目並刪除
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [key, entry] of this.cache) {
-      if (entry.lastAccessed < oldestTime) {
-        oldestTime = entry.lastAccessed;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-    }
-  }
 }
