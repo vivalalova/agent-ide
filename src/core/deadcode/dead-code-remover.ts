@@ -22,26 +22,29 @@ import { DEFAULT_REMOVAL_OPTIONS } from './types.js';
 import { RangeExpander } from './range-expander.js';
 import { ImportCleaner } from './import-cleaner.js';
 import { FileOperationsHandler } from './file-operations.js';
+import { DeadCodeCacheService, createDeadCodeCacheService } from './shared-cache.js';
 
 /**
  * Dead Code 刪除器
  */
 export class DeadCodeRemover {
   private readonly options: Required<DeadCodeRemovalOptions>;
-  private readonly fileCache = new Map<string, string | null>();
   private readonly rangeExpander: RangeExpander;
   private readonly importCleaner: ImportCleaner;
   private readonly fileOperations: FileOperationsHandler;
+  private readonly cacheService: DeadCodeCacheService;
 
   constructor(
     private readonly fileSystem: IFileSystem,
     parserRegistry: ParserRegistry,
-    options?: DeadCodeRemovalOptions
+    options?: DeadCodeRemovalOptions,
+    cacheService?: DeadCodeCacheService
   ) {
     this.options = { ...DEFAULT_REMOVAL_OPTIONS, ...options };
+    this.cacheService = cacheService ?? createDeadCodeCacheService();
     this.rangeExpander = new RangeExpander(parserRegistry);
-    this.importCleaner = new ImportCleaner(fileSystem, parserRegistry);
-    this.fileOperations = new FileOperationsHandler(fileSystem);
+    this.importCleaner = new ImportCleaner(fileSystem, parserRegistry, this.cacheService);
+    this.fileOperations = new FileOperationsHandler(fileSystem, this.cacheService);
   }
 
   /**
@@ -284,23 +287,24 @@ export class DeadCodeRemover {
   }
 
   /**
-   * 讀取檔案
+   * 讀取檔案（使用共用快取）
    * 檔案不存在時快取 null，避免重複讀取
    */
   private async readFile(filePath: string): Promise<string | null> {
-    if (this.fileCache.has(filePath)) {
-      return this.fileCache.get(filePath)!;
+    const cached = this.cacheService.getFile(filePath);
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
-      this.fileCache.set(filePath, contentStr);
+      this.cacheService.setFile(filePath, contentStr);
       return contentStr;
     } catch (error) {
       // 檔案不存在時快取 null，避免重複讀取
       if (error instanceof Error && error.message.includes('ENOENT')) {
-        this.fileCache.set(filePath, null);
+        this.cacheService.setFile(filePath, null);
       }
       return null;
     }
@@ -323,9 +327,7 @@ export class DeadCodeRemover {
    * 清除快取
    */
   clearCache(): void {
-    this.fileCache.clear();
-    this.importCleaner.clearCache();
-    this.fileOperations.clearCache();
+    this.cacheService.clear();
   }
 }
 

@@ -6,6 +6,12 @@
 import * as path from 'path';
 import { createHash } from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
+import {
+  ParserWorkerPool,
+  createParserWorkerPool,
+  type ParseTask,
+  type ParseResult
+} from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
 import type {
@@ -38,6 +44,8 @@ export class IndexEngine {
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
   private readonly fileSystem: IFileSystem;
+  /** Worker Pool（測試環境為 null，使用單執行緒解析） */
+  private readonly parserPool: ParserWorkerPool | null;
   private _disposed = false;
   private _indexed = false;
 
@@ -69,6 +77,13 @@ export class IndexEngine {
       const jsParser = new JavaScriptParser();
       this.parserRegistry.register(jsParser);
     }
+
+    // 建立 Worker Pool（多執行緒解析）
+    // 測試環境禁用 Worker Pool，避免 worker 清理問題
+    const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+    this.parserPool = isTestEnv ? null : createParserWorkerPool({
+      maxThreads: this.config.maxConcurrency
+    });
   }
 
   /**
@@ -461,46 +476,76 @@ export class IndexEngine {
 
   /**
    * 批次索引檔案
+   * - 生產環境：使用 Worker Pool 多執行緒解析
+   * - 測試環境：使用單執行緒逐檔解析（避免 worker 清理問題）
    */
   private async batchIndexFiles(files: string[], options: BatchIndexOptions): Promise<void> {
-    const { concurrency, batchSize, progressCallback } = options;
+    const { batchSize, progressCallback } = options;
     const totalFiles = files.length;
     let processedFiles = 0;
     const errors: string[] = [];
 
-    // 將檔案分批處理
+    // 測試環境：單執行緒逐檔解析
+    if (!this.parserPool) {
+      for (const filePath of files) {
+        try {
+          await this.indexFile(filePath);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '未知錯誤';
+          errors.push(`${filePath}: ${errorMessage}`);
+        }
+
+        processedFiles++;
+        progressCallback({
+          totalFiles,
+          processedFiles,
+          currentFile: filePath,
+          percentage: calculateProgress(processedFiles, totalFiles),
+          errors: [...errors]
+        });
+      }
+
+      if (errors.length > 0) {
+        console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
+        errors.forEach(error => console.warn(`  ${error}`));
+      }
+      return;
+    }
+
+    // 生產環境：Worker Pool 多執行緒解析
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
 
-      // 並行處理當前批次
-      const promises = batch.map(async (file) => {
+      // 1. 準備解析任務（主執行緒讀取檔案）
+      const taskMap = await this.prepareParseTasks(batch);
+
+      // 2. Worker Pool 並行解析（CPU 密集操作在 worker 執行緒）
+      const tasks = Array.from(taskMap.values()).map(t => t.task);
+      const parseResults = await this.parserPool.parseFiles(tasks);
+
+      // 3. 主執行緒更新索引（使用 filePath 匹配）
+      for (const result of parseResults) {
+        const prepared = taskMap.get(result.filePath);
+        if (!prepared) {
+          errors.push(`${result.filePath}: 找不到對應的準備任務`);
+          continue;
+        }
+
         try {
-          await this.indexFile(file);
+          await this.updateIndexFromParseResult(result, prepared.fileInfo, prepared.content);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '未知錯誤';
-          errors.push(`${file}: ${errorMessage}`);
-        } finally {
-          processedFiles++;
-
-          // 回報進度
-          progressCallback({
-            totalFiles,
-            processedFiles,
-            currentFile: file,
-            percentage: calculateProgress(processedFiles, totalFiles),
-            errors: [...errors]
-          });
+          errors.push(`${result.filePath}: ${errorMessage}`);
         }
-      });
 
-      // 限制並行數量
-      const chunks = [];
-      for (let j = 0; j < promises.length; j += concurrency) {
-        chunks.push(promises.slice(j, j + concurrency));
-      }
-
-      for (const chunk of chunks) {
-        await Promise.all(chunk);
+        processedFiles++;
+        progressCallback({
+          totalFiles,
+          processedFiles,
+          currentFile: result.filePath,
+          percentage: calculateProgress(processedFiles, totalFiles),
+          errors: [...errors]
+        });
       }
     }
 
@@ -508,6 +553,90 @@ export class IndexEngine {
       console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
       errors.forEach(error => console.warn(`  ${error}`));
     }
+  }
+
+  /**
+   * 準備解析任務
+   * 在主執行緒讀取檔案內容和 stat，傳給 worker 解析
+   * 回傳 Map 以 filePath 為 key，確保與 parseResults 正確對應
+   */
+  private async prepareParseTasks(files: string[]): Promise<Map<string, {
+    task: ParseTask;
+    fileInfo: FileInfo;
+    content: string;
+  }>> {
+    const taskMap = new Map<string, { task: ParseTask; fileInfo: FileInfo; content: string }>();
+
+    await Promise.all(files.map(async (filePath) => {
+      try {
+        const stat = await this.fileSystem.getStats(filePath);
+
+        // 跳過大檔案
+        if (stat.size > this.config.maxFileSize) {
+          return;
+        }
+
+        const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+        const fileInfo = await this.createFileInfoFromContent(filePath, stat, content);
+
+        taskMap.set(filePath, {
+          task: { filePath, content },
+          fileInfo,
+          content
+        });
+      } catch {
+        // 靜默跳過無法讀取的檔案
+      }
+    }));
+
+    return taskMap;
+  }
+
+  /**
+   * 從解析結果更新索引
+   */
+  private async updateIndexFromParseResult(
+    result: ParseResult,
+    fileInfo: FileInfo,
+    _content: string
+  ): Promise<void> {
+    // 處理解析錯誤
+    if (result.errors.length > 0) {
+      await this.fileIndex.setFileParseErrors(result.filePath, result.errors);
+      return;
+    }
+
+    // 新增到檔案索引
+    await this.fileIndex.addFile(fileInfo);
+
+    // 更新檔案索引的符號和依賴
+    await this.fileIndex.setFileSymbols(result.filePath, result.symbols);
+    await this.fileIndex.setFileDependencies(result.filePath, result.dependencies);
+
+    // 新增符號到符號索引
+    await this.symbolIndex.addSymbols(result.symbols, fileInfo);
+  }
+
+  /**
+   * 從內容建立 FileInfo（避免重複讀取檔案）
+   */
+  private async createFileInfoFromContent(
+    filePath: string,
+    stat: Awaited<ReturnType<typeof this.fileSystem.getStats>>,
+    content: string
+  ): Promise<FileInfo> {
+    const extension = path.extname(filePath);
+    const language = this.getLanguageFromExtension(extension);
+    const checksum = createHash('sha256').update(content).digest('hex');
+
+    return createFileInfo(
+      filePath,
+      stat.modifiedTime,
+      stat.size,
+      extension,
+      language,
+      checksum
+    );
   }
 
   /**
@@ -608,8 +737,14 @@ export class IndexEngine {
     if (!this._disposed) {
       this.clear();
       this._disposed = true;
+
+      // 釋放 Worker Pool 資源（非阻塞，測試環境無 pool）
+      if (this.parserPool) {
+        this.parserPool.destroy().catch(() => {
+          // 忽略銷毀錯誤
+        });
+      }
     }
-    // 可以在這裡加入其他清理邏輯
   }
 
   /**

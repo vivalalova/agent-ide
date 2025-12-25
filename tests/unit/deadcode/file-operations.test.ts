@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FileOperationsHandler, createFileOperationsHandler, type FileOperation } from '@core/deadcode/file-operations.js';
+import { createDeadCodeCacheService, type DeadCodeCacheService } from '@core/deadcode/shared-cache.js';
 import type { DeadCodeRemovalPreview, RemovalOperation, ImportCleanupOperation } from '@core/deadcode/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Range } from '@shared/types/core.js';
@@ -115,10 +116,12 @@ function createPreview(
 describe('FileOperationsHandler', () => {
   let handler: FileOperationsHandler;
   let mockFileSystem: IFileSystem;
+  let cacheService: DeadCodeCacheService;
 
   beforeEach(() => {
     mockFileSystem = createMockFileSystem({});
-    handler = new FileOperationsHandler(mockFileSystem);
+    cacheService = createDeadCodeCacheService();
+    handler = new FileOperationsHandler(mockFileSystem, cacheService);
   });
 
   describe('groupOperationsByFile', () => {
@@ -180,7 +183,8 @@ describe('FileOperationsHandler', () => {
     it('應該套用刪除操作', async () => {
       const fileContent = 'line1\nline2\nline3';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const operations: FileOperation[] = [
         { range: createRange(2, 2), type: 'removal' }
@@ -195,7 +199,8 @@ describe('FileOperationsHandler', () => {
     it('應該套用 partial import cleanup', async () => {
       const fileContent = 'import { foo, bar } from \'./utils\';\nconst x = 1;';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const operations: FileOperation[] = [
         {
@@ -215,7 +220,8 @@ describe('FileOperationsHandler', () => {
     it('應該從後往前排序操作避免位置偏移', async () => {
       const fileContent = 'line1\nline2\nline3\nline4';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       // 故意以錯誤順序傳入
       const operations: FileOperation[] = [
@@ -233,7 +239,8 @@ describe('FileOperationsHandler', () => {
     it('應該清理連續空行', async () => {
       const fileContent = 'line1\n\n\n\nline5';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const operations: FileOperation[] = [];
 
@@ -247,7 +254,8 @@ describe('FileOperationsHandler', () => {
     it('應該保留原始縮排', async () => {
       const fileContent = '  import { foo } from \'./utils\';\n  const x = 1;';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const operations: FileOperation[] = [
         {
@@ -265,7 +273,8 @@ describe('FileOperationsHandler', () => {
 
     it('當檔案無法讀取時應拋出錯誤', async () => {
       mockFileSystem = createMockFileSystem({});
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const operations: FileOperation[] = [
         { range: createRange(1, 1), type: 'removal' }
@@ -279,7 +288,8 @@ describe('FileOperationsHandler', () => {
     it('應該處理邊界超出的 range', async () => {
       const fileContent = 'line1\nline2';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       // range 超出檔案行數
       const operations: FileOperation[] = [
@@ -295,7 +305,8 @@ describe('FileOperationsHandler', () => {
     it('應該處理 type 排序穩定性', async () => {
       const fileContent = 'line1\nline2\nline3';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       // 相同位置不同類型
       const operations: FileOperation[] = [
@@ -436,7 +447,8 @@ describe('FileOperationsHandler', () => {
     it('應該使用快取避免重複讀取', async () => {
       const files = { '/test.ts': 'content' };
       mockFileSystem = createMockFileSystem(files);
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       // 讀取兩次
       await handler.readFile('/test.ts');
@@ -451,13 +463,14 @@ describe('FileOperationsHandler', () => {
     it('應該能清除快取', async () => {
       const files = { '/test.ts': 'content' };
       mockFileSystem = createMockFileSystem(files);
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       await handler.readFile('/test.ts');
       const callsBeforeClear = (mockFileSystem.readFile as ReturnType<typeof vi.fn>).mock.calls
         .filter((call: string[]) => call[0] === '/test.ts').length;
 
-      handler.clearCache();
+      cacheService.clear();
       await handler.readFile('/test.ts');
 
       const callsAfterClear = (mockFileSystem.readFile as ReturnType<typeof vi.fn>).mock.calls
@@ -469,7 +482,8 @@ describe('FileOperationsHandler', () => {
     it('寫入後應該更新快取', async () => {
       const files = { '/test.ts': 'old content' };
       mockFileSystem = createMockFileSystem(files);
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       await handler.writeFile('/test.ts', 'new content');
       const content = await handler.readFile('/test.ts');
@@ -490,16 +504,18 @@ describe('FileOperationsHandler', () => {
         ...createMockFileSystem({}),
         readFile: vi.fn().mockResolvedValue(bufferContent)
       } as unknown as IFileSystem;
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const content = await handler.readFile('/test.ts');
 
       expect(content).toBe('file content');
     });
 
-    it('讀取失敗應返回 null 並清除快取', async () => {
+    it('讀取失敗應返回 null', async () => {
       mockFileSystem = createMockFileSystem({});
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       const content = await handler.readFile('/nonexistent.ts');
 
@@ -511,7 +527,8 @@ describe('FileOperationsHandler', () => {
     it('應該壓縮連續空行', async () => {
       const fileContent = 'line1\n\n\n\nline5';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       await handler.applyFileOperations('/test.ts', []);
 
@@ -522,7 +539,8 @@ describe('FileOperationsHandler', () => {
     it('應該保留單個空行', async () => {
       const fileContent = 'line1\n\nline3';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       await handler.applyFileOperations('/test.ts', []);
 
@@ -533,7 +551,8 @@ describe('FileOperationsHandler', () => {
     it('應該處理全空白行', async () => {
       const fileContent = 'line1\n   \n   \nline4';
       mockFileSystem = createMockFileSystem({ '/test.ts': fileContent });
-      handler = new FileOperationsHandler(mockFileSystem);
+      cacheService = createDeadCodeCacheService();
+      handler = new FileOperationsHandler(mockFileSystem, cacheService);
 
       await handler.applyFileOperations('/test.ts', []);
 
@@ -549,8 +568,9 @@ describe('FileOperationsHandler', () => {
 describe('createFileOperationsHandler', () => {
   it('應該建立 FileOperationsHandler 實例', () => {
     const mockFileSystem = createMockFileSystem({});
+    const cacheService = createDeadCodeCacheService();
 
-    const handler = createFileOperationsHandler(mockFileSystem);
+    const handler = createFileOperationsHandler(mockFileSystem, cacheService);
 
     expect(handler).toBeInstanceOf(FileOperationsHandler);
   });

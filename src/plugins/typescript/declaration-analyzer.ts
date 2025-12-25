@@ -14,6 +14,7 @@ import type {
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch } from '@plugins/shared/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 /**
  * 宣告分析器類別
@@ -21,11 +22,11 @@ import { isLineMatch } from '@plugins/shared/index.js';
  */
 export class DeclarationAnalyzer {
   /**
-   * SourceFile 快取
+   * SourceFile 快取（使用 MemoryCache 自動 LRU 淘汰）
    * key: code 的 hash（長度 + 前後各 100 字元）
-   * value: SourceFile
+   * value: ts.SourceFile
    */
-  private readonly sourceFileCache = new Map<string, ts.SourceFile>();
+  private readonly sourceFileCache: MemoryCache<string, ts.SourceFile> = createLRUCache(100);
 
   /**
    * 建立宣告分析器實例
@@ -34,7 +35,7 @@ export class DeclarationAnalyzer {
   constructor(private readonly compilerOptions?: ts.CompilerOptions) {}
 
   /**
-   * 取得或建立 SourceFile（帶快取）
+   * 取得或建立 SourceFile（使用 MemoryCache 自動 LRU）
    * @param code 原始程式碼
    * @returns SourceFile
    */
@@ -42,7 +43,7 @@ export class DeclarationAnalyzer {
     // 使用簡單的 hash：長度 + 前 100 字元 + 後 100 字元
     const hash = `${code.length}_${code.slice(0, 100)}_${code.slice(-100)}`;
 
-    // 檢查快取
+    // 檢查快取（MemoryCache 自動更新 lastAccessedAt）
     const cached = this.sourceFileCache.get(hash);
     if (cached) {
       return cached;
@@ -56,7 +57,7 @@ export class DeclarationAnalyzer {
       true
     );
 
-    // 快取並返回
+    // 快取並返回（MemoryCache 自動處理 LRU 淘汰）
     this.sourceFileCache.set(hash, sourceFile);
     return sourceFile;
   }

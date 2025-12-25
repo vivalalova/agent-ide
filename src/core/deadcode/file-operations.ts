@@ -11,6 +11,7 @@ import type {
   RemovalOperation,
   UpdatedFile
 } from './types.js';
+import type { DeadCodeCacheService } from './shared-cache.js';
 
 /**
  * 檔案操作類型列舉
@@ -51,9 +52,10 @@ export interface FileOperation {
  * 檔案操作處理器
  */
 export class FileOperationsHandler {
-  private readonly fileCache = new Map<string, string>();
-
-  constructor(private readonly fileSystem: IFileSystem) {}
+  constructor(
+    private readonly fileSystem: IFileSystem,
+    private readonly cacheService: DeadCodeCacheService
+  ) {}
 
   /**
    * 按檔案分組操作（去重相同 range）
@@ -201,30 +203,30 @@ export class FileOperationsHandler {
   }
 
   /**
-   * 讀取檔案
+   * 讀取檔案（使用共用快取）
    */
   async readFile(filePath: string): Promise<string | null> {
-    if (this.fileCache.has(filePath)) {
-      return this.fileCache.get(filePath)!;
+    const cached = this.cacheService.getFile(filePath);
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
-      this.fileCache.set(filePath, contentStr);
+      this.cacheService.setFile(filePath, contentStr);
       return contentStr;
     } catch {
-      this.fileCache.delete(filePath);
       return null;
     }
   }
 
   /**
-   * 寫入檔案
+   * 寫入檔案（同步更新共用快取）
    */
   async writeFile(filePath: string, content: string): Promise<void> {
     await this.fileSystem.writeFile(filePath, content);
-    this.fileCache.set(filePath, content);
+    this.cacheService.updateFile(filePath, content);
   }
 
   /**
@@ -317,17 +319,14 @@ export class FileOperationsHandler {
     return Array.from(files);
   }
 
-  /**
-   * 清除快取
-   */
-  clearCache(): void {
-    this.fileCache.clear();
-  }
 }
 
 /**
  * 建立 FileOperationsHandler 實例
  */
-export function createFileOperationsHandler(fileSystem: IFileSystem): FileOperationsHandler {
-  return new FileOperationsHandler(fileSystem);
+export function createFileOperationsHandler(
+  fileSystem: IFileSystem,
+  cacheService: DeadCodeCacheService
+): FileOperationsHandler {
+  return new FileOperationsHandler(fileSystem, cacheService);
 }

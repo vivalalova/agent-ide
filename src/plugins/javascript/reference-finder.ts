@@ -14,15 +14,10 @@ import {
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
-
-/** AST 快取最大容量（位元組）- 50MB */
-const AST_CACHE_MAX_BYTES = 50 * 1024 * 1024;
-
-/** 每個 AST 節點估算的平均大小（位元組） */
-const ESTIMATED_BYTES_PER_NODE = 100;
 
 /** 程式碼雜湊樣本長度（前 N 字元） */
 const CODE_HASH_SAMPLE_LENGTH = 100;
@@ -55,20 +50,16 @@ interface ASTCacheEntry {
   ast: babel.File;
   /** 變數類型映射（變數名 -> new 的類型名） */
   variableTypes: VariableTypeMap;
-  /** 估算的 AST 大小（位元組） */
-  estimatedSize: number;
 }
 
 /**
  * JavaScript 引用查找器
  * 使用 Babel 語義分析來精確匹配符號引用
+ * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class ReferenceFinder {
-  /** AST 快取（程式碼 hash -> 快取項目），使用 Map 保持插入順序實現 LRU */
-  private astCache: Map<string, ASTCacheEntry> = new Map();
-
-  /** 當前快取大小估算（位元組） */
-  private currentCacheBytes = 0;
+  /** AST 快取（程式碼 hash -> 快取項目），LRU 由 MemoryCache 自動處理 */
+  private readonly astCache: MemoryCache<string, ASTCacheEntry> = createLRUCache(50);
 
   /**
    * 計算程式碼的雜湊值（用於快取 key）
@@ -89,9 +80,11 @@ export class ReferenceFinder {
 
   /**
    * 取得或建立 AST 快取（僅解析 AST，不做 traverse）
+   * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
   private getOrCreateASTCache(code: string): ASTCacheEntry | null {
     const hash = this.computeCodeHash(code);
+    // MemoryCache.get() 自動更新 lastAccessedAt
     const cached = this.astCache.get(hash);
 
     if (cached) {
@@ -107,11 +100,8 @@ export class ReferenceFinder {
       // 僅建立空的 variableTypes，在 findScopedReferences 中一併收集
       const variableTypes: VariableTypeMap = new Map();
 
-      // 估算 AST 大小
-      const estimatedSize = this.estimateASTSize(ast);
-
-      const entry: ASTCacheEntry = { ast, variableTypes, estimatedSize };
-      this.addToCache(hash, entry);
+      const entry: ASTCacheEntry = { ast, variableTypes };
+      this.astCache.set(hash, entry); // MemoryCache 自動處理 LRU 淘汰
 
       return entry;
     } catch {
@@ -120,47 +110,10 @@ export class ReferenceFinder {
   }
 
   /**
-   * 估算 AST 大小（位元組）
-   * 使用 program.body 數量估算，避免完整遍歷
-   * 估算公式：頂層語句數 * 平均節點深度 * 每節點位元組
-   */
-  private estimateASTSize(ast: babel.File): number {
-    // 平均每個頂層語句包含約 20 個節點（經驗估算）
-    const AVERAGE_NODES_PER_STATEMENT = 20;
-    const topLevelStatements = ast.program.body.length;
-    const estimatedNodeCount = topLevelStatements * AVERAGE_NODES_PER_STATEMENT;
-    return estimatedNodeCount * ESTIMATED_BYTES_PER_NODE;
-  }
-
-  /**
-   * 將項目加入快取（基於大小的 LRU 策略）
-   */
-  private addToCache(hash: string, entry: ASTCacheEntry): void {
-    // 如果超過限制，移除最舊項目直到有足夠空間
-    while (
-      this.currentCacheBytes + entry.estimatedSize > AST_CACHE_MAX_BYTES
-      && this.astCache.size > 0
-    ) {
-      const firstKey = this.astCache.keys().next().value;
-      if (firstKey) {
-        const removed = this.astCache.get(firstKey);
-        if (removed) {
-          this.currentCacheBytes -= removed.estimatedSize;
-        }
-        this.astCache.delete(firstKey);
-      }
-    }
-
-    this.astCache.set(hash, entry);
-    this.currentCacheBytes += entry.estimatedSize;
-  }
-
-  /**
    * 清除 AST 快取
    */
   clearCache(): void {
     this.astCache.clear();
-    this.currentCacheBytes = 0;
   }
 
   /**

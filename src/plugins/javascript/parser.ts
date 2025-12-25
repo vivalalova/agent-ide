@@ -66,6 +66,7 @@ import {
   validateParserInput,
   validateRenameInput
 } from '@plugins/shared/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -74,6 +75,7 @@ import { createHash } from 'node:crypto';
 /**
  * 符號行索引快取
  * 用於快速查找特定位置的符號
+ * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 interface SymbolIndexCache {
   /** 符號列表 */
@@ -101,8 +103,8 @@ export class JavaScriptParser implements ParserPlugin {
   private readonly referenceFinder: ReferenceFinder;
   /** 宣告分析器 */
   private readonly declarationAnalyzer: DeclarationAnalyzer;
-  /** 符號索引快取（以檔案路徑為 key） */
-  private symbolIndexCache: Map<string, SymbolIndexCache> = new Map();
+  /** 符號索引快取（以檔案路徑為 key，LRU 由 MemoryCache 自動處理） */
+  private readonly symbolIndexCache: MemoryCache<string, SymbolIndexCache> = createLRUCache(100);
 
   constructor(parseOptions?: Partial<JavaScriptParseOptions>) {
     this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions };
@@ -771,13 +773,14 @@ export class JavaScriptParser implements ParserPlugin {
    * 建立或取得符號索引快取
    * 使用行號索引避免 O(n) 線性搜尋
    * 快取基於 filePath + content hash，避免內容變更後使用舊快取
+   * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
   private async getOrCreateSymbolIndex(ast: JavaScriptAST): Promise<SymbolIndexCache> {
     const cacheKey = ast.sourceFile;
     const contentHash = this.computeContentHash(ast.sourceCode);
     const cached = this.symbolIndexCache.get(cacheKey);
 
-    // 驗證快取：檔案存在且 hash 相同
+    // 驗證快取：檔案存在且 hash 相同（MemoryCache.get() 自動更新 lastAccessedAt）
     if (cached && cached.contentHash === contentHash) {
       return cached;
     }
@@ -798,7 +801,7 @@ export class JavaScriptParser implements ParserPlugin {
     }
 
     const cache: SymbolIndexCache = { symbols, lineIndex, contentHash };
-    this.symbolIndexCache.set(cacheKey, cache);
+    this.symbolIndexCache.set(cacheKey, cache); // MemoryCache 自動處理 LRU 淘汰
 
     return cache;
   }

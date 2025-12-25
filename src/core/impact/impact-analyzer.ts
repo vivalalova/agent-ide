@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
 import type {
@@ -20,7 +21,7 @@ import { FileScanner } from './file-scanner.js';
 import { DependencyExtractor } from './dependency-extractor.js';
 
 /**
- * 快取項目
+ * 快取項目（僅保留業務需要的欄位，LRU 由 MemoryCache 處理）
  */
 interface CacheEntry {
   data: FileDependencies;
@@ -33,7 +34,7 @@ interface CacheEntry {
 export class ImpactAnalyzer {
   private graph: DependencyGraph;
   private cycleDetector: CycleDetector;
-  private cache: Map<string, CacheEntry>;
+  private cache: MemoryCache<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
   private fileSystem: IFileSystem;
   private pathResolver: PathResolver;
@@ -43,7 +44,7 @@ export class ImpactAnalyzer {
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
-    this.cache = new Map();
+    this.cache = createLRUCache<string, CacheEntry>(1000);
     this.fileSystem = fileSystem;
 
     // 使用預設選項並合併使用者選項
@@ -78,6 +79,7 @@ export class ImpactAnalyzer {
       try {
         const stat = await this.fileSystem.getStats(normalizedPath);
         if (stat.modifiedTime <= cacheEntry.lastModified) {
+          // MemoryCache 自動更新 lastAccessedAt
           return cacheEntry.data;
         }
       } catch {
@@ -101,7 +103,7 @@ export class ImpactAnalyzer {
         lastModified: stat.modifiedTime
       };
 
-      // 更新快取
+      // 更新快取（MemoryCache 自動處理 LRU 淘汰）
       this.cache.set(normalizedPath, {
         data: result,
         lastModified: stat.modifiedTime
@@ -369,4 +371,5 @@ export class ImpactAnalyzer {
       ...options
     };
   }
+
 }

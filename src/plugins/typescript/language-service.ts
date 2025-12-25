@@ -9,11 +9,17 @@ import type { TypeScriptSymbol } from './types.js';
 
 /**
  * 檔案資訊
+ * 注意：因 TypeScript Language Service Host 需要迭代所有檔案名稱，
+ * 無法使用 MemoryCache（不支援 .keys() 迭代），保留 Map + 手動 LRU
  */
 interface FileInfo {
   version: number;
   content: string;
+  lastAccessed: number;
 }
+
+/** 檔案快取最大條目數 */
+const MAX_FILES_CACHE_SIZE = 200;
 
 /**
  * Language Service Manager 介面
@@ -192,13 +198,41 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   updateFile(fileName: string, content: string): void {
     const existing = this._files.get(fileName);
     if (existing && existing.content === content) {
+      existing.lastAccessed = Date.now();
       return;
     }
 
+    // LRU 淘汰
+    this.evictFilesIfNeeded();
+
     this._files.set(fileName, {
       version: existing ? existing.version + 1 : 0,
-      content
+      content,
+      lastAccessed: Date.now()
     });
+  }
+
+  /**
+   * LRU 檔案快取淘汰：當快取超過上限時，刪除最久未使用的項目
+   */
+  private evictFilesIfNeeded(): void {
+    if (this._files.size < MAX_FILES_CACHE_SIZE) {
+      return;
+    }
+
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, entry] of this._files) {
+      if (entry.lastAccessed < oldestTime) {
+        oldestTime = entry.lastAccessed;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      this._files.delete(oldestKey);
+    }
   }
 
   /**
