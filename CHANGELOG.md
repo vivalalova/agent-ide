@@ -1,3 +1,23 @@
+## 0.10.0 (2025-12-25)
+
+* test: 修正 unit test 預期值以匹配實作變更 ([a4b44cc](https://github.com/vivalalova/agent-ide/commit/a4b44cc))
+* test: 新增 impact tsconfig 向上查找測試 ([be9c855](https://github.com/vivalalova/agent-ide/commit/be9c855))
+* test: 新增 move glob pattern E2E 測試 ([683ca09](https://github.com/vivalalova/agent-ide/commit/683ca09))
+* test: 新增 move 命令 tsconfig 向上查找測試 ([57648f9](https://github.com/vivalalova/agent-ide/commit/57648f9))
+* test: 新增目錄內部 alias 引用 E2E 測試 ([a1d496f](https://github.com/vivalalova/agent-ide/commit/a1d496f))
+* Merge branch 'fix/move-create-parent-dir' ([4d30ebd](https://github.com/vivalalova/agent-ide/commit/4d30ebd))
+* Merge branch 'fix/move-internal-references' ([16c103f](https://github.com/vivalalova/agent-ide/commit/16c103f))
+* fix: [Fixed #59] 修正 snapshot 命令對父目錄無輸出的問題 ([c3b38c8](https://github.com/vivalalova/agent-ide/commit/c3b38c8)), closes [#59](https://github.com/vivalalova/agent-ide/issues/59)
+* fix: impact 命令支援向上查找 tsconfig.json ([78e17d6](https://github.com/vivalalova/agent-ide/commit/78e17d6))
+* fix: move 命令支援向上查找 tsconfig.json ([01f694e](https://github.com/vivalalova/agent-ide/commit/01f694e))
+* fix: moveDirectory 自動建立父目錄 ([a9f1c64](https://github.com/vivalalova/agent-ide/commit/a9f1c64))
+* fix: moveDirectory 自動建立父目錄 ([ca938e8](https://github.com/vivalalova/agent-ide/commit/ca938e8))
+* fix: 目錄移動時更新內部 alias 引用 ([a0c4d96](https://github.com/vivalalova/agent-ide/commit/a0c4d96))
+* docs: 更新 move glob pattern 文件 ([05b2927](https://github.com/vivalalova/agent-ide/commit/05b2927))
+* docs: 標注 move 目錄時目標已存在會嵌套的行為 ([5acf00f](https://github.com/vivalalova/agent-ide/commit/5acf00f))
+* feat: move 命令支援 glob pattern ([43f1310](https://github.com/vivalalova/agent-ide/commit/43f1310))
+* refactor: [tsconfig 共用模組] 抽取 tsconfig-loader.ts ([5f88e45](https://github.com/vivalalova/agent-ide/commit/5f88e45))
+
 ## <small>0.9.5 (2025-12-25)</small>
 
 * fix: [Fixed #58] 修正移動檔案時內部 import 路徑計算錯誤 ([f576267](https://github.com/vivalalova/agent-ide/commit/f576267)), closes [#58](https://github.com/vivalalova/agent-ide/issues/58)
