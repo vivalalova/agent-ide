@@ -135,6 +135,16 @@ agent-ide move src/utils.ts:25 src/helpers.ts --path .
 agent-ide move src/utils.ts:25 src/helpers.ts:10 --path .
 ```
 
+**⚠️ 目錄移動注意**：遵循 Unix `mv` 行為，目標目錄已存在時會嵌套：
+
+```bash
+# 目標不存在 → 直接移動
+move src/utils src/helpers  # → src/helpers/...
+
+# 目標已存在 → 嵌套進目標內
+move src/utils src/helpers  # → src/helpers/utils/...
+```
+
 **rename `--at` 參數**：當有多個同名符號時，用 `--at` 精確定位：
 
 ```bash

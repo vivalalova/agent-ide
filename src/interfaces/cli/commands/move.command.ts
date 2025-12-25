@@ -35,7 +35,7 @@ interface MoveOptions {
 export function setupMoveCommand(program: Command, context: CommandContext): void {
   program
     .command('move [source] [target]')
-    .description('移動檔案、目錄或成員（source:line 格式觸發成員移動）')
+    .description('移動檔案、目錄或成員（source:line 格式觸發成員移動）。⚠️ 目錄移動遵循 mv 行為：目標已存在時會嵌套')
     .option('-s, --source <path>', '來源路徑')
     .option('-t, --target <path>', '目標路徑')
     .option('-p, --path <path>', '專案根目錄路徑', process.cwd())

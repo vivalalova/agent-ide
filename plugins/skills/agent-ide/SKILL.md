@@ -67,6 +67,8 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 | 移動成員（指定位置） | `agent-ide move src/a.ts:25 src/b.ts:10 --path . --dry-run`             |
 | 刪除 Dead code       | `agent-ide deadcode --path .`                                           |
 
+> ⚠️ **目錄移動**：遵循 `mv` 行為，目標已存在時會嵌套（`move a b` → `b/a/`）
+
 ### 查詢類命令
 
 | 任務           | 命令                                                               |
