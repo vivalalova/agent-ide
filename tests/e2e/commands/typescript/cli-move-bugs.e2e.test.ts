@@ -876,3 +876,126 @@ console.log(version);
     });
   });
 });
+
+/**
+ * Bug: 移動目錄到已存在的父目錄時，內部相對路徑被錯誤更新
+ * - 當移動 src/frontend/alarm 到 src/modules/frontend/（已存在的目錄）
+ * - 內部的 ./alarm.controller 被錯誤改成 ../../modules/frontend/alarm/alarm.controller
+ * - 應該保持 ./alarm.controller 不變（同目錄內的引用）
+ */
+describe('CLI move bugs - 移動到已存在目錄時內部引用錯誤', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('移動目錄到已存在的父目錄', () => {
+    it('移動到已存在目錄時，同目錄內的 ./ 引用應保持不變', async () => {
+      // Given: 建立來源目錄 src/frontend/alarm
+      await fixture.writeFile('src/frontend/alarm/alarm.controller.ts', `
+export class AlarmController {}
+`);
+      await fixture.writeFile('src/frontend/alarm/alarm.service.ts', `
+import { AlarmController } from './alarm.controller';
+
+export class AlarmService {
+  controller = new AlarmController();
+}
+`);
+
+      // 目標父目錄已存在
+      await fixture.writeFile('src/modules/frontend/.gitkeep', '');
+
+      // When: 移動目錄到已存在的父目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend/alarm',
+          'src/modules/frontend/',  // 已存在的目錄，以 / 結尾
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功且 ./alarm.controller 引用保持不變
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 讀取移動後的 service 檔案
+      const serviceContent = await fixture.readFile('src/modules/frontend/alarm/alarm.service.ts');
+
+      // 關鍵斷言：同目錄內的 ./alarm.controller 應該保持不變
+      expect(serviceContent).toContain('from \'./alarm.controller\'');
+      expect(serviceContent).not.toContain('../../modules/frontend/alarm');
+    });
+
+    it('移動到已存在目錄時，目錄內多個檔案互相引用應保持不變', async () => {
+      // Given: 目錄內多個檔案互相引用
+      await fixture.writeFile('src/frontend/alarm/types.ts', `
+export interface Alarm {
+  id: string;
+  message: string;
+}
+`);
+      await fixture.writeFile('src/frontend/alarm/alarm.controller.ts', `
+import { Alarm } from './types';
+
+export class AlarmController {
+  getAlarm(): Alarm {
+    return { id: '1', message: 'test' };
+  }
+}
+`);
+      await fixture.writeFile('src/frontend/alarm/alarm.service.ts', `
+import { AlarmController } from './alarm.controller';
+import { Alarm } from './types';
+
+export class AlarmService {
+  controller = new AlarmController();
+
+  getAlarm(): Alarm {
+    return this.controller.getAlarm();
+  }
+}
+`);
+
+      // 目標父目錄已存在
+      await fixture.writeFile('src/modules/frontend/.gitkeep', '');
+
+      // When: 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend/alarm',
+          'src/modules/frontend/',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // controller.ts 的 ./types 引用應保持不變
+      const controllerContent = await fixture.readFile('src/modules/frontend/alarm/alarm.controller.ts');
+      expect(controllerContent).toContain('from \'./types\'');
+      expect(controllerContent).not.toContain('../../modules/frontend/alarm');
+
+      // service.ts 的 ./alarm.controller 和 ./types 引用應保持不變
+      const serviceContent = await fixture.readFile('src/modules/frontend/alarm/alarm.service.ts');
+      expect(serviceContent).toContain('from \'./alarm.controller\'');
+      expect(serviceContent).toContain('from \'./types\'');
+      expect(serviceContent).not.toContain('../../modules/frontend/alarm');
+    });
+  });
+});
