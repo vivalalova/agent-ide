@@ -1,3 +1,7 @@
+## <small>0.9.5 (2025-12-25)</small>
+
+* fix: [Fixed #58] 修正移動檔案時內部 import 路徑計算錯誤 ([f576267](https://github.com/vivalalova/agent-ide/commit/f576267)), closes [#58](https://github.com/vivalalova/agent-ide/issues/58)
+
 ## <small>0.9.4 (2025-12-25)</small>
 
 * fix: [Fixed #57] 修正目錄移動時路徑計算錯誤 ([04c6242](https://github.com/vivalalova/agent-ide/commit/04c6242)), closes [#57](https://github.com/vivalalova/agent-ide/issues/57)
