@@ -262,7 +262,31 @@ interface TsconfigPathConfig {
 }
 
 /**
+ * 向上查找 tsconfig.json
+ * 從指定目錄開始，逐層向上查找直到找到 tsconfig.json 或到達根目錄
+ */
+async function findTsconfigUp(
+  startDir: string,
+  context: CommandContext
+): Promise<{ tsconfigPath: string; tsconfigDir: string } | null> {
+  let currentDir = path.resolve(startDir);
+  const root = path.parse(currentDir).root;
+
+  while (currentDir !== root) {
+    const tsconfigPath = path.join(currentDir, 'tsconfig.json');
+    if (await context.fileSystem.exists(tsconfigPath)) {
+      return { tsconfigPath, tsconfigDir: currentDir };
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {break;}
+    currentDir = parentDir;
+  }
+  return null;
+}
+
+/**
  * 讀取 tsconfig.json 路徑設定（包含 paths 和 baseUrl）
+ * 會向上查找 tsconfig.json，以支援 --path 指向子目錄的情況
  */
 async function loadTsconfigPathConfig(
   projectRoot: string,
@@ -271,19 +295,25 @@ async function loadTsconfigPathConfig(
   const config: TsconfigPathConfig = { pathAliases: {} };
 
   try {
-    const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
+    // 向上查找 tsconfig.json
+    const found = await findTsconfigUp(projectRoot, context);
+    if (!found) {
+      return config;
+    }
+
+    const { tsconfigPath, tsconfigDir } = found;
     const tsconfigContent = await context.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
     const tsconfig = JSON.parse(tsconfigContent);
 
-    // 解析 baseUrl
+    // 解析 baseUrl（相對於 tsconfig.json 所在目錄）
     if (tsconfig.compilerOptions?.baseUrl) {
-      config.baseUrl = path.resolve(projectRoot, tsconfig.compilerOptions.baseUrl);
+      config.baseUrl = path.resolve(tsconfigDir, tsconfig.compilerOptions.baseUrl);
     }
 
-    // 解析 paths
+    // 解析 paths（相對於 tsconfig.json 所在目錄）
     if (tsconfig.compilerOptions?.paths) {
       const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-      const basePath = path.resolve(projectRoot, baseUrl);
+      const basePath = path.resolve(tsconfigDir, baseUrl);
 
       for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
         if (Array.isArray(paths) && paths.length > 0) {
