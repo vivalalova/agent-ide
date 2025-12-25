@@ -536,3 +536,239 @@ console.log(value);
     });
   });
 });
+
+/**
+ * Bug: 目錄移動時，目錄內部的 alias 引用沒有被更新
+ * - 當移動 src/modules/ems-database-service/ 到 src/infrastructure/ems-database/
+ * - 外部引用被正確更新了
+ * - 但目錄內部的 @/modules/ems-database-service/... 引用沒有被更新為 @/infrastructure/ems-database/...
+ */
+describe('CLI move bugs - 目錄內部 alias 引用未更新', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+
+    // 修改 tsconfig.json 加入 path alias 配置
+    await fixture.writeFile('tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        module: 'ESNext',
+        moduleResolution: 'node',
+        baseUrl: '.',
+        paths: {
+          '@/*': ['src/*']
+        }
+      },
+      include: ['src/**/*']
+    }, null, 2));
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('目錄內部 alias 引用', () => {
+    it('移動目錄時，目錄內部檔案的 @/ alias 引用應該被更新', async () => {
+      // Given: 建立目錄結構 src/modules/db/{index.ts, service.ts}
+      // service.ts 使用 @/modules/db/index 引用同目錄的 index.ts
+      await fixture.writeFile('src/modules/db/index.ts', `
+export const dbVersion = '1.0.0';
+export function connect() {
+  return 'connected';
+}
+`);
+      await fixture.writeFile('src/modules/db/service.ts', `
+import { dbVersion, connect } from '@/modules/db/index';
+
+export class DbService {
+  version = dbVersion;
+
+  init() {
+    return connect();
+  }
+}
+`);
+
+      // When: 移動目錄 src/modules/db 到 src/infrastructure/database
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/db',
+          'src/infrastructure/database',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 讀取移動後的 service.ts 檔案
+      const serviceContent = await fixture.readFile('src/infrastructure/database/service.ts');
+
+      // 舊的 @/modules/db 路徑應該被替換為 @/infrastructure/database
+      expect(serviceContent).not.toContain('@/modules/db');
+      expect(serviceContent).toContain('@/infrastructure/database');
+    });
+
+    it('移動目錄時，目錄內多個檔案互相引用的 alias 都應該被更新', async () => {
+      // Given: 建立複雜的目錄結構
+      await fixture.writeFile('src/modules/db/types.ts', `
+export interface User {
+  id: string;
+  name: string;
+}
+`);
+      await fixture.writeFile('src/modules/db/repository.ts', `
+import { User } from '@/modules/db/types';
+
+export class UserRepository {
+  findById(id: string): User | null {
+    return null;
+  }
+}
+`);
+      await fixture.writeFile('src/modules/db/service.ts', `
+import { User } from '@/modules/db/types';
+import { UserRepository } from '@/modules/db/repository';
+
+export class UserService {
+  private repo = new UserRepository();
+
+  getUser(id: string): User | null {
+    return this.repo.findById(id);
+  }
+}
+`);
+
+      // When: 移動整個目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/db',
+          'src/infrastructure/database',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功且所有內部 alias 引用都被更新
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 檢查 repository.ts
+      const repoContent = await fixture.readFile('src/infrastructure/database/repository.ts');
+      expect(repoContent).not.toContain('@/modules/db');
+      expect(repoContent).toContain('@/infrastructure/database/types');
+
+      // 檢查 service.ts
+      const serviceContent = await fixture.readFile('src/infrastructure/database/service.ts');
+      expect(serviceContent).not.toContain('@/modules/db');
+      expect(serviceContent).toContain('@/infrastructure/database/types');
+      expect(serviceContent).toContain('@/infrastructure/database/repository');
+    });
+
+    it('dry-run 應該顯示目錄內部 alias 引用的變更', async () => {
+      // Given: 建立使用 alias 引用的檔案結構
+      await fixture.writeFile('src/modules/db/index.ts', `
+export const version = '1.0';
+`);
+      await fixture.writeFile('src/modules/db/service.ts', `
+import { version } from '@/modules/db/index';
+console.log(version);
+`);
+
+      // When: dry-run 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/db',
+          'src/infrastructure/database',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該在預覽中顯示 service.ts 的 alias 引用變更
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 應該有 files 顯示內部引用的變更
+      // 輸出格式: files[].hunks[].lines[] 其中 lines 有 type 和 content
+      const files = output.files ?? [];
+      interface HunkLine {
+        type: string;
+        content: string;
+      }
+      interface Hunk {
+        lines: HunkLine[];
+      }
+      interface FileOutput {
+        filePath?: string;
+        hunks?: Hunk[];
+      }
+      const hasInternalUpdate = files.some((f: FileOutput) =>
+        f.filePath?.includes('service.ts') &&
+        f.hunks?.some((h: Hunk) =>
+          h.lines?.some((l: HunkLine) =>
+            l.type === 'delete' && l.content?.includes('@/modules/db')
+          )
+        )
+      );
+      expect(hasInternalUpdate).toBe(true);
+    });
+  });
+
+  describe('外部引用與內部引用同時處理', () => {
+    it('外部和內部的 alias 引用都應該被更新', async () => {
+      // Given: 外部檔案和內部檔案都使用 alias 引用
+      await fixture.writeFile('src/modules/db/index.ts', `
+export const dbVersion = '1.0';
+`);
+      await fixture.writeFile('src/modules/db/service.ts', `
+import { dbVersion } from '@/modules/db/index';
+export const version = dbVersion;
+`);
+      await fixture.writeFile('src/app.ts', `
+import { version } from '@/modules/db/service';
+console.log(version);
+`);
+
+      // When: 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/db',
+          'src/infrastructure/database',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 外部引用被更新
+      const appContent = await fixture.readFile('src/app.ts');
+      expect(appContent).not.toContain('@/modules/db');
+      expect(appContent).toContain('@/infrastructure/database/service');
+
+      // 內部引用也被更新
+      const serviceContent = await fixture.readFile('src/infrastructure/database/service.ts');
+      expect(serviceContent).not.toContain('@/modules/db');
+      expect(serviceContent).toContain('@/infrastructure/database/index');
+    });
+  });
+});

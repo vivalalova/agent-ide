@@ -359,8 +359,8 @@ export class MoveService {
    * 遞迴移動目錄
    */
   private async moveDirectory(source: string, target: string): Promise<void> {
-    // 建立目標目錄
-    await this.fileSystem.createDirectory(target);
+    // 建立目標目錄（recursive: true 確保父目錄也被建立）
+    await this.fileSystem.createDirectory(target, true);
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
