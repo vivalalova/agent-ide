@@ -217,6 +217,27 @@ export class PathCalculator {
             }
           }
 
+          // Issue #58 修復：檢查目標目錄是否有同名檔案
+          // 如果保持相對路徑不變，在目標位置會解析到的檔案
+          const targetDir = path.dirname(target);
+          const potentialTargetResolved = path.resolve(targetDir, importStatement.path);
+
+          // 檢查目標位置是否存在同名檔案
+          const targetExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
+          let targetFileExists = false;
+          for (const ext of targetExtensions) {
+            const fullPath = potentialTargetResolved + ext;
+            if (await this.fileSystem.exists(fullPath)) {
+              targetFileExists = true;
+              break;
+            }
+          }
+
+          // 如果目標目錄有同名檔案，保持相對路徑不變，跳過更新
+          if (targetFileExists) {
+            continue;
+          }
+
           // 計算從新位置應該如何 import 這個檔案
           const newImportPath = this.pathUtils.calculateNewImportPath(target, currentResolved);
 
