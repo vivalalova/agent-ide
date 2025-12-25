@@ -54,14 +54,25 @@ export class PathCalculator {
         const newFilePath = path.join(target, relativePath);
 
         // 更新其他檔案對目錄內檔案的引用
-        const affectedFiles = await this.fileScanner.findAffectedFiles(filePath, projectRoot);
+        // 排除目錄內的所有檔案，避免重複處理
+        const affectedFiles = await this.fileScanner.findAffectedFiles(
+          filePath,
+          projectRoot,
+          filesInDir
+        );
         for (const affectedFile of affectedFiles) {
           const updates = await this.calculatePathUpdates(affectedFile, filePath, newFilePath);
           pathUpdates.push(...updates);
         }
 
         // 更新目錄內檔案的內部 import
-        const internalUpdates = await this.calculateMovedFileInternalUpdates(filePath, newFilePath);
+        // 傳入目錄資訊，讓方法知道哪些引用不需要更新
+        const internalUpdates = await this.calculateMovedFileInternalUpdates(
+          filePath,
+          newFilePath,
+          source,
+          filesInDir
+        );
         pathUpdates.push(...internalUpdates);
       }
     } else {
@@ -152,9 +163,16 @@ export class PathCalculator {
    *
    * @param source - 來源檔案路徑
    * @param target - 目標檔案路徑
+   * @param movedDirectory - 被移動的目錄路徑（目錄移動時使用）
+   * @param filesInMovedDir - 被移動目錄內的所有檔案（目錄移動時使用）
    * @returns 路徑更新列表
    */
-  async calculateMovedFileInternalUpdates(source: string, target: string): Promise<PathUpdate[]> {
+  async calculateMovedFileInternalUpdates(
+    source: string,
+    target: string,
+    movedDirectory?: string,
+    filesInMovedDir?: string[]
+  ): Promise<PathUpdate[]> {
     const updates: PathUpdate[] = [];
 
     try {
@@ -165,6 +183,11 @@ export class PathCalculator {
       if (!imports || !Array.isArray(imports)) {
         return updates;
       }
+
+      // 如果是目錄移動，建立 Set 以快速查找
+      const normalizedFilesInDir = filesInMovedDir
+        ? new Set(filesInMovedDir.map(f => path.normalize(f)))
+        : null;
 
       for (const importStatement of imports) {
         // 跳過 node_modules
@@ -177,6 +200,22 @@ export class PathCalculator {
           // 計算這個 import 當前指向的檔案
           const sourceDir = path.dirname(source);
           const currentResolved = path.resolve(sourceDir, importStatement.path);
+          const normalizedResolved = path.normalize(currentResolved);
+
+          // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
+          if (movedDirectory && normalizedFilesInDir) {
+            // 嘗試解析到實際檔案（處理省略副檔名的情況）
+            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
+            const isTargetInMovedDir = possibleExtensions.some(ext => {
+              const fullPath = path.normalize(normalizedResolved + ext);
+              return normalizedFilesInDir.has(fullPath);
+            });
+
+            // 如果目標檔案也在被移動的目錄內，相對位置不變，跳過更新
+            if (isTargetInMovedDir) {
+              continue;
+            }
+          }
 
           // 計算從新位置應該如何 import 這個檔案
           const newImportPath = this.pathUtils.calculateNewImportPath(target, currentResolved);

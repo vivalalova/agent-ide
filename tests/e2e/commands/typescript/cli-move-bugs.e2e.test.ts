@@ -314,3 +314,225 @@ describe('CLI move bugs - GitHub Issue #29', () => {
     });
   });
 });
+
+/**
+ * GitHub Issue #57: move 命令移動目錄到 src 外部時路徑計算錯誤
+ * - 同一檔案產生兩組 hunks（重複處理）
+ * - 同目錄內的相對引用被錯誤修改
+ * - 產生錯誤路徑如 ../../src/frontend/... 指回原位置
+ */
+describe('CLI move bugs - GitHub Issue #57: 目錄移動路徑計算', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('同目錄內的相對引用', () => {
+    it('移動目錄時，同目錄內的 ./ 引用不應被修改', async () => {
+      // Given: 建立目錄結構 src/frontend/alarm/{controller.ts, controller.spec.ts}
+      await fixture.writeFile('src/frontend/alarm/alarm.controller.ts', `
+export class AlarmController {
+  constructor() {}
+}
+`);
+      await fixture.writeFile('src/frontend/alarm/alarm.controller.spec.ts', `
+import { AlarmController } from './alarm.controller';
+
+describe('AlarmController', () => {
+  it('should work', () => {
+    const controller = new AlarmController();
+    expect(controller).toBeDefined();
+  });
+});
+`);
+
+      // When: 移動整個目錄到 src 外部
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend',
+          'frontend-api',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功且 ./alarm.controller 引用保持不變
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 讀取移動後的 spec 檔案
+      const specContent = await fixture.readFile('frontend-api/alarm/alarm.controller.spec.ts');
+      // 同目錄內的 ./alarm.controller 應該保持不變
+      expect(specContent).toContain('from \'./alarm.controller\'');
+    });
+
+    it('移動目錄時，同目錄樹內的 ../ 引用不應被修改', async () => {
+      // Given: 建立 src/frontend/shared/utils.ts 和 src/frontend/alarm/service.ts
+      await fixture.writeFile('src/frontend/shared/utils.ts', `
+export function formatDate(date: Date): string {
+  return date.toISOString();
+}
+`);
+      await fixture.writeFile('src/frontend/alarm/alarm.service.ts', `
+import { formatDate } from '../shared/utils';
+
+export class AlarmService {
+  getFormattedTime(): string {
+    return formatDate(new Date());
+  }
+}
+`);
+
+      // When: 移動整個目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend',
+          'frontend-api',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: ../shared/utils 應該保持不變
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const serviceContent = await fixture.readFile('frontend-api/alarm/alarm.service.ts');
+      expect(serviceContent).toContain('from \'../shared/utils\'');
+    });
+  });
+
+  describe('外部引用的正確更新', () => {
+    it('src 內的檔案引用被移動目錄內的模組，應正確更新路徑', async () => {
+      // Given: src/app.ts 引用 src/frontend/alarm/controller
+      await fixture.writeFile('src/frontend/alarm/alarm.controller.ts', `
+export class AlarmController {
+  constructor() {}
+}
+`);
+      await fixture.writeFile('src/app.ts', `
+import { AlarmController } from './frontend/alarm/alarm.controller';
+
+const controller = new AlarmController();
+console.log(controller);
+`);
+
+      // When: 移動 src/frontend 到 frontend-api（src 外部）
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend',
+          'frontend-api',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: src/app.ts 的引用應更新為 ../frontend-api/...
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const appContent = await fixture.readFile('src/app.ts');
+      // 舊路徑應該被替換
+      expect(appContent).not.toContain('./frontend/alarm/alarm.controller');
+      // 新路徑應該指向 frontend-api
+      expect(appContent).toContain('frontend-api/alarm/alarm.controller');
+    });
+  });
+
+  describe('重複處理防止', () => {
+    it('dry-run 應該不產生重複的 pathUpdates', async () => {
+      // Given: 目錄內多個檔案互相引用
+      await fixture.writeFile('src/frontend/a.ts', `
+export const a = 1;
+`);
+      await fixture.writeFile('src/frontend/b.ts', `
+import { a } from './a';
+export const b = a + 1;
+`);
+      await fixture.writeFile('src/frontend/c.ts', `
+import { b } from './b';
+export const c = b + 1;
+`);
+
+      // When: dry-run 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend',
+          'lib',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該沒有任何 import 更新（因為都是同目錄內的引用）
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 檢查沒有對 ./a 或 ./b 的更新
+      const files = output.files ?? [];
+      for (const file of files) {
+        const changes = file.changes ?? [];
+        for (const change of changes) {
+          // 同目錄引用不應該出現在 changes 中
+          if (change.oldImport) {
+            expect(change.oldImport).not.toMatch(/from\s+['"]\.\/(a|b)['"]/);
+          }
+        }
+      }
+    });
+
+    it('每個檔案的更新應該只出現一次', async () => {
+      // Given: 外部檔案引用目錄內的模組
+      await fixture.writeFile('src/frontend/module.ts', `
+export const value = 42;
+`);
+      await fixture.writeFile('src/consumer.ts', `
+import { value } from './frontend/module';
+console.log(value);
+`);
+
+      // When: dry-run 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/frontend',
+          'lib',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: consumer.ts 應該只出現一次
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const files = output.files ?? [];
+      const consumerFiles = files.filter((f: { filePath: string }) =>
+        f.filePath?.includes('consumer.ts')
+      );
+      // 同一檔案不應該出現多次
+      expect(consumerFiles.length).toBeLessThanOrEqual(1);
+    });
+  });
+});

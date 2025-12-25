@@ -95,16 +95,23 @@ export class FileScanner {
    *
    * @param movedPath - 被移動的檔案路徑
    * @param projectRoot - 專案根目錄
+   * @param excludeFiles - 要排除的檔案列表（用於目錄移動時排除同目錄內的檔案）
    * @returns 受影響的檔案路徑列表
    */
-  async findAffectedFiles(movedPath: string, projectRoot: string): Promise<string[]> {
+  async findAffectedFiles(
+    movedPath: string,
+    projectRoot: string,
+    excludeFiles: string[] = []
+  ): Promise<string[]> {
     const files = await this.getAllProjectFiles(projectRoot);
     const normalizedMovedPath = path.normalize(movedPath);
+    const normalizedExcludeFiles = new Set(excludeFiles.map(f => path.normalize(f)));
 
-    // 過濾出需要檢查的檔案（排除被移動的檔案本身）
+    // 過濾出需要檢查的檔案（排除被移動的檔案本身和 excludeFiles）
     const filesToCheck = files.filter(file => {
       const normalizedFile = path.normalize(file);
-      return normalizedFile !== normalizedMovedPath;
+      return normalizedFile !== normalizedMovedPath
+        && !normalizedExcludeFiles.has(normalizedFile);
     });
 
     // 並行讀取所有檔案內容
