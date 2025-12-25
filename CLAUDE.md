@@ -135,6 +135,31 @@ agent-ide move src/utils.ts:25 src/helpers.ts --path .
 agent-ide move src/utils.ts:25 src/helpers.ts:10 --path .
 ```
 
+**⚠️ 目錄移動注意**：遵循 Unix `mv` 行為，目標目錄已存在時會嵌套：
+
+```bash
+# 目標不存在 → 直接移動
+move src/utils src/helpers  # → src/helpers/...
+
+# 目標已存在 → 嵌套進目標內
+move src/utils src/helpers  # → src/helpers/utils/...
+```
+
+**Glob 模式**：支援 `*.ts`、`**/*.ts` 等 glob pattern，比照 Unix `mv` 行為：
+
+```bash
+# 移動多個 .ts 檔案到目錄
+agent-ide move "src/utils/*.ts" src/lib/ --path .
+
+# 遞迴移動所有 .ts 檔案
+agent-ide move "src/old/**/*.ts" src/new/ --path .
+
+# 單一檔案匹配時可重命名
+agent-ide move "src/only/*.ts" src/renamed.ts --path .
+```
+
+> ⚠️ 多檔案時目標必須是目錄（以 `/` 結尾或已存在的目錄）
+
 **rename `--at` 參數**：當有多個同名符號時，用 `--at` 精確定位：
 
 ```bash

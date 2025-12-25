@@ -538,6 +538,110 @@ console.log(value);
 });
 
 /**
+ * Bug: 目錄移動時父目錄不存在應自動建立
+ * 當移動目錄到一個不存在的父目錄時（如 filters → modules/common/filters，
+ * 其中 modules/common 不存在），應該自動建立父目錄而非報錯。
+ */
+describe('CLI move bugs - 父目錄自動建立', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('目錄移動到不存在的父目錄', () => {
+    it('移動目錄到不存在的單層父目錄應自動建立', async () => {
+      // Given: 存在 src/utils 目錄
+      // When: 移動到 src/common/utils（common 不存在）
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils',
+          'src/common/utils',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功，自動建立 common 目錄
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+
+    it('移動目錄到不存在的多層父目錄應自動建立', async () => {
+      // Given: 存在 src/utils 目錄
+      // When: 移動到 src/modules/common/utils（modules/common 都不存在）
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils',
+          'src/modules/common/utils',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功，自動建立 modules/common 目錄
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+
+    it('移動檔案到不存在的父目錄應自動建立', async () => {
+      // Given: 存在 src/utils/formatter.ts
+      // When: 移動到 src/new-module/formatters/formatter.ts
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/new-module/formatters/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功，自動建立 new-module/formatters 目錄
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.moved).toBe(true);
+    });
+
+    it('dry-run 模式下應該顯示會建立的父目錄', async () => {
+      // Given: 存在 src/utils 目錄
+      // When: dry-run 移動到不存在的父目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils',
+          'src/modules/shared/utils',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功預覽
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.command).toBe('move');
+    });
+  });
+});
+
+/**
  * Bug: 目錄移動時，目錄內部的 alias 引用沒有被更新
  * - 當移動 src/modules/ems-database-service/ 到 src/infrastructure/ems-database/
  * - 外部引用被正確更新了

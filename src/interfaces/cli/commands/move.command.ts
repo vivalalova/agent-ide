@@ -2,6 +2,7 @@
  * Move 命令
  * 移動檔案或目錄並更新 import 路徑
  * 支援成員移動（透過 source:line 格式）
+ * 支援 glob pattern（如 *.ts）
  */
 
 import type { Command } from 'commander';
@@ -10,9 +11,16 @@ import { MoveService } from '@core/move/move-service.js';
 import { parseMoveTarget, hasPositionInfo } from '@core/move/path-parser.js';
 import { MoveMemberService, MoveTargetType } from '@core/move-member/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
+import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { FileOperationType } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+
+/** 檢查路徑是否包含 glob pattern */
+function isGlobPattern(pattern: string): boolean {
+  return /[*?[\]{}]/.test(pattern);
+}
 
 /** Move 命令選項 */
 interface MoveOptions {
@@ -34,7 +42,7 @@ interface MoveOptions {
 export function setupMoveCommand(program: Command, context: CommandContext): void {
   program
     .command('move [source] [target]')
-    .description('移動檔案、目錄或成員（source:line 格式觸發成員移動）')
+    .description('移動檔案、目錄或成員（source:line 格式觸發成員移動）。⚠️ 目錄移動遵循 mv 行為：目標已存在時會嵌套')
     .option('-s, --source <path>', '來源路徑')
     .option('-t, --target <path>', '目標路徑')
     .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
@@ -61,15 +69,21 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
         return;
       }
 
-      // 解析路徑格式，判斷是檔案移動還是成員移動
-      const parsedSource = parseMoveTarget(source);
-
-      if (hasPositionInfo(parsedSource)) {
-        // 成員移動模式
-        await handleMoveMemberCommand(source, target, options, context);
+      // 檢查是否為 glob pattern
+      if (isGlobPattern(source)) {
+        // Glob 模式
+        await handleGlobMoveCommand(source, target, options, context);
       } else {
-        // 檔案移動模式
-        await handleMoveCommand(source, target, options, context);
+        // 解析路徑格式，判斷是檔案移動還是成員移動
+        const parsedSource = parseMoveTarget(source);
+
+        if (hasPositionInfo(parsedSource)) {
+          // 成員移動模式
+          await handleMoveMemberCommand(source, target, options, context);
+        } else {
+          // 檔案移動模式
+          await handleMoveCommand(source, target, options, context);
+        }
       }
     });
 }
@@ -152,8 +166,8 @@ async function handleMoveCommand(
       return;
     }
 
-    // 讀取 tsconfig.json 路徑設定（paths + baseUrl）
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context);
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
 
     // 建立移動服務
     const moveService = new MoveService(context.fileSystem, {
@@ -223,6 +237,199 @@ async function handleMoveCommand(
 }
 
 /**
+ * 處理 glob pattern 移動命令
+ * 比照 Unix mv 行為：展開 glob 並移動所有匹配檔案到目標目錄
+ */
+async function handleGlobMoveCommand(
+  source: string,
+  target: string,
+  options: MoveOptions,
+  context: CommandContext
+): Promise<void> {
+  const outputHandler = createUnifiedOutputHandler();
+  let format: OutputFormat;
+
+  try {
+    format = parseOutputFormat(options.format, true);
+  } catch {
+    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
+    process.exitCode = 1;
+    return;
+  }
+
+  const isJsonFormat = format === OutputFormat.Json;
+  const projectRoot = options.path || process.cwd();
+
+  try {
+    // 展開 glob pattern（使用 IFileSystem 的 glob 方法）
+    // 注意：memfs 的 glob 需要用相對路徑 + cwd，不支援絕對路徑 pattern
+    const globPattern = path.isAbsolute(source)
+      ? path.relative(projectRoot, source)
+      : source;
+    const matchedFiles = await context.fileSystem.glob(globPattern, {
+      cwd: projectRoot,
+      onlyFiles: true,
+      absolute: true
+    });
+
+    if (matchedFiles.length === 0) {
+      outputHandler.outputError(`Glob pattern 無匹配: ${source}`, format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    // 解析目標路徑
+    const resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+    const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
+
+    // 檢查目標是否為目錄
+    let targetIsDirectory = targetEndsWithSlash;
+    if (!targetIsDirectory) {
+      try {
+        targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
+      } catch {
+        targetIsDirectory = false;
+      }
+    }
+
+    // 多檔案時，目標必須是目錄
+    if (matchedFiles.length > 1 && !targetIsDirectory) {
+      outputHandler.outputError(`多檔案移動時目標必須是目錄: ${target}`, format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    if (!isJsonFormat) {
+      console.log(`   Glob: ${source} (${matchedFiles.length} 個檔案)`);
+      console.log(`   目標: ${target}`);
+    }
+
+    // 讀取 tsconfig 設定
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+
+    // 建立移動服務
+    const moveService = new MoveService(context.fileSystem, {
+      pathAliases: tsconfigPathConfig.pathAliases,
+      baseUrl: tsconfigPathConfig.baseUrl,
+      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
+      includeNodeModules: false
+    });
+
+    // 為每個檔案生成 changeset 並合併
+    const builder = new ChangesetBuilder();
+    const allMovedFiles: Array<{ from: string; to: string }> = [];
+
+    for (const sourceFile of matchedFiles) {
+      const targetFile = targetIsDirectory
+        ? path.join(resolvedTarget, path.basename(sourceFile))
+        : resolvedTarget;
+
+      const moveOperation = {
+        source: sourceFile,
+        target: targetFile,
+        updateImports: options.updateImports
+      };
+
+      const changeset = await moveService.generateChangeset(moveOperation, { projectRoot });
+
+      if (!changeset.success) {
+        outputHandler.outputError(changeset.errors?.join(', ') ?? `移動失敗: ${sourceFile}`, format);
+        process.exitCode = 1;
+        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+        return;
+      }
+
+      // 合併 changeset
+      for (const tc of changeset.textChanges) {
+        builder.addTextChange(tc.filePath, [...tc.edits], tc.operationType);
+      }
+      for (const fo of changeset.fileOperations) {
+        if (fo.type === FileOperationType.Move) {
+          builder.addFileMove(fo.sourcePath, fo.targetPath!);
+        } else if (fo.type === FileOperationType.Create) {
+          builder.addFileCreate(fo.sourcePath, fo.content ?? '');
+        } else if (fo.type === FileOperationType.Delete) {
+          builder.addFileDelete(fo.sourcePath);
+        }
+      }
+
+      allMovedFiles.push({ from: sourceFile, to: targetFile });
+    }
+
+    const mergedChangeset = builder.build();
+
+    // 轉換為 PreviewInput
+    const previewInput = await convertChangesetToPreviewInput(mergedChangeset, context.fileSystem);
+
+    // Dry-run 模式只輸出預覽
+    if (options.dryRun) {
+      outputHandler.outputMutation(previewInput, format);
+      return;
+    }
+
+    // 執行移動
+    if (!isJsonFormat) {
+      console.log('   執行移動...');
+    }
+
+    const applicator = new ChangeApplicator(context.fileSystem);
+    const result = await applicator.apply(mergedChangeset, {
+      atomic: true,
+      rollbackOnError: true
+    });
+
+    if (result.success) {
+      const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
+      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, allMovedFiles, isJsonFormat);
+    } else {
+      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputHandler.outputError(errorMsg, format);
+    process.exitCode = 1;
+    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+  }
+}
+
+/**
+ * 印出 glob 移動成功訊息
+ */
+function printGlobSuccess(
+  fileCount: number,
+  target: string,
+  totalUpdates: number,
+  movedFiles: ReadonlyArray<{ from: string; to: string }>,
+  isJsonFormat: boolean
+): void {
+  if (isJsonFormat) {
+    console.log(JSON.stringify({
+      success: true,
+      filesCount: fileCount,
+      target,
+      movedFiles: movedFiles.map(f => ({ from: f.from, to: f.to })),
+      message: `成功移動 ${fileCount} 個檔案，更新了 ${totalUpdates} 個 import`
+    }, null, 2));
+  } else {
+    console.log('   移動成功!');
+    console.log(`   統計: ${fileCount} 個檔案, ${totalUpdates} 個 import 已更新`);
+
+    if (movedFiles.length > 0 && movedFiles.length <= 10) {
+      console.log('   移動的檔案:');
+      for (const { from, to } of movedFiles) {
+        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
+      }
+    } else if (movedFiles.length > 10) {
+      console.log(`   移動的檔案: ${movedFiles.length} 個 (省略詳細列表)`);
+    }
+  }
+}
+
+/**
  * 印出成功訊息
  */
 function printSuccess(
@@ -255,82 +462,6 @@ function printSuccess(
 }
 
 
-/** tsconfig 路徑設定 */
-interface TsconfigPathConfig {
-  pathAliases: Record<string, string>;
-  baseUrl?: string;
-}
-
-/**
- * 向上查找 tsconfig.json
- * 從指定目錄開始，逐層向上查找直到找到 tsconfig.json 或到達根目錄
- */
-async function findTsconfigUp(
-  startDir: string,
-  context: CommandContext
-): Promise<{ tsconfigPath: string; tsconfigDir: string } | null> {
-  let currentDir = path.resolve(startDir);
-  const root = path.parse(currentDir).root;
-
-  while (currentDir !== root) {
-    const tsconfigPath = path.join(currentDir, 'tsconfig.json');
-    if (await context.fileSystem.exists(tsconfigPath)) {
-      return { tsconfigPath, tsconfigDir: currentDir };
-    }
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {break;}
-    currentDir = parentDir;
-  }
-  return null;
-}
-
-/**
- * 讀取 tsconfig.json 路徑設定（包含 paths 和 baseUrl）
- * 會向上查找 tsconfig.json，以支援 --path 指向子目錄的情況
- */
-async function loadTsconfigPathConfig(
-  projectRoot: string,
-  context: CommandContext
-): Promise<TsconfigPathConfig> {
-  const config: TsconfigPathConfig = { pathAliases: {} };
-
-  try {
-    // 向上查找 tsconfig.json
-    const found = await findTsconfigUp(projectRoot, context);
-    if (!found) {
-      return config;
-    }
-
-    const { tsconfigPath, tsconfigDir } = found;
-    const tsconfigContent = await context.fileSystem.readFile(tsconfigPath, 'utf-8') as string;
-    const tsconfig = JSON.parse(tsconfigContent);
-
-    // 解析 baseUrl（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.baseUrl) {
-      config.baseUrl = path.resolve(tsconfigDir, tsconfig.compilerOptions.baseUrl);
-    }
-
-    // 解析 paths（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.paths) {
-      const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-      const basePath = path.resolve(tsconfigDir, baseUrl);
-
-      for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-        if (Array.isArray(paths) && paths.length > 0) {
-          // 移除 /* 後綴
-          const cleanAlias = alias.replace(/\/\*$/, '');
-          const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
-          // 轉換為絕對路徑
-          config.pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
-        }
-      }
-    }
-  } catch {
-    // tsconfig.json 不存在或解析失敗，使用空設定
-  }
-
-  return config;
-}
 
 /**
  * 處理成員移動命令
