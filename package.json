@@ -84,6 +84,7 @@
     "commander": "^12.1.0",
     "glob": "^11.0.3",
     "minimatch": "^10.0.3",
+    "tinypool": "^2.0.0",
     "typescript": "^5.0.0"
   }
 }
