@@ -1,3 +1,7 @@
+## <small>0.9.4 (2025-12-25)</small>
+
+* fix: [Fixed #57] 修正目錄移動時路徑計算錯誤 ([04c6242](https://github.com/vivalalova/agent-ide/commit/04c6242)), closes [#57](https://github.com/vivalalova/agent-ide/issues/57)
+
 ## <small>0.9.3 (2025-12-25)</small>
 
 * perf: 記憶體優化與 Tinypool 多執行緒解析 (#56) ([bf64d9f](https://github.com/vivalalova/agent-ide/commit/bf64d9f)), closes [#56](https://github.com/vivalalova/agent-ide/issues/56)
