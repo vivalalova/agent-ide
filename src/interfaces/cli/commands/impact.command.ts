@@ -9,7 +9,7 @@ import { ImpactAnalyzer } from '@core/impact/index.js';
 import { QueryCommand, type DepsResult } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
-import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { loadPathAliases } from '@plugins/typescript/tsconfig-loader.js';
 
 /** Impact 命令選項 */
 interface ImpactOptions {
@@ -79,7 +79,7 @@ async function handleImpactCommand(
   }
 
   try {
-    // 讀取 tsconfig.json 路徑別名
+    // 讀取 tsconfig.json 路徑別名（會向上查找 tsconfig.json）
     const pathAliases = await loadPathAliases(analyzePath, context.fileSystem);
 
     // 初始化影響分析器（傳入路徑別名）
@@ -125,40 +125,3 @@ async function handleImpactCommand(
   }
 }
 
-/**
- * 讀取 tsconfig.json 路徑別名
- * @param projectRoot 專案根目錄
- * @param fileSystem 檔案系統
- * @returns 路徑別名映射
- */
-async function loadPathAliases(
-  projectRoot: string,
-  fileSystem: IFileSystem
-): Promise<Record<string, string>> {
-  const pathAliases: Record<string, string> = {};
-
-  try {
-    const tsconfigPath = path.join(projectRoot, 'tsconfig.json');
-    const tsconfigContent = await fileSystem.readFile(tsconfigPath, 'utf-8') as string;
-    const tsconfig = JSON.parse(tsconfigContent);
-
-    if (tsconfig.compilerOptions?.paths) {
-      const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-      const basePath = path.resolve(projectRoot, baseUrl);
-
-      for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-        if (Array.isArray(paths) && paths.length > 0) {
-          // 移除 /* 後綴
-          const cleanAlias = alias.replace(/\/\*$/, '');
-          const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
-          // 轉換為絕對路徑
-          pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
-        }
-      }
-    }
-  } catch {
-    // tsconfig.json 不存在或解析失敗，使用空的路徑別名
-  }
-
-  return pathAliases;
-}
