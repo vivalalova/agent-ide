@@ -23,6 +23,9 @@ import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
 import { createFileUtils, type FileUtils } from '../file-utils.js';
 
+/** 批次並行讀取的檔案數量上限（避免 fd 耗盡） */
+const BATCH_SIZE = 20;
+
 /**
  * 符號查找器
  */
@@ -131,85 +134,95 @@ export class SymbolFinder {
       symbolsByName.set(symbol.name, existing);
     }
 
-    // 一次遍歷所有檔案
-    for (const filePath of projectFiles) {
-      const content = await this.fileUtils.readFile(filePath);
-      if (!content) {
-        continue;
-      }
+    // 批次並行遍歷所有檔案（控制並發數避免 fd 耗盡）
+    for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
+      const batch = projectFiles.slice(i, i + BATCH_SIZE);
+      const fileContents = await Promise.all(
+        batch.map(async (filePath) => {
+          const content = await this.fileUtils.readFile(filePath);
+          return { filePath, content };
+        })
+      );
 
-      const parser = this.fileUtils.getParser(filePath);
-      const lines = content.split('\n');
-
-      // 對每個目標符號查找引用
-      for (const [key, symbol] of symbolKeyMap) {
-        // 對於 class method，需要使用 class name 作為 containerName
-        // symbol.scope 是 method 的 function scope，其 parent 是 class scope
-        let containerName: string | undefined;
-        if (symbol.scope?.type === 'function' && symbol.scope?.parent?.type === 'class') {
-          containerName = symbol.scope.parent.name;
-        } else {
-          containerName = symbol.scope?.name;
+      // 處理這批檔案的結果
+      for (const { filePath, content } of fileContents) {
+        if (!content) {
+          continue;
         }
 
-        // 優先使用 findScopedReferences（精確匹配作用域）
-        if (parser && typeof parser.findScopedReferences === 'function') {
-          const scopedRefs = parser.findScopedReferences(content, symbol.name, { className: containerName });
+        const parser = this.fileUtils.getParser(filePath);
+        const lines = content.split('\n');
 
-          if (scopedRefs) {
-            const refs = results.get(key)!;
-            for (const ref of scopedRefs) {
-              const lineIndex = ref.location.range.start.line - 1;
-              const context = lineIndex >= 0 && lineIndex < lines.length
-                ? lines[lineIndex]
-                : undefined;
-
-              refs.push({
-                symbolName: symbol.name,
-                location: { filePath, range: ref.location.range },
-                type: this.scopedReferenceKindToType(ref.kind),
-                context,
-                containerName: ref.containerName,
-                isMethodCall: ref.kind === ScopedReferenceKind.Call
-              });
-            }
-            continue;
+        // 對每個目標符號查找引用
+        for (const [key, symbol] of symbolKeyMap) {
+          // 對於 class method，需要使用 class name 作為 containerName
+          // symbol.scope 是 method 的 function scope，其 parent 是 class scope
+          let containerName: string | undefined;
+          if (symbol.scope?.type === 'function' && symbol.scope?.parent?.type === 'class') {
+            containerName = symbol.scope.parent.name;
+          } else {
+            containerName = symbol.scope?.name;
           }
-        }
 
-        // Fallback：使用完整符號資訊查找
-        if (parser) {
-          try {
-            const ast = await parser.parse(content, filePath);
-            const references = await parser.findReferences(ast, symbol);
+          // 優先使用 findScopedReferences（精確匹配作用域）
+          if (parser && typeof parser.findScopedReferences === 'function') {
+            const scopedRefs = parser.findScopedReferences(content, symbol.name, { className: containerName });
 
-            const refs = results.get(key)!;
-            for (const ref of references) {
-              const lineIndex = ref.location.range.start.line - 1;
-              const context = lineIndex >= 0 && lineIndex < lines.length
-                ? lines[lineIndex]
-                : undefined;
+            if (scopedRefs) {
+              const refs = results.get(key)!;
+              for (const ref of scopedRefs) {
+                const lineIndex = ref.location.range.start.line - 1;
+                const context = lineIndex >= 0 && lineIndex < lines.length
+                  ? lines[lineIndex]
+                  : undefined;
 
-              refs.push({
-                symbolName: symbol.name,
-                location: ref.location,
-                type: ref.type === 'definition'
-                  ? SymbolReferenceType.Definition
-                  : SymbolReferenceType.Usage,
-                context
-              });
+                refs.push({
+                  symbolName: symbol.name,
+                  location: { filePath, range: ref.location.range },
+                  type: this.scopedReferenceKindToType(ref.kind),
+                  context,
+                  containerName: ref.containerName,
+                  isMethodCall: ref.kind === ScopedReferenceKind.Call
+                });
+              }
+              continue;
             }
-          } catch {
-            // Parser 失敗，降級到文字匹配
+          }
+
+          // Fallback：使用完整符號資訊查找
+          if (parser) {
+            try {
+              const ast = await parser.parse(content, filePath);
+              const references = await parser.findReferences(ast, symbol);
+
+              const refs = results.get(key)!;
+              for (const ref of references) {
+                const lineIndex = ref.location.range.start.line - 1;
+                const context = lineIndex >= 0 && lineIndex < lines.length
+                  ? lines[lineIndex]
+                  : undefined;
+
+                refs.push({
+                  symbolName: symbol.name,
+                  location: ref.location,
+                  type: ref.type === 'definition'
+                    ? SymbolReferenceType.Definition
+                    : SymbolReferenceType.Usage,
+                  context
+                });
+              }
+            } catch {
+              // Parser 失敗，降級到文字匹配
+              const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
+              const refs = results.get(key)!;
+              refs.push(...textRefs);
+            }
+          } else {
+            // 無 Parser，使用文字匹配
             const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
             const refs = results.get(key)!;
             refs.push(...textRefs);
           }
-        } else {
-          // 無 Parser，使用文字匹配
-          const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
-          const refs = results.get(key)!;
-          refs.push(...textRefs);
         }
       }
     }
@@ -250,9 +263,15 @@ export class SymbolFinder {
   async findReferencesWithSymbol(symbol: Symbol, projectFiles: readonly string[]): Promise<SymbolReference[]> {
     const allReferences: SymbolReference[] = [];
 
-    for (const filePath of projectFiles) {
-      const refs = await this.findReferencesInFileWithSymbol(filePath, symbol);
-      allReferences.push(...refs);
+    // 批次並行處理（控制並發數避免 fd 耗盡）
+    for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
+      const batch = projectFiles.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(filePath => this.findReferencesInFileWithSymbol(filePath, symbol))
+      );
+      for (const refs of batchResults) {
+        allReferences.push(...refs);
+      }
     }
 
     return allReferences;
@@ -308,9 +327,15 @@ export class SymbolFinder {
   ): Promise<SymbolReference[]> {
     const allReferences: SymbolReference[] = [];
 
-    for (const filePath of projectFiles) {
-      const refs = await this.findScopedReferencesInFile(filePath, symbolName, options);
-      allReferences.push(...refs);
+    // 批次並行處理（控制並發數避免 fd 耗盡）
+    for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
+      const batch = projectFiles.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(filePath => this.findScopedReferencesInFile(filePath, symbolName, options))
+      );
+      for (const refs of batchResults) {
+        allReferences.push(...refs);
+      }
     }
 
     return allReferences;
@@ -322,9 +347,15 @@ export class SymbolFinder {
   async findCallSites(functionName: string, projectFiles: readonly string[]): Promise<CallSite[]> {
     const results: CallSite[] = [];
 
-    for (const filePath of projectFiles) {
-      const callSites = await this.findCallSitesInFile(filePath, functionName);
-      results.push(...callSites);
+    // 批次並行處理（控制並發數避免 fd 耗盡）
+    for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
+      const batch = projectFiles.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(filePath => this.findCallSitesInFile(filePath, functionName))
+      );
+      for (const callSites of batchResults) {
+        results.push(...callSites);
+      }
     }
 
     return results;
