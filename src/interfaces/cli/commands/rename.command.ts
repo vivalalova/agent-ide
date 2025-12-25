@@ -11,6 +11,7 @@ import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
 /** Rename 命令選項 */
@@ -24,68 +25,6 @@ interface RenameOptions {
   at?: string;
   dryRun?: boolean;
   format: string;
-}
-
-/** 解析後的位置資訊 */
-interface ParsedLocation {
-  filePath: string;
-  line?: number;
-  column?: number;
-}
-
-/**
- * 解析 --at 參數 (file:line:column 格式)
- * 支援格式：
- * - src/file.ts
- * - src/file.ts:42
- * - src/file.ts:42:10
- */
-function parseAtLocation(at: string, basePath: string): ParsedLocation {
-  // 從後往前找冒號，因為 Windows 路徑可能有 C: 開頭
-  const parts = at.split(':');
-
-  // 檢查最後兩個部分是否為數字
-  let filePath: string;
-  let line: number | undefined;
-  let column: number | undefined;
-
-  if (parts.length >= 3) {
-    const lastPart = parts[parts.length - 1];
-    const secondLastPart = parts[parts.length - 2];
-
-    if (/^\d+$/.test(lastPart) && /^\d+$/.test(secondLastPart)) {
-      // file:line:column
-      column = parseInt(lastPart, 10);
-      line = parseInt(secondLastPart, 10);
-      filePath = parts.slice(0, -2).join(':');
-    } else if (/^\d+$/.test(lastPart)) {
-      // file:line (Windows path like C:\path:42)
-      line = parseInt(lastPart, 10);
-      filePath = parts.slice(0, -1).join(':');
-    } else {
-      // 全部都是路徑
-      filePath = at;
-    }
-  } else if (parts.length === 2) {
-    const lastPart = parts[parts.length - 1];
-    if (/^\d+$/.test(lastPart)) {
-      // file:line
-      line = parseInt(lastPart, 10);
-      filePath = parts[0];
-    } else {
-      // Windows path like C:\path
-      filePath = at;
-    }
-  } else {
-    filePath = at;
-  }
-
-  // 轉換為絕對路徑
-  if (!path.isAbsolute(filePath)) {
-    filePath = path.resolve(basePath, filePath);
-  }
-
-  return { filePath, line, column };
 }
 
 /**
@@ -209,7 +148,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     if (searchResults.length > 1) {
       // 有指定 --at 時，過濾到指定位置
       if (options.at) {
-        const location = parseAtLocation(options.at, workspacePath);
+        const location = parsePathLocationAbsolute(options.at, workspacePath);
         const filtered = searchResults.filter(result => {
           const symbolPath = result.symbol.location.filePath;
           const symbolLine = result.symbol.location.range.start.line;

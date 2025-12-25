@@ -8,8 +8,8 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '@core/move/move-service.js';
-import { parseMoveTarget, hasPositionInfo } from '@core/move/path-parser.js';
 import { MoveMemberService, MoveTargetType } from '@core/move-member/index.js';
+import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { FileOperationType } from '@infrastructure/changeset/index.js';
@@ -75,7 +75,7 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
         await handleGlobMoveCommand(source, target, options, context);
       } else {
         // 解析路徑格式，判斷是檔案移動還是成員移動
-        const parsedSource = parseMoveTarget(source);
+        const parsedSource = parsePathLocation(source);
 
         if (hasPositionInfo(parsedSource)) {
           // 成員移動模式
@@ -489,8 +489,8 @@ async function handleMoveMemberCommand(
 
   try {
     // 解析 source 和 target 路徑
-    const parsedSource = parseMoveTarget(source);
-    const parsedTarget = parseMoveTarget(target);
+    const parsedSource = parsePathLocation(source);
+    const parsedTarget = parsePathLocation(target);
 
     // 解析為絕對路徑
     const sourceFilePath = path.isAbsolute(parsedSource.filePath)

@@ -11,7 +11,6 @@ export { ImportResolver } from './import-resolver.js';
 export { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
 export { FileScanner } from './file-scanner.js';
 export { PathCalculator } from './path-calculator.js';
-export { parseMoveTarget, hasPositionInfo, type ParsedPath } from './path-parser.js';
 
 // 型別定義
 export type {
