@@ -1,3 +1,17 @@
+## <small>0.9.2 (2025-12-25)</small>
+
+* fix: change-signature 呼叫點更新失敗修正 ([e812f35](https://github.com/vivalalova/agent-ide/commit/e812f35))
+* perf: [核心效能優化 v2] P0 關鍵問題修復 ([c75b5e2](https://github.com/vivalalova/agent-ide/commit/c75b5e2))
+* perf: [核心效能優化 v2] P1 重要問題修復 ([05629c5](https://github.com/vivalalova/agent-ide/commit/05629c5))
+* perf: [核心效能優化 v3] Core P0 修復 ([f2d355e](https://github.com/vivalalova/agent-ide/commit/f2d355e))
+* perf: [核心效能優化 v3] Infrastructure P0 修復 ([051d69f](https://github.com/vivalalova/agent-ide/commit/051d69f))
+* perf: [核心效能優化 v3] Plugins P0 修復 ([58093dd](https://github.com/vivalalova/agent-ide/commit/58093dd))
+* perf: [核心效能優化 v4] 合併 file-change-preparer 正則掃描 ([97d3f03](https://github.com/vivalalova/agent-ide/commit/97d3f03))
+* perf: [核心效能優化] P0 關鍵問題修復 ([d6e81a7](https://github.com/vivalalova/agent-ide/commit/d6e81a7))
+* perf: [核心效能優化] P1 重要問題修復 ([3d22ed4](https://github.com/vivalalova/agent-ide/commit/3d22ed4))
+* test: 補 bug fixes regression 測試 ([fc82379](https://github.com/vivalalova/agent-ide/commit/fc82379))
+* docs: 優化 agent-ide skill description 並移除冗餘 references ([169b0c8](https://github.com/vivalalova/agent-ide/commit/169b0c8))
+
 ## <small>0.9.1 (2025-12-24)</small>
 
 * merge: refactor/file-utils - FileUtils 靜態化與 CLI 修復 ([e32bdf1](https://github.com/vivalalova/agent-ide/commit/e32bdf1))
