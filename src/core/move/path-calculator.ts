@@ -90,7 +90,27 @@ export class PathCalculator {
       pathUpdates.push(...movedFileInternalUpdates);
     }
 
-    return pathUpdates;
+    // 規範化路徑：確保所有 filePath 都是絕對路徑
+    // 這避免了相對路徑和絕對路徑被視為不同的檔案
+    const normalizedUpdates = pathUpdates.map(update => ({
+      ...update,
+      filePath: path.isAbsolute(update.filePath)
+        ? path.normalize(update.filePath)
+        : path.resolve(projectRoot, update.filePath)
+    }));
+
+    // 去重：使用 filePath + line + oldImport 作為唯一鍵
+    const seen = new Set<string>();
+    const uniqueUpdates = normalizedUpdates.filter(update => {
+      const key = `${update.filePath}:${update.line}:${update.oldImport}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+
+    return uniqueUpdates;
   }
 
   /**
@@ -195,7 +215,7 @@ export class PathCalculator {
           continue;
         }
 
-        // 只處理相對路徑的 import
+        // 處理相對路徑的 import
         if (importStatement.path.startsWith('.')) {
           // 計算這個 import 當前指向的檔案
           const sourceDir = path.dirname(source);
@@ -252,6 +272,68 @@ export class PathCalculator {
                 `$1${newImportPath}$1`
               )
             });
+          }
+        }
+        // 處理 alias 和 baseUrl 相對路徑（如 @/modules/db/...）
+        else {
+          // 解析 alias 到實際檔案路徑
+          const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, source);
+
+          // 如果解析結果與原始路徑相同，表示無法解析，跳過
+          if (resolvedPath === importStatement.path) {
+            continue;
+          }
+
+          const normalizedResolved = path.normalize(resolvedPath);
+
+          // 如果是目錄移動，檢查被引用的檔案是否在被移動的目錄內
+          if (movedDirectory && normalizedFilesInDir) {
+            // 嘗試解析到實際檔案（處理省略副檔名的情況）
+            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
+            const isTargetInMovedDir = possibleExtensions.some(ext => {
+              const fullPath = path.normalize(normalizedResolved + ext);
+              return normalizedFilesInDir.has(fullPath);
+            });
+
+            // 如果目標檔案也在被移動的目錄內，需要更新 alias 路徑
+            if (isTargetInMovedDir) {
+              // 計算被引用檔案相對於原目錄的位置
+              const relativeToMovedDir = path.relative(movedDirectory, normalizedResolved);
+
+              // 計算源檔案相對於原目錄的位置
+              const sourceRelativeToMovedDir = path.relative(movedDirectory, source);
+
+              // 從 target 回溯到目標目錄
+              let targetMovedDir = target;
+              const depthParts = sourceRelativeToMovedDir.split(path.sep);
+              for (let i = 0; i < depthParts.length; i++) {
+                targetMovedDir = path.dirname(targetMovedDir);
+              }
+
+              // 被引用檔案的新位置
+              const newResolvedPath = path.join(targetMovedDir, relativeToMovedDir);
+
+              // 使用 calculateNewImportPathPreservingStyle 計算新的 alias 路徑
+              const newImportPath = this.pathUtils.calculateNewImportPathPreservingStyle(
+                importStatement.path,
+                target,
+                normalizedResolved,
+                newResolvedPath
+              );
+
+              // 如果路徑改變了，加入更新列表
+              if (newImportPath !== importStatement.path) {
+                updates.push({
+                  filePath: target,
+                  line: importStatement.position.line,
+                  oldImport: importStatement.rawStatement,
+                  newImport: importStatement.rawStatement.replace(
+                    new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
+                    `$1${newImportPath}$1`
+                  )
+                });
+              }
+            }
           }
         }
       }
