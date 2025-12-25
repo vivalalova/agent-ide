@@ -20,10 +20,11 @@ import {
 } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
-  parseOutputFormat,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
+import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** call-hierarchy 命令選項 */
 interface CallHierarchyCommandOptions {
@@ -58,15 +59,11 @@ async function handleCallHierarchyCommand(
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, false);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   // 驗證 direction 參數
   const direction = validateDirection(options.direction);
@@ -209,7 +206,7 @@ async function handleCallHierarchyCommand(
 
     outputHandler.outputQuery(result, format);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     outputHandler.outputError(`呼叫層次分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {

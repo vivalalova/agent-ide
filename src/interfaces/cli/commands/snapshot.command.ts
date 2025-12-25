@@ -6,7 +6,8 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { SnapshotGenerator, isProjectSnapshot } from '@core/snapshot/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { createUnifiedOutputHandler } from '@interfaces/cli/unified-output-handler.js';
+import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import { QueryCommand, type SnapshotResult, type ModuleSnapshotData, type ProjectSnapshotData, type IncrementalSnapshotData } from '@infrastructure/formatters/query-types.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 
@@ -39,15 +40,11 @@ export function setupSnapshotCommand(program: Command, context: CommandContext):
  */
 async function handleSnapshotCommand(options: SnapshotOptions, context: CommandContext): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, false);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   const targetPath = path.resolve(options.path);
 
