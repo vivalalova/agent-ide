@@ -178,8 +178,9 @@ describe('SnapshotGenerator - JavaScript', () => {
       const result = await generator.generate('/project') as ProjectSnapshot;
 
       expect(result.project).toBe('project');
-      expect(Object.keys(result.modules)).toContain('src/utils');
-      expect(Object.keys(result.modules)).toContain('src/services');
+      // 當有 package.json + src/ 時，scanFromSrc=true，模組路徑相對於 src/
+      expect(Object.keys(result.modules)).toContain('utils');
+      expect(Object.keys(result.modules)).toContain('services');
     });
 
     it('應該支援混合 TS 和 JS 模組', async () => {
@@ -201,8 +202,9 @@ describe('SnapshotGenerator - JavaScript', () => {
 
       const result = await generator.generate('/project') as ProjectSnapshot;
 
-      expect(Object.keys(result.modules)).toContain('src/core');
-      expect(Object.keys(result.modules)).toContain('src/legacy');
+      // 當有 package.json + src/ 時，scanFromSrc=true，模組路徑相對於 src/
+      expect(Object.keys(result.modules)).toContain('core');
+      expect(Object.keys(result.modules)).toContain('legacy');
     });
   });
 

@@ -327,7 +327,7 @@ describe('ChangeApplicator', () => {
 
         await sut.apply(changeset);
 
-        expect(mockFileSystem.createDirectory).toHaveBeenCalledWith('/new');
+        expect(mockFileSystem.createDirectory).toHaveBeenCalledWith('/new', true);
         expect(mockFileSystem.moveFile).toHaveBeenCalledWith('/old/file.ts', '/new/file.ts');
         expect(mockFileSystem.deleteDirectory).toHaveBeenCalledWith('/old');
       });

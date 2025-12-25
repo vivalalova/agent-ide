@@ -211,9 +211,10 @@ describe('SnapshotGenerator', () => {
       const result = await generator.generate('/project') as ProjectSnapshot;
 
       expect(result.project).toBe('project');
-      expect(Object.keys(result.modules)).toContain('src/core');
-      expect(Object.keys(result.modules)).toContain('src/core/sub');
-      expect(Object.keys(result.modules)).toContain('src/utils');
+      // 當有 package.json + src/ 時，scanFromSrc=true，模組路徑相對於 src/
+      expect(Object.keys(result.modules)).toContain('core');
+      expect(Object.keys(result.modules)).toContain('core/sub');
+      expect(Object.keys(result.modules)).toContain('utils');
     });
 
     it('應該忽略隱藏目錄', async () => {
@@ -235,8 +236,9 @@ describe('SnapshotGenerator', () => {
 
       const result = await generator.generate('/project') as ProjectSnapshot;
 
-      expect(Object.keys(result.modules)).toContain('src/core');
-      expect(Object.keys(result.modules)).not.toContain('src/.hidden');
+      // 當有 package.json + src/ 時，scanFromSrc=true，模組路徑相對於 src/
+      expect(Object.keys(result.modules)).toContain('core');
+      expect(Object.keys(result.modules)).not.toContain('.hidden');
     });
 
     it('應該處理不存在的 src 目錄', async () => {
