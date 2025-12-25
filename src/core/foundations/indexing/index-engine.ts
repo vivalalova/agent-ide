@@ -517,20 +517,22 @@ export class IndexEngine {
       const batch = files.slice(i, i + batchSize);
 
       // 1. 準備解析任務（主執行緒讀取檔案）
-      const preparedTasks = await this.prepareParseTasks(batch);
+      const taskMap = await this.prepareParseTasks(batch);
 
       // 2. Worker Pool 並行解析（CPU 密集操作在 worker 執行緒）
-      const parseResults = await this.parserPool.parseFiles(
-        preparedTasks.map(t => t.task)
-      );
+      const tasks = Array.from(taskMap.values()).map(t => t.task);
+      const parseResults = await this.parserPool.parseFiles(tasks);
 
-      // 3. 主執行緒更新索引
-      for (let j = 0; j < parseResults.length; j++) {
-        const result = parseResults[j];
-        const { fileInfo, content } = preparedTasks[j];
+      // 3. 主執行緒更新索引（使用 filePath 匹配）
+      for (const result of parseResults) {
+        const prepared = taskMap.get(result.filePath);
+        if (!prepared) {
+          errors.push(`${result.filePath}: 找不到對應的準備任務`);
+          continue;
+        }
 
         try {
-          await this.updateIndexFromParseResult(result, fileInfo, content);
+          await this.updateIndexFromParseResult(result, prepared.fileInfo, prepared.content);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '未知錯誤';
           errors.push(`${result.filePath}: ${errorMessage}`);
@@ -556,13 +558,14 @@ export class IndexEngine {
   /**
    * 準備解析任務
    * 在主執行緒讀取檔案內容和 stat，傳給 worker 解析
+   * 回傳 Map 以 filePath 為 key，確保與 parseResults 正確對應
    */
-  private async prepareParseTasks(files: string[]): Promise<Array<{
+  private async prepareParseTasks(files: string[]): Promise<Map<string, {
     task: ParseTask;
     fileInfo: FileInfo;
     content: string;
   }>> {
-    const tasks: Array<{ task: ParseTask; fileInfo: FileInfo; content: string }> = [];
+    const taskMap = new Map<string, { task: ParseTask; fileInfo: FileInfo; content: string }>();
 
     await Promise.all(files.map(async (filePath) => {
       try {
@@ -576,7 +579,7 @@ export class IndexEngine {
         const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
         const fileInfo = await this.createFileInfoFromContent(filePath, stat, content);
 
-        tasks.push({
+        taskMap.set(filePath, {
           task: { filePath, content },
           fileInfo,
           content
@@ -586,7 +589,7 @@ export class IndexEngine {
       }
     }));
 
-    return tasks;
+    return taskMap;
   }
 
   /**

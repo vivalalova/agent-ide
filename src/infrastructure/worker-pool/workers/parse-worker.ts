@@ -50,12 +50,19 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
     const symbols = await parser.extractSymbols(ast);
     const dependencies = await parser.extractDependencies(ast);
 
+    // 移除 TypeScript 特有的不可序列化屬性（tsNode, tsSymbol 包含循環引用）
+    const cleanedSymbols = symbols.map(symbol => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { tsNode, tsSymbol, ...rest } = symbol as any;
+      return rest;
+    });
+
     return {
       filePath,
-      symbols,
+      symbols: cleanedSymbols,
       dependencies,
       errors: []
-    };
+    } as ParseResult;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
