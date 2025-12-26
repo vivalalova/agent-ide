@@ -1,55 +1,65 @@
 # Agent IDE
 
-**🎯 Minimize tokens, maximize accuracy for AI Agents**
+**Minimize tokens, maximize accuracy for AI Agents**
 
 Code intelligence toolkit designed for AI agents, providing search, refactoring, and dependency analysis capabilities.
 
-## 🚀 Quick Start
+## Features
+
+- **Parser**: TypeScript / JavaScript
+- **Unicode identifiers**: Supports non-ASCII variable names
+- **Glob patterns**: `move` supports `*.ts`, `**/*.ts`, etc.
+- **Output formats**: `--format json | summary | diff`
+
+## Quick Start
 
 ### CLI Installation
 
 ```bash
-# From npm
 npm install -g agent-ide
+```
 
-# From source
+From source:
+
+```bash
 git clone https://github.com/vivalalova/agent-ide.git
 cd agent-ide
 pnpm install && pnpm build && npm link
 ```
 
-### Claude Code Skill Installation
+### Claude Code Plugin Installation
 
 ```bash
-# From marketplace
 /plugin marketplace add vivalalova/agent-ide
-# Install plugin
 /plugin install agent-ide@vivalalova/agent-ide
 ```
 
-### CLI Commands
+## Commands
 
-| Command            | Description                                                      | Output Formats      |
-| ------------------ | ---------------------------------------------------------------- | ------------------- |
-| `rename`           | Rename symbols and update references (`--at` for disambiguation) | json, summary, diff |
-| `change-signature` | Modify function signatures                                       | json, summary, diff |
-| `move`             | Move files/members and update imports (`path:line` for members)  | json, summary, diff |
-| `deadcode`         | Detect and remove unused code                                    | json, summary, diff |
-| `cycles`           | Detect circular dependencies                                     | json, summary       |
-| `impact`           | Analyze file impact range                                        | json, summary       |
-| `snapshot`         | Generate module/project snapshots for AI                         | json, summary       |
-| `find-references`  | Find symbol definitions and references                           | json, summary       |
-| `call-hierarchy`   | Analyze function call hierarchy                                  | json, summary       |
+### Query (Read-only)
 
-## 📖 Documentation
+| Command           | Description                            |
+| ----------------- | -------------------------------------- |
+| `cycles`          | Detect circular dependencies (Tarjan)  |
+| `impact`          | Analyze change impact range (BFS)      |
+| `snapshot`        | Generate module snapshots (~91% token saving) |
+| `find-references` | Find symbol definitions and references |
+| `call-hierarchy`  | Analyze function call hierarchy        |
+| `deadcode`        | Detect unused code                     |
 
-- [**Command Reference**](./plugins/skills/agent-ide/SKILL.md) - Quick reference for all commands
-- [**Detailed Docs**](./plugins/skills/agent-ide/references/) - Usage guides and examples
+### Mutation (supports `--dry-run`)
 
-## 📄 License
+| Command            | Description                                      |
+| ------------------ | ------------------------------------------------ |
+| `rename`           | Rename symbols and update all references         |
+| `change-signature` | Refactor function parameters (reorder/add/remove)|
+| `move`             | Move files/directories and update imports        |
+| `move` (with line) | Move members across files (`path:line` syntax)   |
 
-MIT License - See [LICENSE](LICENSE)
+## Documentation
 
----
+- [Command Reference](./plugins/skills/agent-ide/SKILL.md) - Quick reference for all commands
 
-**Empower AI agents to understand and manipulate code smarter** 🤖✨
+## License
+
+MIT
