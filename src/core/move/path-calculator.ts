@@ -337,12 +337,23 @@ export class PathCalculator {
 
           // 如果是目錄移動，檢查被引用的檔案是否在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
-            // 嘗試解析到實際檔案（處理省略副檔名的情況）
+            // 嘗試解析到實際檔案（處理省略副檔名和 index 檔案的情況）
             const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
-            const isTargetInMovedDir = possibleExtensions.some(ext => {
+            const possibleIndexFiles = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+
+            // 檢查直接副檔名匹配（如 @/modules/utils → utils.ts）
+            let isTargetInMovedDir = possibleExtensions.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
+
+            // 如果不是直接匹配，檢查 index 檔案（如 @/modules/alarm → alarm/index.ts）
+            if (!isTargetInMovedDir) {
+              isTargetInMovedDir = possibleIndexFiles.some(indexFile => {
+                const fullPath = path.normalize(normalizedResolved + indexFile);
+                return normalizedFilesInDir.has(fullPath);
+              });
+            }
 
             // 如果目標檔案也在被移動的目錄內，需要更新 alias 路徑
             if (isTargetInMovedDir) {
