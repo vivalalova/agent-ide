@@ -104,12 +104,23 @@ export class FileScanner {
     excludeFiles: string[] = []
   ): Promise<string[]> {
     const files = await this.getAllProjectFiles(projectRoot);
-    const normalizedMovedPath = path.normalize(movedPath);
-    const normalizedExcludeFiles = new Set(excludeFiles.map(f => path.normalize(f)));
+    // 統一使用絕對路徑進行比較，避免相對路徑和絕對路徑不匹配的問題
+    const normalizedMovedPath = path.isAbsolute(movedPath)
+      ? path.normalize(movedPath)
+      : path.normalize(path.resolve(projectRoot, movedPath));
+    const normalizedExcludeFiles = new Set(
+      excludeFiles.map(f => path.isAbsolute(f)
+        ? path.normalize(f)
+        : path.normalize(path.resolve(projectRoot, f))
+      )
+    );
 
     // 過濾出需要檢查的檔案（排除被移動的檔案本身和 excludeFiles）
     const filesToCheck = files.filter(file => {
-      const normalizedFile = path.normalize(file);
+      // 統一轉換為絕對路徑進行比較
+      const normalizedFile = path.isAbsolute(file)
+        ? path.normalize(file)
+        : path.normalize(path.resolve(projectRoot, file));
       return normalizedFile !== normalizedMovedPath
         && !normalizedExcludeFiles.has(normalizedFile);
     });
