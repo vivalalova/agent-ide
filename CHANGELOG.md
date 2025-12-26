@@ -1,3 +1,7 @@
+## <small>0.10.1 (2025-12-26)</small>
+
+* fix: glob 模式移動時保留子目錄結構 ([73852a7](https://github.com/vivalalova/agent-ide/commit/73852a7))
+
 ## 0.10.0 (2025-12-25)
 
 * test: 修正 unit test 預期值以匹配實作變更 ([a4b44cc](https://github.com/vivalalova/agent-ide/commit/a4b44cc))
