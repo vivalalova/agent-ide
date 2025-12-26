@@ -1,3 +1,9 @@
+## 0.11.0 (2025-12-26)
+
+* chore: 升級 @lova/mem-vfs 至 0.1.1 ([423c7cf](https://github.com/vivalalova/agent-ide/commit/423c7cf))
+* Merge branch 'main' of https://github.com/vivalalova/agent-ide ([f6400e7](https://github.com/vivalalova/agent-ide/commit/f6400e7))
+* feat: MemFileSystem 新增 symlink/watch/snapshot API ([e44d1bc](https://github.com/vivalalova/agent-ide/commit/e44d1bc))
+
 ## <small>0.10.3 (2025-12-26)</small>
 
 * merge: 合併 62ee839 修正路徑標準化邏輯 ([5870770](https://github.com/vivalalova/agent-ide/commit/5870770))
