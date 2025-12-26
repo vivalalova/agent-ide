@@ -58,7 +58,12 @@ export default [
     },
     rules: {
       // TypeScript 特定規則 - 調整為警告以便漸進式修復
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+      }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-non-null-assertion': 'warn',
 
@@ -105,6 +110,16 @@ export default [
       'custom/no-fs-in-core': 'error',
       'custom/no-default-instance-in-constructor': 'error',
       'custom/no-new-filesystem': 'error',
+    },
+  },
+  {
+    // 測試檔案特殊規則
+    files: ['tests/**/*.ts', 'tests/**/*.js'],
+    rules: {
+      // 測試中允許 any（mock 和彈性型別需要）
+      '@typescript-eslint/no-explicit-any': 'off',
+      // 測試中允許 non-null assertion（測試已知資料結構）
+      '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
   {
