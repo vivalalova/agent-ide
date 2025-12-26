@@ -11,6 +11,9 @@ import type {
   SerializedGraph
 } from './types.js';
 
+/** 傳遞依賴快取的最大容量 */
+const TRANSITIVE_CACHE_MAX_SIZE = 500;
+
 /**
  * 依賴圖類別
  * 使用鄰接列表實作有向圖
@@ -19,6 +22,12 @@ export class DependencyGraph {
   private adjacencyList: Map<string, Set<string>> = new Map();
   private reverseAdjacencyList: Map<string, Set<string>> = new Map();
   private nodes: Set<string> = new Set();
+
+  /** 傳遞依賴快取 (getTransitiveDependencies 結果) */
+  private transitiveDepCache: Map<string, string[]> = new Map();
+
+  /** 傳遞依賴者快取 (getTransitiveDependents 結果) */
+  private transitiveDeptsCache: Map<string, string[]> = new Map();
 
   /**
    * 建立空的依賴圖
@@ -82,6 +91,9 @@ export class DependencyGraph {
 
     this.adjacencyList.get(from)!.add(to);
     this.reverseAdjacencyList.get(to)!.add(from);
+
+    // 清除受影響的傳遞依賴快取
+    this.invalidateTransitiveCaches(from, to);
   }
 
   /**
@@ -92,6 +104,9 @@ export class DependencyGraph {
   removeDependency(from: string, to: string): void {
     this.adjacencyList.get(from)?.delete(to);
     this.reverseAdjacencyList.get(to)?.delete(from);
+
+    // 清除受影響的傳遞依賴快取
+    this.invalidateTransitiveCaches(from, to);
   }
 
   /**
@@ -162,11 +177,17 @@ export class DependencyGraph {
   }
 
   /**
-   * 取得節點的傳遞依賴
+   * 取得節點的傳遞依賴（含快取）
    * @param filePath 檔案路徑
    * @returns 傳遞依賴列表
    */
   getTransitiveDependencies(filePath: string): string[] {
+    // 檢查快取
+    const cached = this.transitiveDepCache.get(filePath);
+    if (cached) {
+      return [...cached];
+    }
+
     const visited = new Set<string>();
     const result: string[] = [];
 
@@ -183,15 +204,25 @@ export class DependencyGraph {
     };
 
     dfs(filePath);
+
+    // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
+    this.setCacheWithEviction(this.transitiveDepCache, filePath, result);
+
     return result;
   }
 
   /**
-   * 取得節點的傳遞依賴者
+   * 取得節點的傳遞依賴者（含快取）
    * @param filePath 檔案路徑
    * @returns 傳遞依賴者列表
    */
   getTransitiveDependents(filePath: string): string[] {
+    // 檢查快取
+    const cached = this.transitiveDeptsCache.get(filePath);
+    if (cached) {
+      return [...cached];
+    }
+
     const visited = new Set<string>();
     const result: string[] = [];
 
@@ -208,6 +239,10 @@ export class DependencyGraph {
     };
 
     dfs(filePath);
+
+    // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
+    this.setCacheWithEviction(this.transitiveDeptsCache, filePath, result);
+
     return result;
   }
 
@@ -432,14 +467,91 @@ export class DependencyGraph {
     this.nodes.clear();
     this.adjacencyList.clear();
     this.reverseAdjacencyList.clear();
+    this.transitiveDepCache.clear();
+    this.transitiveDeptsCache.clear();
   }
 
   /**
-   * 複製圖
+   * 複製圖（結構複製，避免完整序列化）
    * @returns 圖的深拷貝
    */
   clone(): DependencyGraph {
-    const serialized = this.serialize();
-    return DependencyGraph.deserialize(serialized);
+    const cloned = new DependencyGraph();
+
+    // 複製所有節點
+    for (const node of this.nodes) {
+      cloned.nodes.add(node);
+    }
+
+    // 複製鄰接列表（深拷貝 Set）
+    for (const [from, deps] of this.adjacencyList) {
+      cloned.adjacencyList.set(from, new Set(deps));
+    }
+
+    // 複製反向鄰接列表（深拷貝 Set）
+    for (const [to, deps] of this.reverseAdjacencyList) {
+      cloned.reverseAdjacencyList.set(to, new Set(deps));
+    }
+
+    return cloned;
+  }
+
+  // ===== 私有方法：快取管理 =====
+
+  /**
+   * 清除受邊變更影響的傳遞依賴快取
+   *
+   * 當邊 (from -> to) 變更時：
+   * - transitiveDepCache：from 及其所有傳遞依賴者的快取需清除
+   * - transitiveDeptsCache：to 及其所有傳遞依賴的快取需清除
+   *
+   * @param from 邊的起點
+   * @param to 邊的終點
+   */
+  private invalidateTransitiveCaches(from: string, to: string): void {
+    // 清除 from 節點的傳遞依賴快取
+    this.transitiveDepCache.delete(from);
+
+    // 清除所有傳遞依賴者的快取（它們的傳遞依賴會經過 from）
+    for (const key of this.transitiveDepCache.keys()) {
+      const cached = this.transitiveDepCache.get(key);
+      if (cached?.includes(from)) {
+        this.transitiveDepCache.delete(key);
+      }
+    }
+
+    // 清除 to 節點的傳遞依賴者快取
+    this.transitiveDeptsCache.delete(to);
+
+    // 清除所有傳遞依賴的快取（它們的傳遞依賴者會經過 to）
+    for (const key of this.transitiveDeptsCache.keys()) {
+      const cached = this.transitiveDeptsCache.get(key);
+      if (cached?.includes(to)) {
+        this.transitiveDeptsCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * 帶有 LRU 淘汰策略的快取設定
+   * 當快取超過最大容量時，刪除最舊的項目（Map 迭代順序保證 FIFO）
+   *
+   * @param cache 目標快取 Map
+   * @param key 快取鍵
+   * @param value 快取值
+   */
+  private setCacheWithEviction(
+    cache: Map<string, string[]>,
+    key: string,
+    value: string[]
+  ): void {
+    // 超過上限時，刪除最舊的項目
+    if (cache.size >= TRANSITIVE_CACHE_MAX_SIZE) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        cache.delete(oldestKey);
+      }
+    }
+    cache.set(key, value);
   }
 }

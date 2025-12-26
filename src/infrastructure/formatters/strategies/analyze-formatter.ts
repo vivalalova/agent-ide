@@ -8,6 +8,7 @@ import {
   type AnalyzeResult,
   type DeadCodeResult
 } from '../query-types.js';
+import { groupByFile, formatLimitedList } from '../utils/index.js';
 import { BaseFormatter, Colors, SeverityStyle } from './base-formatter.js';
 
 /**
@@ -82,24 +83,18 @@ export class AnalyzeFormatter extends BaseFormatter<AnalyzeResult> {
     if (result.items.length > 0) {
       lines.push('Dead Code 列表:');
 
-      // 按檔案分組
-      const byFile = new Map<string, typeof result.items>();
-      result.items.forEach(item => {
-        const list = byFile.get(item.file) || [];
-        list.push(item);
-        byFile.set(item.file, list);
-      });
+      const byFile = groupByFile(result.items);
 
       for (const [file, items] of byFile) {
         lines.push(`  ${this.colorize(file, Colors.cyan)}`);
-        items.slice(0, 10).forEach(item => {
-          const icon = this.getDeadCodeIcon(item.type);
-          lines.push(`    ${icon} L${item.line}: ${item.name} (${item.type})`);
-          lines.push(`       ${this.colorize(item.reason, Colors.dim)}`);
-        });
-        if (items.length > 10) {
-          lines.push(`    ... 還有 ${items.length - 10} 個`);
-        }
+        lines.push(...formatLimitedList({
+          items,
+          formatItem: item => {
+            const icon = this.getDeadCodeIcon(item.type);
+            return `${icon} L${item.line}: ${item.name} (${item.type})\n       ${this.colorize(item.reason, Colors.dim)}`;
+          },
+          overflowUnit: ''
+        }));
       }
     } else {
       lines.push(this.colorize('✅ 未發現 Dead Code', Colors.green));

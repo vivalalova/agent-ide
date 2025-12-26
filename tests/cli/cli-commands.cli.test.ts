@@ -271,5 +271,80 @@ describe('CLI 整合測試', () => {
       const result = runCLI(`${CLI} rename --path "${SAMPLE_PROJECT}" --from NonExistentSymbol --to NewName --format json`);
       expect(result.success).toBe(false);
     });
+
+    it('move directory - 移動到已存在父目錄時，內部相對引用應保持不變', () => {
+      // Bug: 當從專案根目錄（有 tsconfig.json）執行移動時，目錄內部的 ./ 相對引用被錯誤地改成絕對路徑
+      // 觸發條件：工作目錄是專案根目錄，且用 --path . 執行
+      // 例如：./alarm.controller → ../../modules/frontend/alarm/alarm.controller
+
+      const { readFileSync, writeFileSync, mkdirSync, rmSync: rm } = require('fs');
+      const { resolve } = require('path');
+      const { execSync } = require('child_process');
+
+      // 建立精確復現 bug 的目錄結構
+      const testDir = resolve(SAMPLE_PROJECT, 'src/test-move-bug');
+      const sourceDir = resolve(testDir, 'frontend/alarm');
+      const dtoDir = resolve(sourceDir, 'dto');
+      const targetParent = resolve(testDir, 'modules/frontend');
+
+      mkdirSync(dtoDir, { recursive: true });
+      mkdirSync(targetParent, { recursive: true });
+
+      // 建立有內部相對引用的檔案（包含子目錄引用）
+      writeFileSync(resolve(dtoDir, 'alarm.dto.ts'), 'export class AlarmDto {}');
+      writeFileSync(resolve(sourceDir, 'alarm.controller.ts'), `import { AlarmDto } from './dto/alarm.dto';
+export class AlarmController {
+  dto: AlarmDto;
+}`);
+      writeFileSync(resolve(sourceDir, 'alarm.service.ts'), `import { AlarmController } from './alarm.controller';
+import { AlarmDto } from './dto/alarm.dto';
+export class AlarmService {
+  controller = new AlarmController();
+  dto: AlarmDto;
+}`);
+
+      // 關鍵：從 SAMPLE_PROJECT 目錄執行（有 tsconfig.json），用 --path .
+      // 這才是真實使用場景，也是 bug 的觸發條件
+      const relativeSourceDir = 'src/test-move-bug/frontend/alarm';
+      const relativeTargetParent = 'src/test-move-bug/modules/frontend/';
+      const cliPath = resolve(PROJECT_ROOT, 'bin/agent-ide.js');
+
+      try {
+        const output = execSync(
+          `node "${cliPath}" move "${relativeSourceDir}" "${relativeTargetParent}" --path . --format json`,
+          { cwd: SAMPLE_PROJECT, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        const result = JSON.parse(output);
+        expect(result.success).toBe(true);
+      } catch (error) {
+        const execError = error as { stdout?: string };
+        if (execError.stdout) {
+          const result = JSON.parse(execError.stdout);
+          expect(result.success).toBe(true);
+        } else {
+          throw error;
+        }
+      }
+
+      // 驗證移動後的 service 檔案
+      const movedServicePath = resolve(targetParent, 'alarm/alarm.service.ts');
+      const serviceContent = readFileSync(movedServicePath, 'utf-8');
+
+      // 關鍵斷言：內部相對引用應該保持不變
+      expect(serviceContent).toContain('from \'./alarm.controller\'');
+      expect(serviceContent).toContain('from \'./dto/alarm.dto\'');
+
+      // 不應該被改成錯誤的絕對相對路徑
+      expect(serviceContent).not.toContain('../../modules/frontend/alarm');
+      expect(serviceContent).not.toContain('../modules/');
+
+      // 驗證 controller 檔案
+      const controllerContent = readFileSync(resolve(targetParent, 'alarm/alarm.controller.ts'), 'utf-8');
+      expect(controllerContent).toContain('from \'./dto/alarm.dto\'');
+      expect(controllerContent).not.toContain('../../modules/frontend/alarm');
+
+      // 清理
+      rm(testDir, { recursive: true, force: true });
+    });
   });
 });

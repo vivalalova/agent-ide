@@ -41,7 +41,10 @@ import {
   createASTMetadata,
   ReferenceType,
   SymbolType,
-  DependencyType,
+  DependencyType
+} from '@shared/types/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
+import {
   createSymbol,
   createReference,
   createDependency
@@ -71,6 +74,17 @@ import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
 import { createHash } from 'node:crypto';
+
+/**
+ * AST 快取項目
+ * 用於儲存已解析的 AST 及其對應的內容雜湊
+ */
+interface ASTCacheItem {
+  /** 已解析的 AST */
+  ast: AST;
+  /** 原始程式碼的雜湊值（用於驗證快取有效性） */
+  contentHash: string;
+}
 
 /**
  * 符號行索引快取
@@ -105,6 +119,8 @@ export class JavaScriptParser implements ParserPlugin {
   private readonly declarationAnalyzer: DeclarationAnalyzer;
   /** 符號索引快取（以檔案路徑為 key，LRU 由 MemoryCache 自動處理） */
   private readonly symbolIndexCache: MemoryCache<string, SymbolIndexCache> = createLRUCache(100);
+  /** AST 快取（以 filePath 為 key，LRU 由 MemoryCache 自動處理） */
+  private readonly astCache: MemoryCache<string, ASTCacheItem> = createLRUCache(100);
 
   constructor(parseOptions?: Partial<JavaScriptParseOptions>) {
     this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions };
@@ -126,6 +142,13 @@ export class JavaScriptParser implements ParserPlugin {
    */
   async parse(code: string, filePath: string): Promise<AST> {
     validateParserInput(code, filePath);
+
+    // 檢查 AST 快取
+    const contentHash = this.computeContentHash(code);
+    const cached = this.astCache.get(filePath);
+    if (cached && cached.contentHash === contentHash) {
+      return cached.ast;
+    }
 
     try {
       // 根據檔案類型調整解析選項
@@ -152,6 +175,9 @@ export class JavaScriptParser implements ParserPlugin {
         sourceCode: code
       };
 
+      // 快取 AST
+      this.astCache.set(filePath, { ast, contentHash });
+
       return ast;
     } catch (error) {
       if (error instanceof JavaScriptParseError) {
@@ -159,7 +185,7 @@ export class JavaScriptParser implements ParserPlugin {
       }
 
       // 包裝 Babel 解析錯誤
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       throw createParseError(`解析失敗: ${errorMessage}`, error instanceof Error ? error : undefined);
     }
   }
@@ -369,7 +395,7 @@ export class JavaScriptParser implements ParserPlugin {
     } catch (error) {
       return createValidationFailure([{
         code: 'BABEL_UNAVAILABLE',
-        message: `Babel 解析器不可用: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Babel 解析器不可用: ${getErrorMessage(error)}`,
         location: {
           filePath: '',
           range: {
@@ -386,6 +412,7 @@ export class JavaScriptParser implements ParserPlugin {
    */
   async dispose(): Promise<void> {
     this.symbolIndexCache.clear();
+    this.astCache.clear();
   }
 
   /**

@@ -7,9 +7,11 @@ import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { QueryCommand, type DepsResult } from '@infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadPathAliases } from '@plugins/typescript/tsconfig-loader.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** Impact 命令選項 */
 interface ImpactOptions {
@@ -41,15 +43,11 @@ async function handleImpactCommand(
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, false);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   const analyzePath = path.resolve(options.path || process.cwd());
 
@@ -118,7 +116,7 @@ async function handleImpactCommand(
 
     outputHandler.outputQuery(result, format);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     outputHandler.outputError(`依賴分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }

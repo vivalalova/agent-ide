@@ -9,9 +9,11 @@ import { IndexEngine } from '@core/foundations/indexing/index-engine.js';
 import { createIndexConfig } from '@core/foundations/indexing/types.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
@@ -24,68 +26,6 @@ interface RenameOptions {
   at?: string;
   dryRun?: boolean;
   format: string;
-}
-
-/** 解析後的位置資訊 */
-interface ParsedLocation {
-  filePath: string;
-  line?: number;
-  column?: number;
-}
-
-/**
- * 解析 --at 參數 (file:line:column 格式)
- * 支援格式：
- * - src/file.ts
- * - src/file.ts:42
- * - src/file.ts:42:10
- */
-function parseAtLocation(at: string, basePath: string): ParsedLocation {
-  // 從後往前找冒號，因為 Windows 路徑可能有 C: 開頭
-  const parts = at.split(':');
-
-  // 檢查最後兩個部分是否為數字
-  let filePath: string;
-  let line: number | undefined;
-  let column: number | undefined;
-
-  if (parts.length >= 3) {
-    const lastPart = parts[parts.length - 1];
-    const secondLastPart = parts[parts.length - 2];
-
-    if (/^\d+$/.test(lastPart) && /^\d+$/.test(secondLastPart)) {
-      // file:line:column
-      column = parseInt(lastPart, 10);
-      line = parseInt(secondLastPart, 10);
-      filePath = parts.slice(0, -2).join(':');
-    } else if (/^\d+$/.test(lastPart)) {
-      // file:line (Windows path like C:\path:42)
-      line = parseInt(lastPart, 10);
-      filePath = parts.slice(0, -1).join(':');
-    } else {
-      // 全部都是路徑
-      filePath = at;
-    }
-  } else if (parts.length === 2) {
-    const lastPart = parts[parts.length - 1];
-    if (/^\d+$/.test(lastPart)) {
-      // file:line
-      line = parseInt(lastPart, 10);
-      filePath = parts[0];
-    } else {
-      // Windows path like C:\path
-      filePath = at;
-    }
-  } else {
-    filePath = at;
-  }
-
-  // 轉換為絕對路徑
-  if (!path.isAbsolute(filePath)) {
-    filePath = path.resolve(basePath, filePath);
-  }
-
-  return { filePath, line, column };
 }
 
 /**
@@ -114,15 +54,11 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
  */
 async function handleRenameCommand(options: RenameOptions, context: CommandContext): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, true);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   // 支援多種參數名稱
   const from = options.symbol || options.from;
@@ -209,7 +145,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     if (searchResults.length > 1) {
       // 有指定 --at 時，過濾到指定位置
       if (options.at) {
-        const location = parseAtLocation(options.at, workspacePath);
+        const location = parsePathLocationAbsolute(options.at, workspacePath);
         const filtered = searchResults.filter(result => {
           const symbolPath = result.symbol.location.filePath;
           const symbolLine = result.symbol.location.range.start.line;
@@ -280,9 +216,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 取得所有專案檔案
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
-    // 2. 使用新的 Changeset 流程
-    const applicator = new ChangeApplicator(context.fileSystem);
-
     // 生成 Changeset
     const changeset = await renameEngine.generateChangeset({
       symbol: targetSymbol,
@@ -290,43 +223,23 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       filePaths: allProjectFiles
     });
 
-    if (!changeset.success) {
-      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'rename');
-      process.exitCode = 1;
-      return;
-    }
-
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
-
-    // 3. Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      outputHandler.outputMutation(previewInput, format);
-      return;
-    }
-
-    // 4. 執行重新命名（處理跨檔案引用）
-    if (!isJsonFormat) {
+    // 執行變更類命令統一流程
+    if (!isJsonFormat && !options.dryRun) {
       console.log('   執行重新命名...');
     }
 
-    // 應用變更（帶回滾）
-    const result = await applicator.apply(changeset, {
-      atomic: true,
-      rollbackOnError: true
+    await executeMutationCommand(changeset, {
+      fileSystem: context.fileSystem,
+      format,
+      dryRun: options.dryRun ?? false,
+      outputHandler,
+      commandName: 'rename'
     });
-
-    if (result.success) {
-      outputHandler.outputMutation(previewInput, format);
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'rename');
-      process.exitCode = 1;
-    }
     } finally {
       indexEngine.dispose();
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = getErrorMessage(error);
     outputHandler.outputError(`重新命名失敗: ${errorMsg}`, format, 'rename');
     process.exitCode = 1;
   }

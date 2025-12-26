@@ -8,14 +8,16 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import { MoveService } from '@core/move/move-service.js';
-import { parseMoveTarget, hasPositionInfo } from '@core/move/path-parser.js';
 import { MoveMemberService, MoveTargetType } from '@core/move-member/index.js';
+import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { FileOperationType } from '@infrastructure/changeset/index.js';
-import { createUnifiedOutputHandler, parseOutputFormat, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** 檢查路徑是否包含 glob pattern */
 function isGlobPattern(pattern: string): boolean {
@@ -94,7 +96,7 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
         await handleGlobMoveCommand(source, target, options, context);
       } else {
         // 解析路徑格式，判斷是檔案移動還是成員移動
-        const parsedSource = parseMoveTarget(source);
+        const parsedSource = parsePathLocation(source);
 
         if (hasPositionInfo(parsedSource)) {
           // 成員移動模式
@@ -117,15 +119,11 @@ async function handleMoveCommand(
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, true);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
@@ -248,7 +246,7 @@ async function handleMoveCommand(
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
@@ -266,15 +264,11 @@ async function handleGlobMoveCommand(
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, true);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
@@ -428,7 +422,7 @@ async function handleGlobMoveCommand(
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
@@ -513,23 +507,19 @@ async function handleMoveMemberCommand(
   context: CommandContext
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
-  let format: OutputFormat;
 
-  try {
-    format = parseOutputFormat(options.format, true);
-  } catch {
-    outputHandler.outputError('不支援的輸出格式。可用格式: json, summary, diff', OutputFormat.Summary);
-    process.exitCode = 1;
-    return;
-  }
+  // 解析輸出格式
+  const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
+  if (!formatResult.success) {return;}
+  const format = formatResult.format!;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
 
   try {
     // 解析 source 和 target 路徑
-    const parsedSource = parseMoveTarget(source);
-    const parsedTarget = parseMoveTarget(target);
+    const parsedSource = parsePathLocation(source);
+    const parsedTarget = parsePathLocation(target);
 
     // 解析為絕對路徑
     const sourceFilePath = path.isAbsolute(parsedSource.filePath)
@@ -579,40 +569,20 @@ async function handleMoveMemberCommand(
     // 生成 Changeset
     const changeset = await moveMemberService.generateChangeset(moveMemberOptions);
 
-    if (!changeset.success) {
-      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format, 'move');
-      process.exitCode = 1;
-      return;
-    }
-
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
-
-    // Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      outputHandler.outputMutation(previewInput, format);
-      return;
-    }
-
-    // 執行變更
-    if (!isJsonFormat) {
+    // 執行變更類命令統一流程
+    if (!isJsonFormat && !options.dryRun) {
       console.log('   執行移動...');
     }
 
-    const applicator = new ChangeApplicator(context.fileSystem);
-    const result = await applicator.apply(changeset, {
-      atomic: true,
-      rollbackOnError: true
+    await executeMutationCommand(changeset, {
+      fileSystem: context.fileSystem,
+      format,
+      dryRun: options.dryRun ?? false,
+      outputHandler,
+      commandName: 'move'
     });
-
-    if (result.success) {
-      outputHandler.outputMutation(previewInput, format);
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format, 'move');
-      process.exitCode = 1;
-    }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format, 'move');
     process.exitCode = 1;
   }

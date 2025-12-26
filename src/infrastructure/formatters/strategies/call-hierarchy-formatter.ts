@@ -7,6 +7,7 @@ import {
   type IncomingCallItem,
   type OutgoingCallItem
 } from '../query-types.js';
+import { groupByFile, formatLimitedList } from '../utils/index.js';
 import { BaseFormatter, Colors } from './base-formatter.js';
 
 /**
@@ -32,15 +33,14 @@ export class CallHierarchyFormatter extends BaseFormatter<CallHierarchyResult> {
     if (result.direction === 'incoming' || result.direction === 'both') {
       lines.push(`📥 呼叫者 (Incoming): ${result.incoming.length} 個`);
       if (result.incoming.length > 0) {
-        const grouped = this.groupCallsByFile(result.incoming);
+        const grouped = groupByFile(result.incoming);
         for (const [file, items] of grouped) {
           lines.push(`  ${this.colorize(file, Colors.cyan)}`);
-          (items as IncomingCallItem[]).slice(0, 10).forEach(item => {
-            lines.push(`    ⬅️  ${item.caller} (L${item.line})`);
-          });
-          if (items.length > 10) {
-            lines.push(`    ... 還有 ${items.length - 10} 個呼叫者`);
-          }
+          lines.push(...formatLimitedList({
+            items: items as IncomingCallItem[],
+            formatItem: item => `⬅️  ${item.caller} (L${item.line})`,
+            overflowUnit: '呼叫者'
+          }));
         }
       }
       lines.push('');
@@ -50,15 +50,14 @@ export class CallHierarchyFormatter extends BaseFormatter<CallHierarchyResult> {
     if (result.direction === 'outgoing' || result.direction === 'both') {
       lines.push(`📤 被呼叫者 (Outgoing): ${result.outgoing.length} 個`);
       if (result.outgoing.length > 0) {
-        const grouped = this.groupCallsByFile(result.outgoing);
+        const grouped = groupByFile(result.outgoing);
         for (const [file, items] of grouped) {
           lines.push(`  ${this.colorize(file, Colors.cyan)}`);
-          (items as OutgoingCallItem[]).slice(0, 10).forEach(item => {
-            lines.push(`    ➡️  ${item.callee} (L${item.line})`);
-          });
-          if (items.length > 10) {
-            lines.push(`    ... 還有 ${items.length - 10} 個被呼叫者`);
-          }
+          lines.push(...formatLimitedList({
+            items: items as OutgoingCallItem[],
+            formatItem: item => `➡️  ${item.callee} (L${item.line})`,
+            overflowUnit: '被呼叫者'
+          }));
         }
       }
       lines.push('');
@@ -72,18 +71,5 @@ export class CallHierarchyFormatter extends BaseFormatter<CallHierarchyResult> {
     lines.push(`📊 統計: ${result.incoming.length} incoming, ${result.outgoing.length} outgoing, ${uniqueFiles} 個檔案`);
 
     return lines.join('\n');
-  }
-
-  /**
-   * 按檔案分組呼叫項目
-   */
-  private groupCallsByFile<T extends { file: string }>(items: T[]): Map<string, T[]> {
-    const byFile = new Map<string, T[]>();
-    items.forEach(item => {
-      const list = byFile.get(item.file) || [];
-      list.push(item);
-      byFile.set(item.file, list);
-    });
-    return byFile;
   }
 }

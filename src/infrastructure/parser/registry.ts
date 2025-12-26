@@ -8,7 +8,8 @@ import { isParserPlugin } from '@infrastructure/parser/interface.js';
 import {
   DuplicateParserError,
   ParserNotFoundError,
-  ParserInitializationError
+  ParserInitializationError,
+  getErrorMessage
 } from '@shared/errors/index.js';
 
 /**
@@ -312,7 +313,7 @@ export class ParserRegistry {
       } catch (error) {
         throw new ParserInitializationError(
           parserInfo.name,
-          `驗證異常: ${error instanceof Error ? error.message : String(error)}`,
+          `驗證異常: ${getErrorMessage(error)}`,
           error instanceof Error ? error : undefined
         );
       }

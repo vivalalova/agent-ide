@@ -8,6 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -92,7 +93,7 @@ export class DeadCodeRemover {
         importCleanups: [],
         affectedFiles: [],
         summary: this.createEmptySummary(),
-        errors: [error instanceof Error ? error.message : String(error)]
+        errors: [getErrorMessage(error)]
       };
     }
   }
@@ -177,7 +178,7 @@ export class DeadCodeRemover {
         const result = await this.fileOperations.applyFileOperations(filePath, operations);
         updatedFiles.push(result);
       } catch (error) {
-        errors.push(`檔案 ${filePath} 處理失敗: ${error instanceof Error ? error.message : String(error)}`);
+        errors.push(`檔案 ${filePath} 處理失敗: ${getErrorMessage(error)}`);
       }
     }
 

@@ -58,11 +58,25 @@ import {
   validateParserInput,
   validateRenameInput
 } from '@plugins/shared/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
+import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import { createHash } from 'node:crypto';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
 import { createPatternAnalyzer, type PatternAnalyzer } from './pattern-analyzer.js';
 import { createReferenceFinder, type ReferenceFinder } from './reference-finder.js';
+
+/**
+ * AST 快取項目
+ * 用於儲存已解析的 AST 及其對應的內容雜湊
+ */
+interface ASTCacheItem {
+  /** 已解析的 AST */
+  ast: AST;
+  /** 原始程式碼的雜湊值（用於驗證快取有效性） */
+  contentHash: string;
+}
 
 /**
  * TypeScript Parser 實作
@@ -82,6 +96,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   private patternAnalyzer: PatternAnalyzer;
   private referenceFinder: ReferenceFinder;
 
+  /** AST 快取（以 filePath 為 key，LRU 由 MemoryCache 自動處理） */
+  private readonly astCache: MemoryCache<string, ASTCacheItem> = createLRUCache(100);
+
   constructor(compilerOptions?: ts.CompilerOptions) {
     this.compilerOptions = { ...DEFAULT_COMPILER_OPTIONS, ...compilerOptions };
     this.symbolExtractor = createSymbolExtractor();
@@ -97,10 +114,25 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   /**
+   * 計算程式碼內容的雜湊值
+   * 用於快取驗證
+   */
+  private computeContentHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex');
+  }
+
+  /**
    * 解析 TypeScript 程式碼
    */
   async parse(code: string, filePath: string): Promise<AST> {
     validateParserInput(code, filePath);
+
+    // 檢查 AST 快取
+    const contentHash = this.computeContentHash(code);
+    const cached = this.astCache.get(filePath);
+    if (cached && cached.contentHash === contentHash) {
+      return cached.ast;
+    }
 
     let program: ts.Program | null = null;
     try {
@@ -151,6 +183,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       // 立即清理 Program 以避免記憶體洩漏
       program = null;
 
+      // 快取 AST
+      this.astCache.set(filePath, { ast, contentHash });
+
       return ast;
     } catch (error) {
       // 確保在錯誤情況下也清理 Program
@@ -159,7 +194,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
       if (error instanceof TypeScriptParseError) {
         throw error;
       }
-      throw createParseError(`解析失敗: ${error instanceof Error ? error.message : String(error)}`);
+      throw createParseError(`解析失敗: ${getErrorMessage(error)}`);
     } finally {
       // 最終清理，確保 Program 被釋放
       if (program) {
@@ -481,7 +516,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     } catch (error) {
       return createValidationFailure([{
         code: 'TS_VALIDATION_ERROR',
-        message: `驗證失敗: ${error instanceof Error ? error.message : String(error)}`,
+        message: `驗證失敗: ${getErrorMessage(error)}`,
         location: { filePath: '', range: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } } }
       }]);
     }
@@ -494,6 +529,9 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   async dispose(): Promise<void> {
     // 從記憶體監控器取消註冊
     MemoryMonitor.getInstance().unregister(this);
+
+    // 清理 AST 快取
+    this.astCache.clear();
 
     // 清理 Language Service Manager
     if (this.languageServiceManager && 'dispose' in this.languageServiceManager) {
