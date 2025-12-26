@@ -193,11 +193,14 @@ export function positionToTsPosition(
 export function getNodeModifiers(node: ts.Node): string[] {
   const modifiers: string[] = [];
 
-  if (ts.canHaveModifiers(node) && ts.getModifiers(node)) {
-    for (const modifier of ts.getModifiers(node)!) {
-      const modifierName = MODIFIER_MAP[modifier.kind];
-      if (modifierName) {
-        modifiers.push(modifierName);
+  if (ts.canHaveModifiers(node)) {
+    const nodeModifiers = ts.getModifiers(node);
+    if (nodeModifiers) {
+      for (const modifier of nodeModifiers) {
+        const modifierName = MODIFIER_MAP[modifier.kind];
+        if (modifierName) {
+          modifiers.push(modifierName);
+        }
       }
     }
   }
@@ -216,11 +219,14 @@ export function getNodeModifiers(node: ts.Node): string[] {
 
       // 檢查 VariableStatement 的 modifiers (export, declare 等)
       const statement = parent.parent;
-      if (statement && ts.canHaveModifiers(statement) && ts.getModifiers(statement)) {
-        for (const modifier of ts.getModifiers(statement)!) {
-          const modifierName = MODIFIER_MAP[modifier.kind];
-          if (modifierName && !modifiers.includes(modifierName)) {
-            modifiers.push(modifierName);
+      if (statement && ts.canHaveModifiers(statement)) {
+        const statementModifiers = ts.getModifiers(statement);
+        if (statementModifiers) {
+          for (const modifier of statementModifiers) {
+            const modifierName = MODIFIER_MAP[modifier.kind];
+            if (modifierName && !modifiers.includes(modifierName)) {
+              modifiers.push(modifierName);
+            }
           }
         }
       }

@@ -58,7 +58,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   // 支援多種參數名稱
   const from = options.symbol || options.from;

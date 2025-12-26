@@ -169,7 +169,8 @@ export class SymbolFinder {
             const scopedRefs = parser.findScopedReferences(content, symbol.name, { className: containerName });
 
             if (scopedRefs) {
-              const refs = results.get(key)!;
+              const refs = results.get(key);
+              if (!refs) {continue;}
               for (const ref of scopedRefs) {
                 const lineIndex = ref.location.range.start.line - 1;
                 const context = lineIndex >= 0 && lineIndex < lines.length
@@ -195,7 +196,8 @@ export class SymbolFinder {
               const ast = await parser.parse(content, filePath);
               const references = await parser.findReferences(ast, symbol);
 
-              const refs = results.get(key)!;
+              const refs = results.get(key);
+              if (!refs) {continue;}
               for (const ref of references) {
                 const lineIndex = ref.location.range.start.line - 1;
                 const context = lineIndex >= 0 && lineIndex < lines.length
@@ -214,14 +216,14 @@ export class SymbolFinder {
             } catch {
               // Parser 失敗，降級到文字匹配
               const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
-              const refs = results.get(key)!;
-              refs.push(...textRefs);
+              const refs = results.get(key);
+              if (refs) {refs.push(...textRefs);}
             }
           } else {
             // 無 Parser，使用文字匹配
             const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
-            const refs = results.get(key)!;
-            refs.push(...textRefs);
+            const refs = results.get(key);
+            if (refs) {refs.push(...textRefs);}
           }
         }
       }

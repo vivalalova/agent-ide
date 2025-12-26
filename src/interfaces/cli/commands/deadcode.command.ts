@@ -82,7 +82,7 @@ async function handleDeadCodeCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
 

@@ -276,7 +276,8 @@ export class ChangeSignatureService {
     if (!fileUpdates.has(definitionUpdate.filePath)) {
       fileUpdates.set(definitionUpdate.filePath, []);
     }
-    fileUpdates.get(definitionUpdate.filePath)!.push({
+    const defUpdates = fileUpdates.get(definitionUpdate.filePath);
+    defUpdates?.push({
       originalCode: definitionUpdate.originalCode,
       newCode: definitionUpdate.newCode,
       line: 0 // 會在下面重新計算
@@ -287,7 +288,8 @@ export class ChangeSignatureService {
       if (!fileUpdates.has(update.filePath)) {
         fileUpdates.set(update.filePath, []);
       }
-      fileUpdates.get(update.filePath)!.push({
+      const callUpdates = fileUpdates.get(update.filePath);
+      callUpdates?.push({
         originalCode: update.originalCode,
         newCode: update.newCode,
         line: update.location.range.start.line

@@ -273,7 +273,7 @@ function convertEditsToLineChanges(
       if (!singleLineEditsByLine.has(startLine)) {
         singleLineEditsByLine.set(startLine, []);
       }
-      singleLineEditsByLine.get(startLine)!.push(edit);
+      singleLineEditsByLine.get(startLine)?.push(edit);
     } else {
       // 跨行編輯：需特殊處理起始/中間/結束行
       multiLineEdits.push(edit);

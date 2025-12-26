@@ -97,7 +97,7 @@ export class ErrorHandlerService implements IErrorHandler {
       shouldRetry
     } = options;
 
-    let lastError: Error;
+    let lastError: Error = new Error('No attempts made');
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -125,7 +125,7 @@ export class ErrorHandlerService implements IErrorHandler {
       }
     }
 
-    throw lastError!;
+    throw lastError;
   }
 
   /**

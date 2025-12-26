@@ -13,13 +13,10 @@ import {
   type UnifiedOutputHandler
 } from '@interfaces/cli/unified-output-handler.js';
 
-/** 格式驗證結果 */
-export interface FormatParseResult {
-  /** 是否解析成功 */
-  success: boolean;
-  /** 解析後的格式（成功時有值） */
-  format?: OutputFormat;
-}
+/** 格式驗證結果（使用 discriminated union 以支援類型收窄） */
+export type FormatParseResult =
+  | { success: true; format: OutputFormat }
+  | { success: false; format?: undefined };
 
 /**
  * 嘗試解析輸出格式，失敗時自動輸出錯誤並設定 exitCode

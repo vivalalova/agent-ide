@@ -206,7 +206,8 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
       // 有變更的行
       // 先輸出刪除
       if (hasDelete) {
-        for (const content of deleteMap.get(lineNum)!) {
+        const deletedContents = deleteMap.get(lineNum) ?? [];
+        for (const content of deletedContents) {
           lines.push({
             type: ChangeLineType.Delete,
             lineNumber: lineNum,
@@ -217,7 +218,8 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
       }
       // 再輸出新增
       if (hasAdd) {
-        for (const content of addMap.get(lineNum)!) {
+        const addedContents = addMap.get(lineNum) ?? [];
+        for (const content of addedContents) {
           lines.push({
             type: ChangeLineType.Add,
             lineNumber: lineNum,

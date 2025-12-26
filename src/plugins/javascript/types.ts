@@ -446,7 +446,7 @@ export function createParseError(
  */
 export function getPluginsForFile(filePath: string): BabelPlugin[] {
   const ext = filePath.substring(filePath.lastIndexOf('.'));
-  const basePlugins = [...DEFAULT_PARSE_OPTIONS.plugins!];
+  const basePlugins = [...(DEFAULT_PARSE_OPTIONS.plugins ?? [])];
 
   // 根據副檔名調整插件
   if (ext === '.jsx' || ext === '.tsx') {

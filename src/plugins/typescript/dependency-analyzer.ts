@@ -334,7 +334,7 @@ export class TypeScriptDependencyAnalyzer {
       if (!dependencyMap.has(currentFile)) {
         dependencyMap.set(currentFile, []);
       }
-      dependencyMap.get(currentFile)!.push(dep.path);
+      dependencyMap.get(currentFile)?.push(dep.path);
     }
 
     // DFS 檢測循環

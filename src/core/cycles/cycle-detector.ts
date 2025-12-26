@@ -112,26 +112,33 @@ export class CycleDetector {
         if (!depState) {
           // 依賴尚未被訪問，遞歸處理
           strongConnect(dep);
-          const nodeState = nodeStates.get(node)!;
-          const depStateAfter = nodeStates.get(dep)!;
-          nodeState.lowLink = Math.min(nodeState.lowLink, depStateAfter.lowLink);
+          const nodeState = nodeStates.get(node);
+          const depStateAfter = nodeStates.get(dep);
+          if (nodeState && depStateAfter) {
+            nodeState.lowLink = Math.min(nodeState.lowLink, depStateAfter.lowLink);
+          }
         } else if (depState.onStack) {
           // 依賴在當前路徑上，更新 lowLink
-          const nodeState = nodeStates.get(node)!;
-          nodeState.lowLink = Math.min(nodeState.lowLink, depState.index);
+          const nodeState = nodeStates.get(node);
+          if (nodeState) {
+            nodeState.lowLink = Math.min(nodeState.lowLink, depState.index);
+          }
         }
       }
 
       // 如果是根節點，產生 SCC
-      const nodeState = nodeStates.get(node)!;
-      if (nodeState.lowLink === nodeState.index) {
+      const nodeState = nodeStates.get(node);
+      if (nodeState && nodeState.lowLink === nodeState.index) {
         const sccNodes: string[] = [];
-        let currentNode: string;
+        let currentNode: string | undefined;
 
         do {
-          currentNode = stack.pop()!;
-          const currentState = nodeStates.get(currentNode)!;
-          currentState.onStack = false;
+          currentNode = stack.pop();
+          if (!currentNode) {break;}
+          const currentState = nodeStates.get(currentNode);
+          if (currentState) {
+            currentState.onStack = false;
+          }
           sccNodes.push(currentNode);
         } while (currentNode !== node);
 

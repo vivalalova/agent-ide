@@ -131,22 +131,29 @@ export function serializeSymbolKey(key: SymbolKey): string {
 export function deserializeSymbolKey(serialized: string): SymbolKey {
   const parts = serialized.split(':');
 
+  // 最少需要 4 個部分：filePath:line:containerName:name
+  if (parts.length < 4) {
+    throw new Error(`Invalid symbol key format: ${serialized}`);
+  }
+
   // 檢查版本前綴
   const version = parts[0];
   if (version === SYMBOL_KEY_VERSION) {
     // v1 格式：v1:filePath:line:containerName:name
     parts.shift(); // 移除版本前綴
-    const name = parts.pop()!;
+    const name = parts.pop() ?? '';
     const containerName = parts.pop() || undefined;
-    const line = parseInt(parts.pop()!, 10);
+    const lineStr = parts.pop() ?? '0';
+    const line = parseInt(lineStr, 10);
     const filePath = parts.join(':');
     return { name, containerName, filePath, line };
   }
 
   // 向後相容：舊格式（無版本前綴）filePath:line:containerName:name
-  const name = parts.pop()!;
+  const name = parts.pop() ?? '';
   const containerName = parts.pop() || undefined;
-  const line = parseInt(parts.pop()!, 10);
+  const lineStr = parts.pop() ?? '0';
+  const line = parseInt(lineStr, 10);
   const filePath = parts.join(':');
 
   return { name, containerName, filePath, line };

@@ -229,7 +229,7 @@ export class CallSiteUpdater {
     for (const change of changes) {
       if (isAddParameterChange(change)) {
         // 使用 callSiteValue 或 defaultValue（驗證階段已確保至少有一個值）
-        const value = change.callSiteValue || change.defaultValue!;
+        const value = change.callSiteValue ?? change.defaultValue ?? '';
         const position = change.position < 0 ? result.length - 1 : Math.min(change.position, result.length - 1);
         if (position >= 0 && position < result.length && !result[position]) {
           result[position] = value;

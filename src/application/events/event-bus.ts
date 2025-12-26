@@ -96,8 +96,8 @@ export class EventBus {
       this.subscriptions.set(eventType, new Map());
     }
 
-    const eventSubscriptions = this.subscriptions.get(eventType)!;
-    eventSubscriptions.set(subscriptionId, subscriptionInfo);
+    const eventSubscriptions = this.subscriptions.get(eventType);
+    eventSubscriptions?.set(subscriptionId, subscriptionInfo);
 
     // 返回取消訂閱函式
     return () => {
@@ -207,8 +207,10 @@ export class EventBus {
 
       // 處理所有佇列中的事件
       while (this.priorityQueue.length > 0) {
-        const item = this.priorityQueue.shift()!;
-        await this.processEvent(item.event);
+        const item = this.priorityQueue.shift();
+        if (item) {
+          await this.processEvent(item.event);
+        }
       }
     } finally {
       this.processing = false;
@@ -330,7 +332,8 @@ export class EventBus {
       });
     }
 
-    const typeStats = this.stats.byEventType.get(eventType)!;
+    const typeStats = this.stats.byEventType.get(eventType);
+    if (!typeStats) {return;}
     switch (operation) {
     case 'emitted':
       typeStats.emitted++;

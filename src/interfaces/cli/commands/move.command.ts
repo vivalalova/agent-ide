@@ -123,7 +123,7 @@ async function handleMoveCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
@@ -268,7 +268,7 @@ async function handleGlobMoveCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
@@ -379,8 +379,8 @@ async function handleGlobMoveCommand(
         builder.addTextChange(tc.filePath, [...tc.edits], tc.operationType);
       }
       for (const fo of changeset.fileOperations) {
-        if (fo.type === FileOperationType.Move) {
-          builder.addFileMove(fo.sourcePath, fo.targetPath!);
+        if (fo.type === FileOperationType.Move && fo.targetPath) {
+          builder.addFileMove(fo.sourcePath, fo.targetPath);
         } else if (fo.type === FileOperationType.Create) {
           builder.addFileCreate(fo.sourcePath, fo.content ?? '');
         } else if (fo.type === FileOperationType.Delete) {
@@ -511,7 +511,7 @@ async function handleMoveMemberCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
   const projectRoot = options.path || process.cwd();
@@ -520,6 +520,13 @@ async function handleMoveMemberCommand(
     // 解析 source 和 target 路徑
     const parsedSource = parsePathLocation(source);
     const parsedTarget = parsePathLocation(target);
+
+    // 確認 source 有位置資訊（type guard）
+    if (!hasPositionInfo(parsedSource)) {
+      outputHandler.outputError('成員移動需要位置資訊 (file:line 格式)', format);
+      process.exitCode = 1;
+      return;
+    }
 
     // 解析為絕對路徑
     const sourceFilePath = path.isAbsolute(parsedSource.filePath)
@@ -552,7 +559,7 @@ async function handleMoveMemberCommand(
     const moveMemberOptions = {
       sourceFile: sourceFilePath,
       sourcePosition: {
-        line: parsedSource.line!,
+        line: parsedSource.line,
         column: parsedSource.column
       },
       target: {

@@ -143,8 +143,10 @@ export class ParserRegistry {
       if (!this.extensionMap.has(extension)) {
         this.extensionMap.set(extension, []);
       }
-      const extensionParsers = this.extensionMap.get(extension)!;
-      this.insertSorted(extensionParsers, parserInfo);
+      const extensionParsers = this.extensionMap.get(extension);
+      if (extensionParsers) {
+        this.insertSorted(extensionParsers, parserInfo);
+      }
     }
 
     // 建立語言索引（使用二元搜尋插入）
@@ -152,8 +154,10 @@ export class ParserRegistry {
       if (!this.languageMap.has(language)) {
         this.languageMap.set(language, []);
       }
-      const languageParsers = this.languageMap.get(language)!;
-      this.insertSorted(languageParsers, parserInfo);
+      const languageParsers = this.languageMap.get(language);
+      if (languageParsers) {
+        this.insertSorted(languageParsers, parserInfo);
+      }
     }
   }
 

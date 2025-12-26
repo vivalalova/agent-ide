@@ -63,7 +63,7 @@ async function handleCallHierarchyCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   // 驗證 direction 參數
   const direction = validateDirection(options.direction);

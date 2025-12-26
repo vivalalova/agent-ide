@@ -89,8 +89,13 @@ export class DependencyGraph {
     this.addNode(from);
     this.addNode(to);
 
-    this.adjacencyList.get(from)!.add(to);
-    this.reverseAdjacencyList.get(to)!.add(from);
+    // addNode 確保節點存在，使用 ?? 作為防禦性程式設計
+    const fromDeps = this.adjacencyList.get(from);
+    const toReverseDeps = this.reverseAdjacencyList.get(to);
+    if (fromDeps && toReverseDeps) {
+      fromDeps.add(to);
+      toReverseDeps.add(from);
+    }
 
     // 清除受影響的傳遞依賴快取
     this.invalidateTransitiveCaches(from, to);
@@ -295,7 +300,8 @@ export class DependencyGraph {
 
       const dependencies = this.getDependencies(current);
       for (const dep of dependencies) {
-        const newInDegree = inDegree.get(dep)! - 1;
+        const currentDegree = inDegree.get(dep) ?? 0;
+        const newInDegree = currentDegree - 1;
         inDegree.set(dep, newInDegree);
 
         if (newInDegree === 0) {

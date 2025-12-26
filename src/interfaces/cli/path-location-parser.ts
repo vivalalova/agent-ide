@@ -12,16 +12,33 @@
 import * as path from 'path';
 
 /**
- * 解析後的路徑位置資訊
+ * 解析後的路徑位置資訊（無位置）
  */
-export interface ParsedPathLocation {
+export interface ParsedPathLocationWithoutPosition {
   /** 檔案路徑 */
   readonly filePath: string;
   /** 行號（1-based） */
-  readonly line?: number;
+  readonly line?: undefined;
+  /** 欄位（1-based） */
+  readonly column?: undefined;
+}
+
+/**
+ * 解析後的路徑位置資訊（有位置）
+ */
+export interface ParsedPathLocationWithPosition {
+  /** 檔案路徑 */
+  readonly filePath: string;
+  /** 行號（1-based） */
+  readonly line: number;
   /** 欄位（1-based） */
   readonly column?: number;
 }
+
+/**
+ * 解析後的路徑位置資訊（discriminated union）
+ */
+export type ParsedPathLocation = ParsedPathLocationWithoutPosition | ParsedPathLocationWithPosition;
 
 /**
  * 解析路徑位置字串
@@ -92,7 +109,8 @@ export function parsePathLocationAbsolute(input: string, basePath: string): Pars
 
 /**
  * 檢查路徑是否包含位置資訊（行號或欄位）
+ * 使用 type guard 讓 TypeScript 能夠正確收窄型別
  */
-export function hasPositionInfo(parsed: ParsedPathLocation): boolean {
+export function hasPositionInfo(parsed: ParsedPathLocation): parsed is ParsedPathLocationWithPosition {
   return parsed.line !== undefined;
 }

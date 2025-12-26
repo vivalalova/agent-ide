@@ -44,7 +44,7 @@ async function handleSnapshotCommand(options: SnapshotOptions, context: CommandC
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   const targetPath = path.resolve(options.path);
 

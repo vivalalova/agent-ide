@@ -146,12 +146,12 @@ export class ImportCleaner {
     const typePrefix = isTypeImport ? 'type ' : '';
 
     // 建構新的 import 語句
-    if (keepDefault && keptNamedSymbols.length > 0) {
+    if (keepDefault && defaultSymbol && keptNamedSymbols.length > 0) {
       // 混合格式：import X, { Y, Z } from '...'
-      return `import ${defaultSymbol!.name}, { ${keptNamedSymbols.join(', ')} } from ${quote}${fromPath}${quote};`;
-    } else if (keepDefault) {
+      return `import ${defaultSymbol.name}, { ${keptNamedSymbols.join(', ')} } from ${quote}${fromPath}${quote};`;
+    } else if (keepDefault && defaultSymbol) {
       // 只有 default：import X from '...'
-      return `import ${defaultSymbol!.name} from ${quote}${fromPath}${quote};`;
+      return `import ${defaultSymbol.name} from ${quote}${fromPath}${quote};`;
     } else if (keptNamedSymbols.length > 0) {
       // 只有 named：import { Y, Z } from '...'
       return `import ${typePrefix}{ ${keptNamedSymbols.join(', ')} } from ${quote}${fromPath}${quote};`;

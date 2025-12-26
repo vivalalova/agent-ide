@@ -152,11 +152,11 @@ export class SignatureValidator {
         if (!firstOptionalParam) {
           firstOptionalParam = param;
         }
-      } else if (!isOptional && !isRest && foundOptional) {
+      } else if (!isOptional && !isRest && foundOptional && firstOptionalParam) {
         // 找到必選參數在可選參數之後
         return {
           code: ChangeSignatureErrorCode.OptionalBeforeRequired,
-          message: `可選參數 '${firstOptionalParam!.name}' 不能位於必選參數 '${param.name}' 之前`,
+          message: `可選參數 '${firstOptionalParam.name}' 不能位於必選參數 '${param.name}' 之前`,
           parameterName: param.name
         };
       }

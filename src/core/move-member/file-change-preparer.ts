@@ -223,15 +223,16 @@ export class FileChangePreparer {
         if (!neededImports.has(key)) {
           neededImports.set(key, { modulePath: relativePath, type: ImportType.Named, symbols: new Set() });
         }
-        neededImports.get(key)!.symbols.add(dep);
+        neededImports.get(key)?.symbols.add(dep);
       } else if (symbolInfo.importedSymbols.has(dep)) {
         // 依賴來自外部模組，保持原本的 import 類型
-        const importInfo = symbolInfo.importedSymbols.get(dep)!;
+        const importInfo = symbolInfo.importedSymbols.get(dep);
+        if (!importInfo) {continue;}
         const key = `${importInfo.modulePath}::${importInfo.type}`;
         if (!neededImports.has(key)) {
           neededImports.set(key, { modulePath: importInfo.modulePath, type: importInfo.type, symbols: new Set() });
         }
-        neededImports.get(key)!.symbols.add(dep);
+        neededImports.get(key)?.symbols.add(dep);
       }
     }
 

@@ -61,7 +61,7 @@ async function handleFindReferencesCommand(
   // 解析輸出格式
   const formatResult = tryParseOutputFormat(options.format, false, outputHandler);
   if (!formatResult.success) {return;}
-  const format = formatResult.format!;
+  const format = formatResult.format;
 
   if (format !== OutputFormat.Json) {
     console.log(`🔍 查找符號引用: ${symbolName}...`);
