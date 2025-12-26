@@ -3,12 +3,11 @@
  * 測試 SessionState 和 ApplicationState 的不可變狀態管理
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   SessionState,
   type SessionOptions,
   type OperationRecord,
-  type SessionContext,
 } from '@application/state/session-state.js';
 import {
   ApplicationState,
@@ -222,7 +221,7 @@ describe('SessionState', () => {
     });
 
     it('should return true when expired', () => {
-      const session = new SessionState('session-123', undefined, {
+      const _session = new SessionState('session-123', undefined, {
         timeoutMs: 100,
       });
 

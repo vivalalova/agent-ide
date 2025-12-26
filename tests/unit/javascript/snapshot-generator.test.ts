@@ -6,7 +6,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SnapshotGenerator } from '@core/snapshot/snapshot-generator.js';
 import {
-  SnapshotScope,
   type ModuleSnapshot,
   type ProjectSnapshot,
   isProjectSnapshot,

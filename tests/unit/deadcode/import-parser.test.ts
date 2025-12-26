@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ImportParser, type ImportStatementInfo, type ImportSymbolInfo } from '@core/deadcode/import-parser.js';
+import { ImportParser, type ImportStatementInfo } from '@core/deadcode/import-parser.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ParserPlugin, ImportDeclaration } from '@infrastructure/parser/interface.js';
 
@@ -45,7 +45,7 @@ function createMockParserRegistry(parser?: ParserPlugin | null): ParserRegistry 
 
 // ===== 測試案例型別 =====
 
-interface ImportParseTestCase {
+interface _ImportParseTestCase {
   scenario: string;
   content: string;
   expected: Partial<ImportStatementInfo>[];

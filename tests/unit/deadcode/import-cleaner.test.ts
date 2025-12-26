@@ -8,7 +8,7 @@ import { ImportCleaner } from '@core/deadcode/import-cleaner.js';
 import { DeadCodeCacheService } from '@core/deadcode/shared-cache.js';
 import type { RemovalOperation } from '@core/deadcode/types.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
-import type { ParserPlugin, ImportDeclaration } from '@infrastructure/parser/interface.js';
+import type { ParserPlugin } from '@infrastructure/parser/interface.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { SymbolType } from '@shared/types/symbol.js';
 

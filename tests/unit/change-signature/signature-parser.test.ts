@@ -3,7 +3,7 @@
  * 測試 AST 解析與 Fallback 邏輯
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SignatureParser, createSignatureParser } from '@core/change-signature/signature-parser.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';

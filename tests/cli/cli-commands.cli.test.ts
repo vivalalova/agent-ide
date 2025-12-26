@@ -23,7 +23,7 @@ const CLI = `node ${resolve(PROJECT_ROOT, 'bin/agent-ide.js')}`;
 
 interface CLIResult {
   success: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   [key: string]: any;
 }
 

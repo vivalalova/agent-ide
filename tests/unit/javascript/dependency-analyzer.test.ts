@@ -3,7 +3,7 @@
  * 測試 JavaScript 檔案的依賴分析功能
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { DirectoryEntry, FileStats } from '@infrastructure/storage/types.js';

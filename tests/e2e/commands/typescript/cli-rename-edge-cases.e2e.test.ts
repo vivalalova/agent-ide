@@ -13,7 +13,7 @@ import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/i
 
 // MARK: - Test Case Types
 
-interface PathTestCase {
+interface _PathTestCase {
   scenario: string;
   pathArg: string;
   shouldSucceed: boolean;

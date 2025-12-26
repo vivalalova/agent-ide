@@ -463,7 +463,7 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       );
 
       const outputWithout = JSON.parse(resultWithout.stdout);
-      const lintRulesFileWithout = outputWithout.files.find((f: { filePath: string }) =>
+      const _lintRulesFileWithout = outputWithout.files.find((f: { filePath: string }) =>
         f.filePath.includes('lint-rules')
       );
 

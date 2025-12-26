@@ -988,7 +988,7 @@ const result = testFunc(42);`;
           end: { line: 10, column: 1, offset: 100 }
         }
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const otherSymbol = createMockSymbol('myOther', 'interface' as any, {
         range: {
           start: { line: 2, column: 3, offset: 10 },

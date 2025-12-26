@@ -336,7 +336,7 @@ describe('Symbol Types', () => {
     });
 
     it('should throw error for invalid scope type', () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect(() => createScope('invalid' as any)).toThrow('無效的 scope 類型');
     });
 

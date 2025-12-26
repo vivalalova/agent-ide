@@ -51,7 +51,7 @@ function createMockFileSystem(files: Map<string, string | DirectoryEntry[]>): IF
     async deleteFile(): Promise<void> { },
     async createDirectory(): Promise<void> { },
     async deleteDirectory(): Promise<void> { },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     async getStats(): Promise<any> {
       return {};
     },
