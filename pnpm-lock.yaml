@@ -46,8 +46,8 @@ importers:
         specifier: ^9.39.1
         version: 9.39.1
       '@lova/mem-vfs':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: 0.1.1
+        version: 0.1.1
       '@semantic-release/changelog':
         specifier: ^6.0.3
         version: 6.0.3(semantic-release@25.0.1(typescript@5.9.2))
@@ -495,8 +495,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lova/mem-vfs@0.1.0':
-    resolution: {integrity: sha512-nYl/Z8shkoIwdfbaC/RBMUMSQwjBz4FYflDzUocRYAIfHiYLpe24k3RZg55p9Uzp8Fm21z8bIRH20TH1iEHRnw==}
+  '@lova/mem-vfs@0.1.1':
+    resolution: {integrity: sha512-XnoxP+FESrqMvz/zOe+7vwdIodcAt+8BmMifX7+/mZ6/KbTJhTsPkeerqdGcYwyQZdoxgucqQbyo3UssakyRQQ==}
     engines: {node: '>=18.0.0'}
 
   '@napi-rs/wasm-runtime@0.2.12':
@@ -3597,7 +3597,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lova/mem-vfs@0.1.0': {}
+  '@lova/mem-vfs@0.1.1': {}
 
   '@napi-rs/wasm-runtime@0.2.12':
     dependencies:
