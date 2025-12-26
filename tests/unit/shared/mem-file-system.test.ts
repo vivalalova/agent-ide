@@ -500,6 +500,160 @@ describe('MemFileSystem', () => {
     });
   });
 
+  describe('symlink 操作', () => {
+    it('應該建立符號連結', async () => {
+      await fs.fromJSON({
+        '/target.txt': 'content',
+      });
+
+      await fs.createSymlink('/target.txt', '/link.txt');
+
+      const isSymlink = await fs.isSymlink('/link.txt');
+      expect(isSymlink).toBe(true);
+    });
+
+    it('應該讀取符號連結目標', async () => {
+      await fs.fromJSON({
+        '/target.txt': 'content',
+      });
+
+      await fs.createSymlink('/target.txt', '/link.txt');
+
+      const target = await fs.readSymlink('/link.txt');
+      expect(target).toBe('/target.txt');
+    });
+
+    it('應該透過符號連結讀取檔案', async () => {
+      await fs.fromJSON({
+        '/target.txt': 'original content',
+      });
+
+      await fs.createSymlink('/target.txt', '/link.txt');
+
+      const content = await fs.readFile('/link.txt', 'utf-8');
+      expect(content).toBe('original content');
+    });
+
+    it('應該取得符號連結統計', async () => {
+      await fs.fromJSON({
+        '/target.txt': 'content',
+      });
+
+      await fs.createSymlink('/target.txt', '/link.txt');
+
+      const stats = await fs.getLinkStats('/link.txt');
+      expect(stats).toBeDefined();
+      expect(typeof stats.mode).toBe('number');
+    });
+  });
+
+  describe('snapshot 操作', () => {
+    it('應該建立和列出快照', async () => {
+      await fs.fromJSON({
+        '/file.txt': 'content',
+      });
+
+      const snapshotId = fs.createSnapshot('test-snapshot');
+
+      expect(snapshotId).toBeDefined();
+      expect(fs.listSnapshots().length).toBe(1);
+      expect(fs.listSnapshots()[0].name).toBe('test-snapshot');
+    });
+
+    it('應該還原快照', async () => {
+      await fs.fromJSON({
+        '/file.txt': 'original',
+      });
+
+      const snapshotId = fs.createSnapshot();
+
+      await fs.writeFile('/file.txt', 'modified');
+      await fs.writeFile('/new.txt', 'new content');
+
+      fs.restoreSnapshot(snapshotId);
+
+      expect(await fs.readFile('/file.txt', 'utf-8')).toBe('original');
+      expect(await fs.exists('/new.txt')).toBe(false);
+    });
+
+    it('應該計算快照差異', async () => {
+      await fs.fromJSON({
+        '/file.txt': 'original',
+      });
+
+      const snapshot1 = fs.createSnapshot();
+
+      await fs.writeFile('/file.txt', 'modified');
+      await fs.writeFile('/new.txt', 'new');
+
+      const diffs = fs.diff(snapshot1);
+
+      expect(diffs.length).toBeGreaterThan(0);
+    });
+
+    it('應該刪除快照', async () => {
+      const snapshotId = fs.createSnapshot();
+
+      expect(fs.deleteSnapshot(snapshotId)).toBe(true);
+      expect(fs.listSnapshots().length).toBe(0);
+    });
+
+    it('應該取得快照資訊', async () => {
+      await fs.fromJSON({
+        '/file.txt': 'content',
+      });
+
+      const snapshotId = fs.createSnapshot('my-snapshot');
+      const info = fs.getSnapshotInfo(snapshotId);
+
+      expect(info).toBeDefined();
+      expect(info?.name).toBe('my-snapshot');
+      expect(info?.fileCount).toBe(1);
+    });
+  });
+
+  describe('watch 操作', () => {
+    it('應該建立 watcher', async () => {
+      const watcher = fs.watch('/');
+
+      expect(watcher).toBeDefined();
+      expect(typeof watcher.close).toBe('function');
+
+      watcher.close();
+    });
+
+    it('應該監聽檔案變更', async () => {
+      const events: string[] = [];
+      // 設定較短的 debounce 時間以加快測試
+      const watcher = fs.watch('/', { ignoreInitial: true, debounce: 10 });
+
+      // 事件參數是 WatcherEvent 物件 { type, path, stats? }
+      watcher.on('change', (event: { path: string }) => {
+        events.push(`change:${event.path}`);
+      });
+
+      watcher.on('add', (event: { path: string }) => {
+        events.push(`add:${event.path}`);
+      });
+
+      // 等待 ready
+      await new Promise<void>((resolve) => {
+        watcher.on('ready', resolve);
+      });
+
+      await fs.writeFile('/test.txt', 'content');
+
+      // 等待超過 debounce 時間讓事件傳播
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // 驗證事件已收到（add 或 change）
+      const hasEvent = events.some((e) => e.includes('/test.txt'));
+      expect(hasEvent).toBe(true);
+
+      watcher.close();
+    });
+  });
+
   describe('邊界條件', () => {
     it('應該處理空字串檔案內容', async () => {
       await fs.writeFile('/empty.txt', '');
