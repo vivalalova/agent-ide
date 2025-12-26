@@ -1,3 +1,9 @@
+## <small>0.10.2 (2025-12-26)</small>
+
+* Merge branch 'main' of https://github.com/vivalalova/agent-ide ([e7cb839](https://github.com/vivalalova/agent-ide/commit/e7cb839))
+* fix: 修正目錄移動時內部相對引用被錯誤更新的問題 ([bbdd68d](https://github.com/vivalalova/agent-ide/commit/bbdd68d))
+* test: 新增目錄移動內部引用保持不變的測試案例 ([7d3211e](https://github.com/vivalalova/agent-ide/commit/7d3211e))
+
 ## <small>0.10.1 (2025-12-26)</small>
 
 * fix: glob 模式移動時保留子目錄結構 ([73852a7](https://github.com/vivalalova/agent-ide/commit/73852a7))
