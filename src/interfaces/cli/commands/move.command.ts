@@ -340,6 +340,16 @@ async function handleGlobMoveCommand(
     const globBaseDir = getGlobBaseDir(globPattern);
     const absoluteGlobBaseDir = path.resolve(projectRoot, globBaseDir);
 
+    // 建立所有被移動檔案的 source → target 映射（用於識別內部引用）
+    const allMovedFilesMap = new Map<string, string>();
+    for (const sourceFile of matchedFiles) {
+      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
+      const targetFile = targetIsDirectory
+        ? path.join(resolvedTarget, relativePath)
+        : resolvedTarget;
+      allMovedFilesMap.set(sourceFile, targetFile);
+    }
+
     // 為每個檔案生成 changeset 並合併
     const builder = new ChangesetBuilder();
     const allMovedFiles: Array<{ from: string; to: string }> = [];
@@ -357,7 +367,11 @@ async function handleGlobMoveCommand(
         updateImports: options.updateImports
       };
 
-      const changeset = await moveService.generateChangeset(moveOperation, { projectRoot });
+      // 傳入 batchMoveInfo 讓服務知道哪些檔案是一起被移動的
+      const changeset = await moveService.generateChangeset(moveOperation, {
+        projectRoot,
+        batchMoveInfo: { allMovedFiles: allMovedFilesMap }
+      });
 
       if (!changeset.success) {
         outputHandler.outputError(changeset.errors?.join(', ') ?? `移動失敗: ${sourceFile}`, format);

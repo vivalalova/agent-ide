@@ -8,7 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
-import type { PathUpdate } from './types.js';
+import type { PathUpdate, BatchMoveInfo } from './types.js';
 
 /**
  * 路徑計算器類別
@@ -34,13 +34,15 @@ export class PathCalculator {
    * @param target - 目標路徑
    * @param isDirectory - 是否為目錄
    * @param projectRoot - 專案根目錄
+   * @param batchMoveInfo - 批次移動資訊（glob 模式使用）
    * @returns 路徑更新列表
    */
   async calculatePathUpdatesInternal(
     source: string,
     target: string,
     isDirectory: boolean,
-    projectRoot: string
+    projectRoot: string,
+    batchMoveInfo?: BatchMoveInfo
   ): Promise<PathUpdate[]> {
     const pathUpdates: PathUpdate[] = [];
 
@@ -78,7 +80,11 @@ export class PathCalculator {
     } else {
       // 單一檔案移動
       // 更新其他檔案對被移動檔案的引用
-      const affectedFiles = await this.fileScanner.findAffectedFiles(source, projectRoot);
+      // 排除同一批次中也被移動的檔案（它們的相對引用會保持不變）
+      const batchExcludeFiles = batchMoveInfo
+        ? Array.from(batchMoveInfo.allMovedFiles.keys())
+        : undefined;
+      const affectedFiles = await this.fileScanner.findAffectedFiles(source, projectRoot, batchExcludeFiles);
 
       for (const filePath of affectedFiles) {
         const updates = await this.calculatePathUpdates(filePath, source, target);
@@ -86,7 +92,14 @@ export class PathCalculator {
       }
 
       // 更新被移動檔案內部的 import（在移動前處理）
-      const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(source, target);
+      // 傳入 batchMoveInfo 讓方法知道哪些檔案是一起被移動的
+      const movedFileInternalUpdates = await this.calculateMovedFileInternalUpdates(
+        source,
+        target,
+        undefined,
+        undefined,
+        batchMoveInfo
+      );
       pathUpdates.push(...movedFileInternalUpdates);
     }
 
@@ -185,13 +198,15 @@ export class PathCalculator {
    * @param target - 目標檔案路徑
    * @param movedDirectory - 被移動的目錄路徑（目錄移動時使用）
    * @param filesInMovedDir - 被移動目錄內的所有檔案（目錄移動時使用）
+   * @param batchMoveInfo - 批次移動資訊（glob 模式使用）
    * @returns 路徑更新列表
    */
   async calculateMovedFileInternalUpdates(
     source: string,
     target: string,
     movedDirectory?: string,
-    filesInMovedDir?: string[]
+    filesInMovedDir?: string[],
+    batchMoveInfo?: BatchMoveInfo
   ): Promise<PathUpdate[]> {
     const updates: PathUpdate[] = [];
 
@@ -208,6 +223,22 @@ export class PathCalculator {
       const normalizedFilesInDir = filesInMovedDir
         ? new Set(filesInMovedDir.map(f => path.normalize(f)))
         : null;
+
+      // 如果是批次移動（glob 模式），建立 Set 以快速查找
+      // 將所有被移動檔案的 source 路徑規範化，同時加入不帶副檔名的版本
+      let normalizedBatchSources: Set<string> | null = null;
+      if (batchMoveInfo) {
+        normalizedBatchSources = new Set<string>();
+        for (const filePath of batchMoveInfo.allMovedFiles.keys()) {
+          const normalized = path.normalize(filePath);
+          normalizedBatchSources.add(normalized);
+          // 同時加入不帶副檔名的版本（用於比較省略副檔名的 import）
+          const ext = path.extname(normalized);
+          if (ext) {
+            normalizedBatchSources.add(normalized.slice(0, -ext.length));
+          }
+        }
+      }
 
       for (const importStatement of imports) {
         // 跳過 node_modules
@@ -233,6 +264,24 @@ export class PathCalculator {
 
             // 如果目標檔案也在被移動的目錄內，相對位置不變，跳過更新
             if (isTargetInMovedDir) {
+              continue;
+            }
+          }
+
+          // 如果是批次移動（glob 模式），檢查被引用的檔案是否也在被移動列表中
+          if (batchMoveInfo) {
+            // 遍歷所有被移動的檔案，檢查是否有匹配
+            // 使用 pathsMatch 來處理路徑格式差異和副檔名省略
+            let isTargetInBatch = false;
+            for (const batchSource of batchMoveInfo.allMovedFiles.keys()) {
+              if (this.pathUtils.pathsMatch(normalizedResolved, batchSource)) {
+                isTargetInBatch = true;
+                break;
+              }
+            }
+
+            // 如果目標檔案也在被移動列表中，相對位置不變，跳過更新
+            if (isTargetInBatch) {
               continue;
             }
           }

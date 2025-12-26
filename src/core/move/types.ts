@@ -311,11 +311,22 @@ export interface MoveInput {
 }
 
 /**
+ * 批次移動資訊
+ * 用於 glob 移動時識別同時被移動的檔案
+ */
+export interface BatchMoveInfo {
+  /** 所有被移動檔案的 source → target 映射 */
+  readonly allMovedFiles: Map<string, string>;
+}
+
+/**
  * 移動選項
  */
 export interface MoveOptions {
   readonly preview?: boolean;
   readonly projectRoot?: string;
+  /** 批次移動資訊（glob 模式使用） */
+  readonly batchMoveInfo?: BatchMoveInfo;
 }
 
 /**

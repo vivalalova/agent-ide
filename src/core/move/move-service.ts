@@ -232,7 +232,13 @@ export class MoveService {
 
       // 收集 import 更新
       const pathUpdates = updateImports
-        ? await this.pathCalculator.calculatePathUpdatesInternal(source, target, isDirectory, projectRoot)
+        ? await this.pathCalculator.calculatePathUpdatesInternal(
+            source,
+            target,
+            isDirectory,
+            projectRoot,
+            options.batchMoveInfo
+          )
         : [];
 
       // 轉換 pathUpdates 為 TextEdit，按檔案分組
