@@ -3,7 +3,7 @@
  * 測試 Dead Code 刪除器的 Import 解析與括號配對功能
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DeadCodeRemover, createDeadCodeRemover } from '@core/deadcode/dead-code-remover.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';

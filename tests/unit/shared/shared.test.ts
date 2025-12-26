@@ -988,6 +988,7 @@ const result = testFunc(42);`;
           end: { line: 10, column: 1, offset: 100 }
         }
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const otherSymbol = createMockSymbol('myOther', 'interface' as any, {
         range: {
           start: { line: 2, column: 3, offset: 10 },
@@ -1325,18 +1326,7 @@ export function targetFunc() {
       });
 
       // 建立真實的 parser mock，返回 call sites
-      const callSiteMock = {
-        functionName: 'targetFunc',
-        location: {
-          filePath: '/test/caller.ts',
-          range: {
-            start: { line: 3, column: 3, offset: 20 },
-            end: { line: 3, column: 15, offset: 32 }
-          }
-        },
-        arguments: [],
-        isMethodCall: false
-      };
+
 
       vi.mocked(mockParser.extractSymbols).mockResolvedValue([
         createMockSymbol('targetFunc', 'function', {

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
-import { CycleDetector, calculateCycleSeverity, createDefaultCycleDetectionOptions, isCircularDependency, type CircularDependency } from '@core/cycles/index.js';
+import { describe, it, expect } from 'vitest';
+
+import { calculateCycleSeverity, createDefaultCycleDetectionOptions, isCircularDependency, type CircularDependency } from '@core/cycles/index.js';
 import {
   createDefaultAnalysisOptions,
   createDefaultQueryOptions,

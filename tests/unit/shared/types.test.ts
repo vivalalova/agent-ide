@@ -15,9 +15,6 @@ import {
   isLocation,
   isPositionBefore,
   isPositionInRange,
-  type Position,
-  type Range,
-  type Location,
 } from '@shared/types/core.js';
 
 // Symbol types
@@ -36,10 +33,6 @@ import {
   getScopeDepth,
   isSameScope,
   getScopePath,
-  type Scope,
-  type Symbol,
-  type Reference,
-  type Dependency,
 } from '@shared/types/symbol.js';
 
 // AST types
@@ -55,9 +48,6 @@ import {
   getNodePath,
   getNodeDepth,
   isNodeAncestorOf,
-  type ASTNode,
-  type ASTMetadata,
-  type AST,
 } from '@shared/types/ast.js';
 
 // ============================================================================
@@ -346,6 +336,7 @@ describe('Symbol Types', () => {
     });
 
     it('should throw error for invalid scope type', () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(() => createScope('invalid' as any)).toThrow('無效的 scope 類型');
     });
 
@@ -1023,7 +1014,11 @@ describe('AST Types', () => {
       createASTNode('Program', rootRange, {}, [func]);
 
       // Get the actual child node which has parent set
-      const actualFunc = func.children[0].parent!.parent!.children[0];
+      const idParent = func.children[0].parent;
+      if (!idParent) {throw new Error('Parent not set');}
+      const funcParent = idParent.parent;
+      if (!funcParent) {throw new Error('Parent not set');}
+      const actualFunc = funcParent.children[0];
       const actualId = actualFunc.children[0];
 
       expect(getNodePath(actualId)).toEqual(['Program', 'FunctionDeclaration', 'Identifier']);

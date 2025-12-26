@@ -12,7 +12,6 @@ import {
   SymbolReferenceType,
   symbolToKey,
   serializeSymbolKey,
-  type SymbolReference
 } from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';

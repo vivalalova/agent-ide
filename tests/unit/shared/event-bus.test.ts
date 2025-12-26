@@ -14,7 +14,7 @@ import {
 // Helper to create a valid event
 function createEvent(
   type: string,
-  payload: Record<string, any> = {},
+  payload: Record<string, unknown> = {},
   priority: EventPriority = EventPriority.NORMAL
 ): BaseEvent {
   return {

@@ -114,11 +114,12 @@ describe('convertRenamePreview', () => {
 
     const result = convertRenamePreview([], conflicts, new Map());
 
-    expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts![0].type).toBe('naming_conflict');
-    expect(result.conflicts![0].message).toBe('Symbol already exists');
-    expect(result.conflicts![0].filePath).toBe('/src/a.ts');
-    expect(result.conflicts![0].line).toBe(5);
+    const actualConflicts = result.conflicts ?? [];
+    expect(actualConflicts).toHaveLength(1);
+    expect(actualConflicts[0].type).toBe('naming_conflict');
+    expect(actualConflicts[0].message).toBe('Symbol already exists');
+    expect(actualConflicts[0].filePath).toBe('/src/a.ts');
+    expect(actualConflicts[0].line).toBe(5);
   });
 
   it('應該處理沒有位置資訊的衝突', () => {
@@ -131,8 +132,10 @@ describe('convertRenamePreview', () => {
 
     const result = convertRenamePreview([], conflicts, new Map());
 
-    expect(result.conflicts![0].filePath).toBeNull();
-    expect(result.conflicts![0].line).toBeNull();
+    const actualConflicts = result.conflicts ?? [];
+    expect(actualConflicts).toHaveLength(1);
+    expect(actualConflicts[0].filePath).toBeNull();
+    expect(actualConflicts[0].line).toBeNull();
   });
 
   it('應該設定操作描述', () => {

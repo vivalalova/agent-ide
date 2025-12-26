@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SnapshotCacheManager } from '@core/snapshot/snapshot-cache.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult } from '@core/snapshot/types.js';
+import type { ModuleSnapshot, ProjectSnapshot } from '@core/snapshot/types.js';
 
 describe('SnapshotCacheManager', () => {
     let fileSystem: IFileSystem;
     let cacheManager: SnapshotCacheManager;
     const mockBasePath = '/test/project';
-    const mockCachePath = '/test/project/.agent-ide/snapshot-cache.json';
+
 
     beforeEach(() => {
         fileSystem = {

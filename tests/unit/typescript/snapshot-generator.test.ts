@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SnapshotGenerator } from '@core/snapshot/snapshot-generator.js';
 import {
-  SnapshotScope,
+
   type ModuleSnapshot,
   type ProjectSnapshot,
   isProjectSnapshot,
@@ -51,6 +51,7 @@ function createMockFileSystem(files: Map<string, string | DirectoryEntry[]>): IF
     async deleteFile(): Promise<void> { },
     async createDirectory(): Promise<void> { },
     async deleteDirectory(): Promise<void> { },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async getStats(): Promise<any> {
       return {};
     },
