@@ -999,3 +999,226 @@ export class AlarmService {
     });
   });
 });
+
+/**
+ * Bug: 移動目錄時，不同子樹的外部檔案 alias 引用未更新
+ * - 當移動 src/modules/siteDeviceYearlyData 到 src/modules/reporting/site-device-yearly-data
+ * - 外部檔案 src/data/repositories/xxx.service.ts 有 @/modules/siteDeviceYearlyData/interfaces/... 引用
+ * - 這個引用應該被更新為 @/modules/reporting/site-device-yearly-data/interfaces/...
+ * - 但實際上沒有被更新
+ *
+ * 關鍵差異：外部檔案在不同子樹（src/data/ vs src/modules/）
+ */
+describe('CLI move bugs - 不同子樹的外部檔案 alias 引用未更新', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+
+    // 修改 tsconfig.json 加入 path alias 配置
+    await fixture.writeFile('tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        module: 'ESNext',
+        moduleResolution: 'node',
+        baseUrl: '.',
+        paths: {
+          '@/*': ['src/*']
+        }
+      },
+      include: ['src/**/*']
+    }, null, 2));
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  describe('外部檔案在不同子樹', () => {
+    it('移動目錄時，不同子樹的外部檔案 alias 引用應該被更新', async () => {
+      // Given: 建立 EMS 專案類似的結構
+      // src/modules/siteDeviceYearlyData/interfaces/siteDeviceYearlyData.interface.ts
+      await fixture.writeFile('src/modules/siteDeviceYearlyData/interfaces/siteDeviceYearlyData.interface.ts', `
+export interface SiteDeviceYearlyData {
+  siteId: string;
+  year: number;
+  data: Record<string, number>;
+}
+`);
+      await fixture.writeFile('src/modules/siteDeviceYearlyData/index.ts', `
+export * from './interfaces/siteDeviceYearlyData.interface';
+`);
+
+      // 外部檔案在不同子樹 src/data/repositories/
+      await fixture.writeFile('src/data/repositories/siteDeviceYearlyData.service.ts', `
+import { SiteDeviceYearlyData } from '@/modules/siteDeviceYearlyData/interfaces/siteDeviceYearlyData.interface';
+
+export class SiteDeviceYearlyDataService {
+  async findOne(siteId: string, year: number): Promise<SiteDeviceYearlyData | null> {
+    return null;
+  }
+}
+`);
+
+      // When: 移動目錄 src/modules/siteDeviceYearlyData 到 src/modules/reporting/site-device-yearly-data
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/siteDeviceYearlyData',
+          'src/modules/reporting/site-device-yearly-data',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 外部檔案的 alias 引用應該被更新
+      const serviceContent = await fixture.readFile('src/data/repositories/siteDeviceYearlyData.service.ts');
+
+      // 舊的 @/modules/siteDeviceYearlyData 路徑應該被替換
+      expect(serviceContent).not.toContain('@/modules/siteDeviceYearlyData');
+      // 新的路徑應該是 @/modules/reporting/site-device-yearly-data
+      expect(serviceContent).toContain('@/modules/reporting/site-device-yearly-data/interfaces/siteDeviceYearlyData.interface');
+    });
+
+    it('移動目錄時，多個不同子樹的外部檔案 alias 引用都應該被更新', async () => {
+      // Given: 多個外部檔案在不同位置
+      await fixture.writeFile('src/modules/siteDeviceYearlyData/dto/common.dto.ts', `
+export interface YearlyDataDto {
+  year: number;
+  value: number;
+}
+`);
+      await fixture.writeFile('src/modules/siteDeviceYearlyData/index.ts', `
+export * from './dto/common.dto';
+`);
+
+      // 外部檔案 1: src/data/repositories/
+      await fixture.writeFile('src/data/repositories/yearly.repository.ts', `
+import { YearlyDataDto } from '@/modules/siteDeviceYearlyData/dto/common.dto';
+
+export class YearlyRepository {
+  async save(data: YearlyDataDto): Promise<void> {}
+}
+`);
+
+      // 外部檔案 2: src/api/controllers/
+      await fixture.writeFile('src/api/controllers/yearly.controller.ts', `
+import { YearlyDataDto } from '@/modules/siteDeviceYearlyData/dto/common.dto';
+
+export class YearlyController {
+  getYearlyData(): YearlyDataDto {
+    return { year: 2024, value: 100 };
+  }
+}
+`);
+
+      // 外部檔案 3: src/services/
+      await fixture.writeFile('src/services/yearly.service.ts', `
+import { YearlyDataDto } from '@/modules/siteDeviceYearlyData/dto/common.dto';
+
+export class YearlyService {
+  calculate(data: YearlyDataDto): number {
+    return data.value * 12;
+  }
+}
+`);
+
+      // When: 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/siteDeviceYearlyData',
+          'src/modules/reporting/site-device-yearly-data',
+          '--path', fixture.rootPath,
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該成功
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 所有外部檔案的 alias 引用都應該被更新
+      const repoContent = await fixture.readFile('src/data/repositories/yearly.repository.ts');
+      expect(repoContent).not.toContain('@/modules/siteDeviceYearlyData');
+      expect(repoContent).toContain('@/modules/reporting/site-device-yearly-data/dto/common.dto');
+
+      const controllerContent = await fixture.readFile('src/api/controllers/yearly.controller.ts');
+      expect(controllerContent).not.toContain('@/modules/siteDeviceYearlyData');
+      expect(controllerContent).toContain('@/modules/reporting/site-device-yearly-data/dto/common.dto');
+
+      const serviceContent = await fixture.readFile('src/services/yearly.service.ts');
+      expect(serviceContent).not.toContain('@/modules/siteDeviceYearlyData');
+      expect(serviceContent).toContain('@/modules/reporting/site-device-yearly-data/dto/common.dto');
+    });
+
+    it('dry-run 應該顯示不同子樹外部檔案的 alias 引用變更', async () => {
+      // Given: 建立結構
+      await fixture.writeFile('src/modules/db/types.ts', `
+export interface DbConfig {
+  host: string;
+  port: number;
+}
+`);
+
+      // 外部檔案在不同子樹
+      await fixture.writeFile('src/infrastructure/config/db.config.ts', `
+import { DbConfig } from '@/modules/db/types';
+
+export const defaultConfig: DbConfig = {
+  host: 'localhost',
+  port: 5432
+};
+`);
+
+      // When: dry-run 移動目錄
+      const result = await executeCLI(
+        [
+          'move',
+          'src/modules/db',
+          'src/infrastructure/database',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // Then: 應該在預覽中顯示外部檔案的變更
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 應該有 files 顯示外部引用的變更
+      const files = output.files ?? [];
+      interface HunkLine {
+        type: string;
+        content: string;
+      }
+      interface Hunk {
+        lines: HunkLine[];
+      }
+      interface FileOutput {
+        filePath?: string;
+        hunks?: Hunk[];
+      }
+      const hasExternalUpdate = files.some((f: FileOutput) =>
+        f.filePath?.includes('db.config.ts') &&
+        f.hunks?.some((h: Hunk) =>
+          h.lines?.some((l: HunkLine) =>
+            l.type === 'delete' && l.content?.includes('@/modules/db')
+          )
+        )
+      );
+      expect(hasExternalUpdate).toBe(true);
+    });
+  });
+});
