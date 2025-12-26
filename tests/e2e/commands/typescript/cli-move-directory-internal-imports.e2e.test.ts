@@ -70,7 +70,7 @@ export class AlarmController {
 
       // 核心驗證：./alarm.service 引用應該保持不變
       const controllerContent = await fixture.readFile('src/modules/frontend/alarm/alarm.controller.ts');
-      expect(controllerContent).toContain("from './alarm.service'");
+      expect(controllerContent).toContain('from \'./alarm.service\'');
       // 不應該被改成奇怪的路徑
       expect(controllerContent).not.toContain('../../modules/frontend');
       expect(controllerContent).not.toContain('../../frontend/alarm');
@@ -122,12 +122,12 @@ export class AlarmService {
 
       // 驗證 dto 內部引用保持不變
       const dtoContent = await fixture.readFile('src/modules/frontend/alarm/dto/alarm-response.dto.ts');
-      expect(dtoContent).toContain("from './alarm.dto'");
+      expect(dtoContent).toContain('from \'./alarm.dto\'');
 
       // 驗證 service 對 dto 的引用保持不變
       const serviceContent = await fixture.readFile('src/modules/frontend/alarm/alarm.service.ts');
-      expect(serviceContent).toContain("from './dto/alarm.dto'");
-      expect(serviceContent).toContain("from './dto/alarm-response.dto'");
+      expect(serviceContent).toContain('from \'./dto/alarm.dto\'');
+      expect(serviceContent).toContain('from \'./dto/alarm-response.dto\'');
     });
 
     it('外部引用應該被正確更新', async () => {
@@ -208,11 +208,11 @@ export class AlarmService {
 
       // 驗證 ../base 引用保持不變
       const implContent = await fixture.readFile('src/modules/frontend/alarm/core/impl/alarm-impl.ts');
-      expect(implContent).toContain("from '../base'");
+      expect(implContent).toContain('from \'../base\'');
 
       // 驗證 ../core/impl/alarm-impl 引用保持不變
       const serviceContent = await fixture.readFile('src/modules/frontend/alarm/services/alarm.service.ts');
-      expect(serviceContent).toContain("from '../core/impl/alarm-impl'");
+      expect(serviceContent).toContain('from \'../core/impl/alarm-impl\'');
     });
   });
 });

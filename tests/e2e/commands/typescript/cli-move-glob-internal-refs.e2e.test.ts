@@ -67,7 +67,7 @@ describe('helper', () => {
 
       // 核心驗證：./index 引用應該保持不變
       const specContent = await fixture.readFile('src/shared/utils/index.spec.ts');
-      expect(specContent).toContain("from './index'");
+      expect(specContent).toContain('from \'./index\'');
       // 不應該被錯誤更新
       expect(specContent).not.toContain('../../utils/index');
       expect(specContent).not.toContain('../utils/index');
@@ -105,12 +105,12 @@ export const c = a + b + 'c';
 
       // 驗證內部引用保持不變
       const bContent = await fixture.readFile('src/lib/b.ts');
-      expect(bContent).toContain("from './a'");
+      expect(bContent).toContain('from \'./a\'');
       expect(bContent).not.toContain('../utils/a');
 
       const cContent = await fixture.readFile('src/lib/c.ts');
-      expect(cContent).toContain("from './a'");
-      expect(cContent).toContain("from './b'");
+      expect(cContent).toContain('from \'./a\'');
+      expect(cContent).toContain('from \'./b\'');
       expect(cContent).not.toContain('../utils/');
     });
 
@@ -145,7 +145,7 @@ console.log(helper());
 
       // 內部引用保持不變
       const specContent = await fixture.readFile('src/shared/utils/helper.spec.ts');
-      expect(specContent).toContain("from './helper'");
+      expect(specContent).toContain('from \'./helper\'');
 
       // 外部引用被更新
       const appContent = await fixture.readFile('src/app.ts');
@@ -188,11 +188,11 @@ export class Service {
 
       // 同目錄引用保持不變
       const implContent = await fixture.readFile('src/modules/feature/core/impl.ts');
-      expect(implContent).toContain("from './base'");
+      expect(implContent).toContain('from \'./base\'');
 
       // 跨目錄相對引用保持不變
       const serviceContent = await fixture.readFile('src/modules/feature/services/service.ts');
-      expect(serviceContent).toContain("from '../core/impl'");
+      expect(serviceContent).toContain('from \'../core/impl\'');
     });
   });
 
@@ -227,7 +227,7 @@ export const unrelated = 'unrelated';
 
       // dependent 對 standalone 的引用應保持不變
       const dependentContent = await fixture.readFile('src/lib/dependent.ts');
-      expect(dependentContent).toContain("from './standalone'");
+      expect(dependentContent).toContain('from \'./standalone\'');
       expect(dependentContent).not.toContain('../utils/');
     });
   });
