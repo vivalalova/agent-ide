@@ -22,6 +22,25 @@ function isGlobPattern(pattern: string): boolean {
   return /[*?[\]{}]/.test(pattern);
 }
 
+/**
+ * 計算 glob pattern 的基礎目錄
+ * 找到第一個包含 glob 特殊字元的路徑段之前的部分
+ * 例如: src/deep/x.ts 會得到 src/deep/
+ */
+function getGlobBaseDir(pattern: string): string {
+  const segments = pattern.split('/');
+  const baseSegments: string[] = [];
+
+  for (const segment of segments) {
+    if (isGlobPattern(segment)) {
+      break;
+    }
+    baseSegments.push(segment);
+  }
+
+  return baseSegments.length > 0 ? baseSegments.join('/') + '/' : '';
+}
+
 /** Move 命令選項 */
 interface MoveOptions {
   source?: string;
@@ -317,13 +336,19 @@ async function handleGlobMoveCommand(
       includeNodeModules: false
     });
 
+    // 計算 glob 的基礎目錄（用於保留目錄結構）
+    const globBaseDir = getGlobBaseDir(globPattern);
+    const absoluteGlobBaseDir = path.resolve(projectRoot, globBaseDir);
+
     // 為每個檔案生成 changeset 並合併
     const builder = new ChangesetBuilder();
     const allMovedFiles: Array<{ from: string; to: string }> = [];
 
     for (const sourceFile of matchedFiles) {
+      // 計算相對於 glob 基礎目錄的路徑，以保留目錄結構
+      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
       const targetFile = targetIsDirectory
-        ? path.join(resolvedTarget, path.basename(sourceFile))
+        ? path.join(resolvedTarget, relativePath)
         : resolvedTarget;
 
       const moveOperation = {
