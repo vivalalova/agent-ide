@@ -1,3 +1,11 @@
+## <small>0.11.1 (2025-12-26)</small>
+
+* docs: 簡化 SKILL.md 優先使用原則說明 ([96042de](https://github.com/vivalalova/agent-ide/commit/96042de))
+* fix: 修正 move 目錄時 alias import 未更新 index.ts barrel export ([49d329a](https://github.com/vivalalova/agent-ide/commit/49d329a))
+* style: [測試] 統一字串引號風格 ([b9bb188](https://github.com/vivalalova/agent-ide/commit/b9bb188))
+* Merge branch 'main' of https://github.com/vivalalova/agent-ide ([acded3d](https://github.com/vivalalova/agent-ide/commit/acded3d))
+* test: 新增不同子樹外部檔案 alias 引用更新測試 ([beec827](https://github.com/vivalalova/agent-ide/commit/beec827))
+
 ## 0.11.0 (2025-12-26)
 
 * chore: 升級 @lova/mem-vfs 至 0.1.1 ([423c7cf](https://github.com/vivalalova/agent-ide/commit/423c7cf))
