@@ -1,3 +1,20 @@
+## <small>0.10.3 (2025-12-26)</small>
+
+* merge: 合併 62ee839 修正路徑標準化邏輯 ([5870770](https://github.com/vivalalova/agent-ide/commit/5870770))
+* fix: 修正多檔案移動時內部相對引用被錯誤更新的問題 ([eb84293](https://github.com/vivalalova/agent-ide/commit/eb84293))
+* fix: 修正目錄移動時內部相對引用被錯誤更新的問題 ([c71cef8](https://github.com/vivalalova/agent-ide/commit/c71cef8))
+* test: 新增 glob 移動內部引用測試案例 ([65eb3e3](https://github.com/vivalalova/agent-ide/commit/65eb3e3))
+* test: 新增目錄移動內部引用保持不變的測試案例 ([62ee839](https://github.com/vivalalova/agent-ide/commit/62ee839))
+* docs: 重整 README 結構，新增 Features 區塊並修正無效連結 ([6a99622](https://github.com/vivalalova/agent-ide/commit/6a99622))
+* perf: [效能優化] DependencyGraph 新增傳遞依賴快取與結構化 clone ([99932a8](https://github.com/vivalalova/agent-ide/commit/99932a8))
+* perf: [效能優化] Parser 新增 AST 快取層 ([b260a2e](https://github.com/vivalalova/agent-ide/commit/b260a2e))
+* perf: [效能優化] ReferenceUpdater 新增快取失效機制 ([7f78dcc](https://github.com/vivalalova/agent-ide/commit/7f78dcc))
+* perf: [效能優化] SymbolFinder 批次並行處理 ([d20b2d2](https://github.com/vivalalova/agent-ide/commit/d20b2d2))
+* refactor: [消除重複邏輯] 新增 CLI command-utils 共用工具 ([afe10e5](https://github.com/vivalalova/agent-ide/commit/afe10e5))
+* refactor: [消除重複邏輯] 新增 formatters grouping 共用工具 ([9b1177b](https://github.com/vivalalova/agent-ide/commit/9b1177b))
+* refactor: [消除重複邏輯] 新增 getErrorMessage 共用錯誤處理函數 ([2d9a6cc](https://github.com/vivalalova/agent-ide/commit/2d9a6cc))
+* refactor: 統一 CLI 路徑位置解析器 ([191f996](https://github.com/vivalalova/agent-ide/commit/191f996))
+
 ## <small>0.10.2 (2025-12-26)</small>
 
 * Merge branch 'main' of https://github.com/vivalalova/agent-ide ([e7cb839](https://github.com/vivalalova/agent-ide/commit/e7cb839))
