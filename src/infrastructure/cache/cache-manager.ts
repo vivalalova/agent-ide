@@ -44,8 +44,10 @@ export interface BatchOperationResult {
  * 快取管理器 - 管理多個快取實例
  */
 export class CacheManager {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型容器需要 any
   private readonly caches = new Map<string, MemoryCache<any, any>>();
   private readonly options: Required<CacheManagerOptions>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型監聽器需要 any
   private readonly globalEventListeners = new Set<CacheEventListener<any, any>>();
   private disposed = false;
 
@@ -297,6 +299,7 @@ export class CacheManager {
   /**
    * 添加全域事件監聽器
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型監聽器需要 any
   addGlobalEventListener(listener: CacheEventListener<any, any>): void {
     this.checkDisposed();
     this.globalEventListeners.add(listener);
@@ -305,6 +308,7 @@ export class CacheManager {
   /**
    * 移除全域事件監聽器
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 泛型監聯器需要 any
   removeGlobalEventListener(listener: CacheEventListener<any, any>): void {
     this.checkDisposed();
     this.globalEventListeners.delete(listener);

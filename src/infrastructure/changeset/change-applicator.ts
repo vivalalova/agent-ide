@@ -409,7 +409,7 @@ export class ChangeApplicator {
         await this.fileSystem.deleteFile(operation.sourcePath);
         break;
 
-      case FileOperationType.Move:
+      case FileOperationType.Move: {
         if (!operation.targetPath) {
           throw new Error('MOVE 操作需要 targetPath');
         }
@@ -421,6 +421,7 @@ export class ChangeApplicator {
           await this.fileSystem.moveFile(operation.sourcePath, operation.targetPath);
         }
         break;
+      }
     }
   }
 

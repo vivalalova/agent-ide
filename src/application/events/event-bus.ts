@@ -20,7 +20,7 @@ import {
  * EventBus 相關錯誤
  */
 export class EventBusError extends BaseError {
-  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+  constructor(message: string, details?: Record<string, unknown>, cause?: Error) {
     super('EVENT_BUS_ERROR', message, details, cause);
   }
 }

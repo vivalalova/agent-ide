@@ -73,7 +73,7 @@ export class MemberExtractor {
   async extractMemberAtPosition(
     filePath: string,
     line: number,
-    column?: number
+    _column?: number
   ): Promise<MemberDefinition | null> {
     const members = await this.listMembers(filePath);
     if (members.length === 0) {

@@ -358,7 +358,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
     return patterns.some(pattern => {
       try {
         return minimatch(normalizedPath, pattern, { dot: true });
-      } catch (error) {
+      } catch {
         this.log('warn', `無效的排除模式: ${pattern}`);
         return false;
       }

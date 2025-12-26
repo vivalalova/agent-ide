@@ -282,7 +282,7 @@ export class FileIndex {
   /**
    * 發送更新事件（內部使用）
    */
-  private emitUpdateEvent(event: IndexUpdateEvent): void {
+  private emitUpdateEvent(_event: IndexUpdateEvent): void {
     // 在實際實作中，這裡可以使用 EventEmitter 或其他事件機制
     // 目前只是預留介面
   }

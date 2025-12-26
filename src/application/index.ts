@@ -193,7 +193,7 @@ export class ApplicationServices {
   public static resetInstance(): void {
     if (ApplicationServices.instance) {
       ApplicationServices.instance.dispose();
-      ApplicationServices.instance = null as any;
+      (ApplicationServices as unknown as { instance: ApplicationServices | null }).instance = null;
     }
   }
 }

@@ -17,10 +17,16 @@ import type {
   SessionState,
   OperationHistory
 } from '../types.js';
+
+/** 測試環境全域擴展 */
+interface TestGlobal {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 循環引用需要 any
+  __test_session_managers?: any[];
+}
 import type { StateManager } from '@application/state/state-manager.js';
 import type { EventBus } from '@application/events/event-bus.js';
 import { BaseError } from '@shared/errors/base-error.js';
-import { SessionState as SessionStateClass } from '@application/state/session-state.js';
+import { SessionState as SessionStateClass, type OperationRecord } from '@application/state/session-state.js';
 
 /**
  * 會話管理相關錯誤
@@ -62,10 +68,11 @@ export class SessionManager implements ISessionManager {
     // 在測試環境中註冊到全域清理器
     if (process.env.NODE_ENV === 'test') {
       if (typeof global !== 'undefined') {
-        if (!(global as any).__test_session_managers) {
-          (global as any).__test_session_managers = [];
+        const testGlobal = global as unknown as TestGlobal;
+        if (!testGlobal.__test_session_managers) {
+          testGlobal.__test_session_managers = [];
         }
-        (global as any).__test_session_managers.push(this);
+        testGlobal.__test_session_managers.push(this);
       }
     }
   }
@@ -214,7 +221,7 @@ export class SessionManager implements ISessionManager {
         timestamp: record.timestamp,
         parameters: (record.metadata.parameters || record.metadata) as Record<string, unknown>,
         result: record.metadata.result,
-        error: record.metadata.error as any,
+        error: record.metadata.error as BaseError | undefined,
         duration: record.metadata.duration as number
       }));
     } catch (error) {
@@ -239,11 +246,13 @@ export class SessionManager implements ISessionManager {
 
     // 在測試環境中從全域清理器移除
     if (process.env.NODE_ENV === 'test') {
-      if (typeof global !== 'undefined' && (global as any).__test_session_managers) {
-        const managers = (global as any).__test_session_managers;
-        const index = managers.indexOf(this);
-        if (index !== -1) {
-          managers.splice(index, 1);
+      if (typeof global !== 'undefined') {
+        const testGlobal = global as unknown as TestGlobal;
+        if (testGlobal.__test_session_managers) {
+          const index = testGlobal.__test_session_managers.indexOf(this);
+          if (index !== -1) {
+            testGlobal.__test_session_managers.splice(index, 1);
+          }
         }
       }
     }
@@ -269,7 +278,7 @@ export class SessionManager implements ISessionManager {
 
     // 更新上下文
     if (updates.context !== undefined) {
-      updatedState = updatedState.updateContext(updates.context as any);
+      updatedState = updatedState.updateContext(updates.context as Record<string, unknown>);
     }
 
     // 更新操作歷史
@@ -278,7 +287,7 @@ export class SessionManager implements ISessionManager {
       updatedState = updatedState.clearHistory();
       const operationRecords = updates.operationHistory.map(op => ({
         id: op.id,
-        type: op.operationType as any,
+        type: op.operationType as OperationRecord['type'],
         timestamp: op.timestamp,
         description: `${op.operationType} operation`,
         metadata: {
@@ -323,7 +332,7 @@ export class SessionManager implements ISessionManager {
         timestamp: record.timestamp,
         parameters: (record.metadata.parameters || record.metadata) as Record<string, unknown>,
         result: record.metadata.result,
-        error: record.metadata.error as any,
+        error: record.metadata.error as BaseError | undefined,
         duration: record.metadata.duration as number
       })),
       createdAt: sessionState.createdAt,

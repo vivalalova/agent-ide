@@ -436,13 +436,11 @@ export class SymbolIndex {
     // 簡化的模糊匹配實現
     let patternIndex = 0;
     let targetIndex = 0;
-    let score = 0;
     let matches = 0;
 
     while (patternIndex < pattern.length && targetIndex < target.length) {
       if (pattern[patternIndex] === target[targetIndex]) {
         matches++;
-        score += 1;
         patternIndex++;
       }
       targetIndex++;

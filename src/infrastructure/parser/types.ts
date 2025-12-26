@@ -125,7 +125,7 @@ export interface ParserOptions {
   readonly targetVersion?: string;
 
   /** 自定義選項 */
-  readonly customOptions?: Record<string, any>;
+  readonly customOptions?: Record<string, unknown>;
 }
 
 /**

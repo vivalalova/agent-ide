@@ -29,7 +29,7 @@ class HandledErrorImpl extends BaseError implements HandledError {
     code: string,
     message: string,
     context: ErrorContext,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
     userMessage?: string,
     recovery?: RecoveryStrategy
@@ -213,7 +213,7 @@ export class ErrorHandlerService implements IErrorHandler {
    */
   private createHandledError(error: Error, context: ErrorContext): HandledError {
     let code: string;
-    let details: Record<string, any> | undefined;
+    let details: Record<string, unknown> | undefined;
     let cause: Error | undefined;
 
     // 如果是 BaseError，保持其屬性

@@ -54,7 +54,7 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
     // 移除 TypeScript 特有的不可序列化屬性（tsNode, tsSymbol 包含循環引用）
     const cleanedSymbols = symbols.map(symbol => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { tsNode, tsSymbol, ...rest } = symbol as any;
+      const { tsNode: _tsNode, tsSymbol: _tsSymbol, ...rest } = symbol as any;
       return rest;
     });
 

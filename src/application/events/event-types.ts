@@ -20,7 +20,7 @@ export interface BaseEvent {
   /** 事件類型 */
   type: string;
   /** 事件負載資料 */
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   /** 事件時間戳 */
   timestamp: Date;
   /** 事件優先級 */
@@ -98,7 +98,7 @@ export interface ModuleInitializedEvent extends BaseEvent {
   payload: {
     moduleName: string;
     version: string;
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
   };
 }
 
@@ -169,7 +169,7 @@ export interface SessionStartedEvent extends BaseEvent {
   payload: {
     sessionId: string;
     userId?: string;
-    clientInfo?: Record<string, any>;
+    clientInfo?: Record<string, unknown>;
   };
 }
 

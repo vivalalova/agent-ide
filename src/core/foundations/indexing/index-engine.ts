@@ -182,7 +182,7 @@ export class IndexEngine {
           const patterns = parserInfo.plugin.getDefaultExcludePatterns();
           parserPatterns.push(...patterns);
         }
-      } catch (error) {
+      } catch {
         // 如果 parser 不支援此方法，忽略錯誤
         console.warn(`Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
       }
@@ -202,7 +202,7 @@ export class IndexEngine {
       if (!stat.isDirectory) {
         throw new Error(`路徑不是有效的目錄: ${dirPath}`);
       }
-    } catch (error) {
+    } catch {
       throw new Error(`無法存取目錄: ${dirPath}`);
     }
 
@@ -234,7 +234,7 @@ export class IndexEngine {
     await this.batchIndexFiles(filesToIndex, {
       concurrency: this.config.maxConcurrency,
       batchSize: 10,
-      progressCallback: (progress) => {
+      progressCallback: (_progress) => {
         // 可以添加進度回調處理
       }
     });
@@ -689,7 +689,7 @@ export class IndexEngine {
     try {
       const stat = await this.fileSystem.getStats(filePath);
       return this.fileIndex.needsReindexing(filePath, stat.modifiedTime);
-    } catch (error) {
+    } catch {
       // 檔案不存在或無法存取，但如果在索引中則需要標記為需要重新索引（用於清理）
       return this.fileIndex.hasFile(filePath);
     }

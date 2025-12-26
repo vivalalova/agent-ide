@@ -3,6 +3,8 @@
  * 所有 ParserPlugin 檢測方法使用的通用型別
  */
 
+// Range and Symbol types are used by UnusedCode and other interfaces
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { Range, Symbol } from '@shared/types/index.js';
 
 /**

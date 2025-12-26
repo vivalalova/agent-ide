@@ -8,14 +8,14 @@
  */
 export class BaseError extends Error {
   public readonly code: string;
-  public readonly details: Record<string, any> | undefined;
+  public readonly details: Record<string, unknown> | undefined;
   public readonly timestamp: Date;
   public cause: Error | undefined;
 
   constructor(
     code: string,
     message: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error
   ) {
     super(message);
@@ -34,7 +34,7 @@ export class BaseError extends Error {
   /**
    * 將錯誤序列化為 JSON
    */
-  toJSON(): Record<string, any> {
+  toJSON(): Record<string, unknown> {
     return {
       name: this.name,
       code: this.code,

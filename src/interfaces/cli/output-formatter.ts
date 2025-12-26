@@ -141,11 +141,12 @@ export class OutputFormatter {
         ...details
       }, null, 2);
 
-    case OutputFormat.Minimal:
+    case OutputFormat.Minimal: {
       const detailsStr = details
         ? ' ' + Object.entries(details).map(([k, v]) => `${k}=${v}`).join(' ')
         : '';
       return `success: ${message}${detailsStr}`;
+    }
     }
   }
 

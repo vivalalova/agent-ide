@@ -10,7 +10,7 @@ export function isAbsolute(path: string): boolean {
   if (path.startsWith('/')) {return true;}
 
   // Windows 絕對路徑以磁碟機代號開頭，如 C:\
-  if (/^[A-Za-z]:[\/\\]/.test(path)) {return true;}
+  if (/^[A-Za-z]:[/\\]/.test(path)) {return true;}
 
   return false;
 }

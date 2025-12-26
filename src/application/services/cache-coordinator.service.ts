@@ -18,7 +18,7 @@ import type {
  * 快取協調器錯誤
  */
 export class CacheCoordinatorError extends BaseError {
-  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+  constructor(message: string, details?: Record<string, unknown>, cause?: Error) {
     super('CACHE_COORDINATOR_ERROR', message, details, cause);
   }
 }
