@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: 🚨 TS/JS 重構禁止手動操作 - 重命名用 rename 取代逐一 Edit；移動檔案用 move 取代 Write+Delete；了解專案用 snapshot 取代逐檔 Read。還有：修改函式參數、循環依賴檢測、影響分析、符號引用、呼叫層次、清理 dead code。一次完成、自動更新所有引用、零遺漏
+description: 當任務涉及 TS/JS 重構（重命名/移動檔案/修改函式參數/循環依賴/dead code/符號引用/呼叫層次/影響分析）時，必須立即使用此 skill，禁止用 Edit/Write/Delete 手動操作
 ---
 
 # Agent IDE
