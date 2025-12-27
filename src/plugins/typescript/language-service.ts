@@ -19,7 +19,7 @@ interface FileInfo {
 }
 
 /** 檔案快取最大條目數 */
-const MAX_FILES_CACHE_SIZE = 200;
+const MAX_FILES_CACHE_SIZE = 600;
 
 /**
  * Language Service Manager 介面

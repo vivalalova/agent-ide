@@ -23,8 +23,8 @@ export class MemoryCache<K, V> {
   constructor(options: CacheOptions = {}) {
     // 設定預設選項
     this.options = {
-      maxSize: options.maxSize ?? 1000,
-      maxMemory: options.maxMemory ?? 50 * 1024 * 1024, // 50MB
+      maxSize: options.maxSize ?? 3000,
+      maxMemory: options.maxMemory ?? 150 * 1024 * 1024, // 150MB
       defaultTTL: options.defaultTTL ?? 0, // 0 表示永不過期
       evictionStrategy: options.evictionStrategy ?? EvictionStrategy.LRU,
       enableStats: options.enableStats ?? false,

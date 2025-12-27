@@ -66,8 +66,8 @@ export {
 
 // 常用的預設配置
 export const DEFAULT_CACHE_OPTIONS: Partial<CacheOptions> = {
-  maxSize: 1000,
-  maxMemory: 50 * 1024 * 1024, // 50MB
+  maxSize: 3000,
+  maxMemory: 150 * 1024 * 1024, // 150MB
   defaultTTL: 0, // 永不過期
   evictionStrategy: EvictionStrategy.LRU,
   enableStats: false,
@@ -108,7 +108,7 @@ export function createCacheManager(options?: Partial<CacheManagerOptions>) {
 /**
  * 工廠函式：建立 LRU 快取
  */
-export function createLRUCache<K, V>(maxSize: number = 1000) {
+export function createLRUCache<K, V>(maxSize: number) {
   return createMemoryCache<K, V>({
     maxSize,
     evictionStrategy: EvictionStrategy.LRU,
@@ -119,7 +119,7 @@ export function createLRUCache<K, V>(maxSize: number = 1000) {
 /**
  * 工廠函式：建立帶 TTL 的快取
  */
-export function createTTLCache<K, V>(defaultTTL: number, maxSize: number = 1000) {
+export function createTTLCache<K, V>(defaultTTL: number, maxSize: number) {
   return createMemoryCache<K, V>({
     maxSize,
     defaultTTL,
