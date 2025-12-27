@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "AI code intelligence toolkit for refactoring, analysis, and quality assessment",
-    "version": "0.11.2"
+    "version": "0.12.0"
   },
   "plugins": [
     {

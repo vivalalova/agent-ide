@@ -1,3 +1,8 @@
+## 0.12.0 (2025-12-27)
+
+* feat: 新增 SessionStart hook 自動提醒使用 agent-ide 重構工具 ([48ad026](https://github.com/vivalalova/agent-ide/commit/48ad026))
+* docs: 改寫 agent-ide skill description 為操作類型對應格式 ([d368dec](https://github.com/vivalalova/agent-ide/commit/d368dec))
+
 ## <small>0.11.2 (2025-12-27)</small>
 
 * docs: 更新 agent-ide skill description 為更明確的觸發條件 ([eb4c097](https://github.com/vivalalova/agent-ide/commit/eb4c097))
