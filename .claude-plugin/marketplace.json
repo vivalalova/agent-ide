@@ -16,6 +16,9 @@
       "strict": false,
       "skills": [
         "./"
+      ],
+      "hooks": [
+        "../hooks/"
       ]
     }
   ]
