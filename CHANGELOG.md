@@ -1,3 +1,9 @@
+## <small>0.12.1 (2025-12-27)</small>
+
+* docs: 新增架構重構計畫 ([a7b5b91](https://github.com/vivalalova/agent-ide/commit/a7b5b91))
+* chore: 新增 plugin 結構靜態驗證 ([adc31c0](https://github.com/vivalalova/agent-ide/commit/adc31c0))
+* fix: 修正 plugin hooks 路徑格式 ([44e8376](https://github.com/vivalalova/agent-ide/commit/44e8376))
+
 ## 0.12.0 (2025-12-27)
 
 * feat: 新增 SessionStart hook 自動提醒使用 agent-ide 重構工具 ([48ad026](https://github.com/vivalalova/agent-ide/commit/48ad026))
