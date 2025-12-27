@@ -1,3 +1,13 @@
+## <small>0.11.2 (2025-12-27)</small>
+
+* docs: 更新 agent-ide skill description 為更明確的觸發條件 ([eb4c097](https://github.com/vivalalova/agent-ide/commit/eb4c097))
+* fix(lint): 修復測試檔案 ESLint 警告 ([adf7409](https://github.com/vivalalova/agent-ide/commit/adf7409))
+* fix(lint): 修復源碼 ESLint 警告 ([231e0e0](https://github.com/vivalalova/agent-ide/commit/231e0e0))
+* fix(lint): 移除 no-non-null-assertion 警告 ([26ca314](https://github.com/vivalalova/agent-ide/commit/26ca314))
+* chore(agent): add project-level workflows ([c6d4f68](https://github.com/vivalalova/agent-ide/commit/c6d4f68))
+* chore(eslint): 優化 ESLint 配置以減少誤報 ([6c96ae2](https://github.com/vivalalova/agent-ide/commit/6c96ae2))
+* chore(tests): resolve ESLint warnings in unit tests ([771d4a3](https://github.com/vivalalova/agent-ide/commit/771d4a3))
+
 ## <small>0.11.1 (2025-12-26)</small>
 
 * docs: 簡化 SKILL.md 優先使用原則說明 ([96042de](https://github.com/vivalalova/agent-ide/commit/96042de))
