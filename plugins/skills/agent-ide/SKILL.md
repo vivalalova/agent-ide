@@ -32,52 +32,37 @@ description: |
 - 重構時用 `--dry-run` 預覽，確認無誤再執行
 - 用 `cycles` 檢查是否產生新的循環依賴
 
-## 執行方式
-
-Plugin 安裝後首次需 build：
-
-```bash
-# PLUGIN_ROOT = 此 skill 所在 repo 的根目錄（往上三層）
-cd ${PLUGIN_ROOT} && pnpm install && pnpm build
-```
-
-之後可直接執行：
-
-```bash
-npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
-```
-
 ## 命令速查表
 
 ### 變更類命令
 
-| 任務                 | 命令                                                                    |
-| -------------------- | ----------------------------------------------------------------------- |
-| 重命名符號           | `agent-ide rename --path . --from X --to Y --dry-run`                   |
-| 重命名（同名消歧）   | `agent-ide rename --path . --from X --to Y --at src/file.ts:42`         |
-| 改參數順序           | `agent-ide change-signature --file f.ts --function fn --reorder "b,a"`  |
-| 加刪參數             | `agent-ide change-signature --file f.ts --function fn --add "c:string"` |
-| 移動檔案             | `agent-ide move src/old.ts src/new.ts --path . --dry-run`               |
-| 移動多檔案（glob）   | `agent-ide move "src/utils/*.ts" src/lib/ --path . --dry-run`           |
-| 移動成員             | `agent-ide move src/a.ts:25 src/b.ts --path . --dry-run`                |
-| 移動成員（指定位置） | `agent-ide move src/a.ts:25 src/b.ts:10 --path . --dry-run`             |
-| 刪除 Dead code       | `agent-ide deadcode --path .`                                           |
+| 任務                 | 命令                                                                            |
+| -------------------- | ------------------------------------------------------------------------------- |
+| 重命名符號           | `npx agent-ide rename --path . --from X --to Y --dry-run`                       |
+| 重命名（同名消歧）   | `npx agent-ide rename --path . --from X --to Y --at src/file.ts:42`             |
+| 改參數順序           | `npx agent-ide change-signature --file f.ts --function fn --reorder "b,a"`      |
+| 加刪參數             | `npx agent-ide change-signature --file f.ts --function fn --add "c:string"`     |
+| 移動檔案             | `npx agent-ide move src/old.ts src/new.ts --path . --dry-run`                   |
+| 移動多檔案（glob）   | `npx agent-ide move "src/utils/*.ts" src/lib/ --path . --dry-run`               |
+| 移動成員             | `npx agent-ide move src/a.ts:25 src/b.ts --path . --dry-run`                    |
+| 移動成員（指定位置） | `npx agent-ide move src/a.ts:25 src/b.ts:10 --path . --dry-run`                 |
+| 刪除 Dead code       | `npx agent-ide deadcode --path .`                                               |
 
 > ⚠️ **目錄移動**：遵循 `mv` 行為，目標已存在時會嵌套（`move a b` → `b/a/`）
 > ⚠️ **Glob 移動**：支援 `*.ts`、`**/*.ts` 等模式，多檔案時目標必須是目錄（以 `/` 結尾或已存在的目錄）
 
 ### 查詢類命令
 
-| 任務           | 命令                                                               |
-| -------------- | ------------------------------------------------------------------ |
-| 循環依賴       | `agent-ide cycles --path . --format json`                          |
-| 影響分析       | `agent-ide impact --file src/core.ts --path .`                     |
-| 模組快照       | `agent-ide snapshot --path src/core/indexing --format json`        |
-| 專案快照       | `agent-ide snapshot --path . --format json`                        |
-| 增量快照       | `agent-ide snapshot --path . --since last --format json`           |
-| 符號引用       | `agent-ide find-references processData --path . --format json`     |
-| 呼叫層次       | `agent-ide call-hierarchy handleRequest --path . --direction both` |
-| Dead code 預覽 | `agent-ide deadcode --path . --dry-run --format json`              |
+| 任務           | 命令                                                                       |
+| -------------- | -------------------------------------------------------------------------- |
+| 循環依賴       | `npx agent-ide cycles --path . --format json`                              |
+| 影響分析       | `npx agent-ide impact --file src/core.ts --path .`                         |
+| 模組快照       | `npx agent-ide snapshot --path src/core/indexing --format json`            |
+| 專案快照       | `npx agent-ide snapshot --path . --format json`                            |
+| 增量快照       | `npx agent-ide snapshot --path . --since last --format json`               |
+| 符號引用       | `npx agent-ide find-references processData --path . --format json`         |
+| 呼叫層次       | `npx agent-ide call-hierarchy handleRequest --path . --direction both`     |
+| Dead code 預覽 | `npx agent-ide deadcode --path . --dry-run --format json`                  |
 
 ## 輸出格式
 
@@ -101,29 +86,29 @@ npx bun ${PLUGIN_ROOT}/bin/agent-ide.js <command>
 
 ```bash
 # 1. 預覽重命名影響
-agent-ide rename --path . --from oldName --to newName --dry-run
+npx agent-ide rename --path . --from oldName --to newName --dry-run
 
 # 2. 執行重命名
-agent-ide rename --path . --from oldName --to newName
+npx agent-ide rename --path . --from oldName --to newName
 
 # 3. 檢查循環依賴
-agent-ide cycles --path .
+npx agent-ide cycles --path .
 ```
 
 ### 模組重組
 
 ```bash
 # 1. 分析循環依賴
-agent-ide cycles --path . --format json
+npx agent-ide cycles --path . --format json
 
 # 2. 預覽檔案移動
-agent-ide move src/old.ts src/new-location.ts --path . --dry-run
+npx agent-ide move src/old.ts src/new-location.ts --path . --dry-run
 
 # 3. 執行移動
-agent-ide move src/old.ts src/new-location.ts --path .
+npx agent-ide move src/old.ts src/new-location.ts --path .
 
 # 4. 檢查新循環依賴
-agent-ide cycles --path .
+npx agent-ide cycles --path .
 ```
 
 ## 支援語言
