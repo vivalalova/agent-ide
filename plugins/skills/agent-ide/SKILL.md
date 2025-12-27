@@ -1,6 +1,17 @@
 ---
 name: agent-ide
-description: 當任務涉及 TS/JS 重構（重命名/移動檔案/修改函式參數/循環依賴/dead code/符號引用/呼叫層次/影響分析）時，必須立即使用此 skill，禁止用 Edit/Write/Delete 手動操作
+description: |
+  TS/JS 程式碼智能重構工具。執行以下操作時自動選用：
+  - 重命名符號 → rename（取代逐一 Edit）
+  - 移動/重組檔案 → move（取代 Write+Delete）
+  - 理解專案架構 → snapshot（取代逐檔 Read）
+  - 清理未使用程式碼 → deadcode
+  - 修改函式參數 → change-signature
+  - 檢測循環依賴 → cycles
+  - 分析變更影響 → impact
+  - 查找符號引用 → find-references
+  - 追蹤呼叫層次 → call-hierarchy
+  優勢：自動更新所有引用、一次完成、零遺漏
 ---
 
 # Agent IDE
