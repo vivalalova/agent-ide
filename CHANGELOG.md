@@ -1,3 +1,9 @@
+## <small>0.12.2 (2025-12-27)</small>
+
+* perf: 提升快取上限至三倍 ([c63f557](https://github.com/vivalalova/agent-ide/commit/c63f557))
+* test: 新增 move 命令同目錄引用更新測試 ([9626fd1](https://github.com/vivalalova/agent-ide/commit/9626fd1))
+* docs: 簡化 SKILL.md 執行方式，統一使用 npx agent-ide ([790817d](https://github.com/vivalalova/agent-ide/commit/790817d))
+
 ## <small>0.12.1 (2025-12-27)</small>
 
 * docs: 新增架構重構計畫 ([a7b5b91](https://github.com/vivalalova/agent-ide/commit/a7b5b91))
