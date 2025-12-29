@@ -4,7 +4,7 @@
  */
 
 // 核心服務
-export { MoveService, MoveOperationError } from './move-service.js';
+export { MoveEngine, MoveOperationError } from './move-engine.js';
 export { ImportResolver } from './import-resolver.js';
 
 // 內部模組（供進階使用）

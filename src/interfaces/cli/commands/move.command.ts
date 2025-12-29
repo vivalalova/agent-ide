@@ -7,8 +7,8 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { MoveService } from '@core/move/move-service.js';
-import { MoveMemberService, MoveTargetType } from '@core/move-member/index.js';
+import { MoveEngine } from '@core/move/move-engine.js';
+import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
@@ -187,7 +187,7 @@ async function handleMoveCommand(
     const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
 
     // 建立移動服務
-    const moveService = new MoveService(context.fileSystem, {
+    const moveService = new MoveEngine(context.fileSystem, {
       pathAliases: tsconfigPathConfig.pathAliases,
       baseUrl: tsconfigPathConfig.baseUrl,
       supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
@@ -323,7 +323,7 @@ async function handleGlobMoveCommand(
     const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
 
     // 建立移動服務
-    const moveService = new MoveService(context.fileSystem, {
+    const moveService = new MoveEngine(context.fileSystem, {
       pathAliases: tsconfigPathConfig.pathAliases,
       baseUrl: tsconfigPathConfig.baseUrl,
       supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
@@ -544,8 +544,8 @@ async function handleMoveMemberCommand(
     // 取得 ParserRegistry（單例）
     const parserRegistry = ParserRegistry.getInstance();
 
-    // 建立服務
-    const moveMemberService = new MoveMemberService(
+    // 建立引擎
+    const moveMemberEngine = new MoveMemberEngine(
       parserRegistry,
       context.fileSystem
     );
@@ -574,7 +574,7 @@ async function handleMoveMemberCommand(
     };
 
     // 生成 Changeset
-    const changeset = await moveMemberService.generateChangeset(moveMemberOptions);
+    const changeset = await moveMemberEngine.generateChangeset(moveMemberOptions);
 
     // 執行變更類命令統一流程
     if (!isJsonFormat && !options.dryRun) {

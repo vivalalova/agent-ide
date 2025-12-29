@@ -301,7 +301,7 @@ export interface ImportResolverConfig {
 }
 
 /**
- * 移動操作輸入 - 給 MoveService 公開方法使用
+ * 移動操作輸入 - 給 MoveEngine 公開方法使用
  * 只包含必要的來源/目標路徑
  */
 export interface MoveInput {

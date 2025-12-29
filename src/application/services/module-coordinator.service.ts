@@ -11,7 +11,7 @@ import { EventPriority } from '@application/events/event-types.js';
 
 // 核心模組引入
 import { RenameEngine } from '@core/rename/rename-engine.js';
-import { MoveService } from '@core/move/move-service.js';
+import { MoveEngine } from '@core/move/move-engine.js';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 
@@ -57,7 +57,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
   // 核心模組實例
   private readonly renameEngine: RenameEngine;
-  private readonly moveService: MoveService;
+  private readonly moveService: MoveEngine;
   private readonly impactAnalyzer: ImpactAnalyzer;
   private readonly fileSystem: IFileSystem;
 
@@ -77,7 +77,7 @@ export class ModuleCoordinatorService implements IModuleCoordinatorService {
 
     // 初始化核心模組實例
     this.renameEngine = new RenameEngine();
-    this.moveService = new MoveService(this.fileSystem);
+    this.moveService = new MoveEngine(this.fileSystem);
     this.impactAnalyzer = new ImpactAnalyzer(this.fileSystem);
 
     // 註冊所有模組

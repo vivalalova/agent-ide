@@ -52,7 +52,7 @@ export class MoveOperationError extends Error {
 /**
  * 檔案移動服務類別
  */
-export class MoveService {
+export class MoveEngine {
   private readonly importResolver: ImportResolver;
   private readonly pathCalculator: PathCalculator;
   private readonly pathUtils: PathUtils;
