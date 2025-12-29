@@ -1,3 +1,16 @@
+## 0.13.0 (2025-12-29)
+
+* docs: [架構重構] 更新 REFACTORING.md 完成狀態 ([7d5ff84](https://github.com/vivalalova/agent-ide/commit/7d5ff84))
+* docs: 簡化 SKILL.md，引導使用 slash commands ([5ab122c](https://github.com/vivalalova/agent-ide/commit/5ab122c))
+* feat: [架構重構] call-hierarchy 新增 types.ts ([1892c6f](https://github.com/vivalalova/agent-ide/commit/1892c6f))
+* feat: [架構重構] find-references 結構標準化 ([192a4d4](https://github.com/vivalalova/agent-ide/commit/192a4d4))
+* feat: 新增 agent-ide slash commands ([8c7e071](https://github.com/vivalalova/agent-ide/commit/8c7e071))
+* refactor: [架構重構] change-signature-service 重命名為 change-signature-engine ([1d81ae9](https://github.com/vivalalova/agent-ide/commit/1d81ae9))
+* refactor: [架構重構] core→plugins 解耦 ([f887895](https://github.com/vivalalova/agent-ide/commit/f887895))
+* refactor: [架構重構] move-member-service 重命名為 move-member-engine ([65c63da](https://github.com/vivalalova/agent-ide/commit/65c63da))
+* refactor: [架構重構] move-service 重命名為 move-engine ([240442c](https://github.com/vivalalova/agent-ide/commit/240442c))
+* refactor: [架構重構] 測試目錄結構對齊 src/ ([e7b637c](https://github.com/vivalalova/agent-ide/commit/e7b637c))
+
 ## <small>0.12.2 (2025-12-27)</small>
 
 * perf: 提升快取上限至三倍 ([c63f557](https://github.com/vivalalova/agent-ide/commit/c63f557))
