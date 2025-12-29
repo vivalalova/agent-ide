@@ -12,13 +12,13 @@
     {
       "name": "agent-ide",
       "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, ShitScore, snapshots. TS/JS/Swift.",
-      "source": "./plugins/skills/agent-ide",
+      "source": "./plugins",
       "strict": false,
       "skills": [
-        "./"
+        "./skills/"
       ],
-      "hooks": [
-        "./plugins/hooks/hooks.json"
+      "commands": [
+        "./commands/"
       ]
     }
   ]
