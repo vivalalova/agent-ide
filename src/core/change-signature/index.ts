@@ -3,8 +3,8 @@
  * 參數重構功能
  */
 
-// 核心服務
-export { ChangeSignatureService, createChangeSignatureService } from './change-signature-service.js';
+// 核心引擎
+export { ChangeSignatureEngine, createChangeSignatureEngine } from './change-signature-engine.js';
 export { SignatureParser, createSignatureParser } from './signature-parser.js';
 export { SignatureValidator, createSignatureValidator } from './signature-validator.js';
 export { SignatureTransformer, createSignatureTransformer } from './signature-transformer.js';

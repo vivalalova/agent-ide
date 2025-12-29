@@ -1,6 +1,6 @@
 /**
- * Change Signature Service
- * 參數重構核心服務
+ * Change Signature Engine
+ * 參數重構核心引擎
  */
 
 import * as path from 'path';
@@ -22,9 +22,9 @@ import { ChangeSignatureErrorCode } from './types.js';
 import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
- * Change Signature Service
+ * Change Signature Engine
  */
-export class ChangeSignatureService {
+export class ChangeSignatureEngine {
   private readonly fileUtils: FileUtils;
   private readonly signatureParser: SignatureParser;
   private readonly symbolFinder: SymbolFinder;
@@ -428,11 +428,11 @@ export class ChangeSignatureService {
 }
 
 /**
- * 建立 ChangeSignatureService 實例
+ * 建立 ChangeSignatureEngine 實例
  */
-export function createChangeSignatureService(
+export function createChangeSignatureEngine(
   parserRegistry: ParserRegistry,
   fileSystem: IFileSystem
-): ChangeSignatureService {
-  return new ChangeSignatureService(parserRegistry, fileSystem);
+): ChangeSignatureEngine {
+  return new ChangeSignatureEngine(parserRegistry, fileSystem);
 }

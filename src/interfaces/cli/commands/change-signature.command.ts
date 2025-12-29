@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import * as path from 'path';
 import {
-  ChangeSignatureService,
+  ChangeSignatureEngine,
   SignatureChangeType,
   type SignatureChange
 } from '@core/change-signature/index.js';
@@ -89,14 +89,14 @@ async function handleChangeSignatureCommand(
     // 取得 ParserRegistry（單例）
     const parserRegistry = ParserRegistry.getInstance();
 
-    // 建立服務
-    const changeSignatureService = new ChangeSignatureService(
+    // 建立引擎
+    const changeSignatureEngine = new ChangeSignatureEngine(
       parserRegistry,
       context.fileSystem
     );
 
     // 生成 Changeset
-    const changeset = await changeSignatureService.generateChangeset({
+    const changeset = await changeSignatureEngine.generateChangeset({
       filePath,
       functionName,
       changes,
