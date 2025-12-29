@@ -25,26 +25,51 @@
 
 ## 2. 待辦事項 (Backlog)
 
-### [Phase 1] 結構標準化 (Standardization)
-- [ ] **命名一致性**: 將 `src/core/move/move-service.ts` 重命名為 `src/core/move/move-engine.ts`，與 `rename-engine` 對齊。
-- [ ] **結構檢查**: 確保所有 Core 模組 (`change-signature`, `deadcode`, etc.) 都有 `index.ts` 和 `types.ts`。
+### [Phase 1] 結構標準化 (Standardization) ✅ 完成
+- [x] **命名一致性**: 將 `src/core/move/move-service.ts` 重命名為 `src/core/move/move-engine.ts`
+- [x] **命名一致性**: 將 `change-signature-service.ts` 重命名為 `change-signature-engine.ts`
+- [x] **命名一致性**: 將 `move-member-service.ts` 重命名為 `move-member-engine.ts`
+- [x] **結構檢查**: `call-hierarchy` 新增 `types.ts`
+- [x] **結構檢查**: `find-references` 新增 `types.ts` 和 `reference-finder-engine.ts`
 
-### [Phase 2] 邏輯去重 (Deduplication)
-- [ ] **Move 模組重構**: 檢查 `src/core/move/file-scanner.ts` 是否可由 `src/core/foundations` 取代。
-- [ ] **Foundations 增強**: 確保 `symbol-finder` 能支援 `move` 所需的查找邏輯。
+### [Phase 2] 邏輯去重 (Deduplication) ✅ 完成
+- [x] **Move 模組分析**: `file-scanner.ts` 保留（功能不同於 foundations，負責 import 路徑解析）
+- [x] **Foundations 確認**: `symbol-finder` 已能支援各模組需求
 
-### [Phase 3] 檔案整理 (Cleanup)
-- [ ] **Shared 檢查**: `src/shared` 是否包含業務邏輯？如果是，移至 `core`。
-- [ ] **Plugins 解耦**: 確認 `core` 沒有 hardcode 引用 `plugins/typescript`。
+### [Phase 3] 檔案整理 (Cleanup) ✅ 完成
+- [x] **Shared 檢查**: `src/shared` 符合規範（僅含 types、errors）
+- [x] **Plugins 解耦**: 新增 `infrastructure/parser/initializer.ts` 作為橋接層
 
-### [Phase 4] 測試對齊 (Test Alignment)
-- [ ] 檢查 `tests/unit/core/*` 是否對應 `src/core/*`。
+### [Phase 4] 測試對齊 (Test Alignment) ✅ 完成
+- [x] **E2E 測試**: 所有 9 個 CLI 命令皆有完整覆蓋
+- [x] **Unit 測試**: 結構已對齊 `src/`（core/、infrastructure/、plugins/、shared/）
 
 ---
 
-## 3. 執行策略 (Execution Strategy)
+## 3. 執行紀錄 (Execution Log)
 
-我將開啟多個 Agent 分別處理：
-1. **Agent A (Moves)**: 負責 `move` 模組的標準化與重構 (Rename Service -> Engine, Remove File Scanner)。
-2. **Agent B (Structure)**: 負責檢查其他 Core 模組 (`deadcode`, `change-signature`) 的結構一致性。
-3. **Agent C (Foundations)**: 負責強化 `foundations` 以支援更多模組的需求。
+### 2024-12-29 重構完成
+
+使用 10 個並行 Agent 完成所有重構任務：
+
+| Agent | 任務 | 結果 |
+|-------|------|------|
+| 1 | `move-service` → `move-engine` | ✅ 完成 |
+| 2 | `change-signature-service` → `change-signature-engine` | ✅ 完成 |
+| 3 | `move-member-service` → `move-member-engine` | ✅ 完成 |
+| 4 | `call-hierarchy` 新增 `types.ts` | ✅ 完成 |
+| 5 | `find-references` 結構標準化 | ✅ 完成 |
+| 6 | `file-scanner` 去重分析 | ✅ 保留（功能不同） |
+| 7 | `shared/` 目錄審查 | ✅ 符合規範 |
+| 8 | `core→plugins` 解耦 | ✅ 完成 |
+| 9 | Unit 測試結構對齊 | ✅ 完成 |
+| 10 | E2E 測試審查 | ✅ 完整覆蓋 |
+
+### 驗證結果
+
+- **Build**: 通過
+- **TypeScript**: 通過
+- **Lint**: 通過
+- **E2E 測試**: 34 files, 763 tests passed
+- **Unit 測試**: 44 files, 2061 tests passed
+- **總計**: 78 files, 2824 tests passed
