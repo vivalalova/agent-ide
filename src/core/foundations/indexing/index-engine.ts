@@ -31,8 +31,7 @@ import {
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
-import { TypeScriptParser } from '@plugins/typescript/parser.js';
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { initializeDefaultParsers } from '@infrastructure/parser/index.js';
 
 /**
  * 索引引擎類別
@@ -67,16 +66,8 @@ export class IndexEngine {
       this.parserRegistry = registry;
     }
 
-    // 確保所有內建 Parser 已註冊
-    if (!this.parserRegistry.getParser('.ts')) {
-      const tsParser = new TypeScriptParser();
-      this.parserRegistry.register(tsParser);
-    }
-
-    if (!this.parserRegistry.getParser('.js')) {
-      const jsParser = new JavaScriptParser();
-      this.parserRegistry.register(jsParser);
-    }
+    // 確保所有內建 Parser 已註冊（透過 infrastructure 層初始化）
+    initializeDefaultParsers(this.parserRegistry);
 
     // 建立 Worker Pool（多執行緒解析）
     // 測試環境禁用 Worker Pool，避免 worker 清理問題

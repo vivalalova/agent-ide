@@ -6,8 +6,8 @@
 export { ParserPlugin, isParserPlugin, supportsExtension, supportsLanguage, getFileExtension, findPluginForFile } from './interface.js';
 export type { ImportDeclaration, ImportNamedSpecifier, FormattedSignature, FormattedParameter, Documentation, DocumentationTag, PatternInfo, PatternType, ScopedFindReferencesOptions, ScopedReference } from './interface.js';
 export { ScopedReferenceKind } from './interface.js';
-export type { CodeEdit, Definition, Usage, ValidationResult, ParserOptions, ParserCapabilities, DefinitionKind, UsageKind, ValidationError as ParserValidationError, ValidationWarning } from './types.js';
-export { createCodeEdit, createDefinition, createUsage, createValidationResult, createValidationSuccess, createValidationFailure, isCodeEdit, isDefinition, isUsage, isValidationResult, isParserCapabilities } from './types.js';
+export type { CodeEdit, Definition, Usage, ValidationResult, ParserOptions, ParserCapabilities, DefinitionKind, UsageKind, ValidationError as ParserValidationError, ValidationWarning, TypeScriptASTExtension } from './types.js';
+export { createCodeEdit, createDefinition, createUsage, createValidationResult, createValidationSuccess, createValidationFailure, isCodeEdit, isDefinition, isUsage, isValidationResult, isParserCapabilities, hasTypeScriptSourceFile, getTypeScriptSourceFile } from './types.js';
 
 // 匯出分析型別
 export type {
@@ -30,3 +30,6 @@ export { BaseParserPlugin } from './base.js';
 // 匯出註冊中心
 export { ParserRegistry } from './registry.js';
 export type { ParserInfo, ParserRegistrationOptions } from './registry.js';
+
+// 匯出初始化函式
+export { initializeDefaultParsers } from './initializer.js';

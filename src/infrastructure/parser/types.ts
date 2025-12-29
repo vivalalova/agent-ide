@@ -3,7 +3,9 @@
  * 包含 Parser 插件系統所需的所有型別介面
  */
 
+import type * as ts from 'typescript';
 import { Range, Location } from '@shared/types/index.js';
+import type { AST } from '@shared/types/index.js';
 
 /**
  * 程式碼編輯操作
@@ -359,4 +361,39 @@ export function isParserCapabilities(value: unknown): value is ParserCapabilitie
     typeof obj.supportsFindUsages === 'boolean' &&
     typeof obj.supportsCodeActions === 'boolean'
   );
+}
+
+// ===== TypeScript AST 擴展支援 =====
+
+/**
+ * 包含 TypeScript SourceFile 的 AST 擴展介面
+ * 用於需要存取 TypeScript 特定功能的場景（如 call-hierarchy 分析）
+ * 這個介面定義在 infrastructure 層，避免 core 直接依賴 plugins
+ */
+export interface TypeScriptASTExtension extends AST {
+  /** TypeScript 編譯器的 SourceFile 物件 */
+  readonly tsSourceFile: ts.SourceFile;
+  /** TypeScript 編譯器的 Program 物件（可選） */
+  readonly program?: ts.Program;
+}
+
+/**
+ * 檢查 AST 是否包含 TypeScript SourceFile
+ * @param ast - AST 物件
+ * @returns true 如果 ast 有 tsSourceFile 屬性
+ */
+export function hasTypeScriptSourceFile(ast: AST): ast is TypeScriptASTExtension {
+  return 'tsSourceFile' in ast && ast.tsSourceFile != null;
+}
+
+/**
+ * 取得 AST 的 TypeScript SourceFile（如果有的話）
+ * @param ast - AST 物件
+ * @returns TypeScript SourceFile 或 null
+ */
+export function getTypeScriptSourceFile(ast: AST): ts.SourceFile | null {
+  if (hasTypeScriptSourceFile(ast)) {
+    return ast.tsSourceFile;
+  }
+  return null;
 }

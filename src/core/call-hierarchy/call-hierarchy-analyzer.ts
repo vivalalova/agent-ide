@@ -4,46 +4,19 @@
  */
 
 import * as ts from 'typescript';
-import type { Location, Range } from '@shared/types/core.js';
+import type { Range } from '@shared/types/core.js';
 import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { getTypeScriptSourceFile } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
-import type { TypeScriptAST } from '@plugins/typescript/types.js';
-
-/** Outgoing 呼叫資訊（目標函數呼叫了誰） */
-export interface OutgoingCall {
-  readonly callee: string;
-  readonly location: Location;
-  readonly context: string;
-  readonly isMethodCall: boolean;
-  readonly receiver?: string;
-}
-
-/** Incoming 呼叫資訊（誰呼叫了目標函數） */
-export interface IncomingCall {
-  readonly caller: string;
-  readonly location: Location;
-  readonly context: string;
-  readonly callerDefinitionFile?: string;
-}
-
-/** 呼叫層次分析選項 */
-export interface CallHierarchyOptions {
-  readonly direction: 'incoming' | 'outgoing' | 'both';
-  readonly depth: number;
-  readonly maxResults?: number;
-}
-
-/** 呼叫層次分析結果 */
-export interface CallHierarchyData {
-  readonly functionName: string;
-  readonly definitionFile: string;
-  readonly definitionLine: number;
-  readonly incoming: IncomingCall[];
-  readonly outgoing: OutgoingCall[];
-}
+import type {
+  CallHierarchyData,
+  CallHierarchyOptions,
+  IncomingCall,
+  OutgoingCall,
+} from './types.js';
 
 /**
  * Call Hierarchy Analyzer
@@ -135,7 +108,7 @@ export class CallHierarchyAnalyzer {
   private async findFunctionDefinition(
     functionName: string,
     projectFiles: readonly string[]
-  ): Promise<{ location: Location } | null> {
+  ): Promise<{ location: { filePath: string; range: Range } } | null> {
     for (const filePath of projectFiles) {
       const definition = await this.symbolFinder.findDefinition(filePath, functionName);
       if (definition && this.isFunctionSymbol(definition.symbol)) {
@@ -256,7 +229,7 @@ export class CallHierarchyAnalyzer {
 
     try {
       const ast = await parser.parse(content, filePath);
-      const sourceFile = (ast as TypeScriptAST).tsSourceFile;
+      const sourceFile = getTypeScriptSourceFile(ast);
 
       if (!sourceFile) {
         return outgoing;
@@ -415,7 +388,7 @@ export class CallHierarchyAnalyzer {
 
     try {
       const ast = await parser.parse(content, filePath);
-      const sourceFile = (ast as TypeScriptAST).tsSourceFile;
+      const sourceFile = getTypeScriptSourceFile(ast);
 
       if (!sourceFile) {
         return results;
