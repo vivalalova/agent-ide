@@ -1,3 +1,8 @@
+## <small>0.13.1 (2025-12-29)</small>
+
+* refactor: 將 slash commands 移至 plugins/commands/ 根目錄 ([9c9a43d](https://github.com/vivalalova/agent-ide/commit/9c9a43d))
+* chore: 更新 marketplace.json 配置 ([e136678](https://github.com/vivalalova/agent-ide/commit/e136678))
+
 ## 0.13.0 (2025-12-29)
 
 * docs: [架構重構] 更新 REFACTORING.md 完成狀態 ([7d5ff84](https://github.com/vivalalova/agent-ide/commit/7d5ff84))
