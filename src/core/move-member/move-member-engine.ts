@@ -1,6 +1,6 @@
 /**
- * Move Member Service
- * 成員移動核心服務
+ * Move Member Engine
+ * 成員移動核心引擎
  */
 
 import * as path from 'path';
@@ -21,9 +21,9 @@ import {
 } from './types.js';
 
 /**
- * Move Member Service
+ * Move Member Engine
  */
-export class MoveMemberService {
+export class MoveMemberEngine {
   private readonly memberExtractor: MemberExtractor;
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileChangePreparer: FileChangePreparer;
@@ -247,11 +247,11 @@ export class MoveMemberService {
 }
 
 /**
- * 建立 MoveMemberService 實例
+ * 建立 MoveMemberEngine 實例
  */
-export function createMoveMemberService(
+export function createMoveMemberEngine(
   parserRegistry: ParserRegistry,
   fileSystem: IFileSystem
-): MoveMemberService {
-  return new MoveMemberService(parserRegistry, fileSystem);
+): MoveMemberEngine {
+  return new MoveMemberEngine(parserRegistry, fileSystem);
 }

@@ -3,8 +3,8 @@
  * 成員移動功能
  */
 
-// 核心服務
-export { MoveMemberService, createMoveMemberService } from './move-member-service.js';
+// 核心引擎
+export { MoveMemberEngine, createMoveMemberEngine } from './move-member-engine.js';
 export { MemberExtractor, createMemberExtractor } from './member-extractor.js';
 export { ReferenceUpdater } from './reference-updater.js';
 export { FileChangePreparer } from './file-change-preparer.js';
