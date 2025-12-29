@@ -10,11 +10,11 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 export { CallHierarchyAnalyzer };
 
 export type {
-  OutgoingCall,
-  IncomingCall,
+  CallHierarchyData,
   CallHierarchyOptions,
-  CallHierarchyData
-} from './call-hierarchy-analyzer.js';
+  IncomingCall,
+  OutgoingCall,
+} from './types.js';
 
 /**
  * 建立呼叫層次分析器的便利函式
