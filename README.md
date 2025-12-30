@@ -42,7 +42,7 @@ pnpm install && pnpm build && npm link
 | ----------------- | -------------------------------------- |
 | `cycles`          | Detect circular dependencies (Tarjan)  |
 | `impact`          | Analyze change impact range (BFS)      |
-| `snapshot`        | Generate module snapshots (~91% token saving) |
+| `snapshot`        | Generate module API snapshots |
 | `find-references` | Find symbol definitions and references |
 | `call-hierarchy`  | Analyze function call hierarchy        |
 | `deadcode`        | Detect unused code                     |

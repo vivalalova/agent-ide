@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：8 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
-**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.5.1
+**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.1
 
 ## 常用指令
 
@@ -37,7 +37,7 @@ src/
 │   ├── impact/           # 影響分析（BFS）
 │   ├── find-references/  # 符號引用
 │   ├── call-hierarchy/   # 呼叫層次
-│   ├── snapshot/         # 模組快照（~91% token 節省）
+│   ├── snapshot/         # 模組快照
 │   ├── rename/           # 重命名+引用更新
 │   ├── change-signature/ # 參數重構
 │   ├── move/             # 檔案移動

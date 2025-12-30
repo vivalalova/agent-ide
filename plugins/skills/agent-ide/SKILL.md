@@ -22,7 +22,7 @@ TS/JS 程式碼智能重構工具，透過 slash commands 操作。
 
 | 命令 | 用途 |
 |------|------|
-| `/snapshot` | 專案/模組 API 快照（節省 ~91% token） |
+| `/snapshot` | 專案/模組 API 快照 |
 | `/cycles` | 循環依賴檢測 |
 | `/impact` | 變更影響分析 |
 | `/find-references` | 符號引用查找 |
