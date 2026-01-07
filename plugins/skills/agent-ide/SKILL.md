@@ -11,7 +11,8 @@ description: |
   - 分析變更影響 → /impact
   - 查找符號引用 → /find-references
   - 追蹤呼叫層次 → /call-hierarchy
-  優勢：自動更新所有引用、一次完成、零遺漏
+  - 還原變更 → /undo（支援多層還原）
+  優勢：自動更新所有引用、一次完成、零遺漏、支援 undo
 ---
 
 # Agent IDE
@@ -31,6 +32,7 @@ TS/JS 程式碼智能重構工具，透過 slash commands 操作。
 | `/move` | 移動檔案/成員 + 自動更新 import |
 | `/change-signature` | 修改函式參數 + 更新呼叫點 |
 | `/deadcode` | 檢測/清理未使用程式碼 |
+| `/undo` | 還原上一次變更（支援多層 undo） |
 
 ## 最佳實踐
 
@@ -62,3 +64,22 @@ TS/JS 程式碼智能重構工具，透過 slash commands 操作。
 2. **清理優先於重構**：`/deadcode` 減少不必要的移動/重命名
 3. **小步快跑**：一次只做一種類型的變更，便於回滾
 4. **重構後驗證**：`/cycles` 確保沒引入循環依賴
+5. **善用 undo**：出錯時 `/undo` 快速還原（最多 10 層）
+
+### Undo 使用
+
+```bash
+# 列出可還原的變更
+/undo --list
+
+# 還原最近一次變更
+/undo
+
+# 預覽還原內容
+/undo --dry-run
+
+# 還原特定版本（ID 前 8 碼）
+/undo --id abc12345
+```
+
+> 歷史記錄儲存於 `~/.config/agent-ide/history/`，超過 10 筆或 7 天自動清理

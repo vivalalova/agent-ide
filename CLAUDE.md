@@ -42,9 +42,10 @@ src/
 │   ├── change-signature/ # 參數重構
 │   ├── move/             # 檔案移動
 │   ├── move-member/      # 成員移動
-│   └── deadcode/         # Dead code 檢測
+│   ├── deadcode/         # Dead code 檢測
+│   └── undo/             # 變更還原
 ├── shared/               # types/ | errors/（全域共用）
-├── infrastructure/       # Parser框架、Cache、Storage、Formatters、Changeset
+├── infrastructure/       # Parser框架、Cache、Storage、Formatters、Changeset、History、Lock
 ├── plugins/              # typescript/ | javascript/ Parser
 ├── interfaces/           # CLI
 └── application/          # DI容器
@@ -62,7 +63,7 @@ src/
 ```text
 第三層：impact（依賴 cycles + foundations）
     ↓
-第二層：cycles, find-references, call-hierarchy, snapshot, rename, deadcode, move, move-member, change-signature
+第二層：cycles, find-references, call-hierarchy, snapshot, rename, deadcode, move, move-member, change-signature, undo
     ↓
 第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
@@ -120,7 +121,26 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
 agent-ide move <source> <target> --path <path>
+agent-ide undo --path <path> [--list] [--id <id>]
 ```
+
+**undo 命令**：還原上一次變更（支援多層 undo，最多 10 次）
+
+```bash
+# 列出可還原的變更
+agent-ide undo --path . --list
+
+# 還原最近一次變更
+agent-ide undo --path .
+
+# 還原特定版本（使用 --list 顯示的 ID 前 8 碼）
+agent-ide undo --path . --id abc12345
+
+# 預覽還原（不執行）
+agent-ide undo --path . --dry-run
+```
+
+> 歷史記錄儲存於 `~/.config/agent-ide/history/`，超過 10 筆或 7 天自動清理
 
 **move 位置格式**：source 帶位置時自動切換為成員移動模式：
 
