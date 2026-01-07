@@ -113,7 +113,8 @@ async function handleChangeSignatureCommand(
       format,
       dryRun: options.dryRun ?? false,
       outputHandler,
-      commandName: 'change-signature'
+      commandName: 'change-signature',
+      projectPath: projectRoot
     });
   } catch (error) {
     const errorMsg = getErrorMessage(error);

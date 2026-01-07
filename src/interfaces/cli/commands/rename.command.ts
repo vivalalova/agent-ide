@@ -233,7 +233,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       format,
       dryRun: options.dryRun ?? false,
       outputHandler,
-      commandName: 'rename'
+      commandName: 'rename',
+      projectPath: workspacePath
     });
     } finally {
       indexEngine.dispose();

@@ -586,7 +586,8 @@ async function handleMoveMemberCommand(
       format,
       dryRun: options.dryRun ?? false,
       outputHandler,
-      commandName: 'move'
+      commandName: 'move',
+      projectPath: projectRoot
     });
   } catch (error) {
     const errorMsg = getErrorMessage(error);

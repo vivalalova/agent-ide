@@ -183,6 +183,7 @@ async function handleDeadCodeCommand(
       dryRun: options.dryRun,
       outputHandler,
       commandName: 'deadcode',
+      projectPath,
       onSuccess: () => {
         if (!isJsonFormat) {
           const totalRemovals = changeset.textChanges
