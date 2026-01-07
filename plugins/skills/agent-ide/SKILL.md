@@ -57,29 +57,15 @@ TS/JS 程式碼智能重構工具，透過 slash commands 操作。
 | 統一命名 | `/rename --from userId --to uid` | 全專案一致性 |
 | 修改 API | `/change-signature` | 參數順序/名稱變更 |
 | 追蹤呼叫 | `/call-hierarchy` → `/find-references` | 理解函式使用情況 |
+| 還原變更 | `/undo` | 還原上一次變更（最多 10 層） |
+| 預覽還原 | `/undo --dry-run` | 檢視將還原的內容 |
+| 查看歷史 | `/undo --list` | 列出可還原的變更 |
+| 指定還原 | `/undo --id abc12345` | 還原特定版本（ID 前 8 碼） |
 
 ### 安全操作原則
 
-1. **先 `--dry-run` 再執行**：變更類命令務必預覽
+1. **每步驗證**：每個變更命令後執行 `build && lint && test` 確認無語法錯誤
 2. **清理優先於重構**：`/deadcode` 減少不必要的移動/重命名
 3. **小步快跑**：一次只做一種類型的變更，便於回滾
 4. **重構後驗證**：`/cycles` 確保沒引入循環依賴
 5. **善用 undo**：出錯時 `/undo` 快速還原（最多 10 層）
-
-### Undo 使用
-
-```bash
-# 列出可還原的變更
-/undo --list
-
-# 還原最近一次變更
-/undo
-
-# 預覽還原內容
-/undo --dry-run
-
-# 還原特定版本（ID 前 8 碼）
-/undo --id abc12345
-```
-
-> 歷史記錄儲存於 `~/.config/agent-ide/history/`，超過 10 筆或 7 天自動清理
