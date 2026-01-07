@@ -5,6 +5,8 @@
 
 import { ChangeApplicator, convertChangesetToPreviewInput, type Changeset } from '@infrastructure/changeset/index.js';
 import type { PreviewInput } from '@infrastructure/formatters/index.js';
+import { HistoryManager } from '@infrastructure/history/index.js';
+import { FileLock, type LockResult } from '@infrastructure/lock/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   createUnifiedOutputHandler,
@@ -62,6 +64,10 @@ export interface MutationExecutionOptions {
   outputHandler: UnifiedOutputHandler;
   /** 命令名稱（用於錯誤輸出） */
   commandName?: string;
+  /** 專案路徑（用於取得鎖和儲存歷史） */
+  projectPath: string;
+  /** 跳過歷史記錄（用於 undo 命令，避免循環） */
+  skipHistory?: boolean;
   /** 執行成功後的回調（可選，用於輸出額外資訊） */
   onSuccess?: (previewInput: PreviewInput) => void;
 }
@@ -105,7 +111,7 @@ export async function executeMutationCommand(
   changeset: Changeset,
   options: MutationExecutionOptions
 ): Promise<MutationExecutionResult> {
-  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess } = options;
+  const { fileSystem, format, dryRun, outputHandler, commandName, projectPath, skipHistory, onSuccess } = options;
 
   // 1. 檢查 changeset 是否成功
   if (!changeset.success) {
@@ -121,31 +127,71 @@ export async function executeMutationCommand(
   // 2. 轉換為 PreviewInput
   const previewInput = await convertChangesetToPreviewInput(changeset, fileSystem);
 
-  // 3. Dry-run 模式只輸出預覽
+  // 3. Dry-run 模式只輸出預覽（不需要鎖）
   if (dryRun) {
     outputHandler.outputMutation(previewInput, format);
     return { success: true, previewInput };
   }
 
-  // 4. 執行變更（帶回滾）
-  const applicator = new ChangeApplicator(fileSystem);
-  const result = await applicator.apply(changeset, {
-    atomic: true,
-    rollbackOnError: true
-  });
+  // 4. 取得專案鎖（確保同一專案同時只有一個變更命令執行）
+  const lock = new FileLock(projectPath);
+  let lockResult: LockResult;
+  try {
+    lockResult = await lock.acquire({
+      command: commandName ?? changeset.command,
+      timeout: 60_000 // 最多等待 60 秒
+    });
+  } catch (error) {
+    // 鎖機制失敗時降級為無鎖模式（記錄警告但繼續執行）
+    console.warn(`[警告] 無法取得專案鎖: ${error instanceof Error ? error.message : String(error)}`);
+    lockResult = { acquired: true, release: async () => {} };
+  }
 
-  // 5. 輸出結果
-  if (result.success) {
-    outputHandler.outputMutation(previewInput, format);
-    onSuccess?.(previewInput);
-    return { success: true, previewInput };
-  } else {
+  if (!lockResult.acquired) {
     outputHandler.outputError(
-      result.errors?.join(', ') ?? '執行失敗',
+      `另一個 agent-ide 程序正在執行中 (PID: ${lockResult.holder?.pid}, 命令: ${lockResult.holder?.command})，請稍候重試`,
       format,
       commandName
     );
     process.exitCode = 1;
     return { success: false };
+  }
+
+  try {
+    // 5. 執行變更（帶回滾）
+    const applicator = new ChangeApplicator(fileSystem);
+    const result = await applicator.apply(changeset, {
+      atomic: true,
+      rollbackOnError: true
+    });
+
+    // 6. 成功時儲存歷史記錄（除非 skipHistory）
+    if (result.success) {
+      if (!skipHistory && result.backups && result.backups.length > 0) {
+        try {
+          const historyManager = new HistoryManager({ projectPath });
+          await historyManager.saveBeforeChange(changeset, result.backups);
+        } catch (error) {
+          // 歷史記錄儲存失敗不應該影響命令執行結果，只記錄警告
+          console.warn(`[警告] 無法儲存歷史記錄: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // 7. 輸出結果
+      outputHandler.outputMutation(previewInput, format);
+      onSuccess?.(previewInput);
+      return { success: true, previewInput };
+    } else {
+      outputHandler.outputError(
+        result.errors?.join(', ') ?? '執行失敗',
+        format,
+        commandName
+      );
+      process.exitCode = 1;
+      return { success: false };
+    }
+  } finally {
+    // 7. 釋放鎖
+    await lockResult.release();
   }
 }

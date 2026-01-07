@@ -8,6 +8,7 @@ export type { CommandContext, CommandSetup } from './types.js';
 export { setupMoveCommand } from './move.command.js';
 export { setupRenameCommand } from './rename.command.js';
 export { setupChangeSignatureCommand } from './change-signature.command.js';
+export { setupUndoCommand } from './undo.command.js';
 
 // Query 命令
 export { setupCyclesCommand } from './cycles.command.js';

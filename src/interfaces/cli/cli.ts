@@ -12,6 +12,7 @@ import {
   setupMoveCommand,
   setupRenameCommand,
   setupChangeSignatureCommand,
+  setupUndoCommand,
   setupCyclesCommand,
   setupImpactCommand,
   setupSnapshotCommand,
@@ -129,6 +130,7 @@ export class AgentIdeCLI {
     setupRenameCommand(this.program, context);
     setupChangeSignatureCommand(this.program, context);
     setupMoveCommand(this.program, context);
+    setupUndoCommand(this.program, context);
 
     // Query 命令
     setupCyclesCommand(this.program, context);
