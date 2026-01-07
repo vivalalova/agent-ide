@@ -126,6 +126,8 @@ export interface ApplyResult {
   readonly movedFiles: ReadonlyArray<{ from: string; to: string }>;
   /** 錯誤訊息列表（可選） */
   readonly errors?: readonly string[];
+  /** 備份項目列表（用於 undo 功能，非 dry-run 時提供） */
+  readonly backups?: readonly BackupEntry[];
 }
 
 /**

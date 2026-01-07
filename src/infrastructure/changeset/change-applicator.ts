@@ -119,7 +119,8 @@ export class ChangeApplicator {
         createdFiles,
         deletedFiles,
         movedFiles,
-        errors: errors.length > 0 ? errors : undefined
+        errors: errors.length > 0 ? errors : undefined,
+        backups: errors.length === 0 ? backups : undefined
       };
     } catch (error) {
       const message = getErrorMessage(error);
