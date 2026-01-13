@@ -1,22 +1,18 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "agent-ide-skills",
+  "description": "AI code intelligence toolkit for refactoring, analysis, and quality assessment",
   "owner": {
     "name": "vivalalova",
     "email": "vivalalova@gmail.com"
-  },
-  "metadata": {
-    "description": "AI code intelligence toolkit for refactoring, analysis, and quality assessment",
-    "version": "0.13.5"
   },
   "plugins": [
     {
       "name": "agent-ide",
       "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
-      "source": ".",
-      "strict": false,
-      "skills": [
-        "./plugins/skills"
-      ]
+      "source": "./plugins/skills/agent-ide",
+      "category": "development",
+      "version": "0.13.5"
     }
   ]
 }
