@@ -1,3 +1,7 @@
+## <small>0.13.4 (2026-01-13)</small>
+
+* fix(plugin): 修正 marketplace.json skills 路徑配置 ([fcc2c0a](https://github.com/vivalalova/agent-ide/commit/fcc2c0a))
+
 ## <small>0.13.3 (2026-01-13)</small>
 
 * fix(plugin): 移除不存在的 commands 目錄配置 ([5dfbf02](https://github.com/vivalalova/agent-ide/commit/5dfbf02))
