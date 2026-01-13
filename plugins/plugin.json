@@ -2,6 +2,5 @@
   "name": "agent-ide",
   "version": "0.5.1",
   "description": "TS/JS 程式碼智能重構工具 - 自動更新引用、節省 token、零遺漏",
-  "commands": "commands/",
   "skills": "skills/"
 }
