@@ -11,11 +11,11 @@
   "plugins": [
     {
       "name": "agent-ide",
-      "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, ShitScore, snapshots. TS/JS/Swift.",
-      "source": "./plugins",
+      "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
+      "source": ".",
       "strict": false,
       "skills": [
-        "../plugins/skills/"
+        "./plugins/skills"
       ]
     }
   ]
