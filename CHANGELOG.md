@@ -1,3 +1,11 @@
+## <small>0.13.2 (2026-01-13)</small>
+
+* refactor: 重構 agent-ide skill 結構 ([4228868](https://github.com/vivalalova/agent-ide/commit/4228868))
+* docs: 完善 agent-ide skill 最佳實踐指南 ([826a2ec](https://github.com/vivalalova/agent-ide/commit/826a2ec))
+* docs: 新增 CLAUDE.md 整合指南章節 ([c096ab4](https://github.com/vivalalova/agent-ide/commit/c096ab4))
+* docs: 更新專案現況（v0.13.1、10 核心模組、移除 snapshot token 節省描述） ([bb0af73](https://github.com/vivalalova/agent-ide/commit/bb0af73))
+* chore: 清理過時文件和暫存檔案 ([ba90466](https://github.com/vivalalova/agent-ide/commit/ba90466))
+
 ## <small>0.13.1 (2025-12-29)</small>
 
 * refactor: 將 slash commands 移至 plugins/commands/ 根目錄 ([9c9a43d](https://github.com/vivalalova/agent-ide/commit/9c9a43d))
