@@ -29,9 +29,18 @@ pnpm install && pnpm build && npm link
 
 ### Claude Code Plugin Installation
 
-```bash
+In Claude Code conversation:
+
+```text
 /plugin marketplace add vivalalova/agent-ide
-/plugin install agent-ide@vivalalova/agent-ide
+/plugin install agent-ide@agent-ide-skills
+```
+
+Or from terminal:
+
+```bash
+claude plugin marketplace add vivalalova/agent-ide
+claude plugin install agent-ide@agent-ide-skills
 ```
 
 ### Recommended: Add to CLAUDE.md
