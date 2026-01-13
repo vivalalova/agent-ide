@@ -15,10 +15,7 @@
       "source": "./plugins",
       "strict": false,
       "skills": [
-        "./skills/"
-      ],
-      "commands": [
-        "./commands/"
+        "../plugins/skills/"
       ]
     }
   ]
