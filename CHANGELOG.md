@@ -1,3 +1,7 @@
+## <small>0.13.3 (2026-01-13)</small>
+
+* fix(plugin): 移除不存在的 commands 目錄配置 ([5dfbf02](https://github.com/vivalalova/agent-ide/commit/5dfbf02))
+
 ## <small>0.13.2 (2026-01-13)</small>
 
 * refactor: 重構 agent-ide skill 結構 ([4228868](https://github.com/vivalalova/agent-ide/commit/4228868))
