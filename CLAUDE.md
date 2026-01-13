@@ -236,6 +236,40 @@ if (dryRun) {
 **驗證**：`pnpm build && pnpm lint && pnpm test`
 **發布**：`npm version patch|minor|major` → `npm publish`
 
+### Plugin 設定檔驗證
+
+用 CLI 安裝測試設定檔正確性（錯誤訊息會指出問題欄位）：
+
+```bash
+# 1. 驗證 marketplace.json（從專案根目錄執行）
+claude plugin marketplace add .
+
+# 2. 驗證 plugin.json
+claude plugin install agent-ide@agent-ide-skills
+
+# 重新測試前先移除
+claude plugin marketplace remove agent-ide-skills
+```
+
+**常見錯誤**：
+
+| 錯誤訊息 | 原因 | 修正 |
+|---------|------|------|
+| `plugins.0.source: Invalid input` | source 格式錯誤 | 使用 `./path/to/plugin` 格式 |
+| `skills: Invalid input` | skills 欄位格式錯誤 | 移除或使用正確路徑格式 |
+
+**正確結構**：
+
+```text
+.claude-plugin/
+└── marketplace.json     # source 指向 plugin 目錄
+
+plugins/skills/agent-ide/
+├── plugin.json          # 無 skills 欄位（SKILL.md 在同目錄自動偵測）
+├── SKILL.md
+└── references/
+```
+
 ## 🚨 功能改動檢查清單
 
 | 改動類型 | 必須更新 |
