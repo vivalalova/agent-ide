@@ -1,3 +1,8 @@
+## <small>0.13.5 (2026-01-13)</small>
+
+* fix(plugin): 更新 marketplace.json 配置 ([f33839a](https://github.com/vivalalova/agent-ide/commit/f33839a))
+* chore: 刪除多餘的 plugins/plugin.json ([ab7e793](https://github.com/vivalalova/agent-ide/commit/ab7e793))
+
 ## <small>0.13.4 (2026-01-13)</small>
 
 * fix(plugin): 修正 marketplace.json skills 路徑配置 ([fcc2c0a](https://github.com/vivalalova/agent-ide/commit/fcc2c0a))
