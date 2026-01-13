@@ -13,10 +13,10 @@ Code intelligence toolkit designed for AI agents, providing search, refactoring,
 
 ## Quick Start
 
-### CLI Installation
+### CLI Usage
 
 ```bash
-npm install -g agent-ide
+npx agent-ide <command> [options]
 ```
 
 From source:
@@ -32,6 +32,32 @@ pnpm install && pnpm build && npm link
 ```bash
 /plugin marketplace add vivalalova/agent-ide
 /plugin install agent-ide@vivalalova/agent-ide
+```
+
+### Recommended: Add to CLAUDE.md
+
+To help Claude Code automatically use agent-ide when appropriate, add the following to your `~/.claude/CLAUDE.md`:
+
+```markdown
+## Agent IDE Integration
+
+Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent-ide over manual Edit/Grep** for:
+
+| Operation | Command | Instead of |
+|-----------|---------|------------|
+| Rename symbol | `/agent-ide rename` | Multiple Edit calls |
+| Move file/member | `/agent-ide move` | Write + Delete + Edit imports |
+| Find references | `/agent-ide find-references` | Grep + manual filtering |
+| Detect dead code | `/agent-ide deadcode` | Manual analysis |
+| Analyze impact | `/agent-ide impact` | Manual tracing |
+| Check cycles | `/agent-ide cycles` | Manual dependency review |
+| Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
+| API snapshot | `/agent-ide snapshot` | Multiple Read calls |
+| Undo changes | `/agent-ide undo` | Manual revert |
+
+**Trigger keywords**: rename, move file, move function, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
+
+**Benefits**: Automatic reference updates, atomic operations, zero missed references, undo support
 ```
 
 ## Commands
