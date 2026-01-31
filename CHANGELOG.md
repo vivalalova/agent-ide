@@ -1,3 +1,10 @@
+## <small>0.13.6 (2026-01-31)</small>
+
+* refactor: 將 marketplace 版本更新邏輯抽為獨立腳本 ([ffc8f7b](https://github.com/vivalalova/agent-ide/commit/ffc8f7b))
+* refactor: 重構 marketplace.json 配置並新增 plugin.json ([f7d9af2](https://github.com/vivalalova/agent-ide/commit/f7d9af2))
+* docs: 新增 Plugin 設定檔驗證章節 ([ac5dad4](https://github.com/vivalalova/agent-ide/commit/ac5dad4))
+* docs: 更新 Plugin 安裝指令格式 ([cbb7ef8](https://github.com/vivalalova/agent-ide/commit/cbb7ef8))
+
 ## <small>0.13.5 (2026-01-13)</small>
 
 * fix(plugin): 更新 marketplace.json 配置 ([f33839a](https://github.com/vivalalova/agent-ide/commit/f33839a))

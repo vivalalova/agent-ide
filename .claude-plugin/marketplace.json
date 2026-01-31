@@ -12,7 +12,7 @@
       "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
       "source": "./plugins/skills/agent-ide",
       "category": "development",
-      "version": "0.13.5"
+      "version": "0.13.6"
     }
   ]
 }
