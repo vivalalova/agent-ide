@@ -93,7 +93,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node -e \"const fs=require('fs'); const m=JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json')); m.metadata.version='${nextRelease.version}'; fs.writeFileSync('.claude-plugin/marketplace.json', JSON.stringify(m,null,2)+'\\n');\""
+        "prepareCmd": "node scripts/update-marketplace-version.js ${nextRelease.version}"
       }
     ],
     [
