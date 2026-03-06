@@ -54,10 +54,10 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.resolved'
       ],
       thresholds: {
-        lines: 40,
-        functions: 40,
+        lines: 43,
+        functions: 45,
         branches: 40,
-        statements: 40
+        statements: 43
       }
     },
   },
