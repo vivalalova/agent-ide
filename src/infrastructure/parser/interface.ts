@@ -105,14 +105,6 @@ export interface ParserPlugin {
    */
   rename(ast: AST, position: Position, newName: string): Promise<CodeEdit[]>;
 
-  /**
-   * 提取函式重構
-   * @param ast AST 物件
-   * @param selection 選取的程式碼範圍
-   * @returns 程式碼編輯操作列表
-   */
-  extractFunction(ast: AST, selection: Range): Promise<CodeEdit[]>;
-
   // ===== 查詢支援 =====
 
   /**
@@ -300,7 +292,6 @@ export function isParserPlugin(value: unknown): value is ParserPlugin {
     'findReferences',
     'extractDependencies',
     'rename',
-    'extractFunction',
     'findDefinition',
     'findUsages',
     'validate',

@@ -79,14 +79,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   }
 
   /**
-   * 提取函式（預設實作返回空陣列）
-   */
-  async extractFunction(_ast: AST, _selection: Range): Promise<CodeEdit[]> {
-    this.log('debug', 'Extracting function from selection');
-    return [];
-  }
-
-  /**
    * 查找定義（預設實作返回 null）
    */
   async findDefinition(_ast: AST, position: Position): Promise<Definition | null> {
@@ -202,7 +194,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   getCapabilities(): ParserCapabilities {
     return {
       supportsRename: false,
-      supportsExtractFunction: false,
       supportsGoToDefinition: false,
       supportsFindUsages: false,
       supportsCodeActions: false
@@ -297,14 +288,13 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   }
 
   /**
-  /**
    * 建立基本的 CodeEdit
    */
   protected createCodeEdit(
     filePath: string,
     range: Range,
     newText: string,
-    editType?: 'rename' | 'extract' | 'inline' | 'format'
+    editType?: 'rename' | 'inline' | 'format'
   ): CodeEdit {
     if (editType !== undefined) {
       return {

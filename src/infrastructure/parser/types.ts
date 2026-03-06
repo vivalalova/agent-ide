@@ -22,7 +22,7 @@ export interface CodeEdit {
   readonly newText: string;
 
   /** 編輯類型（可選） */
-  readonly editType?: 'rename' | 'extract' | 'inline' | 'format';
+  readonly editType?: 'rename' | 'inline' | 'format';
 }
 
 /**
@@ -137,9 +137,6 @@ export interface ParserOptions {
 export interface ParserCapabilities {
   /** 是否支援重新命名 */
   readonly supportsRename: boolean;
-
-  /** 是否支援提取函式 */
-  readonly supportsExtractFunction: boolean;
 
   /** 是否支援跳轉到定義 */
   readonly supportsGoToDefinition: boolean;
@@ -356,7 +353,6 @@ export function isParserCapabilities(value: unknown): value is ParserCapabilitie
 
   return (
     typeof obj.supportsRename === 'boolean' &&
-    typeof obj.supportsExtractFunction === 'boolean' &&
     typeof obj.supportsGoToDefinition === 'boolean' &&
     typeof obj.supportsFindUsages === 'boolean' &&
     typeof obj.supportsCodeActions === 'boolean'

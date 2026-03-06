@@ -413,14 +413,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   /**
-   * 提取函式重構
-   */
-  async extractFunction(_ast: AST, _selection: Range): Promise<CodeEdit[]> {
-    // 這是一個複雜的重構操作，目前提供基本實作
-    throw new Error('提取函式重構尚未實作');
-  }
-
-  /**
    * 查找定義
    */
   async findDefinition(ast: AST, position: Position): Promise<Definition | null> {
