@@ -23,8 +23,8 @@ pnpm lint               # ESLint
 npm link                # 本地安裝
 
 # 單一測試
-pnpm test:e2e -- --run tests/e2e/commands/cli-rename-basic.e2e.test.ts
-pnpm test:unit -- --run tests/unit/example.test.ts
+pnpm test:e2e -- --run tests/e2e/commands/typescript/cli-rename.e2e.test.ts
+pnpm test:unit -- --run tests/unit/core/cycles/cycle-detector.test.ts
 ```
 
 ## 架構
