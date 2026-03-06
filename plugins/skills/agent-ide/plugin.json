@@ -1,5 +1,5 @@
 {
   "name": "agent-ide",
   "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
-  "version": "0.13.5"
+  "version": "0.13.6"
 }
