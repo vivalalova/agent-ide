@@ -35,8 +35,8 @@ export default mergeConfig(baseConfig, defineConfig({
         'src/infrastructure/parser/**',
         'src/infrastructure/formatters/**',
         'src/infrastructure/storage/**',
-        'src/plugins/typescript/**'
-        // NOTE: plugins/javascript 已排除（見 exclude 說明）
+        'src/plugins/typescript/**',
+        'src/plugins/javascript/**'
       ],
       exclude: [
         'node_modules/**',
@@ -51,10 +51,7 @@ export default mergeConfig(baseConfig, defineConfig({
         '**/*.md',
         '**/*.sh',
         '**/*.yaml',
-        '**/*.resolved',
-        // plugins/javascript 為實驗性功能，目前未正式使用，排除以避免拉低整體覆蓋率
-        // 該模組的 branches 覆蓋率僅 1.17%，待正式啟用時再納入測試
-        'src/plugins/javascript/**'
+        '**/*.resolved'
       ],
       thresholds: {
         lines: 40,
