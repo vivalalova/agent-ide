@@ -1,22 +1,22 @@
 ---
-title: "重構: extractFunction 死介面清理"
+title: "清理: eslint-rules no-new-filesystem README 補齊"
 created: 2026-03-06
 priority: low
-suggested_order: C2
+suggested_order: D1
 phase: needs-commit
 iteration: 2
 max_iterations: 3
 ---
 
-# 重構: extractFunction 死介面清理
+# 清理: eslint-rules no-new-filesystem README 補齊
 
-TypeScript parser 和 JavaScript parser 的 extractFunction 方法皆 throw 'Not implemented'。此方法定義在 ParserPlugin interface 中，但無任何 core 模組呼叫它。
+三個自訂 ESLint 規則中，no-fs-in-core 和 no-default-instance-in-constructor 各有 README.md，但 no-new-filesystem 缺少。eslint-rules/README.md 規則列表也未包含 no-new-filesystem。
 
 ## User Stories
 
-- As a developer, I want dead interface methods cleaned up, so that the codebase doesn't have misleading unimplemented stubs.
+- As a developer contributing to agent-ide, I want all custom ESLint rules documented, so that I understand the architectural constraints.
 
 ## 驗收條件
 
-- Given extractFunction in ParserPlugin interface, when confirming no callers exist, then the method is removed from interface and both parser implementations
-- Given the removal, when running `pnpm build && pnpm test`, then everything passes
+- Given no-new-filesystem rule, when checking its directory, then a README.md exists explaining the rule's purpose and examples
+- Given eslint-rules/README.md, when reading the rule list, then all 3 rules are listed
