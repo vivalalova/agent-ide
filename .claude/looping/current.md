@@ -3,6 +3,9 @@ title: "重構: 清理 Application 層死碼"
 created: 2026-03-06
 priority: medium
 suggested_order: C1
+phase: needs-commit
+iteration: 2
+max_iterations: 3
 ---
 
 # 重構: 清理 Application 層死碼

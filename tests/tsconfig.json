@@ -7,7 +7,6 @@
       "@infrastructure/*": ["infrastructure/*"],
       "@plugins/*": ["plugins/*"],
       "@interfaces/*": ["interfaces/*"],
-      "@application/*": ["application/*"],
       "@shared/*": ["shared/*"],
       "@shared/types": ["shared/types/index"],
       "@shared/errors": ["shared/errors/index"],

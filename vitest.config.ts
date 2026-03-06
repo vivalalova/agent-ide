@@ -23,7 +23,6 @@ export default defineConfig({
       '@infrastructure': resolve(__dirname, 'src/infrastructure'),
       '@plugins': resolve(__dirname, 'src/plugins'),
       '@interfaces': resolve(__dirname, 'src/interfaces'),
-      '@application': resolve(__dirname, 'src/application'),
       '@shared': resolve(__dirname, 'src/shared'),
       '@shared/types': resolve(__dirname, 'src/shared/types/index'),
       '@shared/errors': resolve(__dirname, 'src/shared/errors/index'),

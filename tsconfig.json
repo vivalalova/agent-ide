@@ -18,7 +18,6 @@
       "@/*": ["src/*"],
       "@core/*": ["src/core/*"],
       "@infrastructure/*": ["src/infrastructure/*"],
-      "@application/*": ["src/application/*"],
       "@interfaces/*": ["src/interfaces/*"],
       "@plugins/*": ["src/plugins/*"],
       "@shared/*": ["src/shared/*"]
@@ -38,7 +37,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "tests",
     "tests"
   ]
 }

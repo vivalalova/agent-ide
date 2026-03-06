@@ -70,8 +70,7 @@ export default mergeConfig(baseConfig, defineConfig({
         // === 透過 E2E 測試覆蓋的模組 ===
         'src/plugins/**',
         'src/interfaces/cli/**',
-        'src/application/**',
-        'src/core/**',
+'src/core/**',
         'src/infrastructure/parser/**', // Parser 插件基礎架構，透過 E2E 測試覆蓋
         'src/infrastructure/worker-pool/**', // Worker Pool 測試環境禁用，僅生產環境執行
 

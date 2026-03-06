@@ -46,8 +46,7 @@ src/
 ├── shared/               # types/ | errors/（全域共用）
 ├── infrastructure/       # Parser框架、Cache、Storage、Formatters、Changeset
 ├── plugins/              # typescript/ | javascript/ Parser
-├── interfaces/           # CLI
-└── application/          # DI容器
+└── interfaces/           # CLI
 ```
 
 ### Core 設計原則
