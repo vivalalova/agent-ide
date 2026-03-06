@@ -71,8 +71,8 @@ async function handleCyclesCommand(
     // 獲取統計資訊
     const stats = impactAnalyzer.getStats();
 
-    // 取得依賴圖
-    const graph = impactAnalyzer.getGraph();
+    // 取得 runtime-only 依賴圖（排除 type-only imports）
+    const graph = impactAnalyzer.getRuntimeGraph();
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();

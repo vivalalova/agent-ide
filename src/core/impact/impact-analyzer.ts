@@ -33,6 +33,8 @@ interface CacheEntry {
  */
 export class ImpactAnalyzer {
   private graph: DependencyGraph;
+  /** runtime-only 圖：排除 type-only imports，供 cycle 偵測使用 */
+  private runtimeGraph: DependencyGraph;
   private cycleDetector: CycleDetector;
   private cache: MemoryCache<string, CacheEntry>;
   private options: ExtendedDependencyAnalysisOptions;
@@ -43,6 +45,7 @@ export class ImpactAnalyzer {
 
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
+    this.runtimeGraph = new DependencyGraph();
     this.cycleDetector = new CycleDetector();
     this.cache = createLRUCache<string, CacheEntry>(1000);
     this.fileSystem = fileSystem;
@@ -284,11 +287,19 @@ export class ImpactAnalyzer {
   }
 
   /**
-   * 取得依賴圖
+   * 取得完整依賴圖（含 type-only imports，供影響分析使用）
    * @returns 依賴圖實例
    */
   getGraph(): DependencyGraph {
     return this.graph;
+  }
+
+  /**
+   * 取得 runtime-only 依賴圖（排除 type-only imports，供 cycle 偵測使用）
+   * @returns runtime 依賴圖實例
+   */
+  getRuntimeGraph(): DependencyGraph {
+    return this.runtimeGraph;
   }
 
   /**
@@ -298,19 +309,26 @@ export class ImpactAnalyzer {
   private updateDependencyGraph(fileDependencies: FileDependencies): void {
     const { filePath, dependencies } = fileDependencies;
 
-    // 新增節點
+    // 更新完整圖（含 type-only imports）
     this.graph.addNode(filePath);
-
-    // 清除舊的依賴關係
     const oldDeps = this.graph.getDependencies(filePath);
     for (const oldDep of oldDeps) {
       this.graph.removeDependency(filePath, oldDep);
     }
-
-    // 新增新的依賴關係
     for (const dep of dependencies) {
-      // dep.path 現在已經是解析後的絕對路徑
       this.graph.addDependency(filePath, dep.path);
+    }
+
+    // 更新 runtime-only 圖（排除 type-only imports，供 cycle 偵測使用）
+    this.runtimeGraph.addNode(filePath);
+    const oldRuntimeDeps = this.runtimeGraph.getDependencies(filePath);
+    for (const oldDep of oldRuntimeDeps) {
+      this.runtimeGraph.removeDependency(filePath, oldDep);
+    }
+    for (const dep of dependencies) {
+      if (!dep.isTypeOnly) {
+        this.runtimeGraph.addDependency(filePath, dep.path);
+      }
     }
   }
 

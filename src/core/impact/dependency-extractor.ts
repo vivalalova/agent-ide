@@ -46,8 +46,8 @@ export class DependencyExtractor {
       case '.tsx':
       case '.js':
       case '.jsx':
-        // 支援 import type { ... } 語法
-        importRegex = /import\s+(?:type\s+)?(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
+        // 支援 import type { ... } 語法，capture group 1 = 'type '，group 2 = path
+        importRegex = /import\s+(type\s+)?(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
         break;
       default:
         return dependencies; // 不支援的檔案類型
@@ -55,7 +55,8 @@ export class DependencyExtractor {
 
       let match;
       while ((match = importRegex.exec(content)) !== null) {
-        const importPath = match[1];
+        const isTypeOnly = !!match[1];
+        const importPath = match[2];
         const resolvedPath = await this.pathResolver.resolvePath(importPath, filePath);
 
         if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath)) {
@@ -63,7 +64,8 @@ export class DependencyExtractor {
             path: resolvedPath.resolvedPath, // 使用解析後的絕對路徑
             type: DependencyType.Import,
             isRelative: resolvedPath.isRelative,
-            importedSymbols: [] // 簡化實作，實際應該解析 import 語句
+            importedSymbols: [], // 簡化實作，實際應該解析 import 語句
+            isTypeOnly,
           });
         }
       }
