@@ -13,6 +13,77 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/pre-tool-use/pre-bash-guard.ts",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/pre-tool-use/pre-task-plan-model.ts",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/post-tool-use/auto-format.ts",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/post-tool-use/auto-install.ts",
+            "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/post-tool-use/post-write-check.ts",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/post-tool-use/post-write-lint.ts",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/post-tool-use/post-bash-check.ts",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/stop/stop-verify-reminder.ts",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
