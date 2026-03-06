@@ -1,0 +1,18 @@
+{
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "agent-ide@agent-ide-skills": true
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node --experimental-strip-types .claude/hooks/shared/notification/notification.ts"
+          }
+        ]
+      }
+    ]
+  }
+}
