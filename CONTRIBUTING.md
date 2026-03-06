@@ -27,7 +27,7 @@ src/
 ├── core/           # 11個核心模組（foundations, cycles, impact, find-references, call-hierarchy, snapshot, rename, change-signature, move, move-member, deadcode）
 ├── infrastructure/ # parser, cache, storage, utils
 ├── plugins/        # TypeScript, JavaScript
-├── interfaces/     # CLI, MCP
+├── interfaces/     # CLI
 └── shared/         # types, constants, errors
 
 tests/              # 鏡像 src/ 結構

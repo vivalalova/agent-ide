@@ -62,7 +62,6 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Check cycles | `/agent-ide cycles` | Manual dependency review |
 | Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
 | API snapshot | `/agent-ide snapshot` | Multiple Read calls |
-| Undo changes | `/agent-ide undo` | Manual revert |
 
 **Trigger keywords**: rename, move file, move function, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
 

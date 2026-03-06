@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：11 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
-**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.1
+**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.6
 
 ## 常用指令
 

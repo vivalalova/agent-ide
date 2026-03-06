@@ -1,27 +1,24 @@
 ---
-title: "清理: CLAUDE.md 示例路徑修正"
+title: "文件: 統一更新 README / SKILL.md / CLAUDE.md"
 created: 2026-03-06
 priority: low
-suggested_order: D3
-phase: done
+suggested_order: Z99
+phase: needs-commit
 iteration: 2
 max_iterations: 3
 ---
 
-# 清理: CLAUDE.md 示例路徑修正
+# 文件: 統一更新 README / SKILL.md / CLAUDE.md
 
-CLAUDE.md 測試規範段落引用 `tests/e2e/commands/cli-rename-basic.e2e.test.ts`，但實際路徑結構是 `tests/e2e/commands/typescript/` 子目錄。需更新為正確路徑。
+在所有任務完成後，統一審閱並更新專案文件。
 
 ## User Stories
 
-- As a developer following CLAUDE.md, I want example paths to be correct, so that I can quickly find referenced test files.
+- As a user or contributor, I want all documentation to be accurate and consistent, so that I can trust the docs as a reference.
 
 ## 驗收條件
 
-- Given CLAUDE.md test example, when reading the file path, then it matches an existing file in the repository
-
-## 完成記錄
-
-- 更新 E2E 示例路徑：`tests/e2e/commands/cli-rename-basic.e2e.test.ts` → `tests/e2e/commands/typescript/cli-rename.e2e.test.ts`
-- 更新 Unit 示例路徑：`tests/unit/example.test.ts` → `tests/unit/core/cycles/cycle-detector.test.ts`
-- Commit: a11d415
+- Given README.md, when reading module list, then it reflects the latest modules
+- Given plugins/skills/agent-ide/SKILL.md, when comparing to CLI capabilities, then content is consistent
+- Given CLAUDE.md, when checking all example paths and commands, then all are valid
+- Given SKILL.md content changes, when checking frontmatter description, then it is updated accordingly
