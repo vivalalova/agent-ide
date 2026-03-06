@@ -1,24 +1,27 @@
 ---
-title: "清理: CONTRIBUTING.md 過時內容更新"
+title: "清理: CLAUDE.md 示例路徑修正"
 created: 2026-03-06
 priority: low
-suggested_order: D2
-phase: needs-commit
-iteration: 1
+suggested_order: D3
+phase: done
+iteration: 2
 max_iterations: 3
 ---
 
-# 清理: CONTRIBUTING.md 過時內容更新
+# 清理: CLAUDE.md 示例路徑修正
 
-CONTRIBUTING.md 寫「7個核心模組」，實際為 11 個。架構圖列出不存在的模組名稱。測試指令 `pnpm test:watch` 和 `pnpm test:single` 不存在於 package.json scripts。覆蓋率描述「整體 >=80%、core/ >=95%」與實際門檻不符。
+CLAUDE.md 測試規範段落引用 `tests/e2e/commands/cli-rename-basic.e2e.test.ts`，但實際路徑結構是 `tests/e2e/commands/typescript/` 子目錄。需更新為正確路徑。
 
 ## User Stories
 
-- As an external contributor, I want accurate documentation, so that I can understand the project structure and follow the correct workflow.
+- As a developer following CLAUDE.md, I want example paths to be correct, so that I can quickly find referenced test files.
 
 ## 驗收條件
 
-- Given CONTRIBUTING.md, when reading module count, then it matches actual count (11)
-- Given architecture diagram, when comparing to src/core/, then all modules are listed
-- Given test commands section, when running listed commands, then all commands exist in package.json
-- Given coverage section, when comparing to vitest configs, then thresholds match
+- Given CLAUDE.md test example, when reading the file path, then it matches an existing file in the repository
+
+## 完成記錄
+
+- 更新 E2E 示例路徑：`tests/e2e/commands/cli-rename-basic.e2e.test.ts` → `tests/e2e/commands/typescript/cli-rename.e2e.test.ts`
+- 更新 Unit 示例路徑：`tests/unit/example.test.ts` → `tests/unit/core/cycles/cycle-detector.test.ts`
+- Commit: a11d415
