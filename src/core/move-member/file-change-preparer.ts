@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange } from './types.js';
 import { MoveTargetType } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * Import 類型
@@ -421,7 +422,7 @@ export class FileChangePreparer {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
-      console.warn(`[move-member] Failed to read file ${filePath}:`, error);
+      diagnostics.warn('move-member/file-change-preparer', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

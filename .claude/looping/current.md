@@ -1,26 +1,27 @@
 ---
-title: ReferenceFinderEngine Dead Code 清理
+title: Error Handling 一致性重構
 created: 2026-03-12
 priority: medium
-suggested_order: B1
+suggested_order: B2
 phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 1
+review_iterations: 3
 ---
 
-# ReferenceFinderEngine Dead Code 清理
+# Error Handling 一致性重構
 
-`src/core/find-references/reference-finder-engine.ts` 的 `ReferenceFinderEngine` 是 `SymbolFinder` 的薄包裝，零使用者 — CLI 直接用 `IndexEngine` + `SymbolFinder`。僅 barrel export。
+錯誤處理模式不一致：有的 `console.warn` 後繼續、有的 `return null/[]`、有的包裝成結構化 Error。symbol-finder fallback 到 regex 無 log。
 
-依 universal.md #4 移除 `ReferenceFinderEngine`、`createReferenceFinderEngine` 及 barrel export。
+需 (1) 定義錯誤嚴重度分類 (2) `shared/errors/` 擴充結構化錯誤類型 (3) core 模組統一使用。
 
 ## User Stories
 
-- As a developer, I want dead code removed, so that the codebase stays lean and doesn't confuse maintainers.
+- As a developer, I want consistent error handling patterns, so that debugging is predictable and error messages are actionable.
 
 ## 驗收條件
 
-- Given src/, when grepping ReferenceFinderEngine, then no references found
-- Given find-references/index.ts, when checked, then no dead exports
-- Given `pnpm build && pnpm test`, when executed, then all pass
+- Given shared/errors/, when checked, then has structured error types covering all categories
+- Given core modules, when error occurs, then uses consistent pattern (structured error or explicit degradation)
+- Given symbol-finder fallback, when AST fails, then logs warning before regex fallback
+- Given `pnpm test`, when executed, then all pass

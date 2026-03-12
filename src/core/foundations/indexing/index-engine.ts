@@ -14,6 +14,7 @@ import {
 } from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -175,7 +176,7 @@ export class IndexEngine {
         }
       } catch {
         // 如果 parser 不支援此方法，忽略錯誤
-        console.warn(`Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
+        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
       }
     }
 
@@ -497,8 +498,7 @@ export class IndexEngine {
       }
 
       if (errors.length > 0) {
-        console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
-        errors.forEach(error => console.warn(`  ${error}`));
+        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
       }
       return;
     }
@@ -541,8 +541,7 @@ export class IndexEngine {
     }
 
     if (errors.length > 0) {
-      console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
-      errors.forEach(error => console.warn(`  ${error}`));
+      diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
     }
   }
 
@@ -576,7 +575,7 @@ export class IndexEngine {
           content
         });
       } catch (error) {
-        console.warn(`[index-engine] Skipping unreadable file: ${filePath}`, error);
+        diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }));
 

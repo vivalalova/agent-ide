@@ -9,6 +9,7 @@ import { ImportResolver } from './import-resolver.js';
 import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 路徑計算器類別
@@ -184,7 +185,7 @@ export class PathCalculator {
         }
       }
     } catch (error) {
-      console.warn(`無法處理檔案 ${filePath}:`, error);
+      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理檔案: ${error instanceof Error ? error.message : String(error)}`, filePath);
     }
 
     return updates;
@@ -398,7 +399,7 @@ export class PathCalculator {
         }
       }
     } catch (error) {
-      console.warn(`無法處理被移動檔案的內部 import ${source}:`, error);
+      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理被移動檔案的內部 import ${source}: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return updates;

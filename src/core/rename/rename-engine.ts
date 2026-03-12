@@ -23,6 +23,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -87,11 +88,11 @@ export class RenameEngine {
             }
           });
         } catch (error) {
-          console.warn('[rename-engine] Cannot read file during reference search:', error);
+          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${error instanceof Error ? error.message : String(error)}`, filePath);
         }
       }
     } catch (error) {
-      console.warn('[rename-engine] Unexpected error during reference search:', error);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return references;
@@ -210,7 +211,7 @@ export class RenameEngine {
         summary
       };
     } catch (error) {
-      console.warn('[rename-engine] Preview generation failed:', error);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }

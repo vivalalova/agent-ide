@@ -15,6 +15,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 檔案快取項目
@@ -78,7 +79,7 @@ export class ReferenceUpdater {
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
-        console.warn(`SymbolFinder failed for ${filePath}, falling back to text matching:`, error);
+        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder failed, falling back to text matching: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }
 
@@ -118,7 +119,7 @@ export class ReferenceUpdater {
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
-        console.warn(`SymbolFinder (with symbol) failed for ${filePath}, falling back to text matching:`, error);
+        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder (with symbol) failed, falling back to text matching: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }
 
@@ -338,7 +339,7 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       return content;
     } catch (error) {
-      console.warn(`[reference-updater] Failed to read file ${filePath}:`, error);
+      diagnostics.warn('rename/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PatternInfo } from '@infrastructure/parser/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 識別模組內的 factory 模式
@@ -47,11 +48,11 @@ export async function identifyFactoryPatterns(
           }
         }
       } catch (error) {
-        console.warn(`[snapshot] Pattern detection failed for ${filePath}:`, error);
+        diagnostics.warn('snapshot/factory-pattern-detector', 'AST_PARSE_FAILED', `Pattern detection failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }
   } catch (error) {
-    console.warn(`[snapshot] Pattern detection failed for ${modulePath}:`, error);
+    diagnostics.warn('snapshot/factory-pattern-detector', 'AST_PARSE_FAILED', `Pattern detection failed: ${error instanceof Error ? error.message : String(error)}`, modulePath);
   }
 
   return factoryMap;

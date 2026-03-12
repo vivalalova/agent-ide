@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { IndexEngine, createIndexConfig } from '@core/foundations/indexing/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PatternInfo } from '@infrastructure/parser/index.js';
 import { SymbolType, type Symbol } from '@shared/types/index.js';
@@ -237,11 +238,11 @@ export class SnapshotGenerator {
           const codeString = typeof content === 'string' ? content : content.toString('utf-8');
           contents.set(filePath, codeString);
         } catch (error) {
-          console.warn('[snapshot] Skipping unreadable file/dir:', error);
+          diagnostics.warn('snapshot/generator', 'FILE_READ_ERROR', `Skipping unreadable file: ${error instanceof Error ? error.message : String(error)}`, filePath);
         }
       }
     } catch (error) {
-      console.warn('[snapshot] Skipping unreadable file/dir:', error);
+      diagnostics.warn('snapshot/generator', 'FILE_READ_ERROR', `Skipping unreadable dir: ${error instanceof Error ? error.message : String(error)}`, modulePath);
     }
 
     return contents;

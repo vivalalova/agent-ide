@@ -8,6 +8,7 @@ import { Dependency, DependencyType } from '@shared/types/index.js';
 import type { ExtendedDependencyAnalysisOptions } from './types.js';
 import type { PathResolver } from './path-resolver.js';
 import type { FileScanner } from './file-scanner.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 依賴提取器類別
@@ -72,7 +73,7 @@ export class DependencyExtractor {
     } catch (error) {
       // 解析錯誤，回傳空陣列而不拋出錯誤
       if (this.options.verbose !== false) {
-        console.warn(`解析檔案 ${filePath} 時發生錯誤:`, error);
+        diagnostics.warn('impact/dependency-extractor', 'AST_PARSE_FAILED', `解析檔案時發生錯誤: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }
 

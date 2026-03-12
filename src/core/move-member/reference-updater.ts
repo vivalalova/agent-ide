@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { MemberDefinition, ReferenceUpdate, MoveMemberOptions } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 解析的 import 成員
@@ -335,7 +336,7 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
-      console.warn(`[move-member] Failed to read file ${filePath}:`, error);
+      diagnostics.warn('move-member/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

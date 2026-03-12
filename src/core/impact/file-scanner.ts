@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ExtendedDependencyAnalysisOptions } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 檔案掃描器類別
@@ -69,7 +70,7 @@ export class FileScanner {
           }
         }
       } catch (error) {
-        console.warn(`無法讀取目錄 ${dir}:`, error);
+        diagnostics.warn('impact/file-scanner', 'ANALYSIS_DEGRADED', `無法讀取目錄: ${error instanceof Error ? error.message : String(error)}`, dir);
       }
     };
 

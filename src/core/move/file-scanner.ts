@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 檔案掃描器類別
@@ -51,7 +52,7 @@ export class FileScanner {
         }
       } catch (error) {
         // graceful-degradation: 權限不足的目錄跳過，繼續掃描
-        console.warn('[move/file-scanner] Skipping inaccessible directory:', error);
+        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
@@ -83,7 +84,7 @@ export class FileScanner {
         }
       } catch (error) {
         // graceful-degradation: 權限不足的目錄跳過，繼續掃描
-        console.warn('[move/file-scanner] Skipping inaccessible directory:', error);
+        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
@@ -146,7 +147,7 @@ export class FileScanner {
           return { file, content };
         } catch (error) {
           // graceful-degradation: 無法讀取的檔案跳過引用檢查
-          console.warn('[move/file-scanner] Cannot read file for reference check:', error);
+          diagnostics.warn('move/file-scanner', 'FILE_READ_ERROR', `Cannot read file for reference check: ${error instanceof Error ? error.message : String(error)}`);
           return { file, content: null };
         }
       })
@@ -206,7 +207,7 @@ export class FileScanner {
 
       return false;
     } catch (error) {
-      console.warn('[move/file-scanner] Cannot read file for reference check:', error);
+      diagnostics.warn('move/file-scanner', 'FILE_READ_ERROR', `Cannot read file for reference check: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }

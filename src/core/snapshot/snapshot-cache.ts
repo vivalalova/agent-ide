@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult } from './types.js';
 import { isProjectSnapshot } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 快照版本資訊
@@ -99,16 +100,16 @@ export class SnapshotCacheManager {
 
             // 驗證快取結構
             if (!cache.version || !cache.snapshot) {
-                console.warn(`[SnapshotCache] 快取結構無效，將重新生成快照: ${this.cachePath}`);
+                diagnostics.warn('snapshot/cache', 'ANALYSIS_DEGRADED', '快取結構無效，將重新生成快照', this.cachePath);
                 return null;
             }
 
             return cache;
         } catch (error) {
             if (error instanceof SyntaxError) {
-                console.warn(`[SnapshotCache] 快取 JSON 格式錯誤，將重新生成快照: ${this.cachePath}`);
+                diagnostics.warn('snapshot/cache', 'ANALYSIS_DEGRADED', '快取 JSON 格式錯誤，將重新生成快照', this.cachePath);
             } else {
-                console.warn(`[SnapshotCache] 載入快取失敗: ${error}`);
+                diagnostics.warn('snapshot/cache', 'FILE_READ_ERROR', `載入快取失敗: ${error instanceof Error ? error.message : String(error)}`, this.cachePath);
             }
             return null;
         }

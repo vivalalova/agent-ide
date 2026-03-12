@@ -13,6 +13,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type {
   CallHierarchyData,
   CallHierarchyOptions,
@@ -279,7 +280,7 @@ export class CallHierarchyAnalyzer {
 
       findCallsInNode(functionNode.body);
     } catch (error) {
-      console.warn('[call-hierarchy] AST parse failed:', error);
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return outgoing;
@@ -527,7 +528,7 @@ export class CallHierarchyAnalyzer {
         }
       }
     } catch (error) {
-      console.warn('[call-hierarchy] AST parse failed:', error);
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return results;
