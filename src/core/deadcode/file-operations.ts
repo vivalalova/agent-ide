@@ -216,7 +216,8 @@ export class FileOperationsHandler {
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
       this.cacheService.setFile(filePath, contentStr);
       return contentStr;
-    } catch {
+    } catch (error) {
+      console.warn('[deadcode] Failed to read file:', error);
       return null;
     }
   }

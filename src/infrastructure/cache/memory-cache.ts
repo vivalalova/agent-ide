@@ -329,6 +329,7 @@ export class MemoryCache<K, V> {
       const str = JSON.stringify(value);
       return str.length * 2;
     } catch {
+      // graceful-degradation: 不可序列化物件使用預設大小估計
       return 100; // 預設大小
     }
   }

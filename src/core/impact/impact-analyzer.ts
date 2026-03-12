@@ -86,7 +86,7 @@ export class ImpactAnalyzer {
           return cacheEntry.data;
         }
       } catch {
-        // 檔案不存在，從快取中移除
+        // graceful-degradation: 檔案已被刪除時清除快取條目
         this.cache.delete(normalizedPath);
       }
     }

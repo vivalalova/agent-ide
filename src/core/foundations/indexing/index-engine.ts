@@ -575,8 +575,8 @@ export class IndexEngine {
           fileInfo,
           content
         });
-      } catch {
-        // 靜默跳過無法讀取的檔案
+      } catch (error) {
+        console.warn(`[index-engine] Skipping unreadable file: ${filePath}`, error);
       }
     }));
 
@@ -681,7 +681,7 @@ export class IndexEngine {
       const stat = await this.fileSystem.getStats(filePath);
       return this.fileIndex.needsReindexing(filePath, stat.modifiedTime);
     } catch {
-      // 檔案不存在或無法存取，但如果在索引中則需要標記為需要重新索引（用於清理）
+      // graceful-degradation: 檔案已被刪除時仍需標記重新索引以清理索引條目
       return this.fileIndex.hasFile(filePath);
     }
   }
@@ -732,7 +732,7 @@ export class IndexEngine {
       // 釋放 Worker Pool 資源（非阻塞，測試環境無 pool）
       if (this.parserPool) {
         this.parserPool.destroy().catch(() => {
-          // 忽略銷毀錯誤
+          // graceful-degradation: dispose 時 pool 可能已銷毀，忽略銷毀失敗
         });
       }
     }

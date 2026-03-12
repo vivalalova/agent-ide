@@ -12,7 +12,6 @@ import {
   ConflictType,
   RenameSummary,
   ScopeAnalysisResult,
-  createRenameOperation,
   createConflictInfo
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
@@ -87,12 +86,12 @@ export class RenameEngine {
               });
             }
           });
-        } catch {
-          // 忽略無法讀取的檔案，不影響其他檔案的處理
+        } catch (error) {
+          console.warn('[rename-engine] Cannot read file during reference search:', error);
         }
       }
-    } catch {
-      // 忽略錯誤，返回已收集的引用
+    } catch (error) {
+      console.warn('[rename-engine] Unexpected error during reference search:', error);
     }
 
     return references;
@@ -210,26 +209,9 @@ export class RenameEngine {
         conflicts: validation.conflicts,
         summary
       };
-    } catch {
-      // 發生錯誤時回傳基本預覽
-      const operation = createRenameOperation(
-        options.symbol.location.filePath,
-        options.symbol.name,
-        options.newName,
-        options.symbol.location.range
-      );
-
-      return {
-        operations: [operation],
-        affectedFiles: [options.symbol.location.filePath],
-        conflicts: validation.conflicts,
-        summary: {
-          totalReferences: 1,
-          totalFiles: 1,
-          conflictCount: validation.conflicts.length,
-          estimatedTime: 10
-        }
-      };
+    } catch (error) {
+      console.warn('[rename-engine] Preview generation failed:', error);
+      throw error;
     }
   }
 

@@ -49,8 +49,9 @@ export class FileScanner {
             }
           }
         }
-      } catch {
-        // 忽略無法存取的目錄
+      } catch (error) {
+        // graceful-degradation: 權限不足的目錄跳過，繼續掃描
+        console.warn('[move/file-scanner] Skipping inaccessible directory:', error);
       }
     };
 
@@ -80,8 +81,9 @@ export class FileScanner {
             }
           }
         }
-      } catch {
-        // 忽略無法存取的目錄
+      } catch (error) {
+        // graceful-degradation: 權限不足的目錄跳過，繼續掃描
+        console.warn('[move/file-scanner] Skipping inaccessible directory:', error);
       }
     };
 
@@ -142,7 +144,9 @@ export class FileScanner {
         try {
           const content = await this.fileSystem.readFile(file, 'utf-8') as string;
           return { file, content };
-        } catch {
+        } catch (error) {
+          // graceful-degradation: 無法讀取的檔案跳過引用檢查
+          console.warn('[move/file-scanner] Cannot read file for reference check:', error);
           return { file, content: null };
         }
       })
@@ -201,7 +205,8 @@ export class FileScanner {
       }
 
       return false;
-    } catch {
+    } catch (error) {
+      console.warn('[move/file-scanner] Cannot read file for reference check:', error);
       return false;
     }
   }

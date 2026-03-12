@@ -44,7 +44,7 @@ export class FileScanner {
         return [];
       }
     } catch {
-      // 路徑不存在或無法訪問
+      // graceful-degradation: 路徑不存在或無權限時返回空列表
       return [];
     }
 

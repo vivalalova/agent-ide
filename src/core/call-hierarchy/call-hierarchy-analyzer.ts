@@ -271,8 +271,8 @@ export class CallHierarchyAnalyzer {
       };
 
       findCallsInNode(functionNode.body);
-    } catch {
-      // Parser 失敗，返回空結果
+    } catch (error) {
+      console.warn('[call-hierarchy] AST parse failed:', error);
     }
 
     return outgoing;
@@ -410,8 +410,8 @@ export class CallHierarchyAnalyzer {
           results.set(line, { name: enclosingName, file: filePath });
         }
       }
-    } catch {
-      // Parser 失敗，返回空結果
+    } catch (error) {
+      console.warn('[call-hierarchy] AST parse failed:', error);
     }
 
     return results;

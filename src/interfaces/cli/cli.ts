@@ -34,7 +34,7 @@ try {
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
   packageVersion = packageJson.version;
 } catch {
-  // 使用 fallback 版本
+  // graceful-degradation: package.json 讀取失敗時使用 fallback 版本號
 }
 
 export class AgentIdeCLI {

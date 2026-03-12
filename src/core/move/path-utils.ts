@@ -116,6 +116,7 @@ export class PathUtils {
 
       return false;
     } catch {
+      // graceful-degradation: 路徑解析失敗時保守回傳 false
       return false;
     }
   }

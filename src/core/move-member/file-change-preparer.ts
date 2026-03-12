@@ -420,7 +420,8 @@ export class FileChangePreparer {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
+    } catch (error) {
+      console.warn(`[move-member] Failed to read file ${filePath}:`, error);
       return null;
     }
   }

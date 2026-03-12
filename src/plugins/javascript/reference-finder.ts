@@ -104,7 +104,8 @@ export class ReferenceFinder {
       this.astCache.set(hash, entry); // MemoryCache 自動處理 LRU 淘汰
 
       return entry;
-    } catch {
+    } catch (error) {
+      console.warn('[js/reference-finder] JS AST parse failed:', error);
       return null;
     }
   }

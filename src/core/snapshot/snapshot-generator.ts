@@ -236,12 +236,12 @@ export class SnapshotGenerator {
           const content = await this.fileSystem.readFile(filePath);
           const codeString = typeof content === 'string' ? content : content.toString('utf-8');
           contents.set(filePath, codeString);
-        } catch {
-          // 忽略單一檔案的讀取錯誤
+        } catch (error) {
+          console.warn('[snapshot] Skipping unreadable file/dir:', error);
         }
       }
-    } catch {
-      // 忽略目錄讀取錯誤
+    } catch (error) {
+      console.warn('[snapshot] Skipping unreadable file/dir:', error);
     }
 
     return contents;

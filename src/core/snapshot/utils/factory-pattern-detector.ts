@@ -46,12 +46,12 @@ export async function identifyFactoryPatterns(
             }
           }
         }
-      } catch {
-        // 忽略單一檔案的解析錯誤，繼續處理其他檔案
+      } catch (error) {
+        console.warn(`[snapshot] Pattern detection failed for ${filePath}:`, error);
       }
     }
-  } catch {
-    // 忽略目錄讀取錯誤，返回空 Map（fallback 到名稱比對）
+  } catch (error) {
+    console.warn(`[snapshot] Pattern detection failed for ${modulePath}:`, error);
   }
 
   return factoryMap;

@@ -267,7 +267,7 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
       return [];
     }
   } catch {
-    // 路徑不存在
+    // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
     return [];
   }
 
@@ -292,7 +292,7 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
         }
       }
     } catch {
-      // 忽略無法存取的目錄
+      // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
     }
   }
 

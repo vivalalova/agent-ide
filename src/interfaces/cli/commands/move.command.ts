@@ -159,7 +159,7 @@ async function handleMoveCommand(
       try {
         targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
       } catch {
-        // 目標不存在，視為檔案路徑
+        // graceful-degradation: 目標路徑不存在時視為檔案路徑
         targetIsDirectory = false;
       }
     }
@@ -302,6 +302,7 @@ async function handleGlobMoveCommand(
       try {
         targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
       } catch {
+        // graceful-degradation: 目標路徑不存在時視為檔案路徑
         targetIsDirectory = false;
       }
     }

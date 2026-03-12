@@ -112,7 +112,8 @@ export class ReferenceFinder {
       visit(sourceFile);
 
       return references;
-    } catch {
+    } catch (error) {
+      console.warn('[ts/reference-finder] Scoped reference finding failed:', error);
       // 解析失敗，返回 null 讓呼叫端 fallback 到手動過濾
       return null;
     }

@@ -66,7 +66,8 @@ export class PatternAnalyzer {
       ts.forEachChild(sourceFile, visit);
 
       return patterns;
-    } catch {
+    } catch (error) {
+      console.warn('[ts/pattern-analyzer] Pattern analysis failed:', error);
       // 解析失敗，返回 null 讓呼叫端 fallback 到名稱比對
       return null;
     }

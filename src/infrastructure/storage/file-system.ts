@@ -97,7 +97,7 @@ export class FileSystem implements IFileSystem {
       try {
         await fs.unlink(tempPath);
       } catch {
-        // 忽略清理錯誤
+        // graceful-degradation: 暫存檔案清理失敗不影響主流程錯誤傳播
       }
       throw error;
     }
@@ -236,6 +236,7 @@ export class FileSystem implements IFileSystem {
       await fs.access(targetPath);
       return true;
     } catch {
+      // graceful-degradation: fs.access 失敗等同於不存在
       return false;
     }
   }
@@ -276,6 +277,7 @@ export class FileSystem implements IFileSystem {
     try {
       return await this.getStats(targetPath);
     } catch {
+      // graceful-degradation: 明確設計為不拋錯的安全版本
       return null;
     }
   }
@@ -288,6 +290,7 @@ export class FileSystem implements IFileSystem {
       const stats = await this.getStats(targetPath);
       return stats.isFile;
     } catch {
+      // graceful-degradation: stat 失敗時保守回傳 false
       return false;
     }
   }
@@ -300,6 +303,7 @@ export class FileSystem implements IFileSystem {
       const stats = await this.getStats(targetPath);
       return stats.isDirectory;
     } catch {
+      // graceful-degradation: stat 失敗時保守回傳 false
       return false;
     }
   }

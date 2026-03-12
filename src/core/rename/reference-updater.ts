@@ -218,60 +218,55 @@ export class ReferenceUpdater {
   ): Promise<{ filePath: string; changes: TextChange[] }[]> {
     const fileChanges: { filePath: string; changes: TextChange[] }[] = [];
 
-    try {
-      // 找出所有可能包含引用的檔案
-      const referencingFiles = await this.findReferencingFiles(
-        symbol.name,
-        projectFiles
-      );
+    // 找出所有可能包含引用的檔案
+    const referencingFiles = await this.findReferencingFiles(
+      symbol.name,
+      projectFiles
+    );
 
-      // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
-      let filesToProcess: string[] = referencingFiles;
-      if (referencingFiles.length === 0 && symbol.location?.filePath) {
-        filesToProcess = [symbol.location.filePath];
-      }
-
-      for (const filePath of filesToProcess) {
-        // 跳過無效路徑
-        if (!filePath || typeof filePath !== 'string') {
-          continue;
-        }
-
-        // 使用作用域感知的方法查找引用
-        const references = await this.findSymbolReferencesWithSymbol(filePath, symbol);
-
-        // 如果沒有找到引用，檢查是否為符號定義所在檔案
-        if (references.length === 0) {
-          if (symbol.location?.filePath === filePath && symbol.location?.range) {
-            // 至少包含符號定義位置
-            fileChanges.push({
-              filePath,
-              changes: [{
-                range: symbol.location.range,
-                oldText: symbol.name,
-                newText: newName
-              }]
-            });
-          }
-          continue;
-        }
-
-        // 轉換為 TextChange（包含 context 資訊）
-        const changes: TextChange[] = references.map(ref => ({
-          range: ref.range,
-          oldText: symbol.name,
-          newText: newName,
-          context: ref.context
-        }));
-
-        fileChanges.push({ filePath, changes });
-      }
-
-      return fileChanges;
-    } catch (error) {
-      console.error('收集變更時發生錯誤:', error);
-      return [];
+    // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
+    let filesToProcess: string[] = referencingFiles;
+    if (referencingFiles.length === 0 && symbol.location?.filePath) {
+      filesToProcess = [symbol.location.filePath];
     }
+
+    for (const filePath of filesToProcess) {
+      // 跳過無效路徑
+      if (!filePath || typeof filePath !== 'string') {
+        continue;
+      }
+
+      // 使用作用域感知的方法查找引用
+      const references = await this.findSymbolReferencesWithSymbol(filePath, symbol);
+
+      // 如果沒有找到引用，檢查是否為符號定義所在檔案
+      if (references.length === 0) {
+        if (symbol.location?.filePath === filePath && symbol.location?.range) {
+          // 至少包含符號定義位置
+          fileChanges.push({
+            filePath,
+            changes: [{
+              range: symbol.location.range,
+              oldText: symbol.name,
+              newText: newName
+            }]
+          });
+        }
+        continue;
+      }
+
+      // 轉換為 TextChange（包含 context 資訊）
+      const changes: TextChange[] = references.map(ref => ({
+        range: ref.range,
+        oldText: symbol.name,
+        newText: newName,
+        context: ref.context
+      }));
+
+      fileChanges.push({ filePath, changes });
+    }
+
+    return fileChanges;
   }
 
   /**
@@ -313,7 +308,7 @@ export class ReferenceUpdater {
           return cached.content;
         }
       } catch {
-        // getStats 失敗，快取無效
+        // graceful-degradation: stat 失敗時快取視為過期，重新讀取
       }
     }
 
@@ -328,7 +323,7 @@ export class ReferenceUpdater {
         const stat = await this.fileSystem.getStats(filePath);
         this.fileCache.set(filePath, { content, modifiedTime: stat.modifiedTime });
       } catch {
-        // 無法取得 stat 時不快取（下次會重新讀取）
+        // graceful-degradation: 無法取得 stat 時不快取，下次會重新讀取
       }
     }
 
@@ -342,7 +337,8 @@ export class ReferenceUpdater {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       return content;
-    } catch {
+    } catch (error) {
+      console.warn(`[reference-updater] Failed to read file ${filePath}:`, error);
       return null;
     }
   }

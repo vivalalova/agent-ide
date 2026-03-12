@@ -60,8 +60,9 @@ export class CallSiteParser {
       };
 
       visit(sourceFile);
-    } catch {
+    } catch (error) {
       // AST 解析失敗，fallback 到正則匹配（保留向後相容）
+      console.warn(`[call-site-parser] AST parse failed for ${filePath}, using regex fallback:`, error);
       return this.findCallSitesInFileFallback(filePath, content, functionName);
     }
 

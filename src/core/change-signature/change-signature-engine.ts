@@ -89,7 +89,7 @@ export class ChangeSignatureEngine {
             break;
           }
         } catch {
-          // 忽略錯誤，繼續向上搜索
+          // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
         }
         searchDir = path.dirname(searchDir);
       }

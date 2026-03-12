@@ -99,8 +99,9 @@ export async function loadTsconfigPathConfig(
         }
       }
     }
-  } catch {
-    // tsconfig.json 不存在或解析失敗，使用空設定
+  } catch (error) {
+    // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
+    console.warn('[tsconfig-loader] Failed to load tsconfig.json:', error);
   }
 
   return config;

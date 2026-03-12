@@ -87,7 +87,8 @@ export class SymbolFinder {
         signature: this.extractSignature(content, symbol),
         documentation
       };
-    } catch {
+    } catch (error) {
+      console.warn(`[symbol-finder] Parse failed for ${filePath}:`, error);
       return null;
     }
   }
@@ -213,8 +214,9 @@ export class SymbolFinder {
                   context
                 });
               }
-            } catch {
+            } catch (error) {
               // Parser 失敗，降級到文字匹配
+              console.warn(`[symbol-finder] Parse failed for ${filePath}:`, error);
               const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
               const refs = results.get(key);
               if (refs) {refs.push(...textRefs);}
@@ -383,7 +385,8 @@ export class SymbolFinder {
 
       // 使用 CallSiteParser 查找呼叫點
       return this.callSiteParser.findCallSitesInFile(filePath, content, functionName);
-    } catch {
+    } catch (error) {
+      console.warn(`[symbol-finder] Parse failed for ${filePath}:`, error);
       return [];
     }
   }
@@ -431,7 +434,8 @@ export class SymbolFinder {
           modifiers: [...s.modifiers],
           valueType: undefined
         }));
-    } catch {
+    } catch (error) {
+      console.warn(`[symbol-finder] Parse failed for ${filePath}:`, error);
       return [];
     }
   }
@@ -569,8 +573,9 @@ export class SymbolFinder {
       const references = await parser.findReferences(ast, targetSymbol);
 
       return references.map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
-    } catch {
+    } catch (error) {
       // Parser 失敗，降級到文字匹配
+      console.warn(`[symbol-finder] Parse failed for ${filePath}:`, error);
       return useFiltered
         ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
         : this.textMatcher.findReferencesByText(filePath, content, symbolName);

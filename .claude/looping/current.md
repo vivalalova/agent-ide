@@ -1,24 +1,26 @@
 ---
-title: "文件: 統一更新 README / SKILL.md / CLAUDE.md"
-created: 2026-03-06
-priority: low
-suggested_order: Z99
+title: Silent Catch 全面清理（Fail-Fast 強制）
+created: 2026-03-12
+priority: critical
+suggested_order: A1
 phase: needs-commit
 iteration: 2
 max_iterations: 3
+review_iterations: 2
 ---
 
-# 文件: 統一更新 README / SKILL.md / CLAUDE.md
+# Silent Catch 全面清理（Fail-Fast 強制）
 
-在所有任務完成後，統一審閱並更新專案文件。
+全 `src/` 約 60+ 處空 catch，違反 CLAUDE.md Fail-Fast 原則。集中在 `index-engine.ts`（7 處）、`symbol-finder.ts`（12 處）、`move-engine.ts`（5 處）、`reference-updater.ts`（3 處）、`dead-code-remover.ts`（3 處）、`change-applicator.ts`（4 處）等。
+
+逐一審視：能 rethrow 的 rethrow、需 logging 的改結構化錯誤、確實需 graceful degradation 的加顯式註記。
 
 ## User Stories
 
-- As a user or contributor, I want all documentation to be accurate and consistent, so that I can trust the docs as a reference.
+- As a developer, I want all error handling to follow fail-fast principles, so that bugs surface immediately instead of being silently swallowed.
 
 ## 驗收條件
 
-- Given README.md, when reading module list, then it reflects the latest modules
-- Given plugins/skills/agent-ide/SKILL.md, when comparing to CLI capabilities, then content is consistent
-- Given CLAUDE.md, when checking all example paths and commands, then all are valid
-- Given SKILL.md content changes, when checking frontmatter description, then it is updated accordingly
+- Given all catch blocks in src/, when grepped with `grep -r "catch" src/`, then every catch block either rethrows, calls console.warn/error, or has `// graceful-degradation:` comment — zero bare `catch { }` or `catch { return null/[]/undefined }`
+- Given a parse error in symbol-finder, when processing an unparseable file, then console.warn is called with file path and error message before regex fallback
+- Given `pnpm test`, when executed, then all tests still pass after changes

@@ -278,6 +278,7 @@ export function matchesAnyPattern(filePath: string, patterns: readonly string[])
 
       return false;
     } catch {
+      // graceful-degradation: 無效 glob pattern 視為不匹配
       return false;
     }
   });

@@ -131,7 +131,7 @@ export class PathResolver {
                 };
               }
             } catch {
-              // 繼續嘗試
+              // graceful-degradation: 路徑不存在，繼續嘗試其他選項
             }
           }
         } else {
@@ -144,7 +144,7 @@ export class PathResolver {
         }
       }
     } catch {
-      // 繼續嘗試副檔名
+      // graceful-degradation: 路徑不存在，繼續嘗試其他選項
     }
 
     // 嘗試常見的副檔名
@@ -157,7 +157,7 @@ export class PathResolver {
           break;
         }
       } catch {
-        // 繼續嘗試下個副檔名
+        // graceful-degradation: 路徑不存在，繼續嘗試其他選項
       }
     }
 
@@ -172,7 +172,7 @@ export class PathResolver {
             break;
           }
         } catch {
-          // 繼續嘗試
+          // graceful-degradation: 路徑不存在，繼續嘗試其他選項
         }
       }
     }

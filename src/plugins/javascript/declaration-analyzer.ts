@@ -57,7 +57,8 @@ export class DeclarationAnalyzer {
       const ast = babelParse(code, options);
       this.astCache.set(hash, ast); // MemoryCache 自動處理 LRU 淘汰
       return ast;
-    } catch {
+    } catch (error) {
+      console.warn('[js/declaration-analyzer] Parse failed:', error);
       return null;
     }
   }
@@ -181,7 +182,8 @@ export class DeclarationAnalyzer {
           offset: node.end ?? 0
         }
       };
-    } catch {
+    } catch (error) {
+      console.warn('[js/declaration-analyzer] Parse failed:', error);
       return null;
     }
   }
