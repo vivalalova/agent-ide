@@ -379,7 +379,7 @@ export interface TypeScriptASTExtension extends AST {
  * @returns true 如果 ast 有 tsSourceFile 屬性
  */
 export function hasTypeScriptSourceFile(ast: AST): ast is TypeScriptASTExtension {
-  return 'tsSourceFile' in ast && ast.tsSourceFile != null;
+  return 'tsSourceFile' in ast && ast.tsSourceFile !== null && ast.tsSourceFile !== undefined;
 }
 
 /**
@@ -393,3 +393,19 @@ export function getTypeScriptSourceFile(ast: AST): ts.SourceFile | null {
   }
   return null;
 }
+
+/**
+ * 包含 Babel AST 的 AST 擴展介面
+ */
+export interface BabelASTExtension extends AST {
+  readonly babelAST: import('@babel/parser').ParseResult<import('@babel/types').File>;
+  readonly sourceCode: string;
+}
+
+/**
+ * 檢查 AST 是否包含 Babel AST
+ */
+export function hasBabelAST(ast: AST): ast is BabelASTExtension {
+  return 'babelAST' in ast && ast.babelAST !== null && ast.babelAST !== undefined;
+}
+

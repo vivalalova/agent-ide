@@ -106,8 +106,13 @@ async function handleCallHierarchyCommand(
       r => r.symbol.type === 'function' || r.symbol.type === 'variable'
     );
 
+    // 優先選取 function 類型（排除 import specifier 等 variable 型別），
+    // 若無 function 類型則以 variable 為後備（arrow function 場景）
+    const purelyFunctionSymbols = functionSymbols.filter(r => r.symbol.type === 'function');
+    const preferredSymbols = purelyFunctionSymbols.length > 0 ? purelyFunctionSymbols : functionSymbols;
+
     // 若無函數類型，回退到所有結果
-    const matchedSymbols = functionSymbols.length > 0 ? functionSymbols : symbolResults;
+    const matchedSymbols = preferredSymbols.length > 0 ? preferredSymbols : symbolResults;
 
     // 函數找不到的情況
     if (matchedSymbols.length === 0) {

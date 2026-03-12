@@ -4,11 +4,13 @@
  */
 
 import * as ts from 'typescript';
+import * as babel from '@babel/types';
+import babelTraverse from '@babel/traverse';
 import type { Range } from '@shared/types/core.js';
 import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { getTypeScriptSourceFile } from '@infrastructure/parser/index.js';
+import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
 import type {
@@ -17,6 +19,8 @@ import type {
   IncomingCall,
   OutgoingCall,
 } from './types.js';
+
+const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
 /**
  * Call Hierarchy Analyzer
@@ -232,6 +236,9 @@ export class CallHierarchyAnalyzer {
       const sourceFile = getTypeScriptSourceFile(ast);
 
       if (!sourceFile) {
+        if (hasBabelAST(ast)) {
+          return this.findOutgoingCallsFromBabel(ast.babelAST, ast.sourceCode, functionName, filePath, visited);
+        }
         return outgoing;
       }
 
@@ -274,6 +281,112 @@ export class CallHierarchyAnalyzer {
     } catch (error) {
       console.warn('[call-hierarchy] AST parse failed:', error);
     }
+
+    return outgoing;
+  }
+
+  /**
+   * 使用 Babel AST 找出 outgoing 呼叫（JS 檔案）
+   */
+  private findOutgoingCallsFromBabel(
+    babelAst: import('@babel/parser').ParseResult<babel.File>,
+    sourceCode: string,
+    functionName: string,
+    filePath: string,
+    visited: Set<string>
+  ): OutgoingCall[] {
+    const outgoing: OutgoingCall[] = [];
+    const lines = sourceCode.split('\n');
+
+    // 找到目標函式節點範圍（用於後續判斷是否在函式內）
+    let targetFunctionPath: import('@babel/traverse').NodePath | null = null;
+
+    traverse(babelAst, {
+      FunctionDeclaration(path) {
+        if (path.node.id?.name === functionName) {
+          targetFunctionPath = path;
+          path.stop();
+        }
+      },
+      ArrowFunctionExpression(path) {
+        const parent = path.parent;
+        if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
+          targetFunctionPath = path;
+          path.stop();
+        }
+      },
+      FunctionExpression(path) {
+        const parent = path.parent;
+        if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
+          targetFunctionPath = path;
+          path.stop();
+        }
+      },
+      ObjectMethod(path) {
+        if (babel.isIdentifier(path.node.key) && path.node.key.name === functionName) {
+          targetFunctionPath = path;
+          path.stop();
+        }
+      },
+      ClassMethod(path) {
+        if (babel.isIdentifier(path.node.key) && path.node.key.name === functionName) {
+          targetFunctionPath = path;
+          path.stop();
+        }
+      },
+    });
+
+    if (!targetFunctionPath) {
+      return outgoing;
+    }
+
+    // 在目標函式內找所有 CallExpression
+    (targetFunctionPath as import('@babel/traverse').NodePath).traverse({
+      CallExpression(callPath) {
+        const node = callPath.node;
+        const expr = node.callee;
+        let callee: string;
+        let isMethodCall = false;
+        let receiver: string | undefined;
+
+        if (babel.isIdentifier(expr)) {
+          callee = expr.name;
+        } else if (babel.isMemberExpression(expr) && !expr.computed && babel.isIdentifier(expr.property)) {
+          callee = expr.property.name;
+          isMethodCall = true;
+          if (babel.isIdentifier(expr.object)) {
+            receiver = expr.object.name;
+          }
+        } else {
+          return;
+        }
+
+        const loc = node.loc;
+        if (!loc) { return; }
+
+        const line = loc.start.line; // 1-based
+        const column = loc.start.column + 1; // 轉為 1-based
+        const key = `${callee}:${line}:${column}`;
+        if (visited.has(key)) { return; }
+        visited.add(key);
+
+        const lineText = lines[line - 1] || '';
+
+        outgoing.push({
+          callee,
+          location: {
+            filePath,
+            range: {
+              start: { line, column },
+              end: { line, column: column + callee.length }
+            }
+          },
+          context: lineText.trim(),
+          isMethodCall,
+          receiver
+        });
+      }
+    });
 
     return outgoing;
   }
@@ -391,6 +504,9 @@ export class CallHierarchyAnalyzer {
       const sourceFile = getTypeScriptSourceFile(ast);
 
       if (!sourceFile) {
+        if (hasBabelAST(ast)) {
+          return this.findEnclosingFunctionsFromBabel(ast.babelAST, ast.sourceCode, lines, filePath);
+        }
         return results;
       }
 
@@ -456,6 +572,82 @@ export class CallHierarchyAnalyzer {
         }
       })
     );
+
+    return results;
+  }
+
+  /**
+   * 使用 Babel AST 批次找出多個行號所在的外層函數（JS 檔案）
+   */
+  private findEnclosingFunctionsFromBabel(
+    babelAst: import('@babel/parser').ParseResult<babel.File>,
+    _sourceCode: string,
+    queryLines: readonly number[],
+    filePath: string
+  ): Map<number, { name: string; file: string }> {
+    const results = new Map<number, { name: string; file: string }>();
+
+    if (queryLines.length === 0) {
+      return results;
+    }
+
+    // 單次遍歷收集所有函數範圍
+    type FuncRange = { name: string; startLine: number; endLine: number };
+    const funcRanges: FuncRange[] = [];
+
+    traverse(babelAst, {
+      FunctionDeclaration(path) {
+        const loc = path.node.loc;
+        if (!loc || !path.node.id) { return; }
+        funcRanges.push({ name: path.node.id.name, startLine: loc.start.line, endLine: loc.end.line });
+      },
+      ArrowFunctionExpression(path) {
+        const loc = path.node.loc;
+        if (!loc) { return; }
+        const parent = path.parent;
+        if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id)) {
+          funcRanges.push({ name: parent.id.name, startLine: loc.start.line, endLine: loc.end.line });
+        }
+      },
+      FunctionExpression(path) {
+        const loc = path.node.loc;
+        if (!loc) { return; }
+        const parent = path.parent;
+        if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id)) {
+          funcRanges.push({ name: parent.id.name, startLine: loc.start.line, endLine: loc.end.line });
+        }
+      },
+      ObjectMethod(path) {
+        const loc = path.node.loc;
+        if (!loc || !babel.isIdentifier(path.node.key)) { return; }
+        funcRanges.push({ name: path.node.key.name, startLine: loc.start.line, endLine: loc.end.line });
+      },
+      ClassMethod(path) {
+        const loc = path.node.loc;
+        if (!loc || !babel.isIdentifier(path.node.key)) { return; }
+        funcRanges.push({ name: path.node.key.name, startLine: loc.start.line, endLine: loc.end.line });
+      },
+    });
+
+    // 對每個查詢行找最小的 enclosing function
+    for (const queryLine of new Set(queryLines)) {
+      let enclosingName: string | null = null;
+      let smallestRange = Infinity;
+
+      for (const { name, startLine, endLine } of funcRanges) {
+        if (queryLine >= startLine && queryLine <= endLine) {
+          const range = endLine - startLine;
+          if (range < smallestRange) {
+            smallestRange = range;
+            enclosingName = name;
+          }
+        }
+      }
+
+      if (enclosingName) {
+        results.set(queryLine, { name: enclosingName, file: filePath });
+      }
+    }
 
     return results;
   }
