@@ -1,26 +1,26 @@
 ---
-title: call-hierarchy JS 語言支援
+title: JS E2E 測試補全（4 命令）
 created: 2026-03-12
 priority: high
-suggested_order: A2
+suggested_order: T1
 phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 1
+review_iterations: 3
 ---
 
-# call-hierarchy JS 語言支援
+# JS E2E 測試補全（4 命令）
 
-`CallHierarchyAnalyzer` 直接 `import * as ts from 'typescript'` 並使用 `getTypeScriptSourceFile`，硬依賴 TypeScript AST。對 `.js` 檔案無法運作且無明確錯誤訊息。
-
-需 (1) 將 TS 硬依賴抽象化，透過 ParserRegistry 取得 AST (2) 加入 JS 支援或至少回報清楚的「不支援 JS」錯誤 (3) 補 JS E2E 測試。
+`tests/e2e/commands/javascript/` 缺少 `call-hierarchy`、`change-signature`、`move-member`、`snapshot` 四個命令的 E2E 測試。應參照 TS 端對等測試模式，使用 `tests/fixtures/js-project` 或建立新 JS fixture。
 
 ## User Stories
 
-- As an agent using call-hierarchy on a JS project, I want clear error messages or working results, so that I don't get silent failures.
+- As a maintainer, I want E2E test coverage for all commands in JS environment, so that JS support regressions are caught immediately.
 
 ## 驗收條件
 
-- Given a JS project, when running `call-hierarchy`, then either returns correct results or clear unsupported error
-- Given a TS project, when running `call-hierarchy`, then behavior unchanged (no regression)
-- Given JS E2E test, when executed, then validates JS behavior
+- Given js-project fixture, when running call-hierarchy E2E, then test passes (or validates error if JS unsupported)
+- Given js-project fixture, when running change-signature E2E, then test passes
+- Given js-project fixture, when running move-member E2E, then test passes
+- Given js-project fixture, when running snapshot E2E, then test passes
+- Given `pnpm test:e2e`, when executed, then all new JS tests pass
