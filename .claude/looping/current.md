@@ -3,7 +3,7 @@ title: Silent Catch 全面清理（Fail-Fast 強制）
 created: 2026-03-12
 priority: critical
 suggested_order: A1
-phase: needs-commit
+phase: completed
 iteration: 2
 max_iterations: 3
 review_iterations: 2
