@@ -1,26 +1,26 @@
 ---
-title: JS E2E 測試補全（4 命令）
+title: ReferenceFinderEngine Dead Code 清理
 created: 2026-03-12
-priority: high
-suggested_order: T1
+priority: medium
+suggested_order: B1
 phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 3
+review_iterations: 1
 ---
 
-# JS E2E 測試補全（4 命令）
+# ReferenceFinderEngine Dead Code 清理
 
-`tests/e2e/commands/javascript/` 缺少 `call-hierarchy`、`change-signature`、`move-member`、`snapshot` 四個命令的 E2E 測試。應參照 TS 端對等測試模式，使用 `tests/fixtures/js-project` 或建立新 JS fixture。
+`src/core/find-references/reference-finder-engine.ts` 的 `ReferenceFinderEngine` 是 `SymbolFinder` 的薄包裝，零使用者 — CLI 直接用 `IndexEngine` + `SymbolFinder`。僅 barrel export。
+
+依 universal.md #4 移除 `ReferenceFinderEngine`、`createReferenceFinderEngine` 及 barrel export。
 
 ## User Stories
 
-- As a maintainer, I want E2E test coverage for all commands in JS environment, so that JS support regressions are caught immediately.
+- As a developer, I want dead code removed, so that the codebase stays lean and doesn't confuse maintainers.
 
 ## 驗收條件
 
-- Given js-project fixture, when running call-hierarchy E2E, then test passes (or validates error if JS unsupported)
-- Given js-project fixture, when running change-signature E2E, then test passes
-- Given js-project fixture, when running move-member E2E, then test passes
-- Given js-project fixture, when running snapshot E2E, then test passes
-- Given `pnpm test:e2e`, when executed, then all new JS tests pass
+- Given src/, when grepping ReferenceFinderEngine, then no references found
+- Given find-references/index.ts, when checked, then no dead exports
+- Given `pnpm build && pnpm test`, when executed, then all pass
