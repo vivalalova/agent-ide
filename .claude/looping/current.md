@@ -1,26 +1,26 @@
 ---
-title: Silent Catch 全面清理（Fail-Fast 強制）
+title: call-hierarchy JS 語言支援
 created: 2026-03-12
-priority: critical
-suggested_order: A1
-phase: completed
+priority: high
+suggested_order: A2
+phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 2
+review_iterations: 1
 ---
 
-# Silent Catch 全面清理（Fail-Fast 強制）
+# call-hierarchy JS 語言支援
 
-全 `src/` 約 60+ 處空 catch，違反 CLAUDE.md Fail-Fast 原則。集中在 `index-engine.ts`（7 處）、`symbol-finder.ts`（12 處）、`move-engine.ts`（5 處）、`reference-updater.ts`（3 處）、`dead-code-remover.ts`（3 處）、`change-applicator.ts`（4 處）等。
+`CallHierarchyAnalyzer` 直接 `import * as ts from 'typescript'` 並使用 `getTypeScriptSourceFile`，硬依賴 TypeScript AST。對 `.js` 檔案無法運作且無明確錯誤訊息。
 
-逐一審視：能 rethrow 的 rethrow、需 logging 的改結構化錯誤、確實需 graceful degradation 的加顯式註記。
+需 (1) 將 TS 硬依賴抽象化，透過 ParserRegistry 取得 AST (2) 加入 JS 支援或至少回報清楚的「不支援 JS」錯誤 (3) 補 JS E2E 測試。
 
 ## User Stories
 
-- As a developer, I want all error handling to follow fail-fast principles, so that bugs surface immediately instead of being silently swallowed.
+- As an agent using call-hierarchy on a JS project, I want clear error messages or working results, so that I don't get silent failures.
 
 ## 驗收條件
 
-- Given all catch blocks in src/, when grepped with `grep -r "catch" src/`, then every catch block either rethrows, calls console.warn/error, or has `// graceful-degradation:` comment — zero bare `catch { }` or `catch { return null/[]/undefined }`
-- Given a parse error in symbol-finder, when processing an unparseable file, then console.warn is called with file path and error message before regex fallback
-- Given `pnpm test`, when executed, then all tests still pass after changes
+- Given a JS project, when running `call-hierarchy`, then either returns correct results or clear unsupported error
+- Given a TS project, when running `call-hierarchy`, then behavior unchanged (no regression)
+- Given JS E2E test, when executed, then validates JS behavior
