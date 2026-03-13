@@ -18,6 +18,7 @@ import {
   setupFindReferencesCommand,
   setupCallHierarchyCommand,
   setupDeadCodeCommand,
+  setupSearchCommand,
   type CommandContext
 } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
@@ -137,6 +138,7 @@ export class AgentIdeCLI {
     setupFindReferencesCommand(this.program, context);
     setupCallHierarchyCommand(this.program, context);
     setupDeadCodeCommand(this.program, context);
+    setupSearchCommand(this.program, context);
   }
 
   /**

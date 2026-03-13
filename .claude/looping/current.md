@@ -1,27 +1,27 @@
 ---
-title: tsconfig 嚴格度提升（noUnusedLocals / noUnusedParameters）
+title: search 命令實作
 created: 2026-03-12
 priority: medium
-suggested_order: B3
-blockedBy: b1-reference-finder-engine-cleanup, a1-silent-catch-cleanup
+suggested_order: B6
 phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 1
+review_iterations: 2
 ---
 
-# tsconfig 嚴格度提升
+# search 命令實作
 
-`tsconfig.json` 中 `noUnusedLocals: false` 和 `noUnusedParameters: false`，與 universal.md #4 衝突。ESLint `@typescript-eslint/no-unused-vars` 僅 `warn`。
+`QueryCommand.Search`、`SearchResult`、`SearchFormatter` 基礎設施已存在，但無 CLI command 實作、無 core engine。`IndexEngine` 已有 `findSymbol()` 和 `SymbolIndex.search()` 可利用。
 
-應 (1) 掃描修復所有 unused code (2) tsconfig 設為 true (3) ESLint rule 從 warn 改 error。
+應 (1) 建立 `src/core/search/` 或在 CLI 層利用 IndexEngine (2) 實作 `search.command.ts` (3) 連接已有 formatter (4) 補 E2E 測試。
 
 ## User Stories
 
-- As a developer, I want the compiler to catch unused code, so that dead code doesn't accumulate.
+- As an AI agent, I want a `search` command to find symbols across the project, so that I can quickly locate code without external tools.
 
 ## 驗收條件
 
-- Given tsconfig.json, when checked, then noUnusedLocals and noUnusedParameters are true
-- Given `pnpm typecheck`, when executed, then passes with no unused errors
-- Given `pnpm lint`, when executed, then no-unused-vars is error level
+- Given `agent-ide search <symbol> --path <path>`, when executed, then returns matching symbols
+- Given --format json, when used, then outputs structured JSON
+- Given --format summary, when used, then outputs human-readable summary
+- Given E2E test, when executed, then validates search functionality

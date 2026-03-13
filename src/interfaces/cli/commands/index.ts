@@ -16,3 +16,4 @@ export { setupSnapshotCommand } from './snapshot.command.js';
 export { setupFindReferencesCommand } from './find-references.command.js';
 export { setupCallHierarchyCommand } from './call-hierarchy.command.js';
 export { setupDeadCodeCommand } from './deadcode.command.js';
+export { setupSearchCommand } from './search.command.js';
