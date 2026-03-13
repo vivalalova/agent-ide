@@ -25,15 +25,6 @@ export { generatePreviewResult } from './diff-generator.js';
 
 export { PreviewFormatter, createPreviewFormatter } from './preview-formatter.js';
 
-export {
-  convertRenamePreview,
-  convertMovePreview,
-  convertShiftPreview,
-  convertRefactorPreview,
-  type RenamePreviewOptions,
-  type RefactorPreviewOptions
-} from './preview-converter.js';
-
 // ========== Query（唯讀類命令）==========
 export {
   QueryCommand,

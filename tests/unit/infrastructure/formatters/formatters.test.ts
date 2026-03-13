@@ -707,6 +707,31 @@ describe('QueryFormatter', () => {
       expect(summary).toContain('... 還有 5 個');
     });
 
+    it('應該顯示 variable、interface、type 及未知型別的圖示', () => {
+      const result: DeadCodeResult = {
+        command: QueryCommand.Analyze,
+        analyzeType: AnalyzeType.DeadCode,
+        success: true,
+        items: [
+          { name: 'unusedVar', type: 'variable', file: '/src/a.ts', line: 1, column: 1, reason: '未使用' },
+          { name: 'MyInterface', type: 'interface', file: '/src/b.ts', line: 1, column: 1, reason: '未使用' },
+          { name: 'MyType', type: 'type', file: '/src/c.ts', line: 1, column: 1, reason: '未使用' },
+          { name: 'unknown', type: 'enum' as 'variable', file: '/src/d.ts', line: 1, column: 1, reason: '未使用' }
+        ],
+        byType: { variable: 1, interface: 1, type: 1, enum: 1 },
+        filesAffected: 4,
+        scanTime: 50,
+        summary: { totalScanned: 50 }
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📌'); // variable
+      expect(summary).toContain('📋'); // interface
+      expect(summary).toContain('🏷️'); // type
+      expect(summary).toContain('💀'); // default/unknown
+    });
+
     it('應該顯示跳過檔案警告', () => {
       const result: DeadCodeResult = {
         command: QueryCommand.Analyze,
@@ -1220,6 +1245,24 @@ describe('QueryFormatter', () => {
         definition: { file: 'src/test.ts', line: 1, column: 1 },
         references: [
           { file: 'src/caller.ts', line: 5, type: 'usage', context: 'usage' }
+        ]
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('📞');
+    });
+
+    it('應該為未知類型返回預設 📞 圖示', () => {
+      const result: FindReferencesResult = {
+        command: QueryCommand.FindReferences,
+        success: true,
+        summary: {},
+        symbol: 'testFunc',
+        type: 'function',
+        definition: { file: 'src/test.ts', line: 1, column: 1 },
+        references: [
+          { file: 'src/caller.ts', line: 5, type: 'unknown-type' as 'usage', context: 'some ref' }
         ]
       };
 

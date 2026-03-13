@@ -490,3 +490,21 @@ describe('isValidationError', () => {
     expect(isValidationError(new BaseError('TEST', 'test'))).toBe(false);
   });
 });
+
+// ========== getErrorMessage ==========
+
+import { getErrorMessage } from '@shared/errors/error-utils.js';
+
+describe('getErrorMessage', () => {
+  it('應該從 Error 實例取得 message', () => {
+    const err = new Error('something went wrong');
+    expect(getErrorMessage(err)).toBe('something went wrong');
+  });
+
+  it('應該將非 Error 物件轉為字串', () => {
+    expect(getErrorMessage('plain string')).toBe('plain string');
+    expect(getErrorMessage(42)).toBe('42');
+    expect(getErrorMessage(null)).toBe('null');
+    expect(getErrorMessage({ code: 'ERR' })).toBe('[object Object]');
+  });
+});

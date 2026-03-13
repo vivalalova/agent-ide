@@ -220,6 +220,41 @@ describe('ChangesetBuilder', () => {
     });
   });
 
+  // MARK: - 重複檔案操作警告
+
+  describe('重複檔案操作警告', () => {
+    it('addFileCreate 重複操作時應新增警告', () => {
+      const changeset = createChangesetBuilder()
+        .addFileCreate('/dup/file.ts', 'first')
+        .addFileCreate('/dup/file.ts', 'second')
+        .build();
+
+      expect(changeset.warnings).toBeDefined();
+      expect(changeset.warnings![0]).toContain('/dup/file.ts');
+      expect(changeset.fileOperations).toHaveLength(2);
+    });
+
+    it('addFileDelete 重複操作時應新增警告', () => {
+      const changeset = createChangesetBuilder()
+        .addFileDelete('/dup/del.ts')
+        .addFileDelete('/dup/del.ts')
+        .build();
+
+      expect(changeset.warnings).toBeDefined();
+      expect(changeset.warnings![0]).toContain('/dup/del.ts');
+    });
+
+    it('addFileMove 重複 sourcePath 時應新增警告', () => {
+      const changeset = createChangesetBuilder()
+        .addFileMove('/dup/src.ts', '/dest1.ts')
+        .addFileMove('/dup/src.ts', '/dest2.ts')
+        .build();
+
+      expect(changeset.warnings).toBeDefined();
+      expect(changeset.warnings![0]).toContain('/dup/src.ts');
+    });
+  });
+
   // MARK: - addFileCreate
 
   describe('addFileCreate', () => {
