@@ -258,6 +258,17 @@ export class FileIndex {
   }
 
   /**
+   * 從已還原的 entries 水合索引（用於快取載入）
+   */
+  hydrateEntries(entries: Map<string, FileIndexEntry>): void {
+    this.fileEntries.clear();
+    for (const [key, value] of entries) {
+      this.fileEntries.set(key, value);
+    }
+    this.lastUpdated = new Date();
+  }
+
+  /**
    * 估算索引項目的記憶體大小
    */
   private estimateEntrySize(entry: FileIndexEntry): number {

@@ -4,7 +4,8 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS, createSearchOptions } from '@core/foundations/indexing/index.js';
+import { CLI_INDEX_DEFAULTS, createSearchOptions } from '@core/foundations/indexing/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
   QueryCommand,
   type SearchResult,
@@ -42,8 +43,8 @@ export function setupSearchCommand(program: Command, context: CommandContext): v
     .option('--no-fuzzy', '使用精確匹配（預設為模糊匹配）')
     .option('--max-results <n>', '最大結果數', '100')
     .option('--type <type>', '過濾符號類型 (class|function|interface|variable|constant|type|enum)')
-    .action(async (symbol: string, options: SearchOptions) => {
-      await handleSearchCommand(symbol, options, context);
+    .action(async (symbol: string, options: SearchOptions, command: Command) => {
+      await handleSearchCommand(symbol, options, context, command);
     });
 }
 
@@ -53,7 +54,8 @@ export function setupSearchCommand(program: Command, context: CommandContext): v
 async function handleSearchCommand(
   symbolName: string,
   options: SearchOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -81,11 +83,18 @@ async function handleSearchCommand(
   const maxResults = parsedMax;
 
   const projectPath = options.path;
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
+
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   try {
-    await indexEngine.indexProject(projectPath);
 
     const startTime = Date.now();
 

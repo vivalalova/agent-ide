@@ -4,7 +4,8 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { IndexEngine, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,
@@ -42,8 +43,8 @@ export function setupDeadCodeCommand(program: Command, context: CommandContext):
     .option('--include-public-members', '包含 public class members（預設排除）', false)
     .option('--dry-run', '預覽變更而不執行')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
-    .action(async (options: DeadCodeOptions) => {
-      await handleDeadCodeCommand(options, context);
+    .action(async (options: DeadCodeOptions, command: Command) => {
+      await handleDeadCodeCommand(options, context, command);
     });
 }
 
@@ -75,7 +76,8 @@ async function runDeadCodeDetection(
  */
 async function handleDeadCodeCommand(
   options: DeadCodeOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -100,15 +102,19 @@ async function handleDeadCodeCommand(
     return;
   }
 
-  // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
+
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   const parserRegistry = ParserRegistry.getInstance();
 
   try {
-    // 索引專案
-    await indexEngine.indexProject(projectPath);
 
     // 1. 執行 dead code 檢測
     const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);

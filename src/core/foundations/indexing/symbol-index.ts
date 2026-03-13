@@ -6,6 +6,7 @@
 import type { Symbol, Scope, SymbolType } from '@shared/types/index.js';
 import type {
   FileInfo,
+  FileIndexEntry,
   SymbolIndexEntry,
   SymbolSearchResult,
   SearchOptions
@@ -325,6 +326,33 @@ export class SymbolIndex {
     this.symbolsByType.clear();
     this.symbolsByFile.clear();
     this.symbolsByScope.clear();
+    this.lastUpdated = new Date();
+  }
+
+  /**
+   * 從 FileIndexEntry map 水合符號索引（用於快取載入）
+   * O(n) 重建，不需重新 parse 檔案
+   */
+  hydrateFromFileEntries(fileEntries: Map<string, FileIndexEntry>): void {
+    this.symbolsByName.clear();
+    this.symbolsByType.clear();
+    this.symbolsByFile.clear();
+    this.symbolsByScope.clear();
+
+    for (const entry of fileEntries.values()) {
+      if (!entry.isIndexed) {
+        continue;
+      }
+      for (const symbol of entry.symbols) {
+        const indexEntry: SymbolIndexEntry = {
+          symbol,
+          fileInfo: entry.fileInfo,
+          dependencies: []
+        };
+        this.addToIndex(indexEntry);
+      }
+    }
+
     this.lastUpdated = new Date();
   }
 

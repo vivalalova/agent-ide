@@ -4,7 +4,8 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   createCallHierarchyAnalyzer,
@@ -45,8 +46,8 @@ export function setupCallHierarchyCommand(program: Command, context: CommandCont
     .option('-d, --direction <direction>', '分析方向: incoming, outgoing, both', 'both')
     .option('--depth <n>', '遞迴深度（1-10）', '1')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
-    .action(async (functionName: string, options: CallHierarchyCommandOptions) => {
-      await handleCallHierarchyCommand(functionName, options, context);
+    .action(async (functionName: string, options: CallHierarchyCommandOptions, command: Command) => {
+      await handleCallHierarchyCommand(functionName, options, context, command);
     });
 }
 
@@ -56,7 +57,8 @@ export function setupCallHierarchyCommand(program: Command, context: CommandCont
 async function handleCallHierarchyCommand(
   functionName: string,
   options: CallHierarchyCommandOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -87,13 +89,17 @@ async function handleCallHierarchyCommand(
 
   const projectPath = options.path || process.cwd();
 
-  // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
 
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   try {
-    await indexEngine.indexProject(projectPath);
 
     const indexedFiles = indexEngine.getAllIndexedFiles();
     const filePaths = indexedFiles.map(f => f.filePath);

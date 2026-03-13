@@ -1,0 +1,79 @@
+/**
+ * createAndIndexWithCache
+ * 建立 IndexEngine 並嘗試從磁碟快取載入（hit 時跳過 indexProject）
+ */
+
+import { createHash } from 'crypto';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
+import {
+  IndexEngine,
+  createIndexConfig,
+  type IndexConfig
+} from '@core/foundations/indexing/index.js';
+import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
+
+/** createAndIndexWithCache 選項 */
+export interface CacheOptions {
+  /** 是否停用快取（不讀不寫） */
+  noCache: boolean;
+  /** 覆寫快取目錄（預設 ~/.cache/agent-ide/<hash>） */
+  cacheDir?: string;
+}
+
+/**
+ * 建立並索引 IndexEngine，支援磁碟持久化快取
+ *
+ * 流程：
+ * 1. 建立 IndexEngine
+ * 2. noCache → 直接 indexProject
+ * 3. 計算 cache key → 嘗試載入快取
+ * 4. hit → hydrate（跳過 indexProject）
+ * 5. miss → indexProject → save cache
+ */
+export async function createAndIndexWithCache(
+  projectPath: string,
+  fileSystem: IFileSystem,
+  configDefaults: Partial<IndexConfig>,
+  options: CacheOptions
+): Promise<IndexEngine> {
+  const indexConfig = createIndexConfig(projectPath, configDefaults);
+  const indexEngine = new IndexEngine(indexConfig, fileSystem);
+
+  // 測試環境自動 noCache（避免污染 ~/.cache）
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  const effectiveNoCache = options.noCache || isTestEnv;
+
+  if (effectiveNoCache) {
+    await indexEngine.indexProject(projectPath);
+    return indexEngine;
+  }
+
+  // configDefaults hash（前 8 碼），不同命令設定不同快取目錄隔離
+  const configKey = createHash('sha256')
+    .update(JSON.stringify(Object.fromEntries(Object.entries(configDefaults).sort())))
+    .digest('hex')
+    .slice(0, 8);
+
+  const diskCache = new IndexDiskCache(projectPath, configKey, options.cacheDir);
+
+  // 計算當前 cache key
+  const currentKey = await diskCache.computeCacheKey(projectPath, fileSystem);
+
+  // 嘗試載入快取
+  const cached = await diskCache.load();
+
+  if (cached && cached.cacheKey === currentKey) {
+    // cache hit → hydrate（跳過 indexProject）
+    const hydrated = diskCache.hydrateEngine(indexEngine, cached);
+    if (hydrated) {
+      return indexEngine;
+    }
+    // hydrate 失敗 → fallthrough 重新 index
+  }
+
+  // cache miss 或 hydrate 失敗 → 完整索引 + 儲存快取
+  await indexEngine.indexProject(projectPath);
+  await diskCache.save(indexEngine, currentKey);
+
+  return indexEngine;
+}

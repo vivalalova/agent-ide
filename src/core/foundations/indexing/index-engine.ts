@@ -19,6 +19,7 @@ import type {
   IndexConfig,
   IndexStats,
   FileInfo,
+  FileIndexEntry,
   SymbolSearchResult,
   SearchOptions,
   BatchIndexOptions
@@ -718,6 +719,25 @@ export class IndexEngine {
    */
   async getFileSymbols(filePath: string): Promise<readonly Symbol[]> {
     return await this.symbolIndex.getFileSymbols(filePath);
+  }
+
+  /**
+   * 取得當前 fileIndex 的快照（用於快取儲存）
+   */
+  snapshot(): { fileEntries: Map<string, FileIndexEntry> } {
+    // 複製一份，避免外部修改影響內部狀態
+    return {
+      fileEntries: new Map(this.fileIndex.getAllEntries())
+    };
+  }
+
+  /**
+   * 從快取資料水合引擎（跳過 indexProject）
+   */
+  hydrate(fileEntries: Map<string, FileIndexEntry>): void {
+    this.fileIndex.hydrateEntries(fileEntries);
+    this.symbolIndex.hydrateFromFileEntries(fileEntries);
+    this._indexed = true;
   }
 
   /**

@@ -5,8 +5,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { IndexEngine } from '@core/foundations/indexing/index-engine.js';
-import { createIndexConfig } from '@core/foundations/indexing/types.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
@@ -44,15 +43,15 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
     .option('-a, --at <location>', '指定符號位置 (file:line:column)，用於區分同名符號')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
-    .action(async (options: RenameOptions) => {
-      await handleRenameCommand(options, context);
+    .action(async (options: RenameOptions, command: Command) => {
+      await handleRenameCommand(options, context, command);
     });
 }
 
 /**
  * 處理 rename 命令
  */
-async function handleRenameCommand(options: RenameOptions, context: CommandContext): Promise<void> {
+async function handleRenameCommand(options: RenameOptions, context: CommandContext, command: Command): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
   // 解析輸出格式
@@ -114,15 +113,20 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       }
     }
 
-    // 初始化索引引擎（每次都重新索引以確保資料是最新的）
-    const config = createIndexConfig(workspacePath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
-      excludePatterns: ['node_modules/**', '*.test.*']
-    });
-    const indexEngine = new IndexEngine(config, context.fileSystem);
+    const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+    const noCache = globalOpts.cache === false;
+
+    const indexEngine = await createAndIndexWithCache(
+      workspacePath,
+      context.fileSystem,
+      {
+        includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
+        excludePatterns: ['node_modules/**', '*.test.*']
+      },
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     try {
-      await indexEngine.indexProject(workspacePath);
 
       // 初始化重新命名引擎（傳入 fileSystem）
       const renameEngine = new RenameEngine(undefined, context.fileSystem);

@@ -122,7 +122,8 @@ export class AgentIdeCLI {
     this.program
       .name('agent-ide')
       .description('程式碼智能工具集 for AI Agents')
-      .version(packageVersion);
+      .version(packageVersion)
+      .option('--no-cache', '停用索引快取');
 
     const context = this.createCommandContext();
 
