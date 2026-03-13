@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /** tsconfig 路徑設定 */
 export interface TsconfigPathConfig {
@@ -101,7 +102,7 @@ export async function loadTsconfigPathConfig(
     }
   } catch (error) {
     // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
-    console.warn('[tsconfig-loader] Failed to load tsconfig.json:', error);
+    logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
   }
 
   return config;

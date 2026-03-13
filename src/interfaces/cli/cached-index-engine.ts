@@ -11,6 +11,7 @@ import {
   type IndexConfig
 } from '@core/foundations/indexing/index.js';
 import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /** createAndIndexWithCache 選項 */
 export interface CacheOptions {
@@ -44,6 +45,7 @@ export async function createAndIndexWithCache(
   const effectiveNoCache = options.noCache || isTestEnv;
 
   if (effectiveNoCache) {
+    logger.verbose('cache', `Cache disabled, indexing ${projectPath}`);
     await indexEngine.indexProject(projectPath);
     return indexEngine;
   }
@@ -66,14 +68,19 @@ export async function createAndIndexWithCache(
     // cache hit → hydrate（跳過 indexProject）
     const hydrated = diskCache.hydrateEngine(indexEngine, cached);
     if (hydrated) {
+      logger.verbose('cache', 'Cache HIT — hydrating index');
       return indexEngine;
     }
     // hydrate 失敗 → fallthrough 重新 index
+    logger.verbose('cache', 'Cache hydrate failed, re-indexing');
+  } else {
+    logger.verbose('cache', 'Cache MISS — full index');
   }
 
   // cache miss 或 hydrate 失敗 → 完整索引 + 儲存快取
   await indexEngine.indexProject(projectPath);
   await diskCache.save(indexEngine, currentKey);
+  logger.verbose('cache', 'Cache saved');
 
   return indexEngine;
 }

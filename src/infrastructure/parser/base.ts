@@ -4,6 +4,7 @@
  */
 
 import { minimatch } from 'minimatch';
+import { logger as cliLogger } from '@infrastructure/logging/index.js';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
 import { isPosition, SymbolType } from '@shared/types/index.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';
@@ -223,16 +224,12 @@ export abstract class BaseParserPlugin implements ParserPlugin {
 
     switch (level) {
     case 'debug':
-      console.debug(logMessage);
-      break;
     case 'info':
-      console.info(logMessage);
+      cliLogger.verbose(this.name, logMessage);
       break;
     case 'warn':
-      console.warn(logMessage);
-      break;
     case 'error':
-      console.error(logMessage);
+      cliLogger.warn(this.name, logMessage);
       break;
     }
   }

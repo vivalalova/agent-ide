@@ -15,6 +15,7 @@ import type {
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /**
  * 宣告分析器類別
@@ -118,7 +119,7 @@ export class DeclarationAnalyzer {
         }
       };
     } catch (error) {
-      console.warn('[ts/declaration-analyzer] AST extraction failed:', error);
+      logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到字串匹配
       return null;
     }
@@ -270,7 +271,7 @@ export class DeclarationAnalyzer {
 
       return declarations;
     } catch (error) {
-      console.warn('[ts/declaration-analyzer] AST extraction failed:', error);
+      logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到字串解析
       return null;
     }
@@ -389,7 +390,7 @@ export class DeclarationAnalyzer {
         startLine
       };
     } catch (error) {
-      console.warn('[ts/declaration-analyzer] AST extraction failed:', error);
+      logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到正則匹配
       return null;
     }
@@ -591,7 +592,7 @@ export class DeclarationAnalyzer {
         tags
       };
     } catch (error) {
-      console.warn('[ts/declaration-analyzer] AST extraction failed:', error);
+      logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到行號回掃
       return null;
     }

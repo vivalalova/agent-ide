@@ -14,6 +14,7 @@ import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/ind
 import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { logger } from '@infrastructure/logging/index.js';
 import type {
   CallHierarchyData,
   CallHierarchyOptions,
@@ -569,7 +570,7 @@ export class CallHierarchyAnalyzer {
           }
         } catch (error) {
           // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
-          console.debug(`[CallHierarchyAnalyzer] findEnclosingFunctionsMultiFile failed for ${filePath}:`, error);
+          logger.verbose('call-hierarchy', `findEnclosingFunctionsMultiFile failed for ${filePath}: ${error}`);
         }
       })
     );
@@ -733,7 +734,7 @@ export class CallHierarchyAnalyzer {
           }
         } catch (error) {
           // 個別檔案處理失敗不影響其他檔案，記錄偵錯資訊
-          console.debug(`[CallHierarchyAnalyzer] getLineContextsBatch failed for ${filePath}:`, error);
+          logger.verbose('call-hierarchy', `getLineContextsBatch failed for ${filePath}: ${error}`);
         }
       })
     );

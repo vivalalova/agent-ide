@@ -15,6 +15,7 @@ import {
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { logger } from '@infrastructure/logging/index.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -480,6 +481,7 @@ export class IndexEngine {
 
     // 測試環境：單執行緒逐檔解析
     if (!this.parserPool) {
+      logger.verbose('indexer', `Indexing ${totalFiles} files (single-thread)`);
       for (const filePath of files) {
         try {
           await this.indexFile(filePath);
@@ -498,6 +500,7 @@ export class IndexEngine {
         });
       }
 
+      logger.verbose('indexer', `Done: ${processedFiles} indexed, ${errors.length} errors`);
       if (errors.length > 0) {
         diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
       }
@@ -505,6 +508,7 @@ export class IndexEngine {
     }
 
     // 生產環境：Worker Pool 多執行緒解析
+    logger.verbose('indexer', `Indexing ${totalFiles} files (worker pool)`);
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
 
