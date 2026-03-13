@@ -20,7 +20,8 @@
     "test:unit:bail": "npx bun vitest run --config vitest.config.unit.ts --bail=1",
     "test:cli": "npx bun vitest run --config vitest.config.cli.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",
+    "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}'",
+    "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",
     "validate:plugin": "bash scripts/validate-plugin.sh",
     "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\""
   },
