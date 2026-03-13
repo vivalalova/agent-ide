@@ -32,6 +32,7 @@ function enableWorkerPool(): void {
 }
 
 describe('IndexEngine Worker Pool 整合測試 - 多執行緒路徑', () => {
+  // eslint-disable-next-line custom/no-new-filesystem -- Worker Pool 測試需要真實 FileSystem（Worker 無法存取 memfs）
   const realFs = new FileSystem();
 
   describe('Worker Pool 啟用驗證', () => {
