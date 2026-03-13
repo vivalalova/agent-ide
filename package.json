@@ -10,7 +10,6 @@
   },
   "scripts": {
     "build": "tsc && tsc-alias",
-    "pretest": "bash scripts/cleanup-vitest.sh",
     "test": "pnpm test:e2e && pnpm test:unit",
     "test:e2e": "npx bun vitest run --config vitest.config.e2e.ts --coverage",
     "test:unit": "npx bun vitest run --config vitest.config.unit.ts --coverage",
