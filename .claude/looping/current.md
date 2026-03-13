@@ -1,29 +1,27 @@
 ---
-title: Core 模組 Unit Test 補全（7 模組）
+title: tsconfig 嚴格度提升（noUnusedLocals / noUnusedParameters）
 created: 2026-03-12
-priority: high
-suggested_order: T2
-blockedBy: a2-call-hierarchy-js-support
+priority: medium
+suggested_order: B3
+blockedBy: b1-reference-finder-engine-cleanup, a1-silent-catch-cleanup
 phase: needs-commit
 iteration: 2
 max_iterations: 3
-review_iterations: 3
+review_iterations: 1
 ---
 
-# Core 模組 Unit Test 補全（7 模組）
+# tsconfig 嚴格度提升
 
-`tests/unit/core/` 只有 `cycles`、`deadcode`、`change-signature`、`foundations` 的 unit test。缺少 `call-hierarchy`、`find-references`、`impact`、`move`、`move-member`、`rename`、`snapshot` 的 core 層 unit test。
+`tsconfig.json` 中 `noUnusedLocals: false` 和 `noUnusedParameters: false`，與 universal.md #4 衝突。ESLint `@typescript-eslint/no-unused-vars` 僅 `warn`。
 
-目前 core 層完全依賴 E2E 測試，邊界條件難以覆蓋。應逐步補 core engine 的 unit test。
+應 (1) 掃描修復所有 unused code (2) tsconfig 設為 true (3) ESLint rule 從 warn 改 error。
 
 ## User Stories
 
-- As a developer, I want unit tests for all core modules, so that I can refactor with confidence and catch edge-case bugs early.
+- As a developer, I want the compiler to catch unused code, so that dead code doesn't accumulate.
 
 ## 驗收條件
 
-- Given `tests/unit/core/`, when checked, then contains test files for all 7 modules: `call-hierarchy`, `find-references`, `impact`, `move`, `move-member`, `rename`, `snapshot`
-- Given empty project input (no files), when each core engine runs, then returns empty result without throwing
-- Given single-file project, when each core engine runs, then returns correct result
-- Given invalid/non-existent path, when core engine called, then throws structured error (not crashes)
-- Given `pnpm test:unit`, when executed, then all 7 new test suites pass with ≥1 test each
+- Given tsconfig.json, when checked, then noUnusedLocals and noUnusedParameters are true
+- Given `pnpm typecheck`, when executed, then passes with no unused errors
+- Given `pnpm lint`, when executed, then no-unused-vars is error level

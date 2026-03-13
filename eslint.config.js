@@ -57,8 +57,8 @@ export default [
       },
     },
     rules: {
-      // TypeScript 特定規則 - 調整為警告以便漸進式修復
-      '@typescript-eslint/no-unused-vars': ['warn', {
+      // TypeScript 特定規則
+      '@typescript-eslint/no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
         caughtErrorsIgnorePattern: '^_',

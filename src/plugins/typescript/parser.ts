@@ -766,22 +766,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return bestMatch;
   }
 
-  private isPositionInRange(position: Position, range: Range): boolean {
-    if (position.line < range.start.line || position.line > range.end.line) {
-      return false;
-    }
-
-    if (position.line === range.start.line && position.column < range.start.column) {
-      return false;
-    }
-
-    if (position.line === range.end.line && position.column > range.end.column) {
-      return false;
-    }
-
-    return true;
-  }
-
   /**
    * 判斷檔案是否為測試檔案
    */

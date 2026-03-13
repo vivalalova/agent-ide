@@ -30,7 +30,7 @@ export class MoveMemberEngine {
   private readonly changeApplier: ChangeApplier;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
+    parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
     this.memberExtractor = new MemberExtractor(parserRegistry, fileSystem);

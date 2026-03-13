@@ -16,7 +16,6 @@ import {
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
-import { ScopeAnalyzer } from './scope-analyzer.js';
 import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
@@ -40,14 +39,12 @@ export class RenameEngine {
     'import', 'export', 'default', 'from', 'as', 'type'
   ]);
 
-  private readonly scopeAnalyzer: ScopeAnalyzer;
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileSystem: IFileSystem;
 
   constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
-    this.scopeAnalyzer = new ScopeAnalyzer();
     this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem);
   }
 

@@ -737,12 +737,4 @@ export class IndexEngine {
     }
   }
 
-  /**
-   * 檢查索引是否已被釋放或尚未建立
-   */
-  private checkDisposed(): void {
-    if (this._disposed || !this._indexed) {
-      throw new Error('索引尚未建立');
-    }
-  }
 }

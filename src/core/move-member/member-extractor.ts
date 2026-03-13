@@ -21,8 +21,8 @@ export class MemberExtractor {
   private readonly fileUtils: FileUtils;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    parserRegistry: ParserRegistry,
+    fileSystem: IFileSystem
   ) {
     this.fileUtils = new FileUtils(fileSystem, parserRegistry);
   }

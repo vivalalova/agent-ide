@@ -18,12 +18,10 @@ import { UpdateOperation } from './types.js';
  * 負責管理專案中所有檔案的索引資訊
  */
 export class FileIndex {
-  private readonly config: IndexConfig;
   private readonly fileEntries = new Map<string, FileIndexEntry>();
   private lastUpdated = new Date();
 
-  constructor(config: IndexConfig) {
-    this.config = config;
+  constructor(_config: IndexConfig) {
   }
 
   /**

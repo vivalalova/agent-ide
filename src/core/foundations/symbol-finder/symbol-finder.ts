@@ -36,8 +36,8 @@ export class SymbolFinder {
   private readonly fileUtils: FileUtils;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    parserRegistry: ParserRegistry,
+    fileSystem: IFileSystem
   ) {
     this.textMatcher = new TextMatcher();
     this.callSiteParser = new CallSiteParser();
@@ -468,7 +468,7 @@ export class SymbolFinder {
   private convertParserRefToSymbolReference(
     ref: { location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }; type: string },
     symbolName: string,
-    filePath: string,
+    _filePath: string,
     lines: string[]
   ): SymbolReference {
     const lineIndex = ref.location.range.start.line - 1;

@@ -33,7 +33,7 @@ export class ChangeSignatureEngine {
   private readonly callSiteUpdater: CallSiteUpdater;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
+    parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
@@ -400,7 +400,7 @@ export class ChangeSignatureEngine {
   /**
    * 建立錯誤結果
    */
-  private createErrorResult(code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
+  private createErrorResult(_code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
     // 錯誤情況下必須提供佔位簽名資訊
     const emptyRange = { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } };
     const emptyLocation = { filePath: '', range: emptyRange };

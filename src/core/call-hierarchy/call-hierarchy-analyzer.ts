@@ -33,7 +33,7 @@ export class CallHierarchyAnalyzer {
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    fileSystem: IFileSystem
   ) {
     this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
