@@ -74,6 +74,7 @@ import {
 } from '@plugins/shared/utils/async.js';
 
 // Memory monitor
+import { logger } from '@infrastructure/logging/index.js';
 import {
   MemoryMonitor,
   getFormattedMemoryReport,
@@ -1055,14 +1056,14 @@ describe('MemoryMonitor', () => {
     });
 
     it('should handle dispose errors gracefully', async () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       const disposable: Disposable = {
         dispose: () => { throw new Error('Dispose error'); }
       };
       monitor.register(disposable);
       await monitor.cleanup();
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
     });
   });
 

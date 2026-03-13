@@ -8,6 +8,7 @@ import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
+import { logger, LogLevel } from '@infrastructure/logging/index.js';
 import {
   setupMoveCommand,
   setupRenameCommand,
@@ -74,7 +75,7 @@ export class AgentIdeCLI {
 
       // 檢查 registry 是否可用
       if (!registry) {
-        console.debug('Parser registry not available');
+        logger.verbose('parser', 'Parser registry not available');
         return;
       }
 
@@ -95,9 +96,7 @@ export class AgentIdeCLI {
           registry.register(tsParser);
         }
       } catch (tsError) {
-        // 如果 TypeScript Parser 載入失敗，記錄錯誤
-        console.debug('TypeScript parser loading failed:', tsError);
-        console.debug('TypeScript Parser initialization warning:', tsError);
+        logger.verbose('parser', `TypeScript parser loading failed: ${tsError}`);
       }
 
       // 嘗試註冊內建的 JavaScript Parser
@@ -107,14 +106,11 @@ export class AgentIdeCLI {
           registry.register(jsParser);
         }
       } catch (jsError) {
-        // 如果 JavaScript Parser 載入失敗，記錄錯誤
-        console.debug('JavaScript parser loading failed:', jsError);
-        console.debug('JavaScript Parser initialization warning:', jsError);
+        logger.verbose('parser', `JavaScript parser loading failed: ${jsError}`);
       }
 
     } catch (error) {
-      // 靜默處理初始化錯誤，避免影響 CLI 啟動
-      console.debug('Parser initialization warning:', error);
+      logger.verbose('parser', `Parser initialization warning: ${error}`);
     }
   }
 
@@ -123,7 +119,13 @@ export class AgentIdeCLI {
       .name('agent-ide')
       .description('程式碼智能工具集 for AI Agents')
       .version(packageVersion)
-      .option('--no-cache', '停用索引快取');
+      .option('--no-cache', '停用索引快取')
+      .option('--verbose', '顯示詳細處理資訊');
+
+    this.program.hook('preAction', (thisCommand) => {
+      const opts = thisCommand.optsWithGlobals() as { verbose?: boolean };
+      logger.setLevel(opts.verbose ? LogLevel.Verbose : LogLevel.Normal);
+    });
 
     const context = this.createCommandContext();
 
