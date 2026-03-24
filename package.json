@@ -18,6 +18,7 @@
     "test:e2e:bail": "npx bun vitest run --config vitest.config.e2e.ts --bail=1",
     "test:unit:bail": "npx bun vitest run --config vitest.config.unit.ts --bail=1",
     "test:cli": "npx bun vitest run --config vitest.config.cli.ts",
+    "bench": "npx bun vitest bench --config vitest.config.bench.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}'",
     "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",

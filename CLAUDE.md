@@ -19,6 +19,7 @@ pnpm test               # 全部測試（E2E + Unit）
 pnpm test:e2e           # E2E 測試（memfs 隔離）
 pnpm test:unit          # Unit 測試
 pnpm test:cli           # CLI 煙霧測試
+pnpm bench              # Benchmark（效能基準測試）
 pnpm lint               # ESLint
 npm link                # 本地安裝
 
@@ -73,6 +74,7 @@ src/
 | E2E | `tests/e2e/` | `pnpm test:e2e` | CLI 端對端（memfs 隔離） |
 | Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試 |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
+| Bench | `tests/bench/` | `pnpm bench` | 效能基準測試 |
 
 ### E2E 測試模式
 
