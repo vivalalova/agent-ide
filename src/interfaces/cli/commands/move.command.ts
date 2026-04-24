@@ -7,6 +7,7 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
+import { createGlobMovePlan, isGlobPattern, resolveGlobPattern } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
@@ -22,30 +23,6 @@ import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/co
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
-
-/** 檢查路徑是否包含 glob pattern */
-function isGlobPattern(pattern: string): boolean {
-  return /[*?[\]{}]/.test(pattern);
-}
-
-/**
- * 計算 glob pattern 的基礎目錄
- * 找到第一個包含 glob 特殊字元的路徑段之前的部分
- * 例如: src/deep/x.ts 會得到 src/deep/
- */
-function getGlobBaseDir(pattern: string): string {
-  const segments = pattern.split('/');
-  const baseSegments: string[] = [];
-
-  for (const segment of segments) {
-    if (isGlobPattern(segment)) {
-      break;
-    }
-    baseSegments.push(segment);
-  }
-
-  return baseSegments.length > 0 ? baseSegments.join('/') + '/' : '';
-}
 
 /** Move 命令選項 */
 interface MoveOptions {
@@ -280,9 +257,7 @@ async function handleGlobMoveCommand(
   try {
     // 展開 glob pattern（使用 IFileSystem 的 glob 方法）
     // 注意：memfs 的 glob 需要用相對路徑 + cwd，不支援絕對路徑 pattern
-    const globPattern = path.isAbsolute(source)
-      ? path.relative(projectRoot, source)
-      : source;
+    const globPattern = resolveGlobPattern(source, projectRoot);
     const matchedFiles = await context.fileSystem.glob(globPattern, {
       cwd: projectRoot,
       onlyFiles: true,
@@ -335,31 +310,18 @@ async function handleGlobMoveCommand(
       includeNodeModules: false
     });
 
-    // 計算 glob 的基礎目錄（用於保留目錄結構）
-    const globBaseDir = getGlobBaseDir(globPattern);
-    const absoluteGlobBaseDir = path.resolve(projectRoot, globBaseDir);
-
-    // 建立所有被移動檔案的 source → target 映射（用於識別內部引用）
-    const allMovedFilesMap = new Map<string, string>();
-    for (const sourceFile of matchedFiles) {
-      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
-      const targetFile = targetIsDirectory
-        ? path.join(resolvedTarget, relativePath)
-        : resolvedTarget;
-      allMovedFilesMap.set(sourceFile, targetFile);
-    }
+    const movePlan = createGlobMovePlan({
+      sourcePattern: source,
+      matchedFiles,
+      targetPath: resolvedTarget,
+      projectRoot,
+      targetIsDirectory
+    });
 
     // 為每個檔案生成 changeset 並合併
     const builder = new ChangesetBuilder();
-    const allMovedFiles: Array<{ from: string; to: string }> = [];
 
-    for (const sourceFile of matchedFiles) {
-      // 計算相對於 glob 基礎目錄的路徑，以保留目錄結構
-      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
-      const targetFile = targetIsDirectory
-        ? path.join(resolvedTarget, relativePath)
-        : resolvedTarget;
-
+    for (const { from: sourceFile, to: targetFile } of movePlan.movedFiles) {
       const moveOperation = {
         source: sourceFile,
         target: targetFile,
@@ -369,7 +331,7 @@ async function handleGlobMoveCommand(
       // 傳入 batchMoveInfo 讓服務知道哪些檔案是一起被移動的
       const changeset = await moveService.generateChangeset(moveOperation, {
         projectRoot,
-        batchMoveInfo: { allMovedFiles: allMovedFilesMap }
+        batchMoveInfo: movePlan.batchMoveInfo
       });
 
       if (!changeset.success) {
@@ -393,7 +355,6 @@ async function handleGlobMoveCommand(
         }
       }
 
-      allMovedFiles.push({ from: sourceFile, to: targetFile });
     }
 
     const mergedChangeset = builder.build();
@@ -420,7 +381,7 @@ async function handleGlobMoveCommand(
 
     if (result.success) {
       const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, allMovedFiles, isJsonFormat, outputHandler);
+      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, movePlan.movedFiles, isJsonFormat, outputHandler);
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;

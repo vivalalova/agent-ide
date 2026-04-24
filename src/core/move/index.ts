@@ -10,7 +10,19 @@ export { ImportResolver } from './import-resolver.js';
 // 內部模組（供進階使用）
 export { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
 export { FileScanner } from './file-scanner.js';
+export {
+  createGlobMovePlan,
+  getGlobBaseDir,
+  isGlobPattern,
+  resolveGlobPattern
+} from './glob-move-planner.js';
 export { PathCalculator } from './path-calculator.js';
+
+export type {
+  GlobMovedFile,
+  GlobMovePlan,
+  GlobMovePlanInput
+} from './glob-move-planner.js';
 
 // 型別定義
 export type {
