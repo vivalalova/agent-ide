@@ -106,37 +106,57 @@ export class FileScanner {
     projectRoot: string,
     excludeFiles: string[] = []
   ): Promise<string[]> {
+    const absoluteProjectRoot = this.resolveProjectRoot(projectRoot);
+    const normalizedMovedPath = this.normalizePath(movedPath, absoluteProjectRoot);
+    const affectedFilesByPath = await this.findAffectedFilesForPaths(
+      [movedPath],
+      projectRoot,
+      excludeFiles
+    );
+
+    return affectedFilesByPath.get(normalizedMovedPath) ?? [];
+  }
+
+  /**
+   * 找出多個移動路徑各自影響的檔案。
+   * 批次移動時只掃描並讀取專案檔案一次，避免每個來源檔重複 traversal。
+   *
+   * @param movedPaths - 被移動的檔案路徑列表
+   * @param projectRoot - 專案根目錄
+   * @param excludeFiles - 要排除的檔案列表
+   * @returns normalized moved path -> 受影響檔案路徑列表
+   */
+  async findAffectedFilesForPaths(
+    movedPaths: readonly string[],
+    projectRoot: string,
+    excludeFiles: readonly string[] = []
+  ): Promise<Map<string, string[]>> {
     const files = await this.getAllProjectFiles(projectRoot);
 
     // 修復：統一使用絕對路徑進行比較
     // getAllProjectFiles 可能返回相對路徑（當 projectRoot 是相對路徑時）
     // 而 excludeFiles 通常是絕對路徑
-    const absoluteProjectRoot = path.isAbsolute(projectRoot)
-      ? projectRoot
-      : path.resolve(projectRoot);
-
-    const normalizedMovedPath = path.isAbsolute(movedPath)
-      ? path.normalize(movedPath)
-      : path.normalize(path.resolve(absoluteProjectRoot, movedPath));
+    const absoluteProjectRoot = this.resolveProjectRoot(projectRoot);
+    const normalizedMovedPaths = movedPaths.map(movedPath => this.normalizePath(movedPath, absoluteProjectRoot));
+    const affectedFilesByMovedPath = new Map<string, Set<string>>();
+    for (const movedPath of normalizedMovedPaths) {
+      affectedFilesByMovedPath.set(movedPath, new Set<string>());
+    }
 
     // 將 excludeFiles 轉為絕對路徑的 Set
     const normalizedExcludeFiles = new Set(
-      excludeFiles.map(f => {
-        const absPath = path.isAbsolute(f) ? f : path.resolve(absoluteProjectRoot, f);
-        return path.normalize(absPath);
-      })
+      excludeFiles.map(f => this.normalizePath(f, absoluteProjectRoot))
     );
+    for (const movedPath of normalizedMovedPaths) {
+      normalizedExcludeFiles.add(movedPath);
+    }
 
     // 過濾出需要檢查的檔案（排除被移動的檔案本身和 excludeFiles）
     const filesToCheck = files.filter(file => {
       // 將檔案路徑轉為絕對路徑進行比較
-      const absoluteFile = path.isAbsolute(file)
-        ? file
-        : path.resolve(absoluteProjectRoot, file);
-      const normalizedFile = path.normalize(absoluteFile);
+      const normalizedFile = this.normalizePath(file, absoluteProjectRoot);
 
-      return normalizedFile !== normalizedMovedPath
-        && !normalizedExcludeFiles.has(normalizedFile);
+      return !normalizedExcludeFiles.has(normalizedFile);
     });
 
     // 並行讀取所有檔案內容
@@ -154,30 +174,44 @@ export class FileScanner {
     );
 
     // 批次檢查引用
-    const affectedFiles: string[] = [];
     for (const { file, content } of fileContents) {
       if (content === null) {
         continue;
       }
 
       const imports = this.importResolver.parseImportStatements(content, file);
-      const hasReference = imports.some(importStatement => {
+      for (const importStatement of imports) {
         // 跳過 node_modules
         if (this.importResolver.isNodeModuleImport(importStatement.path)) {
-          return false;
+          continue;
         }
 
         // 解析 import 路徑並檢查是否指向目標檔案
         const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, file);
-        return this.pathUtils.pathsMatch(resolvedPath, movedPath);
-      });
-
-      if (hasReference) {
-        affectedFiles.push(file);
+        for (const movedPath of normalizedMovedPaths) {
+          if (this.pathUtils.pathsMatch(resolvedPath, movedPath)) {
+            affectedFilesByMovedPath.get(movedPath)?.add(file);
+          }
+        }
       }
     }
 
-    return affectedFiles;
+    return new Map(
+      Array.from(affectedFilesByMovedPath.entries()).map(([movedPath, affectedFiles]) => [
+        movedPath,
+        Array.from(affectedFiles)
+      ])
+    );
+  }
+
+  private resolveProjectRoot(projectRoot: string): string {
+    return path.isAbsolute(projectRoot) ? projectRoot : path.resolve(projectRoot);
+  }
+
+  private normalizePath(filePath: string, absoluteProjectRoot: string): string {
+    return path.isAbsolute(filePath)
+      ? path.normalize(filePath)
+      : path.normalize(path.resolve(absoluteProjectRoot, filePath));
   }
 
   /**

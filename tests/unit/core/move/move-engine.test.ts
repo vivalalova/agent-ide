@@ -2,7 +2,7 @@
  * MoveEngine 單元測試
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MoveEngine } from '@core/move/move-engine.js';
 import { createMockFileSystem } from '../_helpers/mock-factories.js';
 
@@ -72,6 +72,61 @@ describe('MoveEngine', () => {
       expect(changeset.success).toBe(false);
       expect(changeset.errors).toBeDefined();
       expect(changeset.errors!.some(e => e.includes('來源路徑不存在'))).toBe(true);
+    });
+  });
+
+  describe('generateChangeset - 批次移動效能', () => {
+    it('Given 同一批次的多個檔案移動, when 逐一產生 changeset, then 專案目錄只掃描一次', async () => {
+      const projectRoot = '/project';
+      const sourceA = '/project/src/a.ts';
+      const sourceB = '/project/src/b.ts';
+      const consumer = '/project/src/consumer.ts';
+      const files = {
+        [sourceA]: 'export const a = 1;',
+        [sourceB]: 'export const b = 2;',
+        [consumer]: [
+          'import { a } from \'./a\';',
+          'import { b } from \'./b\';',
+          'console.log(a, b);'
+        ].join('\n')
+      };
+      const mockFs = createMockFileSystem(files);
+      const readDirectory = vi.fn(async (dirPath: string) => {
+        if (dirPath === projectRoot) {
+          return [
+            { name: 'src', path: '/project/src', isDirectory: true, isFile: false }
+          ];
+        }
+        if (dirPath === '/project/src') {
+          return [
+            { name: 'a.ts', path: sourceA, isDirectory: false, isFile: true },
+            { name: 'b.ts', path: sourceB, isDirectory: false, isFile: true },
+            { name: 'consumer.ts', path: consumer, isDirectory: false, isFile: true }
+          ];
+        }
+        return [];
+      });
+      mockFs.readDirectory = readDirectory;
+      const engine = new MoveEngine(mockFs);
+      const batchMoveInfo = {
+        allMovedFiles: new Map([
+          [sourceA, '/project/lib/a.ts'],
+          [sourceB, '/project/lib/b.ts']
+        ])
+      };
+
+      await engine.generateChangeset(
+        { source: sourceA, target: '/project/lib/a.ts' },
+        { projectRoot, batchMoveInfo }
+      );
+      await engine.generateChangeset(
+        { source: sourceB, target: '/project/lib/b.ts' },
+        { projectRoot, batchMoveInfo }
+      );
+
+      expect(readDirectory).toHaveBeenCalledTimes(2);
+      expect(readDirectory).toHaveBeenNthCalledWith(1, projectRoot);
+      expect(readDirectory).toHaveBeenNthCalledWith(2, '/project/src');
     });
   });
 });

@@ -18,6 +18,7 @@ import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 export class PathCalculator {
   private readonly pathUtils: PathUtils;
   private readonly fileScanner: FileScanner;
+  private readonly batchAffectedFilesCache = new WeakMap<BatchMoveInfo, Map<string, Promise<Map<string, string[]>>>>();
 
   constructor(
     private readonly fileSystem: IFileSystem,
@@ -82,10 +83,9 @@ export class PathCalculator {
       // 單一檔案移動
       // 更新其他檔案對被移動檔案的引用
       // 排除同一批次中也被移動的檔案（它們的相對引用會保持不變）
-      const batchExcludeFiles = batchMoveInfo
-        ? Array.from(batchMoveInfo.allMovedFiles.keys())
-        : undefined;
-      const affectedFiles = await this.fileScanner.findAffectedFiles(source, projectRoot, batchExcludeFiles);
+      const affectedFiles = batchMoveInfo
+        ? await this.findBatchAffectedFiles(source, projectRoot, batchMoveInfo)
+        : await this.fileScanner.findAffectedFiles(source, projectRoot);
 
       for (const filePath of affectedFiles) {
         const updates = await this.calculatePathUpdates(filePath, source, target);
@@ -125,6 +125,37 @@ export class PathCalculator {
     });
 
     return uniqueUpdates;
+  }
+
+  private async findBatchAffectedFiles(
+    source: string,
+    projectRoot: string,
+    batchMoveInfo: BatchMoveInfo
+  ): Promise<string[]> {
+    let projectCache = this.batchAffectedFilesCache.get(batchMoveInfo);
+    if (!projectCache) {
+      projectCache = new Map<string, Promise<Map<string, string[]>>>();
+      this.batchAffectedFilesCache.set(batchMoveInfo, projectCache);
+    }
+
+    const absoluteProjectRoot = path.isAbsolute(projectRoot) ? projectRoot : path.resolve(projectRoot);
+    const projectCacheKey = path.normalize(absoluteProjectRoot);
+    let affectedFilesPromise = projectCache.get(projectCacheKey);
+    if (!affectedFilesPromise) {
+      const batchSourceFiles = Array.from(batchMoveInfo.allMovedFiles.keys());
+      affectedFilesPromise = this.fileScanner.findAffectedFilesForPaths(
+        batchSourceFiles,
+        projectRoot,
+        batchSourceFiles
+      );
+      projectCache.set(projectCacheKey, affectedFilesPromise);
+    }
+
+    const normalizedSource = path.isAbsolute(source)
+      ? path.normalize(source)
+      : path.normalize(path.resolve(absoluteProjectRoot, source));
+    const affectedFilesBySource = await affectedFilesPromise;
+    return affectedFilesBySource.get(normalizedSource) ?? [];
   }
 
   /**
