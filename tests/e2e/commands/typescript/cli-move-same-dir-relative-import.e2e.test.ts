@@ -76,14 +76,12 @@ export function validateTouData(data: TouData): boolean {
 
     // 核心驗證：同目錄的 ./ 引用應該被更新
     const serviceContent = await fixture.readFile('src/tou-calculate/touCalculate.service.ts');
-    console.log('Service content after move:', serviceContent);
 
     // 這是 bug 的核心：同目錄的相對路徑應該被更新
     expect(serviceContent).toContain('from \'./interfaces/tou-calculate.interface\'');
     expect(serviceContent).not.toContain('from \'./tou-calculate.interface\'');
 
     const helperContent = await fixture.readFile('src/tou-calculate/touCalculate.helper.ts');
-    console.log('Helper content after move:', helperContent);
 
     expect(helperContent).toContain('from \'./interfaces/tou-calculate.interface\'');
     expect(helperContent).not.toContain('from \'./tou-calculate.interface\'');
@@ -163,13 +161,11 @@ export class BasicFeeService {
 
     // 驗證 1: 同目錄的相對路徑應該被更新
     const serviceContent = await fixture.readFile('src/tou-calculate/touCalculate.service.ts');
-    console.log('TouCalculate service content after move:', serviceContent);
     expect(serviceContent).toContain('from \'./interfaces/tou-calculate.interface\'');
     expect(serviceContent).not.toContain('from \'./tou-calculate.interface\'');
 
     // 驗證 2: path alias 引用也應該被更新
     const basicFeeContent = await fixture.readFile('src/basic-fee/basicFee.service.ts');
-    console.log('BasicFee service content after move:', basicFeeContent);
     expect(basicFeeContent).toContain('from \'@/tou-calculate/interfaces/tou-calculate.interface\'');
     expect(basicFeeContent).not.toContain('from \'@/tou-calculate/tou-calculate.interface\'');
   });

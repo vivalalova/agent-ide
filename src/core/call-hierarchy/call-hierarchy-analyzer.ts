@@ -155,19 +155,12 @@ export class CallHierarchyAnalyzer {
       visited.add(targetName);
 
       const callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
-
-      // 過濾掉遞迴自身呼叫
-      const filteredCallSites = callSites.filter(
-        callSite => !(callSite.location.filePath === definitionFile
-                      && callSite.functionName === targetName)
-      );
-
-      if (filteredCallSites.length === 0) {
+      if (callSites.length === 0) {
         return;
       }
 
       // 批次查詢所有 callSites 的 enclosing functions（按檔案分組處理）
-      const queries = filteredCallSites.map(callSite => ({
+      const queries = callSites.map(callSite => ({
         filePath: callSite.location.filePath,
         line: callSite.location.range.start.line
       }));
@@ -179,10 +172,15 @@ export class CallHierarchyAnalyzer {
       // 建立 incoming 結果
       // 使用 filePath:functionName 作為唯一鍵，避免同名但不同檔案的函數被去重
       const callersToRecurse = new Map<string, { name: string; file: string }>();
-      for (const callSite of filteredCallSites) {
+      for (const callSite of callSites) {
         const key = `${callSite.location.filePath}:${callSite.location.range.start.line}`;
         const callerInfo = enclosingFunctions.get(key);
         const context = contexts.get(key) || '';
+
+        // 只排除目標函數自己的遞迴呼叫；同檔案其他 caller 仍然是有效 incoming。
+        if (callSite.location.filePath === definitionFile && callerInfo?.name === targetName) {
+          continue;
+        }
 
         incoming.push({
           caller: callerInfo?.name || '<anonymous>',
