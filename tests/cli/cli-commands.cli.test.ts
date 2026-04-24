@@ -109,6 +109,13 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
+    it('search - 符號搜尋', () => {
+      const result = runCLI(`${CLI} search UserService --path "${SAMPLE_PROJECT}" --format json`);
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.results)).toBe(true);
+      expect(result.results.length).toBeGreaterThan(0);
+    });
+
     it('find-references - 符號引用搜尋', () => {
       const result = runCLI(`${CLI} find-references BaseModel --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);

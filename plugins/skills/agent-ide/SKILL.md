@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: TS/JS 程式碼智能重構工具。重命名、移動檔案、清理 dead code、修改函式簽章時自動更新所有引用。
+description: TS/JS 程式碼智能重構工具。搜尋符號、查找引用、重命名、移動檔案、清理 dead code、修改函式簽章時自動更新所有引用。
 ---
 
 # Agent IDE
@@ -14,6 +14,7 @@ TS/JS 程式碼智能重構工具。
 | [snapshot](references/snapshot.md) | 專案/模組 API 快照 |
 | [cycles](references/cycles.md) | 循環依賴檢測 |
 | [impact](references/impact.md) | 變更影響分析 |
+| [search](references/search.md) | 符號搜尋 |
 | [find-references](references/find-references.md) | 符號引用查找 |
 | [call-hierarchy](references/call-hierarchy.md) | 呼叫層次追蹤 |
 | [rename](references/rename.md) | 重命名符號 + 自動更新引用 |
@@ -39,6 +40,7 @@ TS/JS 程式碼智能重構工具。
 |------|-------|------|
 | 接手新專案 | `deadcode` → `snapshot` | 先清垃圾，再看全貌 |
 | 重構前診斷 | `cycles` → `impact` | 找問題點，評估影響範圍 |
+| 找符號入口 | `search <symbol>` | 模糊搜尋符號位置 |
 | 檔案重組 | `move src/a.ts src/b/` | 自動更新所有 import |
 | 抽取函式 | `move src/a.ts:25 src/b.ts` | 移動成員到新位置 |
 | 統一命名 | `rename --from userId --to uid` | 全專案一致性 |

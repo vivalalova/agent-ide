@@ -18,6 +18,34 @@ describe('CLI change-signature - 基於 sample-project fixture', () => {
   });
 
   describe('參數重排序 - 基本功能', () => {
+    it('應該支援文件宣告的 --file 和 --function 形式', async () => {
+      await fixture.writeFile('src/doc-option-form.ts', `
+function calculate(a: number, b: number): number {
+  return a - b;
+}
+
+const result = calculate(10, 5);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', 'src/doc-option-form.ts',
+          '--function', 'calculate',
+          '-p', fixture.rootPath,
+          '--reorder', 'b,a',
+          '--dry-run',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.files.length).toBeGreaterThan(0);
+    });
+
     it('應該成功重排序兩個參數', async () => {
       const testFile = `${fixture.rootPath}/test-reorder.ts`;
       await fixture.memfs.writeFile(testFile, `
