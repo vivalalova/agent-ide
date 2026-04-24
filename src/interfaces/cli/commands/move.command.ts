@@ -13,7 +13,11 @@ import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-locatio
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { FileOperationType } from '@infrastructure/changeset/index.js';
-import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
+import {
+  createUnifiedOutputHandler,
+  OutputFormat,
+  type UnifiedOutputHandler
+} from '@interfaces/cli/unified-output-handler.js';
 import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
@@ -176,7 +180,7 @@ async function handleMoveCommand(
     if (normalizedSource === normalizedTarget) {
       // 源和目標相同時，視為 no-op，成功返回
       if (isJsonFormat) {
-        console.log(JSON.stringify({ success: true, message: 'Source and target are identical. No changes made.', changes: [] }));
+        outputHandler.outputJson({ success: true, message: 'Source and target are identical. No changes made.', changes: [] });
       } else {
         console.log('   Source and target are identical. No changes made.');
       }
@@ -239,7 +243,7 @@ async function handleMoveCommand(
     if (result.success) {
       // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
       const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printSuccess(normalizedSource, normalizedTarget, totalUpdates, result.movedFiles, isJsonFormat);
+      printSuccess(normalizedSource, normalizedTarget, totalUpdates, result.movedFiles, isJsonFormat, outputHandler);
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
@@ -416,7 +420,7 @@ async function handleGlobMoveCommand(
 
     if (result.success) {
       const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, allMovedFiles, isJsonFormat);
+      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, allMovedFiles, isJsonFormat, outputHandler);
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
@@ -438,16 +442,17 @@ function printGlobSuccess(
   target: string,
   totalUpdates: number,
   movedFiles: ReadonlyArray<{ from: string; to: string }>,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  outputHandler: UnifiedOutputHandler
 ): void {
   if (isJsonFormat) {
-    console.log(JSON.stringify({
+    outputHandler.outputJson({
       success: true,
       filesCount: fileCount,
       target,
       movedFiles: movedFiles.map(f => ({ from: f.from, to: f.to })),
       message: `成功移動 ${fileCount} 個檔案，更新了 ${totalUpdates} 個 import`
-    }, null, 2));
+    }, 2);
   } else {
     console.log('   移動成功!');
     console.log(`   統計: ${fileCount} 個檔案, ${totalUpdates} 個 import 已更新`);
@@ -471,17 +476,18 @@ function printSuccess(
   target: string,
   totalUpdates: number,
   movedFiles: ReadonlyArray<{ from: string; to: string }>,
-  isJsonFormat: boolean
+  isJsonFormat: boolean,
+  outputHandler: UnifiedOutputHandler
 ): void {
   if (isJsonFormat) {
-    console.log(JSON.stringify({
+    outputHandler.outputJson({
       success: true,
       source,
       target,
       moved: movedFiles.length > 0,
       pathUpdates: [], // 向後相容：實際更新已應用，這裡僅保留欄位
       message: `成功移動 ${source} → ${target}，更新了 ${totalUpdates} 個 import`
-    }, null, 2));
+    }, 2);
   } else {
     console.log('   移動成功!');
     console.log(`   統計: ${totalUpdates} 個 import 已更新`);

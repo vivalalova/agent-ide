@@ -104,6 +104,14 @@ export class UnifiedOutputHandler {
   // ========== 通用方法 ==========
 
   /**
+   * 輸出原始 JSON 結果。
+   * 保留給尚未能完整映射到 Query/Mutation formatter 的 CLI 相容輸出。
+   */
+  outputJson(value: unknown, spacing?: number): void {
+    console.log(JSON.stringify(value, null, spacing));
+  }
+
+  /**
    * 輸出錯誤
    * JSON 格式輸出到 stdout（機器可讀），其他格式輸出到 stderr
    * @param command 可選的命令名稱，JSON 輸出時會包含此欄位
@@ -119,7 +127,7 @@ export class UnifiedOutputHandler {
       if (command) {
         output.command = command;
       }
-      console.log(JSON.stringify(output));
+      this.outputJson(output);
     } else {
       console.error(`\n❌ 錯誤: ${message}`);
     }

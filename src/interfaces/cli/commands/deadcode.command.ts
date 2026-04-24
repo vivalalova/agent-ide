@@ -129,7 +129,7 @@ async function handleDeadCodeCommand(
       if (!isJsonFormat) {
         console.log('   沒有檢測到 dead code');
       } else {
-        console.log(JSON.stringify({ success: true, message: '沒有檢測到 dead code', removals: [] }));
+        outputHandler.outputJson({ success: true, message: '沒有檢測到 dead code', removals: [] });
       }
       return;
     }
@@ -168,12 +168,12 @@ async function handleDeadCodeCommand(
           }
         }
       } else {
-        console.log(JSON.stringify({
+        outputHandler.outputJson({
           success: true,
           message: '符合條件的 dead code 已被過濾',
           warnings: changeset.warnings,
           removals: []
-        }));
+        });
       }
       return;
     }

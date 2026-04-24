@@ -74,7 +74,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   // 如果 from 和 to 相同，直接返回成功但無操作
   if (from === to) {
     if (isJsonFormat) {
-      console.log(JSON.stringify({
+      outputHandler.outputJson({
         command: 'rename',
         success: true,
         files: [],
@@ -82,7 +82,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         operations: 0,
         affectedFiles: 0,
         operationDescription: `No changes needed: '${from}' is already named '${to}'`
-      }));
+      });
     } else {
       console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
     }
