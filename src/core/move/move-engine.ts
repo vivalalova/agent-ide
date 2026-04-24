@@ -15,7 +15,7 @@ import {
 import { getErrorMessage } from '@shared/errors/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathCalculator } from './path-calculator.js';
-import { PathUtils } from './path-utils.js';
+import { ALLOWED_EXTENSIONS, PathUtils } from './path-utils.js';
 import type {
   MoveInput,
   MoveOptions,
@@ -67,7 +67,7 @@ export class MoveEngine {
     } else {
       const defaultConfig: ImportResolverConfig = {
         pathAliases: {},
-        supportedExtensions: ['.js', '.ts', '.jsx', '.tsx', '.vue'],
+        supportedExtensions: ALLOWED_EXTENSIONS,
         ...config
       };
       this.importResolver = new ImportResolver(defaultConfig);

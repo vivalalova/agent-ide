@@ -9,6 +9,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { createGlobMovePlan, isGlobPattern, resolveGlobPattern } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
+import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
@@ -171,7 +172,7 @@ async function handleMoveCommand(
     const moveService = new MoveEngine(context.fileSystem, {
       pathAliases: tsconfigPathConfig.pathAliases,
       baseUrl: tsconfigPathConfig.baseUrl,
-      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
+      supportedExtensions: ALLOWED_EXTENSIONS,
       includeNodeModules: false
     });
 
@@ -306,7 +307,7 @@ async function handleGlobMoveCommand(
     const moveService = new MoveEngine(context.fileSystem, {
       pathAliases: tsconfigPathConfig.pathAliases,
       baseUrl: tsconfigPathConfig.baseUrl,
-      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
+      supportedExtensions: ALLOWED_EXTENSIONS,
       includeNodeModules: false
     });
 
