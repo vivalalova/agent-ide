@@ -9,7 +9,7 @@ import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
 import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -49,11 +49,8 @@ async function handleCyclesCommand(
 
   const analyzePath = path.resolve(options.path || process.cwd());
 
-  // 檢查路徑是否存在（在進度訊息前檢查）
-  const pathExists = await context.fileSystem.exists(analyzePath);
-  if (!pathExists) {
-    outputHandler.outputError(`路徑不存在: ${analyzePath}`, format);
-    process.exitCode = 1;
+  const pathIsDirectory = await ensureDirectoryPath(analyzePath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 

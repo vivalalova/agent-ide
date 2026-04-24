@@ -347,6 +347,23 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       );
 
       expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
+    });
+
+    it('檔案路徑不可作為專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export const unused = 1;');
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
 
     it('不支援的格式應該報錯', async () => {

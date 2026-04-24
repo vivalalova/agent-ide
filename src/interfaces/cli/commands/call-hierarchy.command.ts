@@ -23,7 +23,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensurePathExists, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -88,8 +88,8 @@ async function handleCallHierarchyCommand(
   }
 
   const projectPath = options.path || process.cwd();
-  const pathExists = await ensurePathExists(projectPath, context.fileSystem, outputHandler, format);
-  if (!pathExists) {
+  const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 

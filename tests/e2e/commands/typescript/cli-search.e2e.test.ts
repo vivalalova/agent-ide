@@ -215,5 +215,19 @@ describe('CLI search - 基於 sample-project fixture', () => {
       expect(output.success).toBe(false);
       expect(output.error).toContain('路徑不存在');
     });
+
+    it('檔案路徑不可作為專案路徑', async () => {
+      await fixture.writeFile('src/not-directory.ts', 'export const target = 1;');
+
+      const result = await executeCLI(
+        ['search', 'target', '--path', fixture.getFilePath('src/not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
+    });
   });
 });

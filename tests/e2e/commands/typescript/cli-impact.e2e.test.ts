@@ -264,24 +264,6 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
     });
 
-    it('應該處理不存在的檔案', async () => {
-      const result = await executeCLI(
-        ['impact', '--file', 'nonexistent.ts', '--path', fixture.rootPath, '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect([0, 1]).toContain(result.exitCode);
-    });
-
-    it('應該處理空專案路徑', async () => {
-      const result = await executeCLI(
-        ['impact', '--file', 'test.ts', '--path', '/nonexistent', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect([0, 1]).toContain(result.exitCode);
-    });
-
     it('應該處理深層目錄結構', async () => {
       await fixture.writeFile('deep/nested/very/deep/file.ts', 'export const deep = 1;');
       await fixture.writeFile('deep/nested/consumer.ts', 'import { deep } from "./very/deep/file.js";\nexport const use = deep;');
@@ -342,6 +324,20 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(result.exitCode).toBe(1);
       // summary 格式的錯誤輸出到 stderr
       expect(result.stderr).toContain('路徑不存在');
+    });
+
+    it('應該拒絕將檔案路徑當成專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export const target = 1;');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'target.ts', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
 
     it('應該對深層不存在的檔案路徑顯示錯誤', async () => {

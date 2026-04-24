@@ -267,7 +267,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
 
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThan(0);
     });
 
     it('應該正確報告循環依賴', async () => {
@@ -278,13 +281,6 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       expect(() => JSON.parse(result.stdout)).not.toThrow();
-    });
-
-    it('應該處理空專案', async () => {
-      const result = await executeCLI(['cycles', '--path', '/nonexistent'], { memfs: fixture.memfs });
-
-      // 確保不會崩潰
-      expect([0, 1]).toContain(result.exitCode);
     });
 
     it('應該對不存在的路徑顯示錯誤訊息並返回 exit code 1', async () => {
@@ -351,10 +347,16 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
     });
 
     it('應該處理空圖狀態（isEmpty 驗證）', async () => {
-      // 不創建任何檔案
+      fixture.memfs.reset();
+      await fixture.memfs.createDirectory(fixture.rootPath);
+
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.cycles).toEqual([]);
+      expect(output.summary.totalScanned).toBe(0);
     });
 
     it('應該檢測弱連通圖（isConnected 驗證）', async () => {
@@ -550,7 +552,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
 
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThan(0);
     });
 
     it('應該處理 maxDepth 限制（深度控制）', async () => {
@@ -574,11 +579,18 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       expect(() => JSON.parse(result.stdout)).not.toThrow();
     });
 
-    it('應該處理非檔案非目錄路徑（邊界驗證）', async () => {
-      // 嘗試分析一個既不是檔案也不是目錄的路徑
-      const result = await executeCLI(['cycles', '--path', '/dev/null', '--format', 'json'], { memfs: fixture.memfs });
+    it('應該拒絕將檔案路徑當成專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export const value = 1;');
 
-      expect([0, 1]).toContain(result.exitCode);
+      const result = await executeCLI(
+        ['cycles', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
   });
 

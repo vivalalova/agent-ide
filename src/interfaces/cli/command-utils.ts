@@ -69,6 +69,30 @@ export async function ensurePathExists(
   return true;
 }
 
+/**
+ * 驗證 CLI 輸入路徑存在且為目錄。
+ */
+export async function ensureDirectoryPath(
+  pathToCheck: string,
+  fileSystem: IFileSystem,
+  outputHandler: UnifiedOutputHandler,
+  format: OutputFormat
+): Promise<boolean> {
+  const exists = await ensurePathExists(pathToCheck, fileSystem, outputHandler, format);
+  if (!exists) {
+    return false;
+  }
+
+  const isDirectory = await fileSystem.isDirectory(pathToCheck);
+  if (!isDirectory) {
+    outputHandler.outputError(`路徑不是目錄: ${pathToCheck}`, format);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return true;
+}
+
 /** 變更類命令執行選項 */
 export interface MutationExecutionOptions {
   /** 檔案系統 */

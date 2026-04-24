@@ -196,12 +196,11 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // 檢查 JSON 輸出結構（exitCode 在測試環境中可能不正確）
+      expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
       expect(output.command).toBe('call-hierarchy');
       expect(output.success).toBe(false);
-      expect(output.errors).toBeDefined();
-      expect(output.errors.length).toBeGreaterThan(0);
+      expect(output.errors).toEqual(['找不到函數 "nonExistent"']);
     });
 
     it('應該拒絕無效的 direction 並輸出錯誤', async () => {
@@ -212,9 +211,11 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // JSON 格式錯誤輸出到 stdout
-      const hasError = result.stdout.includes('direction') || result.stderr.includes('direction');
-      expect(hasError).toBe(true);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('direction');
     });
 
     it('應該拒絕超出範圍的 depth 並輸出錯誤', async () => {
@@ -225,9 +226,11 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // JSON 格式錯誤輸出到 stdout
-      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
-      expect(hasError).toBe(true);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('depth');
     });
 
     it('應該拒絕無效的格式並輸出錯誤', async () => {
@@ -238,8 +241,9 @@ export function target() {
         { memfs: fixture.memfs }
       );
 
-      // 檢查 stderr 有錯誤訊息
+      expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('格式');
+      expect(result.stdout).toBe('');
     });
 
     it('無效路徑應回傳 JSON 錯誤', async () => {
@@ -252,6 +256,20 @@ export function target() {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('路徑不存在');
+    });
+
+    it('檔案路徑不可作為專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export function fn() {}');
+
+      const result = await executeCLI(
+        ['call-hierarchy', 'fn', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
   });
 
@@ -1027,9 +1045,11 @@ export const broken = ( => { sharedUtil(); };
         { memfs: fixture.memfs }
       );
 
-      // JSON 格式錯誤輸出到 stdout
-      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
-      expect(hasError).toBe(true);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('depth');
     });
 
     it('應該拒絕負數 depth', async () => {
@@ -1038,9 +1058,11 @@ export const broken = ( => { sharedUtil(); };
         { memfs: fixture.memfs }
       );
 
-      // JSON 格式錯誤輸出到 stdout
-      const hasError = result.stdout.includes('depth') || result.stderr.includes('depth');
-      expect(hasError).toBe(true);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('depth');
     });
   });
 });

@@ -8,7 +8,7 @@ import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { QueryCommand, type DepsResult } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadPathAliases } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -51,11 +51,8 @@ async function handleImpactCommand(
 
   const analyzePath = path.resolve(options.path || process.cwd());
 
-  // 檢查專案路徑是否存在（在進度訊息前檢查）
-  const pathExists = await context.fileSystem.exists(analyzePath);
-  if (!pathExists) {
-    outputHandler.outputError(`路徑不存在: ${analyzePath}`, format);
-    process.exitCode = 1;
+  const pathIsDirectory = await ensureDirectoryPath(analyzePath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 
@@ -122,4 +119,3 @@ async function handleImpactCommand(
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
-

@@ -16,7 +16,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -94,11 +94,8 @@ async function handleDeadCodeCommand(
 
   const projectPath = options.path || process.cwd();
 
-  // 檢查路徑是否存在
-  const exists = await context.fileSystem.exists(projectPath);
-  if (!exists) {
-    outputHandler.outputError(`路徑不存在: ${projectPath}`, format);
-    process.exitCode = 1;
+  const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 

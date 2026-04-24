@@ -352,8 +352,9 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
         { memfs: fixture.memfs }
       );
 
-      // 可能返回錯誤或成功（取決於錯誤處理方式）
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('不支援的輸出格式');
+      expect(result.stdout).toBe('');
     });
 
     it('無效路徑應回傳 JSON 錯誤', async () => {
@@ -366,6 +367,20 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('路徑不存在');
+    });
+
+    it('檔案路徑不可作為專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export const test = 1;');
+
+      const result = await executeCLI(
+        ['find-references', 'test', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
   });
 });
