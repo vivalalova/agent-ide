@@ -102,14 +102,12 @@ async function handleSearchCommand(
 
     const startTime = Date.now();
 
-    // 當有 --type 過濾時，不在 engine 層截斷（確保 truncated 語意正確）
-    // 否則請求 maxResults+1 以偵測是否有更多結果
-    const engineMaxResults = options.type ? Number.MAX_SAFE_INTEGER : maxResults + 1;
     const fetchOpts = createSearchOptions({
       fuzzy: options.fuzzy,
-      maxResults: engineMaxResults,
+      maxResults: maxResults + 1,
       caseSensitive: false,
       includeFileInfo: true,
+      ...(options.type ? { symbolTypes: [options.type as SymbolType] } : {}),
     });
 
     // 使用 searchSymbols（fuzzy）或 findSymbol（exact）
@@ -119,13 +117,8 @@ async function handleSearchCommand(
 
     const searchTime = Date.now() - startTime;
 
-    // 先過濾型別（若有指定），再截斷（+1 probe 在此層）
-    const typeFiltered = options.type
-      ? symbolResults.filter(r => r.symbol.type === options.type as SymbolType)
-      : symbolResults;
-
-    const truncated = typeFiltered.length > maxResults;
-    const limitedResults = truncated ? typeFiltered.slice(0, maxResults) : typeFiltered;
+    const truncated = symbolResults.length > maxResults;
+    const limitedResults = truncated ? symbolResults.slice(0, maxResults) : symbolResults;
 
     // 映射為 SearchMatch
     const matches: SearchMatch[] = limitedResults.map(sr => {

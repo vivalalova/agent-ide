@@ -135,8 +135,8 @@ describe('CLI search - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      // 精確匹配應找到 findItem
-      expect(output.results.some((r: { content: string }) => r.content.includes('findItem') && !r.content.includes('findItemById'))).toBe(true);
+      expect(output.results.map((r: { content: string }) => r.content)).toContain('[function] findItem');
+      expect(output.results.map((r: { content: string }) => r.content)).not.toContain('[function] findItemById');
     });
   });
 

@@ -3,7 +3,7 @@
  * 包含檔案索引、符號索引、查詢結果等型別
  */
 
-import type { Symbol, Dependency } from '@shared/types/index.js';
+import type { Symbol, Dependency, SymbolType } from '@shared/types/index.js';
 
 /**
  * CLI 命令共用的索引配置常數
@@ -94,6 +94,7 @@ export interface SearchOptions {
   readonly fuzzy: boolean;
   readonly maxResults: number;
   readonly includeFileInfo: boolean;
+  readonly symbolTypes?: readonly SymbolType[];
 }
 
 /**
@@ -297,10 +298,11 @@ export function createIndexConfig(
  */
 export function createSearchOptions(options?: Partial<SearchOptions>): SearchOptions {
   return {
-    caseSensitive: options?.caseSensitive || false,
-    fuzzy: options?.fuzzy || true,
-    maxResults: options?.maxResults || 100,
-    includeFileInfo: options?.includeFileInfo || true
+    caseSensitive: options?.caseSensitive ?? false,
+    fuzzy: options?.fuzzy ?? true,
+    maxResults: options?.maxResults ?? 100,
+    includeFileInfo: options?.includeFileInfo ?? true,
+    ...(options?.symbolTypes ? { symbolTypes: options.symbolTypes } : {})
   };
 }
 

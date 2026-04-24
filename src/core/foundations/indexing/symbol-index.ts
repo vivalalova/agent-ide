@@ -194,6 +194,11 @@ export class SymbolIndex {
     const caseSensitive = options?.caseSensitive ?? false;
     const fuzzy = options?.fuzzy ?? true;
     const maxResults = options?.maxResults ?? 100;
+    const symbolTypes = options?.symbolTypes;
+
+    if (maxResults <= 0) {
+      return results;
+    }
 
     const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
@@ -218,6 +223,10 @@ export class SymbolIndex {
 
       if (matches) {
         for (const entry of entries) {
+          if (symbolTypes && !symbolTypes.includes(entry.symbol.type)) {
+            continue;
+          }
+
           results.push({
             symbol: entry.symbol,
             fileInfo: entry.fileInfo,
@@ -435,10 +444,18 @@ export class SymbolIndex {
    */
   private convertToSearchResults(entries: SymbolIndexEntry[], options?: SearchOptions): SymbolSearchResult[] {
     const maxResults = options?.maxResults ?? 100;
+    const symbolTypes = options?.symbolTypes;
     const results: SymbolSearchResult[] = [];
 
-    for (let i = 0; i < Math.min(entries.length, maxResults); i++) {
-      const entry = entries[i];
+    for (const entry of entries) {
+      if (results.length >= maxResults) {
+        break;
+      }
+
+      if (symbolTypes && !symbolTypes.includes(entry.symbol.type)) {
+        continue;
+      }
+
       results.push({
         symbol: entry.symbol,
         fileInfo: entry.fileInfo,
