@@ -15,7 +15,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensurePathExists, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { SymbolType } from '@shared/types/index.js';
@@ -83,6 +83,10 @@ async function handleSearchCommand(
   const maxResults = parsedMax;
 
   const projectPath = options.path;
+  const pathExists = await ensurePathExists(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathExists) {
+    return;
+  }
 
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;

@@ -50,6 +50,25 @@ export function tryParseOutputFormat(
   }
 }
 
+/**
+ * 驗證 CLI 輸入路徑存在，失敗時輸出統一錯誤並設定 exitCode。
+ */
+export async function ensurePathExists(
+  pathToCheck: string,
+  fileSystem: IFileSystem,
+  outputHandler: UnifiedOutputHandler,
+  format: OutputFormat
+): Promise<boolean> {
+  const exists = await fileSystem.exists(pathToCheck);
+  if (!exists) {
+    outputHandler.outputError(`路徑不存在: ${pathToCheck}`, format);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return true;
+}
+
 /** 變更類命令執行選項 */
 export interface MutationExecutionOptions {
   /** 檔案系統 */

@@ -211,6 +211,9 @@ describe('CLI search - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
     });
   });
 });

@@ -356,14 +356,16 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect([0, 1]).toContain(result.exitCode);
     });
 
-    it('應該處理不存在的路徑', async () => {
+    it('無效路徑應回傳 JSON 錯誤', async () => {
       const result = await executeCLI(
-        ['find-references', 'test', '--path', '/nonexistent/path', '--format', 'json'],
+        ['find-references', 'test', '--path', '/nonexistent/path/xyz', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      // memfs 環境下路徑處理可能不同
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
     });
   });
 });

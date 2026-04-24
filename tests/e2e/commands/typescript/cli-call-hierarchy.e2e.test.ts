@@ -241,6 +241,18 @@ export function target() {
       // 檢查 stderr 有錯誤訊息
       expect(result.stderr).toContain('格式');
     });
+
+    it('無效路徑應回傳 JSON 錯誤', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'fn', '--path', '/nonexistent/path/xyz', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
+    });
   });
 
   describe('JSON 輸出結構驗證', () => {
