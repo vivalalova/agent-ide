@@ -32,7 +32,11 @@ describe('CLI snapshot - 基於 sample-project fixture', () => {
       const result = await executeCLI(['snapshot', '--path', modulePath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const snapshotResult = JSON.parse(result.stdout) as SnapshotResult;
+      expect(snapshotResult.command).toBe('snapshot');
+      expect(snapshotResult.success).toBe(true);
+      expect(snapshotResult.snapshotType).toBe('module');
+      expect((snapshotResult.snapshot as ModuleSnapshotData).module).toContain('types');
     });
 
     it('應該包含 SnapshotResult 結構', async () => {

@@ -9,6 +9,32 @@ import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/i
 describe('CLI cycles - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
+  interface CycleItem {
+    cycle: string[];
+    length: number;
+  }
+
+  interface CyclesOutput {
+    success: boolean;
+    cycles: CycleItem[];
+    summary: {
+      cyclesFound: number;
+      totalScanned: number;
+    };
+  }
+
+  function parseCyclesOutput(stdout: string): CyclesOutput {
+    return JSON.parse(stdout) as CyclesOutput;
+  }
+
+  function hasCycleContaining(output: CyclesOutput, fileNames: string[]): boolean {
+    return output.cycles.some(item =>
+      fileNames.every(fileName =>
+        item.cycle.some(filePath => filePath.includes(fileName))
+      )
+    );
+  }
+
   beforeEach(async () => {
     fixture = await loadFixture('sample-project');
   });
@@ -34,7 +60,11 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       if (validateJson) {
-        expect(() => JSON.parse(result.stdout)).not.toThrow();
+        const output = parseCyclesOutput(result.stdout);
+        expect(output.success).toBe(true);
+        expect(Array.isArray(output.cycles)).toBe(true);
+      } else {
+        expect(result.stdout.length).toBeGreaterThan(0);
       }
     });
 
@@ -56,7 +86,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(25);
+      expect(hasCycleContaining(output, ['chain-0.ts', 'chain-24.ts'])).toBe(false);
     });
 
     it('應該處理扇出極高的單檔案 (50+ import)', async () => {
@@ -78,7 +111,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(61);
+      expect(hasCycleContaining(output, ['fan-out.ts', 'module-0.ts'])).toBe(false);
     });
 
     it('應該處理扇入極高的單模組 (被 50+ 檔案引用)', async () => {
@@ -96,7 +132,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(61);
+      expect(hasCycleContaining(output, ['shared.ts', 'consumer-0.ts'])).toBe(false);
     });
 
     it('應該處理複雜菱形依賴網絡 (12 節點、多層級、多路徑交織)', async () => {
@@ -123,7 +162,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(12);
+      expect(hasCycleContaining(output, ['top-1.ts', 'base-a.ts'])).toBe(false);
     });
   });
 
@@ -135,7 +177,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['a-cycle.ts', 'b-cycle.ts'])).toBe(true);
     });
 
     it('應該檢測間接循環 (A→B→C→A)', async () => {
@@ -146,7 +190,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['a-indirect.ts', 'b-indirect.ts', 'c-indirect.ts'])).toBe(true);
     });
 
     it('應該檢測多重循環交織', async () => {
@@ -158,16 +204,21 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['m1.ts', 'm2.ts'])).toBe(true);
+      expect(hasCycleContaining(output, ['m3.ts', 'm4.ts'])).toBe(true);
     });
 
-    it('應該檢測自我引用', async () => {
+    it('預設應忽略自我引用', async () => {
       await fixture.writeFile('self-ref.ts', 'import { self } from "./self-ref.js";\nexport const self = 1;');
 
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['self-ref.ts'])).toBe(false);
     });
 
   });
@@ -217,7 +268,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, files.map(file => file.path))).toBe(false);
     });
   });
 
@@ -228,7 +281,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['island.ts'])).toBe(false);
     });
 
     it('應該處理外部套件依賴', async () => {
@@ -237,7 +292,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['external.ts'])).toBe(false);
     });
 
     it('應該處理路徑別名 (@/...)', async () => {
@@ -247,7 +304,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['alias-target.ts', 'alias-import.ts'])).toBe(false);
     });
 
     it('應該處理極端相對路徑 (../../../../../../)', async () => {
@@ -257,7 +316,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['file.ts', 'root.ts'])).toBe(false);
     });
   });
 
@@ -280,7 +341,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['cycle-a.ts', 'cycle-b.ts'])).toBe(true);
     });
 
     it('應該對不存在的路徑顯示錯誤訊息並返回 exit code 1', async () => {
@@ -309,7 +372,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['normal.ts'])).toBe(false);
     });
 
     it('應該處理移除節點操作（中間節點移除）', async () => {
@@ -321,7 +386,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['node-a.ts', 'node-c.ts'])).toBe(false);
     });
 
     it('應該處理序列化與反序列化（完整往返）', async () => {
@@ -333,7 +400,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['ser-a.ts', 'ser-c.ts'])).toBe(false);
     });
 
     it('應該處理圖的克隆（深拷貝驗證）', async () => {
@@ -343,7 +412,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['clone-a.ts', 'clone-b.ts'])).toBe(false);
     });
 
     it('應該處理空圖狀態（isEmpty 驗證）', async () => {
@@ -369,7 +440,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['island-a1.ts', 'island-b1.ts'])).toBe(false);
     });
   });
 
@@ -390,7 +463,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['long-cycle-0.ts', 'long-cycle-24.ts'])).toBe(true);
     });
 
     it('應該處理複雜強連通分量（多個 SCC）', async () => {
@@ -409,10 +484,13 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['scc1-a.ts', 'scc1-b.ts'])).toBe(true);
+      expect(hasCycleContaining(output, ['scc2-c.ts', 'scc2-d.ts', 'scc2-e.ts'])).toBe(true);
     });
 
-    it('應該計算循環複雜度（內部連接密度）', async () => {
+    it('應該回報高密度強連通分量中的循環', async () => {
       // 高複雜度循環（多重交叉引用）
       await fixture.writeFile('complex-a.ts', 'import { b } from "./complex-b.js";\nimport { c } from "./complex-c.js";\nexport const a = 1;');
       await fixture.writeFile('complex-b.ts', 'import { c } from "./complex-c.js";\nimport { a } from "./complex-a.js";\nexport const b = 2;');
@@ -421,7 +499,13 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(
+        hasCycleContaining(output, ['complex-a.ts', 'complex-b.ts']) ||
+        hasCycleContaining(output, ['complex-b.ts', 'complex-c.ts']) ||
+        hasCycleContaining(output, ['complex-a.ts', 'complex-c.ts'])
+      ).toBe(true);
     });
 
     it('應該提供修復策略建議（suggestFixStrategies）', async () => {
@@ -433,7 +517,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['fix-a2.ts', 'fix-b2.ts'])).toBe(true);
     });
 
     it('應該正確計算循環嚴重性（severity）', async () => {
@@ -450,7 +536,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['low-a.ts', 'low-b.ts'])).toBe(true);
+      expect(hasCycleContaining(output, ['med-a.ts', 'med-d.ts'])).toBe(true);
     });
   });
 
@@ -484,7 +573,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThanOrEqual(20);
+      expect(hasCycleContaining(output, ['concurrent-0.ts', 'concurrent-19.ts'])).toBe(false);
     });
 
     it('應該計算影響分數（impactScore）', async () => {
@@ -503,7 +595,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['impact-core.ts', 'impact-consumer-0.ts'])).toBe(false);
     });
 
     it('應該識別測試檔案（isTestFile）', async () => {
@@ -515,7 +609,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['source.ts', 'source.test.ts'])).toBe(false);
     });
 
     it('應該處理 Swift 外部依賴（系統框架）', async () => {
@@ -524,7 +620,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['swift-app.swift'])).toBe(false);
     });
 
     it('應該處理 Swift 相對路徑引用', async () => {
@@ -534,7 +632,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['swift-a.swift', 'swift-b.swift'])).toBe(false);
     });
 
     it('應該處理路徑解析失敗（副檔名嘗試）', async () => {
@@ -544,7 +644,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['resolve-source.ts', 'resolve-import.ts'])).toBe(false);
     });
 
     it('應該處理解析錯誤（extractDependencies 錯誤處理）', async () => {
@@ -565,7 +667,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['deep.ts'])).toBe(false);
     });
 
     it('應該處理 glob 模式匹配（** 和 * 差異）', async () => {
@@ -576,7 +680,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['src/app.ts', 'test/app.spec.ts'])).toBe(false);
     });
 
     it('應該拒絕將檔案路徑當成專案路徑', async () => {
@@ -601,8 +707,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalScanned).toBeGreaterThan(0);
     });
 
     it('應該驗證循環依賴嚴重性計算（calculateCycleSeverity）', async () => {
@@ -614,7 +721,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['sev-3a.ts', 'sev-3c.ts'])).toBe(true);
     });
   });
 
@@ -627,12 +736,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseCyclesOutput(result.stdout);
       expect(output.success).toBe(true);
-      expect(output.cycles).toBeDefined();
       expect(Array.isArray(output.cycles)).toBe(true);
-      // 驗證至少檢測到一個循環
-      expect(output.cycles.length).toBeGreaterThan(0);
+      expect(hasCycleContaining(output, ['verify-a.ts', 'verify-b.ts'])).toBe(true);
     });
 
     it('應該回傳正確的循環結構（cycle, length）', async () => {
@@ -642,16 +749,21 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseCyclesOutput(result.stdout);
       expect(output.cycles.length).toBeGreaterThan(0);
 
       // 驗證循環結構
-      const cycle = output.cycles[0];
+      const cycle = output.cycles.find(item =>
+        item.cycle.some(filePath => filePath.includes('struct-a.ts')) &&
+        item.cycle.some(filePath => filePath.includes('struct-b.ts'))
+      );
+      expect(cycle).not.toBeUndefined();
+      if (!cycle) {return;}
       expect(cycle).toHaveProperty('cycle');
       expect(cycle).toHaveProperty('length');
       expect(Array.isArray(cycle.cycle)).toBe(true);
       expect(typeof cycle.length).toBe('number');
-      expect(cycle.length).toBeGreaterThanOrEqual(2);
+      expect(cycle.length).toBe(2);
     });
 
     it('應該正確檢測三層循環（A→B→C→A）', async () => {
@@ -662,14 +774,8 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.cycles.length).toBeGreaterThan(0);
-
-      // 驗證有三層循環被檢測到
-      const hasThreeNodeCycle = output.cycles.some(
-        (c: { length: number }) => c.length >= 3
-      );
-      expect(hasThreeNodeCycle).toBe(true);
+      const output = parseCyclesOutput(result.stdout);
+      expect(hasCycleContaining(output, ['tri-a.ts', 'tri-b.ts', 'tri-c.ts'])).toBe(true);
     });
 
     it('應該正確識別雙節點循環長度', async () => {
@@ -680,12 +786,8 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.cycles.length).toBeGreaterThan(0);
-
-      // 驗證有 2 節點循環
-      const twoNodeCycle = output.cycles.find((c: { length: number }) => c.length === 2);
-      expect(twoNodeCycle).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
+      expect(hasCycleContaining(output, ['sev-low-a.ts', 'sev-low-b.ts'])).toBe(true);
     });
 
     it('應該檢測多個獨立循環', async () => {
@@ -699,9 +801,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      // 應該檢測到至少 2 個循環
-      expect(output.cycles.length).toBeGreaterThanOrEqual(2);
+      const output = parseCyclesOutput(result.stdout);
+      expect(hasCycleContaining(output, ['multi-a.ts', 'multi-b.ts'])).toBe(true);
+      expect(hasCycleContaining(output, ['multi-c.ts', 'multi-d.ts'])).toBe(true);
     });
 
     it('應該在 summary 格式中顯示循環資訊', async () => {
@@ -721,9 +823,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      // 自我引用可能被檢測為長度 1 的循環（取決於 ignoreSelfLoops 設定）
-      expect(output).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['self-loop.ts'])).toBe(false);
     });
 
     it('應該正確計算循環統計摘要', async () => {
@@ -733,9 +835,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      // 驗證 summary 欄位存在
-      expect(output.summary).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
+      expect(hasCycleContaining(output, ['stat-a.ts', 'stat-b.ts'])).toBe(true);
+      expect(output.summary.cyclesFound).toBe(output.cycles.length);
       expect(typeof output.summary.cyclesFound).toBe('number');
     });
 
@@ -747,9 +849,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.cycles).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
       expect(Array.isArray(output.cycles)).toBe(true);
+      expect(hasCycleContaining(output, ['no-cycle-a.ts', 'no-cycle-b.ts'])).toBe(false);
     });
 
     const cycleLengthCases = [
@@ -771,11 +873,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseCyclesOutput(result.stdout);
       expect(output.cycles.length).toBeGreaterThan(0);
 
-      const matchingCycle = output.cycles.find((c: { length: number }) => c.length >= minExpectedLength);
-      expect(matchingCycle).toBeDefined();
+      expect(output.cycles.some(item => item.length >= minExpectedLength)).toBe(true);
     });
 
     it('應該正確處理交叉循環（共享節點）', async () => {
@@ -788,8 +889,11 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.cycles).toBeDefined();
+      const output = parseCyclesOutput(result.stdout);
+      expect(
+        hasCycleContaining(output, ['cross-a.ts', 'cross-b.ts', 'cross-c.ts']) ||
+        hasCycleContaining(output, ['cross-b.ts', 'cross-d.ts'])
+      ).toBe(true);
     });
 
     it('應該驗證循環路徑包含正確的檔案', async () => {
@@ -799,15 +903,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseCyclesOutput(result.stdout);
       expect(output.cycles.length).toBeGreaterThan(0);
 
-      // 驗證循環路徑包含正確的檔案名稱
-      const cycle = output.cycles[0];
-      expect(cycle.cycle.length).toBeGreaterThanOrEqual(2);
-      const hasPathA = cycle.cycle.some((f: string) => f.includes('path-a'));
-      const hasPathB = cycle.cycle.some((f: string) => f.includes('path-b'));
-      expect(hasPathA || hasPathB).toBe(true);
+      expect(hasCycleContaining(output, ['path-a.ts', 'path-b.ts'])).toBe(true);
     });
   });
 
@@ -821,7 +920,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['dag-a.ts', 'dag-d.ts'])).toBe(false);
     });
 
     it('應該在有循環時正確標記 hasCycle', async () => {
@@ -832,7 +933,9 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['topo-cycle-a.ts', 'topo-cycle-b.ts', 'topo-cycle-c.ts'])).toBe(true);
     });
 
     it('應該返回參與循環的檔案列表（cycleFiles）', async () => {
@@ -843,7 +946,10 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseCyclesOutput(result.stdout);
+      expect(output.success).toBe(true);
+      expect(hasCycleContaining(output, ['cycle-files-a.ts', 'cycle-files-b.ts'])).toBe(true);
+      expect(hasCycleContaining(output, ['cycle-files-clean.ts'])).toBe(false);
     });
   });
 });

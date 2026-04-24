@@ -46,10 +46,11 @@ describe('CLI --verbose - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      // stdout 必須是有效 JSON
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
       const output = JSON.parse(result.stdout);
       expect(output.command).toBe('search');
+      expect(output.success).toBe(true);
+      expect(Array.isArray(output.results)).toBe(true);
+      expect(output.results.some((item: { content: string }) => item.content.includes('UserService'))).toBe(true);
     });
   });
 

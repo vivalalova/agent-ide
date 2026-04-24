@@ -225,11 +225,10 @@ const n = count(42);
       );
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr || result.stdout).toBeDefined();
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error).toContain('找不到函式');
     });
 
     it('應該處理無效的參數名稱', async () => {
@@ -246,11 +245,10 @@ function test(a: number): number {
       );
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr || result.stdout).toBeDefined();
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error).toContain('找不到參數');
     });
 
     it('應該處理不存在的檔案', async () => {
@@ -259,7 +257,11 @@ function test(a: number): number {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error.length).toBeGreaterThan(0);
     });
 
     it('應該處理語法錯誤的檔案', async () => {
@@ -271,7 +273,11 @@ function test(a: number): number {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error.length).toBeGreaterThan(0);
     });
   });
 
@@ -289,7 +295,19 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('refactor');
+      expect(output.success).toBe(true);
+      expect(output.summary.totalChanges).toBeGreaterThanOrEqual(2);
+      expect(output.files.length).toBe(1);
+
+      const changedContent = output.files
+        .flatMap((file: { hunks: Array<{ lines: Array<{ content: string }> }> }) => file.hunks)
+        .flatMap((hunk: { lines: Array<{ content: string }> }) => hunk.lines)
+        .map((line: { content: string }) => line.content)
+        .join('\n');
+      expect(changedContent).toContain('function fn(b: number, a: number): number');
+      expect(changedContent).toContain('const x = fn(2, 1);');
     });
 
     it('應該支援 summary 格式輸出', async () => {
@@ -305,7 +323,9 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBeDefined();
+      expect(result.stdout).toContain('Files: 1');
+      expect(result.stdout).toContain('Changes:');
+      expect(result.stdout).toContain('test-format-summary.ts');
     });
 
     it('應該支援 diff 格式輸出', async () => {
@@ -321,7 +341,10 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBeDefined();
+      expect(result.stdout).toContain('--- a/');
+      expect(result.stdout).toContain('+++ b/');
+      expect(result.stdout).toContain('function fn(b: number, a: number): number');
+      expect(result.stdout).toContain('const x = fn(2, 1);');
     });
   });
 
@@ -757,7 +780,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定檔案與函式名稱');
     });
 
     it('應該處理缺少函式名稱參數', async () => {
@@ -769,7 +793,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定檔案與函式名稱');
     });
 
     it('應該處理缺少操作參數', async () => {
@@ -781,7 +806,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定至少一個變更操作');
     });
   });
 });

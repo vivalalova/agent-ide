@@ -327,7 +327,10 @@ export enum Role {
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('move');
+      expect(output.success).toBe(true);
+      expect(output.summary.totalFiles).toBeGreaterThan(0);
     });
 
     it('應該支援 summary 格式輸出', async () => {

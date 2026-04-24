@@ -9,6 +9,30 @@ import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/i
 describe('CLI impact - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
 
+  interface ImpactOutput {
+    command: string;
+    success: boolean;
+    summary: {
+      totalScanned: number;
+      totalDependencies: number;
+    };
+    impact: {
+      targetFile: string;
+      dependents: string[];
+      dependencies: string[];
+      totalAffected: number;
+    };
+    basePath: string;
+  }
+
+  function parseImpactOutput(stdout: string): ImpactOutput {
+    return JSON.parse(stdout) as ImpactOutput;
+  }
+
+  function includesPath(paths: string[], fileName: string): boolean {
+    return paths.some(filePath => filePath.includes(fileName));
+  }
+
   beforeEach(async () => {
     fixture = await loadFixture('sample-project');
   });
@@ -25,7 +49,12 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = parseImpactOutput(result.stdout);
+      expect(output.command).toBe('deps');
+      expect(output.success).toBe(true);
+      expect(output.impact.targetFile).toContain('array-utils.ts');
+      expect(output.impact.totalAffected).toBe(output.impact.dependents.length);
+      expect(Array.isArray(output.impact.dependencies)).toBe(true);
     });
 
     it('應該支援 JSON 格式輸出', async () => {
@@ -35,9 +64,11 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseImpactOutput(result.stdout);
       expect(output.command).toBe('deps');
-      expect(output.success).toBeDefined();
+      expect(output.success).toBe(true);
+      expect(output.basePath).toBe(fixture.rootPath);
+      expect(output.summary.totalScanned).toBeGreaterThan(0);
     });
 
     it('應該支援 summary 格式輸出', async () => {
@@ -363,7 +394,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseImpactOutput(result.stdout);
       expect(output.command).toBe('deps');
     });
 
@@ -376,8 +407,9 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseImpactOutput(result.stdout);
       expect(typeof output.success).toBe('boolean');
+      expect(output.success).toBe(true);
     });
 
     it('應該包含 summary 欄位', async () => {
@@ -389,8 +421,9 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.summary).toBeDefined();
+      const output = parseImpactOutput(result.stdout);
+      expect(output.summary.totalScanned).toBeGreaterThan(0);
+      expect(output.summary.totalDependencies).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -448,8 +481,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.impact).toBeDefined();
+      const output = parseImpactOutput(result.stdout);
       expect(output.impact.targetFile).toContain('target-file.ts');
     });
 
@@ -463,9 +495,10 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.impact).toBeDefined();
+      const output = parseImpactOutput(result.stdout);
       expect(Array.isArray(output.impact.dependents)).toBe(true);
+      expect(includesPath(output.impact.dependents, 'dep-consumer.ts')).toBe(true);
+      expect(output.impact.totalAffected).toBe(1);
     });
 
     it('應該返回 dependencies 陣列', async () => {
@@ -478,9 +511,9 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.impact).toBeDefined();
+      const output = parseImpactOutput(result.stdout);
       expect(Array.isArray(output.impact.dependencies)).toBe(true);
+      expect(includesPath(output.impact.dependencies, 'lib.ts')).toBe(true);
     });
 
     it('應該在 summary 格式顯示影響資訊', async () => {
@@ -504,11 +537,11 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
+      const output = parseImpactOutput(result.stdout);
       expect(output.success).toBe(true);
       // user.ts 被 services 引用，應該有 dependents
-      expect(output.impact).toBeDefined();
       expect(Array.isArray(output.impact.dependents)).toBe(true);
+      expect(output.impact.totalAffected).toBe(output.impact.dependents.length);
     });
   });
 });

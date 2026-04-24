@@ -28,8 +28,8 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.command).toBe('deadcode-removal');
       expect(output.success).toBe(true);
-      expect(output.files).toBeDefined();
       expect(Array.isArray(output.files)).toBe(true);
+      expect(output.files.length).toBeGreaterThan(0);
     });
 
     it('應該輸出 diff 格式', async () => {
@@ -63,9 +63,9 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
 
       const output = JSON.parse(result.stdout);
 
-      expect(output.summary).toBeDefined();
-      expect(output.summary.totalFiles).toBeGreaterThanOrEqual(0);
-      expect(output.summary.totalChanges).toBeGreaterThanOrEqual(0);
+      expect(result.exitCode).toBe(0);
+      expect(output.summary.totalFiles).toBeGreaterThan(0);
+      expect(output.summary.totalChanges).toBeGreaterThan(0);
     });
   });
 
@@ -189,7 +189,13 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
         { memfs: fixture.memfs }
       );
 
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('deadcode-removal');
+      expect(output.success).toBe(true);
+      expect(output.files.length).toBeGreaterThan(0);
+      expect(output.summary.totalChanges).toBeGreaterThan(0);
+      expect(output.operations).toBe(output.summary.totalChanges);
     });
 
     it('每個檔案應該包含 hunks 資訊', async () => {
@@ -200,10 +206,10 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
 
       const output = JSON.parse(result.stdout);
 
-      if (output.files && output.files.length > 0) {
-        const file = output.files[0];
-        expect(file.filePath).toBeDefined();
-        expect(file.hunks).toBeDefined();
+      expect(result.exitCode).toBe(0);
+      expect(output.files.length).toBeGreaterThan(0);
+      for (const file of output.files) {
+        expect(file.filePath).toMatch(/\.ts$/);
         expect(Array.isArray(file.hunks)).toBe(true);
       }
     });

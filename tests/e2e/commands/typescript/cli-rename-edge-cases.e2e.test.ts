@@ -215,7 +215,10 @@ describe('CLI rename edge-cases - 邊界條件與錯誤處理', () => {
 
       // Then: stdout 應該是有效 JSON
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('rename');
+      expect(output.success).toBe(true);
+      expect(output.summary.totalChanges).toBeGreaterThan(0);
     });
 
     it('錯誤情況下 json 格式也應該返回結構化資料', async () => {

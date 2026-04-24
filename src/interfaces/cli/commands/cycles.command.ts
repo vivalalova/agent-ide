@@ -19,6 +19,8 @@ interface CyclesOptions {
   format: string;
 }
 
+const CLI_MAX_CYCLE_LENGTH = 100;
+
 /**
  * 設定 cycles 命令
  */
@@ -73,7 +75,11 @@ async function handleCyclesCommand(
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();
-    const cycles = cycleDetector.detectCycles(graph);
+    const cycles = cycleDetector.detectCycles(graph, {
+      maxCycleLength: CLI_MAX_CYCLE_LENGTH,
+      reportAllCycles: false,
+      ignoreSelfLoops: true
+    });
 
     // 轉換 cycles 為 CycleInfo
     const cycleInfos: CycleInfo[] = cycles.map(c => ({

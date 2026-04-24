@@ -203,10 +203,9 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
 
       const output = JSON.parse(result.stdout);
-      expect(output).toHaveProperty('success');
+      expect(output.success).toBe(true);
       expect(output).toHaveProperty('source');
       expect(output).toHaveProperty('target');
       expect(output).toHaveProperty('moved');
