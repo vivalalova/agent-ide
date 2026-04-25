@@ -33,6 +33,14 @@ interface TsconfigLocation {
 }
 
 const TSCONFIG_EXTENSION = '.json';
+const NODE_MODULES_DIR = 'node_modules';
+const PACKAGE_JSON_FILE = 'package.json';
+const TSCONFIG_FILE = 'tsconfig.json';
+
+interface PackageExtendsSpec {
+  packageName: string;
+  configPath?: string;
+}
 
 function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
   const parsed = ts.parseConfigFileTextToJson(tsconfigPath, content);
@@ -43,31 +51,127 @@ function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
   return parsed.config as TsconfigFile;
 }
 
-async function resolveExtendsPath(
-  extendedPath: string,
-  tsconfigDir: string,
+async function isExistingFile(filePath: string, fileSystem: IFileSystem): Promise<boolean> {
+  return await fileSystem.exists(filePath) && await fileSystem.isFile(filePath);
+}
+
+async function resolveConfigFileCandidate(
+  candidatePath: string,
   fileSystem: IFileSystem
 ): Promise<string | null> {
-  if (!extendedPath.startsWith('.') && !path.isAbsolute(extendedPath)) {
-    return null;
+  if (await isExistingFile(candidatePath, fileSystem)) {
+    return candidatePath;
   }
 
-  const candidate = path.isAbsolute(extendedPath)
-    ? extendedPath
-    : path.resolve(tsconfigDir, extendedPath);
-
-  if (await fileSystem.exists(candidate)) {
-    return candidate;
-  }
-
-  if (!candidate.endsWith(TSCONFIG_EXTENSION)) {
-    const jsonCandidate = `${candidate}${TSCONFIG_EXTENSION}`;
-    if (await fileSystem.exists(jsonCandidate)) {
+  if (!candidatePath.endsWith(TSCONFIG_EXTENSION)) {
+    const jsonCandidate = `${candidatePath}${TSCONFIG_EXTENSION}`;
+    if (await isExistingFile(jsonCandidate, fileSystem)) {
       return jsonCandidate;
     }
   }
 
   return null;
+}
+
+function parsePackageExtendsSpec(extendedPath: string): PackageExtendsSpec | null {
+  const parts = extendedPath.split('/').filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+
+  if (extendedPath.startsWith('@')) {
+    if (parts.length < 2) {
+      return null;
+    }
+
+    return {
+      packageName: `${parts[0]}/${parts[1]}`,
+      configPath: parts.slice(2).join('/') || undefined
+    };
+  }
+
+  return {
+    packageName: parts[0],
+    configPath: parts.slice(1).join('/') || undefined
+  };
+}
+
+async function resolvePackageRootConfig(
+  packageRoot: string,
+  fileSystem: IFileSystem
+): Promise<string | null> {
+  const packageJsonPath = path.join(packageRoot, PACKAGE_JSON_FILE);
+  if (await isExistingFile(packageJsonPath, fileSystem)) {
+    try {
+      const content = await fileSystem.readFile(packageJsonPath, 'utf-8') as string;
+      const packageJson = JSON.parse(content) as { tsconfig?: unknown };
+      if (typeof packageJson.tsconfig === 'string') {
+        const tsconfigPath = path.resolve(packageRoot, packageJson.tsconfig);
+        const resolvedTsconfig = await resolveConfigFileCandidate(tsconfigPath, fileSystem);
+        if (resolvedTsconfig) {
+          return resolvedTsconfig;
+        }
+      }
+    } catch (error) {
+      logger.warn('tsconfig-loader', `Failed to read package tsconfig field: ${error}`);
+    }
+  }
+
+  return resolveConfigFileCandidate(path.join(packageRoot, TSCONFIG_FILE), fileSystem);
+}
+
+async function resolvePackageExtendsPath(
+  extendedPath: string,
+  tsconfigDir: string,
+  fileSystem: IFileSystem
+): Promise<string | null> {
+  const packageSpec = parsePackageExtendsSpec(extendedPath);
+  if (!packageSpec) {
+    return null;
+  }
+
+  let currentDir = path.resolve(tsconfigDir);
+  const root = path.parse(currentDir).root;
+
+  while (true) {
+    const packageRoot = path.join(currentDir, NODE_MODULES_DIR, packageSpec.packageName);
+    if (await fileSystem.exists(packageRoot)) {
+      if (packageSpec.configPath) {
+        const configPath = path.join(packageRoot, packageSpec.configPath);
+        const resolvedConfig = await resolveConfigFileCandidate(configPath, fileSystem);
+        if (resolvedConfig) {
+          return resolvedConfig;
+        }
+      } else {
+        const resolvedConfig = await resolvePackageRootConfig(packageRoot, fileSystem);
+        if (resolvedConfig) {
+          return resolvedConfig;
+        }
+      }
+    }
+
+    if (currentDir === root) {
+      break;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+
+  return null;
+}
+
+async function resolveExtendsPath(
+  extendedPath: string,
+  tsconfigDir: string,
+  fileSystem: IFileSystem
+): Promise<string | null> {
+  if (extendedPath.startsWith('.') || path.isAbsolute(extendedPath)) {
+    const candidate = path.isAbsolute(extendedPath)
+      ? extendedPath
+      : path.resolve(tsconfigDir, extendedPath);
+    return resolveConfigFileCandidate(candidate, fileSystem);
+  }
+
+  return resolvePackageExtendsPath(extendedPath, tsconfigDir, fileSystem);
 }
 
 function resolvePathAliases(
@@ -132,8 +236,7 @@ async function loadResolvedTsconfigPathConfig(
   }
 
   if (compilerOptions.paths) {
-    const baseUrl = compilerOptions.baseUrl || '.';
-    const basePath = path.resolve(tsconfigDir, baseUrl);
+    const basePath = config.baseUrl ?? tsconfigDir;
     config.pathAliases = resolvePathAliases(compilerOptions.paths, basePath);
   }
 
