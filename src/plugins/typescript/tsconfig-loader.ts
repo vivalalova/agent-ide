@@ -4,6 +4,7 @@
  */
 
 import * as path from 'path';
+import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 
@@ -17,10 +18,126 @@ export interface TsconfigPathConfig {
   tsconfigDir?: string;
 }
 
+interface TsconfigFile {
+  extends?: string | string[];
+  compilerOptions?: {
+    baseUrl?: string;
+    paths?: Record<string, unknown>;
+  };
+}
+
 /** tsconfig 查找結果 */
 interface TsconfigLocation {
   tsconfigPath: string;
   tsconfigDir: string;
+}
+
+const TSCONFIG_EXTENSION = '.json';
+
+function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
+  const parsed = ts.parseConfigFileTextToJson(tsconfigPath, content);
+  if (parsed.error) {
+    throw new Error(ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n'));
+  }
+
+  return parsed.config as TsconfigFile;
+}
+
+async function resolveExtendsPath(
+  extendedPath: string,
+  tsconfigDir: string,
+  fileSystem: IFileSystem
+): Promise<string | null> {
+  if (!extendedPath.startsWith('.') && !path.isAbsolute(extendedPath)) {
+    return null;
+  }
+
+  const candidate = path.isAbsolute(extendedPath)
+    ? extendedPath
+    : path.resolve(tsconfigDir, extendedPath);
+
+  if (await fileSystem.exists(candidate)) {
+    return candidate;
+  }
+
+  if (!candidate.endsWith(TSCONFIG_EXTENSION)) {
+    const jsonCandidate = `${candidate}${TSCONFIG_EXTENSION}`;
+    if (await fileSystem.exists(jsonCandidate)) {
+      return jsonCandidate;
+    }
+  }
+
+  return null;
+}
+
+function resolvePathAliases(
+  paths: Record<string, unknown>,
+  basePath: string
+): Record<string, string> {
+  const aliases: Record<string, string> = {};
+
+  for (const [alias, mappedPaths] of Object.entries(paths)) {
+    if (Array.isArray(mappedPaths) && mappedPaths.length > 0) {
+      // 移除 /* 後綴
+      const cleanAlias = alias.replace(/\/\*$/, '');
+      const cleanPath = (mappedPaths[0] as string).replace(/\/\*$/, '');
+      // 轉換為絕對路徑
+      aliases[cleanAlias] = path.resolve(basePath, cleanPath);
+    }
+  }
+
+  return aliases;
+}
+
+async function loadResolvedTsconfigPathConfig(
+  tsconfigPath: string,
+  fileSystem: IFileSystem,
+  visited = new Set<string>()
+): Promise<TsconfigPathConfig> {
+  const resolvedTsconfigPath = path.resolve(tsconfigPath);
+  if (visited.has(resolvedTsconfigPath)) {
+    throw new Error(`Circular tsconfig extends detected: ${resolvedTsconfigPath}`);
+  }
+  visited.add(resolvedTsconfigPath);
+
+  const tsconfigDir = path.dirname(resolvedTsconfigPath);
+  const tsconfigContent = await fileSystem.readFile(resolvedTsconfigPath, 'utf-8') as string;
+  const tsconfig = parseTsconfig(resolvedTsconfigPath, tsconfigContent);
+  const config: TsconfigPathConfig = { pathAliases: {}, tsconfigDir };
+  const extendedConfigs = Array.isArray(tsconfig.extends)
+    ? tsconfig.extends
+    : tsconfig.extends ? [tsconfig.extends] : [];
+
+  for (const extendedPath of extendedConfigs) {
+    const resolvedExtends = await resolveExtendsPath(extendedPath, tsconfigDir, fileSystem);
+    if (!resolvedExtends) {
+      logger.warn('tsconfig-loader', `Unsupported or missing tsconfig extends: ${extendedPath}`);
+      continue;
+    }
+
+    const inheritedConfig = await loadResolvedTsconfigPathConfig(resolvedExtends, fileSystem, new Set(visited));
+    config.pathAliases = { ...config.pathAliases, ...inheritedConfig.pathAliases };
+    if (inheritedConfig.baseUrl) {
+      config.baseUrl = inheritedConfig.baseUrl;
+    }
+  }
+
+  const compilerOptions = tsconfig.compilerOptions;
+  if (!compilerOptions) {
+    return config;
+  }
+
+  if (compilerOptions.baseUrl) {
+    config.baseUrl = path.resolve(tsconfigDir, compilerOptions.baseUrl);
+  }
+
+  if (compilerOptions.paths) {
+    const baseUrl = compilerOptions.baseUrl || '.';
+    const basePath = path.resolve(tsconfigDir, baseUrl);
+    config.pathAliases = resolvePathAliases(compilerOptions.paths, basePath);
+  }
+
+  return config;
 }
 
 /**
@@ -74,32 +191,7 @@ export async function loadTsconfigPathConfig(
       return config;
     }
 
-    const { tsconfigPath, tsconfigDir } = found;
-    config.tsconfigDir = tsconfigDir;
-
-    const tsconfigContent = await fileSystem.readFile(tsconfigPath, 'utf-8') as string;
-    const tsconfig = JSON.parse(tsconfigContent);
-
-    // 解析 baseUrl（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.baseUrl) {
-      config.baseUrl = path.resolve(tsconfigDir, tsconfig.compilerOptions.baseUrl);
-    }
-
-    // 解析 paths（相對於 tsconfig.json 所在目錄）
-    if (tsconfig.compilerOptions?.paths) {
-      const baseUrl = tsconfig.compilerOptions.baseUrl || '.';
-      const basePath = path.resolve(tsconfigDir, baseUrl);
-
-      for (const [alias, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-        if (Array.isArray(paths) && paths.length > 0) {
-          // 移除 /* 後綴
-          const cleanAlias = alias.replace(/\/\*$/, '');
-          const cleanPath = (paths[0] as string).replace(/\/\*$/, '');
-          // 轉換為絕對路徑
-          config.pathAliases[cleanAlias] = path.resolve(basePath, cleanPath);
-        }
-      }
-    }
+    return await loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
   } catch (error) {
     // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
     logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
