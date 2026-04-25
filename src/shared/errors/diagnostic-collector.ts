@@ -23,10 +23,14 @@ export interface Diagnostic {
  */
 export class DiagnosticCollector {
   private readonly _diagnostics: Diagnostic[] = [];
-  private readonly _silent: boolean;
+  private _silent: boolean;
 
   constructor(options: { silent?: boolean } = {}) {
     this._silent = options.silent ?? false;
+  }
+
+  setSilent(silent: boolean): void {
+    this._silent = silent;
   }
 
   warn(module: string, code: string, message: string, filePath?: string): void {

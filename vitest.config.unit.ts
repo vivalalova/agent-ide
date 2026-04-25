@@ -34,8 +34,8 @@ export default mergeConfig(baseConfig, defineConfig({
     testTimeout: TEST_TIMEOUT_MS,
     hookTimeout: HOOK_TIMEOUT_MS,
 
-    // Unit 測試不需要 E2E 的 fixture setup
-    setupFiles: [],
+    // Unit 測試共用診斷與 logger 隔離
+    setupFiles: ['./tests/setup.ts'],
 
     // Worker 設定 - Unit 測試可較高並發
     pool: 'forks',

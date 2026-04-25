@@ -39,6 +39,21 @@ describe('DiagnosticCollector', () => {
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     });
+
+    it('should allow console forwarding to be muted and restored', () => {
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const dc = new DiagnosticCollector();
+
+      dc.setSilent(true);
+      dc.warn('mod', 'CODE', 'muted');
+      expect(spy).not.toHaveBeenCalled();
+
+      dc.setSilent(false);
+      dc.warn('mod', 'CODE', 'forwarded');
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      spy.mockRestore();
+    });
   });
 
   describe('error', () => {
@@ -127,11 +142,16 @@ describe('diagnostics (global singleton)', () => {
     expect(diagnostics).toBeInstanceOf(DiagnosticCollector);
   });
 
-  it('should be non-silent by default (forwards to console.warn)', () => {
+  it('should forward to console.warn when explicitly enabled', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    diagnostics.warn('test', 'TEST_CODE', 'test message');
-    expect(spy).toHaveBeenCalled();
-    spy.mockRestore();
-    diagnostics.clear();
+    diagnostics.setSilent(false);
+    try {
+      diagnostics.warn('test', 'TEST_CODE', 'test message');
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      diagnostics.clear();
+      diagnostics.setSilent(true);
+    }
   });
 });
