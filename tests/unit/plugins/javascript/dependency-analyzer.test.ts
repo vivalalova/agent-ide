@@ -594,6 +594,7 @@ describe('ImpactAnalyzer (JavaScript)', () => {
       const result = await analyzer.analyzeFile('/src/app.mjs');
 
       expect(result.filePath).toBe('/src/app.mjs');
+      expect(result.dependencies.map(dependency => dependency.path)).toContain('/src/helper.mjs');
     });
 
     it('應該分析 .cjs 檔案（含 ES6 import）', async () => {
@@ -606,9 +607,8 @@ describe('ImpactAnalyzer (JavaScript)', () => {
 
       const result = await analyzer.analyzeFile('/src/app.cjs');
 
-      // ImpactAnalyzer 目前不支援 .cjs 副檔名（includePatterns 未包含）
-      // 但 analyzeFile 直接分析單一檔案應該可以
       expect(result.filePath).toBe('/src/app.cjs');
+      expect(result.dependencies.map(dependency => dependency.path)).toContain('/src/helper.cjs');
     });
   });
 

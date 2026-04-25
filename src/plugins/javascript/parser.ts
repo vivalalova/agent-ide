@@ -41,7 +41,8 @@ import {
   createASTMetadata,
   ReferenceType,
   SymbolType,
-  DependencyType
+  DependencyType,
+  JAVASCRIPT_SOURCE_EXTENSIONS
 } from '@shared/types/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import {
@@ -106,7 +107,7 @@ interface SymbolIndexCache {
 export class JavaScriptParser implements ParserPlugin {
   public readonly name = 'javascript';
   public readonly version = '1.0.0';
-  public readonly supportedExtensions = ['.js', '.jsx', '.mjs', '.cjs'] as const;
+  public readonly supportedExtensions = JAVASCRIPT_SOURCE_EXTENSIONS;
   public readonly supportedLanguages = ['javascript', 'jsx'] as const;
 
   private parseOptions: JavaScriptParseOptions;

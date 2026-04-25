@@ -5,11 +5,12 @@
 
 import * as path from 'path';
 import { ImportResolver } from './import-resolver.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 
 /**
  * 支援的檔案副檔名
  */
-export const ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue'] as const;
+export const ALLOWED_EXTENSIONS = [...SOURCE_FILE_EXTENSIONS, '.vue'] as const;
 
 /**
  * 排除的目錄模式
@@ -19,7 +20,7 @@ export const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.b
 /**
  * 支援移除的副檔名
  */
-const REMOVABLE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx'];
+const REMOVABLE_EXTENSIONS = SOURCE_FILE_EXTENSIONS;
 
 /**
  * 路徑工具類別
@@ -129,7 +130,7 @@ export class PathUtils {
    */
   removeExtension(filePath: string): string {
     const ext = path.extname(filePath);
-    if (REMOVABLE_EXTENSIONS.includes(ext)) {
+    if ((REMOVABLE_EXTENSIONS as readonly string[]).includes(ext)) {
       return filePath.slice(0, -ext.length);
     }
     return filePath;
@@ -148,7 +149,7 @@ export class PathUtils {
 
     // 移除副檔名（如果目標是支援的檔案類型）
     const ext = path.extname(relativePath);
-    if (REMOVABLE_EXTENSIONS.includes(ext)) {
+    if ((REMOVABLE_EXTENSIONS as readonly string[]).includes(ext)) {
       relativePath = relativePath.slice(0, -ext.length);
     }
 
@@ -189,7 +190,7 @@ export class PathUtils {
 
           // 移除副檔名
           const newExt = path.extname(newRelativeToAlias);
-          if (REMOVABLE_EXTENSIONS.includes(newExt)) {
+          if ((REMOVABLE_EXTENSIONS as readonly string[]).includes(newExt)) {
             newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
           }
 
@@ -209,7 +210,7 @@ export class PathUtils {
 
         // 移除副檔名
         const newExt = path.extname(newRelativeToBaseUrl);
-        if (REMOVABLE_EXTENSIONS.includes(newExt)) {
+        if ((REMOVABLE_EXTENSIONS as readonly string[]).includes(newExt)) {
           newRelativeToBaseUrl = newRelativeToBaseUrl.slice(0, -newExt.length);
         }
 

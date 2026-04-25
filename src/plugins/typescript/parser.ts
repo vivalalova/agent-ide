@@ -35,7 +35,8 @@ import {
   createAST,
   createASTMetadata,
   ReferenceType,
-  SymbolType
+  SymbolType,
+  TYPESCRIPT_PARSER_EXTENSIONS
 } from '@shared/types/index.js';
 import {
   TypeScriptAST,
@@ -84,7 +85,7 @@ interface ASTCacheItem {
 export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly name = 'typescript';
   public readonly version = '1.0.0';
-  public readonly supportedExtensions = ['.ts', '.tsx', '.d.ts'] as const;
+  public readonly supportedExtensions = TYPESCRIPT_PARSER_EXTENSIONS;
   public readonly supportedLanguages = ['typescript', 'tsx'] as const;
 
   private symbolExtractor: TypeScriptSymbolExtractor;
@@ -610,21 +611,15 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   // 私有輔助方法
 
   private getScriptKind(filePath: string): ts.ScriptKind {
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
-    switch (ext) {
-    case '.tsx':
+    if (filePath.endsWith('.tsx')) {
       return ts.ScriptKind.TSX;
-    case '.d.ts':
-      return ts.ScriptKind.TS;
-    case '.ts':
-    default:
-      return ts.ScriptKind.TS;
     }
+
+    return ts.ScriptKind.TS;
   }
 
   private getLanguageFromFilePath(filePath: string): string {
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
-    return ext === '.tsx' ? 'tsx' : 'typescript';
+    return filePath.endsWith('.tsx') ? 'tsx' : 'typescript';
   }
 
   private findNodeAtPosition(sourceFile: ts.SourceFile, position: number): ts.Node | undefined {
@@ -770,7 +765,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 判斷檔案是否為測試檔案
    */
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
+    return /\.(test|spec)\.(ts|tsx|mts|cts)$/.test(filePath) ||
            filePath.includes('/__tests__/') ||
            filePath.includes('/__mocks__/');
   }

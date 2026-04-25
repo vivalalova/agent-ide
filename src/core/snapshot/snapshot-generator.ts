@@ -9,7 +9,7 @@ import { IndexEngine, createIndexConfig } from '@core/foundations/indexing/index
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PatternInfo } from '@infrastructure/parser/index.js';
-import { SymbolType, type Symbol } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS, SymbolType, type Symbol } from '@shared/types/index.js';
 import type { ModuleSnapshot, ProjectSnapshot, SnapshotResult, PrivateInfo } from './types.js';
 import { SnapshotScope, isProjectSnapshot } from './types.js';
 import { SnapshotCacheManager } from './snapshot-cache.js';
@@ -132,9 +132,8 @@ export class SnapshotGenerator {
       }
     }
 
-    // 檢查是否有 index.ts（模組入口）
-    const indexPath = path.join(targetPath, 'index.ts');
-    const hasIndex = await this.fileSystem.exists(indexPath);
+    // 檢查是否有 index source file（模組入口）
+    const hasIndex = await this.hasIndexSourceFile(targetPath);
 
     if (hasIndex) {
       return { scope: SnapshotScope.Module, scanFromSrc: false };
@@ -148,6 +147,20 @@ export class SnapshotGenerator {
 
     // 預設為模組
     return { scope: SnapshotScope.Module, scanFromSrc: false };
+  }
+
+  private async hasIndexSourceFile(dirPath: string): Promise<boolean> {
+    for (const extension of SOURCE_FILE_EXTENSIONS) {
+      if (await this.fileSystem.exists(path.join(dirPath, `index${extension}`))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isIndexSourceFile(fileName: string): boolean {
+    return SOURCE_FILE_EXTENSIONS.some(extension => fileName === `index${extension}`);
   }
 
   /**
@@ -167,10 +180,7 @@ export class SnapshotGenerator {
       const subDirPath = path.join(dirPath, entry.name);
       const subEntries = await this.fileSystem.readDirectory(subDirPath);
 
-      // 檢查子目錄是否有 index.ts
-      const hasIndex = subEntries.some(e =>
-        e.name === 'index.ts' || e.name === 'index.js'
-      );
+      const hasIndex = subEntries.some(e => this.isIndexSourceFile(e.name));
 
       if (hasIndex) {
         return true;
@@ -191,8 +201,14 @@ export class SnapshotGenerator {
    */
   private async generateModuleSnapshot(modulePath: string): Promise<ModuleSnapshot> {
     const config = createIndexConfig(modulePath, {
-      includeExtensions: ['.ts', '.js', '.tsx', '.jsx'],
-      excludePatterns: ['node_modules/**', '**/*.test.ts', '**/*.spec.ts']
+      includeExtensions: SOURCE_FILE_EXTENSIONS,
+      excludePatterns: [
+        'node_modules/**',
+        ...SOURCE_FILE_EXTENSIONS.flatMap(extension => [
+          `**/*.test${extension}`,
+          `**/*.spec${extension}`
+        ])
+      ]
     });
 
     const indexEngine = new IndexEngine(config, this.fileSystem);
@@ -292,10 +308,7 @@ export class SnapshotGenerator {
 
       const entries = await this.fileSystem.readDirectory(dirPath);
 
-      // 檢查是否有 index.ts
-      const hasIndex = entries.some(entry =>
-        entry.name === 'index.ts' || entry.name === 'index.js'
-      );
+      const hasIndex = entries.some(entry => this.isIndexSourceFile(entry.name));
 
       if (hasIndex) {
         moduleDirs.push(dirPath);

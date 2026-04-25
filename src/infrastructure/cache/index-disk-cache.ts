@@ -11,6 +11,7 @@ import { readFile, writeFile, mkdir, rename as fsRename, access } from 'fs/promi
 import { constants as fsConstants } from 'fs';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import {
   IndexCacheSerializer,
   CACHE_VERSION,
@@ -47,7 +48,7 @@ export class IndexDiskCache {
     projectFileSystem: IFileSystem
   ): Promise<string> {
     try {
-      const extensions = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
+      const extensions = SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`);
       const excludePatterns = ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'];
 
       const allFiles: string[] = [];

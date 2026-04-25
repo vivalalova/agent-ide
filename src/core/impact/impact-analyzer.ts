@@ -8,6 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -371,7 +372,7 @@ export class ImpactAnalyzer {
       followSymlinks: true,
       maxDepth: 100,
       excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-      includePatterns: ['**/*.ts', '**/*.js', '**/*.tsx', '**/*.jsx'],
+      includePatterns: SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`),
       concurrency: 4
     };
   }

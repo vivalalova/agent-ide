@@ -376,7 +376,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    * 判斷檔案是否為測試檔案（預設實作）
    */
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filePath) ||
+    return /\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(filePath) ||
            filePath.includes('/__tests__/') ||
            filePath.includes('/__mocks__/');
   }

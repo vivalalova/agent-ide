@@ -8,6 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PatternInfo } from '@infrastructure/parser/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { isSourceFileExtension } from '@shared/types/index.js';
 
 /**
  * 識別模組內的 factory 模式
@@ -28,7 +29,7 @@ export async function identifyFactoryPatterns(
       if (entry.isDirectory) { continue; }
 
       const ext = path.extname(entry.name);
-      if (!['.ts', '.js', '.tsx', '.jsx'].includes(ext)) { continue; }
+      if (!isSourceFileExtension(ext)) { continue; }
 
       const filePath = path.join(modulePath, entry.name);
       const parser = ParserRegistry.getInstance().getParser(ext);

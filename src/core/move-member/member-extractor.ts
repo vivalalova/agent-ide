@@ -8,6 +8,10 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { FileUtils } from '@core/foundations/file-utils.js';
 import { MemberType, type MemberDefinition } from './types.js';
 import {
+  isJavaScriptSourceExtension,
+  isTypeScriptSourceExtension
+} from '@shared/types/index.js';
+import {
   extractTypeScriptMember,
   listTypeScriptMembers,
   extractJavaScriptMember,
@@ -49,16 +53,15 @@ export class MemberExtractor {
 
     const extension = FileUtils.getFileExtension(filePath);
 
-    switch (extension) {
-      case '.ts':
-      case '.tsx':
-        return extractTypeScriptMember(content, filePath, memberName, memberType, className);
-      case '.js':
-      case '.jsx':
-        return extractJavaScriptMember(content, filePath, memberName, memberType, className);
-      default:
-        return null;
+    if (isTypeScriptSourceExtension(extension)) {
+      return extractTypeScriptMember(content, filePath, memberName, memberType, className);
     }
+
+    if (isJavaScriptSourceExtension(extension)) {
+      return extractJavaScriptMember(content, filePath, memberName, memberType, className);
+    }
+
+    return null;
   }
 
   /**
@@ -123,16 +126,15 @@ export class MemberExtractor {
 
     const extension = FileUtils.getFileExtension(filePath);
 
-    switch (extension) {
-      case '.ts':
-      case '.tsx':
-        return listTypeScriptMembers(content, filePath, className);
-      case '.js':
-      case '.jsx':
-        return listJavaScriptMembers(content, filePath, className);
-      default:
-        return [];
+    if (isTypeScriptSourceExtension(extension)) {
+      return listTypeScriptMembers(content, filePath, className);
     }
+
+    if (isJavaScriptSourceExtension(extension)) {
+      return listJavaScriptMembers(content, filePath, className);
+    }
+
+    return [];
   }
 }
 

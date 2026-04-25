@@ -13,6 +13,7 @@ import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/co
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
@@ -120,7 +121,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       workspacePath,
       context.fileSystem,
       {
-        includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
+        includeExtensions: CLI_INDEX_DEFAULTS.includeExtensions,
         excludePatterns: ['node_modules/**', '*.test.*']
       },
       { noCache, cacheDir: globalOpts.cacheDir }

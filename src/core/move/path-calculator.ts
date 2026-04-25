@@ -10,6 +10,10 @@ import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+
+const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
+const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
 
 /**
  * 路徑計算器類別
@@ -288,8 +292,7 @@ export class PathCalculator {
           // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
             // 嘗試解析到實際檔案（處理省略副檔名的情況）
-            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
-            const isTargetInMovedDir = possibleExtensions.some(ext => {
+            const isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
@@ -324,9 +327,8 @@ export class PathCalculator {
           const potentialTargetResolved = path.resolve(targetDir, importStatement.path);
 
           // 檢查目標位置是否存在同名檔案
-          const targetExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
           let targetFileExists = false;
-          for (const ext of targetExtensions) {
+          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
             const fullPath = potentialTargetResolved + ext;
             if (await this.fileSystem.exists(fullPath)) {
               targetFileExists = true;
@@ -370,18 +372,15 @@ export class PathCalculator {
           // 如果是目錄移動，檢查被引用的檔案是否在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
             // 嘗試解析到實際檔案（處理省略副檔名和 index 檔案的情況）
-            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
-            const possibleIndexFiles = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
-
             // 檢查直接副檔名匹配（如 @/modules/utils → utils.ts）
-            let isTargetInMovedDir = possibleExtensions.some(ext => {
+            let isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
 
             // 如果不是直接匹配，檢查 index 檔案（如 @/modules/alarm → alarm/index.ts）
             if (!isTargetInMovedDir) {
-              isTargetInMovedDir = possibleIndexFiles.some(indexFile => {
+              isTargetInMovedDir = SOURCE_INDEX_FILES.some(indexFile => {
                 const fullPath = path.normalize(normalizedResolved + indexFile);
                 return normalizedFilesInDir.has(fullPath);
               });

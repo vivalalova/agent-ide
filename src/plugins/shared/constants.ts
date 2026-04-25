@@ -34,9 +34,15 @@ export const TYPESCRIPT_EXCLUDE_PATTERNS = [
   '**/*.spec.ts',
   '**/*.test.tsx',
   '**/*.spec.tsx',
+  '**/*.test.mts',
+  '**/*.spec.mts',
+  '**/*.test.cts',
+  '**/*.spec.cts',
   '**/__tests__/**',
   '**/__mocks__/**',
-  '**/*.d.ts'
+  '**/*.d.ts',
+  '**/*.d.mts',
+  '**/*.d.cts'
 ] as const;
 
 /**

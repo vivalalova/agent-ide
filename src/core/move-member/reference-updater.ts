@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { MemberDefinition, ReferenceUpdate, MoveMemberOptions } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 
 /**
  * 解析的 import 成員
@@ -257,7 +258,7 @@ export class ReferenceUpdater {
    */
   private removeExtension(filePath: string): string {
     const ext = path.extname(filePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
+    if ((SOURCE_FILE_EXTENSIONS as readonly string[]).includes(ext)) {
       return filePath.slice(0, -ext.length);
     }
     return filePath;
@@ -278,7 +279,10 @@ export class ReferenceUpdater {
     let relativePath = path.relative(fromDir, to);
 
     // 移除副檔名
-    relativePath = relativePath.replace(/\.(ts|tsx|js|jsx)$/, '');
+    const extension = path.extname(relativePath);
+    if ((SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension)) {
+      relativePath = relativePath.slice(0, -extension.length);
+    }
 
     // 確保以 ./ 開頭
     if (!relativePath.startsWith('.')) {
@@ -324,8 +328,7 @@ export class ReferenceUpdater {
    * 檢查是否為支援的檔案類型
    */
   private isSupportedFile(filename: string): boolean {
-    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
-    return supportedExtensions.some(ext => filename.endsWith(ext));
+    return SOURCE_FILE_EXTENSIONS.some(ext => filename.endsWith(ext));
   }
 
   /**

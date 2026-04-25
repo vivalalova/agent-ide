@@ -35,18 +35,15 @@ export class SignatureParser {
       return null;
     }
 
-    const extension = FileUtils.getFileExtension(filePath);
-
-    switch (extension) {
-      case '.ts':
-      case '.tsx':
-        return this.parseTypeScriptSignature(content, filePath, functionName);
-      case '.js':
-      case '.jsx':
-        return this.parseJavaScriptSignature(content, filePath, functionName);
-      default:
-        return null;
+    if (FileUtils.isTypeScript(filePath)) {
+      return this.parseTypeScriptSignature(content, filePath, functionName);
     }
+
+    if (FileUtils.isJavaScript(filePath)) {
+      return this.parseJavaScriptSignature(content, filePath, functionName);
+    }
+
+    return null;
   }
 
   /**

@@ -47,4 +47,17 @@ describe('search options', () => {
 
     expect(results).toHaveLength(0);
   });
+
+  it('相同符號重複加入索引時搜尋結果應去重', async () => {
+    const index = new SymbolIndex();
+    const symbol = createMockSymbol('uniqueSearchValue', SymbolType.Constant, '/src/value.ts');
+    const fileInfo = createFileInfo('/src/value.ts');
+
+    await index.addSymbol(symbol, fileInfo);
+    await index.addSymbol(symbol, fileInfo);
+
+    const results = await index.findSymbol('uniqueSearchValue');
+
+    expect(results).toHaveLength(1);
+  });
 });

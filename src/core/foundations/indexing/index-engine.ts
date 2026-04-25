@@ -14,6 +14,7 @@ import {
 } from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
+import { getSourceLanguage } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { logger } from '@infrastructure/logging/index.js';
 import type {
@@ -660,10 +661,6 @@ export class IndexEngine {
    */
   private getLanguageFromExtension(extension: string): string | undefined {
     const languageMap: Record<string, string> = {
-      '.ts': 'typescript',
-      '.tsx': 'typescript',
-      '.js': 'javascript',
-      '.jsx': 'javascript',
       '.java': 'java',
       '.cpp': 'cpp',
       '.c': 'c',
@@ -674,7 +671,7 @@ export class IndexEngine {
       '.rs': 'rust'
     };
 
-    return languageMap[extension];
+    return getSourceLanguage(extension) ?? languageMap[extension];
   }
 
   /**

@@ -371,6 +371,11 @@ export class SymbolIndex {
   private addToIndex(entry: SymbolIndexEntry): void {
     const { symbol, fileInfo } = entry;
 
+    const fileEntries = this.symbolsByFile.get(fileInfo.filePath) || [];
+    if (fileEntries.some(existingEntry => this.isSameSymbolEntry(existingEntry, entry))) {
+      return;
+    }
+
     // 名稱索引
     const nameEntries = this.symbolsByName.get(symbol.name) || [];
     nameEntries.push(entry);
@@ -382,7 +387,6 @@ export class SymbolIndex {
     this.symbolsByType.set(symbol.type, typeEntries);
 
     // 檔案索引
-    const fileEntries = this.symbolsByFile.get(fileInfo.filePath) || [];
     fileEntries.push(entry);
     this.symbolsByFile.set(fileInfo.filePath, fileEntries);
 
@@ -393,6 +397,19 @@ export class SymbolIndex {
       scopeEntries.push(entry);
       this.symbolsByScope.set(scopeKey, scopeEntries);
     }
+  }
+
+  private isSameSymbolEntry(a: SymbolIndexEntry, b: SymbolIndexEntry): boolean {
+    const aRange = a.symbol.location.range;
+    const bRange = b.symbol.location.range;
+
+    return a.fileInfo.filePath === b.fileInfo.filePath
+      && a.symbol.name === b.symbol.name
+      && a.symbol.type === b.symbol.type
+      && aRange.start.line === bRange.start.line
+      && aRange.start.column === bRange.start.column
+      && aRange.end.line === bRange.end.line
+      && aRange.end.column === bRange.end.column;
   }
 
   /**

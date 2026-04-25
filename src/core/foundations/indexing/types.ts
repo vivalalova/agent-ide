@@ -4,6 +4,7 @@
  */
 
 import type { Symbol, Dependency, SymbolType } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 
 /**
  * CLI 命令共用的索引配置常數
@@ -11,7 +12,7 @@ import type { Symbol, Dependency, SymbolType } from '@shared/types/index.js';
  */
 export const CLI_INDEX_DEFAULTS = {
   /** 支援的程式語言副檔名 */
-  includeExtensions: ['.ts', '.tsx', '.js', '.jsx'] as const,
+  includeExtensions: SOURCE_FILE_EXTENSIONS,
   /** 排除的目錄模式 */
   excludePatterns: [
     'node_modules/**',
@@ -285,7 +286,7 @@ export function createIndexConfig(
   return {
     workspacePath,
     excludePatterns: options?.excludePatterns || ['node_modules/**', '.git/**', 'dist/**'],
-    includeExtensions: options?.includeExtensions || ['.ts', '.js', '.tsx', '.jsx'],
+    includeExtensions: options?.includeExtensions || SOURCE_FILE_EXTENSIONS,
     maxFileSize: options?.maxFileSize || 1024 * 1024, // 1MB
     enablePersistence: options?.enablePersistence || true,
     persistencePath: options?.persistencePath,

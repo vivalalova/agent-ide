@@ -14,6 +14,19 @@ export * from './ast.js';
 // 行號工具函數
 export { isSameLine, toOneBased, toZeroBased } from './line-number.js';
 
+// Source file extension helpers
+export {
+  TYPESCRIPT_SOURCE_EXTENSIONS,
+  TYPESCRIPT_PARSER_EXTENSIONS,
+  JAVASCRIPT_SOURCE_EXTENSIONS,
+  SOURCE_FILE_EXTENSIONS,
+  isTypeScriptSourceExtension,
+  isJavaScriptSourceExtension,
+  isSourceFileExtension,
+  getSourceLanguage,
+  getImportResolutionExtensions
+} from './source-file-extensions.js';
+
 // 重新匯出常用型別以便於使用
 export type {
   Position,

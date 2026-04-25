@@ -80,6 +80,42 @@ export const dD = dB + dC;
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
     });
+
+    it('應該分析 .mts 檔案使用 .mjs runtime import 的影響', async () => {
+      await fixture.writeFile('src/esm-source.mts', 'export const esmValue = 1;');
+      await fixture.writeFile(
+        'src/esm-consumer.mts',
+        'import { esmValue } from \'./esm-source.mjs\';\nexport const usedEsmValue = esmValue;'
+      );
+
+      const result = await executeCLI(
+        ['impact', '--file', 'src/esm-source.mts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents: string[] = output.impact?.dependents ?? [];
+      expect(dependents.some(filePath => filePath.includes('esm-consumer.mts'))).toBe(true);
+    });
+
+    it('應該分析 .cts 檔案使用 .cjs runtime import 的影響', async () => {
+      await fixture.writeFile('src/cjs-source.cts', 'export const cjsValue = 1;');
+      await fixture.writeFile(
+        'src/cjs-consumer.cts',
+        'import { cjsValue } from \'./cjs-source.cjs\';\nexport const usedCjsValue = cjsValue;'
+      );
+
+      const result = await executeCLI(
+        ['impact', '--file', 'src/cjs-source.cts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents: string[] = output.impact?.dependents ?? [];
+      expect(dependents.some(filePath => filePath.includes('cjs-consumer.cts'))).toBe(true);
+    });
   });
 
   // MARK: - 孤立檔案與邊界條件

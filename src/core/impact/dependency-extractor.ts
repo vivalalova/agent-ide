@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { Dependency, DependencyType } from '@shared/types/index.js';
+import { Dependency, DependencyType, isSourceFileExtension } from '@shared/types/index.js';
 import type { ExtendedDependencyAnalysisOptions } from './types.js';
 import type { PathResolver } from './path-resolver.js';
 import type { FileScanner } from './file-scanner.js';
@@ -39,20 +39,12 @@ export class DependencyExtractor {
     const fileExt = path.extname(filePath);
 
     try {
-      // 簡單的正則表達式解析（實際應該使用 AST）
-      let importRegex: RegExp;
-
-      switch (fileExt) {
-      case '.ts':
-      case '.tsx':
-      case '.js':
-      case '.jsx':
-        // 支援 import type { ... } 語法，capture group 1 = 'type '，group 2 = path
-        importRegex = /import\s+(type\s+)?(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
-        break;
-      default:
+      if (!isSourceFileExtension(fileExt)) {
         return dependencies; // 不支援的檔案類型
       }
+
+      // 支援 import type { ... } 語法，capture group 1 = 'type '，group 2 = path
+      const importRegex = /import\s+(type\s+)?(?:{[^}]*}|\*\s+as\s+\w+|\w+)?\s*from\s+['"`]([^'"`]+)['"`]/g;
 
       let match;
       while ((match = importRegex.exec(content)) !== null) {

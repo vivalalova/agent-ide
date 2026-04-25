@@ -57,6 +57,20 @@ describe('CLI search - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.results.some((r: { content: string }) => r.content.includes('UserService'))).toBe(true);
     });
+
+    it('相同符號不應重複出現在搜尋結果', async () => {
+      await fixture.writeFile('src/search-dedupe.ts', 'export const uniqueSearchValue = 1;');
+
+      const result = await executeCLI(
+        ['search', 'uniqueSearchValue', '--no-fuzzy', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.results).toHaveLength(1);
+      expect(output.results[0].content).toBe('[constant] uniqueSearchValue');
+    });
   });
 
   describe('搜尋結果結構', () => {
