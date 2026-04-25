@@ -33,7 +33,7 @@ export async function handleGlobMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
 
   try {
     // 展開 glob pattern（使用 IFileSystem 的 glob 方法）

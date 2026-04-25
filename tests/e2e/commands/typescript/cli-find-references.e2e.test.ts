@@ -130,6 +130,30 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(Array.isArray(output.references)).toBe(true);
     });
 
+    it('應該回傳與 line 對齊的 context', async () => {
+      const result = await executeCLI(
+        ['find-references', 'UserService', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const indexReferences = output.references.filter((ref: { file: string }) => ref.file.endsWith('/src/index.ts'));
+
+      expect(indexReferences).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            line: 4,
+            context: 'import { UserService } from \'./services/user-service\';'
+          }),
+          expect.objectContaining({
+            line: 24,
+            context: 'const userService = new UserService();'
+          })
+        ])
+      );
+    });
+
     it('應該查找函數呼叫引用', async () => {
       await fixture.writeFile('fn.ts', 'export function fn() { return 1; }');
       await fixture.writeFile('caller.ts', 'import { fn } from "./fn.js";\nconst result = fn();');

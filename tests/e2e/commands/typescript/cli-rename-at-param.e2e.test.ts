@@ -51,7 +51,7 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
 
   describe('使用 --at 指定檔案', () => {
     it('同一檔案有多個同名符號時需要指定行號', async () => {
-      // user-handler.ts 有多個 userId（:15, :19, :23），只指定檔案無法區分
+      // user-handler.ts 有多個 userId（:16, :20, :24），只指定檔案無法區分
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts', '--format', 'json'],
         { memfs: fixture.memfs }
@@ -65,7 +65,7 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
 
     it('使用 --at file:line 精確定位符號', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:15', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:16', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -80,7 +80,7 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
 
     it('應該 rename 指定位置的符號及其引用', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:15', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:16', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -137,7 +137,7 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
   describe('--at 格式解析', () => {
     it('應該支援 file:line 格式（相對路徑）', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:15', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:16', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -146,7 +146,7 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
 
     it('應該支援 file:line:column 格式', async () => {
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:15:22', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'uid', '--at', 'src/api/handlers/user-handler.ts:16:23', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

@@ -15,10 +15,11 @@ import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unifie
 import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 /** Change Signature 命令選項 */
 interface ChangeSignatureOptions {
-  path: string;
+  path?: string;
   file?: string;
   function?: string;
   add?: string;
@@ -37,7 +38,7 @@ export function setupChangeSignatureCommand(program: Command, context: CommandCo
   program
     .command('change-signature [file] [functionName]')
     .description('修改函式簽名並自動更新所有呼叫點')
-    .option('-p, --path <path>', '專案根目錄路徑', process.cwd())
+    .option('-p, --path <path>', '專案根目錄路徑')
     .option('--file <file>', '要修改的檔案路徑')
     .option('--function <name>', '要修改的函式名稱')
     .option('--add <params>', '新增參數 (格式: name:type=default@position,name2:type2)')
@@ -79,10 +80,12 @@ async function handleChangeSignatureCommand(
   }
 
   try {
-    // 解析專案根目錄和檔案路徑
-    const projectRoot = options.path ? path.resolve(process.cwd(), options.path) : process.cwd();
-    // 檔案路徑相對於 projectRoot 解析（與其他命令一致）
-    const filePath = path.isAbsolute(resolvedFile) ? resolvedFile : path.resolve(projectRoot, resolvedFile);
+    const { projectRoot, filePath } = await resolveChangeSignaturePaths({
+      resolvedFile,
+      pathOption: options.path,
+      cwd: process.cwd(),
+      fileSystem: context.fileSystem
+    });
 
     // 解析變更操作
     const changes = parseChanges(options);
@@ -132,6 +135,55 @@ async function handleChangeSignatureCommand(
     outputHandler.outputError(errorMsg, format, 'change-signature');
     process.exitCode = 1;
   }
+}
+
+export interface ResolveChangeSignaturePathsOptions {
+  resolvedFile: string;
+  pathOption?: string;
+  cwd: string;
+  fileSystem: IFileSystem;
+}
+
+export interface ResolvedChangeSignaturePaths {
+  projectRoot: string;
+  filePath: string;
+}
+
+export async function resolveChangeSignaturePaths(
+  options: ResolveChangeSignaturePathsOptions
+): Promise<ResolvedChangeSignaturePaths> {
+  if (options.pathOption) {
+    const projectRoot = path.resolve(options.cwd, options.pathOption);
+    return {
+      projectRoot,
+      filePath: path.isAbsolute(options.resolvedFile)
+        ? options.resolvedFile
+        : path.resolve(projectRoot, options.resolvedFile)
+    };
+  }
+
+  const filePath = path.isAbsolute(options.resolvedFile)
+    ? options.resolvedFile
+    : path.resolve(options.cwd, options.resolvedFile);
+  const projectRoot = await findNearestProjectRoot(filePath, options.fileSystem) ?? options.cwd;
+
+  return { projectRoot, filePath };
+}
+
+async function findNearestProjectRoot(filePath: string, fileSystem: IFileSystem): Promise<string | undefined> {
+  let currentDir = path.dirname(filePath);
+
+  while (currentDir !== path.dirname(currentDir)) {
+    const markers = ['package.json', 'tsconfig.json', '.git'];
+    for (const marker of markers) {
+      if (await fileSystem.exists(path.join(currentDir, marker))) {
+        return currentDir;
+      }
+    }
+    currentDir = path.dirname(currentDir);
+  }
+
+  return undefined;
 }
 
 /**

@@ -257,6 +257,16 @@ describe('CLI 整合測試', () => {
       verifyTypecheck(SAMPLE_PROJECT);
     });
 
+    it('move file - 相對 --path 不應重複拼接 project root', () => {
+      const result = runCLI(`${CLI} move src/services/user-service.ts src/moved-services/user-service.ts --path "tests/fixtures/sample-project" --format json`);
+      expect(result.success).toBe(true);
+      expect(result.source).toBe(resolve(SAMPLE_PROJECT, 'src/services/user-service.ts'));
+      expect(result.target).toBe(resolve(SAMPLE_PROJECT, 'src/moved-services/user-service.ts'));
+      expect(result.message).toContain('更新了');
+      expect(existsSync(resolve(SAMPLE_PROJECT, 'src/moved-services/user-service.ts'))).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
+    });
+
     it('move directory - 目錄移動後仍可編譯', () => {
       const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils" "${SAMPLE_PROJECT}/src/moved-utils" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);

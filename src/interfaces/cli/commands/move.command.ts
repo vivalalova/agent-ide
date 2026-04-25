@@ -95,7 +95,7 @@ async function handleMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
 
   // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
   const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
@@ -275,7 +275,7 @@ async function handleMoveMemberCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
 
   try {
     // 解析 source 和 target 路徑

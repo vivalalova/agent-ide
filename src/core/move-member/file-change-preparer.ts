@@ -74,11 +74,13 @@ export class FileChangePreparer {
       reexportStatement = `export { ${member.name} } from '${relativePath}';\n`;
     }
 
-    const newLines = [
-      ...lines.slice(0, removeStartLine),
-      ...(options.keepReexport ? [reexportStatement] : []),
-      ...lines.slice(endLine + 1)
-    ];
+    const newLines = this.mergeWithSingleBlankBoundary(
+      [
+        ...lines.slice(0, removeStartLine),
+        ...(options.keepReexport ? [reexportStatement] : [])
+      ],
+      lines.slice(endLine + 1)
+    );
 
     return {
       filePath: options.sourceFile,
@@ -125,7 +127,7 @@ export class FileChangePreparer {
 
     if (isNewFile) {
       // 新檔案：生成完整的檔案內容
-      const newCode = dependencyImports + (dependencyImports ? '\n\n' : '') + memberCode + '\n';
+      const newCode = this.ensureTrailingNewline(dependencyImports + (dependencyImports ? '\n\n' : '') + memberCode);
 
       return {
         filePath: target.filePath,
@@ -146,7 +148,7 @@ export class FileChangePreparer {
 
     if (insertLine < 0) {
       // 預設插入到檔案結尾
-      insertLine = lines.length;
+      insertLine = this.findAppendInsertPosition(lines);
     }
 
     // 現有檔案：將 import 插入到檔案開頭（在現有 import 之後）
@@ -161,7 +163,7 @@ export class FileChangePreparer {
         memberCode,
         ...lines.slice(insertLine)
       ];
-      finalCode = newLines.join('\n');
+      finalCode = this.ensureTrailingNewline(newLines.join('\n'));
     } else {
       const newLines = [
         ...lines.slice(0, insertLine),
@@ -169,7 +171,7 @@ export class FileChangePreparer {
         memberCode,
         ...lines.slice(insertLine)
       ];
-      finalCode = newLines.join('\n');
+      finalCode = this.ensureTrailingNewline(newLines.join('\n'));
     }
 
     return {
@@ -416,6 +418,54 @@ export class FileChangePreparer {
     }
 
     return relativePath;
+  }
+
+  private ensureTrailingNewline(content: string): string {
+    return content.endsWith('\n') ? content : `${content}\n`;
+  }
+
+  private findAppendInsertPosition(lines: string[]): number {
+    return lines.at(-1) === '' ? lines.length - 1 : lines.length;
+  }
+
+  private mergeWithSingleBlankBoundary(before: string[], after: string[]): string[] {
+    const mergedBefore = [...before];
+    const mergedAfter = [...after];
+    let trailingBlankCount = this.countTrailingBlankLines(mergedBefore);
+    let leadingBlankCount = this.countLeadingBlankLines(mergedAfter);
+
+    if (trailingBlankCount + leadingBlankCount <= 1) {
+      return [...mergedBefore, ...mergedAfter];
+    }
+
+    while (trailingBlankCount > 1) {
+      mergedBefore.pop();
+      trailingBlankCount--;
+    }
+
+    const keepLeadingBlank = trailingBlankCount === 0 ? 1 : 0;
+    while (leadingBlankCount > keepLeadingBlank) {
+      mergedAfter.shift();
+      leadingBlankCount--;
+    }
+
+    return [...mergedBefore, ...mergedAfter];
+  }
+
+  private countTrailingBlankLines(lines: string[]): number {
+    let count = 0;
+    for (let i = lines.length - 1; i >= 0 && lines[i].trim() === ''; i--) {
+      count++;
+    }
+    return count;
+  }
+
+  private countLeadingBlankLines(lines: string[]): number {
+    let count = 0;
+    for (let i = 0; i < lines.length && lines[i].trim() === ''; i++) {
+      count++;
+    }
+    return count;
   }
 
   /**

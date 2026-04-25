@@ -257,7 +257,7 @@ describe('CLI rename conflict-detection - 衝突檢測與多符號消歧', () =>
       {
         scenario: '指定有效 --at（file:line:column）應成功',
         symbolName: 'userId',
-        atValue: 'src/types/order.ts:61:2',
+        atValue: 'src/types/order.ts:62:3',
         shouldSucceed: true,
       },
       {
@@ -323,7 +323,7 @@ describe('CLI rename conflict-detection - 衝突檢測與多符號消歧', () =>
 
       // When: 使用完整位置格式
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'newUserId', '--at', 'src/types/order.ts:61:2', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'userId', '--to', 'newUserId', '--at', 'src/types/order.ts:62:3', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
