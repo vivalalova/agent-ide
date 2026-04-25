@@ -164,6 +164,29 @@ log('test');
         expect(output.success).toBe(true);
       }
     });
+
+    it('應該把未加引號的 string 預設值輸出為字串 literal', async () => {
+      const testFile = `${fixture.rootPath}/test-add-string-default.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function formatAmount(amount: number): string {
+  return String(amount);
+}
+
+const text = formatAmount(42);
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'formatAmount', '-p', fixture.rootPath, '--add', 'locale:string=en-US', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('locale: string = \'en-US\'');
+      expect(updatedContent).toContain('formatAmount(42, \'en-US\')');
+      expect(updatedContent).not.toContain('formatAmount(42, en-US)');
+    });
   });
 
   describe('刪除參數 - 基本功能', () => {
@@ -188,6 +211,29 @@ const result = process('test', 123);
         expect(output.success).toBe(true);
       }
     });
+
+    it('刪除仍在函式 body 使用的參數應該失敗且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-remove-used-param.ts`;
+      const originalContent = `
+function process(data: string, suffix: string): string {
+  return data + suffix;
+}
+
+const result = process('a', 'b');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'process', '-p', fixture.rootPath, '--remove', 'suffix', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('仍在函式 body 中使用');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
   });
 
   describe('修改參數類型 - 基本功能', () => {
@@ -211,6 +257,31 @@ const n = count(42);
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
       }
+    });
+  });
+
+  describe('重命名參數 - 基本功能', () => {
+    it('應該同步更新函式 body 內的參數引用', async () => {
+      const testFile = `${fixture.rootPath}/test-rename-param-body.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function describeUser(userId: string): string {
+  const normalized = userId.trim();
+  return 'User: ' + userId + ' (' + normalized + ')';
+}
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'describeUser', '-p', fixture.rootPath, '--rename', 'userId:accountId', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('function describeUser(accountId: string): string');
+      expect(updatedContent).toContain('const normalized = accountId.trim();');
+      expect(updatedContent).toContain('\'User: \' + accountId');
+      expect(updatedContent).not.toContain('userId');
     });
   });
 

@@ -69,6 +69,39 @@ describe('CLI move - JavaScript 專案', () => {
       expect(consumerContent).not.toContain('./src/unused');
     });
 
+    it('移動 JS ESM 檔案後應保留 .js import 副檔名', async () => {
+      const result = await executeCLI(
+        ['move', 'src/utils.js', 'src/lib/utils.js', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const indexContent = await fixture.readFile('src/index.js');
+      const serviceContent = await fixture.readFile('src/service.js');
+      expect(indexContent).toContain('./lib/utils.js');
+      expect(serviceContent).toContain('./lib/utils.js');
+      expect(indexContent).not.toContain('./lib/utils\'');
+      expect(serviceContent).not.toContain('./lib/utils\'');
+    });
+
+    it('移動含有內部 import 的 JS ESM 檔案後應保留 .js 副檔名', async () => {
+      const result = await executeCLI(
+        ['move', 'src/service.js', 'src/lib/service.js', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const apiContent = await fixture.readFile('src/api.js');
+      const movedServiceContent = await fixture.readFile('src/lib/service.js');
+      expect(apiContent).toContain('./lib/service.js');
+      expect(movedServiceContent).toContain('../utils.js');
+      expect(movedServiceContent).toContain('../models.js');
+      expect(movedServiceContent).not.toContain('../utils\'');
+      expect(movedServiceContent).not.toContain('../models\'');
+    });
+
     it('--dry-run 不應實際移動檔案', async () => {
       await executeCLI(
         ['move', 'src/unused.js', 'src/deprecated.js', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],

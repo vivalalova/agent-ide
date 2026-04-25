@@ -23,4 +23,37 @@ describe('PathUtils modern module extensions', () => {
       )
     ).toBe('./module');
   });
+
+  it('preserves runtime extension when recalculating alias import paths', () => {
+    const aliasPathUtils = new PathUtils(new ImportResolver({
+      pathAliases: { '@': '/workspace/src' },
+      supportedExtensions: ALLOWED_EXTENSIONS
+    }));
+
+    expect(
+      aliasPathUtils.calculateNewImportPathPreservingStyle(
+        '@/utils.js',
+        '/workspace/src/consumer.js',
+        '/workspace/src/utils.js',
+        '/workspace/src/lib/utils.js'
+      )
+    ).toBe('@/lib/utils.js');
+  });
+
+  it('preserves runtime extension when recalculating baseUrl import paths', () => {
+    const baseUrlPathUtils = new PathUtils(new ImportResolver({
+      pathAliases: {},
+      baseUrl: '/workspace',
+      supportedExtensions: ALLOWED_EXTENSIONS
+    }));
+
+    expect(
+      baseUrlPathUtils.calculateNewImportPathPreservingStyle(
+        'src/utils.js',
+        '/workspace/src/consumer.js',
+        '/workspace/src/utils.js',
+        '/workspace/src/lib/utils.js'
+      )
+    ).toBe('src/lib/utils.js');
+  });
 });

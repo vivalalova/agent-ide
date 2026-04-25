@@ -14,6 +14,7 @@ import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
@@ -129,9 +130,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     try {
 
-      // 初始化重新命名引擎（傳入 fileSystem）
-      const renameEngine = new RenameEngine(undefined, context.fileSystem);
-
     // 1. 查找符號
     if (!isJsonFormat) {
       console.log(`   查找符號 "${from}"...`);
@@ -221,6 +219,12 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 取得所有專案檔案
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
+    targetSymbol = await resolveParserBackedSymbol(targetSymbol, context, ParserRegistry.getInstance(), Boolean(options.at));
+    const renameEngine = new RenameEngine(
+      isFunctionLocalSymbol(targetSymbol) ? ParserRegistry.getInstance() : undefined,
+      context.fileSystem
+    );
+
     // 生成 Changeset
     const changeset = await renameEngine.generateChangeset({
       symbol: targetSymbol,
@@ -248,6 +252,42 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     outputHandler.outputError(`重新命名失敗: ${errorMsg}`, format, 'rename');
     process.exitCode = 1;
   }
+}
+
+async function resolveParserBackedSymbol(
+  symbol: CodeSymbol,
+  context: CommandContext,
+  registry: ParserRegistry,
+  strict: boolean
+): Promise<CodeSymbol> {
+  const filePath = symbol.location.filePath;
+  const parser = registry.getParser(path.extname(filePath));
+
+  if (!parser) {
+    return symbol;
+  }
+
+  const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
+  const ast = await parser.parse(content, filePath);
+  const symbols = await parser.extractSymbols(ast);
+  const resolved = symbols.find(candidate =>
+    candidate.name === symbol.name
+    && candidate.type === symbol.type
+    && candidate.location.filePath === symbol.location.filePath
+    && candidate.location.range.start.line === symbol.location.range.start.line
+    && candidate.location.range.start.column === symbol.location.range.start.column
+  );
+
+  if (!resolved && strict) {
+    throw new Error(`無法從 AST 解析指定位置的符號 "${symbol.name}"`);
+  }
+
+  return resolved ?? symbol;
+}
+
+function isFunctionLocalSymbol(symbol: CodeSymbol): boolean {
+  const scopeType = symbol.scope?.type;
+  return Boolean(symbol.location?.filePath) && (scopeType === 'function' || scopeType === 'block');
 }
 
 /**

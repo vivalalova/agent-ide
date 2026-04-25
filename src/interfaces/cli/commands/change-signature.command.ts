@@ -290,14 +290,38 @@ function parseAddParameter(param: string): SignatureChange | null {
   // 解析名稱和類型
   const [name, type] = nameTypePart.split(':').map(s => s.trim());
   if (!name) {return null;}
+  const normalizedDefaultValue = normalizeDefaultValue(type, defaultValue);
 
   return {
     type: SignatureChangeType.AddParameter,
     name,
     parameterType: type || undefined,
-    defaultValue,
-    optional: !!defaultValue,
+    defaultValue: normalizedDefaultValue,
+    optional: !!normalizedDefaultValue,
     position,
-    callSiteValue: defaultValue
+    callSiteValue: normalizedDefaultValue
   };
+}
+
+function normalizeDefaultValue(parameterType: string | undefined, defaultValue: string | undefined): string | undefined {
+  if (defaultValue === undefined) {
+    return undefined;
+  }
+
+  const trimmed = defaultValue.trim();
+  if (parameterType !== 'string' || isStringLiteral(trimmed) || isNullishLiteral(trimmed)) {
+    return trimmed;
+  }
+
+  return `'${trimmed.replace(/\\/g, '\\\\').replace(/'/g, '\\\'')}'`;
+}
+
+function isStringLiteral(value: string): boolean {
+  return (value.startsWith('\'') && value.endsWith('\''))
+    || (value.startsWith('"') && value.endsWith('"'))
+    || (value.startsWith('`') && value.endsWith('`'));
+}
+
+function isNullishLiteral(value: string): boolean {
+  return value === 'undefined' || value === 'null';
 }

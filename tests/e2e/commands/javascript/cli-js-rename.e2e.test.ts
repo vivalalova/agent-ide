@@ -86,6 +86,18 @@ describe('CLI rename - JavaScript 專案', () => {
   });
 
   describe('錯誤處理', () => {
+    it('同名符號錯誤應列出可直接用於 --at 的 1-based 位置', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'formatName', '--to', 'formatDisplayName', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.error).toContain('src/utils.js:1:');
+      expect(output.error).not.toContain('.js:0:');
+    });
+
     it('不存在的符號應回傳錯誤', async () => {
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'nonExistentSymbol99', '--to', 'newName', '--dry-run', '--format', 'json'],

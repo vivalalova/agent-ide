@@ -341,8 +341,13 @@ export class PathCalculator {
             continue;
           }
 
-          // 計算從新位置應該如何 import 這個檔案
-          const newImportPath = this.pathUtils.calculateNewImportPath(target, currentResolved);
+          // 計算從新位置應該如何 import 這個檔案，並保留原始 import 的副檔名樣式。
+          const newImportPath = this.pathUtils.calculateNewImportPathPreservingStyle(
+            importStatement.path,
+            target,
+            currentResolved,
+            currentResolved
+          );
 
           // 如果路徑改變了，加入更新列表
           if (newImportPath !== importStatement.path) {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent IDE CLI Fixture Test"
+  short_description: "Manual CLI fixture mutation workflow"
+  default_prompt: "Use $agent-ide-cli-fixture-test to manually test agent-ide CLI mutations against tests/fixtures and fix any failures."

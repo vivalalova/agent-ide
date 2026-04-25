@@ -88,8 +88,15 @@ describe('CLI rename --at 參數 - 基於 sample-project fixture', () => {
 
       if (result.stdout) {
         const output = JSON.parse(result.stdout);
-        // 應該有變更（定義 + 引用）
-        expect(output.summary.totalChanges).toBeGreaterThanOrEqual(1);
+        expect(output.summary.totalFiles).toBe(1);
+        expect(output.files).toHaveLength(1);
+        expect(output.files[0].filePath).toContain('src/api/handlers/user-handler.ts');
+
+        const changedContent = JSON.stringify(output.files[0].hunks);
+        expect(changedContent).toContain('handleGetUser(uid: string)');
+        expect(changedContent).toContain('getUser(uid)');
+        expect(changedContent).not.toContain('handleUpdateUser(uid');
+        expect(changedContent).not.toContain('handleDeleteUser(uid');
       }
     });
   });

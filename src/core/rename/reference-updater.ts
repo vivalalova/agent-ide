@@ -226,7 +226,9 @@ export class ReferenceUpdater {
     );
 
     // 如果沒有找到引用檔案，至少處理符號定義所在的檔案
-    let filesToProcess: string[] = referencingFiles;
+    let filesToProcess: string[] = this.isFunctionLocalSymbol(symbol)
+      ? [symbol.location.filePath]
+      : referencingFiles;
     if (referencingFiles.length === 0 && symbol.location?.filePath) {
       filesToProcess = [symbol.location.filePath];
     }
@@ -268,6 +270,11 @@ export class ReferenceUpdater {
     }
 
     return fileChanges;
+  }
+
+  private isFunctionLocalSymbol(symbol: Symbol): boolean {
+    const scopeType = symbol.scope?.type;
+    return Boolean(symbol.location?.filePath) && (scopeType === 'function' || scopeType === 'block');
   }
 
   /**

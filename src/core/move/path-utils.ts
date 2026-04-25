@@ -197,7 +197,7 @@ export class PathUtils {
           // 組合新的別名路徑：alias + / + newRelativeToAlias
           // 如果 alias 本身不以 / 結尾，需要加上
           const separator = alias.endsWith('/') ? '' : '/';
-          return alias + separator + newRelativeToAlias;
+          return this.preserveOriginalExtension(originalImportPath, alias + separator + newRelativeToAlias);
         }
       }
 
@@ -214,12 +214,27 @@ export class PathUtils {
           newRelativeToBaseUrl = newRelativeToBaseUrl.slice(0, -newExt.length);
         }
 
-        return newRelativeToBaseUrl;
+        return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
       }
     }
 
     // 否則使用相對路徑
-    return this.calculateNewImportPath(fromFile, newFilePath);
+    return this.preserveOriginalExtension(
+      originalImportPath,
+      this.calculateNewImportPath(fromFile, newFilePath)
+    );
+  }
+
+  private preserveOriginalExtension(originalImportPath: string, newImportPath: string): string {
+    const originalExtension = path.extname(originalImportPath);
+    if (
+      !(REMOVABLE_EXTENSIONS as readonly string[]).includes(originalExtension)
+      || path.extname(newImportPath)
+    ) {
+      return newImportPath;
+    }
+
+    return `${newImportPath}${originalExtension}`;
   }
 
   /**
