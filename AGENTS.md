@@ -15,9 +15,12 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 ```bash
 pnpm build              # 建置
 pnpm typecheck          # 型別檢查
-pnpm test               # 全部測試（E2E + Unit）
-pnpm test:e2e           # E2E 測試（memfs 隔離）
-pnpm test:unit          # Unit 測試
+pnpm test               # 預設快速測試（Unit + 關鍵 TS E2E，<30s 目標）
+pnpm test:full          # 完整測試（全部 E2E + Unit，無 coverage）
+pnpm test:e2e           # 全部 E2E 測試（memfs 隔離，無 coverage）
+pnpm test:e2e:quick     # 關鍵 TypeScript E2E 快速測試
+pnpm test:unit          # Unit 快速測試（無 coverage）
+pnpm test:coverage      # 全部 coverage 測試（E2E + Unit，含門檻）
 pnpm test:cli           # CLI 煙霧測試
 pnpm lint               # ESLint
 npm link                # 本地安裝
@@ -70,8 +73,9 @@ src/
 
 | 類型 | 目錄 | 命令 | 用途 |
 |-----|------|------|------|
-| E2E | `tests/e2e/` | `pnpm test:e2e` | CLI 端對端（memfs 隔離） |
-| Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試 |
+| E2E Quick | `tests/e2e/commands/typescript/` | `pnpm test:e2e:quick` | 關鍵 TypeScript CLI 端對端快速測試 |
+| E2E Full | `tests/e2e/` | `pnpm test:e2e` | 完整 CLI 端對端（memfs 隔離，無 coverage） |
+| Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試（快速無 coverage） |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
 
 ### E2E 測試模式
@@ -94,6 +98,7 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 ### 🚨 覆蓋率要求
 
 - 覆蓋率門檻設於 `vitest.config.e2e.ts`，禁止隨意調降
+- 覆蓋率驗證使用 `pnpm test:coverage`；日常 `pnpm test` 為 Unit + 關鍵 TS E2E 快速路徑
 - `tests/fixtures/` 專案必須可編譯
 
 ## CLI 命令
