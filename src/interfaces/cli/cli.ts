@@ -30,14 +30,23 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageJsonPath = path.resolve(__dirname, '../../../package.json');
-let packageVersion = '0.1.0'; // fallback
 
-try {
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-  packageVersion = packageJson.version;
-} catch {
-  // graceful-degradation: package.json 讀取失敗時使用 fallback 版本號
+export function readPackageVersion(targetPath: string = packageJsonPath): string {
+  let packageJson: { version?: unknown };
+  try {
+    packageJson = JSON.parse(readFileSync(targetPath, 'utf-8')) as { version?: unknown };
+  } catch (error) {
+    throw new Error(`Cannot read package version from ${targetPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (typeof packageJson.version !== 'string' || packageJson.version.trim().length === 0) {
+    throw new Error(`Invalid package version in ${targetPath}`);
+  }
+
+  return packageJson.version;
 }
+
+const packageVersion = readPackageVersion();
 
 export class AgentIdeCLI {
   private program: Command;

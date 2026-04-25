@@ -8,7 +8,7 @@
 import { execSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -92,6 +92,19 @@ describe('CLI 整合測試', () => {
   // ========================================
   // Query Commands（唯讀）
   // ========================================
+
+  describe('Meta Commands', () => {
+    it('--version - 輸出 package.json 版本', () => {
+      const packageJson = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf-8')) as { version: string };
+      const output = execSync(`${CLI} --version`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output.trim()).toBe(packageJson.version);
+    });
+  });
 
   describe('Query Commands', () => {
     it('cycles - 循環依賴檢測', () => {
