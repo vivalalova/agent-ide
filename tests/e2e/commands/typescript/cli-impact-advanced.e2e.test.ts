@@ -116,6 +116,46 @@ export const dD = dB + dC;
       const dependents: string[] = output.impact?.dependents ?? [];
       expect(dependents.some(filePath => filePath.includes('cjs-consumer.cts'))).toBe(true);
     });
+
+    it.each([
+      {
+        name: 'side-effect import',
+        source: 'side-effect-source.ts',
+        consumer: 'side-effect-consumer.ts',
+        content: 'import \'./side-effect-source.js\';\nexport const loaded = true;'
+      },
+      {
+        name: 're-export declaration',
+        source: 're-export-source.ts',
+        consumer: 're-export-consumer.ts',
+        content: 'export { reExportedValue } from \'./re-export-source.js\';'
+      },
+      {
+        name: 'dynamic import',
+        source: 'dynamic-source.ts',
+        consumer: 'dynamic-consumer.ts',
+        content: 'export async function loadDynamic() {\n  return import(\'./dynamic-source.js\');\n}'
+      },
+      {
+        name: 'CommonJS require in .cts',
+        source: 'required-source.cts',
+        consumer: 'required-consumer.cts',
+        content: 'const required = require(\'./required-source.cjs\');\nexport const requiredValue = required.requiredValue;'
+      }
+    ])('應該分析 $name 的影響', async ({ source, consumer, content }) => {
+      await fixture.writeFile(`src/${source}`, 'export const reExportedValue = 1;\nexport const requiredValue = 2;');
+      await fixture.writeFile(`src/${consumer}`, content);
+
+      const result = await executeCLI(
+        ['impact', '--file', `src/${source}`, '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents: string[] = output.impact?.dependents ?? [];
+      expect(dependents.some(filePath => filePath.includes(consumer))).toBe(true);
+    });
   });
 
   // MARK: - 孤立檔案與邊界條件

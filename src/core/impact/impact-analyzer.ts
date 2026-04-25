@@ -59,7 +59,6 @@ export class ImpactAnalyzer {
     this.pathResolver = new PathResolver(fileSystem, this.options);
     this.fileScanner = new FileScanner(fileSystem, this.options);
     this.dependencyExtractor = new DependencyExtractor(
-      this.options,
       this.pathResolver,
       this.fileScanner
     );
