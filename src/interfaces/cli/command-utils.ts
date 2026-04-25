@@ -42,9 +42,9 @@ export function tryParseOutputFormat(
   try {
     const format = parseOutputFormat(formatStr, allowDiff);
     return { success: true, format };
-  } catch {
-    const availableFormats = allowDiff ? 'json, summary, diff' : 'json, summary';
-    handler.outputError(`不支援的輸出格式。可用格式: ${availableFormats}`, OutputFormat.Summary);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    handler.outputError(message, OutputFormat.Summary);
     process.exitCode = 1;
     return { success: false };
   }
