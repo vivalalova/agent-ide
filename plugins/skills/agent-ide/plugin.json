@@ -1,5 +1,5 @@
 {
   "name": "agent-ide",
-  "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
+  "description": "Agent IDE CLI for TS/JS code intelligence and safe refactoring: snapshot, cycles, impact, search/find-references, call-hierarchy, rename, move, change-signature, deadcode.",
   "version": "0.13.6"
 }

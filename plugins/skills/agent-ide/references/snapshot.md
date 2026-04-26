@@ -4,7 +4,7 @@
 
 ## 參數
 
-- `--path <path>` - 目標路徑（必填）
+- `--path <path>` - 目標路徑（預設 `.`）
 - `--since last` - 增量模式
 - `--refresh` - 強制重新生成
 - `--format json|summary` - 輸出格式（預設 json）

@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: TS/JS 程式碼智能重構工具。搜尋符號、查找引用、重命名、移動檔案、清理 dead code、修改函式簽章時自動更新所有引用。
+description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: snapshot, cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, or update imports and call sites."
 ---
 
 # Agent IDE
