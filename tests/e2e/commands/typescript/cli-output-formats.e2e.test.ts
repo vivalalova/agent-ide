@@ -140,31 +140,6 @@ obj.method();
     });
   });
 
-  // MARK: - snapshot formatter
-
-  describe('snapshot summary 格式', () => {
-    it('應該輸出 module snapshot 的 summary', async () => {
-      const result = await executeCLI(
-        ['snapshot', '--path', `${fixture.rootPath}/src/types`, '--format', 'summary'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      // summary 輸出包含模組相關資訊
-      expect(result.stdout.length).toBeGreaterThan(0);
-    });
-
-    it('應該輸出 project snapshot 的 summary', async () => {
-      const result = await executeCLI(
-        ['snapshot', '--path', fixture.rootPath, '--format', 'summary'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout.length).toBeGreaterThan(0);
-    });
-  });
-
   // MARK: - deps (impact) formatter
 
   describe('impact/deps summary 格式', () => {

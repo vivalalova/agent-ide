@@ -12,7 +12,6 @@ export { setupChangeSignatureCommand } from './change-signature.command.js';
 // Query 命令
 export { setupCyclesCommand } from './cycles.command.js';
 export { setupImpactCommand } from './impact.command.js';
-export { setupSnapshotCommand } from './snapshot.command.js';
 export { setupFindReferencesCommand } from './find-references.command.js';
 export { setupCallHierarchyCommand } from './call-hierarchy.command.js';
 export { setupDeadCodeCommand } from './deadcode.command.js';

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：11 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
 **環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.6
 
@@ -38,7 +38,6 @@ src/
 │   ├── impact/           # 影響分析（BFS）
 │   ├── find-references/  # 符號引用
 │   ├── call-hierarchy/   # 呼叫層次
-│   ├── snapshot/         # 模組快照
 │   ├── rename/           # 重命名+引用更新
 │   ├── change-signature/ # 參數重構
 │   ├── move/             # 檔案移動
@@ -62,7 +61,7 @@ src/
 ```text
 第三層：impact（依賴 cycles + foundations）
     ↓
-第二層：cycles, find-references, call-hierarchy, snapshot, rename, deadcode, move, move-member, change-signature
+第二層：cycles, find-references, call-hierarchy, rename, deadcode, move, move-member, change-signature
     ↓
 第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
@@ -109,7 +108,6 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 ```bash
 agent-ide cycles --path <path>
 agent-ide impact --file <file> --path <path>
-agent-ide snapshot --path <path> [--since last] [--refresh]
 agent-ide find-references <symbol> --path <path>
 agent-ide call-hierarchy <function> --path <path>
 agent-ide deadcode --path <path> [--dry-run] [--include-exports]

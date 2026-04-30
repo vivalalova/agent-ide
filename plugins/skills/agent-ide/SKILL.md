@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: snapshot, cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, or update imports and call sites."
+description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, or update imports and call sites."
 ---
 
 # Agent IDE
@@ -11,7 +11,6 @@ TS/JS 程式碼智能重構工具。
 
 | 功能 | 用途 |
 |------|------|
-| [snapshot](references/snapshot.md) | 專案/模組 API 快照 |
 | [cycles](references/cycles.md) | 循環依賴檢測 |
 | [impact](references/impact.md) | 變更影響分析 |
 | [search](references/search.md) | 符號搜尋 |
@@ -28,7 +27,7 @@ TS/JS 程式碼智能重構工具。
 
 ```text
 1. deadcode     → 清理未使用程式碼（清場）
-2. snapshot     → 了解專案架構（偵察）
+2. search       → 找入口與主要符號（偵察）
 3. cycles       → 檢測循環依賴（診斷）
 4. move         → 重組檔案/成員（重構）
 5. rename       → 修正命名風格（收尾）
@@ -38,7 +37,7 @@ TS/JS 程式碼智能重構工具。
 
 | 場景 | 功能 | 說明 |
 |------|-------|------|
-| 接手新專案 | `deadcode` → `snapshot` | 先清垃圾，再看全貌 |
+| 接手新專案 | `deadcode` → `search` | 先清垃圾，再找入口 |
 | 重構前診斷 | `cycles` → `impact` | 找問題點，評估影響範圍 |
 | 找符號入口 | `search <symbol>` | 模糊搜尋符號位置 |
 | 檔案重組 | `move src/a.ts src/b/` | 自動更新所有 import |

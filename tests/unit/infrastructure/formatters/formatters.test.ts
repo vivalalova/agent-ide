@@ -30,12 +30,9 @@ import {
   type SearchResult,
   type DepsResult,
   type AnalyzeResult,
-  type SnapshotResult,
   type FindReferencesResult,
   type CallHierarchyResult,
   type DeadCodeResult,
-  type ModuleSnapshotData,
-  type ProjectSnapshotData,
   AnalyzeType
 } from '@infrastructure/formatters/query-types.js';
 
@@ -749,134 +746,6 @@ describe('QueryFormatter', () => {
 
       expect(summary).toContain('跳過檔案: 3 個');
       expect(summary).toContain('解析失敗');
-    });
-  });
-
-  describe('formatSnapshotSummary', () => {
-    it('應該格式化模組快照', () => {
-      const moduleSnapshot: ModuleSnapshotData = {
-        module: 'src/core/indexing',
-        api: { 'Indexer': { 'index': 'method', 'search': 'method' } },
-        factories: { 'createIndexer': 'function' },
-        types: { 'IndexOptions': 'interface' },
-        private: { 'InternalCache': { fields: ['data'], imports: 'Map' } }
-      };
-
-      const result: SnapshotResult = {
-        command: QueryCommand.Snapshot,
-        success: true,
-        summary: {},
-        snapshotType: 'module',
-        snapshot: moduleSnapshot
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('模組: src/core/indexing');
-      expect(summary).toContain('API: 1 classes');
-      expect(summary).toContain('Factories: 1');
-      expect(summary).toContain('Types: 1');
-      expect(summary).toContain('Private: 1 classes');
-    });
-
-    it('應該格式化專案快照', () => {
-      const projectSnapshot: ProjectSnapshotData = {
-        project: 'my-project',
-        modules: {
-          'src/core/indexing': {
-            module: 'src/core/indexing',
-            api: { 'Indexer': { 'index': 'method' } },
-            factories: {},
-            types: {},
-            private: {}
-          },
-          'src/core/dependency': {
-            module: 'src/core/dependency',
-            api: { 'DependencyGraph': { 'analyze': 'method' } },
-            factories: { 'createGraph': 'function' },
-            types: { 'GraphNode': 'type' },
-            private: {}
-          }
-        }
-      };
-
-      const result: SnapshotResult = {
-        command: QueryCommand.Snapshot,
-        success: true,
-        summary: {},
-        snapshotType: 'project',
-        snapshot: projectSnapshot
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('專案: my-project');
-      expect(summary).toContain('模組數: 2');
-      expect(summary).toContain('src/core/indexing');
-      expect(summary).toContain('src/core/dependency');
-    });
-
-    it('應該格式化增量快照（有 baseVersion）', () => {
-      const incrementalSnapshot = {
-        version: 'v2',
-        baseVersion: 'v1',
-        delta: {
-          added: {
-            modules: { 'new-module': { module: 'new-module', api: { NewClass: {} }, factories: {}, types: {}, private: {} } },
-            symbols: [{ type: 'function', module: 'core', name: 'newFunc' }]
-          },
-          modified: {
-            modules: ['modified-module'],
-            symbols: [{ type: 'class', module: 'core', name: 'ModifiedClass' }]
-          },
-          removed: {
-            modules: ['deleted-module'],
-            symbols: [{ type: 'variable', module: 'util', name: 'oldVar' }]
-          }
-        }
-      };
-
-      const result: SnapshotResult = {
-        command: QueryCommand.Snapshot,
-        success: true,
-        summary: {},
-        snapshotType: 'incremental',
-        snapshot: incrementalSnapshot
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('增量快照');
-      expect(summary).toContain('Version: v2');
-      expect(summary).toContain('基準版本: v1');
-      expect(summary).toContain('新增: 1 個模組, 1 個符號');
-      expect(summary).toContain('修改: 1 個模組, 1 個符號');
-      expect(summary).toContain('刪除: 1 個模組, 1 個符號');
-    });
-
-    it('應該格式化增量快照（無 baseVersion，初始快照）', () => {
-      const incrementalSnapshot = {
-        version: 'v1',
-        baseVersion: null,
-        delta: {
-          added: { modules: {}, symbols: [] },
-          modified: { modules: [], symbols: [] },
-          removed: { modules: [], symbols: [] }
-        }
-      };
-
-      const result: SnapshotResult = {
-        command: QueryCommand.Snapshot,
-        success: true,
-        summary: {},
-        snapshotType: 'incremental',
-        snapshot: incrementalSnapshot
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('(初始快照)');
-      expect(summary).toContain('沒有變更');
     });
   });
 

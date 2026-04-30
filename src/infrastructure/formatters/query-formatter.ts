@@ -9,7 +9,6 @@ import {
   type SearchResult,
   type DepsResult,
   type AnalyzeResult,
-  type SnapshotResult,
   type FindReferencesResult,
   type CallHierarchyResult
 } from './query-types.js';
@@ -18,7 +17,6 @@ import {
   SearchFormatter,
   DepsFormatter,
   AnalyzeFormatter,
-  SnapshotFormatter,
   FindReferencesFormatter,
   CallHierarchyFormatter
 } from './strategies/index.js';
@@ -76,8 +74,6 @@ export class QueryFormatter {
         return this.getStrategy<DepsResult>(QueryCommand.Deps).formatSummary(result as DepsResult);
       case QueryCommand.Analyze:
         return this.getStrategy<AnalyzeResult>(QueryCommand.Analyze).formatSummary(result as AnalyzeResult);
-      case QueryCommand.Snapshot:
-        return this.getStrategy<SnapshotResult>(QueryCommand.Snapshot).formatSummary(result as SnapshotResult);
       case QueryCommand.FindReferences:
         return this.getStrategy<FindReferencesResult>(QueryCommand.FindReferences)
           .formatSummary(result as FindReferencesResult);
@@ -110,9 +106,6 @@ export class QueryFormatter {
         break;
       case QueryCommand.Analyze:
         strategy = new AnalyzeFormatter(this.color);
-        break;
-      case QueryCommand.Snapshot:
-        strategy = new SnapshotFormatter(this.color);
         break;
       case QueryCommand.FindReferences:
         strategy = new FindReferencesFormatter(this.color);

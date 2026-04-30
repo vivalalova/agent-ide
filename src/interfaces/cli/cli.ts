@@ -15,7 +15,6 @@ import {
   setupChangeSignatureCommand,
   setupCyclesCommand,
   setupImpactCommand,
-  setupSnapshotCommand,
   setupFindReferencesCommand,
   setupCallHierarchyCommand,
   setupDeadCodeCommand,
@@ -146,7 +145,6 @@ export class AgentIdeCLI {
     // Query 命令
     setupCyclesCommand(this.program, context);
     setupImpactCommand(this.program, context);
-    setupSnapshotCommand(this.program, context);
     setupFindReferencesCommand(this.program, context);
     setupCallHierarchyCommand(this.program, context);
     setupDeadCodeCommand(this.program, context);

@@ -8,7 +8,7 @@
 import { execSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -104,6 +104,16 @@ describe('CLI 整合測試', () => {
 
       expect(output.trim()).toBe(packageJson.version);
     });
+
+    it('--help 不應列出已移除的 snapshot 命令', () => {
+      const output = execSync(`${CLI} --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).not.toContain('snapshot');
+    });
   });
 
   describe('Query Commands', () => {
@@ -114,11 +124,6 @@ describe('CLI 整合測試', () => {
 
     it('impact - 影響分析', () => {
       const result = runCLI(`${CLI} impact --file "${SAMPLE_PROJECT}/src/models/base-model.ts" --path "${SAMPLE_PROJECT}" --format json`);
-      expect(result.success).toBe(true);
-    });
-
-    it('snapshot - 模組快照', () => {
-      const result = runCLI(`${CLI} snapshot --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
     });
 
@@ -144,53 +149,6 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
-    it('snapshot - 父目錄掃描多個子模組 (Issue #59)', () => {
-      // 動態創建測試目錄結構
-      const testDir = resolve(FIXTURE_PATH, 'issue-59-test');
-      const modulesDir = resolve(testDir, 'modules');
-
-      try {
-        // 創建目錄結構
-        mkdirSync(resolve(modulesDir, 'auth'), { recursive: true });
-        mkdirSync(resolve(modulesDir, 'users'), { recursive: true });
-        mkdirSync(resolve(modulesDir, 'payments'), { recursive: true });
-
-        // 創建模組檔案
-        writeFileSync(
-          resolve(modulesDir, 'auth/index.ts'),
-          'export class AuthService { login(): boolean { return true; } }'
-        );
-        writeFileSync(
-          resolve(modulesDir, 'users/index.ts'),
-          'export interface User { id: string; name: string; }'
-        );
-        writeFileSync(
-          resolve(modulesDir, 'payments/index.ts'),
-          'export function createPayment(amount: number) { return { amount }; }'
-        );
-
-        // 執行 snapshot 命令（對 modules 父目錄）
-        const result = runCLI(`${CLI} snapshot --path "${modulesDir}" --format json`);
-
-        // 驗證核心功能
-        expect(result.success).toBe(true);
-        expect(result.snapshotType).toBe('project'); // Issue #59 核心：應該是 project 類型
-        expect(result.snapshot).toBeDefined();
-        expect(result.snapshot.modules).toBeDefined();
-
-        // 應該找到所有子模組
-        const moduleNames = Object.keys(result.snapshot.modules);
-        expect(moduleNames).toContain('auth');
-        expect(moduleNames).toContain('users');
-        expect(moduleNames).toContain('payments');
-        expect(moduleNames.length).toBe(3);
-      } finally {
-        // 清理測試目錄
-        if (existsSync(testDir)) {
-          rmSync(testDir, { recursive: true, force: true });
-        }
-      }
-    });
   });
 
   // ========================================

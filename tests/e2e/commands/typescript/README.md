@@ -34,9 +34,6 @@ cli-<command>[-<category>].e2e.test.ts
 | | `cli-cycles-coverage.e2e.test.ts` | 覆蓋率補充測試 |
 | **impact** | `cli-impact.e2e.test.ts` | 影響分析 |
 | | `cli-impact-path-alias.e2e.test.ts` | 路徑別名支援 |
-| **snapshot** | `cli-snapshot.e2e.test.ts` | 模組快照 |
-| | `cli-snapshot-incremental.e2e.test.ts` | 增量更新 |
-| | `cli-snapshot-coverage.e2e.test.ts` | 覆蓋率補充測試 |
 | **search** | `cli-search.e2e.test.ts` | 符號搜尋 |
 | **其他** | `cli-call-hierarchy.e2e.test.ts` | 呼叫層次分析 |
 | | `cli-change-signature.e2e.test.ts` | 參數簽名重構 |

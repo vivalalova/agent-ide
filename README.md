@@ -63,7 +63,6 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Analyze impact | `/agent-ide impact` | Manual tracing |
 | Check cycles | `/agent-ide cycles` | Manual dependency review |
 | Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
-| API snapshot | `/agent-ide snapshot` | Multiple Read calls |
 
 **Trigger keywords**: rename, move file, move function, search symbol, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
 
@@ -78,7 +77,6 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | ----------------- | -------------------------------------- |
 | `cycles`          | Detect circular dependencies (Tarjan)  |
 | `impact`          | Analyze change impact range (BFS)      |
-| `snapshot`        | Generate module API snapshots |
 | `search`          | Search symbols with fuzzy matching     |
 | `find-references` | Find symbol definitions and references |
 | `call-hierarchy`  | Analyze function call hierarchy        |

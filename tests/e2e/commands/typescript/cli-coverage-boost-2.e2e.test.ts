@@ -201,40 +201,6 @@ describe('CLI coverage boost 2 - dependency-graph 深層路徑', () => {
     });
   });
 
-  describe('snapshot --since last（觸發 serialize/deserialize）', () => {
-    it('第一次 snapshot --since last 應回傳 incremental 結構（觸發 serialize）', async () => {
-      const result = await executeCLI(
-        ['snapshot', '--path', fixture.rootPath, '--since', 'last', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      // 第一次沒有快取，回傳 incremental 或 full snapshot
-      expect(output.snapshotType).toBeDefined();
-    });
-
-    it('第二次 snapshot --since last 應偵測到 delta（觸發 deserialize）', async () => {
-      // 第一次建立快取
-      await executeCLI(
-        ['snapshot', '--path', fixture.rootPath, '--since', 'last', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      // 寫入新檔案，改變圖結構
-      await fixture.writeFile('src/snap-new-file.ts', 'export const snapNew = \'new\';');
-
-      // 第二次執行（觸發 deserialize 路徑）
-      const result = await executeCLI(
-        ['snapshot', '--path', fixture.rootPath, '--since', 'last', '--format', 'json'],
-        { memfs: fixture.memfs }
-      );
-
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.snapshotType).toBe('incremental');
-    });
-  });
 });
 
 // ============================================================
