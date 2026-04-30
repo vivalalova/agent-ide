@@ -448,6 +448,11 @@ describe('Object Utilities', () => {
       expect(get(obj, 'a.b.c')).toBe(1);
     });
 
+    it('should get nested array property with bracket path', () => {
+      const obj = { users: [{ name: 'Alice' }] };
+      expect(get(obj, 'users[0].name')).toBe('Alice');
+    });
+
     it('should return default value for missing path', () => {
       const obj = { a: 1 };
       expect(get(obj, 'b.c', 'default')).toBe('default');
@@ -463,6 +468,11 @@ describe('Object Utilities', () => {
     it('should return true for existing path', () => {
       const obj = { a: { b: 1 } };
       expect(has(obj, 'a.b')).toBe(true);
+    });
+
+    it('should return true for nested array property with bracket path', () => {
+      const obj = { users: [{ name: 'Alice' }] };
+      expect(has(obj, 'users[0].name')).toBe(true);
     });
 
     it('should return false for missing path', () => {

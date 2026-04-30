@@ -15,11 +15,13 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 ```bash
 pnpm build              # 建置
 pnpm typecheck          # 型別檢查
-pnpm test               # 全部測試（E2E + Unit）
-pnpm test:e2e           # E2E 測試（memfs 隔離）
-pnpm test:unit          # Unit 測試
+pnpm test               # 預設快速測試（Unit + 關鍵 TS E2E，<30s 目標）
+pnpm test:full          # 完整測試（全部 E2E + Unit，無 coverage）
+pnpm test:e2e           # 全部 E2E 測試（memfs 隔離，無 coverage）
+pnpm test:e2e:quick     # 關鍵 TypeScript E2E 快速測試
+pnpm test:unit          # Unit 快速測試（無 coverage）
+pnpm test:coverage      # 全部 coverage 測試（E2E + Unit，含門檻）
 pnpm test:cli           # CLI 煙霧測試
-pnpm bench              # Benchmark（效能基準測試）
 pnpm lint               # ESLint
 npm link                # 本地安裝
 
@@ -70,10 +72,10 @@ src/
 
 | 類型 | 目錄 | 命令 | 用途 |
 |-----|------|------|------|
-| E2E | `tests/e2e/` | `pnpm test:e2e` | CLI 端對端（memfs 隔離） |
-| Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試 |
+| E2E Quick | `tests/e2e/commands/typescript/` | `pnpm test:e2e:quick` | 關鍵 TypeScript CLI 端對端快速測試 |
+| E2E Full | `tests/e2e/` | `pnpm test:e2e` | 完整 CLI 端對端（memfs 隔離，無 coverage） |
+| Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試（快速無 coverage） |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
-| Bench | `tests/bench/` | `pnpm bench` | 效能基準測試 |
 
 ### E2E 測試模式
 
@@ -95,6 +97,7 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 ### 🚨 覆蓋率要求
 
 - 覆蓋率門檻設於 `vitest.config.e2e.ts`，禁止隨意調降
+- 覆蓋率驗證使用 `pnpm test:coverage`；日常 `pnpm test` 為 Unit + 關鍵 TS E2E 快速路徑
 - `tests/fixtures/` 專案必須可編譯
 
 ## CLI 命令
@@ -103,14 +106,20 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 
 `--format`：json | summary | diff（變更類預設）
 
+### 全域選項
+
+- `--no-cache`：停用索引快取
+- `--cache-dir <path>`：覆寫索引快取目錄
+
 ### 查詢類（唯讀）
 
 ```bash
 agent-ide cycles --path <path>
 agent-ide impact --file <file> --path <path>
+agent-ide search <symbol> --path <path> [--type function] [--no-fuzzy]
 agent-ide find-references <symbol> --path <path>
 agent-ide call-hierarchy <function> --path <path>
-agent-ide deadcode --path <path> [--dry-run] [--include-exports]
+agent-ide deadcode --path <path> --dry-run [--include-exports]
 ```
 
 ### 變更類（支援 --dry-run）
@@ -118,6 +127,7 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ```bash
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
+agent-ide deadcode --path <path> [--include-exports]
 agent-ide move <source> <target> --path <path>
 ```
 
@@ -237,14 +247,16 @@ if (dryRun) {
 
 ### Plugin 設定檔驗證
 
-用 CLI 安裝測試設定檔正確性（錯誤訊息會指出問題欄位）：
+用 Claude Code CLI 驗證設定檔正確性（錯誤訊息會指出問題欄位）：
 
 ```bash
-# 1. 驗證 marketplace.json（從專案根目錄執行）
-claude plugin marketplace add .
+# 1. 直接驗證 manifest
+claude plugin validate .claude-plugin/marketplace.json
+claude plugin validate plugins/skills/agent-ide/plugin.json
 
-# 2. 驗證 plugin.json
-claude plugin install agent-ide@agent-ide-skills
+# 2. 額外做一次本地安裝 smoke test（從專案根目錄執行）
+claude plugin marketplace add . --scope local
+claude plugin install agent-ide@agent-ide-skills --scope local
 
 # 重新測試前先移除
 claude plugin marketplace remove agent-ide-skills
@@ -273,10 +285,10 @@ plugins/skills/agent-ide/
 
 | 改動類型 | 必須更新 |
 |---------|---------|
-| CLI 新增選項/命令 | E2E 測試、`CLAUDE.md`、`plugins/skills/agent-ide/` |
+| CLI 新增選項/命令 | E2E 測試、`AGENTS.md`、`plugins/skills/agent-ide/` |
 | Core 模組改動 | E2E 測試、文件 |
 | 輸出格式改動 | `infrastructure/formatters/`、E2E 測試 |
 
-**文件位置**：`README.md`（介紹）| `plugins/skills/agent-ide/SKILL.md`（速查）| `CLAUDE.md`（開發規範）
+**文件位置**：`README.md`（介紹）| `plugins/skills/agent-ide/SKILL.md`（速查）| `AGENTS.md`（開發規範）
 
 **SKILL.md 更新**：內容變更時必須同步更新 frontmatter description
