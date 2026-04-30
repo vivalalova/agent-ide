@@ -27,6 +27,7 @@ describe('CLI cycles - JavaScript 專案', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('cycles');
       expect(output.success).toBe(true);
       expect(Array.isArray(output.cycles)).toBe(true);
     });

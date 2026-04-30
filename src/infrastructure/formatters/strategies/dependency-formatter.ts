@@ -1,18 +1,18 @@
 /**
- * Deps 命令格式化策略
+ * Dependency query formatting strategy.
  */
 
-import { type DepsResult } from '../query-types.js';
+import { type DependencyResult } from '../query-types.js';
 import { BaseFormatter, Colors } from './base-formatter.js';
 
 /**
- * Deps 結果格式化器
+ * Dependency result formatter for cycles and impact commands.
  */
-export class DepsFormatter extends BaseFormatter<DepsResult> {
+export class DependencyFormatter extends BaseFormatter<DependencyResult> {
   /**
-   * 格式化 Deps 摘要
+   * 格式化 dependency 摘要
    */
-  formatSummary(result: DepsResult): string {
+  formatSummary(result: DependencyResult): string {
     const lines: string[] = [];
     const basePath = result.basePath;
 

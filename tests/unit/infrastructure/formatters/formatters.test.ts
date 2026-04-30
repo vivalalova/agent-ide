@@ -26,14 +26,10 @@ import {
 } from '@infrastructure/formatters/types.js';
 import {
   QueryCommand,
-  IssueSeverity,
   type SearchResult,
-  type DepsResult,
-  type AnalyzeResult,
+  type DependencyResult,
   type FindReferencesResult,
-  type CallHierarchyResult,
-  type DeadCodeResult,
-  AnalyzeType
+  type CallHierarchyResult
 } from '@infrastructure/formatters/query-types.js';
 
 // ========== DiffGenerator 測試 ==========
@@ -392,6 +388,14 @@ describe('QueryFormatter', () => {
       const f = createQueryFormatter({ color: false });
       expect(f).toBeInstanceOf(QueryFormatter);
     });
+
+    it('不應暴露已移除的 analyze 查詢命令', () => {
+      expect(Object.values(QueryCommand)).not.toContain('analyze');
+    });
+
+    it('不應暴露不存在的 deps 查詢命令', () => {
+      expect(Object.values(QueryCommand)).not.toContain('deps');
+    });
   });
 
   describe('toJson', () => {
@@ -464,10 +468,10 @@ describe('QueryFormatter', () => {
     });
   });
 
-  describe('formatDepsSummary', () => {
+  describe('formatDependencySummary', () => {
     it('應該顯示無循環依賴', () => {
-      const result: DepsResult = {
-        command: QueryCommand.Deps,
+      const result: DependencyResult = {
+        command: QueryCommand.Cycles,
         success: true,
         summary: {},
         cycles: []
@@ -479,8 +483,8 @@ describe('QueryFormatter', () => {
     });
 
     it('應該列出循環依賴', () => {
-      const result: DepsResult = {
-        command: QueryCommand.Deps,
+      const result: DependencyResult = {
+        command: QueryCommand.Cycles,
         success: true,
         summary: {},
         cycles: [
@@ -497,8 +501,8 @@ describe('QueryFormatter', () => {
     });
 
     it('應該顯示影響分析', () => {
-      const result: DepsResult = {
-        command: QueryCommand.Deps,
+      const result: DependencyResult = {
+        command: QueryCommand.Impact,
         success: true,
         summary: {},
         cycles: [],
@@ -519,8 +523,8 @@ describe('QueryFormatter', () => {
     });
 
     it('應該截斷過長的依賴者列表', () => {
-      const result: DepsResult = {
-        command: QueryCommand.Deps,
+      const result: DependencyResult = {
+        command: QueryCommand.Impact,
         success: true,
         summary: {},
         cycles: [],
@@ -535,217 +539,6 @@ describe('QueryFormatter', () => {
       const summary = formatter.toSummary(result);
 
       expect(summary).toContain('... 還有 5 個');
-    });
-  });
-
-  describe('formatAnalyzeSummary', () => {
-    it('應該顯示分析類型和成功狀態', () => {
-      const result: AnalyzeResult = {
-        command: QueryCommand.Analyze,
-        success: true,
-        summary: {},
-        analyzeType: AnalyzeType.Complexity
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('分析類型: complexity');
-      expect(summary).toContain('成功: 是');
-    });
-
-    it('應該列出問題並顯示嚴重度', () => {
-      const result: AnalyzeResult = {
-        command: QueryCommand.Analyze,
-        success: true,
-        summary: {},
-        analyzeType: AnalyzeType.Complexity,
-        issues: [
-          { type: 'high-complexity', severity: IssueSeverity.High, message: 'Function too complex', filePath: 'src/test.ts', line: 10 },
-          { type: 'dead-code', severity: IssueSeverity.Low, message: 'Unused variable', filePath: 'src/app.ts' }
-        ]
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('發現 2 個問題');
-      expect(summary).toContain('Function too complex');
-      expect(summary).toContain('Unused variable');
-      expect(summary).toContain('src/test.ts:10');
-    });
-
-    it('應該截斷過長的問題列表', () => {
-      const result: AnalyzeResult = {
-        command: QueryCommand.Analyze,
-        success: true,
-        summary: {},
-        analyzeType: AnalyzeType.Complexity,
-        issues: Array.from({ length: 15 }, (_, i) => ({
-          type: 'issue',
-          message: `Issue ${i}`,
-          severity: IssueSeverity.Low
-        }))
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('發現 15 個問題');
-      expect(summary).toContain('... 還有 5 個問題');
-    });
-  });
-
-  describe('formatDeadCodeSummary', () => {
-    it('應該顯示 Dead Code 標題和統計', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [],
-        byType: {},
-        filesAffected: 0,
-        scanTime: 100,
-        summary: { totalScanned: 50 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('Dead Code');
-      expect(summary).toContain('掃描符號: 50');
-      expect(summary).toContain('Dead Code: 0 個');
-      expect(summary).toContain('影響檔案: 0 個');
-    });
-
-    it('應該列出 Dead Code 項目', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [
-          { name: 'unusedFunc', type: 'function', file: '/src/test.ts', line: 10, column: 1, reason: '函式沒有任何引用' },
-          { name: 'UnusedClass', type: 'class', file: '/src/test.ts', line: 20, column: 1, reason: '類別沒有任何引用' }
-        ],
-        byType: { function: 1, class: 1 },
-        filesAffected: 1,
-        scanTime: 150,
-        summary: { totalScanned: 100 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('Dead Code: 2 個');
-      expect(summary).toContain('unusedFunc');
-      expect(summary).toContain('UnusedClass');
-      expect(summary).toContain('L10');
-      expect(summary).toContain('L20');
-    });
-
-    it('應該按類型統計', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [
-          { name: 'func1', type: 'function', file: '/src/a.ts', line: 1, column: 1, reason: '未使用' },
-          { name: 'func2', type: 'function', file: '/src/b.ts', line: 1, column: 1, reason: '未使用' },
-          { name: 'MyClass', type: 'class', file: '/src/c.ts', line: 1, column: 1, reason: '未使用' }
-        ],
-        byType: { function: 2, class: 1 },
-        filesAffected: 3,
-        scanTime: 200,
-        summary: { totalScanned: 50 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('按類型統計');
-      expect(summary).toContain('函式: 2');
-      expect(summary).toContain('類別: 1');
-    });
-
-    it('應該顯示無 Dead Code 訊息', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [],
-        byType: {},
-        filesAffected: 0,
-        scanTime: 50,
-        summary: { totalScanned: 100 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('未發現 Dead Code');
-    });
-
-    it('應該截斷過長的項目列表', () => {
-      const items = Array.from({ length: 15 }, (_, i) => ({
-        name: `unused${i}`,
-        type: 'function' as const,
-        file: '/src/test.ts',
-        line: i + 1,
-        column: 1,
-        reason: '未使用'
-      }));
-
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items,
-        byType: { function: 15 },
-        filesAffected: 1,
-        scanTime: 100,
-        summary: { totalScanned: 50 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('... 還有 5 個');
-    });
-
-    it('應該顯示 variable、interface、type 及未知型別的圖示', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [
-          { name: 'unusedVar', type: 'variable', file: '/src/a.ts', line: 1, column: 1, reason: '未使用' },
-          { name: 'MyInterface', type: 'interface', file: '/src/b.ts', line: 1, column: 1, reason: '未使用' },
-          { name: 'MyType', type: 'type', file: '/src/c.ts', line: 1, column: 1, reason: '未使用' },
-          { name: 'unknown', type: 'enum' as 'variable', file: '/src/d.ts', line: 1, column: 1, reason: '未使用' }
-        ],
-        byType: { variable: 1, interface: 1, type: 1, enum: 1 },
-        filesAffected: 4,
-        scanTime: 50,
-        summary: { totalScanned: 50 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('📌'); // variable
-      expect(summary).toContain('📋'); // interface
-      expect(summary).toContain('🏷️'); // type
-      expect(summary).toContain('💀'); // default/unknown
-    });
-
-    it('應該顯示跳過檔案警告', () => {
-      const result: DeadCodeResult = {
-        command: QueryCommand.Analyze,
-        analyzeType: AnalyzeType.DeadCode,
-        success: true,
-        items: [],
-        byType: {},
-        filesAffected: 0,
-        scanTime: 100,
-        skippedFiles: 3,
-        summary: { totalScanned: 50 }
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('跳過檔案: 3 個');
-      expect(summary).toContain('解析失敗');
     });
   });
 
@@ -945,21 +738,6 @@ describe('QueryFormatter', () => {
       expect(summary).toContain('成功: 否');
     });
 
-    it('應該顯示問題數量', () => {
-      const result = {
-        command: 'unknown' as QueryCommand,
-        success: true,
-        summary: {},
-        issues: [
-          { type: 'issue1', message: 'msg1' },
-          { type: 'issue2', message: 'msg2' }
-        ]
-      };
-
-      const summary = formatter.toSummary(result);
-
-      expect(summary).toContain('問題數: 2');
-    });
   });
 
   describe('formatFindReferencesSummary - 截斷測試', () => {
@@ -1158,8 +936,8 @@ describe('QueryFormatter', () => {
     });
 
     it('應該在 color=true 時添加顏色碼', () => {
-      const result: DepsResult = {
-        command: QueryCommand.Deps,
+      const result: DependencyResult = {
+        command: QueryCommand.Cycles,
         success: true,
         summary: {},
         cycles: []

@@ -50,7 +50,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = parseImpactOutput(result.stdout);
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
       expect(output.success).toBe(true);
       expect(output.impact.targetFile).toContain('array-utils.ts');
       expect(output.impact.totalAffected).toBe(output.impact.dependents.length);
@@ -65,7 +65,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = parseImpactOutput(result.stdout);
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
       expect(output.success).toBe(true);
       expect(output.basePath).toBe(fixture.rootPath);
       expect(output.summary.totalScanned).toBeGreaterThan(0);
@@ -395,7 +395,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = parseImpactOutput(result.stdout);
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
     });
 
     it('應該包含 success 欄位', async () => {

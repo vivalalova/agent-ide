@@ -143,8 +143,7 @@ describe('CLI cycles - 進階路徑覆蓋', () => {
       const output = JSON.parse(result.stdout);
 
       // 驗證必要欄位
-      // cycles 使用 DepsResult，command 欄位值為 'deps'
-      expect(output.command).toBeDefined();
+      expect(output.command).toBe('cycles');
       expect(output.success).toBeDefined();
       expect(Array.isArray(output.cycles)).toBe(true);
       expect(output.summary).toBeDefined();

@@ -106,6 +106,11 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 
 `--format`：json | summary | diff（變更類預設）
 
+### 全域選項
+
+- `--no-cache`：停用索引快取
+- `--cache-dir <path>`：覆寫索引快取目錄
+
 ### 查詢類（唯讀）
 
 ```bash

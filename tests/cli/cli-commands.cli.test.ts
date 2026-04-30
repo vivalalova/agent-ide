@@ -6,9 +6,10 @@
  */
 
 import { execSync } from 'child_process';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -113,6 +114,50 @@ describe('CLI 整合測試', () => {
       });
 
       expect(output).not.toContain('snapshot');
+    });
+
+    it('--help 應列出可覆寫快取目錄的 --cache-dir 選項', () => {
+      const output = execSync(`${CLI} --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).toContain('--cache-dir');
+    });
+
+    it('--cache-dir 應把索引快取寫入指定目錄', () => {
+      const cacheDir = mkdtempSync(join(tmpdir(), 'agent-ide-cli-cache-'));
+
+      try {
+        const output = execSync(`${CLI} --cache-dir "${cacheDir}" search UserService --path "${SAMPLE_PROJECT}" --format json`, {
+          cwd: PROJECT_ROOT,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            NODE_ENV: 'development',
+            VITEST: 'false',
+          },
+        });
+        const result = JSON.parse(output) as CLIResult;
+
+        expect(result.success).toBe(true);
+        const cacheEntries = readdirSync(cacheDir, { recursive: true }).map(String);
+        expect(cacheEntries).toContain('index.json');
+      } finally {
+        rmSync(cacheDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rename --help 不應列出已移除的 --type 選項', () => {
+      const output = execSync(`${CLI} rename --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).not.toContain('--type');
     });
   });
 

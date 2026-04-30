@@ -128,6 +128,7 @@ export class AgentIdeCLI {
       .description('程式碼智能工具集 for AI Agents')
       .version(packageVersion)
       .option('--no-cache', '停用索引快取')
+      .option('--cache-dir <path>', '覆寫索引快取目錄')
       .option('--verbose', '顯示詳細處理資訊');
 
     this.program.hook('preAction', (thisCommand) => {

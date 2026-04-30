@@ -1,12 +1,12 @@
 /**
  * Impact 命令
- * 影響分析（從 deps impact 攤平而來）
+ * 影響分析
  */
 
 import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
-import { QueryCommand, type DepsResult } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type DependencyResult } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -91,8 +91,8 @@ async function handleImpactCommand(
     const dependencies = impactAnalyzer.getDependencies(targetFile);
 
     // Impact 命令不輸出循環依賴（改用 cycles 命令獲取）
-    const result: DepsResult = {
-      command: QueryCommand.Deps,
+    const result: DependencyResult = {
+      command: QueryCommand.Impact,
       success: true,
       cycles: [],
       summary: {

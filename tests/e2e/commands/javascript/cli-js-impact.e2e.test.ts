@@ -88,7 +88,7 @@ describe('CLI impact - JavaScript 專案', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
       expect(output.success).toBeDefined();
     });
   });

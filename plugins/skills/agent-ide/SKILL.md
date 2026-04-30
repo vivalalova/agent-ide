@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, or update imports and call sites."
+description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, update imports/call sites, or control index cache with --no-cache/--cache-dir."
 ---
 
 # Agent IDE
@@ -20,6 +20,11 @@ TS/JS 程式碼智能重構工具。
 | [move](references/move.md) | 移動檔案/成員 + 自動更新 import |
 | [change-signature](references/change-signature.md) | 修改函式參數 + 更新呼叫點 |
 | [deadcode](references/deadcode.md) | 檢測/清理未使用程式碼 |
+
+## 全域選項
+
+- `--no-cache`：停用索引快取
+- `--cache-dir <path>`：覆寫索引快取目錄
 
 ## 最佳實踐
 

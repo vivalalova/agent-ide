@@ -19,6 +19,11 @@ Code intelligence toolkit designed for AI agents, providing search, refactoring,
 npx agent-ide <command> [options]
 ```
 
+Global options:
+
+- `--no-cache` - disable index cache
+- `--cache-dir <path>` - override index cache directory
+
 From source:
 
 ```bash

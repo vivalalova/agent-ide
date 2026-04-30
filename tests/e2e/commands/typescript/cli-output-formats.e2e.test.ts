@@ -140,9 +140,9 @@ obj.method();
     });
   });
 
-  // MARK: - deps (impact) formatter
+  // MARK: - impact formatter
 
-  describe('impact/deps summary 格式', () => {
+  describe('impact summary 格式', () => {
     it('應該輸出 impact 的 summary 格式', async () => {
       const result = await executeCLI(
         ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'summary'],
@@ -153,7 +153,7 @@ obj.method();
       expect(result.stdout.length).toBeGreaterThan(0);
     });
 
-    it('應該輸出 impact 的 json 格式（驗證 DepsResult 結構）', async () => {
+    it('應該輸出 impact 的 json 格式', async () => {
       const result = await executeCLI(
         ['impact', '--file', 'src/utils/array-utils.ts', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
@@ -161,7 +161,7 @@ obj.method();
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
       expect(output.success).toBe(true);
       expect(output.impact).toBeDefined();
       expect(output.impact.targetFile).toBeDefined();

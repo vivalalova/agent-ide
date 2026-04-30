@@ -1,13 +1,13 @@
 /**
  * Cycles 命令
- * 循環依賴分析（從 deps cycles 攤平而來）
+ * 循環依賴分析
  */
 
 import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
-import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type DependencyResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -87,8 +87,8 @@ async function handleCyclesCommand(
       length: c.length
     }));
 
-    const result: DepsResult = {
-      command: QueryCommand.Deps,
+    const result: DependencyResult = {
+      command: QueryCommand.Cycles,
       success: true,
       cycles: cycleInfos,
       summary: {

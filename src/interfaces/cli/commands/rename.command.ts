@@ -18,7 +18,6 @@ import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
-  type: string;
   symbol?: string;
   from?: string;
   newName?: string;
@@ -36,7 +35,6 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
   program
     .command('rename')
     .description('重新命名程式碼元素')
-    .option('-t, --type <type>', '符號類型 (variable|function|class|interface)', 'variable')
     .option('-s, --symbol <name>', '要重新命名的符號')
     .option('-f, --from <name>', '原始名稱（--symbol 的別名）')
     .option('-n, --new-name <name>', '新名稱')

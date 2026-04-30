@@ -15,6 +15,7 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
   }
 
   interface CyclesOutput {
+    command: string;
     success: boolean;
     cycles: CycleItem[];
     summary: {
@@ -330,6 +331,7 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('cycles');
       expect(output.success).toBe(true);
       expect(output.summary.totalScanned).toBeGreaterThan(0);
     });

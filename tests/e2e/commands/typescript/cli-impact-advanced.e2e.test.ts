@@ -61,7 +61,7 @@ export const dD = dB + dC;
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
-      // DepsResult 結構：dependents 在 output.impact.dependents
+      // impact 結構：dependents 在 output.impact.dependents
       expect(Array.isArray(output.impact?.dependents)).toBe(true);
     });
 
@@ -199,7 +199,7 @@ export const dD = dB + dC;
   // MARK: - 格式驗證
 
   describe('輸出格式驗證', () => {
-    it('json 格式應包含完整的 DepsResult 結構', async () => {
+    it('json 格式應包含完整的 impact 結構', async () => {
       const result = await executeCLI(
         ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
@@ -209,7 +209,7 @@ export const dD = dB + dC;
       const output = JSON.parse(result.stdout);
 
       // 驗證完整結構
-      expect(output.command).toBe('deps');
+      expect(output.command).toBe('impact');
       expect(output.success).toBeDefined();
       expect(output.impact).toBeDefined();
       expect(output.impact.targetFile).toBeDefined();
