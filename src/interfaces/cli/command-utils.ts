@@ -143,7 +143,7 @@ export function outputMutationWithLegacyFields(
 ): void {
   if (format === OutputFormat.Json) {
     const result = outputHandler.createMutationResult(input);
-    outputHandler.outputJson({ ...result, ...legacyFields }, 2);
+    outputHandler.outputJson({ ...legacyFields, ...result }, 2);
     return;
   }
 
