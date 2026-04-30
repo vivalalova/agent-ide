@@ -127,6 +127,7 @@ async function handleCallHierarchyCommand(
 
     // 函數找不到的情況
     if (matchedSymbols.length === 0) {
+      const errorMessage = `找不到函數 "${functionName}"`;
       const errorResult: CallHierarchyResult = {
         command: QueryCommand.CallHierarchy,
         success: false,
@@ -141,7 +142,8 @@ async function handleCallHierarchyCommand(
           outgoingCount: 0,
           uniqueFiles: 0
         },
-        errors: [`找不到函數 "${functionName}"`]
+        error: errorMessage,
+        errors: [errorMessage]
       };
       outputHandler.outputQuery(errorResult, format);
       process.exitCode = 1;

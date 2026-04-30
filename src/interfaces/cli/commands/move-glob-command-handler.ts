@@ -4,13 +4,15 @@ import { MoveEngine } from '@core/move/move-engine.js';
 import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { ChangeApplicator, ChangesetBuilder, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { FileOperationType } from '@infrastructure/changeset/index.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import {
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat
+} from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.js';
 import {
   createUnifiedOutputHandler,
-  OutputFormat,
-  type UnifiedOutputHandler
+  OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -161,7 +163,16 @@ export async function handleGlobMoveCommand(
 
     if (result.success) {
       const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, movePlan.movedFiles, isJsonFormat, outputHandler);
+      if (isJsonFormat) {
+        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+          filesCount: matchedFiles.length,
+          target: resolvedTarget,
+          movedFiles: movePlan.movedFiles.map(f => ({ from: f.from, to: f.to })),
+          message: `成功移動 ${matchedFiles.length} 個檔案，更新了 ${totalUpdates} 個 import`
+        });
+      } else {
+        printGlobSuccess(matchedFiles.length, totalUpdates, movePlan.movedFiles);
+      }
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
@@ -180,31 +191,18 @@ export async function handleGlobMoveCommand(
  */
 function printGlobSuccess(
   fileCount: number,
-  target: string,
   totalUpdates: number,
-  movedFiles: readonly GlobMovedFile[],
-  isJsonFormat: boolean,
-  outputHandler: UnifiedOutputHandler
+  movedFiles: readonly GlobMovedFile[]
 ): void {
-  if (isJsonFormat) {
-    outputHandler.outputJson({
-      success: true,
-      filesCount: fileCount,
-      target,
-      movedFiles: movedFiles.map(f => ({ from: f.from, to: f.to })),
-      message: `成功移動 ${fileCount} 個檔案，更新了 ${totalUpdates} 個 import`
-    }, 2);
-  } else {
-    console.log('   移動成功!');
-    console.log(`   統計: ${fileCount} 個檔案, ${totalUpdates} 個 import 已更新`);
+  console.log('   移動成功!');
+  console.log(`   統計: ${fileCount} 個檔案, ${totalUpdates} 個 import 已更新`);
 
-    if (movedFiles.length > 0 && movedFiles.length <= 10) {
-      console.log('   移動的檔案:');
-      for (const { from, to } of movedFiles) {
-        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
-      }
-    } else if (movedFiles.length > 10) {
-      console.log(`   移動的檔案: ${movedFiles.length} 個 (省略詳細列表)`);
+  if (movedFiles.length > 0 && movedFiles.length <= 10) {
+    console.log('   移動的檔案:');
+    for (const { from, to } of movedFiles) {
+      console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
     }
+  } else if (movedFiles.length > 10) {
+    console.log(`   移動的檔案: ${movedFiles.length} 個 (省略詳細列表)`);
   }
 }

@@ -4,7 +4,7 @@
  */
 
 import { ChangeApplicator, convertChangesetToPreviewInput, type Changeset } from '@infrastructure/changeset/index.js';
-import type { PreviewInput } from '@infrastructure/formatters/index.js';
+import { PreviewCommand, type PreviewInput } from '@infrastructure/formatters/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   createUnifiedOutputHandler,
@@ -115,6 +115,39 @@ export interface MutationExecutionResult {
   success: boolean;
   /** PreviewInput（用於輸出） */
   previewInput?: PreviewInput;
+}
+
+/**
+ * 建立無檔案變更的 mutation preview input。
+ */
+export function createEmptyMutationPreviewInput(
+  command: PreviewCommand,
+  operationDescription: string
+): PreviewInput {
+  return {
+    command,
+    success: true,
+    fileChanges: [],
+    operationDescription
+  };
+}
+
+/**
+ * 輸出 mutation 結果，JSON 模式保留既有命令欄位並補齊統一 PreviewResult 欄位。
+ */
+export function outputMutationWithLegacyFields(
+  outputHandler: UnifiedOutputHandler,
+  input: PreviewInput,
+  format: OutputFormat,
+  legacyFields: Record<string, unknown> = {}
+): void {
+  if (format === OutputFormat.Json) {
+    const result = outputHandler.createMutationResult(input);
+    outputHandler.outputJson({ ...result, ...legacyFields }, 2);
+    return;
+  }
+
+  outputHandler.outputMutation(input, format);
 }
 
 /**

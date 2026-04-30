@@ -11,15 +11,20 @@ import { isGlobPattern } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
 import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import {
   createUnifiedOutputHandler,
-  OutputFormat,
-  type UnifiedOutputHandler
+  OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  createEmptyMutationPreviewInput,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
 import { handleGlobMoveCommand } from '@interfaces/cli/commands/move-glob-command-handler.js';
 import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -145,7 +150,18 @@ async function handleMoveCommand(
     if (normalizedSource === normalizedTarget) {
       // 源和目標相同時，視為 no-op，成功返回
       if (isJsonFormat) {
-        outputHandler.outputJson({ success: true, message: 'Source and target are identical. No changes made.', changes: [] });
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(
+            PreviewCommand.Move,
+            'Source and target are identical. No changes made.'
+          ),
+          format,
+          {
+            message: 'Source and target are identical. No changes made.',
+            changes: []
+          }
+        );
       } else {
         console.log('   Source and target are identical. No changes made.');
       }
@@ -208,7 +224,17 @@ async function handleMoveCommand(
     if (result.success) {
       // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
       const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printSuccess(normalizedSource, normalizedTarget, totalUpdates, result.movedFiles, isJsonFormat, outputHandler);
+      if (isJsonFormat) {
+        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+          source: normalizedSource,
+          target: normalizedTarget,
+          moved: result.movedFiles.length > 0,
+          pathUpdates: [],
+          message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
+        });
+      } else {
+        printSuccess(totalUpdates, result.movedFiles);
+      }
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
@@ -226,31 +252,16 @@ async function handleMoveCommand(
  * 印出成功訊息
  */
 function printSuccess(
-  source: string,
-  target: string,
   totalUpdates: number,
-  movedFiles: ReadonlyArray<{ from: string; to: string }>,
-  isJsonFormat: boolean,
-  outputHandler: UnifiedOutputHandler
+  movedFiles: ReadonlyArray<{ from: string; to: string }>
 ): void {
-  if (isJsonFormat) {
-    outputHandler.outputJson({
-      success: true,
-      source,
-      target,
-      moved: movedFiles.length > 0,
-      pathUpdates: [], // 向後相容：實際更新已應用，這裡僅保留欄位
-      message: `成功移動 ${source} → ${target}，更新了 ${totalUpdates} 個 import`
-    }, 2);
-  } else {
-    console.log('   移動成功!');
-    console.log(`   統計: ${totalUpdates} 個 import 已更新`);
+  console.log('   移動成功!');
+  console.log(`   統計: ${totalUpdates} 個 import 已更新`);
 
-    if (movedFiles.length > 0) {
-      console.log('   移動的檔案:');
-      for (const { from, to } of movedFiles) {
-        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
-      }
+  if (movedFiles.length > 0) {
+    console.log('   移動的檔案:');
+    for (const { from, to } of movedFiles) {
+      console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
     }
   }
 }

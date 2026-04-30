@@ -8,6 +8,24 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
+function parseJsonOutput(result: { stdout: string }): Record<string, any> {
+  return JSON.parse(result.stdout) as Record<string, any>;
+}
+
+function expectMutationJsonContract(output: Record<string, any>, command: string): void {
+  expect(output.success).toBe(true);
+  expect(output.command).toBe(command);
+  expect(output.summary).toEqual(expect.objectContaining({
+    totalFiles: expect.any(Number),
+    totalChanges: expect.any(Number),
+    additions: expect.any(Number),
+    deletions: expect.any(Number)
+  }));
+  expect(typeof output.operations).toBe('number');
+  expect(typeof output.affectedFiles).toBe('number');
+  expect(Array.isArray(output.files)).toBe(true);
+}
+
 describe('CLI 輸出格式 - summary 與 json 路徑覆蓋', () => {
   let fixture: FixtureContext;
 
@@ -75,6 +93,25 @@ export function depthB() { return depthC(); }
       // 找不到函數時應輸出錯誤資訊
       const output = result.stdout + result.stderr;
       expect(output.length).toBeGreaterThan(0);
+    });
+
+    it('應該在 json 找不到函數時提供一致的 error 與 errors 欄位', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'notExistFn999', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = parseJsonOutput(result);
+      expect(output.command).toBe('call-hierarchy');
+      expect(output.success).toBe(false);
+      expect(output.error).toBe('找不到函數 "notExistFn999"');
+      expect(output.errors).toEqual(['找不到函數 "notExistFn999"']);
+      expect(output.summary).toEqual(expect.objectContaining({
+        incomingCount: 0,
+        outgoingCount: 0,
+        uniqueFiles: 0
+      }));
     });
   });
 
@@ -234,6 +271,52 @@ obj.method();
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout.length).toBeGreaterThan(0);
+    });
+  });
+
+  // MARK: - mutation json contract
+
+  describe('mutation json contract', () => {
+    it('move 實際執行時應保留舊欄位並提供統一 PreviewResult 欄位', async () => {
+      const result = await executeCLI(
+        ['move', 'src/utils/string-utils.ts', 'src/moved-utils/string-utils.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = parseJsonOutput(result);
+      expectMutationJsonContract(output, 'move');
+      expect(output.source).toBe(fixture.getFilePath('src/utils/string-utils.ts'));
+      expect(output.target).toBe(fixture.getFilePath('src/moved-utils/string-utils.ts'));
+      expect(output.message).toContain('更新了');
+    });
+
+    it('move no-op 時應使用統一 PreviewResult 欄位', async () => {
+      const result = await executeCLI(
+        ['move', 'src/utils/string-utils.ts', 'src/utils/string-utils.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = parseJsonOutput(result);
+      expectMutationJsonContract(output, 'move');
+      expect(output.message).toBe('Source and target are identical. No changes made.');
+      expect(output.changes).toEqual([]);
+    });
+
+    it('deadcode 無項目時應使用統一 PreviewResult 欄位', async () => {
+      await fixture.writeFile('src/no-deadcode/index.ts', 'export function liveEntry() { return 1; }');
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.getFilePath('src/no-deadcode'), '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = parseJsonOutput(result);
+      expectMutationJsonContract(output, 'deadcode-removal');
+      expect(output.message).toBe('沒有檢測到 dead code');
+      expect(output.removals).toEqual([]);
     });
   });
 });

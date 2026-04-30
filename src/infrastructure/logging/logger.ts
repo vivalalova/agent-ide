@@ -47,6 +47,11 @@ export class Logger {
     if (this._level === LogLevel.Silent) {return;}
     process.stderr.write(`[WARN][${module}] ${message}\n`);
   }
+
+  error(module: string, message: string): void {
+    if (this._level === LogLevel.Silent) {return;}
+    process.stderr.write(`[ERROR][${module}] ${message}\n`);
+  }
 }
 
 export const logger = Logger.getInstance();

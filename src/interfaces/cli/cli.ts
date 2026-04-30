@@ -9,6 +9,7 @@ import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import { logger, LogLevel } from '@infrastructure/logging/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import {
   setupMoveCommand,
   setupRenameCommand,
@@ -134,6 +135,10 @@ export class AgentIdeCLI {
     this.program.hook('preAction', (thisCommand) => {
       const opts = thisCommand.optsWithGlobals() as { verbose?: boolean };
       logger.setLevel(opts.verbose ? LogLevel.Verbose : LogLevel.Normal);
+      diagnostics.setSink({
+        warn: (module, message) => logger.warn(module, message),
+        error: (module, message) => logger.error(module, message)
+      });
     });
 
     const context = this.createCommandContext();

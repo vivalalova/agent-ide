@@ -54,6 +54,21 @@ describe('DiagnosticCollector', () => {
 
       spy.mockRestore();
     });
+
+    it('should forward warnings through a configured sink', () => {
+      const sink = {
+        warn: vi.fn(),
+        error: vi.fn()
+      };
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const dc = new DiagnosticCollector({ sink });
+
+      dc.warn('mod', 'CODE', 'msg', '/src/foo.ts');
+
+      expect(sink.warn).toHaveBeenCalledWith('mod', '/src/foo.ts msg');
+      expect(consoleSpy).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('error', () => {
@@ -71,6 +86,21 @@ describe('DiagnosticCollector', () => {
       dc.error('mod', 'CODE', 'msg');
       expect(spy).toHaveBeenCalled();
       spy.mockRestore();
+    });
+
+    it('should forward errors through a configured sink', () => {
+      const sink = {
+        warn: vi.fn(),
+        error: vi.fn()
+      };
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const dc = new DiagnosticCollector({ sink });
+
+      dc.error('mod', 'CODE', 'msg');
+
+      expect(sink.error).toHaveBeenCalledWith('mod', 'msg');
+      expect(consoleSpy).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
     });
   });
 

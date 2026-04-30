@@ -8,8 +8,14 @@ import * as path from 'path';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  createEmptyMutationPreviewInput,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -74,15 +80,14 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   // 如果 from 和 to 相同，直接返回成功但無操作
   if (from === to) {
     if (isJsonFormat) {
-      outputHandler.outputJson({
-        command: 'rename',
-        success: true,
-        files: [],
-        summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0 },
-        operations: 0,
-        affectedFiles: 0,
-        operationDescription: `No changes needed: '${from}' is already named '${to}'`
-      });
+      outputMutationWithLegacyFields(
+        outputHandler,
+        createEmptyMutationPreviewInput(
+          PreviewCommand.Rename,
+          `No changes needed: '${from}' is already named '${to}'`
+        ),
+        format
+      );
     } else {
       console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
     }

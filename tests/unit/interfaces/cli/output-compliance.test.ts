@@ -19,4 +19,21 @@ describe('CLI output compliance', () => {
 
     expect(directJsonOutputs).toEqual([]);
   });
+
+  it('does not emit ad-hoc command-level JSON object shapes', () => {
+    const commandsDir = path.join(process.cwd(), 'src/interfaces/cli/commands');
+    const commandFiles = readdirSync(commandsDir)
+      .filter(fileName => fileName.endsWith('.ts'))
+      .map(fileName => path.join(commandsDir, fileName));
+
+    const adHocJsonOutputs = commandFiles.flatMap(filePath => {
+      const source = readFileSync(filePath, 'utf-8');
+      return source.match(/outputJson\(\s*\{/g)?.map(match => ({
+        filePath,
+        match
+      })) ?? [];
+    });
+
+    expect(adHocJsonOutputs).toEqual([]);
+  });
 });

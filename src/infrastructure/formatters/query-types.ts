@@ -35,6 +35,8 @@ export interface QueryResult {
   summary: QuerySummary;
   /** 命令特定資料 */
   data?: unknown;
+  /** 主要錯誤訊息，供 JSON clients 使用 */
+  error?: string;
   /** 錯誤訊息 */
   errors?: string[];
 }

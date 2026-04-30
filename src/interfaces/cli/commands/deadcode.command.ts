@@ -12,11 +12,18 @@ import {
   type DeadCodeDetectionResult
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  createEmptyMutationPreviewInput,
+  ensureDirectoryPath,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -126,7 +133,15 @@ async function handleDeadCodeCommand(
       if (!isJsonFormat) {
         console.log('   沒有檢測到 dead code');
       } else {
-        outputHandler.outputJson({ success: true, message: '沒有檢測到 dead code', removals: [] });
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '沒有檢測到 dead code'),
+          format,
+          {
+            message: '沒有檢測到 dead code',
+            removals: []
+          }
+        );
       }
       return;
     }
@@ -165,12 +180,16 @@ async function handleDeadCodeCommand(
           }
         }
       } else {
-        outputHandler.outputJson({
-          success: true,
-          message: '符合條件的 dead code 已被過濾',
-          warnings: changeset.warnings,
-          removals: []
-        });
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '符合條件的 dead code 已被過濾'),
+          format,
+          {
+            message: '符合條件的 dead code 已被過濾',
+            warnings: changeset.warnings,
+            removals: []
+          }
+        );
       }
       return;
     }
