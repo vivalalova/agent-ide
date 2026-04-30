@@ -23,6 +23,7 @@ Global options:
 
 - `--no-cache` - disable index cache
 - `--cache-dir <path>` - override index cache directory
+- `--verbose` - show detailed processing information
 
 From source:
 
@@ -71,7 +72,7 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 
 **Trigger keywords**: rename, move file, move function, search symbol, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
 
-**Benefits**: Automatic reference updates, atomic operations, zero missed references, undo support
+**Benefits**: Automatic reference updates, atomic operations, previewable changes, undo-friendly diffs
 ```
 
 ## Commands

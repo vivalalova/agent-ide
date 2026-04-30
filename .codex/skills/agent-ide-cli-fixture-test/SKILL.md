@@ -20,7 +20,7 @@ Use this skill to manually exercise the built `agent-ide` CLI on fixture project
 
 3. For each case, run one CLI action against one fixture, then inspect exactly what changed:
    - Prefer mutation commands: `rename`, `change-signature`, `move`, `deadcode`.
-   - Include read-only sanity cases: `find-references`, `impact`, `cycles`, `snapshot`.
+   - Include read-only sanity cases: `find-references`, `impact`, `cycles`, `search`, and `call-hierarchy`.
    - Use fixtures under `tests/fixtures/*`; do not create unrelated throwaway projects.
    - Run `git diff -- tests/fixtures/<fixture>` immediately after each mutation.
    - Verify the final side effect, not only command success.

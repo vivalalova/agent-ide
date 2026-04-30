@@ -110,6 +110,7 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 
 - `--no-cache`：停用索引快取
 - `--cache-dir <path>`：覆寫索引快取目錄
+- `--verbose`：顯示詳細處理資訊
 
 ### 查詢類（唯讀）
 
