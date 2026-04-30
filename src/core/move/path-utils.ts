@@ -5,21 +5,17 @@
 
 import * as path from 'path';
 import { ImportResolver } from './import-resolver.js';
+import { isSourceFileExtension, SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
 
 /**
  * 支援的檔案副檔名
  */
-export const ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.vue'] as const;
+export const ALLOWED_EXTENSIONS = [...SOURCE_FILE_EXTENSIONS, '.vue'] as const;
 
 /**
  * 排除的目錄模式
  */
 export const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.build'] as const;
-
-/**
- * 支援移除的副檔名
- */
-const REMOVABLE_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx'];
 
 /**
  * 路徑工具類別
@@ -116,6 +112,7 @@ export class PathUtils {
 
       return false;
     } catch {
+      // graceful-degradation: 路徑解析失敗時保守回傳 false
       return false;
     }
   }
@@ -127,11 +124,7 @@ export class PathUtils {
    * @returns 移除副檔名後的路徑
    */
   removeExtension(filePath: string): string {
-    const ext = path.extname(filePath);
-    if (REMOVABLE_EXTENSIONS.includes(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-    return filePath;
+    return stripSourceFileExtension(filePath);
   }
 
   /**
@@ -145,11 +138,7 @@ export class PathUtils {
     const fromDir = path.dirname(fromFile);
     let relativePath = path.relative(fromDir, toFile);
 
-    // 移除副檔名（如果目標是支援的檔案類型）
-    const ext = path.extname(relativePath);
-    if (REMOVABLE_EXTENSIONS.includes(ext)) {
-      relativePath = relativePath.slice(0, -ext.length);
-    }
+    relativePath = stripSourceFileExtension(relativePath);
 
     // 確保相對路徑以 ./ 或 ../ 開始
     if (!relativePath.startsWith('.')) {
@@ -186,16 +175,12 @@ export class PathUtils {
           let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
           newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
 
-          // 移除副檔名
-          const newExt = path.extname(newRelativeToAlias);
-          if (REMOVABLE_EXTENSIONS.includes(newExt)) {
-            newRelativeToAlias = newRelativeToAlias.slice(0, -newExt.length);
-          }
+          newRelativeToAlias = stripSourceFileExtension(newRelativeToAlias);
 
           // 組合新的別名路徑：alias + / + newRelativeToAlias
           // 如果 alias 本身不以 / 結尾，需要加上
           const separator = alias.endsWith('/') ? '' : '/';
-          return alias + separator + newRelativeToAlias;
+          return this.preserveOriginalExtension(originalImportPath, alias + separator + newRelativeToAlias);
         }
       }
 
@@ -206,18 +191,29 @@ export class PathUtils {
         let newRelativeToBaseUrl = path.relative(baseUrl, path.normalize(newFilePath));
         newRelativeToBaseUrl = newRelativeToBaseUrl.replace(/\\/g, '/');
 
-        // 移除副檔名
-        const newExt = path.extname(newRelativeToBaseUrl);
-        if (REMOVABLE_EXTENSIONS.includes(newExt)) {
-          newRelativeToBaseUrl = newRelativeToBaseUrl.slice(0, -newExt.length);
-        }
+        newRelativeToBaseUrl = stripSourceFileExtension(newRelativeToBaseUrl);
 
-        return newRelativeToBaseUrl;
+        return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
       }
     }
 
     // 否則使用相對路徑
-    return this.calculateNewImportPath(fromFile, newFilePath);
+    return this.preserveOriginalExtension(
+      originalImportPath,
+      this.calculateNewImportPath(fromFile, newFilePath)
+    );
+  }
+
+  private preserveOriginalExtension(originalImportPath: string, newImportPath: string): string {
+    const originalExtension = path.extname(originalImportPath);
+    if (
+      !isSourceFileExtension(originalExtension)
+      || path.extname(newImportPath)
+    ) {
+      return newImportPath;
+    }
+
+    return `${newImportPath}${originalExtension}`;
   }
 
   /**

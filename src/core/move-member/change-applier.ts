@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ReferenceUpdate, FileChange, TargetFileChange } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * Change Applier
@@ -51,7 +52,8 @@ export class ChangeApplier {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
+    } catch (error) {
+      diagnostics.warn('move-member/change-applier', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

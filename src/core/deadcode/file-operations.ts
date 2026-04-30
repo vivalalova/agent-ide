@@ -5,6 +5,7 @@
 
 import type { Range } from '@shared/types/core.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type {
   DeadCodeRemovalPreview,
   ImportCleanupOperation,
@@ -216,7 +217,8 @@ export class FileOperationsHandler {
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
       this.cacheService.setFile(filePath, contentStr);
       return contentStr;
-    } catch {
+    } catch (error) {
+      diagnostics.warn('deadcode/file-operations', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

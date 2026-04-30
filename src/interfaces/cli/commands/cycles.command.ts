@@ -1,15 +1,15 @@
 /**
  * Cycles 命令
- * 循環依賴分析（從 deps cycles 攤平而來）
+ * 循環依賴分析
  */
 
 import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
-import { QueryCommand, type DepsResult, type CycleInfo } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type DependencyResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -18,6 +18,8 @@ interface CyclesOptions {
   path: string;
   format: string;
 }
+
+const CLI_MAX_CYCLE_LENGTH = 100;
 
 /**
  * 設定 cycles 命令
@@ -49,11 +51,8 @@ async function handleCyclesCommand(
 
   const analyzePath = path.resolve(options.path || process.cwd());
 
-  // 檢查路徑是否存在（在進度訊息前檢查）
-  const pathExists = await context.fileSystem.exists(analyzePath);
-  if (!pathExists) {
-    outputHandler.outputError(`路徑不存在: ${analyzePath}`, format);
-    process.exitCode = 1;
+  const pathIsDirectory = await ensureDirectoryPath(analyzePath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 
@@ -71,12 +70,16 @@ async function handleCyclesCommand(
     // 獲取統計資訊
     const stats = impactAnalyzer.getStats();
 
-    // 取得依賴圖
-    const graph = impactAnalyzer.getGraph();
+    // 取得 runtime-only 依賴圖（排除 type-only imports）
+    const graph = impactAnalyzer.getRuntimeGraph();
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();
-    const cycles = cycleDetector.detectCycles(graph);
+    const cycles = cycleDetector.detectCycles(graph, {
+      maxCycleLength: CLI_MAX_CYCLE_LENGTH,
+      reportAllCycles: false,
+      ignoreSelfLoops: true
+    });
 
     // 轉換 cycles 為 CycleInfo
     const cycleInfos: CycleInfo[] = cycles.map(c => ({
@@ -84,8 +87,8 @@ async function handleCyclesCommand(
       length: c.length
     }));
 
-    const result: DepsResult = {
-      command: QueryCommand.Deps,
+    const result: DependencyResult = {
+      command: QueryCommand.Cycles,
       success: true,
       cycles: cycleInfos,
       summary: {

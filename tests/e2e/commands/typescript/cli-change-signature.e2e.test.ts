@@ -18,6 +18,34 @@ describe('CLI change-signature - 基於 sample-project fixture', () => {
   });
 
   describe('參數重排序 - 基本功能', () => {
+    it('應該支援文件宣告的 --file 和 --function 形式', async () => {
+      await fixture.writeFile('src/doc-option-form.ts', `
+function calculate(a: number, b: number): number {
+  return a - b;
+}
+
+const result = calculate(10, 5);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', 'src/doc-option-form.ts',
+          '--function', 'calculate',
+          '-p', fixture.rootPath,
+          '--reorder', 'b,a',
+          '--dry-run',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.files.length).toBeGreaterThan(0);
+    });
+
     it('應該成功重排序兩個參數', async () => {
       const testFile = `${fixture.rootPath}/test-reorder.ts`;
       await fixture.memfs.writeFile(testFile, `
@@ -136,6 +164,29 @@ log('test');
         expect(output.success).toBe(true);
       }
     });
+
+    it('應該把未加引號的 string 預設值輸出為字串 literal', async () => {
+      const testFile = `${fixture.rootPath}/test-add-string-default.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function formatAmount(amount: number): string {
+  return String(amount);
+}
+
+const text = formatAmount(42);
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'formatAmount', '-p', fixture.rootPath, '--add', 'locale:string=en-US', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('locale: string = \'en-US\'');
+      expect(updatedContent).toContain('formatAmount(42, \'en-US\')');
+      expect(updatedContent).not.toContain('formatAmount(42, en-US)');
+    });
   });
 
   describe('刪除參數 - 基本功能', () => {
@@ -159,6 +210,29 @@ const result = process('test', 123);
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
       }
+    });
+
+    it('刪除仍在函式 body 使用的參數應該失敗且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-remove-used-param.ts`;
+      const originalContent = `
+function process(data: string, suffix: string): string {
+  return data + suffix;
+}
+
+const result = process('a', 'b');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'process', '-p', fixture.rootPath, '--remove', 'suffix', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('仍在函式 body 中使用');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
     });
   });
 
@@ -186,6 +260,31 @@ const n = count(42);
     });
   });
 
+  describe('重命名參數 - 基本功能', () => {
+    it('應該同步更新函式 body 內的參數引用', async () => {
+      const testFile = `${fixture.rootPath}/test-rename-param-body.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function describeUser(userId: string): string {
+  const normalized = userId.trim();
+  return 'User: ' + userId + ' (' + normalized + ')';
+}
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'describeUser', '-p', fixture.rootPath, '--rename', 'userId:accountId', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('function describeUser(accountId: string): string');
+      expect(updatedContent).toContain('const normalized = accountId.trim();');
+      expect(updatedContent).toContain('\'User: \' + accountId');
+      expect(updatedContent).not.toContain('userId');
+    });
+  });
+
   describe('錯誤處理', () => {
     it('應該處理不存在的函式', async () => {
       const testFile = `${fixture.rootPath}/test-nonexistent.ts`;
@@ -197,11 +296,10 @@ const n = count(42);
       );
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr || result.stdout).toBeDefined();
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error).toContain('找不到函式');
     });
 
     it('應該處理無效的參數名稱', async () => {
@@ -218,11 +316,10 @@ function test(a: number): number {
       );
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr || result.stdout).toBeDefined();
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(false);
-      }
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error).toContain('找不到參數');
     });
 
     it('應該處理不存在的檔案', async () => {
@@ -231,7 +328,11 @@ function test(a: number): number {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error.length).toBeGreaterThan(0);
     });
 
     it('應該處理語法錯誤的檔案', async () => {
@@ -243,7 +344,11 @@ function test(a: number): number {
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.command).toBe('change-signature');
+      expect(output.error.length).toBeGreaterThan(0);
     });
   });
 
@@ -261,7 +366,19 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => JSON.parse(result.stdout)).not.toThrow();
+      const output = JSON.parse(result.stdout);
+      expect(output.command).toBe('refactor');
+      expect(output.success).toBe(true);
+      expect(output.summary.totalChanges).toBeGreaterThanOrEqual(2);
+      expect(output.files.length).toBe(1);
+
+      const changedContent = output.files
+        .flatMap((file: { hunks: Array<{ lines: Array<{ content: string }> }> }) => file.hunks)
+        .flatMap((hunk: { lines: Array<{ content: string }> }) => hunk.lines)
+        .map((line: { content: string }) => line.content)
+        .join('\n');
+      expect(changedContent).toContain('function fn(b: number, a: number): number');
+      expect(changedContent).toContain('const x = fn(2, 1);');
     });
 
     it('應該支援 summary 格式輸出', async () => {
@@ -277,7 +394,9 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBeDefined();
+      expect(result.stdout).toContain('Files: 1');
+      expect(result.stdout).toContain('Changes:');
+      expect(result.stdout).toContain('test-format-summary.ts');
     });
 
     it('應該支援 diff 格式輸出', async () => {
@@ -293,7 +412,10 @@ const x = fn(1, 2);
       );
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBeDefined();
+      expect(result.stdout).toContain('--- a/');
+      expect(result.stdout).toContain('+++ b/');
+      expect(result.stdout).toContain('function fn(b: number, a: number): number');
+      expect(result.stdout).toContain('const x = fn(2, 1);');
     });
   });
 
@@ -729,7 +851,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定檔案與函式名稱');
     });
 
     it('應該處理缺少函式名稱參數', async () => {
@@ -741,7 +864,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定檔案與函式名稱');
     });
 
     it('應該處理缺少操作參數', async () => {
@@ -753,7 +877,8 @@ ${calls}
         { memfs: fixture.memfs }
       );
 
-      expect(result.stderr || result.stdout).toBeDefined();
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('請指定至少一個變更操作');
     });
   });
 });

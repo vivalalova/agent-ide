@@ -24,7 +24,6 @@ function createMockParser(overrides?: Partial<ParserPlugin>): ParserPlugin {
     findReferences: vi.fn().mockResolvedValue([]),
     extractDependencies: vi.fn().mockResolvedValue([]),
     rename: vi.fn().mockResolvedValue([]),
-    extractFunction: vi.fn().mockResolvedValue([]),
     findDefinition: vi.fn().mockResolvedValue(null),
     findUsages: vi.fn().mockResolvedValue([]),
     validate: vi.fn().mockResolvedValue({ isValid: true, errors: [] }),

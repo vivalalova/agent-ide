@@ -87,6 +87,7 @@ export interface Dependency {
   readonly type: DependencyType;
   readonly isRelative: boolean;
   readonly importedSymbols: readonly string[];
+  readonly isTypeOnly?: boolean;
 }
 
 /**

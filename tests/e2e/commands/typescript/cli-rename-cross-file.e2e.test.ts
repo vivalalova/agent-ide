@@ -351,11 +351,11 @@ describe('CLI rename cross-file - 跨檔案引用更新', () => {
 
     it('應該處理循環引用', async () => {
       // Given: 可能存在的循環引用結構
-      // User interface 在 user.ts:38:17
+      // User interface 在 user.ts:39:18
 
       // When: 重命名可能涉及循環的符號
       const result = await executeCLI(
-        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'Account', '--at', 'src/types/user.ts:38:17', '--dry-run', '--format', 'json'],
+        ['rename', '--path', fixture.rootPath, '--from', 'User', '--to', 'Account', '--at', 'src/types/user.ts:39:18', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

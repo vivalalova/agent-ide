@@ -5,6 +5,7 @@
 
 import { AgentIdeCLI } from '@interfaces/cli/cli.js';
 import type { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
+import { Logger } from '@infrastructure/logging/index.js';
 
 /** CLI 執行結果 */
 export interface CLIResult {
@@ -34,12 +35,14 @@ export interface ExecuteOptions {
 export async function executeCLI(args: string[], options: ExecuteOptions): Promise<CLIResult> {
   const cli = new AgentIdeCLI(options.memfs);
 
-  // 攔截 console.log 和 console.error
+  // 攔截 console.* 和 process.stderr.write（捕捉 logger 輸出）
   const stdout: string[] = [];
   const stderr: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
   const originalWarn = console.warn;
+  const originalDebug = console.debug;
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
   console.log = (...logArgs: unknown[]) => {
     stdout.push(logArgs.map(String).join(' '));
@@ -51,6 +54,15 @@ export async function executeCLI(args: string[], options: ExecuteOptions): Promi
 
   console.warn = (...logArgs: unknown[]) => {
     stderr.push(logArgs.map(String).join(' '));
+  };
+
+  console.debug = () => { /* silenced in tests */ };
+
+
+  (process.stderr as any).write = (chunk: unknown): boolean => {
+    const text = chunk !== null && chunk !== undefined ? String(chunk) : '';
+    stderr.push(text);
+    return true;
   };
 
   const startTime = performance.now();
@@ -73,11 +85,16 @@ export async function executeCLI(args: string[], options: ExecuteOptions): Promi
       stderr.push(error.message);
     }
   } finally {
-    // 還原 console 和 process.exitCode
+    // 還原 console、process.stderr.write 和 process.exitCode
     console.log = originalLog;
     console.error = originalError;
     console.warn = originalWarn;
+    console.debug = originalDebug;
+
+    (process.stderr as any).write = originalStderrWrite;
     process.exitCode = originalExitCode;
+    // 重置 Logger 狀態（避免 verbose 模式污染後續測試）
+    Logger.resetInstance();
   }
 
   const duration = performance.now() - startTime;

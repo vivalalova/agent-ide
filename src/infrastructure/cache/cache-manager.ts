@@ -5,6 +5,7 @@ import {
   type CacheEvent,
   type CacheEventListener
 } from './types.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /**
  * 全域統計資訊
@@ -225,15 +226,14 @@ export class CacheManager {
             loaded++;
           } catch (error) {
             failed++;
-            console.warn(`Failed to warm up cache item ${key}:`, error);
+            logger.warn('cache-manager', `Failed to warm up cache item ${key}: ${error}`);
           }
         }
       }
     } catch (error) {
       failed++;
       // NOTE: 快取預熱失敗為非關鍵錯誤，不影響主程式運行
-      // 使用 console.error 記錄以便偵錯，但不中斷流程
-      console.error('Failed to load warmup data:', error);
+      logger.warn('cache-manager', `Failed to load warmup data: ${error}`);
     }
 
     // 呼叫完成回調
@@ -358,8 +358,7 @@ export class CacheManager {
         listener(event);
       } catch (error) {
         // NOTE: 監聽器錯誤為非關鍵錯誤，不影響快取操作
-        // 使用 console.error 記錄以便偵錯，避免中斷事件分發
-        console.error('Global cache event listener error:', error);
+        logger.warn('cache-manager', `Global cache event listener error: ${error}`);
       }
     }
   }

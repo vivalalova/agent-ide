@@ -7,55 +7,29 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
+import { isGlobPattern } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
+import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput, ChangesetBuilder } from '@infrastructure/changeset/index.js';
-import { FileOperationType } from '@infrastructure/changeset/index.js';
-import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
+import {
+  createUnifiedOutputHandler,
+  OutputFormat
+} from '@interfaces/cli/unified-output-handler.js';
+import {
+  createEmptyMutationPreviewInput,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
+import { handleGlobMoveCommand } from '@interfaces/cli/commands/move-glob-command-handler.js';
+import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
-
-/** 檢查路徑是否包含 glob pattern */
-function isGlobPattern(pattern: string): boolean {
-  return /[*?[\]{}]/.test(pattern);
-}
-
-/**
- * 計算 glob pattern 的基礎目錄
- * 找到第一個包含 glob 特殊字元的路徑段之前的部分
- * 例如: src/deep/x.ts 會得到 src/deep/
- */
-function getGlobBaseDir(pattern: string): string {
-  const segments = pattern.split('/');
-  const baseSegments: string[] = [];
-
-  for (const segment of segments) {
-    if (isGlobPattern(segment)) {
-      break;
-    }
-    baseSegments.push(segment);
-  }
-
-  return baseSegments.length > 0 ? baseSegments.join('/') + '/' : '';
-}
-
-/** Move 命令選項 */
-interface MoveOptions {
-  source?: string;
-  target?: string;
-  path: string;
-  updateImports: boolean;
-  dryRun?: boolean;
-  format: string;
-  /** 成員移動：目標類別 */
-  targetClass?: string;
-  /** 成員移動：保留 re-export */
-  keepReexport?: boolean;
-}
 
 /**
  * 設定 move 命令
@@ -126,7 +100,7 @@ async function handleMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
 
   // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
   const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
@@ -159,7 +133,7 @@ async function handleMoveCommand(
       try {
         targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
       } catch {
-        // 目標不存在，視為檔案路徑
+        // graceful-degradation: 目標路徑不存在時視為檔案路徑
         targetIsDirectory = false;
       }
     }
@@ -176,7 +150,18 @@ async function handleMoveCommand(
     if (normalizedSource === normalizedTarget) {
       // 源和目標相同時，視為 no-op，成功返回
       if (isJsonFormat) {
-        console.log(JSON.stringify({ success: true, message: 'Source and target are identical. No changes made.', changes: [] }));
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(
+            PreviewCommand.Move,
+            'Source and target are identical. No changes made.'
+          ),
+          format,
+          {
+            message: 'Source and target are identical. No changes made.',
+            changes: []
+          }
+        );
       } else {
         console.log('   Source and target are identical. No changes made.');
       }
@@ -190,7 +175,7 @@ async function handleMoveCommand(
     const moveService = new MoveEngine(context.fileSystem, {
       pathAliases: tsconfigPathConfig.pathAliases,
       baseUrl: tsconfigPathConfig.baseUrl,
-      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
+      supportedExtensions: ALLOWED_EXTENSIONS,
       includeNodeModules: false
     });
 
@@ -239,7 +224,17 @@ async function handleMoveCommand(
     if (result.success) {
       // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
       const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printSuccess(normalizedSource, normalizedTarget, totalUpdates, result.movedFiles, isJsonFormat);
+      if (isJsonFormat) {
+        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+          source: normalizedSource,
+          target: normalizedTarget,
+          moved: result.movedFiles.length > 0,
+          pathUpdates: [],
+          message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
+        });
+      } else {
+        printSuccess(totalUpdates, result.movedFiles);
+      }
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
@@ -250,215 +245,6 @@ async function handleMoveCommand(
     outputHandler.outputError(errorMsg, format);
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-  }
-}
-
-/**
- * 處理 glob pattern 移動命令
- * 比照 Unix mv 行為：展開 glob 並移動所有匹配檔案到目標目錄
- */
-async function handleGlobMoveCommand(
-  source: string,
-  target: string,
-  options: MoveOptions,
-  context: CommandContext
-): Promise<void> {
-  const outputHandler = createUnifiedOutputHandler();
-
-  // 解析輸出格式
-  const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
-  if (!formatResult.success) {return;}
-  const format = formatResult.format;
-
-  const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
-
-  try {
-    // 展開 glob pattern（使用 IFileSystem 的 glob 方法）
-    // 注意：memfs 的 glob 需要用相對路徑 + cwd，不支援絕對路徑 pattern
-    const globPattern = path.isAbsolute(source)
-      ? path.relative(projectRoot, source)
-      : source;
-    const matchedFiles = await context.fileSystem.glob(globPattern, {
-      cwd: projectRoot,
-      onlyFiles: true,
-      absolute: true
-    });
-
-    if (matchedFiles.length === 0) {
-      outputHandler.outputError(`Glob pattern 無匹配: ${source}`, format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-      return;
-    }
-
-    // 解析目標路徑
-    const resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
-    const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
-
-    // 檢查目標是否為目錄
-    let targetIsDirectory = targetEndsWithSlash;
-    if (!targetIsDirectory) {
-      try {
-        targetIsDirectory = await context.fileSystem.isDirectory(resolvedTarget);
-      } catch {
-        targetIsDirectory = false;
-      }
-    }
-
-    // 多檔案時，目標必須是目錄
-    if (matchedFiles.length > 1 && !targetIsDirectory) {
-      outputHandler.outputError(`多檔案移動時目標必須是目錄: ${target}`, format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-      return;
-    }
-
-    if (!isJsonFormat) {
-      console.log(`   Glob: ${source} (${matchedFiles.length} 個檔案)`);
-      console.log(`   目標: ${target}`);
-    }
-
-    // 讀取 tsconfig 設定
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
-
-    // 建立移動服務
-    const moveService = new MoveEngine(context.fileSystem, {
-      pathAliases: tsconfigPathConfig.pathAliases,
-      baseUrl: tsconfigPathConfig.baseUrl,
-      supportedExtensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
-      includeNodeModules: false
-    });
-
-    // 計算 glob 的基礎目錄（用於保留目錄結構）
-    const globBaseDir = getGlobBaseDir(globPattern);
-    const absoluteGlobBaseDir = path.resolve(projectRoot, globBaseDir);
-
-    // 建立所有被移動檔案的 source → target 映射（用於識別內部引用）
-    const allMovedFilesMap = new Map<string, string>();
-    for (const sourceFile of matchedFiles) {
-      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
-      const targetFile = targetIsDirectory
-        ? path.join(resolvedTarget, relativePath)
-        : resolvedTarget;
-      allMovedFilesMap.set(sourceFile, targetFile);
-    }
-
-    // 為每個檔案生成 changeset 並合併
-    const builder = new ChangesetBuilder();
-    const allMovedFiles: Array<{ from: string; to: string }> = [];
-
-    for (const sourceFile of matchedFiles) {
-      // 計算相對於 glob 基礎目錄的路徑，以保留目錄結構
-      const relativePath = path.relative(absoluteGlobBaseDir, sourceFile);
-      const targetFile = targetIsDirectory
-        ? path.join(resolvedTarget, relativePath)
-        : resolvedTarget;
-
-      const moveOperation = {
-        source: sourceFile,
-        target: targetFile,
-        updateImports: options.updateImports
-      };
-
-      // 傳入 batchMoveInfo 讓服務知道哪些檔案是一起被移動的
-      const changeset = await moveService.generateChangeset(moveOperation, {
-        projectRoot,
-        batchMoveInfo: { allMovedFiles: allMovedFilesMap }
-      });
-
-      if (!changeset.success) {
-        outputHandler.outputError(changeset.errors?.join(', ') ?? `移動失敗: ${sourceFile}`, format);
-        process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-        return;
-      }
-
-      // 合併 changeset
-      for (const tc of changeset.textChanges) {
-        builder.addTextChange(tc.filePath, [...tc.edits], tc.operationType);
-      }
-      for (const fo of changeset.fileOperations) {
-        if (fo.type === FileOperationType.Move && fo.targetPath) {
-          builder.addFileMove(fo.sourcePath, fo.targetPath);
-        } else if (fo.type === FileOperationType.Create) {
-          builder.addFileCreate(fo.sourcePath, fo.content ?? '');
-        } else if (fo.type === FileOperationType.Delete) {
-          builder.addFileDelete(fo.sourcePath);
-        }
-      }
-
-      allMovedFiles.push({ from: sourceFile, to: targetFile });
-    }
-
-    const mergedChangeset = builder.build();
-
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(mergedChangeset, context.fileSystem);
-
-    // Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      outputHandler.outputMutation(previewInput, format);
-      return;
-    }
-
-    // 執行移動
-    if (!isJsonFormat) {
-      console.log('   執行移動...');
-    }
-
-    const applicator = new ChangeApplicator(context.fileSystem);
-    const result = await applicator.apply(mergedChangeset, {
-      atomic: true,
-      rollbackOnError: true
-    });
-
-    if (result.success) {
-      const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      printGlobSuccess(matchedFiles.length, resolvedTarget, totalUpdates, allMovedFiles, isJsonFormat);
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-    }
-  } catch (error) {
-    const errorMsg = getErrorMessage(error);
-    outputHandler.outputError(errorMsg, format);
-    process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-  }
-}
-
-/**
- * 印出 glob 移動成功訊息
- */
-function printGlobSuccess(
-  fileCount: number,
-  target: string,
-  totalUpdates: number,
-  movedFiles: ReadonlyArray<{ from: string; to: string }>,
-  isJsonFormat: boolean
-): void {
-  if (isJsonFormat) {
-    console.log(JSON.stringify({
-      success: true,
-      filesCount: fileCount,
-      target,
-      movedFiles: movedFiles.map(f => ({ from: f.from, to: f.to })),
-      message: `成功移動 ${fileCount} 個檔案，更新了 ${totalUpdates} 個 import`
-    }, null, 2));
-  } else {
-    console.log('   移動成功!');
-    console.log(`   統計: ${fileCount} 個檔案, ${totalUpdates} 個 import 已更新`);
-
-    if (movedFiles.length > 0 && movedFiles.length <= 10) {
-      console.log('   移動的檔案:');
-      for (const { from, to } of movedFiles) {
-        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
-      }
-    } else if (movedFiles.length > 10) {
-      console.log(`   移動的檔案: ${movedFiles.length} 個 (省略詳細列表)`);
-    }
   }
 }
 
@@ -466,30 +252,16 @@ function printGlobSuccess(
  * 印出成功訊息
  */
 function printSuccess(
-  source: string,
-  target: string,
   totalUpdates: number,
-  movedFiles: ReadonlyArray<{ from: string; to: string }>,
-  isJsonFormat: boolean
+  movedFiles: ReadonlyArray<{ from: string; to: string }>
 ): void {
-  if (isJsonFormat) {
-    console.log(JSON.stringify({
-      success: true,
-      source,
-      target,
-      moved: movedFiles.length > 0,
-      pathUpdates: [], // 向後相容：實際更新已應用，這裡僅保留欄位
-      message: `成功移動 ${source} → ${target}，更新了 ${totalUpdates} 個 import`
-    }, null, 2));
-  } else {
-    console.log('   移動成功!');
-    console.log(`   統計: ${totalUpdates} 個 import 已更新`);
+  console.log('   移動成功!');
+  console.log(`   統計: ${totalUpdates} 個 import 已更新`);
 
-    if (movedFiles.length > 0) {
-      console.log('   移動的檔案:');
-      for (const { from, to } of movedFiles) {
-        console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
-      }
+  if (movedFiles.length > 0) {
+    console.log('   移動的檔案:');
+    for (const { from, to } of movedFiles) {
+      console.log(`      ${path.relative(process.cwd(), from)} → ${path.relative(process.cwd(), to)}`);
     }
   }
 }
@@ -514,7 +286,7 @@ async function handleMoveMemberCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
 
   try {
     // 解析 source 和 target 路徑

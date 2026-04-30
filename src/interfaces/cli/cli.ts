@@ -8,16 +8,18 @@ import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { TypeScriptParser } from '@plugins/typescript/parser.js';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
+import { logger, LogLevel } from '@infrastructure/logging/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import {
   setupMoveCommand,
   setupRenameCommand,
   setupChangeSignatureCommand,
   setupCyclesCommand,
   setupImpactCommand,
-  setupSnapshotCommand,
   setupFindReferencesCommand,
   setupCallHierarchyCommand,
   setupDeadCodeCommand,
+  setupSearchCommand,
   type CommandContext
 } from '@interfaces/cli/commands/index.js';
 import { readFileSync } from 'fs';
@@ -28,14 +30,23 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageJsonPath = path.resolve(__dirname, '../../../package.json');
-let packageVersion = '0.1.0'; // fallback
 
-try {
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-  packageVersion = packageJson.version;
-} catch {
-  // 使用 fallback 版本
+export function readPackageVersion(targetPath: string = packageJsonPath): string {
+  let packageJson: { version?: unknown };
+  try {
+    packageJson = JSON.parse(readFileSync(targetPath, 'utf-8')) as { version?: unknown };
+  } catch (error) {
+    throw new Error(`Cannot read package version from ${targetPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (typeof packageJson.version !== 'string' || packageJson.version.trim().length === 0) {
+    throw new Error(`Invalid package version in ${targetPath}`);
+  }
+
+  return packageJson.version;
 }
+
+const packageVersion = readPackageVersion();
 
 export class AgentIdeCLI {
   private program: Command;
@@ -73,7 +84,7 @@ export class AgentIdeCLI {
 
       // 檢查 registry 是否可用
       if (!registry) {
-        console.debug('Parser registry not available');
+        logger.verbose('parser', 'Parser registry not available');
         return;
       }
 
@@ -94,9 +105,7 @@ export class AgentIdeCLI {
           registry.register(tsParser);
         }
       } catch (tsError) {
-        // 如果 TypeScript Parser 載入失敗，記錄錯誤
-        console.debug('TypeScript parser loading failed:', tsError);
-        console.debug('TypeScript Parser initialization warning:', tsError);
+        logger.verbose('parser', `TypeScript parser loading failed: ${tsError}`);
       }
 
       // 嘗試註冊內建的 JavaScript Parser
@@ -106,14 +115,11 @@ export class AgentIdeCLI {
           registry.register(jsParser);
         }
       } catch (jsError) {
-        // 如果 JavaScript Parser 載入失敗，記錄錯誤
-        console.debug('JavaScript parser loading failed:', jsError);
-        console.debug('JavaScript Parser initialization warning:', jsError);
+        logger.verbose('parser', `JavaScript parser loading failed: ${jsError}`);
       }
 
     } catch (error) {
-      // 靜默處理初始化錯誤，避免影響 CLI 啟動
-      console.debug('Parser initialization warning:', error);
+      logger.verbose('parser', `Parser initialization warning: ${error}`);
     }
   }
 
@@ -121,7 +127,19 @@ export class AgentIdeCLI {
     this.program
       .name('agent-ide')
       .description('程式碼智能工具集 for AI Agents')
-      .version(packageVersion);
+      .version(packageVersion)
+      .option('--no-cache', '停用索引快取')
+      .option('--cache-dir <path>', '覆寫索引快取目錄')
+      .option('--verbose', '顯示詳細處理資訊');
+
+    this.program.hook('preAction', (thisCommand) => {
+      const opts = thisCommand.optsWithGlobals() as { verbose?: boolean };
+      logger.setLevel(opts.verbose ? LogLevel.Verbose : LogLevel.Normal);
+      diagnostics.setSink({
+        warn: (module, message) => logger.warn(module, message),
+        error: (module, message) => logger.error(module, message)
+      });
+    });
 
     const context = this.createCommandContext();
 
@@ -133,10 +151,10 @@ export class AgentIdeCLI {
     // Query 命令
     setupCyclesCommand(this.program, context);
     setupImpactCommand(this.program, context);
-    setupSnapshotCommand(this.program, context);
     setupFindReferencesCommand(this.program, context);
     setupCallHierarchyCommand(this.program, context);
     setupDeadCodeCommand(this.program, context);
+    setupSearchCommand(this.program, context);
   }
 
   /**

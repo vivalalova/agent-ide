@@ -6,9 +6,10 @@
  */
 
 import { execSync } from 'child_process';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -93,6 +94,73 @@ describe('CLI 整合測試', () => {
   // Query Commands（唯讀）
   // ========================================
 
+  describe('Meta Commands', () => {
+    it('--version - 輸出 package.json 版本', () => {
+      const packageJson = JSON.parse(readFileSync(resolve(PROJECT_ROOT, 'package.json'), 'utf-8')) as { version: string };
+      const output = execSync(`${CLI} --version`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output.trim()).toBe(packageJson.version);
+    });
+
+    it('--help 不應列出已移除的 snapshot 命令', () => {
+      const output = execSync(`${CLI} --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).not.toContain('snapshot');
+    });
+
+    it('--help 應列出可覆寫快取目錄的 --cache-dir 選項', () => {
+      const output = execSync(`${CLI} --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).toContain('--cache-dir');
+    });
+
+    it('--cache-dir 應把索引快取寫入指定目錄', () => {
+      const cacheDir = mkdtempSync(join(tmpdir(), 'agent-ide-cli-cache-'));
+
+      try {
+        const output = execSync(`${CLI} --cache-dir "${cacheDir}" search UserService --path "${SAMPLE_PROJECT}" --format json`, {
+          cwd: PROJECT_ROOT,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            NODE_ENV: 'development',
+            VITEST: 'false',
+          },
+        });
+        const result = JSON.parse(output) as CLIResult;
+
+        expect(result.success).toBe(true);
+        const cacheEntries = readdirSync(cacheDir, { recursive: true }).map(String);
+        expect(cacheEntries).toContain('index.json');
+      } finally {
+        rmSync(cacheDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rename --help 不應列出已移除的 --type 選項', () => {
+      const output = execSync(`${CLI} rename --help`, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      expect(output).not.toContain('--type');
+    });
+  });
+
   describe('Query Commands', () => {
     it('cycles - 循環依賴檢測', () => {
       const result = runCLI(`${CLI} cycles --path "${SAMPLE_PROJECT}" --format json`);
@@ -104,9 +172,11 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
-    it('snapshot - 模組快照', () => {
-      const result = runCLI(`${CLI} snapshot --path "${SAMPLE_PROJECT}" --format json`);
+    it('search - 符號搜尋', () => {
+      const result = runCLI(`${CLI} search UserService --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
+      expect(Array.isArray(result.results)).toBe(true);
+      expect(result.results.length).toBeGreaterThan(0);
     });
 
     it('find-references - 符號引用搜尋', () => {
@@ -124,53 +194,6 @@ describe('CLI 整合測試', () => {
       expect(result.success).toBe(true);
     });
 
-    it('snapshot - 父目錄掃描多個子模組 (Issue #59)', () => {
-      // 動態創建測試目錄結構
-      const testDir = resolve(FIXTURE_PATH, 'issue-59-test');
-      const modulesDir = resolve(testDir, 'modules');
-
-      try {
-        // 創建目錄結構
-        mkdirSync(resolve(modulesDir, 'auth'), { recursive: true });
-        mkdirSync(resolve(modulesDir, 'users'), { recursive: true });
-        mkdirSync(resolve(modulesDir, 'payments'), { recursive: true });
-
-        // 創建模組檔案
-        writeFileSync(
-          resolve(modulesDir, 'auth/index.ts'),
-          'export class AuthService { login(): boolean { return true; } }'
-        );
-        writeFileSync(
-          resolve(modulesDir, 'users/index.ts'),
-          'export interface User { id: string; name: string; }'
-        );
-        writeFileSync(
-          resolve(modulesDir, 'payments/index.ts'),
-          'export function createPayment(amount: number) { return { amount }; }'
-        );
-
-        // 執行 snapshot 命令（對 modules 父目錄）
-        const result = runCLI(`${CLI} snapshot --path "${modulesDir}" --format json`);
-
-        // 驗證核心功能
-        expect(result.success).toBe(true);
-        expect(result.snapshotType).toBe('project'); // Issue #59 核心：應該是 project 類型
-        expect(result.snapshot).toBeDefined();
-        expect(result.snapshot.modules).toBeDefined();
-
-        // 應該找到所有子模組
-        const moduleNames = Object.keys(result.snapshot.modules);
-        expect(moduleNames).toContain('auth');
-        expect(moduleNames).toContain('users');
-        expect(moduleNames).toContain('payments');
-        expect(moduleNames.length).toBe(3);
-      } finally {
-        // 清理測試目錄
-        if (existsSync(testDir)) {
-          rmSync(testDir, { recursive: true, force: true });
-        }
-      }
-    });
   });
 
   // ========================================
@@ -234,6 +257,16 @@ describe('CLI 整合測試', () => {
     it('move file - 檔案移動後仍可編譯', () => {
       const result = runCLI(`${CLI} move "${SAMPLE_PROJECT}/src/utils/string-utils.ts" "${SAMPLE_PROJECT}/src/new-utils/string-utils.ts" --path "${SAMPLE_PROJECT}" --format json`);
       expect(result.success).toBe(true);
+      verifyTypecheck(SAMPLE_PROJECT);
+    });
+
+    it('move file - 相對 --path 不應重複拼接 project root', () => {
+      const result = runCLI(`${CLI} move src/services/user-service.ts src/moved-services/user-service.ts --path "tests/fixtures/sample-project" --format json`);
+      expect(result.success).toBe(true);
+      expect(result.source).toBe(resolve(SAMPLE_PROJECT, 'src/services/user-service.ts'));
+      expect(result.target).toBe(resolve(SAMPLE_PROJECT, 'src/moved-services/user-service.ts'));
+      expect(result.message).toContain('更新了');
+      expect(existsSync(resolve(SAMPLE_PROJECT, 'src/moved-services/user-service.ts'))).toBe(true);
       verifyTypecheck(SAMPLE_PROJECT);
     });
 

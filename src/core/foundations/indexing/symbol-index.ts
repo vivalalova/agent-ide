@@ -6,6 +6,7 @@
 import type { Symbol, Scope, SymbolType } from '@shared/types/index.js';
 import type {
   FileInfo,
+  FileIndexEntry,
   SymbolIndexEntry,
   SymbolSearchResult,
   SearchOptions
@@ -193,6 +194,11 @@ export class SymbolIndex {
     const caseSensitive = options?.caseSensitive ?? false;
     const fuzzy = options?.fuzzy ?? true;
     const maxResults = options?.maxResults ?? 100;
+    const symbolTypes = options?.symbolTypes;
+
+    if (maxResults <= 0) {
+      return results;
+    }
 
     const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
@@ -217,6 +223,10 @@ export class SymbolIndex {
 
       if (matches) {
         for (const entry of entries) {
+          if (symbolTypes && !symbolTypes.includes(entry.symbol.type)) {
+            continue;
+          }
+
           results.push({
             symbol: entry.symbol,
             fileInfo: entry.fileInfo,
@@ -329,10 +339,42 @@ export class SymbolIndex {
   }
 
   /**
+   * 從 FileIndexEntry map 水合符號索引（用於快取載入）
+   * O(n) 重建，不需重新 parse 檔案
+   */
+  hydrateFromFileEntries(fileEntries: Map<string, FileIndexEntry>): void {
+    this.symbolsByName.clear();
+    this.symbolsByType.clear();
+    this.symbolsByFile.clear();
+    this.symbolsByScope.clear();
+
+    for (const entry of fileEntries.values()) {
+      if (!entry.isIndexed) {
+        continue;
+      }
+      for (const symbol of entry.symbols) {
+        const indexEntry: SymbolIndexEntry = {
+          symbol,
+          fileInfo: entry.fileInfo,
+          dependencies: []
+        };
+        this.addToIndex(indexEntry);
+      }
+    }
+
+    this.lastUpdated = new Date();
+  }
+
+  /**
    * 新增符號項目到各個索引
    */
   private addToIndex(entry: SymbolIndexEntry): void {
     const { symbol, fileInfo } = entry;
+
+    const fileEntries = this.symbolsByFile.get(fileInfo.filePath) || [];
+    if (fileEntries.some(existingEntry => this.isSameSymbolEntry(existingEntry, entry))) {
+      return;
+    }
 
     // 名稱索引
     const nameEntries = this.symbolsByName.get(symbol.name) || [];
@@ -345,7 +387,6 @@ export class SymbolIndex {
     this.symbolsByType.set(symbol.type, typeEntries);
 
     // 檔案索引
-    const fileEntries = this.symbolsByFile.get(fileInfo.filePath) || [];
     fileEntries.push(entry);
     this.symbolsByFile.set(fileInfo.filePath, fileEntries);
 
@@ -356,6 +397,19 @@ export class SymbolIndex {
       scopeEntries.push(entry);
       this.symbolsByScope.set(scopeKey, scopeEntries);
     }
+  }
+
+  private isSameSymbolEntry(a: SymbolIndexEntry, b: SymbolIndexEntry): boolean {
+    const aRange = a.symbol.location.range;
+    const bRange = b.symbol.location.range;
+
+    return a.fileInfo.filePath === b.fileInfo.filePath
+      && a.symbol.name === b.symbol.name
+      && a.symbol.type === b.symbol.type
+      && aRange.start.line === bRange.start.line
+      && aRange.start.column === bRange.start.column
+      && aRange.end.line === bRange.end.line
+      && aRange.end.column === bRange.end.column;
   }
 
   /**
@@ -407,10 +461,18 @@ export class SymbolIndex {
    */
   private convertToSearchResults(entries: SymbolIndexEntry[], options?: SearchOptions): SymbolSearchResult[] {
     const maxResults = options?.maxResults ?? 100;
+    const symbolTypes = options?.symbolTypes;
     const results: SymbolSearchResult[] = [];
 
-    for (let i = 0; i < Math.min(entries.length, maxResults); i++) {
-      const entry = entries[i];
+    for (const entry of entries) {
+      if (results.length >= maxResults) {
+        break;
+      }
+
+      if (symbolTypes && !symbolTypes.includes(entry.symbol.type)) {
+        continue;
+      }
+
       results.push({
         symbol: entry.symbol,
         fileInfo: entry.fileInfo,

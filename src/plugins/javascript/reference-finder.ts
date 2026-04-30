@@ -15,6 +15,7 @@ import {
 import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -104,7 +105,8 @@ export class ReferenceFinder {
       this.astCache.set(hash, entry); // MemoryCache 自動處理 LRU 淘汰
 
       return entry;
-    } catch {
+    } catch (error) {
+      logger.warn('js/reference-finder', `JS AST parse failed: ${error}`);
       return null;
     }
   }

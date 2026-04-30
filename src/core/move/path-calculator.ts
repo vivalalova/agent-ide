@@ -9,6 +9,11 @@ import { ImportResolver } from './import-resolver.js';
 import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+
+const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
+const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
 
 /**
  * 路徑計算器類別
@@ -17,6 +22,7 @@ import type { PathUpdate, BatchMoveInfo } from './types.js';
 export class PathCalculator {
   private readonly pathUtils: PathUtils;
   private readonly fileScanner: FileScanner;
+  private readonly batchAffectedFilesCache = new WeakMap<BatchMoveInfo, Map<string, Promise<Map<string, string[]>>>>();
 
   constructor(
     private readonly fileSystem: IFileSystem,
@@ -81,10 +87,9 @@ export class PathCalculator {
       // 單一檔案移動
       // 更新其他檔案對被移動檔案的引用
       // 排除同一批次中也被移動的檔案（它們的相對引用會保持不變）
-      const batchExcludeFiles = batchMoveInfo
-        ? Array.from(batchMoveInfo.allMovedFiles.keys())
-        : undefined;
-      const affectedFiles = await this.fileScanner.findAffectedFiles(source, projectRoot, batchExcludeFiles);
+      const affectedFiles = batchMoveInfo
+        ? await this.findBatchAffectedFiles(source, projectRoot, batchMoveInfo)
+        : await this.fileScanner.findAffectedFiles(source, projectRoot);
 
       for (const filePath of affectedFiles) {
         const updates = await this.calculatePathUpdates(filePath, source, target);
@@ -124,6 +129,37 @@ export class PathCalculator {
     });
 
     return uniqueUpdates;
+  }
+
+  private async findBatchAffectedFiles(
+    source: string,
+    projectRoot: string,
+    batchMoveInfo: BatchMoveInfo
+  ): Promise<string[]> {
+    let projectCache = this.batchAffectedFilesCache.get(batchMoveInfo);
+    if (!projectCache) {
+      projectCache = new Map<string, Promise<Map<string, string[]>>>();
+      this.batchAffectedFilesCache.set(batchMoveInfo, projectCache);
+    }
+
+    const absoluteProjectRoot = path.isAbsolute(projectRoot) ? projectRoot : path.resolve(projectRoot);
+    const projectCacheKey = path.normalize(absoluteProjectRoot);
+    let affectedFilesPromise = projectCache.get(projectCacheKey);
+    if (!affectedFilesPromise) {
+      const batchSourceFiles = Array.from(batchMoveInfo.allMovedFiles.keys());
+      affectedFilesPromise = this.fileScanner.findAffectedFilesForPaths(
+        batchSourceFiles,
+        projectRoot,
+        batchSourceFiles
+      );
+      projectCache.set(projectCacheKey, affectedFilesPromise);
+    }
+
+    const normalizedSource = path.isAbsolute(source)
+      ? path.normalize(source)
+      : path.normalize(path.resolve(absoluteProjectRoot, source));
+    const affectedFilesBySource = await affectedFilesPromise;
+    return affectedFilesBySource.get(normalizedSource) ?? [];
   }
 
   /**
@@ -184,7 +220,7 @@ export class PathCalculator {
         }
       }
     } catch (error) {
-      console.warn(`無法處理檔案 ${filePath}:`, error);
+      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理檔案: ${error instanceof Error ? error.message : String(error)}`, filePath);
     }
 
     return updates;
@@ -256,8 +292,7 @@ export class PathCalculator {
           // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
             // 嘗試解析到實際檔案（處理省略副檔名的情況）
-            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
-            const isTargetInMovedDir = possibleExtensions.some(ext => {
+            const isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
@@ -292,9 +327,8 @@ export class PathCalculator {
           const potentialTargetResolved = path.resolve(targetDir, importStatement.path);
 
           // 檢查目標位置是否存在同名檔案
-          const targetExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
           let targetFileExists = false;
-          for (const ext of targetExtensions) {
+          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
             const fullPath = potentialTargetResolved + ext;
             if (await this.fileSystem.exists(fullPath)) {
               targetFileExists = true;
@@ -307,8 +341,13 @@ export class PathCalculator {
             continue;
           }
 
-          // 計算從新位置應該如何 import 這個檔案
-          const newImportPath = this.pathUtils.calculateNewImportPath(target, currentResolved);
+          // 計算從新位置應該如何 import 這個檔案，並保留原始 import 的副檔名樣式。
+          const newImportPath = this.pathUtils.calculateNewImportPathPreservingStyle(
+            importStatement.path,
+            target,
+            currentResolved,
+            currentResolved
+          );
 
           // 如果路徑改變了，加入更新列表
           if (newImportPath !== importStatement.path) {
@@ -338,18 +377,15 @@ export class PathCalculator {
           // 如果是目錄移動，檢查被引用的檔案是否在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
             // 嘗試解析到實際檔案（處理省略副檔名和 index 檔案的情況）
-            const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', ''];
-            const possibleIndexFiles = ['/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
-
             // 檢查直接副檔名匹配（如 @/modules/utils → utils.ts）
-            let isTargetInMovedDir = possibleExtensions.some(ext => {
+            let isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
 
             // 如果不是直接匹配，檢查 index 檔案（如 @/modules/alarm → alarm/index.ts）
             if (!isTargetInMovedDir) {
-              isTargetInMovedDir = possibleIndexFiles.some(indexFile => {
+              isTargetInMovedDir = SOURCE_INDEX_FILES.some(indexFile => {
                 const fullPath = path.normalize(normalizedResolved + indexFile);
                 return normalizedFilesInDir.has(fullPath);
               });
@@ -398,7 +434,7 @@ export class PathCalculator {
         }
       }
     } catch (error) {
-      console.warn(`無法處理被移動檔案的內部 import ${source}:`, error);
+      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理被移動檔案的內部 import ${source}: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return updates;

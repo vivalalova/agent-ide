@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { logger } from '@infrastructure/logging/index.js';
 import {
   MemoryMonitor,
   withMemoryMonitoring,
@@ -188,7 +189,7 @@ describe('MemoryMonitor', () => {
     });
 
     it('應該處理 dispose 拋出的錯誤', async () => {
-      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       const dispose = vi.fn().mockRejectedValue(new Error('cleanup error'));
 
       monitor.register({ dispose });
@@ -196,8 +197,8 @@ describe('MemoryMonitor', () => {
       // 不應該拋出錯誤
       await expect(monitor.cleanup()).resolves.not.toThrow();
 
-      expect(consoleWarn).toHaveBeenCalled();
-      consoleWarn.mockRestore();
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
     });
 
     it('應該處理空的資源列表', async () => {
@@ -419,7 +420,7 @@ describe('邊界條件', () => {
   });
 
   it('應該在 cleanup 期間處理新的 dispose 錯誤', async () => {
-    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
     const syncErrorDisposable: Disposable = {
       dispose: () => {
@@ -438,7 +439,7 @@ describe('邊界條件', () => {
 
     await monitor.cleanup();
 
-    expect(consoleWarn).toHaveBeenCalled();
-    consoleWarn.mockRestore();
+    expect(loggerSpy).toHaveBeenCalled();
+    loggerSpy.mockRestore();
   });
 });

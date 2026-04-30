@@ -2,7 +2,7 @@
  * 影響分析相關型別定義
  */
 
-import { Dependency } from '@shared/types/index.js';
+import { Dependency, SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 
 /**
  * 檔案依賴資訊
@@ -95,7 +95,7 @@ export function createDefaultAnalysisOptions(): DependencyAnalysisOptions {
     followSymlinks: true,
     maxDepth: 100,
     excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-    includePatterns: ['**/*.ts', '**/*.js', '**/*.tsx', '**/*.jsx']
+    includePatterns: SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`)
   };
 }
 

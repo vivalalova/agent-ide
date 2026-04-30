@@ -4,6 +4,7 @@
  */
 
 import { minimatch } from 'minimatch';
+import { logger as cliLogger } from '@infrastructure/logging/index.js';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
 import { isPosition, SymbolType } from '@shared/types/index.js';
 import type { ParserPlugin } from '@infrastructure/parser/interface.js';
@@ -75,14 +76,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    */
   async rename(_ast: AST, position: Position, newName: string): Promise<CodeEdit[]> {
     this.log('debug', `Renaming at position ${position.line}:${position.column} to ${newName}`);
-    return [];
-  }
-
-  /**
-   * 提取函式（預設實作返回空陣列）
-   */
-  async extractFunction(_ast: AST, _selection: Range): Promise<CodeEdit[]> {
-    this.log('debug', 'Extracting function from selection');
     return [];
   }
 
@@ -202,7 +195,6 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   getCapabilities(): ParserCapabilities {
     return {
       supportsRename: false,
-      supportsExtractFunction: false,
       supportsGoToDefinition: false,
       supportsFindUsages: false,
       supportsCodeActions: false
@@ -232,16 +224,12 @@ export abstract class BaseParserPlugin implements ParserPlugin {
 
     switch (level) {
     case 'debug':
-      console.debug(logMessage);
-      break;
     case 'info':
-      console.info(logMessage);
+      cliLogger.verbose(this.name, logMessage);
       break;
     case 'warn':
-      console.warn(logMessage);
-      break;
     case 'error':
-      console.error(logMessage);
+      cliLogger.warn(this.name, logMessage);
       break;
     }
   }
@@ -297,14 +285,13 @@ export abstract class BaseParserPlugin implements ParserPlugin {
   }
 
   /**
-  /**
    * 建立基本的 CodeEdit
    */
   protected createCodeEdit(
     filePath: string,
     range: Range,
     newText: string,
-    editType?: 'rename' | 'extract' | 'inline' | 'format'
+    editType?: 'rename' | 'inline' | 'format'
   ): CodeEdit {
     if (editType !== undefined) {
       return {
@@ -389,7 +376,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    * 判斷檔案是否為測試檔案（預設實作）
    */
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filePath) ||
+    return /\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(filePath) ||
            filePath.includes('/__tests__/') ||
            filePath.includes('/__mocks__/');
   }

@@ -160,7 +160,7 @@ export class LanguageServiceManager implements ILanguageServiceManager {
             return ts.ScriptSnapshot.fromString(content);
           }
         } catch {
-          // 忽略錯誤
+          // graceful-degradation: 外部 .d.ts 檔案讀取失敗時返回 undefined，Language Service 跳過該檔案
         }
         return undefined;
       },

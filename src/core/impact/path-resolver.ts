@@ -6,6 +6,10 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { PathResolutionResult, ExtendedDependencyAnalysisOptions } from './types.js';
+import {
+  SOURCE_FILE_EXTENSIONS,
+  getImportResolutionExtensions
+} from '@shared/types/index.js';
 
 /**
  * 路徑解析器類別
@@ -103,13 +107,12 @@ export class PathResolver {
     basePath: string,
     isRelative: boolean
   ): Promise<PathResolutionResult> {
-    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
-
-    // 移除 .js/.jsx 副檔名（TypeScript 專案中 import './foo.js' 實際上指向 ./foo.ts）
-    let normalizedPath = basePath;
-    if (basePath.endsWith('.js') || basePath.endsWith('.jsx')) {
-      normalizedPath = basePath.replace(/\.jsx?$/, '');
-    }
+    const importExtension = path.extname(basePath);
+    const extensions = getImportResolutionExtensions(importExtension);
+    const usesRuntimeImportExtension = extensions !== SOURCE_FILE_EXTENSIONS;
+    const normalizedPath = usesRuntimeImportExtension
+      ? basePath.slice(0, -importExtension.length)
+      : basePath;
 
     let finalPath = normalizedPath;
     let exists = false;
@@ -131,7 +134,7 @@ export class PathResolver {
                 };
               }
             } catch {
-              // 繼續嘗試
+              // graceful-degradation: 路徑不存在，繼續嘗試其他選項
             }
           }
         } else {
@@ -144,7 +147,7 @@ export class PathResolver {
         }
       }
     } catch {
-      // 繼續嘗試副檔名
+      // graceful-degradation: 路徑不存在，繼續嘗試其他選項
     }
 
     // 嘗試常見的副檔名
@@ -157,7 +160,7 @@ export class PathResolver {
           break;
         }
       } catch {
-        // 繼續嘗試下個副檔名
+        // graceful-degradation: 路徑不存在，繼續嘗試其他選項
       }
     }
 
@@ -172,7 +175,7 @@ export class PathResolver {
             break;
           }
         } catch {
-          // 繼續嘗試
+          // graceful-degradation: 路徑不存在，繼續嘗試其他選項
         }
       }
     }

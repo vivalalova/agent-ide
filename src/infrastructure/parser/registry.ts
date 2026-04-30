@@ -11,6 +11,7 @@ import {
   ParserInitializationError,
   getErrorMessage
 } from '@shared/errors/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /**
  * Parser 資訊
@@ -342,7 +343,7 @@ export class ParserRegistry {
         await parserInfo.plugin.dispose();
       } catch (error) {
         // 記錄錯誤但不拋出，避免影響其他 Parser 的清理
-        console.warn(`清理 Parser ${parserInfo.name} 時發生錯誤:`, error);
+        logger.warn('parser-registry', `清理 Parser ${parserInfo.name} 時發生錯誤: ${error}`);
       }
     });
 

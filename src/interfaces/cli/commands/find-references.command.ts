@@ -4,7 +4,7 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
@@ -24,9 +24,10 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 
 /** find-references 命令選項 */
 interface FindReferencesOptions {
@@ -43,8 +44,8 @@ export function setupFindReferencesCommand(program: Command, context: CommandCon
     .description('查找符號的定義和所有引用')
     .option('-p, --path <path>', '專案路徑', '.')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
-    .action(async (symbol: string, options: FindReferencesOptions) => {
-      await handleFindReferencesCommand(symbol, options, context);
+    .action(async (symbol: string, options: FindReferencesOptions, command: Command) => {
+      await handleFindReferencesCommand(symbol, options, context, command);
     });
 }
 
@@ -54,7 +55,8 @@ export function setupFindReferencesCommand(program: Command, context: CommandCon
 async function handleFindReferencesCommand(
   symbolName: string,
   options: FindReferencesOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -68,15 +70,22 @@ async function handleFindReferencesCommand(
   }
 
   const projectPath = options.path || process.cwd();
+  const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
+    return;
+  }
 
-  // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
 
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   try {
-    // 索引專案
-    await indexEngine.indexProject(projectPath);
 
     // 取得所有已索引檔案路徑
     const indexedFiles = indexEngine.getAllIndexedFiles();
@@ -124,8 +133,10 @@ async function handleFindReferencesCommand(
       refs = await symbolFinder.findScopedReferences(symbolName, filePaths);
     }
 
+    const uniqueRefs = dedupeSymbolReferences(refs);
+
     // 轉換為輸出格式
-    const references: ReferenceItem[] = refs.map(ref => ({
+    const references: ReferenceItem[] = uniqueRefs.map(ref => ({
       file: ref.location.filePath,
       line: ref.location.range.start.line,
       column: ref.location.range.start.column,
@@ -186,3 +197,27 @@ function mapReferenceType(type: SymbolReferenceType): ReferenceType {
   }
 }
 
+function dedupeSymbolReferences(refs: readonly SymbolReference[]): SymbolReference[] {
+  const seen = new Set<string>();
+  const uniqueRefs: SymbolReference[] = [];
+
+  for (const ref of refs) {
+    const key = [
+      ref.location.filePath,
+      ref.location.range.start.line,
+      ref.location.range.start.column,
+      ref.location.range.end.line,
+      ref.location.range.end.column,
+      ref.type
+    ].join(':');
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueRefs.push(ref);
+  }
+
+  return uniqueRefs;
+}

@@ -4,9 +4,10 @@
  */
 
 import * as path from 'path';
+import * as ts from 'typescript';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { Changeset } from '@infrastructure/changeset/index.js';
+import type { Changeset, TextEdit } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { SignatureParser } from './signature-parser.js';
 import { SignatureValidator } from './signature-validator.js';
@@ -16,9 +17,11 @@ import type {
   ChangeSignatureOptions,
   ChangeSignatureResult,
   FunctionSignature,
-  CallSiteUpdate
+  CallSiteUpdate,
+  SignatureChange
 } from './types.js';
-import { ChangeSignatureErrorCode } from './types.js';
+import { ChangeSignatureErrorCode, isRemoveParameterChange, isRenameParameterChange } from './types.js';
+import { resolveParameterIndex } from './utils.js';
 import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 
 /**
@@ -33,7 +36,7 @@ export class ChangeSignatureEngine {
   private readonly callSiteUpdater: CallSiteUpdater;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
+    parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
@@ -70,6 +73,14 @@ export class ChangeSignatureEngine {
       );
     }
 
+    const removedParameterUsageError = await this.validateRemovedParameterBodyReferences(originalSignature, options.changes);
+    if (removedParameterUsageError) {
+      return this.createErrorResult(
+        ChangeSignatureErrorCode.RequiredParameterInUse,
+        removedParameterUsageError
+      );
+    }
+
     // 3. 計算新簽名
     const newSignature = this.transformer.applyChangesToSignature(originalSignature, options.changes);
 
@@ -89,7 +100,7 @@ export class ChangeSignatureEngine {
             break;
           }
         } catch {
-          // 忽略錯誤，繼續向上搜索
+          // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
         }
         searchDir = path.dirname(searchDir);
       }
@@ -182,6 +193,14 @@ export class ChangeSignatureEngine {
       description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
     }], TextEditOperationType.Modify);
 
+    const parameterRenameEdits = await this.generateParameterRenameBodyEdits(
+      result.originalSignature,
+      options.changes
+    );
+    if (parameterRenameEdits.length > 0) {
+      builder.addTextChange(filePath, parameterRenameEdits, TextEditOperationType.Modify);
+    }
+
     // 轉換 callSiteUpdates
     // 按檔案分組，合併同一檔案的多個變更
     const updatesByFile = new Map<string, CallSiteUpdate[]>();
@@ -223,6 +242,254 @@ export class ChangeSignatureEngine {
     );
 
     return builder.build();
+  }
+
+  private async validateRemovedParameterBodyReferences(
+    signature: FunctionSignature,
+    changes: readonly SignatureChange[]
+  ): Promise<string | null> {
+    const removedNames: string[] = [];
+
+    for (const change of changes) {
+      if (!isRemoveParameterChange(change)) {
+        continue;
+      }
+
+      const index = resolveParameterIndex(signature.parameters, change.parameterNameOrIndex);
+      const parameter = index >= 0 ? signature.parameters[index] : undefined;
+      if (parameter) {
+        removedNames.push(parameter.name);
+      }
+    }
+
+    if (removedNames.length === 0) {
+      return null;
+    }
+
+    const usedNames = await this.findBodyParameterReferences(signature, new Set(removedNames));
+    if (usedNames.length === 0) {
+      return null;
+    }
+
+    return `無法移除參數 ${usedNames.join(', ')}：仍在函式 body 中使用`;
+  }
+
+  private async generateParameterRenameBodyEdits(
+    signature: FunctionSignature,
+    changes: readonly SignatureChange[]
+  ): Promise<TextEdit[]> {
+    const renameMap = new Map<string, string>();
+
+    for (const change of changes) {
+      if (!isRenameParameterChange(change)) {
+        continue;
+      }
+
+      const index = resolveParameterIndex(signature.parameters, change.parameterNameOrIndex);
+      const parameter = index >= 0 ? signature.parameters[index] : undefined;
+      if (parameter && parameter.name !== change.newName) {
+        renameMap.set(parameter.name, change.newName);
+      }
+    }
+
+    if (renameMap.size === 0) {
+      return [];
+    }
+
+    const content = await this.fileUtils.readFile(signature.location.filePath);
+    if (!content) {
+      return [];
+    }
+
+    const sourceFile = ts.createSourceFile(
+      signature.location.filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      this.getScriptKind(signature.location.filePath)
+    );
+    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
+    const body = targetFunction && 'body' in targetFunction ? targetFunction.body : undefined;
+
+    if (!body) {
+      return [];
+    }
+
+    const edits: TextEdit[] = [];
+
+    const visit = (node: ts.Node): void => {
+      if (node !== body && this.isFunctionLikeDeclaration(node)) {
+        return;
+      }
+
+      if (ts.isIdentifier(node)) {
+        const newName = renameMap.get(node.text);
+        if (newName && !this.shouldSkipParameterIdentifier(node)) {
+          const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+
+          edits.push({
+            range: {
+              start: { line: start.line + 1, column: start.character + 1 },
+              end: { line: end.line + 1, column: end.character + 1 }
+            },
+            newText: newName,
+            description: `Rename parameter reference ${node.text} -> ${newName}`
+          });
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(body, visit);
+    return edits;
+  }
+
+  private async findBodyParameterReferences(
+    signature: FunctionSignature,
+    names: ReadonlySet<string>
+  ): Promise<string[]> {
+    const content = await this.fileUtils.readFile(signature.location.filePath);
+    if (!content) {
+      return [];
+    }
+
+    const sourceFile = ts.createSourceFile(
+      signature.location.filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      this.getScriptKind(signature.location.filePath)
+    );
+    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
+    const body = targetFunction && 'body' in targetFunction ? targetFunction.body : undefined;
+
+    if (!body) {
+      return [];
+    }
+
+    const usedNames = new Set<string>();
+
+    const visit = (node: ts.Node): void => {
+      if (node !== body && this.isFunctionLikeDeclaration(node)) {
+        return;
+      }
+
+      if (ts.isIdentifier(node) && names.has(node.text) && !this.shouldSkipParameterIdentifier(node)) {
+        usedNames.add(node.text);
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(body, visit);
+    return Array.from(usedNames);
+  }
+
+  private findFunctionLikeDeclaration(
+    sourceFile: ts.SourceFile,
+    signature: FunctionSignature
+  ): ts.FunctionLikeDeclaration | undefined {
+    let found: ts.FunctionLikeDeclaration | undefined;
+
+    const visit = (node: ts.Node): void => {
+      if (found) {
+        return;
+      }
+
+      if (this.isNamedFunctionLikeDeclaration(node, signature.name)) {
+        const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        if (start.line + 1 === signature.location.range.start.line) {
+          found = node;
+          return;
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    visit(sourceFile);
+    return found;
+  }
+
+  private isNamedFunctionLikeDeclaration(node: ts.Node, name: string): node is ts.FunctionLikeDeclaration {
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node))
+      && this.getFunctionLikeName(node) === name
+    ) {
+      return true;
+    }
+
+    if (ts.isArrowFunction(node)) {
+      const parent = node.parent;
+      return ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) && parent.name.text === name;
+    }
+
+    return false;
+  }
+
+  private getFunctionLikeName(node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression): string | undefined {
+    const nodeName = node.name;
+    if (!nodeName) {
+      return undefined;
+    }
+    if (ts.isIdentifier(nodeName) || ts.isStringLiteral(nodeName) || ts.isNumericLiteral(nodeName)) {
+      return nodeName.text;
+    }
+    return undefined;
+  }
+
+  private isFunctionLikeDeclaration(node: ts.Node): boolean {
+    return ts.isFunctionDeclaration(node)
+      || ts.isMethodDeclaration(node)
+      || ts.isFunctionExpression(node)
+      || ts.isArrowFunction(node)
+      || ts.isConstructorDeclaration(node)
+      || ts.isGetAccessorDeclaration(node)
+      || ts.isSetAccessorDeclaration(node);
+  }
+
+  private shouldSkipParameterIdentifier(node: ts.Identifier): boolean {
+    const parent = node.parent;
+    if (!parent) {
+      return false;
+    }
+
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      return true;
+    }
+
+    if (ts.isPropertyAssignment(parent) && parent.name === node) {
+      return true;
+    }
+
+    if (ts.isPropertyDeclaration(parent) && parent.name === node) {
+      return true;
+    }
+
+    if (ts.isPropertySignature(parent) && parent.name === node) {
+      return true;
+    }
+
+    if (ts.isMethodDeclaration(parent) && parent.name === node) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private getScriptKind(filePath: string): ts.ScriptKind {
+    if (filePath.endsWith('.tsx')) {
+      return ts.ScriptKind.TSX;
+    }
+    if (filePath.endsWith('.jsx')) {
+      return ts.ScriptKind.JSX;
+    }
+    if (filePath.endsWith('.js')) {
+      return ts.ScriptKind.JS;
+    }
+    return ts.ScriptKind.TS;
   }
 
   /**
@@ -400,7 +667,7 @@ export class ChangeSignatureEngine {
   /**
    * 建立錯誤結果
    */
-  private createErrorResult(code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
+  private createErrorResult(_code: ChangeSignatureErrorCode, message: string): ChangeSignatureResult {
     // 錯誤情況下必須提供佔位簽名資訊
     const emptyRange = { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } };
     const emptyLocation = { filePath: '', range: emptyRange };

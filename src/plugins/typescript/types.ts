@@ -158,8 +158,8 @@ export function tsPositionToPosition(
 ): Position {
   const lineAndChar = sourceFile.getLineAndCharacterOfPosition(pos);
   return {
-    line: lineAndChar.line,
-    column: lineAndChar.character,
+    line: lineAndChar.line + 1,
+    column: lineAndChar.character + 1,
     offset: pos
   };
 }
@@ -184,7 +184,7 @@ export function positionToTsPosition(
   sourceFile: ts.SourceFile,
   position: Position
 ): number {
-  return sourceFile.getPositionOfLineAndCharacter(position.line, position.column);
+  return sourceFile.getPositionOfLineAndCharacter(position.line - 1, position.column - 1);
 }
 
 /**

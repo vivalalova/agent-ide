@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { IssueSeverity, type QueryResult } from '../query-types.js';
+import type { QueryResult } from '../query-types.js';
 
 /** ANSI 顏色碼 */
 export const Colors = {
@@ -15,14 +15,6 @@ export const Colors = {
   cyan: '\x1b[36m',
   dim: '\x1b[2m',
   bold: '\x1b[1m'
-} as const;
-
-/** 嚴重度對應的顏色和 emoji */
-export const SeverityStyle = {
-  [IssueSeverity.Critical]: { color: Colors.red, emoji: '🔴' },
-  [IssueSeverity.High]: { color: Colors.red, emoji: '🟠' },
-  [IssueSeverity.Medium]: { color: Colors.yellow, emoji: '🟡' },
-  [IssueSeverity.Low]: { color: Colors.green, emoji: '🟢' }
 } as const;
 
 /**

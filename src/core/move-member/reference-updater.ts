@@ -6,6 +6,8 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { MemberDefinition, ReferenceUpdate, MoveMemberOptions } from './types.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
 
 /**
  * 解析的 import 成員
@@ -255,11 +257,7 @@ export class ReferenceUpdater {
    * 移除檔案副檔名
    */
   private removeExtension(filePath: string): string {
-    const ext = path.extname(filePath);
-    if (['.js', '.ts', '.jsx', '.tsx'].includes(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-    return filePath;
+    return stripSourceFileExtension(filePath);
   }
 
   /**
@@ -276,8 +274,7 @@ export class ReferenceUpdater {
     const fromDir = path.dirname(from);
     let relativePath = path.relative(fromDir, to);
 
-    // 移除副檔名
-    relativePath = relativePath.replace(/\.(ts|tsx|js|jsx)$/, '');
+    relativePath = stripSourceFileExtension(relativePath);
 
     // 確保以 ./ 開頭
     if (!relativePath.startsWith('.')) {
@@ -323,8 +320,7 @@ export class ReferenceUpdater {
    * 檢查是否為支援的檔案類型
    */
   private isSupportedFile(filename: string): boolean {
-    const supportedExtensions = ['.ts', '.tsx', '.js', '.jsx'];
-    return supportedExtensions.some(ext => filename.endsWith(ext));
+    return SOURCE_FILE_EXTENSIONS.some(ext => filename.endsWith(ext));
   }
 
   /**
@@ -334,7 +330,8 @@ export class ReferenceUpdater {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
+    } catch (error) {
+      diagnostics.warn('move-member/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

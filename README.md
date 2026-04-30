@@ -19,6 +19,12 @@ Code intelligence toolkit designed for AI agents, providing search, refactoring,
 npx agent-ide <command> [options]
 ```
 
+Global options:
+
+- `--no-cache` - disable index cache
+- `--cache-dir <path>` - override index cache directory
+- `--verbose` - show detailed processing information
+
 From source:
 
 ```bash
@@ -56,17 +62,17 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 |-----------|---------|------------|
 | Rename symbol | `/agent-ide rename` | Multiple Edit calls |
 | Move file/member | `/agent-ide move` | Write + Delete + Edit imports |
+| Search symbol | `/agent-ide search` | Grep + manual ranking |
 | Find references | `/agent-ide find-references` | Grep + manual filtering |
-| Detect dead code | `/agent-ide deadcode` | Manual analysis |
+| Detect dead code | `/agent-ide deadcode --dry-run` | Manual analysis |
+| Remove dead code | `/agent-ide deadcode` | Manual deletion |
 | Analyze impact | `/agent-ide impact` | Manual tracing |
 | Check cycles | `/agent-ide cycles` | Manual dependency review |
 | Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
-| API snapshot | `/agent-ide snapshot` | Multiple Read calls |
-| Undo changes | `/agent-ide undo` | Manual revert |
 
-**Trigger keywords**: rename, move file, move function, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
+**Trigger keywords**: rename, move file, move function, search symbol, find references, dead code, unused code, circular dependency, call hierarchy, refactor parameters, impact analysis
 
-**Benefits**: Automatic reference updates, atomic operations, zero missed references, undo support
+**Benefits**: Automatic reference updates, atomic operations, previewable changes, undo-friendly diffs
 ```
 
 ## Commands
@@ -77,10 +83,10 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | ----------------- | -------------------------------------- |
 | `cycles`          | Detect circular dependencies (Tarjan)  |
 | `impact`          | Analyze change impact range (BFS)      |
-| `snapshot`        | Generate module API snapshots |
+| `search`          | Search symbols with fuzzy matching     |
 | `find-references` | Find symbol definitions and references |
 | `call-hierarchy`  | Analyze function call hierarchy        |
-| `deadcode`        | Detect unused code                     |
+| `deadcode --dry-run` | Detect unused code                  |
 
 ### Mutation (supports `--dry-run`)
 
@@ -90,6 +96,7 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `change-signature` | Refactor function parameters (reorder/add/remove)|
 | `move`             | Move files/directories and update imports        |
 | `move` (with line) | Move members across files (`path:line` syntax)   |
+| `deadcode`         | Remove unused code and clean imports             |
 
 ## Documentation
 

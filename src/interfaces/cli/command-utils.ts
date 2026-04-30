@@ -4,7 +4,7 @@
  */
 
 import { ChangeApplicator, convertChangesetToPreviewInput, type Changeset } from '@infrastructure/changeset/index.js';
-import type { PreviewInput } from '@infrastructure/formatters/index.js';
+import { PreviewCommand, type PreviewInput } from '@infrastructure/formatters/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   createUnifiedOutputHandler,
@@ -42,12 +42,55 @@ export function tryParseOutputFormat(
   try {
     const format = parseOutputFormat(formatStr, allowDiff);
     return { success: true, format };
-  } catch {
-    const availableFormats = allowDiff ? 'json, summary, diff' : 'json, summary';
-    handler.outputError(`不支援的輸出格式。可用格式: ${availableFormats}`, OutputFormat.Summary);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    handler.outputError(message, OutputFormat.Summary);
     process.exitCode = 1;
     return { success: false };
   }
+}
+
+/**
+ * 驗證 CLI 輸入路徑存在，失敗時輸出統一錯誤並設定 exitCode。
+ */
+export async function ensurePathExists(
+  pathToCheck: string,
+  fileSystem: IFileSystem,
+  outputHandler: UnifiedOutputHandler,
+  format: OutputFormat
+): Promise<boolean> {
+  const exists = await fileSystem.exists(pathToCheck);
+  if (!exists) {
+    outputHandler.outputError(`路徑不存在: ${pathToCheck}`, format);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * 驗證 CLI 輸入路徑存在且為目錄。
+ */
+export async function ensureDirectoryPath(
+  pathToCheck: string,
+  fileSystem: IFileSystem,
+  outputHandler: UnifiedOutputHandler,
+  format: OutputFormat
+): Promise<boolean> {
+  const exists = await ensurePathExists(pathToCheck, fileSystem, outputHandler, format);
+  if (!exists) {
+    return false;
+  }
+
+  const isDirectory = await fileSystem.isDirectory(pathToCheck);
+  if (!isDirectory) {
+    outputHandler.outputError(`路徑不是目錄: ${pathToCheck}`, format);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return true;
 }
 
 /** 變更類命令執行選項 */
@@ -72,6 +115,39 @@ export interface MutationExecutionResult {
   success: boolean;
   /** PreviewInput（用於輸出） */
   previewInput?: PreviewInput;
+}
+
+/**
+ * 建立無檔案變更的 mutation preview input。
+ */
+export function createEmptyMutationPreviewInput(
+  command: PreviewCommand,
+  operationDescription: string
+): PreviewInput {
+  return {
+    command,
+    success: true,
+    fileChanges: [],
+    operationDescription
+  };
+}
+
+/**
+ * 輸出 mutation 結果，JSON 模式保留既有命令欄位並補齊統一 PreviewResult 欄位。
+ */
+export function outputMutationWithLegacyFields(
+  outputHandler: UnifiedOutputHandler,
+  input: PreviewInput,
+  format: OutputFormat,
+  legacyFields: Record<string, unknown> = {}
+): void {
+  if (format === OutputFormat.Json) {
+    const result = outputHandler.createMutationResult(input);
+    outputHandler.outputJson({ ...legacyFields, ...result }, 2);
+    return;
+  }
+
+  outputHandler.outputMutation(input, format);
 }
 
 /**

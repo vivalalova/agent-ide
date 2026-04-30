@@ -8,6 +8,7 @@ import {
   CacheEventType
 } from './types.js';
 import { StrategyFactory, type CacheStrategy } from '@infrastructure/cache/strategies.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /**
  * 高效能記憶體快取實作，支援多種淘汰策略
@@ -329,6 +330,7 @@ export class MemoryCache<K, V> {
       const str = JSON.stringify(value);
       return str.length * 2;
     } catch {
+      // graceful-degradation: 不可序列化物件使用預設大小估計
       return 100; // 預設大小
     }
   }
@@ -417,7 +419,7 @@ export class MemoryCache<K, V> {
         listener(event);
       } catch (error) {
         // 忽略監聽器錯誤，避免影響快取操作
-        console.error('Cache event listener error:', error);
+        logger.warn('memory-cache', `Cache event listener error: ${error}`);
       }
     }
   }

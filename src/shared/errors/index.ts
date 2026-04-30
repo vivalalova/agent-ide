@@ -10,6 +10,12 @@ export { getErrorMessage } from './error-utils.js';
 // 匯出所有錯誤類別
 export { BaseError, isBaseError } from './base-error.js';
 export {
+  DiagnosticCollector,
+  DiagnosticSeverity,
+  diagnostics,
+  type Diagnostic
+} from './diagnostic-collector.js';
+export {
   ParserError,
   DuplicateParserError,
   ParserNotFoundError,
@@ -193,5 +199,9 @@ export const ErrorCodes = {
   // 配置錯誤
   INVALID_CONFIG: 'INVALID_CONFIG',
   MISSING_CONFIG: 'MISSING_CONFIG',
-  CONFIG_TYPE_MISMATCH: 'CONFIG_TYPE_MISMATCH'
+  CONFIG_TYPE_MISMATCH: 'CONFIG_TYPE_MISMATCH',
+
+  // 分析錯誤
+  AST_PARSE_FAILED: 'AST_PARSE_FAILED',
+  ANALYSIS_DEGRADED: 'ANALYSIS_DEGRADED'
 } as const;

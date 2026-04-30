@@ -268,18 +268,8 @@ export function set(obj: Record<string, any>, path: string, value: unknown): voi
 export function get(obj: Record<string, any>, path: string, defaultValue?: unknown): unknown {
   if (!path) {return obj;}
 
-  const keys = parsePath(path);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑遍歷需要 any
-  let current: any = obj;
-
-  for (const key of keys) {
-    if (current === null || current === undefined || !(key in current)) {
-      return defaultValue;
-    }
-    current = current[key];
-  }
-
-  return current;
+  const result = resolvePath(obj, path);
+  return result.exists ? result.value : defaultValue;
 }
 
 /**
@@ -292,18 +282,23 @@ export function get(obj: Record<string, any>, path: string, defaultValue?: unkno
 export function has(obj: Record<string, any>, path: string): boolean {
   if (!path) {return false;}
 
+  return resolvePath(obj, path).exists;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑存取需要 any
+function resolvePath(obj: Record<string, any>, path: string): { exists: boolean; value: unknown } {
   const keys = parsePath(path);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 動態路徑遍歷需要 any
   let current: any = obj;
 
   for (const key of keys) {
     if (current === null || current === undefined || !(key in current)) {
-      return false;
+      return { exists: false, value: undefined };
     }
     current = current[key];
   }
 
-  return true;
+  return { exists: true, value: current };
 }
 
 /**

@@ -12,18 +12,17 @@ import {
   ConflictType,
   RenameSummary,
   ScopeAnalysisResult,
-  createRenameOperation,
   createConflictInfo
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
-import { ScopeAnalyzer } from './scope-analyzer.js';
 import { ReferenceUpdater } from './reference-updater.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -40,14 +39,12 @@ export class RenameEngine {
     'import', 'export', 'default', 'from', 'as', 'type'
   ]);
 
-  private readonly scopeAnalyzer: ScopeAnalyzer;
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileSystem: IFileSystem;
 
   constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
-    this.scopeAnalyzer = new ScopeAnalyzer();
     this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem);
   }
 
@@ -87,12 +84,12 @@ export class RenameEngine {
               });
             }
           });
-        } catch {
-          // 忽略無法讀取的檔案，不影響其他檔案的處理
+        } catch (error) {
+          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${error instanceof Error ? error.message : String(error)}`, filePath);
         }
       }
-    } catch {
-      // 忽略錯誤，返回已收集的引用
+    } catch (error) {
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return references;
@@ -210,26 +207,9 @@ export class RenameEngine {
         conflicts: validation.conflicts,
         summary
       };
-    } catch {
-      // 發生錯誤時回傳基本預覽
-      const operation = createRenameOperation(
-        options.symbol.location.filePath,
-        options.symbol.name,
-        options.newName,
-        options.symbol.location.range
-      );
-
-      return {
-        operations: [operation],
-        affectedFiles: [options.symbol.location.filePath],
-        conflicts: validation.conflicts,
-        summary: {
-          totalReferences: 1,
-          totalFiles: 1,
-          conflictCount: validation.conflicts.length,
-          estimatedTime: 10
-        }
-      };
+    } catch (error) {
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
   }
 

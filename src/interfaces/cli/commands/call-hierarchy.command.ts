@@ -4,10 +4,12 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   createCallHierarchyAnalyzer,
+  type CallHierarchyData,
   type CallHierarchyOptions
 } from '@core/call-hierarchy/index.js';
 import {
@@ -22,7 +24,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -45,8 +47,8 @@ export function setupCallHierarchyCommand(program: Command, context: CommandCont
     .option('-d, --direction <direction>', '分析方向: incoming, outgoing, both', 'both')
     .option('--depth <n>', '遞迴深度（1-10）', '1')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
-    .action(async (functionName: string, options: CallHierarchyCommandOptions) => {
-      await handleCallHierarchyCommand(functionName, options, context);
+    .action(async (functionName: string, options: CallHierarchyCommandOptions, command: Command) => {
+      await handleCallHierarchyCommand(functionName, options, context, command);
     });
 }
 
@@ -56,7 +58,8 @@ export function setupCallHierarchyCommand(program: Command, context: CommandCont
 async function handleCallHierarchyCommand(
   functionName: string,
   options: CallHierarchyCommandOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -86,14 +89,22 @@ async function handleCallHierarchyCommand(
   }
 
   const projectPath = options.path || process.cwd();
+  const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
+    return;
+  }
 
-  // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
 
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   try {
-    await indexEngine.indexProject(projectPath);
 
     const indexedFiles = indexEngine.getAllIndexedFiles();
     const filePaths = indexedFiles.map(f => f.filePath);
@@ -106,11 +117,17 @@ async function handleCallHierarchyCommand(
       r => r.symbol.type === 'function' || r.symbol.type === 'variable'
     );
 
+    // 優先選取 function 類型（排除 import specifier 等 variable 型別），
+    // 若無 function 類型則以 variable 為後備（arrow function 場景）
+    const purelyFunctionSymbols = functionSymbols.filter(r => r.symbol.type === 'function');
+    const preferredSymbols = purelyFunctionSymbols.length > 0 ? purelyFunctionSymbols : functionSymbols;
+
     // 若無函數類型，回退到所有結果
-    const matchedSymbols = functionSymbols.length > 0 ? functionSymbols : symbolResults;
+    const matchedSymbols = preferredSymbols.length > 0 ? preferredSymbols : symbolResults;
 
     // 函數找不到的情況
     if (matchedSymbols.length === 0) {
+      const errorMessage = `找不到函數 "${functionName}"`;
       const errorResult: CallHierarchyResult = {
         command: QueryCommand.CallHierarchy,
         success: false,
@@ -125,7 +142,8 @@ async function handleCallHierarchyCommand(
           outgoingCount: 0,
           uniqueFiles: 0
         },
-        errors: [`找不到函數 "${functionName}"`]
+        error: errorMessage,
+        errors: [errorMessage]
       };
       outputHandler.outputQuery(errorResult, format);
       process.exitCode = 1;
@@ -143,7 +161,6 @@ async function handleCallHierarchyCommand(
     const functionSymbol = matchedSymbols[0];
     const definitionFile = functionSymbol.symbol.location.filePath;
     const definitionLine = functionSymbol.symbol.location.range.start.line;
-    const definitionRange = functionSymbol.symbol.location.range;
 
     // 建立分析器並執行分析
     const parserRegistry = ParserRegistry.getInstance();
@@ -154,30 +171,39 @@ async function handleCallHierarchyCommand(
       depth
     };
 
-    const analysisResult = await analyzer.analyzeWithDefinition(
-      functionName,
-      definitionFile,
-      definitionRange,
-      filePaths,
-      analysisOptions
-    );
+    const analysisResults: CallHierarchyData[] = [];
+    for (const matchedSymbol of matchedSymbols) {
+      const symbolDefinitionFile = matchedSymbol.symbol.location.filePath;
+      const symbolDefinitionRange = matchedSymbol.symbol.location.range;
+      analysisResults.push(await analyzer.analyzeWithDefinition(
+        functionName,
+        symbolDefinitionFile,
+        symbolDefinitionRange,
+        filePaths,
+        analysisOptions
+      ));
+    }
 
     // 轉換為輸出格式
-    const incoming: IncomingCallItem[] = analysisResult.incoming.map(call => ({
-      caller: call.caller,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
+    const incoming: IncomingCallItem[] = dedupeIncomingCalls(
+      analysisResults.flatMap(result => result.incoming.map(call => ({
+        caller: call.caller,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      })))
+    );
 
-    const outgoing: OutgoingCallItem[] = analysisResult.outgoing.map(call => ({
-      callee: call.callee,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
+    const outgoing: OutgoingCallItem[] = dedupeOutgoingCalls(
+      analysisResults.flatMap(result => result.outgoing.map(call => ({
+        callee: call.callee,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      })))
+    );
 
     // 計算涉及的檔案數
     const uniqueFiles = new Set([
@@ -225,3 +251,36 @@ function validateDirection(dir: string): CallHierarchyDirection | null {
   return null;
 }
 
+function dedupeIncomingCalls(calls: readonly IncomingCallItem[]): IncomingCallItem[] {
+  const seen = new Set<string>();
+  const uniqueCalls: IncomingCallItem[] = [];
+
+  for (const call of calls) {
+    const key = `${call.caller}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueCalls.push(call);
+  }
+
+  return uniqueCalls;
+}
+
+function dedupeOutgoingCalls(calls: readonly OutgoingCallItem[]): OutgoingCallItem[] {
+  const seen = new Set<string>();
+  const uniqueCalls: OutgoingCallItem[] = [];
+
+  for (const call of calls) {
+    const key = `${call.callee}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueCalls.push(call);
+  }
+
+  return uniqueCalls;
+}

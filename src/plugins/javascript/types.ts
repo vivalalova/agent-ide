@@ -169,13 +169,13 @@ export function babelLocationToPosition(location: babel.SourceLocation): Range {
   const end = location.end as BabelPositionWithIndex;
   return {
     start: {
-      line: start.line - 1, // Babel 使用 1-based 行號，我們使用 0-based
-      column: start.column,
+      line: start.line,
+      column: start.column + 1,
       offset: start.index ?? 0
     },
     end: {
-      line: end.line - 1,
-      column: end.column,
+      line: end.line,
+      column: end.column + 1,
       offset: end.index ?? 0
     }
   };
@@ -187,13 +187,13 @@ export function babelLocationToPosition(location: babel.SourceLocation): Range {
 export function positionToBabelLocation(position: Position): babel.SourceLocation {
   return {
     start: {
-      line: position.line + 1, // 轉換為 1-based
-      column: position.column,
+      line: position.line,
+      column: position.column - 1,
       index: position.offset || 0
     },
     end: {
-      line: position.line + 1,
-      column: position.column + 1,
+      line: position.line,
+      column: position.column,
       index: (position.offset || 0) + 1
     },
     filename: '',
@@ -313,8 +313,8 @@ export function createJavaScriptASTNode(
 ): JavaScriptASTNode {
   const type = BABEL_NODE_TYPE_MAP[babelNode.type] || babelNode.type;
   const range = babelNode.loc ? babelLocationToPosition(babelNode.loc) : {
-    start: { line: 0, column: 0, offset: 0 },
-    end: { line: 0, column: 0, offset: 0 }
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 1, offset: 0 }
   };
 
   const properties: Record<string, string | boolean | babel.Comment[] | null | undefined> = {

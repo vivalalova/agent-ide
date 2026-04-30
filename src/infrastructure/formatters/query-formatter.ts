@@ -7,18 +7,14 @@ import {
   QueryCommand,
   type QueryResult,
   type SearchResult,
-  type DepsResult,
-  type AnalyzeResult,
-  type SnapshotResult,
+  type DependencyResult,
   type FindReferencesResult,
   type CallHierarchyResult
 } from './query-types.js';
 import {
   type IQueryStrategy,
   SearchFormatter,
-  DepsFormatter,
-  AnalyzeFormatter,
-  SnapshotFormatter,
+  DependencyFormatter,
   FindReferencesFormatter,
   CallHierarchyFormatter
 } from './strategies/index.js';
@@ -72,12 +68,9 @@ export class QueryFormatter {
     switch (result.command) {
       case QueryCommand.Search:
         return this.getStrategy<SearchResult>(QueryCommand.Search).formatSummary(result as SearchResult);
-      case QueryCommand.Deps:
-        return this.getStrategy<DepsResult>(QueryCommand.Deps).formatSummary(result as DepsResult);
-      case QueryCommand.Analyze:
-        return this.getStrategy<AnalyzeResult>(QueryCommand.Analyze).formatSummary(result as AnalyzeResult);
-      case QueryCommand.Snapshot:
-        return this.getStrategy<SnapshotResult>(QueryCommand.Snapshot).formatSummary(result as SnapshotResult);
+      case QueryCommand.Cycles:
+      case QueryCommand.Impact:
+        return this.getStrategy<DependencyResult>(result.command).formatSummary(result as DependencyResult);
       case QueryCommand.FindReferences:
         return this.getStrategy<FindReferencesResult>(QueryCommand.FindReferences)
           .formatSummary(result as FindReferencesResult);
@@ -105,14 +98,9 @@ export class QueryFormatter {
       case QueryCommand.Search:
         strategy = new SearchFormatter(this.color);
         break;
-      case QueryCommand.Deps:
-        strategy = new DepsFormatter(this.color);
-        break;
-      case QueryCommand.Analyze:
-        strategy = new AnalyzeFormatter(this.color);
-        break;
-      case QueryCommand.Snapshot:
-        strategy = new SnapshotFormatter(this.color);
+      case QueryCommand.Cycles:
+      case QueryCommand.Impact:
+        strategy = new DependencyFormatter(this.color);
         break;
       case QueryCommand.FindReferences:
         strategy = new FindReferencesFormatter(this.color);
@@ -146,11 +134,6 @@ export class QueryFormatter {
       Object.entries(result.summary).forEach(([key, value]) => {
         lines.push(`  ${key}: ${value}`);
       });
-    }
-
-    if (result.issues && result.issues.length > 0) {
-      lines.push('');
-      lines.push(`問題數: ${result.issues.length}`);
     }
 
     return lines.join('\n');

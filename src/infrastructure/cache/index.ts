@@ -218,6 +218,7 @@ export class CacheUtils {
     try {
       return JSON.stringify(key);
     } catch {
+      // graceful-degradation: 循環引用等不可序列化物件 fallback 到 String()
       return String(key);
     }
   }

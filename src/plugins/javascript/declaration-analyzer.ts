@@ -17,6 +17,7 @@ import type {
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch, parseJSDocContent } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -57,7 +58,8 @@ export class DeclarationAnalyzer {
       const ast = babelParse(code, options);
       this.astCache.set(hash, ast); // MemoryCache 自動處理 LRU 淘汰
       return ast;
-    } catch {
+    } catch (error) {
+      logger.warn('js/declaration-analyzer', `Parse failed: ${error}`);
       return null;
     }
   }
@@ -181,7 +183,8 @@ export class DeclarationAnalyzer {
           offset: node.end ?? 0
         }
       };
-    } catch {
+    } catch (error) {
+      logger.warn('js/declaration-analyzer', `Parse failed: ${error}`);
       return null;
     }
   }

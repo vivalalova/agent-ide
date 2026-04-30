@@ -22,6 +22,7 @@ import {
 import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
 import { createFileUtils, type FileUtils } from '../file-utils.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /** 批次並行讀取的檔案數量上限（避免 fd 耗盡） */
 const BATCH_SIZE = 20;
@@ -35,8 +36,8 @@ export class SymbolFinder {
   private readonly fileUtils: FileUtils;
 
   constructor(
-    private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    parserRegistry: ParserRegistry,
+    fileSystem: IFileSystem
   ) {
     this.textMatcher = new TextMatcher();
     this.callSiteParser = new CallSiteParser();
@@ -87,7 +88,8 @@ export class SymbolFinder {
         signature: this.extractSignature(content, symbol),
         documentation
       };
-    } catch {
+    } catch (error) {
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }
@@ -213,14 +215,16 @@ export class SymbolFinder {
                   context
                 });
               }
-            } catch {
+            } catch (error) {
               // Parser 失敗，降級到文字匹配
+              diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
               const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
               const refs = results.get(key);
               if (refs) {refs.push(...textRefs);}
             }
           } else {
-            // 無 Parser，使用文字匹配
+            // 無 Parser，降級到文字匹配
+            diagnostics.warn('symbol-finder', 'ANALYSIS_DEGRADED', 'No parser available, falling back to text match', filePath);
             const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
             const refs = results.get(key);
             if (refs) {refs.push(...textRefs);}
@@ -383,7 +387,8 @@ export class SymbolFinder {
 
       // 使用 CallSiteParser 查找呼叫點
       return this.callSiteParser.findCallSitesInFile(filePath, content, functionName);
-    } catch {
+    } catch (error) {
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return [];
     }
   }
@@ -431,7 +436,8 @@ export class SymbolFinder {
           modifiers: [...s.modifiers],
           valueType: undefined
         }));
-    } catch {
+    } catch (error) {
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return [];
     }
   }
@@ -462,7 +468,7 @@ export class SymbolFinder {
   private convertParserRefToSymbolReference(
     ref: { location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }; type: string },
     symbolName: string,
-    filePath: string,
+    _filePath: string,
     lines: string[]
   ): SymbolReference {
     const lineIndex = ref.location.range.start.line - 1;
@@ -519,6 +525,7 @@ export class SymbolFinder {
 
     // 無 Parser 時降級到文字匹配
     if (!parser) {
+      diagnostics.warn('symbol-finder', 'ANALYSIS_DEGRADED', 'No parser available, falling back to text match', filePath);
       return useFiltered
         ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
         : this.textMatcher.findReferencesByText(filePath, content, symbolName);
@@ -569,8 +576,9 @@ export class SymbolFinder {
       const references = await parser.findReferences(ast, targetSymbol);
 
       return references.map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
-    } catch {
+    } catch (error) {
       // Parser 失敗，降級到文字匹配
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return useFiltered
         ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
         : this.textMatcher.findReferencesByText(filePath, content, symbolName);

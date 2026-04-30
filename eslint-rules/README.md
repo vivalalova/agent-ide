@@ -18,6 +18,13 @@
 - 檢查範圍：`**/*.ts`
 - 規則級別：`error`
 
+### [no-new-filesystem](./no-new-filesystem/README.md)
+
+禁止直接 `new FileSystem()`，強制依賴注入。僅 `cli.ts`（composition root）例外。
+
+- 檢查範圍：`**/*.ts`（`cli.ts` 除外）
+- 規則級別：`error`
+
 ## 測試
 
 ```bash

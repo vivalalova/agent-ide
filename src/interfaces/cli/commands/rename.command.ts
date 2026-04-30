@@ -5,19 +5,25 @@
 
 import type { Command } from 'commander';
 import * as path from 'path';
-import { IndexEngine } from '@core/foundations/indexing/index-engine.js';
-import { createIndexConfig } from '@core/foundations/indexing/types.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  createEmptyMutationPreviewInput,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
-  type: string;
   symbol?: string;
   from?: string;
   newName?: string;
@@ -35,7 +41,6 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
   program
     .command('rename')
     .description('重新命名程式碼元素')
-    .option('-t, --type <type>', '符號類型 (variable|function|class|interface)', 'variable')
     .option('-s, --symbol <name>', '要重新命名的符號')
     .option('-f, --from <name>', '原始名稱（--symbol 的別名）')
     .option('-n, --new-name <name>', '新名稱')
@@ -44,15 +49,15 @@ export function setupRenameCommand(program: Command, context: CommandContext): v
     .option('-a, --at <location>', '指定符號位置 (file:line:column)，用於區分同名符號')
     .option('--dry-run', '預覽變更而不執行')
     .option('--format <format>', '輸出格式 (diff|json|summary)', 'diff')
-    .action(async (options: RenameOptions) => {
-      await handleRenameCommand(options, context);
+    .action(async (options: RenameOptions, command: Command) => {
+      await handleRenameCommand(options, context, command);
     });
 }
 
 /**
  * 處理 rename 命令
  */
-async function handleRenameCommand(options: RenameOptions, context: CommandContext): Promise<void> {
+async function handleRenameCommand(options: RenameOptions, context: CommandContext, command: Command): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
   // 解析輸出格式
@@ -75,15 +80,14 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   // 如果 from 和 to 相同，直接返回成功但無操作
   if (from === to) {
     if (isJsonFormat) {
-      console.log(JSON.stringify({
-        command: 'rename',
-        success: true,
-        files: [],
-        summary: { totalFiles: 0, totalChanges: 0, additions: 0, deletions: 0 },
-        operations: 0,
-        affectedFiles: 0,
-        operationDescription: `No changes needed: '${from}' is already named '${to}'`
-      }));
+      outputMutationWithLegacyFields(
+        outputHandler,
+        createEmptyMutationPreviewInput(
+          PreviewCommand.Rename,
+          `No changes needed: '${from}' is already named '${to}'`
+        ),
+        format
+      );
     } else {
       console.log(`   沒有變更需要：'${from}' 已經是 '${to}'`);
     }
@@ -114,18 +118,20 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       }
     }
 
-    // 初始化索引引擎（每次都重新索引以確保資料是最新的）
-    const config = createIndexConfig(workspacePath, {
-      includeExtensions: ['.ts', '.tsx', '.js', '.jsx'],
-      excludePatterns: ['node_modules/**', '*.test.*']
-    });
-    const indexEngine = new IndexEngine(config, context.fileSystem);
+    const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+    const noCache = globalOpts.cache === false;
+
+    const indexEngine = await createAndIndexWithCache(
+      workspacePath,
+      context.fileSystem,
+      {
+        includeExtensions: CLI_INDEX_DEFAULTS.includeExtensions,
+        excludePatterns: ['node_modules/**', '*.test.*']
+      },
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     try {
-      await indexEngine.indexProject(workspacePath);
-
-      // 初始化重新命名引擎（傳入 fileSystem）
-      const renameEngine = new RenameEngine(undefined, context.fileSystem);
 
     // 1. 查找符號
     if (!isJsonFormat) {
@@ -216,6 +222,12 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 取得所有專案檔案
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
+    targetSymbol = await resolveParserBackedSymbol(targetSymbol, context, ParserRegistry.getInstance(), Boolean(options.at));
+    const renameEngine = new RenameEngine(
+      isFunctionLocalSymbol(targetSymbol) ? ParserRegistry.getInstance() : undefined,
+      context.fileSystem
+    );
+
     // 生成 Changeset
     const changeset = await renameEngine.generateChangeset({
       symbol: targetSymbol,
@@ -245,6 +257,42 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   }
 }
 
+async function resolveParserBackedSymbol(
+  symbol: CodeSymbol,
+  context: CommandContext,
+  registry: ParserRegistry,
+  strict: boolean
+): Promise<CodeSymbol> {
+  const filePath = symbol.location.filePath;
+  const parser = registry.getParser(path.extname(filePath));
+
+  if (!parser) {
+    return symbol;
+  }
+
+  const content = await context.fileSystem.readFile(filePath, 'utf-8') as string;
+  const ast = await parser.parse(content, filePath);
+  const symbols = await parser.extractSymbols(ast);
+  const resolved = symbols.find(candidate =>
+    candidate.name === symbol.name
+    && candidate.type === symbol.type
+    && candidate.location.filePath === symbol.location.filePath
+    && candidate.location.range.start.line === symbol.location.range.start.line
+    && candidate.location.range.start.column === symbol.location.range.start.column
+  );
+
+  if (!resolved && strict) {
+    throw new Error(`無法從 AST 解析指定位置的符號 "${symbol.name}"`);
+  }
+
+  return resolved ?? symbol;
+}
+
+function isFunctionLocalSymbol(symbol: CodeSymbol): boolean {
+  const scopeType = symbol.scope?.type;
+  return Boolean(symbol.location?.filePath) && (scopeType === 'function' || scopeType === 'block');
+}
+
 /**
  * 取得所有專案檔案
  */
@@ -267,7 +315,7 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
       return [];
     }
   } catch {
-    // 路徑不存在
+    // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
     return [];
   }
 
@@ -292,7 +340,7 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
         }
       }
     } catch {
-      // 忽略無法存取的目錄
+      // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
     }
   }
 

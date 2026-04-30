@@ -7,6 +7,7 @@ import * as ts from 'typescript';
 import type { Range } from '@shared/types/core.js';
 import type { CallSite, CallSiteArgument } from './types.js';
 import { TextMatcher } from './text-matcher.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * 呼叫點解析器
@@ -60,8 +61,9 @@ export class CallSiteParser {
       };
 
       visit(sourceFile);
-    } catch {
+    } catch (error) {
       // AST 解析失敗，fallback 到正則匹配（保留向後相容）
+      diagnostics.warn('call-site-parser', 'AST_PARSE_FAILED', `AST parse failed, using regex fallback: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return this.findCallSitesInFileFallback(filePath, content, functionName);
     }
 

@@ -35,7 +35,8 @@ import {
   createAST,
   createASTMetadata,
   ReferenceType,
-  SymbolType
+  SymbolType,
+  TYPESCRIPT_PARSER_EXTENSIONS
 } from '@shared/types/index.js';
 import {
   TypeScriptAST,
@@ -84,7 +85,7 @@ interface ASTCacheItem {
 export class TypeScriptParser implements ParserPlugin, Disposable {
   public readonly name = 'typescript';
   public readonly version = '1.0.0';
-  public readonly supportedExtensions = ['.ts', '.tsx', '.d.ts'] as const;
+  public readonly supportedExtensions = TYPESCRIPT_PARSER_EXTENSIONS;
   public readonly supportedLanguages = ['typescript', 'tsx'] as const;
 
   private symbolExtractor: TypeScriptSymbolExtractor;
@@ -413,14 +414,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   /**
-   * 提取函式重構
-   */
-  async extractFunction(_ast: AST, _selection: Range): Promise<CodeEdit[]> {
-    // 這是一個複雜的重構操作，目前提供基本實作
-    throw new Error('提取函式重構尚未實作');
-  }
-
-  /**
    * 查找定義
    */
   async findDefinition(ast: AST, position: Position): Promise<Definition | null> {
@@ -618,21 +611,15 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   // 私有輔助方法
 
   private getScriptKind(filePath: string): ts.ScriptKind {
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
-    switch (ext) {
-    case '.tsx':
+    if (filePath.endsWith('.tsx')) {
       return ts.ScriptKind.TSX;
-    case '.d.ts':
-      return ts.ScriptKind.TS;
-    case '.ts':
-    default:
-      return ts.ScriptKind.TS;
     }
+
+    return ts.ScriptKind.TS;
   }
 
   private getLanguageFromFilePath(filePath: string): string {
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
-    return ext === '.tsx' ? 'tsx' : 'typescript';
+    return filePath.endsWith('.tsx') ? 'tsx' : 'typescript';
   }
 
   private findNodeAtPosition(sourceFile: ts.SourceFile, position: number): ts.Node | undefined {
@@ -774,27 +761,11 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     return bestMatch;
   }
 
-  private isPositionInRange(position: Position, range: Range): boolean {
-    if (position.line < range.start.line || position.line > range.end.line) {
-      return false;
-    }
-
-    if (position.line === range.start.line && position.column < range.start.column) {
-      return false;
-    }
-
-    if (position.line === range.end.line && position.column > range.end.column) {
-      return false;
-    }
-
-    return true;
-  }
-
   /**
    * 判斷檔案是否為測試檔案
    */
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.(ts|tsx)$/.test(filePath) ||
+    return /\.(test|spec)\.(ts|tsx|mts|cts)$/.test(filePath) ||
            filePath.includes('/__tests__/') ||
            filePath.includes('/__mocks__/');
   }

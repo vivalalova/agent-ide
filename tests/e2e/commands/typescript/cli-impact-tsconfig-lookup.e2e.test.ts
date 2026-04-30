@@ -106,6 +106,146 @@ export function authenticate() { return login(); }
   });
 
   describe('多種 path alias', () => {
+    it('應該支援 TypeScript 原生 tsconfig 註解與 trailing comma', async () => {
+      await fixture.writeFile('tsconfig.json', `{
+        "compilerOptions": {
+          // TypeScript accepts comments in tsconfig.json.
+          "baseUrl": ".",
+          "paths": {
+            "@/*": ["src/*"],
+          },
+        },
+      }`);
+
+      await fixture.writeFile('src/utils/commented-config.ts', `
+export function readConfig() { return 'commented'; }
+`);
+
+      await fixture.writeFile('src/services/commented-config-user.ts', `
+import { readConfig } from '@/utils/commented-config';
+export function useConfig() { return readConfig(); }
+`);
+
+      const srcPath = path.join(fixture.rootPath, 'src');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'utils/commented-config.ts', '--path', srcPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents = output.impact.dependents as string[];
+      expect(dependents.some((d) => d.includes('commented-config-user.ts'))).toBe(true);
+    });
+
+    it('應該繼承 extends tsconfig 中定義的 path alias', async () => {
+      await fixture.writeFile('tsconfig.base.json', JSON.stringify({
+        compilerOptions: {
+          baseUrl: '.',
+          paths: {
+            '@/*': ['src/*']
+          }
+        }
+      }));
+      await fixture.writeFile('tsconfig.json', JSON.stringify({
+        extends: './tsconfig.base.json'
+      }));
+
+      await fixture.writeFile('src/utils/inherited-config.ts', `
+export function readInheritedConfig() { return 'inherited'; }
+`);
+
+      await fixture.writeFile('src/services/inherited-config-user.ts', `
+import { readInheritedConfig } from '@/utils/inherited-config';
+export function useInheritedConfig() { return readInheritedConfig(); }
+`);
+
+      const srcPath = path.join(fixture.rootPath, 'src');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'utils/inherited-config.ts', '--path', srcPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents = output.impact.dependents as string[];
+      expect(dependents.some((d) => d.includes('inherited-config-user.ts'))).toBe(true);
+    });
+
+    it('應該從 node_modules package extends 繼承 path alias', async () => {
+      await fixture.writeFile('node_modules/@config/ts/base.json', JSON.stringify({
+        compilerOptions: {
+          baseUrl: '../../..',
+          paths: {
+            '@/*': ['src/*']
+          }
+        }
+      }));
+      await fixture.writeFile('tsconfig.json', JSON.stringify({
+        extends: '@config/ts/base.json'
+      }));
+
+      await fixture.writeFile('src/utils/package-config.ts', `
+export function readPackageConfig() { return 'package'; }
+`);
+
+      await fixture.writeFile('src/services/package-config-user.ts', `
+import { readPackageConfig } from '@/utils/package-config';
+export function usePackageConfig() { return readPackageConfig(); }
+`);
+
+      const srcPath = path.join(fixture.rootPath, 'src');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'utils/package-config.ts', '--path', srcPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents = output.impact.dependents as string[];
+      expect(dependents.some((d) => d.includes('package-config-user.ts'))).toBe(true);
+    });
+
+    it('應該用繼承的 baseUrl 解析子層覆蓋的 paths', async () => {
+      await fixture.writeFile('tsconfig.base.json', JSON.stringify({
+        compilerOptions: {
+          baseUrl: './src'
+        }
+      }));
+      await fixture.writeFile('tsconfig.json', JSON.stringify({
+        extends: './tsconfig.base.json',
+        compilerOptions: {
+          paths: {
+            '#/*': ['utils/*']
+          }
+        }
+      }));
+
+      await fixture.writeFile('src/utils/inherited-baseurl.ts', `
+export function readInheritedBaseUrl() { return 'baseUrl'; }
+`);
+
+      await fixture.writeFile('src/services/inherited-baseurl-user.ts', `
+import { readInheritedBaseUrl } from '#/inherited-baseurl';
+export function useInheritedBaseUrl() { return readInheritedBaseUrl(); }
+`);
+
+      const srcPath = path.join(fixture.rootPath, 'src');
+
+      const result = await executeCLI(
+        ['impact', '--file', 'utils/inherited-baseurl.ts', '--path', srcPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const dependents = output.impact.dependents as string[];
+      expect(dependents.some((d) => d.includes('inherited-baseurl-user.ts'))).toBe(true);
+    });
+
     it('應該正確解析多個 path alias 設定', async () => {
       // Given
       await fixture.writeFile('tsconfig.json', JSON.stringify({

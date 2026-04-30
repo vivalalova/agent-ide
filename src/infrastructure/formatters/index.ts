@@ -25,29 +25,16 @@ export { generatePreviewResult } from './diff-generator.js';
 
 export { PreviewFormatter, createPreviewFormatter } from './preview-formatter.js';
 
-export {
-  convertRenamePreview,
-  convertMovePreview,
-  convertShiftPreview,
-  convertRefactorPreview,
-  type RenamePreviewOptions,
-  type RefactorPreviewOptions
-} from './preview-converter.js';
-
 // ========== Query（唯讀類命令）==========
 export {
   QueryCommand,
-  IssueSeverity,
-  AnalyzeType,
   type QueryResult,
   type QuerySummary,
-  type QueryIssue,
   type SearchResult,
   type SearchMatch,
-  type DepsResult,
+  type DependencyResult,
   type CycleInfo,
   type ImpactInfo,
-  type AnalyzeResult,
   type FindReferencesResult,
   type ReferenceItem,
   type ReferenceType,
@@ -56,9 +43,7 @@ export {
   type CallHierarchyDirection,
   type IncomingCallItem,
   type OutgoingCallItem,
-  type FunctionDefinitionInfo,
-  type DeadCodeResult,
-  type DeadCodeResultItem
+  type FunctionDefinitionInfo
 } from './query-types.js';
 
 export {

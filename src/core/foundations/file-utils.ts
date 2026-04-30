@@ -5,6 +5,11 @@
 
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import {
+  isJavaScriptSourceExtension,
+  isTypeScriptSourceExtension
+} from '@shared/types/index.js';
 
 /**
  * 檔案操作工具類
@@ -25,7 +30,8 @@ export class FileUtils {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
-    } catch {
+    } catch (error) {
+      diagnostics.warn('file-utils', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }
@@ -55,7 +61,7 @@ export class FileUtils {
    */
   static isTypeScript(filePath: string): boolean {
     const ext = FileUtils.getFileExtension(filePath);
-    return ext === '.ts' || ext === '.tsx';
+    return isTypeScriptSourceExtension(ext);
   }
 
   /**
@@ -63,7 +69,7 @@ export class FileUtils {
    */
   static isJavaScript(filePath: string): boolean {
     const ext = FileUtils.getFileExtension(filePath);
-    return ext === '.js' || ext === '.jsx';
+    return isJavaScriptSourceExtension(ext);
   }
 
   /**

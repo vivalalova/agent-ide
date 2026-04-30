@@ -73,7 +73,7 @@ export function listTypeScriptMembers(
   let match;
 
   // 函式定義
-  const functionPattern = /^(\s*)(export\s+)?(async\s+)?function\s+(\w+)/gm;
+  const functionPattern = /^([ \t]*)(export[ \t]+)?(async[ \t]+)?function[ \t]+(\w+)/gm;
   while ((match = functionPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -94,7 +94,7 @@ export function listTypeScriptMembers(
   }
 
   // 類別定義
-  const classPattern = /^(\s*)(export\s+)?(abstract\s+)?class\s+(\w+)/gm;
+  const classPattern = /^([ \t]*)(export[ \t]+)?(abstract[ \t]+)?class[ \t]+(\w+)/gm;
   while ((match = classPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -121,7 +121,7 @@ export function listTypeScriptMembers(
   }
 
   // 介面定義
-  const interfacePattern = /^(\s*)(export\s+)?interface\s+(\w+)/gm;
+  const interfacePattern = /^([ \t]*)(export[ \t]+)?interface[ \t]+(\w+)/gm;
   while ((match = interfacePattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -142,7 +142,7 @@ export function listTypeScriptMembers(
   }
 
   // 類型別名
-  const typePattern = /^(\s*)(export\s+)?type\s+(\w+)/gm;
+  const typePattern = /^([ \t]*)(export[ \t]+)?type[ \t]+(\w+)/gm;
   while ((match = typePattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findTypeAliasEnd(lines, lineNumber - 1);
@@ -163,7 +163,7 @@ export function listTypeScriptMembers(
   }
 
   // 常數
-  const constPattern = /^(\s*)(export\s+)?const\s+(\w+)/gm;
+  const constPattern = /^([ \t]*)(export[ \t]+)?const[ \t]+(\w+)/gm;
   while ((match = constPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findStatementEnd(lines, lineNumber - 1);
@@ -184,7 +184,7 @@ export function listTypeScriptMembers(
   }
 
   // 列舉
-  const enumPattern = /^(\s*)(export\s+)?enum\s+(\w+)/gm;
+  const enumPattern = /^([ \t]*)(export[ \t]+)?enum[ \t]+(\w+)/gm;
   while ((match = enumPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -242,7 +242,7 @@ export function extractClassMembers(
   let match;
 
   // 方法
-  const methodPattern = /^\s*(public|private|protected)?\s*(static)?\s*(async)?\s*(\w+)\s*\([^)]*\)/gm;
+  const methodPattern = /^[ \t]*(public|private|protected)?[ \t]*(static)?[ \t]*(async)?[ \t]*(\w+)[ \t]*\([^)]*\)/gm;
   while ((match = methodPattern.exec(classBody)) !== null) {
     // 跳過 constructor
     if (match[4] === 'constructor') { continue; }
@@ -267,7 +267,7 @@ export function extractClassMembers(
   }
 
   // 屬性
-  const propertyPattern = /^\s*(public|private|protected)?\s*(static)?\s*(readonly)?\s*(\w+)\s*[?:]?\s*[^(]/gm;
+  const propertyPattern = /^[ \t]*(public|private|protected)?[ \t]*(static)?[ \t]*(readonly)?[ \t]*(\w+)[ \t]*[?:]?[ \t]*[^(]/gm;
   while ((match = propertyPattern.exec(classBody)) !== null) {
     // 跳過方法和 constructor
     if (classBody.substring(match.index).match(/^\s*\w+\s*\(/)) { continue; }
@@ -347,34 +347,42 @@ function extractModifiers(declaration: string): string[] {
  * 提取文件註解
  */
 export function extractDocumentation(lines: string[], memberLine: number): string | undefined {
-  const docLines: string[] = [];
-  let i = memberLine - 1;
-
-  while (i >= 0) {
-    const line = lines[i].trim();
-
-    if (line.endsWith('*/')) {
-      docLines.unshift(line);
-      i--;
-      while (i >= 0 && !lines[i].trim().startsWith('/**') && !lines[i].trim().startsWith('/*')) {
-        docLines.unshift(lines[i].trim());
-        i--;
-      }
-      if (i >= 0) {
-        docLines.unshift(lines[i].trim());
-      }
-      break;
-    } else if (line.startsWith('//')) {
-      docLines.unshift(line.substring(2).trim());
-      i--;
-    } else if (line === '') {
-      i--;
-    } else {
-      break;
-    }
+  const previousLineIndex = memberLine - 1;
+  if (previousLineIndex < 0 || lines[previousLineIndex].trim() === '') {
+    return undefined;
   }
 
-  return docLines.length > 0 ? docLines.join('\n') : undefined;
+  const docLines: string[] = [];
+  let i = previousLineIndex;
+  const previousLine = lines[i].trim();
+
+  if (previousLine.endsWith('*/')) {
+    let foundStart = false;
+    while (i >= 0) {
+      const line = lines[i].trim();
+      docLines.unshift(line);
+      if (line.startsWith('/**') || line.startsWith('/*')) {
+        foundStart = true;
+        break;
+      }
+      i--;
+    }
+    return foundStart ? docLines.join('\n') : undefined;
+  }
+
+  if (previousLine.startsWith('//')) {
+    while (i >= 0) {
+      const line = lines[i].trim();
+      if (!line.startsWith('//')) {
+        break;
+      }
+      docLines.unshift(line.substring(2).trim());
+      i--;
+    }
+    return docLines.join('\n');
+  }
+
+  return undefined;
 }
 
 /**

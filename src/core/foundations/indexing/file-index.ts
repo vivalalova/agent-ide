@@ -18,12 +18,10 @@ import { UpdateOperation } from './types.js';
  * 負責管理專案中所有檔案的索引資訊
  */
 export class FileIndex {
-  private readonly config: IndexConfig;
   private readonly fileEntries = new Map<string, FileIndexEntry>();
   private lastUpdated = new Date();
 
-  constructor(config: IndexConfig) {
-    this.config = config;
+  constructor(_config: IndexConfig) {
   }
 
   /**
@@ -257,6 +255,17 @@ export class FileIndex {
    */
   getAllEntries(): ReadonlyMap<string, FileIndexEntry> {
     return this.fileEntries;
+  }
+
+  /**
+   * 從已還原的 entries 水合索引（用於快取載入）
+   */
+  hydrateEntries(entries: Map<string, FileIndexEntry>): void {
+    this.fileEntries.clear();
+    for (const [key, value] of entries) {
+      this.fileEntries.set(key, value);
+    }
+    this.lastUpdated = new Date();
   }
 
   /**

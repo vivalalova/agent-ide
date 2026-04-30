@@ -10,6 +10,7 @@ import {
   calculateFactoryConfidence,
   createFactoryPatternInfo
 } from '@plugins/shared/index.js';
+import { logger } from '@infrastructure/logging/index.js';
 
 /**
  * 設計模式識別分析器
@@ -66,7 +67,8 @@ export class PatternAnalyzer {
       ts.forEachChild(sourceFile, visit);
 
       return patterns;
-    } catch {
+    } catch (error) {
+      logger.warn('ts/pattern-analyzer', `Pattern analysis failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到名稱比對
       return null;
     }

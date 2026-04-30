@@ -5,8 +5,8 @@
 ## 參數
 
 - `--file <file>` - 要分析的檔案（必填）
-- `--path <path>` - 專案路徑（必填）
-- `--format json|summary` - 輸出格式（預設 json）
+- `--path <path>` - 專案路徑（預設 `.`）
+- `--format json|summary` - 輸出格式（預設 summary）
 
 ## 範例
 

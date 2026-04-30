@@ -1,6 +1,9 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
 import baseConfig from './vitest.config.js';
 
+const CLI_TEST_TIMEOUT_MS = 60_000;
+const CLI_HOOK_TIMEOUT_MS = 120_000;
+
 /**
  * CLI 整合測試配置
  * - 透過實際 CLI 執行測試（非 memfs）
@@ -13,8 +16,8 @@ export default mergeConfig(baseConfig, defineConfig({
     exclude: ['node_modules/**', 'dist/**'],
 
     // CLI 測試需要較長超時
-    testTimeout: 60000,
-    hookTimeout: 10000,
+    testTimeout: CLI_TEST_TIMEOUT_MS,
+    hookTimeout: CLI_HOOK_TIMEOUT_MS,
 
     // 測試專用 setup
     setupFiles: ['./tests/setup.ts'],

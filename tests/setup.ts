@@ -3,7 +3,9 @@
  * 初始化測試環境、signal handlers、全域設定
  */
 
-import { beforeAll, afterAll } from 'vitest';
+import { beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
+import { LogLevel, logger } from '@infrastructure/logging/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { clearFixtureCache } from './helpers/fixture-manager.js';
 
 // Signal handlers 防止殭屍進程
@@ -25,11 +27,32 @@ process.on('exit', cleanup);
 
 // 全域設定
 beforeAll(async () => {
+  diagnostics.setSilent(true);
+  diagnostics.resetSink();
+  logger.setLevel(LogLevel.Silent);
   // 預載入常用 fixtures（可選）
   // await loadFixture('sample-project');
+});
+
+beforeEach(() => {
+  diagnostics.clear();
+  diagnostics.setSilent(true);
+  diagnostics.resetSink();
+  logger.setLevel(LogLevel.Silent);
+});
+
+afterEach(() => {
+  diagnostics.clear();
+  diagnostics.setSilent(true);
+  diagnostics.resetSink();
+  logger.setLevel(LogLevel.Silent);
 });
 
 afterAll(async () => {
   // 清理所有快取
   clearFixtureCache();
+  diagnostics.clear();
+  diagnostics.setSilent(false);
+  diagnostics.resetSink();
+  logger.setLevel(LogLevel.Normal);
 });

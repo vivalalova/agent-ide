@@ -4,18 +4,26 @@
  */
 
 import type { Command } from 'commander';
-import { IndexEngine, createIndexConfig, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { IndexEngine, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,
   type DeadCodeDetectionResult
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  createEmptyMutationPreviewInput,
+  ensureDirectoryPath,
+  outputMutationWithLegacyFields,
+  tryParseOutputFormat,
+  executeMutationCommand
+} from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
@@ -42,8 +50,8 @@ export function setupDeadCodeCommand(program: Command, context: CommandContext):
     .option('--include-public-members', '包含 public class members（預設排除）', false)
     .option('--dry-run', '預覽變更而不執行')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
-    .action(async (options: DeadCodeOptions) => {
-      await handleDeadCodeCommand(options, context);
+    .action(async (options: DeadCodeOptions, command: Command) => {
+      await handleDeadCodeCommand(options, context, command);
     });
 }
 
@@ -75,7 +83,8 @@ async function runDeadCodeDetection(
  */
 async function handleDeadCodeCommand(
   options: DeadCodeOptions,
-  context: CommandContext
+  context: CommandContext,
+  command: Command
 ): Promise<void> {
   const outputHandler = createUnifiedOutputHandler();
 
@@ -92,23 +101,24 @@ async function handleDeadCodeCommand(
 
   const projectPath = options.path || process.cwd();
 
-  // 檢查路徑是否存在
-  const exists = await context.fileSystem.exists(projectPath);
-  if (!exists) {
-    outputHandler.outputError(`路徑不存在: ${projectPath}`, format);
-    process.exitCode = 1;
+  const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
+  if (!pathIsDirectory) {
     return;
   }
 
-  // 建立索引引擎
-  const indexConfig = createIndexConfig(projectPath, CLI_INDEX_DEFAULTS);
-  const indexEngine = new IndexEngine(indexConfig, context.fileSystem);
+  const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
+  const noCache = globalOpts.cache === false;
+
+  const indexEngine = await createAndIndexWithCache(
+    projectPath,
+    context.fileSystem,
+    CLI_INDEX_DEFAULTS,
+    { noCache, cacheDir: globalOpts.cacheDir }
+  );
 
   const parserRegistry = ParserRegistry.getInstance();
 
   try {
-    // 索引專案
-    await indexEngine.indexProject(projectPath);
 
     // 1. 執行 dead code 檢測
     const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);
@@ -123,7 +133,15 @@ async function handleDeadCodeCommand(
       if (!isJsonFormat) {
         console.log('   沒有檢測到 dead code');
       } else {
-        console.log(JSON.stringify({ success: true, message: '沒有檢測到 dead code', removals: [] }));
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '沒有檢測到 dead code'),
+          format,
+          {
+            message: '沒有檢測到 dead code',
+            removals: []
+          }
+        );
       }
       return;
     }
@@ -162,12 +180,16 @@ async function handleDeadCodeCommand(
           }
         }
       } else {
-        console.log(JSON.stringify({
-          success: true,
-          message: '符合條件的 dead code 已被過濾',
-          warnings: changeset.warnings,
-          removals: []
-        }));
+        outputMutationWithLegacyFields(
+          outputHandler,
+          createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '符合條件的 dead code 已被過濾'),
+          format,
+          {
+            message: '符合條件的 dead code 已被過濾',
+            warnings: changeset.warnings,
+            removals: []
+          }
+        );
       }
       return;
     }

@@ -130,6 +130,30 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(Array.isArray(output.references)).toBe(true);
     });
 
+    it('應該回傳與 line 對齊的 context', async () => {
+      const result = await executeCLI(
+        ['find-references', 'UserService', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const indexReferences = output.references.filter((ref: { file: string }) => ref.file.endsWith('/src/index.ts'));
+
+      expect(indexReferences).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            line: 4,
+            context: 'import { UserService } from \'./services/user-service\';'
+          }),
+          expect.objectContaining({
+            line: 24,
+            context: 'const userService = new UserService();'
+          })
+        ])
+      );
+    });
+
     it('應該查找函數呼叫引用', async () => {
       await fixture.writeFile('fn.ts', 'export function fn() { return 1; }');
       await fixture.writeFile('caller.ts', 'import { fn } from "./fn.js";\nconst result = fn();');
@@ -343,6 +367,27 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
     });
+
+    it('多個同名定義不應輸出重複引用', async () => {
+      await fixture.writeFile('src/ref-a.ts', 'export class DuplicateRef {}');
+      await fixture.writeFile('src/ref-b.ts', 'export class DuplicateRef {}');
+
+      const result = await executeCLI(
+        ['find-references', 'DuplicateRef', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+
+      const referenceKeys = output.references.map(
+        (ref: { file: string; line: number; column?: number; type: string }) =>
+          `${ref.file}:${ref.line}:${ref.column ?? ''}:${ref.type}`
+      );
+      expect(referenceKeys).toHaveLength(new Set(referenceKeys).size);
+    });
   });
 
   describe('錯誤處理', () => {
@@ -352,18 +397,35 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
         { memfs: fixture.memfs }
       );
 
-      // 可能返回錯誤或成功（取決於錯誤處理方式）
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('不支援的輸出格式');
+      expect(result.stdout).toBe('');
     });
 
-    it('應該處理不存在的路徑', async () => {
+    it('無效路徑應回傳 JSON 錯誤', async () => {
       const result = await executeCLI(
-        ['find-references', 'test', '--path', '/nonexistent/path', '--format', 'json'],
+        ['find-references', 'test', '--path', '/nonexistent/path/xyz', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      // memfs 環境下路徑處理可能不同
-      expect([0, 1]).toContain(result.exitCode);
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不存在');
+    });
+
+    it('檔案路徑不可作為專案路徑', async () => {
+      await fixture.writeFile('not-directory.ts', 'export const test = 1;');
+
+      const result = await executeCLI(
+        ['find-references', 'test', '--path', fixture.getFilePath('not-directory.ts'), '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('路徑不是目錄');
     });
   });
 });

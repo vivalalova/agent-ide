@@ -28,16 +28,13 @@ cli-<command>[-<category>].e2e.test.ts
 | | `cli-move-bugs.e2e.test.ts` | Bug 修復測試 |
 | | `cli-move-extreme.e2e.test.ts` | 極端情況測試 |
 | **move-member** | `cli-move-member.e2e.test.ts` | 成員移動功能 |
-| | `cli-move-member-bugs.e2e.test.ts` | Bug 修復測試 |
 | **deadcode** | `cli-deadcode.e2e.test.ts` | Dead code 檢測 |
 | | `cli-deadcode-autofix.e2e.test.ts` | 自動修復功能 |
 | **cycles** | `cli-cycles.e2e.test.ts` | 循環依賴檢測 |
 | | `cli-cycles-coverage.e2e.test.ts` | 覆蓋率補充測試 |
 | **impact** | `cli-impact.e2e.test.ts` | 影響分析 |
 | | `cli-impact-path-alias.e2e.test.ts` | 路徑別名支援 |
-| **snapshot** | `cli-snapshot.e2e.test.ts` | 模組快照 |
-| | `cli-snapshot-incremental.e2e.test.ts` | 增量更新 |
-| | `cli-snapshot-coverage.e2e.test.ts` | 覆蓋率補充測試 |
+| **search** | `cli-search.e2e.test.ts` | 符號搜尋 |
 | **其他** | `cli-call-hierarchy.e2e.test.ts` | 呼叫層次分析 |
 | | `cli-change-signature.e2e.test.ts` | 參數簽名重構 |
 | | `cli-find-references.e2e.test.ts` | 符號引用查找 |

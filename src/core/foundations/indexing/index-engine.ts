@@ -14,10 +14,14 @@ import {
 } from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
+import { getSourceLanguage } from '@shared/types/index.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { logger } from '@infrastructure/logging/index.js';
 import type {
   IndexConfig,
   IndexStats,
   FileInfo,
+  FileIndexEntry,
   SymbolSearchResult,
   SearchOptions,
   BatchIndexOptions
@@ -175,7 +179,7 @@ export class IndexEngine {
         }
       } catch {
         // 如果 parser 不支援此方法，忽略錯誤
-        console.warn(`Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
+        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
       }
     }
 
@@ -478,6 +482,7 @@ export class IndexEngine {
 
     // 測試環境：單執行緒逐檔解析
     if (!this.parserPool) {
+      logger.verbose('indexer', `Indexing ${totalFiles} files (single-thread)`);
       for (const filePath of files) {
         try {
           await this.indexFile(filePath);
@@ -496,14 +501,15 @@ export class IndexEngine {
         });
       }
 
+      logger.verbose('indexer', `Done: ${processedFiles} indexed, ${errors.length} errors`);
       if (errors.length > 0) {
-        console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
-        errors.forEach(error => console.warn(`  ${error}`));
+        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
       }
       return;
     }
 
     // 生產環境：Worker Pool 多執行緒解析
+    logger.verbose('indexer', `Indexing ${totalFiles} files (worker pool)`);
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
 
@@ -541,8 +547,7 @@ export class IndexEngine {
     }
 
     if (errors.length > 0) {
-      console.warn(`索引過程中發生 ${errors.length} 個錯誤:`);
-      errors.forEach(error => console.warn(`  ${error}`));
+      diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
     }
   }
 
@@ -575,8 +580,8 @@ export class IndexEngine {
           fileInfo,
           content
         });
-      } catch {
-        // 靜默跳過無法讀取的檔案
+      } catch (error) {
+        diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       }
     }));
 
@@ -656,10 +661,6 @@ export class IndexEngine {
    */
   private getLanguageFromExtension(extension: string): string | undefined {
     const languageMap: Record<string, string> = {
-      '.ts': 'typescript',
-      '.tsx': 'typescript',
-      '.js': 'javascript',
-      '.jsx': 'javascript',
       '.java': 'java',
       '.cpp': 'cpp',
       '.c': 'c',
@@ -670,7 +671,7 @@ export class IndexEngine {
       '.rs': 'rust'
     };
 
-    return languageMap[extension];
+    return getSourceLanguage(extension) ?? languageMap[extension];
   }
 
   /**
@@ -681,7 +682,7 @@ export class IndexEngine {
       const stat = await this.fileSystem.getStats(filePath);
       return this.fileIndex.needsReindexing(filePath, stat.modifiedTime);
     } catch {
-      // 檔案不存在或無法存取，但如果在索引中則需要標記為需要重新索引（用於清理）
+      // graceful-degradation: 檔案已被刪除時仍需標記重新索引以清理索引條目
       return this.fileIndex.hasFile(filePath);
     }
   }
@@ -722,6 +723,25 @@ export class IndexEngine {
   }
 
   /**
+   * 取得當前 fileIndex 的快照（用於快取儲存）
+   */
+  snapshot(): { fileEntries: Map<string, FileIndexEntry> } {
+    // 複製一份，避免外部修改影響內部狀態
+    return {
+      fileEntries: new Map(this.fileIndex.getAllEntries())
+    };
+  }
+
+  /**
+   * 從快取資料水合引擎（跳過 indexProject）
+   */
+  hydrate(fileEntries: Map<string, FileIndexEntry>): void {
+    this.fileIndex.hydrateEntries(fileEntries);
+    this.symbolIndex.hydrateFromFileEntries(fileEntries);
+    this._indexed = true;
+  }
+
+  /**
    * 釋放資源
    */
   dispose(): void {
@@ -732,18 +752,10 @@ export class IndexEngine {
       // 釋放 Worker Pool 資源（非阻塞，測試環境無 pool）
       if (this.parserPool) {
         this.parserPool.destroy().catch(() => {
-          // 忽略銷毀錯誤
+          // graceful-degradation: dispose 時 pool 可能已銷毀，忽略銷毀失敗
         });
       }
     }
   }
 
-  /**
-   * 檢查索引是否已被釋放或尚未建立
-   */
-  private checkDisposed(): void {
-    if (this._disposed || !this._indexed) {
-      throw new Error('索引尚未建立');
-    }
-  }
 }

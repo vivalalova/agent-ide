@@ -118,7 +118,7 @@ error  Instance creation in constructor body is not allowed.
 
 ```bash
 # 測試單一檔案
-npx eslint src/application/state/state-manager.ts
+npx eslint src/infrastructure/cache/cache-manager.ts
 
 # 檢查所有違規
 pnpm lint 2>&1 | grep 'no-default-instance-in-constructor'

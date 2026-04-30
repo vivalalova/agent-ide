@@ -49,7 +49,7 @@ export class CallSiteUpdater {
   private readonly fileUtils: FileUtils;
 
   constructor(
-    private readonly fileSystem: IFileSystem,
+    fileSystem: IFileSystem,
     parserRegistry: ParserRegistry
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);

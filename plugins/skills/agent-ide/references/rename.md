@@ -4,9 +4,9 @@
 
 ## 參數
 
-- `--from <old>` - 原始符號名稱（必填）
-- `--to <new>` - 新符號名稱（必填）
-- `--path <path>` - 專案路徑（必填）
+- `--from <old>` / `--symbol <name>` - 原始符號名稱（必填）
+- `--to <new>` / `--new-name <name>` - 新符號名稱（必填）
+- `--path <path>` - 專案路徑（預設 `.`）
 - `--at <file:line:column>` - 指定符號位置（同名消歧）
 - `--dry-run` - 預覽變更
 - `--format json|summary|diff` - 輸出格式（預設 diff）

@@ -24,11 +24,10 @@ node dist/interfaces/cli/index.js --help
 
 ```
 src/
-├── core/           # 7個核心模組（indexing, search, rename, move, refactor, analysis, dependency）
+├── core/           # 10個核心模組（foundations, cycles, impact, find-references, call-hierarchy, rename, change-signature, move, move-member, deadcode）
 ├── infrastructure/ # parser, cache, storage, utils
 ├── plugins/        # TypeScript, JavaScript
-├── application/    # 服務協調層
-├── interfaces/     # CLI, MCP
+├── interfaces/     # CLI
 └── shared/         # types, constants, errors
 
 tests/              # 鏡像 src/ 結構
@@ -67,7 +66,7 @@ describe('ModuleName', () => {
 **測試要求**：
 - 檔名：`*.test.ts`
 - 描述：繁體中文、AAA 模式
-- 覆蓋率：整體 ≥80%、core/ ≥95%、新功能 100%
+- 覆蓋率：E2E lines/statements ≥43%、functions ≥45%、branches ≥40%；Unit lines/statements ≥90%、functions ≥95%、branches ≥85%
 
 ```bash
 pnpm test --coverage  # 查看覆蓋率
@@ -210,9 +209,11 @@ Closes #123
 ## 常用指令
 
 ```bash
-pnpm test              # 執行測試
-pnpm test:watch        # 監看模式
-pnpm test:single       # 單分支隔離測試
+pnpm test              # 執行所有測試（E2E + Unit）
+pnpm test:e2e          # E2E 測試
+pnpm test:unit         # Unit 測試
+pnpm test:e2e:watch    # E2E 監看模式
+pnpm test:unit:watch   # Unit 監看模式
 pnpm typecheck         # 型別檢查
 pnpm lint              # Lint 檢查
 pnpm build             # 建置專案

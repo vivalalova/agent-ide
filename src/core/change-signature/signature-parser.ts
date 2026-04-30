@@ -21,7 +21,7 @@ export class SignatureParser {
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    fileSystem: IFileSystem
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
   }
@@ -35,18 +35,15 @@ export class SignatureParser {
       return null;
     }
 
-    const extension = FileUtils.getFileExtension(filePath);
-
-    switch (extension) {
-      case '.ts':
-      case '.tsx':
-        return this.parseTypeScriptSignature(content, filePath, functionName);
-      case '.js':
-      case '.jsx':
-        return this.parseJavaScriptSignature(content, filePath, functionName);
-      default:
-        return null;
+    if (FileUtils.isTypeScript(filePath)) {
+      return this.parseTypeScriptSignature(content, filePath, functionName);
     }
+
+    if (FileUtils.isJavaScript(filePath)) {
+      return this.parseJavaScriptSignature(content, filePath, functionName);
+    }
+
+    return null;
   }
 
   /**
@@ -142,31 +139,6 @@ export class SignatureParser {
 
     const range = parser.getFullDeclarationRange(content, functionName, 'function', _startLine);
     return range ? range.end.line : null;
-  }
-
-  /**
-   * 找到函數的行號（用於 AST 解析）
-   */
-  private findFunctionLineNumber(content: string, functionName: string): number | null {
-    const patterns = [
-      // function 宣告
-      new RegExp(`^(\\s*)(export\\s+)?(async\\s+)?function\\s+${this.escapeRegex(functionName)}\\s*`, 'm'),
-      // 箭頭函式
-      new RegExp(`^(\\s*)(export\\s+)?(const|let|var)\\s+${this.escapeRegex(functionName)}\\s*`, 'm'),
-      // class 方法
-      new RegExp(`^(\\s*)(public|private|protected)?\\s*(static)?\\s*(async)?\\s*${this.escapeRegex(functionName)}\\s*[(<]`, 'm'),
-    ];
-
-    for (const pattern of patterns) {
-      const match = content.match(pattern);
-      if (match) {
-        const matchIndex = content.indexOf(match[0]);
-        const newlinesInMatch = (match[1] || '').split('\n').length - 1;
-        return content.substring(0, matchIndex).split('\n').length + newlinesInMatch;
-      }
-    }
-
-    return null;
   }
 
   /**

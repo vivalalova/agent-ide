@@ -74,6 +74,7 @@ import {
 } from '@plugins/shared/utils/async.js';
 
 // Memory monitor
+import { logger } from '@infrastructure/logging/index.js';
 import {
   MemoryMonitor,
   getFormattedMemoryReport,
@@ -447,6 +448,11 @@ describe('Object Utilities', () => {
       expect(get(obj, 'a.b.c')).toBe(1);
     });
 
+    it('should get nested array property with bracket path', () => {
+      const obj = { users: [{ name: 'Alice' }] };
+      expect(get(obj, 'users[0].name')).toBe('Alice');
+    });
+
     it('should return default value for missing path', () => {
       const obj = { a: 1 };
       expect(get(obj, 'b.c', 'default')).toBe('default');
@@ -462,6 +468,11 @@ describe('Object Utilities', () => {
     it('should return true for existing path', () => {
       const obj = { a: { b: 1 } };
       expect(has(obj, 'a.b')).toBe(true);
+    });
+
+    it('should return true for nested array property with bracket path', () => {
+      const obj = { users: [{ name: 'Alice' }] };
+      expect(has(obj, 'users[0].name')).toBe(true);
     });
 
     it('should return false for missing path', () => {
@@ -1055,14 +1066,14 @@ describe('MemoryMonitor', () => {
     });
 
     it('should handle dispose errors gracefully', async () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       const disposable: Disposable = {
         dispose: () => { throw new Error('Dispose error'); }
       };
       monitor.register(disposable);
       await monitor.cleanup();
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
     });
   });
 

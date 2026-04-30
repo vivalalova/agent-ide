@@ -7,6 +7,8 @@
 import { IndexEngine } from './index-engine.js';
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
+import { IndexCacheSerializer, CACHE_VERSION } from './index-cache-serializer.js';
+import type { SerializedIndexData } from './index-cache-serializer.js';
 
 // 基礎設施
 import type { IFileSystem } from '@infrastructure/storage/index.js';
@@ -46,7 +48,10 @@ import {
 import { isFileInfo, isIndexConfig } from './types.js';
 
 // 匯出核心類別
-export { IndexEngine, FileIndex, SymbolIndex };
+export { IndexEngine, FileIndex, SymbolIndex, IndexCacheSerializer, CACHE_VERSION };
+
+// 匯出快取型別
+export type { SerializedIndexData };
 
 // 匯出型別
 export type {

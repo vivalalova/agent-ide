@@ -13,6 +13,7 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, type ImportStatementInfo } from './import-parser.js';
 import type { DeadCodeCacheService } from './shared-cache.js';
+import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 
 /**
  * Import 清理器
@@ -256,7 +257,8 @@ export class ImportCleaner {
       const contentStr = typeof content === 'string' ? content : content.toString('utf-8');
       this.cacheService.setFile(filePath, contentStr);
       return contentStr;
-    } catch {
+    } catch (error) {
+      diagnostics.warn('deadcode/import-cleaner', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
   }

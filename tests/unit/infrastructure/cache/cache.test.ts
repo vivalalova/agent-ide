@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '@infrastructure/logging/index.js';
 import { MemoryCache } from '@infrastructure/cache/memory-cache.js';
 import { CacheManager } from '@infrastructure/cache/cache-manager.js';
 import {
@@ -245,14 +246,14 @@ describe('MemoryCache', () => {
     });
 
     it('should handle listener errors gracefully', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       const badListener = () => { throw new Error('Listener error'); };
 
       cache.addListener(badListener);
       cache.set('key1', 'value1'); // Should not throw
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
     });
 
     it('should emit CLEAR event', () => {
@@ -1026,14 +1027,14 @@ describe('CacheManager', () => {
     });
 
     it('should handle global listener errors', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
       manager.addGlobalEventListener(() => { throw new Error('Listener error'); });
 
       const cache = manager.createCache<string, any>('test');
       cache.set('key1', 'value1'); // Should not throw
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(loggerSpy).toHaveBeenCalled();
+      loggerSpy.mockRestore();
     });
   });
 

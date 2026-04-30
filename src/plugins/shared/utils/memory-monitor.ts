@@ -4,6 +4,8 @@
  * 用於監控記憶體使用情況並自動清理資源
  */
 
+import { logger } from '@infrastructure/logging/index.js';
+
 /**
  * 記憶體使用統計
  */
@@ -111,7 +113,7 @@ export class MemoryMonitor {
     const stats = this.getMemoryStats();
 
     if (stats.usagePercent > this.thresholdPercent) {
-      console.warn(`記憶體使用率過高: ${stats.usagePercent.toFixed(2)}%，開始清理...`);
+      logger.warn('memory-monitor', `記憶體使用率過高: ${stats.usagePercent.toFixed(2)}%，開始清理...`);
       await this.cleanup();
 
       // 清理後再次檢查
@@ -132,7 +134,7 @@ export class MemoryMonitor {
         try {
           await disposable.dispose();
         } catch (error) {
-          console.warn('清理資源時發生錯誤:', error);
+          logger.warn('memory-monitor', `清理資源時發生錯誤: ${error}`);
         }
       })
     );
