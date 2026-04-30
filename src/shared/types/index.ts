@@ -23,6 +23,7 @@ export {
   isTypeScriptSourceExtension,
   isJavaScriptSourceExtension,
   isSourceFileExtension,
+  stripSourceFileExtension,
   getSourceLanguage,
   getImportResolutionExtensions
 } from './source-file-extensions.js';

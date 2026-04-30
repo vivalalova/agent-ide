@@ -29,6 +29,11 @@ export function isSourceFileExtension(extension: string): boolean {
   return (SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension);
 }
 
+export function stripSourceFileExtension(filePath: string): string {
+  const extension = SOURCE_FILE_EXTENSIONS.find(sourceExtension => filePath.endsWith(sourceExtension));
+  return extension ? filePath.slice(0, -extension.length) : filePath;
+}
+
 export function getSourceLanguage(extension: string): string | undefined {
   if (isTypeScriptSourceExtension(extension)) {
     return 'typescript';

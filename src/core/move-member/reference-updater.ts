@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { MemberDefinition, ReferenceUpdate, MoveMemberOptions } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
 
 /**
  * 解析的 import 成員
@@ -257,11 +257,7 @@ export class ReferenceUpdater {
    * 移除檔案副檔名
    */
   private removeExtension(filePath: string): string {
-    const ext = path.extname(filePath);
-    if ((SOURCE_FILE_EXTENSIONS as readonly string[]).includes(ext)) {
-      return filePath.slice(0, -ext.length);
-    }
-    return filePath;
+    return stripSourceFileExtension(filePath);
   }
 
   /**
@@ -278,11 +274,7 @@ export class ReferenceUpdater {
     const fromDir = path.dirname(from);
     let relativePath = path.relative(fromDir, to);
 
-    // 移除副檔名
-    const extension = path.extname(relativePath);
-    if ((SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension)) {
-      relativePath = relativePath.slice(0, -extension.length);
-    }
+    relativePath = stripSourceFileExtension(relativePath);
 
     // 確保以 ./ 開頭
     if (!relativePath.startsWith('.')) {

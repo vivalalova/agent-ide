@@ -8,7 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange } from './types.js';
 import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { stripSourceFileExtension } from '@shared/types/index.js';
 
 /**
  * Import 類型
@@ -406,11 +406,7 @@ export class FileChangePreparer {
     const fromDir = path.dirname(from);
     let relativePath = path.relative(fromDir, to);
 
-    // 移除副檔名
-    const extension = path.extname(relativePath);
-    if ((SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension)) {
-      relativePath = relativePath.slice(0, -extension.length);
-    }
+    relativePath = stripSourceFileExtension(relativePath);
 
     // 確保以 ./ 開頭
     if (!relativePath.startsWith('.')) {
