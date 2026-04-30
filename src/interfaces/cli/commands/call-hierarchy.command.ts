@@ -9,6 +9,7 @@ import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js'
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
   createCallHierarchyAnalyzer,
+  type CallHierarchyData,
   type CallHierarchyOptions
 } from '@core/call-hierarchy/index.js';
 import {
@@ -158,7 +159,6 @@ async function handleCallHierarchyCommand(
     const functionSymbol = matchedSymbols[0];
     const definitionFile = functionSymbol.symbol.location.filePath;
     const definitionLine = functionSymbol.symbol.location.range.start.line;
-    const definitionRange = functionSymbol.symbol.location.range;
 
     // 建立分析器並執行分析
     const parserRegistry = ParserRegistry.getInstance();
@@ -169,30 +169,39 @@ async function handleCallHierarchyCommand(
       depth
     };
 
-    const analysisResult = await analyzer.analyzeWithDefinition(
-      functionName,
-      definitionFile,
-      definitionRange,
-      filePaths,
-      analysisOptions
-    );
+    const analysisResults: CallHierarchyData[] = [];
+    for (const matchedSymbol of matchedSymbols) {
+      const symbolDefinitionFile = matchedSymbol.symbol.location.filePath;
+      const symbolDefinitionRange = matchedSymbol.symbol.location.range;
+      analysisResults.push(await analyzer.analyzeWithDefinition(
+        functionName,
+        symbolDefinitionFile,
+        symbolDefinitionRange,
+        filePaths,
+        analysisOptions
+      ));
+    }
 
     // 轉換為輸出格式
-    const incoming: IncomingCallItem[] = analysisResult.incoming.map(call => ({
-      caller: call.caller,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
+    const incoming: IncomingCallItem[] = dedupeIncomingCalls(
+      analysisResults.flatMap(result => result.incoming.map(call => ({
+        caller: call.caller,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      })))
+    );
 
-    const outgoing: OutgoingCallItem[] = analysisResult.outgoing.map(call => ({
-      callee: call.callee,
-      file: call.location.filePath,
-      line: call.location.range.start.line,
-      column: call.location.range.start.column,
-      context: call.context
-    }));
+    const outgoing: OutgoingCallItem[] = dedupeOutgoingCalls(
+      analysisResults.flatMap(result => result.outgoing.map(call => ({
+        callee: call.callee,
+        file: call.location.filePath,
+        line: call.location.range.start.line,
+        column: call.location.range.start.column,
+        context: call.context
+      })))
+    );
 
     // 計算涉及的檔案數
     const uniqueFiles = new Set([
@@ -238,4 +247,38 @@ function validateDirection(dir: string): CallHierarchyDirection | null {
     return normalized as CallHierarchyDirection;
   }
   return null;
+}
+
+function dedupeIncomingCalls(calls: readonly IncomingCallItem[]): IncomingCallItem[] {
+  const seen = new Set<string>();
+  const uniqueCalls: IncomingCallItem[] = [];
+
+  for (const call of calls) {
+    const key = `${call.caller}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueCalls.push(call);
+  }
+
+  return uniqueCalls;
+}
+
+function dedupeOutgoingCalls(calls: readonly OutgoingCallItem[]): OutgoingCallItem[] {
+  const seen = new Set<string>();
+  const uniqueCalls: OutgoingCallItem[] = [];
+
+  for (const call of calls) {
+    const key = `${call.callee}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueCalls.push(call);
+  }
+
+  return uniqueCalls;
 }

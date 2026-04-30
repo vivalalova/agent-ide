@@ -34,7 +34,8 @@ import type {
   Reference,
   Dependency,
   Position,
-  Range
+  Range,
+  Scope
 } from '@shared/types/index.js';
 import {
   createAST,
@@ -47,6 +48,7 @@ import {
 import { getErrorMessage } from '@shared/errors/index.js';
 import {
   createSymbol,
+  createScope,
   createReference,
   createDependency
 } from '@shared/types/index.js';
@@ -203,6 +205,7 @@ export class JavaScriptParser implements ParserPlugin {
       // 處理各種宣告節點
       FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
         this.extractFunctionSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractParameterSymbols(path.node.params, path.node.id?.name, symbols, typedAst.sourceFile);
       },
 
       ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
@@ -210,7 +213,7 @@ export class JavaScriptParser implements ParserPlugin {
       },
 
       VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-        this.extractVariableSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractVariableSymbol(path.node, symbols, typedAst.sourceFile, this.getNearestFunctionName(path));
       },
 
       ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
@@ -227,6 +230,12 @@ export class JavaScriptParser implements ParserPlugin {
 
       ClassMethod: (path: NodePath<babel.ClassMethod>) => {
         this.extractMethodSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractParameterSymbols(
+          path.node.params,
+          babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
+          symbols,
+          typedAst.sourceFile
+        );
       },
 
       ClassProperty: (path: NodePath<babel.ClassProperty>) => {
@@ -235,6 +244,30 @@ export class JavaScriptParser implements ParserPlugin {
 
       ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
         this.extractObjectMethodSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractParameterSymbols(
+          path.node.params,
+          babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
+          symbols,
+          typedAst.sourceFile
+        );
+      },
+
+      FunctionExpression: (path: NodePath<babel.FunctionExpression>) => {
+        this.extractParameterSymbols(
+          path.node.params,
+          this.getFunctionExpressionName(path),
+          symbols,
+          typedAst.sourceFile
+        );
+      },
+
+      ArrowFunctionExpression: (path: NodePath<babel.ArrowFunctionExpression>) => {
+        this.extractParameterSymbols(
+          path.node.params,
+          this.getFunctionExpressionName(path),
+          symbols,
+          typedAst.sourceFile
+        );
       },
 
       ObjectProperty: (path: NodePath<babel.ObjectProperty>) => {
@@ -503,16 +536,49 @@ export class JavaScriptParser implements ParserPlugin {
   private extractVariableSymbol(
     node: babel.VariableDeclarator,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    functionScopeName?: string
   ): void {
     if (babel.isIdentifier(node.id)) {
       const symbol = this.createSymbolFromNode(
         node,
         node.id.name,
         SymbolType.Variable,
-        sourceFile
+        sourceFile,
+        {},
+        functionScopeName ? createScope('function', functionScopeName) : undefined
       );
       symbols.push(symbol);
+    }
+  }
+
+  private extractParameterSymbols(
+    params: babel.Function['params'],
+    functionScopeName: string | undefined,
+    symbols: JavaScriptSymbol[],
+    sourceFile: string
+  ): void {
+    for (const param of params) {
+      if (!babel.isIdentifier(param)) {
+        continue;
+      }
+
+      const location = {
+        filePath: sourceFile,
+        range: this.getNodeRange(param)
+      };
+      const baseSymbol = createSymbol(
+        param.name,
+        SymbolType.Variable,
+        location,
+        createScope('function', functionScopeName),
+        []
+      );
+
+      symbols.push({
+        ...baseSymbol,
+        babelNode: param
+      });
     }
   }
 
@@ -600,12 +666,13 @@ export class JavaScriptParser implements ParserPlugin {
     name: string,
     type: SymbolType,
     sourceFile: string,
-    options: { isImported?: boolean; isExported?: boolean } = {}
+    options: { isImported?: boolean; isExported?: boolean } = {},
+    scope?: Scope
   ): JavaScriptSymbol {
     const range = this.getNodeRange(node);
     const location = { filePath: sourceFile, range };
 
-    const baseSymbol = createSymbol(name, type, location, undefined, []);
+    const baseSymbol = createSymbol(name, type, location, scope, []);
 
     return {
       ...baseSymbol,
@@ -733,9 +800,99 @@ export class JavaScriptParser implements ParserPlugin {
       return false;
     }
 
+    if (this.isFunctionLocalSymbol(symbol)) {
+      if (babel.isMemberExpression(parent) && parent.property === node && !parent.computed) {
+        return false;
+      }
+
+      return this.isSameBabelBinding(path, symbol);
+    }
+
     // 基本的作用域檢查
     // Babel traverse 的 path 已經處理了作用域，字串和註解不會進入這裡
     return true;
+  }
+
+  private isFunctionLocalSymbol(symbol: JavaScriptSymbol): boolean {
+    return symbol.scope?.type === 'function' || symbol.scope?.type === 'block';
+  }
+
+  private isSameBabelBinding(path: NodePath<babel.Identifier>, symbol: JavaScriptSymbol): boolean {
+    const targetIdentifier = this.getBindingIdentifier(symbol.babelNode);
+    if (!targetIdentifier) {
+      return false;
+    }
+
+    const binding = path.scope.getBinding(symbol.name);
+    return binding?.identifier === targetIdentifier;
+  }
+
+  private getBindingIdentifier(node: babel.Node): babel.Identifier | null {
+    if (babel.isIdentifier(node)) {
+      return node;
+    }
+
+    if ((babel.isFunctionDeclaration(node) || babel.isClassDeclaration(node)) && node.id) {
+      return node.id;
+    }
+
+    if (babel.isVariableDeclarator(node) && babel.isIdentifier(node.id)) {
+      return node.id;
+    }
+
+    if (
+      (babel.isImportDefaultSpecifier(node)
+        || babel.isImportSpecifier(node)
+        || babel.isImportNamespaceSpecifier(node))
+    ) {
+      return node.local;
+    }
+
+    return null;
+  }
+
+  private getNearestFunctionName(path: NodePath<babel.Node>): string | undefined {
+    let current: NodePath | null = path.parentPath;
+
+    while (current) {
+      const node = current.node;
+
+      if (babel.isFunctionDeclaration(node)) {
+        return node.id?.name;
+      }
+
+      if (babel.isClassMethod(node) || babel.isObjectMethod(node)) {
+        return babel.isIdentifier(node.key) ? node.key.name : undefined;
+      }
+
+      if (babel.isFunctionExpression(node) || babel.isArrowFunctionExpression(node)) {
+        return this.getFunctionExpressionName(current as NodePath<babel.FunctionExpression | babel.ArrowFunctionExpression>);
+      }
+
+      current = current.parentPath;
+    }
+
+    return undefined;
+  }
+
+  private getFunctionExpressionName(
+    path: NodePath<babel.FunctionExpression | babel.ArrowFunctionExpression>
+  ): string | undefined {
+    const parent = path.parent;
+
+    if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id)) {
+      return parent.id.name;
+    }
+
+    if (babel.isAssignmentExpression(parent) && babel.isIdentifier(parent.left)) {
+      return parent.left.name;
+    }
+
+    if (babel.isObjectProperty(parent) && babel.isIdentifier(parent.key)) {
+      return parent.key.name;
+    }
+
+    return undefined;
   }
 
   private getReferenceType(

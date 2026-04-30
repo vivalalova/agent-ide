@@ -187,6 +187,41 @@ export function target() {
     });
   });
 
+  describe('多定義符號', () => {
+    it('outgoing 應合併所有同名定義的呼叫', async () => {
+      await fixture.writeFile('src/multi-a.ts', `
+import { leftHelper } from './left-helper.js';
+
+export function multiEntry() {
+  leftHelper();
+}
+      `.trim());
+      await fixture.writeFile('src/multi-b.ts', `
+import { rightHelper } from './right-helper.js';
+
+export function multiEntry() {
+  rightHelper();
+}
+      `.trim());
+      await fixture.writeFile('src/left-helper.ts', 'export function leftHelper() {}');
+      await fixture.writeFile('src/right-helper.ts', 'export function rightHelper() {}');
+
+      const result = await executeCLI(
+        ['call-hierarchy', 'multiEntry', '--path', fixture.rootPath, '--direction', 'outgoing', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+
+      const callees = new Set(output.outgoing.map((call: { callee: string }) => call.callee));
+      expect(callees).toContain('leftHelper');
+      expect(callees).toContain('rightHelper');
+    });
+  });
+
   describe('錯誤處理', () => {
     it('應該處理找不到的函數', async () => {
       await fixture.writeFile('src/empty.ts', 'export const x = 1;');

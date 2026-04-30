@@ -237,7 +237,7 @@ export class CallHierarchyAnalyzer {
 
       if (!sourceFile) {
         if (hasBabelAST(ast)) {
-          return this.findOutgoingCallsFromBabel(ast.babelAST, ast.sourceCode, functionName, filePath, visited);
+          return this.findOutgoingCallsFromBabel(ast.babelAST, ast.sourceCode, functionName, filePath, functionRange, visited);
         }
         return outgoing;
       }
@@ -293,49 +293,58 @@ export class CallHierarchyAnalyzer {
     sourceCode: string,
     functionName: string,
     filePath: string,
+    functionRange: Range,
     visited: Set<string>
   ): OutgoingCall[] {
     const outgoing: OutgoingCall[] = [];
     const lines = sourceCode.split('\n');
 
     // 找到目標函式節點範圍（用於後續判斷是否在函式內）
+    let fallbackFunctionPath: import('@babel/traverse').NodePath | null = null;
     let targetFunctionPath: import('@babel/traverse').NodePath | null = null;
+
+    const recordCandidate = (
+      path: import('@babel/traverse').NodePath,
+      nameNode: babel.Node | null | undefined
+    ): void => {
+      fallbackFunctionPath ??= path;
+      if (nameNode && this.babelNodeMatchesRange(nameNode, functionRange)) {
+        targetFunctionPath = path;
+        path.stop();
+      }
+    };
 
     traverse(babelAst, {
       FunctionDeclaration(path) {
         if (path.node.id?.name === functionName) {
-          targetFunctionPath = path;
-          path.stop();
+          recordCandidate(path, path.node.id);
         }
       },
       ArrowFunctionExpression(path) {
         const parent = path.parent;
         if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
-          targetFunctionPath = path;
-          path.stop();
+          recordCandidate(path, parent.id);
         }
       },
       FunctionExpression(path) {
         const parent = path.parent;
         if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
-          targetFunctionPath = path;
-          path.stop();
+          recordCandidate(path, parent.id);
         }
       },
       ObjectMethod(path) {
         if (babel.isIdentifier(path.node.key) && path.node.key.name === functionName) {
-          targetFunctionPath = path;
-          path.stop();
+          recordCandidate(path, path.node.key);
         }
       },
       ClassMethod(path) {
         if (babel.isIdentifier(path.node.key) && path.node.key.name === functionName) {
-          targetFunctionPath = path;
-          path.stop();
+          recordCandidate(path, path.node.key);
         }
       },
     });
 
+    targetFunctionPath ??= fallbackFunctionPath;
     if (!targetFunctionPath) {
       return outgoing;
     }
@@ -391,29 +400,48 @@ export class CallHierarchyAnalyzer {
     return outgoing;
   }
 
+  private babelNodeMatchesRange(node: babel.Node, range: Range): boolean {
+    const loc = node.loc;
+    if (!loc) {
+      return false;
+    }
+
+    return loc.start.line === range.start.line && loc.start.column + 1 === range.start.column;
+  }
+
   /**
    * 在 AST 中找到目標函數節點
-   * @param range 預留參數：未來可用於精確定位同名函數
    */
   private findFunctionNode(
     sourceFile: ts.SourceFile,
     functionName: string,
-    _range: Range // Reserved: 未來可用於區分同名但不同位置的函數
+    range: Range
   ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null {
-    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
+    let fallback: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
+    let exactMatch: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
+
+    const recordCandidate = (
+      functionNode: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+      declarationNode: ts.Node
+    ): void => {
+      fallback ??= functionNode;
+      if (this.nodeNameMatchesRange(declarationNode, sourceFile, range)) {
+        exactMatch = functionNode;
+      }
+    };
 
     const visit = (node: ts.Node): void => {
-      if (result) {return;}
+      if (exactMatch) {return;}
 
       // FunctionDeclaration
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-        result = node;
+        recordCandidate(node, node);
         return;
       }
 
       // MethodDeclaration
       if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
-        result = node;
+        recordCandidate(node, node);
         return;
       }
 
@@ -421,11 +449,11 @@ export class CallHierarchyAnalyzer {
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         if (node.name.text === functionName && node.initializer) {
           if (ts.isArrowFunction(node.initializer)) {
-            result = node.initializer;
+            recordCandidate(node.initializer, node);
             return;
           }
           if (ts.isFunctionExpression(node.initializer)) {
-            result = node.initializer;
+            recordCandidate(node.initializer, node);
             return;
           }
         }
@@ -435,7 +463,28 @@ export class CallHierarchyAnalyzer {
     };
 
     visit(sourceFile);
-    return result;
+    return exactMatch ?? fallback;
+  }
+
+  private nodeNameMatchesRange(node: ts.Node, sourceFile: ts.SourceFile, range: Range): boolean {
+    const nameNode = this.getComparableNameNode(node);
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(nameNode.getStart(sourceFile));
+
+    return line + 1 === range.start.line && character + 1 === range.start.column;
+  }
+
+  private getComparableNameNode(node: ts.Node): ts.Node {
+    if ((ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node))
+      && node.name
+      && ts.isIdentifier(node.name)) {
+      return node.name;
+    }
+
+    if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+      return node.name;
+    }
+
+    return node;
   }
 
   /**

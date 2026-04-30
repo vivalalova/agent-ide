@@ -72,6 +72,28 @@ describe('CLI rename - JavaScript 專案', () => {
       expect(extraContent).not.toContain('DEFAULT_LOCALE');
     });
 
+    it('使用 --at 重命名 JS 函式參數時只更新該 binding', async () => {
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'name', '--to', 'productName', '--at', 'src/service.js:13', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const serviceContent = await fixture.readFile('src/service.js');
+      expect(serviceContent).toContain('const name = formatName(firstName, lastName);');
+      expect(serviceContent).toContain('export function createProduct(productName, price)');
+      expect(serviceContent).toContain('return new Product(productName, price);');
+      expect(serviceContent).not.toContain('const productName = formatName');
+
+      const modelsContent = await fixture.readFile('src/models.js');
+      expect(modelsContent).toContain('constructor(name, price)');
+      expect(modelsContent).toContain('this.name = name;');
+      expect(modelsContent).not.toContain('this.productName = productName;');
+    });
+
     it('--dry-run 不應實際修改檔案', async () => {
       const originalContent = await fixture.readFile('src/utils.js');
 

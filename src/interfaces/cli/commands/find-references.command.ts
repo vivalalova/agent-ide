@@ -133,8 +133,10 @@ async function handleFindReferencesCommand(
       refs = await symbolFinder.findScopedReferences(symbolName, filePaths);
     }
 
+    const uniqueRefs = dedupeSymbolReferences(refs);
+
     // 轉換為輸出格式
-    const references: ReferenceItem[] = refs.map(ref => ({
+    const references: ReferenceItem[] = uniqueRefs.map(ref => ({
       file: ref.location.filePath,
       line: ref.location.range.start.line,
       column: ref.location.range.start.column,
@@ -193,4 +195,29 @@ function mapReferenceType(type: SymbolReferenceType): ReferenceType {
     default:
       return 'usage';
   }
+}
+
+function dedupeSymbolReferences(refs: readonly SymbolReference[]): SymbolReference[] {
+  const seen = new Set<string>();
+  const uniqueRefs: SymbolReference[] = [];
+
+  for (const ref of refs) {
+    const key = [
+      ref.location.filePath,
+      ref.location.range.start.line,
+      ref.location.range.start.column,
+      ref.location.range.end.line,
+      ref.location.range.end.column,
+      ref.type
+    ].join(':');
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueRefs.push(ref);
+  }
+
+  return uniqueRefs;
 }

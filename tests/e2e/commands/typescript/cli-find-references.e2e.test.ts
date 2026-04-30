@@ -367,6 +367,27 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
     });
+
+    it('多個同名定義不應輸出重複引用', async () => {
+      await fixture.writeFile('src/ref-a.ts', 'export class DuplicateRef {}');
+      await fixture.writeFile('src/ref-b.ts', 'export class DuplicateRef {}');
+
+      const result = await executeCLI(
+        ['find-references', 'DuplicateRef', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+
+      const referenceKeys = output.references.map(
+        (ref: { file: string; line: number; column?: number; type: string }) =>
+          `${ref.file}:${ref.line}:${ref.column ?? ''}:${ref.type}`
+      );
+      expect(referenceKeys).toHaveLength(new Set(referenceKeys).size);
+    });
   });
 
   describe('錯誤處理', () => {
