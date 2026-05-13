@@ -11,8 +11,13 @@ import {
   type SignatureChange
 } from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { tryParseOutputFormat, executeMutationCommand } from '@interfaces/cli/command-utils.js';
+import {
+  tryParseOutputFormat,
+  executeMutationCommand,
+  outputMutationWithLegacyFields
+} from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
@@ -87,6 +92,14 @@ async function handleChangeSignatureCommand(
       fileSystem: context.fileSystem
     });
 
+    // 檔案存在性前置檢查（與 engine 「找不到函式」分流）
+    if (!(await context.fileSystem.exists(filePath))) {
+      outputHandler.outputError(`檔案不存在: ${filePath}`, format, 'change-signature');
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
     // 解析變更操作
     const changes = parseChanges(options);
 
@@ -118,6 +131,39 @@ async function handleChangeSignatureCommand(
       projectRoot
     });
 
+    // No-op 偵測：success=true 但套用後 previewInput 為空（typical reorder 同序）
+    if (changeset.success) {
+      const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+      if (previewInput.fileChanges.length === 0) {
+        const message = `無實質變更：函式 ${resolvedFunctionName} 在套用變更後與原狀相同`;
+        if (isJsonFormat) {
+          outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+            noop: true,
+            message
+          });
+        } else {
+          console.log(message);
+        }
+        return;
+      }
+
+      // Dry-run 印出簽名變更摘要（仿 move fix 的 `Renamed:` 行）
+      if (options.dryRun) {
+        const sigChange = parseSignatureDescription(changeset.description);
+        if (!isJsonFormat && changeset.description) {
+          console.log(changeset.description);
+        }
+        if (isJsonFormat) {
+          outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+            signatureChange: sigChange
+          });
+          return;
+        }
+        outputHandler.outputMutation(previewInput, format);
+        return;
+      }
+    }
+
     // 執行變更類命令統一流程
     if (!isJsonFormat && !options.dryRun) {
       console.log('   執行變更...');
@@ -135,6 +181,29 @@ async function handleChangeSignatureCommand(
     outputHandler.outputError(errorMsg, format, 'change-signature');
     process.exitCode = 1;
   }
+}
+
+/**
+ * 從 changeset.description 解析簽名變更摘要
+ * 來源格式：`Changed signature of <name>: (<before>) -> (<after>)`
+ */
+function parseSignatureDescription(
+  description: string | undefined
+): { name: string; before: string; after: string } | undefined {
+  if (!description) {
+    return undefined;
+  }
+
+  const match = description.match(/^Changed signature of (\S+):\s*\((.*)\) -> \((.*)\)$/);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    name: match[1],
+    before: match[2],
+    after: match[3]
+  };
 }
 
 export interface ResolveChangeSignaturePathsOptions {
