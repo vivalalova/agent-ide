@@ -28,6 +28,12 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Ensure npm >= 11.5.1 for OIDC trusted publishing
+        run: |
+          sudo rm -rf "$(npm root -g)/npm" /usr/local/bin/npm /usr/local/bin/npx
+          npm install -g npm@11.6.2
+          npm --version
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
