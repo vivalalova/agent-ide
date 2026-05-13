@@ -2,5 +2,15 @@
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "agent-ide@agent-ide-skills": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(npm version:*)",
+      "Bash(npm publish:*)",
+      "Bash(pnpm version:*)",
+      "Bash(pnpm publish:*)",
+      "Bash(yarn version:*)",
+      "Bash(yarn publish:*)"
+    ]
   }
 }

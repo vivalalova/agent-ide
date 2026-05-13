@@ -244,7 +244,18 @@ if (dryRun) {
 
 **開發**：規格→API→測試→實作→CLI
 **驗證**：`pnpm build && pnpm lint && pnpm test`
-**發布**：`npm version patch|minor|major` → `npm publish`
+
+### 🚨 發布機制（重要）
+
+本專案使用 **semantic-release 自動發布**，由 `.github/workflows/release.yml` 處理：
+
+- push 到 `main` → CI 跑 build + test → `npx semantic-release` 自動執行：
+  - 依 commit message（conventional commits）判斷 patch/minor/major
+  - 自動更新 `package.json` 版本（產生 `chore(release): x.y.z [skip ci]` commit）
+  - 自動建立 git tag、GitHub Release、npm publish（OIDC，無需 token）
+- Commit 規範：`feat:` → minor、`fix:` → patch、`BREAKING CHANGE:` → major、其他（`chore:`/`docs:`/`refactor:`）不觸發發版
+
+**禁止手動 `npm version` / `npm publish`**：會產生非 conventional commit 與離散 tag，與 semantic-release 衝突造成版本錯亂。需要發版只要 push 符合規範的 commit 即可。已透過 `.claude/settings.json` 的 `permissions.deny` 阻擋這些指令。
 
 ### Plugin 設定檔驗證
 
