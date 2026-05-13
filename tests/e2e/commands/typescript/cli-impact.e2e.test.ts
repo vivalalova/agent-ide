@@ -13,8 +13,9 @@ describe('CLI impact - 基於 sample-project fixture', () => {
     command: string;
     success: boolean;
     summary: {
-      totalScanned: number;
+      totalFiles: number;
       totalDependencies: number;
+      totalAffected: number;
     };
     impact: {
       targetFile: string;
@@ -68,7 +69,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(output.command).toBe('impact');
       expect(output.success).toBe(true);
       expect(output.basePath).toBe(fixture.rootPath);
-      expect(output.summary.totalScanned).toBeGreaterThan(0);
+      expect(output.summary.totalFiles).toBeGreaterThan(0);
     });
 
     it('應該支援 summary 格式輸出', async () => {
@@ -422,7 +423,7 @@ describe('CLI impact - 基於 sample-project fixture', () => {
 
       expect(result.exitCode).toBe(0);
       const output = parseImpactOutput(result.stdout);
-      expect(output.summary.totalScanned).toBeGreaterThan(0);
+      expect(output.summary.totalFiles).toBeGreaterThan(0);
       expect(output.summary.totalDependencies).toBeGreaterThanOrEqual(0);
     });
   });
@@ -542,6 +543,45 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       // user.ts 被 services 引用，應該有 dependents
       expect(Array.isArray(output.impact.dependents)).toBe(true);
       expect(output.impact.totalAffected).toBe(output.impact.dependents.length);
+    });
+  });
+
+  describe('JSON 噪音欄位防護', () => {
+    it('impact JSON 不得包含 cycles 欄位', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(Object.hasOwn(output, 'cycles')).toBe(false);
+    });
+
+    it('impact JSON summary 不得包含 cyclesFound / issuesFound', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout) as { summary: Record<string, unknown> };
+      expect(Object.hasOwn(output.summary, 'cyclesFound')).toBe(false);
+      expect(Object.hasOwn(output.summary, 'issuesFound')).toBe(false);
+    });
+
+    it('impact JSON summary keys 僅含影響分析相關欄位', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src/types/user.ts', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout) as { summary: Record<string, unknown> };
+      const allowedKeys = new Set(['totalFiles', 'totalDependencies', 'totalAffected']);
+      for (const key of Object.keys(output.summary)) {
+        expect(allowedKeys.has(key)).toBe(true);
+      }
     });
   });
 });

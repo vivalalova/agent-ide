@@ -88,13 +88,20 @@ export interface ImpactInfo {
   totalAffected: number;
 }
 
-/** Dependency analysis result for cycles and impact commands. */
-export interface DependencyResult extends QueryResult {
-  command: QueryCommand.Cycles | QueryCommand.Impact;
+/** Cycles 命令結果 */
+export interface CyclesResult extends QueryResult {
+  command: QueryCommand.Cycles;
   /** 循環依賴 */
   cycles: CycleInfo[];
+  /** 專案根目錄路徑（用於計算相對路徑） */
+  basePath?: string;
+}
+
+/** Impact 命令結果 */
+export interface ImpactResult extends QueryResult {
+  command: QueryCommand.Impact;
   /** 影響分析 */
-  impact?: ImpactInfo;
+  impact: ImpactInfo;
   /** 專案根目錄路徑（用於計算相對路徑） */
   basePath?: string;
 }

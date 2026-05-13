@@ -27,7 +27,8 @@ import {
 import {
   QueryCommand,
   type SearchResult,
-  type DependencyResult,
+  type CyclesResult,
+  type ImpactResult,
   type FindReferencesResult,
   type CallHierarchyResult
 } from '@infrastructure/formatters/query-types.js';
@@ -470,7 +471,7 @@ describe('QueryFormatter', () => {
 
   describe('formatDependencySummary', () => {
     it('應該顯示無循環依賴', () => {
-      const result: DependencyResult = {
+      const result: CyclesResult = {
         command: QueryCommand.Cycles,
         success: true,
         summary: {},
@@ -483,7 +484,7 @@ describe('QueryFormatter', () => {
     });
 
     it('應該列出循環依賴', () => {
-      const result: DependencyResult = {
+      const result: CyclesResult = {
         command: QueryCommand.Cycles,
         success: true,
         summary: {},
@@ -501,11 +502,10 @@ describe('QueryFormatter', () => {
     });
 
     it('應該顯示影響分析', () => {
-      const result: DependencyResult = {
+      const result: ImpactResult = {
         command: QueryCommand.Impact,
         success: true,
         summary: {},
-        cycles: [],
         impact: {
           targetFile: 'src/core.ts',
           dependents: ['src/app.ts', 'src/util.ts'],
@@ -523,11 +523,10 @@ describe('QueryFormatter', () => {
     });
 
     it('應該截斷過長的依賴者列表', () => {
-      const result: DependencyResult = {
+      const result: ImpactResult = {
         command: QueryCommand.Impact,
         success: true,
         summary: {},
-        cycles: [],
         impact: {
           targetFile: 'src/core.ts',
           dependents: Array.from({ length: 10 }, (_, i) => `file${i}.ts`),
@@ -961,7 +960,7 @@ describe('QueryFormatter', () => {
     });
 
     it('應該在 color=true 時添加顏色碼', () => {
-      const result: DependencyResult = {
+      const result: CyclesResult = {
         command: QueryCommand.Cycles,
         success: true,
         summary: {},

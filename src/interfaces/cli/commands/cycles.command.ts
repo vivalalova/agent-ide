@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
-import { QueryCommand, type DependencyResult, type CycleInfo } from '@infrastructure/formatters/index.js';
+import { QueryCommand, type CyclesResult, type CycleInfo } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -87,7 +87,7 @@ async function handleCyclesCommand(
       length: c.length
     }));
 
-    const result: DependencyResult = {
+    const result: CyclesResult = {
       command: QueryCommand.Cycles,
       success: true,
       cycles: cycleInfos,

@@ -4,6 +4,7 @@
 
 export { BaseFormatter, Colors, type IQueryStrategy } from './base-formatter.js';
 export { SearchFormatter } from './search-formatter.js';
-export { DependencyFormatter } from './dependency-formatter.js';
+export { CyclesFormatter } from './cycles-formatter.js';
+export { ImpactFormatter } from './impact-formatter.js';
 export { FindReferencesFormatter } from './find-references-formatter.js';
 export { CallHierarchyFormatter } from './call-hierarchy-formatter.js';

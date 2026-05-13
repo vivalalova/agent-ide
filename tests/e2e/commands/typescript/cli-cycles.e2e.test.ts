@@ -856,6 +856,17 @@ describe('CLI cycles - 基於 sample-project fixture', () => {
       expect(hasCycleContaining(output, ['no-cycle-a.ts', 'no-cycle-b.ts'])).toBe(false);
     });
 
+    it('cycles JSON 必須含 cycles 陣列與 summary.cyclesFound（拆型回歸守門）', async () => {
+      const result = await executeCLI(['cycles', '--path', fixture.rootPath, '--format', 'json'], { memfs: fixture.memfs });
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(Object.hasOwn(output, 'cycles')).toBe(true);
+      expect(Array.isArray(output.cycles)).toBe(true);
+      const summary = output.summary as Record<string, unknown>;
+      expect(typeof summary.cyclesFound).toBe('number');
+    });
+
     const cycleLengthCases = [
       { length: 4, description: '中等長度循環（4 節點）', minExpectedLength: 4 },
       { length: 8, description: '長循環（8 節點）', minExpectedLength: 7 },

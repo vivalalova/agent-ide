@@ -7,14 +7,16 @@ import {
   QueryCommand,
   type QueryResult,
   type SearchResult,
-  type DependencyResult,
+  type CyclesResult,
+  type ImpactResult,
   type FindReferencesResult,
   type CallHierarchyResult
 } from './query-types.js';
 import {
   type IQueryStrategy,
   SearchFormatter,
-  DependencyFormatter,
+  CyclesFormatter,
+  ImpactFormatter,
   FindReferencesFormatter,
   CallHierarchyFormatter
 } from './strategies/index.js';
@@ -69,8 +71,9 @@ export class QueryFormatter {
       case QueryCommand.Search:
         return this.getStrategy<SearchResult>(QueryCommand.Search).formatSummary(result as SearchResult);
       case QueryCommand.Cycles:
+        return this.getStrategy<CyclesResult>(QueryCommand.Cycles).formatSummary(result as CyclesResult);
       case QueryCommand.Impact:
-        return this.getStrategy<DependencyResult>(result.command).formatSummary(result as DependencyResult);
+        return this.getStrategy<ImpactResult>(QueryCommand.Impact).formatSummary(result as ImpactResult);
       case QueryCommand.FindReferences:
         return this.getStrategy<FindReferencesResult>(QueryCommand.FindReferences)
           .formatSummary(result as FindReferencesResult);
@@ -99,8 +102,10 @@ export class QueryFormatter {
         strategy = new SearchFormatter(this.color);
         break;
       case QueryCommand.Cycles:
+        strategy = new CyclesFormatter(this.color);
+        break;
       case QueryCommand.Impact:
-        strategy = new DependencyFormatter(this.color);
+        strategy = new ImpactFormatter(this.color);
         break;
       case QueryCommand.FindReferences:
         strategy = new FindReferencesFormatter(this.color);
