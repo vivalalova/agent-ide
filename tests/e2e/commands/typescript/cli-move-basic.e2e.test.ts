@@ -443,11 +443,10 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
         { memfs: fixture.memfs }
       );
 
+      expect(result.exitCode).not.toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output).toBeDefined();
-      if (output.error) {
-        expect(output.error).toBeDefined();
-      }
+      expect(output.success).toBe(false);
+      expect(output.error).toMatch(/來源與目標相同/);
     });
 
     it('應該處理超深目標路徑 (50+ 層)', async () => {

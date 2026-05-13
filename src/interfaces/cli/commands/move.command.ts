@@ -11,16 +11,14 @@ import { isGlobPattern } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
 import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
-import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
+import { ChangeApplicator, convertChangesetToPreviewInput, FileOperationType } from '@infrastructure/changeset/index.js';
 import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
 import {
-  createEmptyMutationPreviewInput,
   outputMutationWithLegacyFields,
   tryParseOutputFormat,
   executeMutationCommand
@@ -148,23 +146,9 @@ async function handleMoveCommand(
     const normalizedSource = path.resolve(resolvedSource);
     const normalizedTarget = path.resolve(resolvedTarget);
     if (normalizedSource === normalizedTarget) {
-      // 源和目標相同時，視為 no-op，成功返回
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(
-          outputHandler,
-          createEmptyMutationPreviewInput(
-            PreviewCommand.Move,
-            'Source and target are identical. No changes made.'
-          ),
-          format,
-          {
-            message: 'Source and target are identical. No changes made.',
-            changes: []
-          }
-        );
-      } else {
-        console.log('   Source and target are identical. No changes made.');
-      }
+      outputHandler.outputError(`來源與目標相同，無需移動: ${normalizedSource}`, format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -202,12 +186,42 @@ async function handleMoveCommand(
       return;
     }
 
+    // 防禦性退場：空 changeset 不應該發生在 success=true 的情境
+    if (changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
+      outputHandler.outputError('無檔案需移動，請檢查路徑', format);
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
     // 轉換為 PreviewInput
     const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
 
+    // 收集 rename 與 import 更新摘要，給輸出層
+    const renames = changeset.fileOperations
+      .filter(op => op.type === FileOperationType.Move)
+      .map(op => ({
+        from: op.sourcePath,
+        to: op.targetPath ?? op.sourcePath
+      }));
+    const pathUpdates = changeset.textChanges.map(tc => ({
+      file: tc.filePath,
+      edits: tc.edits.length
+    }));
+
     // Dry-run 模式只輸出預覽
     if (options.dryRun) {
-      outputHandler.outputMutation(previewInput, format);
+      if (isJsonFormat) {
+        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+          renames,
+          pathUpdates
+        });
+      } else {
+        for (const { from, to } of renames) {
+          console.log(`Renamed: ${path.relative(projectRoot, from)} → ${path.relative(projectRoot, to)}`);
+        }
+        outputHandler.outputMutation(previewInput, format);
+      }
       return;
     }
 

@@ -3,6 +3,10 @@ title: 修正 move 命令空 changeset 時 silent fail（無錯誤、無提示�
 created: 2026-05-13
 priority: high
 suggested_order: A1
+phase: needs-review
+iteration: 1
+max_iterations: 5
+review_iterations: 0
 ---
 
 # 修正 move 命令空 changeset 時 silent fail（無錯誤、無提示）

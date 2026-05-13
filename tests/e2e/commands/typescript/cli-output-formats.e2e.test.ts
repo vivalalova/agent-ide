@@ -291,17 +291,16 @@ obj.method();
       expect(output.message).toContain('更新了');
     });
 
-    it('move no-op 時應使用統一 PreviewResult 欄位', async () => {
+    it('move 來源與目標相同時應報錯並維持統一 PreviewResult 欄位', async () => {
       const result = await executeCLI(
         ['move', 'src/utils/string-utils.ts', 'src/utils/string-utils.ts', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).not.toBe(0);
       const output = parseJsonOutput(result);
-      expectMutationJsonContract(output, 'move');
-      expect(output.message).toBe('Source and target are identical. No changes made.');
-      expect(output.changes).toEqual([]);
+      expect(output.success).toBe(false);
+      expect(output.error).toMatch(/來源與目標相同/);
     });
 
     it('deadcode 無項目時應使用統一 PreviewResult 欄位', async () => {

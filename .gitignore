@@ -160,3 +160,6 @@ review.md
 # Agent IDE local cache and snapshots
 .agent-ide/
 todo
+
+# Looping session-level state
+.agents/looping/.looping_active_*
