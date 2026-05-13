@@ -2,6 +2,20 @@
 
 * fix(call-hierarchy): formatter summary 顯示找不到函數錯誤訊息 ([1620a70](https://github.com/vivalalova/agent-ide/commit/1620a70))
 * fix(change-signature): 修正空 changeset 與檔案不存在 silent fail ([94563dd](https://github.com/vivalalova/agent-ide/commit/94563dd))
+* fix(ci): Node 22 → 24，移除脆弱的 npm self-upgrade step ([c75ec7e](https://github.com/vivalalova/agent-ide/commit/c75ec7e))
+* fix(ci): 升級 runner npm 至 11.6.2 修復 OIDC trusted publishing ([549127c](https://github.com/vivalalova/agent-ide/commit/549127c))
+* fix(ci): 移除無效的 npm@latest 全域升級 step ([d1392dd](https://github.com/vivalalova/agent-ide/commit/d1392dd))
+* fix(move): 修正 dry-run 與 source===target silent fail ([2285cf6](https://github.com/vivalalova/agent-ide/commit/2285cf6))
+* chore: [Looping 任務] 建立 4 個 CLI bug 修復 task ([6efd612](https://github.com/vivalalova/agent-ide/commit/6efd612))
+* chore: 補充 semantic-release 發布機制並阻擋手動版本指令 ([b46f278](https://github.com/vivalalova/agent-ide/commit/b46f278))
+* chore(release): 0.13.7 [skip ci] ([89dd8d0](https://github.com/vivalalova/agent-ide/commit/89dd8d0))
+* refactor(formatters): 拆 DependencyResult 為 CyclesResult + ImpactResult ([cb8506a](https://github.com/vivalalova/agent-ide/commit/cb8506a))
+* Stabilize agent-ide CLI and project setup (#60) ([0a2bf59](https://github.com/vivalalova/agent-ide/commit/0a2bf59)), closes [#60](https://github.com/vivalalova/agent-ide/issues/60) [#4](https://github.com/vivalalova/agent-ide/issues/4)
+
+## <small>0.13.7 (2026-05-13)</small>
+
+* fix(call-hierarchy): formatter summary 顯示找不到函數錯誤訊息 ([1620a70](https://github.com/vivalalova/agent-ide/commit/1620a70))
+* fix(change-signature): 修正空 changeset 與檔案不存在 silent fail ([94563dd](https://github.com/vivalalova/agent-ide/commit/94563dd))
 * fix(ci): 移除無效的 npm@latest 全域升級 step ([d1392dd](https://github.com/vivalalova/agent-ide/commit/d1392dd))
 * fix(move): 修正 dry-run 與 source===target silent fail ([2285cf6](https://github.com/vivalalova/agent-ide/commit/2285cf6))
 * refactor(formatters): 拆 DependencyResult 為 CyclesResult + ImpactResult ([cb8506a](https://github.com/vivalalova/agent-ide/commit/cb8506a))
