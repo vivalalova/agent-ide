@@ -527,6 +527,51 @@ export const arrowFn = () => {
     });
   });
 
+  describe('Summary 格式 - 找不到函數的錯誤訊息', () => {
+    it('summary 不存在函式 → stdout 含「找不到函數」，不渲染空 hierarchy', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'nonexistent_xyz', '--path', fixture.rootPath, '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toMatch(/找不到函數/);
+      expect(result.stdout).toMatch(/nonexistent_xyz/);
+      expect(result.stdout).not.toMatch(/定義位置/);
+      expect(result.stdout).not.toMatch(/Incoming/);
+      expect(result.stdout).not.toMatch(/Outgoing/);
+      expect(result.stdout).not.toMatch(/📊 統計/);
+    });
+
+    it('json 不存在函式 → success false + error 含「找不到函數」（regression-safe）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'nonexistent_xyz', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toMatch(/找不到函數/);
+      expect(output.errors?.[0]).toMatch(/找不到函數/);
+    });
+
+    it('summary 存在但 0 caller → 正常渲染 hierarchy（防 formatter 誤短路）', async () => {
+      await fixture.writeFile('src/lone-fn.ts', 'export function loneFn() { return 1; }');
+
+      const result = await executeCLI(
+        ['call-hierarchy', 'loneFn', '--path', fixture.rootPath, '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('📞');
+      expect(result.stdout).toContain('loneFn');
+      expect(result.stdout).toMatch(/Incoming.*0 個/);
+      expect(result.stdout).toMatch(/Outgoing.*0 個/);
+    });
+  });
+
   describe('定義位置驗證', () => {
     it('應該返回正確的定義檔案路徑', async () => {
       const result = await executeCLI(

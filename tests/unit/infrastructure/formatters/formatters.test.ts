@@ -709,6 +709,31 @@ describe('QueryFormatter', () => {
       expect(summary).toContain('被呼叫者 (Outgoing): 1 個');
       expect(summary).toContain('統計: 1 incoming, 1 outgoing');
     });
+
+    it('success:false 時只印 error 訊息，不渲染 hierarchy 樣板', () => {
+      const result: CallHierarchyResult = {
+        command: QueryCommand.CallHierarchy,
+        success: false,
+        summary: {},
+        function: 'foo',
+        file: '',
+        direction: 'both',
+        depth: 1,
+        incoming: [],
+        outgoing: [],
+        error: '找不到函數 "foo"',
+        errors: ['找不到函數 "foo"']
+      };
+
+      const summary = formatter.toSummary(result);
+
+      expect(summary).toContain('找不到函數');
+      expect(summary).toContain('foo');
+      expect(summary).not.toContain('📍 定義位置');
+      expect(summary).not.toContain('📥 呼叫者');
+      expect(summary).not.toContain('📤 被呼叫者');
+      expect(summary).not.toContain('📊 統計');
+    });
   });
 
   describe('formatDefaultSummary', () => {

@@ -1,63 +1,66 @@
 ---
-title: 修正 change-signature 空 changeset 時 silent fail（無變更不報告）
+title: 修正 call-hierarchy 找不到函式時 summary formatter 不顯示 error 訊息
 created: 2026-05-13
 priority: high
-suggested_order: A2
+suggested_order: B1
 phase: needs-review
-iteration: 3
+iteration: 2
 max_iterations: 5
-review_iterations: 2
+review_iterations: 1
 max_review_iterations: 5
 ---
 
-# 修正 change-signature 空 changeset 時 silent fail（無變更不報告）
+# 修正 call-hierarchy 找不到函式時 summary formatter 不顯示 error 訊息
 
 ## 背景
 
-手動測試發現：`change-signature --reorder "data"` 對只有單一參數 `data` 的 `createUser` 函式跑 dry-run，輸出 `Summary: 0 files, 0 changes`，沒任何訊息說明「順序與現狀相同」或「無變更」。AI agent 無法區分「沒事做」「函式不存在」「路徑錯誤」。
+`call-hierarchy <name>` 在 `<name>` 不存在時，exit code 已正確 = 1，但 stdout 仍顯示「定義位置: 」「0 incoming / 0 outgoing」這類迷惑訊息，**沒有「找不到函數」這條錯誤訊息**。AI agent 看 stdout 仍會誤判成「函式存在但無 caller」。
 
 實測：
-- CLI 層 path 處理已正確（`change-signature.command.ts:165` 有 `path.isAbsolute` 守衛）
-- 證據中的 `檔案: ../sample-project/...` 是 L101 `console.log(path.relative(process.cwd(), filePath))` 顯示用，**不是 bug**
-- 真實 bug 是 engine 產出空 changeset 時 CLI 沒做提示
+- `call-hierarchy.command.ts:129` 已有 `matchedSymbols.length === 0` 的 fail-fast 分支，set `error`、`errors`、`success: false`、`exitCode = 1`
+- errorResult 經 `outputHandler.outputQuery(errorResult, format)` 輸出
+- 但 `CallHierarchyFormatter.formatSummary()` 沒處理 `success: false` 時改顯示 error 訊息，仍渲染標準 hierarchy 樣板（空白 file、0 incoming、0 outgoing）
 
 ## 重現
 
 ```bash
-agent-ide change-signature \
-  --file /Users/lova/git/vibe/agent-ide/tests/fixtures/sample-project/src/services/user-service.ts \
-  --function createUser \
-  --reorder "data" \
-  --dry-run
+agent-ide call-hierarchy nonexistent_function_xyz \
+  --path /Users/lova/git/vibe/agent-ide/tests/fixtures/sample-project
 ```
 
-實際輸出：
+實際輸出（exit code 1）：
 ```
-   修改函式簽名: createUser
-   檔案: ../sample-project/src/services/user-service.ts
-Summary: 0 files, 0 changes
+📞 分析呼叫層次: nonexistent_function_xyz...
+📞 函數呼叫層次: nonexistent_function_xyz
+📍 定義位置: 
+🔍 分析方向: both, 深度: 1
+
+📥 呼叫者 (Incoming): 0 個
+📤 被呼叫者 (Outgoing): 0 個
+📊 統計: 0 incoming, 0 outgoing, 0 個檔案
 ```
 
-注意：`createUser(data: CreateUserData)` 只有一個參數，reorder 自己等於不變，本來就無事可做。問題在沒有任何提示。
+預期應該明顯印出「❌ 找不到函數 "nonexistent_function_xyz"」並且不渲染空白 hierarchy。
 
 ## 預期
 
-- 空 changeset 必須明確分類並輸出：
-  - 函式存在但 `--reorder/--add/--remove/--rename/--change-type` 結果與現狀相同 → 「無實質變更」+ exit code 0（資訊提示，非錯誤）
-  - 函式不存在 → 「找不到函式: X」+ exit code 1
-  - 檔案不存在 → 「檔案不存在: X」+ exit code 1
-- 有實際變更時 → dry-run 輸出參數變更前後 diff + 所有 call site 更新
+- summary 格式：函式不存在 → 只印錯誤訊息「❌ 找不到函數: <name>」，不再渲染空 hierarchy
+- json 格式：保持現有 `success: false` + `error` + `errors`（已正確）
+- exit code = 1（已正確）
 
 ## User Stories
 
-- As an AI agent，I want `change-signature` 明確說出空 changeset 的原因，so that 我不會誤判 silent 為成功。
+- As an AI agent，I want summary stdout 明確顯示「找不到函數」錯誤，so that 我不會把空 hierarchy 誤判成「無呼叫者」。
 
 ## 驗收條件
 
 - 先補 E2E 測試（fail-first）：
-  - `--reorder` 結果與現狀相同 → stdout 含「無實質變更」訊息、exit code 0。
-  - 對不存在函式 → exit code ≠ 0、stderr 含「找不到函式」、json 含 error 欄位。
-  - 對不存在檔案 → exit code ≠ 0、stderr 含「檔案不存在」。
-  - 有效 reorder（如雙參數 swap）→ 輸出包含參數順序變更 diff。
-- 與 [[fix-move-silent-fail-absolute-path]] 共用「mutation 空 changeset 回報」標準，行為對齊。
+  - 對不存在函式跑 summary 格式 → stdout 必須包含「找不到函數」字樣，**不得**包含「定義位置」「Incoming」「Outgoing」這些 hierarchy 欄位。
+  - 對不存在函式跑 json 格式 → 結果 `success === false`、`error` 含「找不到函數」。
+  - 對存在但 0 caller 的函式 → exit code 0、summary 正常渲染 hierarchy。
+- 修改範圍：`infrastructure/formatters/query/call-hierarchy-formatter.ts`（或同等路徑），在 `formatSummary()` 開頭檢查 `result.success === false` 提早 return error 訊息。
 - `pnpm test` 全綠。
+
+## 相關
+
+可同時檢視其他 QueryFormatter 是否有同樣的「success false 仍渲染空樣板」問題（find-references、search 等）。

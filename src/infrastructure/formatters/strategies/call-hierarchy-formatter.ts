@@ -18,6 +18,14 @@ export class CallHierarchyFormatter extends BaseFormatter<CallHierarchyResult> {
    * 格式化 CallHierarchy 摘要
    */
   formatSummary(result: CallHierarchyResult): string {
+    // success:false → 只印錯誤訊息，不渲染空白 hierarchy 樣板
+    if (result.success === false) {
+      const message = result.error
+        ?? result.errors?.[0]
+        ?? `找不到函數 "${result.function}"`;
+      return this.colorize(`❌ ${message}`, Colors.red);
+    }
+
     const lines: string[] = [];
 
     // 標題與定義位置
