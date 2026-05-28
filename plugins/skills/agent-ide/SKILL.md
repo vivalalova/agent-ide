@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: "Agent IDE CLI for TypeScript/JavaScript code intelligence and safe refactoring. Use when Codex needs to inspect or change TS/JS projects with agent-ide: cycles, impact, search/find-references, call-hierarchy, rename symbols, move files or members, change function signatures, clean dead code, update imports/call sites, or control index cache with --no-cache/--cache-dir."
+description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references, trace call hierarchy, rename safely, move files/directories/members, update imports, change function signatures and call sites, detect or remove dead code/unused code, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
 ---
 
 # Agent IDE
