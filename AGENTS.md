@@ -23,6 +23,8 @@ pnpm test:unit          # Unit 快速測試（無 coverage）
 pnpm test:coverage      # 全部 coverage 測試（E2E + Unit，含門檻）
 pnpm test:cli           # CLI 煙霧測試
 pnpm lint               # ESLint
+pnpm validate:plugin    # Plugin 結構 + skill docs/help 對齊檢查
+pnpm sync:skill-docs    # 從真實 CLI help 重新產生 skill reference 區塊與 plugin description
 npm link                # 本地安裝
 
 # 單一測試
@@ -258,11 +260,18 @@ if (dryRun) {
 用 Claude Code CLI 驗證設定檔正確性（錯誤訊息會指出問題欄位）：
 
 ```bash
-# 1. 直接驗證 manifest
+# 1. CLI help 或 SKILL.md description 變更後，先從 TS source CLI 同步 reference/plugin metadata
+pnpm sync:skill-docs
+
+# 2. 驗證 manifest、plugin 結構、skill docs/help 對齊
 claude plugin validate .claude-plugin/marketplace.json
 claude plugin validate plugins/skills/agent-ide/plugin.json
+pnpm validate:plugin
 
-# 2. 額外做一次本地安裝 smoke test（從專案根目錄執行）
+# 3. CLI source/help 有改時，另跑一般建置驗證；docs-only metadata 可跳過 build
+pnpm build
+
+# 4. 額外做一次本地安裝 smoke test（從專案根目錄執行）
 claude plugin marketplace add . --scope local
 claude plugin install agent-ide@agent-ide-skills --scope local
 

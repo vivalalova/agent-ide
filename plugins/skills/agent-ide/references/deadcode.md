@@ -2,15 +2,25 @@
 
 檢測未使用的程式碼；預設只預覽，清理必須明確指定 `--apply`。
 
-## 參數
+## CLI Help
 
-- `--path <path>` - 專案路徑（預設 `.`）
-- `--apply` - 實際刪除 dead code 並清理 import
-- `--dry-run` - 只偵測並預覽，不刪除；與 `--apply` 同時使用時仍不寫入
-- `--include-exports` - 也檢測未使用的 export
-- `--include-public-members` - 也檢測 public class members
-- `--exclude <patterns...>` - 排除的檔案或符號模式
-- `--format json|summary|diff` - 輸出格式（預設 summary）
+<!-- agent-ide-help:start -->
+```text
+Usage: agent-ide deadcode [options]
+
+檢測未使用的程式碼（dead code）；刪除需明確 --apply
+
+Options:
+  -p, --path <path>         專案路徑 (default: ".")
+  --format <format>         輸出格式 (json|summary|diff) (default: "summary")
+  --include-exports         包含 export 的符號（預設排除） (default: false)
+  --include-public-members  包含 public class members（預設排除） (default: false)
+  --dry-run                 預覽變更而不執行（即使同時指定 --apply）
+  --apply                   實際刪除 dead code 並清理 import
+  --exclude <patterns...>   排除的檔案/符號模式
+  -h, --help                display help for command
+```
+<!-- agent-ide-help:end -->
 
 ## 範例
 

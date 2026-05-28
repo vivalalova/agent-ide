@@ -2,12 +2,21 @@
 
 查找符號的所有引用位置。
 
-## 參數
+## CLI Help
 
-- `<symbol>` - 要查找的符號名稱（必填）
-- `--path <path>` - 專案路徑（預設 `.`）
-- `--at <file:line:column>` - 指定符號位置（同名消歧）
-- `--format json|summary` - 輸出格式（預設 summary）
+<!-- agent-ide-help:start -->
+```text
+Usage: agent-ide find-references [options] <symbol>
+
+查找符號的定義和所有引用
+
+Options:
+  -p, --path <path>    專案路徑 (default: ".")
+  -a, --at <location>  指定符號位置 (file:line:column)，用於區分同名符號
+  --format <format>    輸出格式 (json|summary) (default: "summary")
+  -h, --help           display help for command
+```
+<!-- agent-ide-help:end -->
 
 ## 範例
 

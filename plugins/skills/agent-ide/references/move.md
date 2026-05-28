@@ -2,21 +2,27 @@
 
 移動檔案/成員並自動更新 import。
 
-## 參數
+## CLI Help
 
-- `<source>` 或 `--source <path>` - 來源路徑
-  - 檔案：`src/old.ts`
-  - 目錄：`src/utils/`
-  - Glob：`"src/utils/*.ts"`
-  - 成員：`src/utils.ts:25`（行號表示成員移動）
-- `<target>` 或 `--target <path>` - 目標路徑
-- `--path <path>` - 專案根目錄路徑（預設目前工作目錄）；相對 source/target 都以此為基準解析
-- `--update-imports` - 自動更新 import 路徑（預設 true）
-- `--no-update-imports` - 不更新 import 路徑
-- `--target-class <name>` - 目標類別名稱（成員移動用）
-- `--keep-reexport` - 保留原位置的 re-export（成員移動用）
-- `--dry-run` - 預覽變更；輸出會列出 resolved project root、source、requested target、final target
-- `--format json|summary|diff` - 輸出格式（預設 diff）
+<!-- agent-ide-help:start -->
+```text
+Usage: agent-ide move [options] [source] [target]
+
+移動檔案、目錄或成員（source:line 格式觸發成員移動）。⚠️ 目錄移動遵循 mv 行為：目標已存在時會嵌套
+
+Options:
+  -s, --source <path>    來源路徑
+  -t, --target <path>    目標路徑
+  -p, --path <path>      專案根目錄路徑 (default: "<cwd>")
+  --update-imports       自動更新 import 路徑（預設為 true） (default: true)
+  --no-update-imports    不更新 import 路徑
+  --dry-run              預覽變更而不執行
+  --format <format>      輸出格式 (diff|json|summary) (default: "diff")
+  --target-class <name>  目標類別名稱（成員移動用）
+  --keep-reexport        保留原位置的 re-export（成員移動用）
+  -h, --help             display help for command
+```
+<!-- agent-ide-help:end -->
 
 ## 範例
 

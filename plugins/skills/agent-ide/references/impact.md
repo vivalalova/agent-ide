@@ -2,11 +2,21 @@
 
 分析檔案變更的影響範圍（BFS）。
 
-## 參數
+## CLI Help
 
-- `--file <file>` - 要分析的檔案（必填）；相對路徑以 `--path` 為基準解析
-- `--path <path>` - 專案根目錄路徑（預設 `.`）
-- `--format json|summary` - 輸出格式（預設 summary）
+<!-- agent-ide-help:start -->
+```text
+Usage: agent-ide impact [options]
+
+分析檔案影響範圍
+
+Options:
+  -f, --file <file>  要分析的檔案
+  -p, --path <path>  專案路徑 (default: ".")
+  --format <format>  輸出格式 (json|summary) (default: "summary")
+  -h, --help         display help for command
+```
+<!-- agent-ide-help:end -->
 
 ## 範例
 
