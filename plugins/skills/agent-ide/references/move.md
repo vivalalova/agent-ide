@@ -1,6 +1,6 @@
 # move
 
-移動檔案/成員並自動更新 import。
+移動檔案/目錄/成員並自動更新 import。
 
 ## CLI Help
 
@@ -39,4 +39,4 @@ npx agent-ide move src/utils.ts:25 src/helpers.ts --path . --keep-reexport
 - `--path` 是 project root，不是 source file。
 - 相對 source/target 皆相對 `--path` 解析。
 - 目標已存在且是目錄時，遵循 Unix `mv` 行為，final target 會變成 `<target>/<source basename>`。
-- `--dry-run` 的 summary/diff 會顯示 final target。檔案/成員移動 JSON 會提供 `projectRoot`、`source`、`target`、`finalTarget`、`pathContext`；glob JSON 會提供 `projectRoot`、`sourcePattern`、`target`、`movedFiles`。
+- `--dry-run` 的 summary/diff 會顯示 final target 和 import 更新預覽。檔案/成員移動 JSON 會提供 `projectRoot`、`source`、`target`、`finalTarget`、`pathContext`；glob JSON 會提供 `projectRoot`、`sourcePattern`、`target`、`movedFiles`。

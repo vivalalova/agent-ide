@@ -93,12 +93,16 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Command            | Description                                      |
 | ------------------ | ------------------------------------------------ |
 | `rename`           | Rename symbols and update all references         |
-| `change-signature` | Refactor function parameters, including distinct call-site values for added params |
+| `change-signature` | Add, remove, reorder, rename, or retype function parameters; supports distinct call-site values for added params |
 | `move`             | Move files/directories and update imports        |
 | `move` (with line) | Move members across files (`path:line` syntax)   |
 | `deadcode --apply` | Remove unused code and clean imports             |
 
-`move --path` is the project root for relative source/target paths. `move --dry-run` reports resolved project root and final target paths, including Unix `mv` nesting when the target directory already exists.
+`deadcode` is preview-only unless `--apply` is present. `--dry-run` wins even when passed with `--apply`.
+
+`move --path` is the project root for relative source/target paths. `move --dry-run` reports resolved project root, requested source/target, final target paths, and import-update hunks; glob JSON also lists `movedFiles`. Targets follow Unix `mv` nesting when the target directory already exists.
+
+`change-signature` supports `--add`, `--remove`, `--reorder`, `--rename`, and `--change-type`. Use `--call-site-value param=expression` with `--add` when existing call sites should receive a value different from the function default.
 
 `impact --path` is the project root for relative `--file` paths. JSON validation errors include `pathContext` with resolved project root and target file metadata.
 

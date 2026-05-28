@@ -8,7 +8,7 @@ AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI �
 
 **現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
 
-**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.6
+**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.7
 
 ## 常用指令
 
@@ -23,6 +23,8 @@ pnpm test:unit          # Unit 快速測試（無 coverage）
 pnpm test:coverage      # 全部 coverage 測試（E2E + Unit，含門檻）
 pnpm test:cli           # CLI 煙霧測試
 pnpm lint               # ESLint
+pnpm validate:plugin    # Plugin 結構 + skill docs/help 對齊檢查
+pnpm sync:skill-docs    # 從真實 CLI help 重新產生 skill reference 區塊與 plugin description
 npm link                # 本地安裝
 
 # 單一測試
@@ -118,9 +120,9 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 agent-ide cycles --path <path>
 agent-ide impact --file <file> --path <path>
 agent-ide search <symbol> --path <path> [--type function] [--no-fuzzy]
-agent-ide find-references <symbol> --path <path>
-agent-ide call-hierarchy <function> --path <path>
-agent-ide deadcode --path <path> [--dry-run] [--include-exports]
+agent-ide find-references <symbol> --path <path> [--at <file:line:column>]
+agent-ide call-hierarchy <function> --path <path> [--at <file:line:column>]
+agent-ide deadcode --path <path> [--dry-run] [--include-exports] [--include-public-members] [--exclude <patterns...>]
 ```
 
 `impact --path` 是 project root；相對 `--file` 以 `--path` 為基準解析。JSON validation errors 會提供 `pathContext`，包含 resolved project root 與 target file metadata。
@@ -130,13 +132,19 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ```bash
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
+agent-ide change-signature --file <file> --function <name> --add "options:RequestOptions={ cache: false }" --call-site-value "options=runtimeOptions"
+agent-ide change-signature --file <file> --function <name> --remove "unused"
+agent-ide change-signature --file <file> --function <name> --rename "oldName:newName"
+agent-ide change-signature --file <file> --function <name> --change-type "value:unknown"
 agent-ide deadcode --path <path> --apply [--include-exports]
 agent-ide move <source> <target> --path <path>
 ```
 
+`deadcode` 預設只預覽，不寫入；實際刪除必須明確加 `--apply`。`--dry-run` 即使和 `--apply` 同時指定也會維持預覽模式。
+
 **move 位置格式**：source 帶位置時自動切換為成員移動模式：
 
-`--path` 是 project root；相對 source/target 都以 `--path` 為基準解析。`move --dry-run` 會輸出 resolved project root、source、requested target、final target；目標已存在且是目錄時 final target 會明確顯示嵌套後路徑。
+`--path` 是 project root；相對 source/target 都以 `--path` 為基準解析。`move --dry-run` 會輸出 resolved project root、source、requested target、final target 與 import 更新預覽；目標已存在且是目錄時 final target 會明確顯示嵌套後路徑。
 
 ```bash
 # 檔案移動
@@ -184,6 +192,8 @@ agent-ide rename --from userId --to uid
 # 用 --at 指定 file:line 精確定位
 agent-ide rename --from userId --to uid --at src/user.ts:42
 ```
+
+**唯讀符號查詢 `--at` 參數**：`find-references` 與 `call-hierarchy` 可用 `--at <file:line:column>` 鎖定同名符號；JSON 輸出包含 `symbols` 定義候選清單，定位成功時包含 `targetSymbol`。`find-references` 的 `symbols` / `definitions` 不包含 parser 產生的 import-only candidate。
 
 ## 輸出處理架構
 

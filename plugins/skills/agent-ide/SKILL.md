@@ -17,8 +17,8 @@ TS/JS 程式碼智能重構工具。
 | [find-references](references/find-references.md) | 符號引用查找 |
 | [call-hierarchy](references/call-hierarchy.md) | 呼叫層次追蹤 |
 | [rename](references/rename.md) | 重命名符號 + 自動更新引用 |
-| [move](references/move.md) | 移動檔案/成員 + 自動更新 import |
-| [change-signature](references/change-signature.md) | 修改函式參數 + 更新呼叫點，可指定新增參數的呼叫點值 |
+| [move](references/move.md) | 移動檔案/目錄/成員 + 自動更新 import |
+| [change-signature](references/change-signature.md) | 新增/移除/重排/重命名/改型別 + 更新呼叫點，可指定新增參數的呼叫點值 |
 | [deadcode](references/deadcode.md) | 檢測未使用程式碼；`--apply` 才清理 |
 
 ## 全域選項
@@ -54,7 +54,7 @@ TS/JS 程式碼智能重構工具。
 
 ### 安全操作原則
 
-1. **預覽後明確 apply**：變更類功能務必預覽；`deadcode` 預設只預覽，清理需加 `--apply`
+1. **預覽後明確 apply**：變更類功能務必預覽；`deadcode` 預設只預覽，清理需加 `--apply`，且 `--dry-run` 會覆蓋 `--apply`
 2. **清理優先於重構**：`deadcode` 減少不必要的移動/重命名
 3. **小步快跑**：一次只做一種類型的變更，便於回滾
 4. **重構後驗證**：`cycles` 確保沒引入循環依賴
