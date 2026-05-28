@@ -46,11 +46,11 @@ export class SignatureValidator {
           newParameterNames.add(change.name);
         }
 
-        // 驗證新增參數必須有預設值
-        if (!change.callSiteValue && !change.defaultValue) {
+        // 驗證新增參數必須有 function default；呼叫點值不能替代簽名預設值。
+        if (!change.defaultValue) {
           errors.push({
             code: ChangeSignatureErrorCode.MissingDefaultValue,
-            message: `參數 ${change.name} 缺少預設值，請使用 --default-value 或 --call-site-value 指定`,
+            message: `參數 ${change.name} 缺少 function default，請使用 --add name:type=default 指定`,
             parameterName: change.name
           });
         }

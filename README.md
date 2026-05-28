@@ -93,7 +93,7 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Command            | Description                                      |
 | ------------------ | ------------------------------------------------ |
 | `rename`           | Rename symbols and update all references         |
-| `change-signature` | Refactor function parameters (reorder/add/remove)|
+| `change-signature` | Refactor function parameters, including distinct call-site values for added params |
 | `move`             | Move files/directories and update imports        |
 | `move` (with line) | Move members across files (`path:line` syntax)   |
 | `deadcode --apply` | Remove unused code and clean imports             |

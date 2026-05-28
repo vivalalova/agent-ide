@@ -4,11 +4,14 @@
  */
 
 import type { Command } from 'commander';
+import { parse as parseJavaScript, type ParserPlugin } from '@babel/parser';
 import * as path from 'path';
+import * as ts from 'typescript';
 import {
   ChangeSignatureEngine,
   SignatureChangeType,
-  type SignatureChange
+  type SignatureChange,
+  type AddParameterChange
 } from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
@@ -20,6 +23,7 @@ import {
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { isJavaScriptSourceExtension } from '@shared/types/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 /** Change Signature 命令選項 */
@@ -27,7 +31,8 @@ interface ChangeSignatureOptions {
   path?: string;
   file?: string;
   function?: string;
-  add?: string;
+  add?: string | string[];
+  callSiteValue?: string[];
   remove?: string;
   reorder?: string;
   rename?: string;
@@ -46,7 +51,12 @@ export function setupChangeSignatureCommand(program: Command, context: CommandCo
     .option('-p, --path <path>', '專案根目錄路徑')
     .option('--file <file>', '要修改的檔案路徑')
     .option('--function <name>', '要修改的函式名稱')
-    .option('--add <params>', '新增參數 (格式: name:type=default@position,name2:type2)')
+    .option('--add <params>', '新增參數 (格式: name:type=default@position,name2:type2=default2，可重複)', collectRepeatedOption)
+    .option(
+      '--call-site-value <mapping>',
+      '新增參數在呼叫點使用的值 (格式: param=expression，可重複；--add 仍需 default；未指定時使用 default)',
+      collectRepeatedOption
+    )
     .option('--remove <params>', '移除參數 (參數名稱或索引，逗號分隔)')
     .option('--reorder <order>', '重新排序 (參數名稱或索引，逗號分隔)')
     .option('--rename <mapping>', '重命名參數 (格式: oldName:newName,oldName2:newName2)')
@@ -101,7 +111,10 @@ async function handleChangeSignatureCommand(
     }
 
     // 解析變更操作
-    const changes = parseChanges(options);
+    const changes = parseChangeSignatureChanges({
+      ...options,
+      targetFilePath: filePath
+    });
 
     if (changes.length === 0) {
       outputHandler.outputError('請指定至少一個變更操作 (--add, --remove, --reorder, --rename, --change-type)', format);
@@ -258,18 +271,41 @@ async function findNearestProjectRoot(filePath: string, fileSystem: IFileSystem)
 /**
  * 解析變更操作
  */
-function parseChanges(options: ChangeSignatureOptions): SignatureChange[] {
+function collectRepeatedOption(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
+}
+
+export interface ChangeSignatureParseOptions {
+  add?: string | readonly string[];
+  callSiteValue?: readonly string[];
+  targetFilePath?: string;
+  remove?: string;
+  reorder?: string;
+  rename?: string;
+  changeType?: string;
+}
+
+export function parseChangeSignatureChanges(options: ChangeSignatureParseOptions): SignatureChange[] {
   const changes: SignatureChange[] = [];
+  const syntaxMode = getSyntaxValidationMode(options.targetFilePath);
+  const callSiteValues = parseCallSiteValueMappings(options.callSiteValue ?? [], syntaxMode);
+  const addedParameterNames = new Set<string>();
 
   // 解析 --add 參數
   if (options.add) {
-    const addParams = options.add.split(',');
+    const addParams = splitAddParameters(options.add);
     for (const param of addParams) {
-      const change = parseAddParameter(param);
+      const change = parseAddParameter(param, callSiteValues, syntaxMode);
       if (change) {
         changes.push(change);
+        addedParameterNames.add(change.name);
       }
     }
+  }
+
+  const unknownCallSiteParameters = [...callSiteValues.keys()].filter(name => !addedParameterNames.has(name));
+  if (unknownCallSiteParameters.length > 0) {
+    throw new Error(`--call-site-value 只能指定本次 --add 新增的參數: ${unknownCallSiteParameters.join(', ')}`);
   }
 
   // 解析 --remove 參數
@@ -334,7 +370,11 @@ function parseChanges(options: ChangeSignatureOptions): SignatureChange[] {
  * 解析新增參數
  * 格式: name:type=default@position
  */
-function parseAddParameter(param: string): SignatureChange | null {
+function parseAddParameter(
+  param: string,
+  callSiteValues: ReadonlyMap<string, string>,
+  syntaxMode: SyntaxValidationMode
+): AddParameterChange | null {
   const trimmed = param.trim();
   if (!trimmed) {return null;}
 
@@ -350,16 +390,32 @@ function parseAddParameter(param: string): SignatureChange | null {
   // 解析預設值
   let defaultValue: string | undefined;
   let nameTypePart = paramPart;
-  const defaultMatch = paramPart.match(/=(.+)$/);
-  if (defaultMatch) {
-    defaultValue = defaultMatch[1];
-    nameTypePart = paramPart.slice(0, -defaultMatch[0].length);
+  const defaultSeparatorIndex = paramPart.indexOf('=');
+  if (defaultSeparatorIndex >= 0) {
+    defaultValue = paramPart.slice(defaultSeparatorIndex + 1);
+    nameTypePart = paramPart.slice(0, defaultSeparatorIndex);
+    if (!defaultValue.trim()) {
+      throw new Error(`無效的 --add 參數語法: ${param}`);
+    }
   }
 
   // 解析名稱和類型
-  const [name, type] = nameTypePart.split(':').map(s => s.trim());
-  if (!name) {return null;}
+  const typeSeparatorIndex = nameTypePart.indexOf(':');
+  const name = (typeSeparatorIndex >= 0 ? nameTypePart.slice(0, typeSeparatorIndex) : nameTypePart).trim();
+  const type = typeSeparatorIndex >= 0 ? nameTypePart.slice(typeSeparatorIndex + 1).trim() : '';
+  if (!name) {
+    throw new Error(`無效的 --add 參數語法: ${param}`);
+  }
+  validateParameterName(name);
+  validateParameterType(name, type, syntaxMode);
   const normalizedDefaultValue = normalizeDefaultValue(type, defaultValue);
+  const explicitCallSiteValue = callSiteValues.get(name);
+  if (normalizedDefaultValue) {
+    validateAddDefaultExpression(name, normalizedDefaultValue, syntaxMode);
+  }
+  if (explicitCallSiteValue !== undefined && !normalizedDefaultValue) {
+    throw new Error(`--call-site-value ${name} 需要 --add 為該參數指定 function default`);
+  }
 
   return {
     type: SignatureChangeType.AddParameter,
@@ -368,8 +424,225 @@ function parseAddParameter(param: string): SignatureChange | null {
     defaultValue: normalizedDefaultValue,
     optional: !!normalizedDefaultValue,
     position,
-    callSiteValue: normalizedDefaultValue
+    callSiteValue: explicitCallSiteValue ?? normalizedDefaultValue
   };
+}
+
+interface SyntaxValidationMode {
+  readonly language: 'typescript' | 'javascript';
+  readonly jsx: boolean;
+}
+
+function getSyntaxValidationMode(targetFilePath: string | undefined): SyntaxValidationMode {
+  const extension = targetFilePath ? path.extname(targetFilePath) : '';
+  return {
+    language: isJavaScriptSourceExtension(extension) ? 'javascript' : 'typescript',
+    jsx: extension === '.jsx' || extension === '.tsx'
+  };
+}
+
+function parseCallSiteValueMappings(
+  mappings: readonly string[],
+  syntaxMode: SyntaxValidationMode
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  for (const mapping of mappings) {
+    const trimmed = mapping.trim();
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
+      throw new Error(`無效的 --call-site-value 語法: ${mapping}。格式: param=expression`);
+    }
+
+    const parameterName = trimmed.slice(0, separatorIndex).trim();
+    const expression = trimmed.slice(separatorIndex + 1).trim();
+    if (!parameterName || !expression) {
+      throw new Error(`無效的 --call-site-value 語法: ${mapping}。格式: param=expression`);
+    }
+    if (result.has(parameterName)) {
+      throw new Error(`--call-site-value 重複指定參數: ${parameterName}`);
+    }
+
+    validateCallSiteExpression(parameterName, expression, syntaxMode);
+    result.set(parameterName, expression);
+  }
+
+  return result;
+}
+
+function validateParameterName(parameterName: string): void {
+  try {
+    const ast = parseJavaScript(`function __agentIdeValidate(${parameterName}) {}`, { sourceType: 'module' });
+    const declaration = ast.program.body[0];
+    if (
+      declaration?.type !== 'FunctionDeclaration'
+      || declaration.params.length !== 1
+      || declaration.params[0]?.type !== 'Identifier'
+      || declaration.params[0].name !== parameterName
+    ) {
+      throw new Error('not a plain identifier');
+    }
+  } catch {
+    throw new Error(`無效的 --add 參數名稱: ${parameterName}`);
+  }
+}
+
+function validateParameterType(
+  parameterName: string,
+  parameterType: string | undefined,
+  syntaxMode: SyntaxValidationMode
+): void {
+  if (!parameterType || syntaxMode.language === 'javascript') {
+    return;
+  }
+
+  const message = getTypeScriptSyntaxError(`type __AgentIdeParameterType = ${parameterType};`);
+  if (message) {
+    throw new Error(`--add ${parameterName} type 無效: ${message}`);
+  }
+}
+
+function validateCallSiteExpression(
+  parameterName: string,
+  expression: string,
+  syntaxMode: SyntaxValidationMode
+): void {
+  const message = getExpressionSyntaxError(expression, syntaxMode);
+  if (message) {
+    throw new Error(`--call-site-value ${parameterName} expression 無效: ${message}`);
+  }
+}
+
+function validateAddDefaultExpression(
+  parameterName: string,
+  expression: string,
+  syntaxMode: SyntaxValidationMode
+): void {
+  const message = getParameterDefaultSyntaxError(expression, syntaxMode);
+  if (message) {
+    throw new Error(`--add ${parameterName} default 無效: ${message}`);
+  }
+}
+
+function getParameterDefaultSyntaxError(expression: string, syntaxMode: SyntaxValidationMode): string | undefined {
+  try {
+    parseJavaScript(`function __agentIdeDefault(__value = ${expression}) {}`, {
+      sourceType: 'module',
+      plugins: getBabelPlugins(syntaxMode, syntaxMode.language === 'typescript')
+    });
+    return undefined;
+  } catch (error) {
+    return `${syntaxMode.language === 'javascript' ? 'JavaScript' : 'TypeScript'} parameter default 無效: ${getErrorMessage(error)}`;
+  }
+}
+
+function getExpressionSyntaxError(expression: string, syntaxMode: SyntaxValidationMode): string | undefined {
+  if (syntaxMode.language === 'javascript') {
+    try {
+      parseJavaScript(`const __agentIdeCallSiteValue = (${expression});`, {
+        sourceType: 'module',
+        plugins: getBabelPlugins(syntaxMode, false)
+      });
+      return undefined;
+    } catch (error) {
+      return `JavaScript expression 無效: ${getErrorMessage(error)}`;
+    }
+  }
+
+  return getTypeScriptSyntaxError(`const __agentIdeCallSiteValue = (${expression});`, syntaxMode);
+}
+
+function getBabelPlugins(syntaxMode: SyntaxValidationMode, includeTypeScript: boolean): ParserPlugin[] {
+  const plugins: ParserPlugin[] = [];
+  if (includeTypeScript) {
+    plugins.push('typescript');
+  }
+  if (syntaxMode.jsx) {
+    plugins.push('jsx');
+  }
+  return plugins;
+}
+
+function getTypeScriptSyntaxError(source: string, syntaxMode?: SyntaxValidationMode): string | undefined {
+  const compilerOptions: ts.CompilerOptions = {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.Latest
+  };
+  if (syntaxMode?.jsx) {
+    compilerOptions.jsx = ts.JsxEmit.Preserve;
+  }
+
+  const diagnostics = ts.transpileModule(source, {
+    compilerOptions,
+    fileName: syntaxMode?.jsx ? '__agentIdeExpression.tsx' : '__agentIdeExpression.ts',
+    reportDiagnostics: true
+  }).diagnostics ?? [];
+
+  const syntaxErrors = diagnostics.filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (syntaxErrors.length === 0) {
+    return undefined;
+  }
+
+  return ts.flattenDiagnosticMessageText(syntaxErrors[0].messageText, ' ');
+}
+
+function splitAddParameters(add: string | readonly string[]): string[] {
+  const addInputs = Array.isArray(add) ? add : [add];
+  return addInputs.flatMap(input => splitTopLevelComma(input));
+}
+
+function splitTopLevelComma(input: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote: '\'' | '"' | '`' | null = null;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let angleDepth = 0;
+
+  for (const char of input) {
+    if (quote) {
+      current += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === '(') { parenDepth += 1; }
+    if (char === ')') { parenDepth = Math.max(0, parenDepth - 1); }
+    if (char === '[') { bracketDepth += 1; }
+    if (char === ']') { bracketDepth = Math.max(0, bracketDepth - 1); }
+    if (char === '{') { braceDepth += 1; }
+    if (char === '}') { braceDepth = Math.max(0, braceDepth - 1); }
+    if (char === '<') { angleDepth += 1; }
+    if (char === '>') { angleDepth = Math.max(0, angleDepth - 1); }
+
+    if (char === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+
+  return parts;
 }
 
 function normalizeDefaultValue(parameterType: string | undefined, defaultValue: string | undefined): string | undefined {

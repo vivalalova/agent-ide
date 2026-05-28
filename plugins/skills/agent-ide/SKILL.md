@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, detect dead code or remove dead code with --apply, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
+description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, add parameters with distinct call-site values via --call-site-value, detect dead code or remove dead code with --apply, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
 ---
 
 # Agent IDE
@@ -18,7 +18,7 @@ TS/JS 程式碼智能重構工具。
 | [call-hierarchy](references/call-hierarchy.md) | 呼叫層次追蹤 |
 | [rename](references/rename.md) | 重命名符號 + 自動更新引用 |
 | [move](references/move.md) | 移動檔案/成員 + 自動更新 import |
-| [change-signature](references/change-signature.md) | 修改函式參數 + 更新呼叫點 |
+| [change-signature](references/change-signature.md) | 修改函式參數 + 更新呼叫點，可指定新增參數的呼叫點值 |
 | [deadcode](references/deadcode.md) | 檢測未使用程式碼；`--apply` 才清理 |
 
 ## 全域選項
@@ -49,7 +49,7 @@ TS/JS 程式碼智能重構工具。
 | 檔案重組 | `move src/a.ts src/b/` | 自動更新所有 import |
 | 抽取函式 | `move src/a.ts:25 src/b.ts` | 移動成員到新位置 |
 | 統一命名 | `rename --from userId --to uid` | 全專案一致性 |
-| 修改 API | `change-signature` | 參數順序/名稱變更 |
+| 修改 API | `change-signature` | 參數順序/名稱/呼叫點值變更 |
 | 追蹤呼叫 | `call-hierarchy` → `find-references` | 理解函式使用情況 |
 
 ### 安全操作原則

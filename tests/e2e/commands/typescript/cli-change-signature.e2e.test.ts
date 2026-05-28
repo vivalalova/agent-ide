@@ -4,10 +4,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as ts from 'typescript';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
 describe('CLI change-signature - 基於 sample-project fixture', () => {
   let fixture: FixtureContext;
+
+  function expectValidTypeScript(sourceText: string): void {
+    const sourceFile = ts.createSourceFile('generated.ts', sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    expect(sourceFile.parseDiagnostics).toEqual([]);
+  }
 
   beforeEach(async () => {
     fixture = await loadFixture('sample-project');
@@ -186,6 +192,306 @@ const text = formatAmount(42);
       expect(updatedContent).toContain('locale: string = \'en-US\'');
       expect(updatedContent).toContain('formatAmount(42, \'en-US\')');
       expect(updatedContent).not.toContain('formatAmount(42, en-US)');
+    });
+
+    it('應該使用 explicit call-site value 而不是 function default', async () => {
+      const testFile = `${fixture.rootPath}/test-add-call-site-value.ts`;
+      await fixture.memfs.writeFile(testFile, `
+interface RequestOptions {
+  cache: boolean;
+}
+
+function fetchData(url: string): string {
+  return url;
+}
+
+const runtimeOptions = { cache: true };
+const response = fetchData('/api');
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'fetchData',
+          '-p', fixture.rootPath,
+          '--add', 'options:RequestOptions={ cache: false }',
+          '--call-site-value', 'options=runtimeOptions',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('function fetchData(url: string, options: RequestOptions = { cache: false }): string');
+      expect(updatedContent).toContain('const response = fetchData(\'/api\', runtimeOptions);');
+      expect(updatedContent).not.toContain('fetchData(\'/api\', { cache: false })');
+      expectValidTypeScript(updatedContent);
+    });
+
+    it('應該保留 explicit call-site expressions 的有效 TS 語法', async () => {
+      const testFile = `${fixture.rootPath}/test-add-call-site-expressions.ts`;
+      await fixture.memfs.writeFile(testFile, `
+interface Options {
+  cache: boolean;
+  retries: number;
+}
+
+const runtimeLocale = 'zh-TW';
+
+function configure(id: string): string {
+  return id;
+}
+
+const result = configure('profile');
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'configure',
+          '-p', fixture.rootPath,
+          '--add',
+          [
+            'label:string=\'default\'',
+            'enabled:boolean=false',
+            'nullable:string=\'fallback\'',
+            'missing:string=\'fallback\'',
+            'options:Options={ cache: false, retries: 0 }',
+            'locale:string=\'en-US\''
+          ].join(','),
+          '--call-site-value', 'label=\'runtime\'',
+          '--call-site-value', 'enabled=true',
+          '--call-site-value', 'nullable=null',
+          '--call-site-value', 'missing=undefined',
+          '--call-site-value', 'options={ cache: true, retries: 2 }',
+          '--call-site-value', 'locale=runtimeLocale',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain(
+        'configure(\'profile\', \'runtime\', true, null, undefined, { cache: true, retries: 2 }, runtimeLocale)'
+      );
+      expectValidTypeScript(updatedContent);
+    });
+
+    it('無效 call-site value mapping 應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-call-site-value.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', 'label:string=default',
+          '--call-site-value', 'label',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('--call-site-value');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('無效 --add 語法應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-add-syntax.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', ':string=default',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('--add');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('缺少 function default 的 explicit call-site value 應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-missing-default-with-call-site-value.ts`;
+      const originalContent = `
+function render(name?: string): string {
+  return name ?? 'home';
+}
+
+const output = render();
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', 'label:string',
+          '--call-site-value', 'label=runtimeLabel',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('function default');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('無效 --add default expression 應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-add-default-expression.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', 'options:Options={ cache: true',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('--add');
+      expect(output.error).toContain('default');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('無效 --add 參數名稱應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-add-name.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', 'bad-name:string=default',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('參數名稱');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('rest syntax 不能當作 --add 參數名稱', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-add-rest-name.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', '...labels=[]',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('參數名稱');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('無效 --add TypeScript type 應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-invalid-add-type.ts`;
+      const originalContent = `
+function render(name: string): string {
+  return name;
+}
+
+const output = render('home');
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'render',
+          '-p', fixture.rootPath,
+          '--add', 'label:bad type=default',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('type');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
     });
   });
 

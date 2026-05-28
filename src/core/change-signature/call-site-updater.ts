@@ -206,8 +206,9 @@ export class CallSiteUpdater {
       result.push('');
     }
 
-    // 映射原始參數
-    for (const [originalIndex, { newIndex }] of parameterMapping.entries()) {
+    // 映射原始參數與新增參數
+    const addedPositions = new Set<number>();
+    for (const [originalIndex, { newIndex, value }] of parameterMapping.entries()) {
       if (originalIndex >= 0) {
         if (originalIndex < callSite.arguments.length) {
           // 呼叫點有提供此參數
@@ -221,11 +222,15 @@ export class CallSiteUpdater {
             result[newIndex] = OMITTED_PARAMETER_MARKER;
           }
         }
+      } else {
+        if (value !== undefined) {
+          result[newIndex] = value;
+          addedPositions.add(newIndex);
+        }
       }
     }
 
     // 填入新增參數的值
-    const addedPositions = new Set<number>();
     for (const change of changes) {
       if (isAddParameterChange(change)) {
         // 使用 callSiteValue 或 defaultValue（驗證階段已確保至少有一個值）

@@ -130,6 +130,7 @@ agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ```bash
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
+agent-ide change-signature --file <file> --function <name> --add "options:RequestOptions={ cache: false }" --call-site-value "options=runtimeOptions"
 agent-ide deadcode --path <path> --apply [--include-exports]
 agent-ide move <source> <target> --path <path>
 ```
