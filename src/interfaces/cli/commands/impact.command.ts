@@ -8,7 +8,7 @@ import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { QueryCommand, type ImpactResult } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, outputErrorWithDetails, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadPathAliases } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -49,22 +49,39 @@ async function handleImpactCommand(
   if (!formatResult.success) {return;}
   const format = formatResult.format;
 
-  const analyzePath = path.resolve(options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const analyzePath = path.resolve(process.cwd(), projectRootInput);
+  const targetFile = path.isAbsolute(options.file)
+    ? options.file
+    : path.join(analyzePath, options.file);
+  const pathContext = createImpactPathContext(analyzePath, options.file, targetFile);
 
-  const pathIsDirectory = await ensureDirectoryPath(analyzePath, context.fileSystem, outputHandler, format);
+  const pathIsDirectory = await ensureDirectoryPath(analyzePath, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot: analyzePath,
+    command: 'impact',
+    extraContext: pathContext
+  });
   if (!pathIsDirectory) {
     return;
   }
 
-  // 將相對路徑轉為絕對路徑
-  const targetFile = path.isAbsolute(options.file)
-    ? options.file
-    : path.join(analyzePath, options.file);
-
   // 檢查目標檔案是否存在（在進度訊息前檢查）
   const fileExists = await context.fileSystem.exists(targetFile);
   if (!fileExists) {
-    outputHandler.outputError(`檔案不存在: ${targetFile}`, format);
+    outputErrorWithDetails(
+      outputHandler,
+      format,
+      `檔案不存在: ${targetFile}`,
+      {
+        pathContext: {
+          role: 'targetFile',
+          ...pathContext
+        }
+      },
+      'impact'
+    );
     process.exitCode = 1;
     return;
   }
@@ -114,4 +131,16 @@ async function handleImpactCommand(
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
+}
+
+function createImpactPathContext(
+  projectRoot: string,
+  requestedFile: string,
+  resolvedFile: string
+): Record<string, unknown> {
+  return {
+    projectRoot,
+    requestedFile,
+    resolvedFile
+  };
 }

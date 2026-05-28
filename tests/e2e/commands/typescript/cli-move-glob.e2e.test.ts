@@ -156,6 +156,41 @@ export class AlarmController {}
       expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
+      expect(output.pathContext).toMatchObject({
+        projectRoot: fixture.rootPath,
+        sourcePattern: 'src/empty/*.ts',
+        requestedTarget: 'src/dest/',
+        resolvedTarget: fixture.getFilePath('src/dest')
+      });
+    });
+
+    it('glob 應區分 project root 不存在與 pattern 無匹配', async () => {
+      const missingProjectRoot = '/tmp/agent-ide-definitely-missing-root';
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/*.ts',
+          'src/lib/',
+          '--path', missingProjectRoot,
+          '--dry-run',
+          '--format', 'json',
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('project root');
+      expect(output.error).not.toContain('Glob pattern 無匹配');
+      expect(output.pathContext).toMatchObject({
+        role: 'projectRoot',
+        inputPath: missingProjectRoot,
+        resolvedPath: missingProjectRoot,
+        expected: 'exists',
+        projectRoot: missingProjectRoot
+      });
     });
   });
 
@@ -220,6 +255,12 @@ console.log(helper(), format());
       expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
+      expect(output.pathContext).toMatchObject({
+        projectRoot: fixture.rootPath,
+        sourcePattern: 'src/utils/*.ts',
+        requestedTarget: 'src/single.ts',
+        resolvedTarget: fixture.getFilePath('src/single.ts')
+      });
     });
 
     it('單一檔案匹配時可以重命名', async () => {
@@ -266,11 +307,52 @@ console.log(helper(), format());
 
       // Then
       expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.projectRoot).toBe(fixture.rootPath);
+      expect(output.sourcePattern).toBe('src/utils/*.ts');
+      expect(output.target).toBe(fixture.getFilePath('src/lib'));
+      expect(output.filesCount).toBeGreaterThanOrEqual(2);
+      expect(output.movedFiles).toEqual(
+        expect.arrayContaining([
+          {
+            from: fixture.getFilePath('src/utils/a.ts'),
+            to: fixture.getFilePath('src/lib/a.ts')
+          },
+          {
+            from: fixture.getFilePath('src/utils/b.ts'),
+            to: fixture.getFilePath('src/lib/b.ts')
+          }
+        ])
+      );
 
       // 檔案不應實際移動
       expect(await fixture.exists('src/utils/a.ts')).toBe(true);
       expect(await fixture.exists('src/utils/b.ts')).toBe(true);
       expect(await fixture.exists('src/lib/a.ts')).toBe(false);
+    });
+
+    it('dry-run summary 應列出目標路徑並在大量檔案時明確截斷', async () => {
+      for (let i = 0; i < 12; i += 1) {
+        await fixture.writeFile(`src/many/file-${i}.ts`, `export const value${i} = ${i};`);
+      }
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/many/*.ts',
+          'src/lib/',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'summary'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Moved files: 12 total');
+      expect(result.stdout).toContain('Showing first 10 of 12 destinations');
+      expect(result.stdout).toContain('src/many/file-0.ts -> src/lib/file-0.ts');
+      expect(result.stdout).toContain('2 more destination(s) omitted');
     });
   });
 });

@@ -98,6 +98,10 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `move` (with line) | Move members across files (`path:line` syntax)   |
 | `deadcode --apply` | Remove unused code and clean imports             |
 
+`move --path` is the project root for relative source/target paths. `move --dry-run` reports resolved project root and final target paths, including Unix `mv` nesting when the target directory already exists.
+
+`impact --path` is the project root for relative `--file` paths. JSON validation errors include `pathContext` with resolved project root and target file metadata.
+
 ## Documentation
 
 - [Command Reference](./plugins/skills/agent-ide/SKILL.md) - Quick reference for all commands

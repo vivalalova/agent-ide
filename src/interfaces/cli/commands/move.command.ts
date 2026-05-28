@@ -19,7 +19,9 @@ import {
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
 import {
+  ensureDirectoryPath,
   outputMutationWithLegacyFields,
+  outputErrorWithDetails,
   tryParseOutputFormat,
   executeMutationCommand
 } from '@interfaces/cli/command-utils.js';
@@ -28,6 +30,16 @@ import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+
+interface MovePathContext {
+  readonly projectRoot: string;
+  readonly requestedSource: string;
+  readonly requestedTarget: string;
+  readonly resolvedSource: string;
+  readonly resolvedTarget: string;
+  readonly finalTarget: string;
+  readonly targetKind: string;
+}
 
 /**
  * 設定 move 命令
@@ -98,7 +110,17 @@ async function handleMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), projectRootInput);
+  const projectRootIsDirectory = await ensureDirectoryPath(projectRoot, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot,
+    command: 'move'
+  });
+  if (!projectRootIsDirectory) {
+    return;
+  }
 
   // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
   const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
@@ -108,17 +130,9 @@ async function handleMoveCommand(
   }
 
   try {
-    // 檢查源檔案是否存在
-    const sourceExists = await context.fileSystem.exists(resolvedSource);
-    if (!sourceExists) {
-      outputHandler.outputError(`源檔案找不到: ${source}`, format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-      return;
-    }
-
     // Bug 2 修復：處理目標為目錄的情況
-    let resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+    const initialResolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+    let resolvedTarget = initialResolvedTarget;
 
     // 檢查目標是否為目錄（以 / 結尾或已存在的目錄）
     const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
@@ -142,11 +156,42 @@ async function handleMoveCommand(
       resolvedTarget = path.join(resolvedTarget, sourceBasename);
     }
 
+    const pathContext = createMovePathContext({
+      projectRoot,
+      requestedSource: source,
+      requestedTarget: target,
+      resolvedSource,
+      resolvedTarget: initialResolvedTarget,
+      finalTarget: resolvedTarget,
+      targetKind: getMoveTargetKind(targetIsDirectory, targetEndsWithSlash)
+    });
+
+    // 檢查源檔案是否存在
+    const sourceExists = await context.fileSystem.exists(resolvedSource);
+    if (!sourceExists) {
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `來源路徑不存在: ${source}`,
+        { pathContext },
+        'move'
+      );
+      process.exitCode = 1;
+      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
     // 檢查源和目標是否相同
     const normalizedSource = path.resolve(resolvedSource);
     const normalizedTarget = path.resolve(resolvedTarget);
     if (normalizedSource === normalizedTarget) {
-      outputHandler.outputError(`來源與目標相同，無需移動: ${normalizedSource}`, format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `來源與目標相同，無需移動: ${normalizedSource}`,
+        { pathContext },
+        'move'
+      );
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
@@ -180,7 +225,13 @@ async function handleMoveCommand(
     const changeset = await moveService.generateChangeset(moveOperation, moveOptions);
 
     if (!changeset.success) {
-      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        changeset.errors?.join(', ') ?? '生成變更失敗',
+        { pathContext },
+        'move'
+      );
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
@@ -188,7 +239,13 @@ async function handleMoveCommand(
 
     // 防禦性退場：空 changeset 不應該發生在 success=true 的情境
     if (changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
-      outputHandler.outputError('無檔案需移動，請檢查路徑', format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        '無檔案需移動，請檢查路徑',
+        { pathContext },
+        'move'
+      );
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
@@ -213,12 +270,14 @@ async function handleMoveCommand(
     if (options.dryRun) {
       if (isJsonFormat) {
         outputMutationWithLegacyFields(outputHandler, previewInput, format, {
+          ...createMoveLegacyFields(pathContext),
           renames,
           pathUpdates
         });
       } else {
+        printMovePathPreview(pathContext);
         for (const { from, to } of renames) {
-          console.log(`Renamed: ${path.relative(projectRoot, from)} → ${path.relative(projectRoot, to)}`);
+          console.log(`Renamed: ${formatRelativePath(projectRoot, from)} → ${formatRelativePath(projectRoot, to)}`);
         }
         outputHandler.outputMutation(previewInput, format);
       }
@@ -240,8 +299,7 @@ async function handleMoveCommand(
       const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
       if (isJsonFormat) {
         outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          source: normalizedSource,
-          target: normalizedTarget,
+          ...createMoveLegacyFields(pathContext),
           moved: result.movedFiles.length > 0,
           pathUpdates: [],
           message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
@@ -260,6 +318,48 @@ async function handleMoveCommand(
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
+}
+
+function createMovePathContext(input: MovePathContext): MovePathContext {
+  return input;
+}
+
+function createMoveLegacyFields(context: MovePathContext): Record<string, unknown> {
+  return {
+    projectRoot: context.projectRoot,
+    requestedSource: context.requestedSource,
+    requestedTarget: context.requestedTarget,
+    source: context.resolvedSource,
+    target: context.finalTarget,
+    resolvedSource: context.resolvedSource,
+    resolvedTarget: context.resolvedTarget,
+    finalTarget: context.finalTarget,
+    targetKind: context.targetKind,
+    pathContext: context
+  };
+}
+
+function getMoveTargetKind(targetIsDirectory: boolean, targetEndsWithSlash: boolean): string {
+  if (targetIsDirectory) {
+    return targetEndsWithSlash ? 'directory' : 'existing directory';
+  }
+
+  return 'file path';
+}
+
+function printMovePathPreview(context: MovePathContext): void {
+  console.log(`Project root: ${context.projectRoot}`);
+  console.log(`Requested source: ${context.requestedSource}`);
+  console.log(`Requested target: ${context.requestedTarget}`);
+  console.log(`Resolved source: ${formatRelativePath(context.projectRoot, context.resolvedSource)}`);
+  console.log(`Resolved target: ${formatRelativePath(context.projectRoot, context.resolvedTarget)}`);
+  console.log(`Final target: ${formatRelativePath(context.projectRoot, context.finalTarget)}`);
+  console.log(`Target interpretation: ${context.targetKind}`);
+}
+
+function formatRelativePath(projectRoot: string, filePath: string): string {
+  const relativePath = path.relative(projectRoot, filePath);
+  return relativePath.length > 0 ? relativePath : '.';
 }
 
 /**
@@ -300,7 +400,17 @@ async function handleMoveMemberCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), projectRootInput);
+  const projectRootIsDirectory = await ensureDirectoryPath(projectRoot, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot,
+    command: 'move'
+  });
+  if (!projectRootIsDirectory) {
+    return;
+  }
 
   try {
     // 解析 source 和 target 路徑
@@ -321,6 +431,15 @@ async function handleMoveMemberCommand(
     const targetFilePath = path.isAbsolute(parsedTarget.filePath)
       ? parsedTarget.filePath
       : path.resolve(projectRoot, parsedTarget.filePath);
+    const pathContext = createMovePathContext({
+      projectRoot,
+      requestedSource: source,
+      requestedTarget: target,
+      resolvedSource: sourceFilePath,
+      resolvedTarget: targetFilePath,
+      finalTarget: targetFilePath,
+      targetKind: options.targetClass ? 'member target class' : 'member target file'
+    });
 
     if (!isJsonFormat) {
       console.log(`   移動成員: ${path.relative(projectRoot, sourceFilePath)}:${parsedSource.line}`);
@@ -366,13 +485,18 @@ async function handleMoveMemberCommand(
     if (!isJsonFormat && !options.dryRun) {
       console.log('   執行移動...');
     }
+    if (!isJsonFormat && options.dryRun) {
+      printMovePathPreview(pathContext);
+    }
 
     await executeMutationCommand(changeset, {
       fileSystem: context.fileSystem,
       format,
       dryRun: options.dryRun ?? false,
       outputHandler,
-      commandName: 'move'
+      commandName: 'move',
+      legacyFields: createMoveLegacyFields(pathContext),
+      errorFields: createMoveLegacyFields(pathContext)
     });
   } catch (error) {
     const errorMsg = getErrorMessage(error);

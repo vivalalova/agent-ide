@@ -260,6 +260,18 @@ export function farewell(name: string): string {
       );
 
       expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.projectRoot).toBe(fixture.rootPath);
+      expect(output.finalTarget).toBe(fixture.getFilePath('src/conflict-target.ts'));
+      expect(output.pathContext).toMatchObject({
+        projectRoot: fixture.rootPath,
+        requestedSource: `${fixture.getFilePath('src/conflict-source.ts')}:1`,
+        requestedTarget: fixture.getFilePath('src/conflict-target.ts'),
+        resolvedSource: fixture.getFilePath('src/conflict-source.ts'),
+        finalTarget: fixture.getFilePath('src/conflict-target.ts'),
+        targetKind: 'member target file'
+      });
     });
 
 
@@ -419,6 +431,25 @@ export const OTHER = 'other';
       expect(output.success).toBe(true);
       expect(output.summary).toBeDefined();
       expect(typeof output.summary.totalFiles).toBe('number');
+    });
+
+    it('summary dry-run 應顯示成員移動的 path preview', async () => {
+      await fixture.writeFile('src/preview-source.ts', `export function previewFn(): void {}
+`);
+      await fixture.writeFile('src/preview-target.ts', '');
+
+      const result = await executeCLI(
+        ['move', 'src/preview-source.ts:1', 'src/preview-target.ts',
+          '-p', fixture.rootPath, '--dry-run', '--format', 'summary'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Project root: /test-workspace');
+      expect(result.stdout).toContain('Requested source: src/preview-source.ts:1');
+      expect(result.stdout).toContain('Requested target: src/preview-target.ts');
+      expect(result.stdout).toContain('Final target: src/preview-target.ts');
+      expect(result.stdout).toContain('Target interpretation: member target file');
     });
 
     it('diff 格式輸出不為空', async () => {

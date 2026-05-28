@@ -123,6 +123,8 @@ agent-ide call-hierarchy <function> --path <path> [--at <file:line:column>]
 agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ```
 
+`impact --path` 是 project root；相對 `--file` 以 `--path` 為基準解析。JSON validation errors 會提供 `pathContext`，包含 resolved project root 與 target file metadata。
+
 ### 變更類（支援 --dry-run）
 
 ```bash
@@ -133,6 +135,8 @@ agent-ide move <source> <target> --path <path>
 ```
 
 **move 位置格式**：source 帶位置時自動切換為成員移動模式：
+
+`--path` 是 project root；相對 source/target 都以 `--path` 為基準解析。`move --dry-run` 會輸出 resolved project root、source、requested target、final target；目標已存在且是目錄時 final target 會明確顯示嵌套後路徑。
 
 ```bash
 # 檔案移動

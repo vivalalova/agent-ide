@@ -3,6 +3,7 @@
  * 提供格式驗證和變更類命令執行的共用邏輯
  */
 
+import * as path from 'path';
 import { ChangeApplicator, convertChangesetToPreviewInput, type Changeset } from '@infrastructure/changeset/index.js';
 import { PreviewCommand, type PreviewInput } from '@infrastructure/formatters/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
@@ -17,6 +18,14 @@ import {
 export type FormatParseResult =
   | { success: true; format: OutputFormat }
   | { success: false; format?: undefined };
+
+export interface PathValidationDetails {
+  role?: string;
+  inputPath?: string;
+  projectRoot?: string;
+  command?: string;
+  extraContext?: Record<string, unknown>;
+}
 
 /**
  * 嘗試解析輸出格式，失敗時自動輸出錯誤並設定 exitCode
@@ -57,11 +66,21 @@ export async function ensurePathExists(
   pathToCheck: string,
   fileSystem: IFileSystem,
   outputHandler: UnifiedOutputHandler,
-  format: OutputFormat
+  format: OutputFormat,
+  details: PathValidationDetails = {}
 ): Promise<boolean> {
   const exists = await fileSystem.exists(pathToCheck);
   if (!exists) {
-    outputHandler.outputError(`路徑不存在: ${pathToCheck}`, format);
+    const message = details.role === 'projectRoot'
+      ? `project root 路徑不存在: ${pathToCheck}`
+      : `路徑不存在: ${pathToCheck}`;
+    outputErrorWithDetails(
+      outputHandler,
+      format,
+      message,
+      { pathContext: createPathValidationContext(pathToCheck, 'exists', details) },
+      details.command
+    );
     process.exitCode = 1;
     return false;
   }
@@ -76,21 +95,81 @@ export async function ensureDirectoryPath(
   pathToCheck: string,
   fileSystem: IFileSystem,
   outputHandler: UnifiedOutputHandler,
-  format: OutputFormat
+  format: OutputFormat,
+  details: PathValidationDetails = {}
 ): Promise<boolean> {
-  const exists = await ensurePathExists(pathToCheck, fileSystem, outputHandler, format);
+  const exists = await ensurePathExists(pathToCheck, fileSystem, outputHandler, format, details);
   if (!exists) {
     return false;
   }
 
   const isDirectory = await fileSystem.isDirectory(pathToCheck);
   if (!isDirectory) {
-    outputHandler.outputError(`路徑不是目錄: ${pathToCheck}`, format);
+    const message = details.role === 'projectRoot'
+      ? `project root 路徑不是目錄: ${pathToCheck}`
+      : `路徑不是目錄: ${pathToCheck}`;
+    outputErrorWithDetails(
+      outputHandler,
+      format,
+      message,
+      { pathContext: createPathValidationContext(pathToCheck, 'directory', details) },
+      details.command
+    );
     process.exitCode = 1;
     return false;
   }
 
   return true;
+}
+
+export function outputErrorWithDetails(
+  outputHandler: UnifiedOutputHandler,
+  format: OutputFormat,
+  message: string,
+  extraFields: Record<string, unknown>,
+  command?: string
+): void {
+  if (format === OutputFormat.Json) {
+    outputHandler.outputJson({
+      success: false,
+      error: message,
+      ...(command ? { command } : {}),
+      ...extraFields
+    });
+    return;
+  }
+
+  outputHandler.outputError(formatErrorMessage(message, extraFields), format, command);
+}
+
+function createPathValidationContext(
+  pathToCheck: string,
+  expected: string,
+  details: PathValidationDetails
+): Record<string, unknown> {
+  return {
+    role: details.role ?? 'path',
+    inputPath: details.inputPath ?? pathToCheck,
+    resolvedPath: path.resolve(pathToCheck),
+    expected,
+    ...(details.projectRoot ? { projectRoot: details.projectRoot } : {}),
+    ...(details.extraContext ?? {})
+  };
+}
+
+function formatErrorMessage(message: string, extraFields: Record<string, unknown>): string {
+  const context = extraFields.pathContext;
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    return message;
+  }
+
+  const entries = Object.entries(context as Record<string, unknown>)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}: ${String(value)}`);
+
+  return entries.length > 0
+    ? `${message}\n${entries.join('\n')}`
+    : message;
 }
 
 /** 變更類命令執行選項 */
@@ -109,6 +188,8 @@ export interface MutationExecutionOptions {
   onSuccess?: (previewInput: PreviewInput) => void;
   /** JSON 輸出時額外保留的命令專屬欄位 */
   legacyFields?: Record<string, unknown>;
+  /** 錯誤輸出時額外保留的命令專屬欄位 */
+  errorFields?: Record<string, unknown>;
 }
 
 /** 變更類命令執行結果 */
@@ -183,15 +264,20 @@ export async function executeMutationCommand(
   changeset: Changeset,
   options: MutationExecutionOptions
 ): Promise<MutationExecutionResult> {
-  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess, legacyFields } = options;
+  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess, legacyFields, errorFields } = options;
 
   // 1. 檢查 changeset 是否成功
   if (!changeset.success) {
-    outputHandler.outputError(
-      changeset.errors?.join(', ') ?? '生成變更失敗',
-      format,
-      commandName
-    );
+    const message = changeset.errors?.join(', ') ?? '生成變更失敗';
+    if (errorFields) {
+      outputErrorWithDetails(outputHandler, format, message, errorFields, commandName);
+    } else {
+      outputHandler.outputError(
+        message,
+        format,
+        commandName
+      );
+    }
     process.exitCode = 1;
     return { success: false };
   }
@@ -218,11 +304,16 @@ export async function executeMutationCommand(
     onSuccess?.(previewInput);
     return { success: true, previewInput };
   } else {
-    outputHandler.outputError(
-      result.errors?.join(', ') ?? '執行失敗',
-      format,
-      commandName
-    );
+    const message = result.errors?.join(', ') ?? '執行失敗';
+    if (errorFields) {
+      outputErrorWithDetails(outputHandler, format, message, errorFields, commandName);
+    } else {
+      outputHandler.outputError(
+        message,
+        format,
+        commandName
+      );
+    }
     process.exitCode = 1;
     return { success: false };
   }

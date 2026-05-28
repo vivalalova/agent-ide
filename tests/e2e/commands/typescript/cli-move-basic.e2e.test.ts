@@ -116,6 +116,12 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
       expect(output.files).toBeDefined();
       expect(output.summary).toBeDefined();
+      expect(output.projectRoot).toBe(fixture.rootPath);
+      expect(output.requestedSource).toBe(source);
+      expect(output.requestedTarget).toBe(target);
+      expect(output.source).toBe(source);
+      expect(output.target).toBe(target);
+      expect(output.finalTarget).toBe(target);
     });
 
     it('應該在dry-run 模式下顯示會受影響的 import', async () => {
@@ -149,6 +155,28 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.summary).toBeDefined();
       expect(output.summary.totalFiles).toBeGreaterThanOrEqual(0);
       expect(output.summary.totalChanges).toBeGreaterThanOrEqual(0);
+    });
+
+    it('目標為既有目錄時 summary dry-run 應顯示最終嵌套路徑', async () => {
+      await fixture.writeFile('src/existing-target/.keep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts',
+          'src/existing-target',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'summary'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Project root: /test-workspace');
+      expect(result.stdout).toContain('Requested target: src/existing-target');
+      expect(result.stdout).toContain('Final target: src/existing-target/string-utils.ts');
+      expect(result.stdout).toContain('Target interpretation: existing directory');
     });
   });
 
@@ -267,6 +295,42 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.success).toBe(false);
       expect(output.error).toBeDefined();
       expect(output.error).toMatch(/找不到|不存在/);
+      expect(output.pathContext).toMatchObject({
+        projectRoot: fixture.rootPath,
+        requestedSource: source,
+        requestedTarget: target,
+        resolvedSource: source,
+        finalTarget: target
+      });
+    });
+
+    it('應該區分 project root 不存在與來源檔案不存在', async () => {
+      const missingProjectRoot = '/tmp/agent-ide-definitely-missing-root';
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts',
+          'src/helpers/string-utils.ts',
+          '--path', missingProjectRoot,
+          '--dry-run',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('project root');
+      expect(output.error).not.toContain('來源路徑不存在');
+      expect(output.pathContext).toMatchObject({
+        role: 'projectRoot',
+        inputPath: missingProjectRoot,
+        resolvedPath: missingProjectRoot,
+        expected: 'exists',
+        projectRoot: missingProjectRoot
+      });
     });
 
     it('應該處理目標路徑已存在的情況', async () => {

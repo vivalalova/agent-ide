@@ -5,6 +5,8 @@ import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { ChangeApplicator, ChangesetBuilder, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
 import { FileOperationType } from '@infrastructure/changeset/index.js';
 import {
+  ensureDirectoryPath,
+  outputErrorWithDetails,
   outputMutationWithLegacyFields,
   tryParseOutputFormat
 } from '@interfaces/cli/command-utils.js';
@@ -35,7 +37,18 @@ export async function handleGlobMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), projectRootInput);
+  const projectRootIsDirectory = await ensureDirectoryPath(projectRoot, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot,
+    command: 'move'
+  });
+  if (!projectRootIsDirectory) {
+    return;
+  }
+  const resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
 
   try {
     // 展開 glob pattern（使用 IFileSystem 的 glob 方法）
@@ -48,14 +61,19 @@ export async function handleGlobMoveCommand(
     });
 
     if (matchedFiles.length === 0) {
-      outputHandler.outputError(`Glob pattern 無匹配: ${source}`, format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `Glob pattern 無匹配: ${source}`,
+        { pathContext: createGlobPathContext(source, target, projectRoot, resolvedTarget) },
+        'move'
+      );
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
     // 解析目標路徑
-    const resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
     const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
 
     // 檢查目標是否為目錄
@@ -71,7 +89,13 @@ export async function handleGlobMoveCommand(
 
     // 多檔案時，目標必須是目錄
     if (matchedFiles.length > 1 && !targetIsDirectory) {
-      outputHandler.outputError(`多檔案移動時目標必須是目錄: ${target}`, format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `多檔案移動時目標必須是目錄: ${target}`,
+        { pathContext: createGlobPathContext(source, target, projectRoot, resolvedTarget) },
+        'move'
+      );
       process.exitCode = 1;
       if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
@@ -118,7 +142,19 @@ export async function handleGlobMoveCommand(
       });
 
       if (!changeset.success) {
-        outputHandler.outputError(changeset.errors?.join(', ') ?? `移動失敗: ${sourceFile}`, format);
+        outputErrorWithDetails(
+          outputHandler,
+          format,
+          changeset.errors?.join(', ') ?? `移動失敗: ${sourceFile}`,
+          {
+            pathContext: {
+              ...createGlobPathContext(source, target, projectRoot, resolvedTarget),
+              resolvedSource: sourceFile,
+              finalTarget: targetFile
+            }
+          },
+          'move'
+        );
         process.exitCode = 1;
         if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
@@ -146,7 +182,13 @@ export async function handleGlobMoveCommand(
 
     // Dry-run 模式只輸出預覽
     if (options.dryRun) {
-      outputHandler.outputMutation(previewInput, format);
+      const legacyFields = createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles);
+      if (isJsonFormat) {
+        outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
+      } else {
+        printGlobPreview(projectRoot, movePlan.movedFiles);
+        outputHandler.outputMutation(previewInput, format);
+      }
       return;
     }
 
@@ -165,9 +207,7 @@ export async function handleGlobMoveCommand(
       const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
       if (isJsonFormat) {
         outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          filesCount: matchedFiles.length,
-          target: resolvedTarget,
-          movedFiles: movePlan.movedFiles.map(f => ({ from: f.from, to: f.to })),
+          ...createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles),
           message: `成功移動 ${matchedFiles.length} 個檔案，更新了 ${totalUpdates} 個 import`
         });
       } else {
@@ -184,6 +224,66 @@ export async function handleGlobMoveCommand(
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
+}
+
+/**
+ * 建立 glob 移動 JSON 相容欄位。
+ */
+function createGlobMoveLegacyFields(
+  sourcePattern: string,
+  requestedTarget: string,
+  projectRoot: string,
+  resolvedTarget: string,
+  filesCount: number,
+  movedFiles: readonly GlobMovedFile[]
+): Record<string, unknown> {
+  return {
+    projectRoot,
+    sourcePattern,
+    requestedTarget,
+    target: resolvedTarget,
+    filesCount,
+    movedFiles: movedFiles.map(f => ({ from: f.from, to: f.to })),
+    pathContext: createGlobPathContext(sourcePattern, requestedTarget, projectRoot, resolvedTarget)
+  };
+}
+
+function createGlobPathContext(
+  sourcePattern: string,
+  requestedTarget: string,
+  projectRoot: string,
+  resolvedTarget: string
+): Record<string, unknown> {
+  return {
+    projectRoot,
+    sourcePattern,
+    requestedTarget,
+    resolvedTarget
+  };
+}
+
+function printGlobPreview(projectRoot: string, movedFiles: readonly GlobMovedFile[]): void {
+  const sortedMovedFiles = [...movedFiles].sort((a, b) => a.from.localeCompare(b.from));
+  console.log(`Moved files: ${movedFiles.length} total`);
+
+  const visibleMovedFiles = sortedMovedFiles.slice(0, 10);
+  if (movedFiles.length > 10) {
+    console.log(`Showing first 10 of ${movedFiles.length} destinations`);
+  }
+
+  for (const { from, to } of visibleMovedFiles) {
+    console.log(`   ${formatRelativePath(projectRoot, from)} -> ${formatRelativePath(projectRoot, to)}`);
+  }
+
+  const omittedCount = movedFiles.length - visibleMovedFiles.length;
+  if (omittedCount > 0) {
+    console.log(`${omittedCount} more destination(s) omitted`);
+  }
+}
+
+function formatRelativePath(projectRoot: string, filePath: string): string {
+  const relativePath = path.relative(projectRoot, filePath);
+  return relativePath.length > 0 ? relativePath : '.';
 }
 
 /**
