@@ -33,7 +33,8 @@ interface DeadCodeOptions {
   format: string;
   includeExports: boolean;
   includePublicMembers: boolean;
-  dryRun: boolean;
+  dryRun?: boolean;
+  apply?: boolean;
   exclude: string[];
 }
 
@@ -43,12 +44,13 @@ interface DeadCodeOptions {
 export function setupDeadCodeCommand(program: Command, context: CommandContext): void {
   program
     .command('deadcode')
-    .description('檢測並刪除未使用的程式碼（dead code）')
+    .description('檢測未使用的程式碼（dead code）；刪除需明確 --apply')
     .option('-p, --path <path>', '專案路徑', '.')
     .option('--format <format>', '輸出格式 (json|summary|diff)', 'summary')
     .option('--include-exports', '包含 export 的符號（預設排除）', false)
     .option('--include-public-members', '包含 public class members（預設排除）', false)
-    .option('--dry-run', '預覽變更而不執行')
+    .option('--dry-run', '預覽變更而不執行（即使同時指定 --apply）')
+    .option('--apply', '實際刪除 dead code 並清理 import')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
     .action(async (options: DeadCodeOptions, command: Command) => {
       await handleDeadCodeCommand(options, context, command);
@@ -94,9 +96,11 @@ async function handleDeadCodeCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
+  const willApply = options.apply === true && options.dryRun !== true;
+  const deadCodeExecutionFields = createDeadCodeExecutionFields(willApply);
 
   if (!isJsonFormat) {
-    console.log('   檢測並準備刪除 Dead Code...');
+    console.log(willApply ? '   檢測並刪除 Dead Code...' : '   檢測 Dead Code（預覽模式）...');
   }
 
   const projectPath = options.path || process.cwd();
@@ -139,6 +143,7 @@ async function handleDeadCodeCommand(
           format,
           {
             message: '沒有檢測到 dead code',
+            ...deadCodeExecutionFields,
             removals: []
           }
         );
@@ -186,6 +191,7 @@ async function handleDeadCodeCommand(
           format,
           {
             message: '符合條件的 dead code 已被過濾',
+            ...deadCodeExecutionFields,
             warnings: changeset.warnings,
             removals: []
           }
@@ -195,16 +201,17 @@ async function handleDeadCodeCommand(
     }
 
     // 4. 執行變更類命令統一流程
-    if (!isJsonFormat && !options.dryRun) {
+    if (!isJsonFormat && willApply) {
       console.log('   執行刪除...');
     }
 
     const result = await executeMutationCommand(changeset, {
       fileSystem: context.fileSystem,
       format,
-      dryRun: options.dryRun,
+      dryRun: !willApply,
       outputHandler,
       commandName: 'deadcode',
+      legacyFields: deadCodeExecutionFields,
       onSuccess: () => {
         if (!isJsonFormat) {
           const totalRemovals = changeset.textChanges
@@ -222,15 +229,24 @@ async function handleDeadCodeCommand(
       }
     });
 
-    // dry-run 提示
-    if (options.dryRun && result.success && !isJsonFormat) {
-      console.log('\n   移除 --dry-run 實際執行刪除');
+    // preview 提示
+    if (!willApply && result.success && !isJsonFormat) {
+      console.log('\n   加上 --apply 實際執行刪除');
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    outputHandler.outputError(`Dead code 刪除失敗: ${errorMessage}`, format);
+    const action = willApply ? '刪除' : '檢測';
+    outputHandler.outputError(`Dead code ${action}失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
     indexEngine.dispose();
   }
+}
+
+function createDeadCodeExecutionFields(willApply: boolean): Record<string, unknown> {
+  return {
+    mode: willApply ? 'apply' : 'preview',
+    previewOnly: !willApply,
+    applied: willApply
+  };
 }

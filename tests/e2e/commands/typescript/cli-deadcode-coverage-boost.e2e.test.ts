@@ -39,7 +39,7 @@ export function helperB() { return 2; }
 
       // 用 --include-exports 觸發 import-cleaner 的 removedSymbols 路徑
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -99,7 +99,7 @@ export function removeMe() { return 'remove'; }
 
       // 用 --include-exports 觸發 import-cleaner 的部分清理路徑
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -125,7 +125,7 @@ export function funcC() { return 3; }
 
       // 用 --include-exports 觸發 import-cleaner 的 partial import 路徑
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -150,7 +150,7 @@ export default class DefaultClass {
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -173,7 +173,7 @@ export function namedUnused() { return 2; }
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -261,7 +261,7 @@ export function otherHelper() { return 'other'; }
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -298,7 +298,7 @@ export const exportedB = 2;
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -332,7 +332,7 @@ export const alive = 42;
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -370,7 +370,7 @@ export function main() {
 
       // 用 --include-exports 觸發 file-operations 的 ImportPartial 替換路徑
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -430,7 +430,7 @@ export const alive = 1;
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -460,7 +460,7 @@ export const active = 2;
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -520,7 +520,7 @@ export const live = 'live';
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -594,7 +594,7 @@ export const final = 'final';
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -804,7 +804,7 @@ export function main() {
 
     // 用 --include-exports 強制檢測 comboDead（exported symbol），觸發 import cleanup
     const result = await executeCLI(
-      ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+      ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
       { memfs: fixture.memfs }
     );
 

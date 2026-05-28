@@ -31,7 +31,7 @@ export function alsoUnused(): number {
 `);
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -60,7 +60,7 @@ export function doWork(): string {
 `);
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -91,7 +91,7 @@ console.log(calledByConsumer());
 `);
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -128,7 +128,7 @@ function deadInConsumer(): void {
 `);
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -160,7 +160,7 @@ function deadInConsumer(): void {
       ) as string;
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -250,7 +250,7 @@ console.log(keepMe());
 `);
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

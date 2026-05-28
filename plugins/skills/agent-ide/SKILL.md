@@ -1,6 +1,6 @@
 ---
 name: agent-ide
-description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, detect or remove dead code/unused code, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
+description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, detect dead code or remove dead code with --apply, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
 ---
 
 # Agent IDE
@@ -19,7 +19,7 @@ TS/JS 程式碼智能重構工具。
 | [rename](references/rename.md) | 重命名符號 + 自動更新引用 |
 | [move](references/move.md) | 移動檔案/成員 + 自動更新 import |
 | [change-signature](references/change-signature.md) | 修改函式參數 + 更新呼叫點 |
-| [deadcode](references/deadcode.md) | 檢測/清理未使用程式碼 |
+| [deadcode](references/deadcode.md) | 檢測未使用程式碼；`--apply` 才清理 |
 
 ## 全域選項
 
@@ -32,7 +32,7 @@ TS/JS 程式碼智能重構工具。
 ### 重構標準流程
 
 ```text
-1. deadcode     → 清理未使用程式碼（清場）
+1. deadcode     → 檢測未使用程式碼（需 `--apply` 才清理）
 2. search       → 找入口與主要符號（偵察）
 3. cycles       → 檢測循環依賴（診斷）
 4. move         → 重組檔案/成員（重構）
@@ -43,7 +43,7 @@ TS/JS 程式碼智能重構工具。
 
 | 場景 | 功能 | 說明 |
 |------|-------|------|
-| 接手新專案 | `deadcode` → `search` | 先清垃圾，再找入口 |
+| 接手新專案 | `deadcode` → `search` | 先預覽未使用程式碼，再找入口 |
 | 重構前診斷 | `cycles` → `impact` | 找問題點，評估影響範圍 |
 | 找符號入口 | `search <symbol>` | 模糊搜尋符號位置 |
 | 檔案重組 | `move src/a.ts src/b/` | 自動更新所有 import |
@@ -54,7 +54,7 @@ TS/JS 程式碼智能重構工具。
 
 ### 安全操作原則
 
-1. **先 `--dry-run` 再執行**：變更類功能務必預覽
+1. **預覽後明確 apply**：變更類功能務必預覽；`deadcode` 預設只預覽，清理需加 `--apply`
 2. **清理優先於重構**：`deadcode` 減少不必要的移動/重命名
 3. **小步快跑**：一次只做一種類型的變更，便於回滾
 4. **重構後驗證**：`cycles` 確保沒引入循環依賴

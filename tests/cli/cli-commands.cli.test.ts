@@ -203,7 +203,7 @@ describe('CLI 整合測試', () => {
   describe('Mutation Commands', () => {
     it('deadcode - 刪除 dead code、驗證輸出結構、確認仍可編譯', () => {
       // 使用 deadcode-autofix fixture（有 tsconfig.json 可驗證編譯）
-      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_AUTOFIX}" --format json`);
+      const result = runCLI(`${CLI} deadcode --path "${DEADCODE_AUTOFIX}" --apply --format json`);
 
       // 驗證基本結構
       expect(result.success).toBe(true);

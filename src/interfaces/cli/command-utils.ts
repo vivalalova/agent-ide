@@ -107,6 +107,8 @@ export interface MutationExecutionOptions {
   commandName?: string;
   /** 執行成功後的回調（可選，用於輸出額外資訊） */
   onSuccess?: (previewInput: PreviewInput) => void;
+  /** JSON 輸出時額外保留的命令專屬欄位 */
+  legacyFields?: Record<string, unknown>;
 }
 
 /** 變更類命令執行結果 */
@@ -181,7 +183,7 @@ export async function executeMutationCommand(
   changeset: Changeset,
   options: MutationExecutionOptions
 ): Promise<MutationExecutionResult> {
-  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess } = options;
+  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess, legacyFields } = options;
 
   // 1. 檢查 changeset 是否成功
   if (!changeset.success) {
@@ -199,7 +201,7 @@ export async function executeMutationCommand(
 
   // 3. Dry-run 模式只輸出預覽
   if (dryRun) {
-    outputHandler.outputMutation(previewInput, format);
+    outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
     return { success: true, previewInput };
   }
 
@@ -212,7 +214,7 @@ export async function executeMutationCommand(
 
   // 5. 輸出結果
   if (result.success) {
-    outputHandler.outputMutation(previewInput, format);
+    outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
     onSuccess?.(previewInput);
     return { success: true, previewInput };
   } else {

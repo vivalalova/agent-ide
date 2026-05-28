@@ -64,8 +64,8 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Move file/member | `/agent-ide move` | Write + Delete + Edit imports |
 | Search symbol | `/agent-ide search` | Grep + manual ranking |
 | Find references | `/agent-ide find-references` | Grep + manual filtering |
-| Detect dead code | `/agent-ide deadcode --dry-run` | Manual analysis |
-| Remove dead code | `/agent-ide deadcode` | Manual deletion |
+| Detect dead code | `/agent-ide deadcode` | Manual analysis |
+| Remove dead code | `/agent-ide deadcode --apply` | Manual deletion |
 | Analyze impact | `/agent-ide impact` | Manual tracing |
 | Check cycles | `/agent-ide cycles` | Manual dependency review |
 | Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
@@ -86,7 +86,7 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `search`          | Search symbols with fuzzy matching     |
 | `find-references` | Find symbol definitions and references; use `--at` to disambiguate same-name symbols |
 | `call-hierarchy`  | Analyze function call hierarchy; use `--at` to target one same-name function or method |
-| `deadcode --dry-run` | Detect unused code                  |
+| `deadcode`        | Detect unused code and preview removals; use `--apply` to remove |
 
 ### Mutation (supports `--dry-run`)
 
@@ -96,7 +96,7 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `change-signature` | Refactor function parameters (reorder/add/remove)|
 | `move`             | Move files/directories and update imports        |
 | `move` (with line) | Move members across files (`path:line` syntax)   |
-| `deadcode`         | Remove unused code and clean imports             |
+| `deadcode --apply` | Remove unused code and clean imports             |
 
 ## Documentation
 

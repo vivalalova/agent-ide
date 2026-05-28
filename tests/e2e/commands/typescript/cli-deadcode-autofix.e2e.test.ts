@@ -27,8 +27,8 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       expect(result.exitCode).toBe(0);
       // diff 格式應該包含刪除標記
       expect(result.stdout).toContain('-');
-      // 應該提示移除 --dry-run
-      expect(result.stdout).toContain('--dry-run');
+      // 應該提示加上 --apply 才會實際刪除
+      expect(result.stdout).toContain('--apply');
     });
 
     it('應該輸出 JSON 格式預覽', async () => {
@@ -42,6 +42,9 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       expect(output.command).toBe('deadcode-removal');
       expect(output.success).toBe(true);
       expect(output.files).toBeDefined();
+      expect(output.previewOnly).toBe(true);
+      expect(output.applied).toBe(false);
+      expect(output.mode).toBe('preview');
     });
 
     it('應該檢測到 deadcode.ts 中的 dead code', async () => {
@@ -82,7 +85,32 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       expect(afterContent).toBe(originalContent);
     });
 
-    it('預設應該實際刪除 dead code', async () => {
+    it('預設應該只預覽 dead code，不修改檔案', async () => {
+      const originalContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+      expect(originalContent).toContain('unusedFunction');
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.previewOnly).toBe(true);
+      expect(output.applied).toBe(false);
+      expect(output.mode).toBe('preview');
+
+      const afterContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+      expect(afterContent).toBe(originalContent);
+    });
+
+    it('--apply 應該實際刪除 dead code', async () => {
       // 讀取原始內容，確認包含 unusedFunction
       const originalContent = await fixture.memfs.readFile(
         `${fixture.rootPath}/src/deadcode.ts`,
@@ -90,13 +118,17 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       );
       expect(originalContent).toContain('unusedFunction');
 
-      // 執行實際刪除（預設行為）
+      // 執行實際刪除（需明確 --apply）
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath],
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.previewOnly).toBe(false);
+      expect(output.applied).toBe(true);
+      expect(output.mode).toBe('apply');
 
       // 檔案應該被修改
       const afterContent = await fixture.memfs.readFile(
@@ -106,6 +138,30 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
 
       // unusedFunction 應該被刪除
       expect(afterContent).not.toContain('function unusedFunction');
+    });
+
+    it('--dry-run 應該覆蓋 --apply，不修改檔案', async () => {
+      const originalContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.previewOnly).toBe(true);
+      expect(output.applied).toBe(false);
+      expect(output.mode).toBe('preview');
+
+      const afterContent = await fixture.memfs.readFile(
+        `${fixture.rootPath}/src/deadcode.ts`,
+        'utf-8'
+      );
+      expect(afterContent).toBe(originalContent);
     });
   });
 
@@ -131,12 +187,38 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
 
       expect(countHunks(outputWith)).toBeLessThanOrEqual(countHunks(outputWithout));
     });
+
+    it('--apply 且所有 dead code 被排除時 JSON 應保留 apply mode', async () => {
+      const result = await executeCLI(
+        [
+          'deadcode',
+          '--path', fixture.rootPath,
+          '--apply',
+          '--exclude',
+          'unusedFunction',
+          'helperFunction',
+          'UnusedClass',
+          'unusedVariable',
+          'UnusedInterface',
+          'UnusedType',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.files?.length ?? 0).toBe(0);
+      expect(output.previewOnly).toBe(false);
+      expect(output.applied).toBe(true);
+      expect(output.mode).toBe('apply');
+    });
   });
 
   describe('main 符號保護', () => {
     it('main 函式不應該被刪除', async () => {
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath],
+        ['deadcode', '--path', fixture.rootPath, '--apply'],
         { memfs: fixture.memfs }
       );
 
@@ -169,7 +251,7 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
     it('沒有 dead code 時應正常結束', async () => {
       // 先刪除所有 dead code
       await executeCLI(
-        ['deadcode', '--path', fixture.rootPath],
+        ['deadcode', '--path', fixture.rootPath, '--apply'],
         { memfs: fixture.memfs }
       );
 
@@ -183,6 +265,26 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       // 應該顯示沒有 dead code 或 files 為空
       const output = JSON.parse(result.stdout);
       expect(output.files?.length ?? 0).toBe(0);
+    });
+
+    it('--apply 在沒有 dead code 時 JSON 應保留 apply mode', async () => {
+      // 先刪除所有 dead code
+      await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--apply'],
+        { memfs: fixture.memfs }
+      );
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--apply', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.files?.length ?? 0).toBe(0);
+      expect(output.previewOnly).toBe(false);
+      expect(output.applied).toBe(true);
+      expect(output.mode).toBe('apply');
     });
   });
 
@@ -211,7 +313,7 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       expect(originalContent).toContain('@param x 輸入參數');
       expect(originalContent).toContain('@returns 計算結果');
 
-      const result = await executeCLI(['deadcode', '--path', fixture.rootPath], { memfs: fixture.memfs });
+      const result = await executeCLI(['deadcode', '--path', fixture.rootPath, '--apply'], { memfs: fixture.memfs });
       expect(result.exitCode).toBe(0);
 
       const afterContent = await fixture.memfs.readFile(
@@ -226,7 +328,7 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
     });
 
     it('刪除 dead code 時不應留下孤立的 JSDoc', async () => {
-      const result = await executeCLI(['deadcode', '--path', fixture.rootPath], { memfs: fixture.memfs });
+      const result = await executeCLI(['deadcode', '--path', fixture.rootPath, '--apply'], { memfs: fixture.memfs });
       expect(result.exitCode).toBe(0);
 
       const afterContent = await fixture.memfs.readFile(

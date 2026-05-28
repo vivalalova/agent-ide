@@ -120,7 +120,7 @@ agent-ide impact --file <file> --path <path>
 agent-ide search <symbol> --path <path> [--type function] [--no-fuzzy]
 agent-ide find-references <symbol> --path <path>
 agent-ide call-hierarchy <function> --path <path>
-agent-ide deadcode --path <path> --dry-run [--include-exports]
+agent-ide deadcode --path <path> [--dry-run] [--include-exports]
 ```
 
 ### 變更類（支援 --dry-run）
@@ -128,7 +128,7 @@ agent-ide deadcode --path <path> --dry-run [--include-exports]
 ```bash
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
-agent-ide deadcode --path <path> [--include-exports]
+agent-ide deadcode --path <path> --apply [--include-exports]
 agent-ide move <source> <target> --path <path>
 ```
 
