@@ -4,6 +4,7 @@
  */
 
 import type { Location } from '@shared/types/core.js';
+import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 
 /** Outgoing 呼叫資訊（目標函數呼叫了誰） */
 export interface OutgoingCall {
@@ -27,6 +28,7 @@ export interface CallHierarchyOptions {
   readonly direction: 'incoming' | 'outgoing' | 'both';
   readonly depth: number;
   readonly maxResults?: number;
+  readonly targetCallSiteFilter?: (callSite: CallSite) => Promise<boolean>;
 }
 
 /** 呼叫層次分析結果 */

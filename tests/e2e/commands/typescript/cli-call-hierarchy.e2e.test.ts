@@ -219,6 +219,205 @@ export function multiEntry() {
       const callees = new Set(output.outgoing.map((call: { callee: string }) => call.callee));
       expect(callees).toContain('leftHelper');
       expect(callees).toContain('rightHelper');
+      expect(output.symbols).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'multiEntry', file: expect.stringContaining('multi-a.ts') }),
+          expect.objectContaining({ name: 'multiEntry', file: expect.stringContaining('multi-b.ts') })
+        ])
+      );
+    });
+
+    it('應該用 --at 鎖定同名類別方法的呼叫層次', async () => {
+      await fixture.writeFile('src/left-action.ts', 'export function leftAction() {}');
+      await fixture.writeFile('src/right-action.ts', 'export function rightAction() {}');
+      await fixture.writeFile('src/left-runner.ts', [
+        'import { leftAction } from "./left-action.js";',
+        'export class LeftRunner {',
+        '  run() {',
+        '    leftAction();',
+        '  }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/right-runner.ts', [
+        'import { rightAction } from "./right-action.js";',
+        'export class RightRunner {',
+        '  run() {',
+        '    rightAction();',
+        '  }',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'run',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-runner.ts:3',
+          '--direction',
+          'outgoing',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.targetSymbol.file).toContain('src/left-runner.ts');
+      expect(output.symbols).toHaveLength(1);
+      expect(output.summary.definitionCount).toBe(1);
+
+      const callees = output.outgoing.map((call: { callee: string }) => call.callee);
+      expect(callees).toContain('leftAction');
+      expect(callees).not.toContain('rightAction');
+    });
+
+    it('應該用 --at 保留同名類別方法的 incoming 呼叫者', async () => {
+      await fixture.writeFile('src/left-runner-incoming.ts', [
+        'export class LeftIncomingRunner {',
+        '  run() { return "left"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/right-runner-incoming.ts', [
+        'export class RightIncomingRunner {',
+        '  run() { return "right"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile(
+        'src/left-runner-caller.ts',
+        'import { LeftIncomingRunner } from "./left-runner-incoming.js";\nexport function leftRunCaller() { return new LeftIncomingRunner().run(); }'
+      );
+      await fixture.writeFile(
+        'src/right-runner-caller.ts',
+        'import { RightIncomingRunner } from "./right-runner-incoming.js";\nexport function rightRunCaller() { return new RightIncomingRunner().run(); }'
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'run',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-runner-incoming.ts:2',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const callers = output.incoming.map((call: { caller: string }) => call.caller);
+
+      expect(callers).toContain('leftRunCaller');
+      expect(callers).not.toContain('rightRunCaller');
+    });
+
+    it('應該用 --at 鎖定同名函數的 incoming 呼叫者', async () => {
+      await fixture.writeFile('src/left-incoming.ts', 'export function incomingTarget() { return "left"; }');
+      await fixture.writeFile('src/right-incoming.ts', 'export function incomingTarget() { return "right"; }');
+      await fixture.writeFile(
+        'src/left-incoming-caller.ts',
+        'import { incomingTarget } from "./left-incoming.js";\nexport function leftIncomingCaller() { return incomingTarget(); }'
+      );
+      await fixture.writeFile(
+        'src/right-incoming-caller.ts',
+        'import { incomingTarget } from "./right-incoming.js";\nexport function rightIncomingCaller() { return incomingTarget(); }'
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'incomingTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-incoming.ts:1',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const callers = output.incoming.map((call: { caller: string }) => call.caller);
+
+      expect(callers).toContain('leftIncomingCaller');
+      expect(callers).not.toContain('rightIncomingCaller');
+    });
+
+    it('應該用 --at 鎖定同名 arrow function 候選', async () => {
+      await fixture.writeFile('src/function-helper.ts', 'export function functionHelper() {}');
+      await fixture.writeFile('src/arrow-helper.ts', 'export function arrowHelper() {}');
+      await fixture.writeFile(
+        'src/function-mixed-target.ts',
+        'import { functionHelper } from "./function-helper.js";\nexport function mixedTarget() { functionHelper(); }'
+      );
+      await fixture.writeFile(
+        'src/arrow-mixed-target.ts',
+        [
+          'import { arrowHelper } from "./arrow-helper.js";',
+          'export const mixedTarget = () => {',
+          '  arrowHelper();',
+          '};'
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'mixedTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/arrow-mixed-target.ts:2',
+          '--direction',
+          'outgoing',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.targetSymbol.file).toContain('src/arrow-mixed-target.ts');
+
+      const callees = output.outgoing.map((call: { callee: string }) => call.callee);
+      expect(callees).toContain('arrowHelper');
+      expect(callees).not.toContain('functionHelper');
+    });
+
+    it('無效 --at 位置應回傳清楚錯誤', async () => {
+      await fixture.writeFile('src/located-call.ts', 'export function locatedCall() {}');
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'locatedCall',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/located-call.ts:42',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('locatedCall');
+      expect(output.error).toContain('src/located-call.ts:42');
     });
   });
 

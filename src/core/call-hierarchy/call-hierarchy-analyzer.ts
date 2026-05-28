@@ -11,7 +11,7 @@ import type { Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
-import { createSymbolFinder, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
+import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { logger } from '@infrastructure/logging/index.js';
@@ -83,7 +83,8 @@ export class CallHierarchyAnalyzer {
         functionName,
         projectFiles,
         definitionFile,
-        options.depth
+        options.depth,
+        options.targetCallSiteFilter
       );
       incoming.push(...incomingCalls);
     }
@@ -140,7 +141,8 @@ export class CallHierarchyAnalyzer {
     functionName: string,
     projectFiles: readonly string[],
     definitionFile: string,
-    depth: number
+    depth: number,
+    targetCallSiteFilter?: (callSite: CallSite) => Promise<boolean>
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
     const visited = new Set<string>();
@@ -154,7 +156,10 @@ export class CallHierarchyAnalyzer {
       }
       visited.add(targetName);
 
-      const callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
+      let callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
+      if (currentDepth === 1 && targetCallSiteFilter) {
+        callSites = await this.filterCallSites(callSites, targetCallSiteFilter);
+      }
       if (callSites.length === 0) {
         return;
       }
@@ -206,6 +211,21 @@ export class CallHierarchyAnalyzer {
 
     await findCallsRecursive(functionName, 1);
     return incoming;
+  }
+
+  private async filterCallSites(
+    callSites: readonly CallSite[],
+    targetCallSiteFilter: (callSite: CallSite) => Promise<boolean>
+  ): Promise<CallSite[]> {
+    const filteredCallSites: CallSite[] = [];
+
+    for (const callSite of callSites) {
+      if (await targetCallSiteFilter(callSite)) {
+        filteredCallSites.push(callSite);
+      }
+    }
+
+    return filteredCallSites;
   }
 
   /**

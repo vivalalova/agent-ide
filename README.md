@@ -84,8 +84,8 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `cycles`          | Detect circular dependencies (Tarjan)  |
 | `impact`          | Analyze change impact range (BFS)      |
 | `search`          | Search symbols with fuzzy matching     |
-| `find-references` | Find symbol definitions and references |
-| `call-hierarchy`  | Analyze function call hierarchy        |
+| `find-references` | Find symbol definitions and references; use `--at` to disambiguate same-name symbols |
+| `call-hierarchy`  | Analyze function call hierarchy; use `--at` to target one same-name function or method |
 | `deadcode --dry-run` | Detect unused code                  |
 
 ### Mutation (supports `--dry-run`)

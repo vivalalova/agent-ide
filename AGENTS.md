@@ -118,8 +118,8 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 agent-ide cycles --path <path>
 agent-ide impact --file <file> --path <path>
 agent-ide search <symbol> --path <path> [--type function] [--no-fuzzy]
-agent-ide find-references <symbol> --path <path>
-agent-ide call-hierarchy <function> --path <path>
+agent-ide find-references <symbol> --path <path> [--at <file:line:column>]
+agent-ide call-hierarchy <function> --path <path> [--at <file:line:column>]
 agent-ide deadcode --path <path> --dry-run [--include-exports]
 ```
 
@@ -180,6 +180,8 @@ agent-ide rename --from userId --to uid
 # 用 --at 指定 file:line 精確定位
 agent-ide rename --from userId --to uid --at src/user.ts:42
 ```
+
+**唯讀符號查詢 `--at` 參數**：`find-references` 與 `call-hierarchy` 可用 `--at <file:line:column>` 鎖定同名符號；JSON 輸出包含 `symbols` 定義候選清單，定位成功時包含 `targetSymbol`。`find-references` 的 `symbols` / `definitions` 不包含 parser 產生的 import-only candidate。
 
 ## 輸出處理架構
 

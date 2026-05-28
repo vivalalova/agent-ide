@@ -204,6 +204,330 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
     });
   });
 
+  describe('--at 符號定位', () => {
+    it('應該只回傳指定同名函數定義的引用', async () => {
+      await fixture.writeFile('src/left-target.ts', 'export function duplicateTarget() { return "left"; }');
+      await fixture.writeFile('src/right-target.ts', 'export function duplicateTarget() { return "right"; }');
+      await fixture.writeFile(
+        'src/use-left-target.ts',
+        'import { duplicateTarget } from "./left-target.js";\nexport const left = duplicateTarget();'
+      );
+      await fixture.writeFile(
+        'src/use-right-target.ts',
+        'import { duplicateTarget } from "./right-target.js";\nexport const right = duplicateTarget();'
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'duplicateTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-target.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.targetSymbol.file).toContain('src/left-target.ts');
+      expect(output.symbols).toHaveLength(1);
+      expect(output.summary.definitionCount).toBe(1);
+
+      const referenceFiles = output.references.map((ref: { file: string }) => ref.file);
+      expect(referenceFiles.some((file: string) => file.includes('use-left-target.ts'))).toBe(true);
+      expect(referenceFiles.some((file: string) => file.includes('use-right-target.ts'))).toBe(false);
+    });
+
+    it('同檔 shadowed symbol 不應被 --at 納入指定符號引用', async () => {
+      await fixture.writeFile(
+        'src/same-file-target.ts',
+        [
+          'export function sameFileTarget() { return "selected"; }',
+          'export const selectedValue = sameFileTarget();',
+          'function wrapper() {',
+          '  function sameFileTarget() { return "shadow"; }',
+          '  return sameFileTarget();',
+          '}'
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'sameFileTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/same-file-target.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const contexts = output.references.map((ref: { context: string }) => ref.context);
+
+      expect(contexts.some((context: string) => context.includes('selectedValue'))).toBe(true);
+      expect(contexts.some((context: string) => context.includes('return "shadow"'))).toBe(false);
+      expect(contexts.some((context: string) => context.trim() === 'return sameFileTarget();')).toBe(false);
+    });
+
+    it('同名定義沒有 --at 時應回傳所有候選 identity', async () => {
+      await fixture.writeFile('src/identity-a.ts', 'export const duplicateIdentity = "a";');
+      await fixture.writeFile('src/identity-b.ts', 'export const duplicateIdentity = "b";');
+
+      const result = await executeCLI(
+        ['find-references', 'duplicateIdentity', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.symbols).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'duplicateIdentity', file: expect.stringContaining('identity-a.ts') }),
+          expect.objectContaining({ name: 'duplicateIdentity', file: expect.stringContaining('identity-b.ts') })
+        ])
+      );
+      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該用 --at 鎖定同名類別方法的引用', async () => {
+      await fixture.writeFile('src/left-reference-runner.ts', [
+        'export class LeftReferenceRunner {',
+        '  run() { return "left"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/right-reference-runner.ts', [
+        'export class RightReferenceRunner {',
+        '  run() { return "right"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile(
+        'src/use-left-reference-runner.ts',
+        'import { LeftReferenceRunner } from "./left-reference-runner.js";\nexport function leftReferenceCaller() { return new LeftReferenceRunner().run(); }'
+      );
+      await fixture.writeFile(
+        'src/use-right-reference-runner.ts',
+        'import { RightReferenceRunner } from "./right-reference-runner.js";\nexport const right = new RightReferenceRunner().run();'
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'run',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-reference-runner.ts:2',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const referenceFiles = output.references.map((ref: { file: string }) => ref.file);
+
+      expect(referenceFiles.some((file: string) => file.includes('use-left-reference-runner.ts'))).toBe(true);
+      expect(referenceFiles.some((file: string) => file.includes('use-right-reference-runner.ts'))).toBe(false);
+    });
+
+    it('應該解析 tsconfig paths alias 的指定符號引用', async () => {
+      await fixture.writeFile('tsconfig.json', JSON.stringify({
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          baseUrl: '.',
+          paths: {
+            '@features/*': ['src/features/*']
+          }
+        },
+        include: ['src/**/*']
+      }));
+      await fixture.writeFile('src/features/left-alias-source.ts', 'export function aliasPipeline() { return "left"; }');
+      await fixture.writeFile('src/features/right-alias-source.ts', 'export function aliasPipeline() { return "right"; }');
+      await fixture.writeFile(
+        'src/use-left-alias.ts',
+        'import { aliasPipeline } from "@features/left-alias-source";\nexport const left = aliasPipeline();'
+      );
+      await fixture.writeFile(
+        'src/use-right-alias.ts',
+        'import { aliasPipeline } from "./features/right-alias-source.js";\nexport const right = aliasPipeline();'
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'aliasPipeline',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/features/left-alias-source.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const referenceFiles = output.references.map((ref: { file: string }) => ref.file);
+
+      expect(referenceFiles.some((file: string) => file.includes('use-left-alias.ts'))).toBe(true);
+      expect(referenceFiles.some((file: string) => file.includes('use-right-alias.ts'))).toBe(false);
+    });
+
+    it('應該保留 namespace import 與 barrel re-export 的指定符號引用', async () => {
+      await fixture.writeFile('src/left-library.ts', 'export function selectedPipeline() { return "left"; }');
+      await fixture.writeFile('src/right-library.ts', 'export function selectedPipeline() { return "right"; }');
+      await fixture.writeFile('src/left-barrel.ts', 'export { selectedPipeline } from "./left-library.js";');
+      await fixture.writeFile(
+        'src/use-left-library.ts',
+        [
+          'import * as leftLibrary from "./left-library.js";',
+          'import { selectedPipeline } from "./left-barrel.js";',
+          'export const direct = leftLibrary.selectedPipeline();',
+          'export const indirect = selectedPipeline();'
+        ].join('\n')
+      );
+      await fixture.writeFile(
+        'src/use-right-library.ts',
+        [
+          'import * as rightLibrary from "./right-library.js";',
+          'export const wrong = rightLibrary.selectedPipeline();'
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'selectedPipeline',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-library.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const contexts = output.references.map((ref: { context: string }) => ref.context);
+      const referenceFiles = output.references.map((ref: { file: string }) => ref.file);
+
+      expect(contexts.some((context: string) => context.includes('leftLibrary.selectedPipeline'))).toBe(true);
+      expect(contexts.some((context: string) => context.includes('selectedPipeline();'))).toBe(true);
+      expect(referenceFiles.some((file: string) => file.includes('left-barrel.ts'))).toBe(true);
+      expect(referenceFiles.some((file: string) => file.includes('use-right-library.ts'))).toBe(false);
+    });
+
+    it('同檔混合 namespace import 時不應納入非目標模組引用', async () => {
+      await fixture.writeFile('src/left-mixed-library.ts', 'export function mixedPipeline() { return "left"; }');
+      await fixture.writeFile('src/right-mixed-library.ts', 'export function mixedPipeline() { return "right"; }');
+      await fixture.writeFile(
+        'src/use-mixed-library.ts',
+        [
+          'import * as leftMixed from "./left-mixed-library.js";',
+          'import * as rightMixed from "./right-mixed-library.js";',
+          'export const left = leftMixed.mixedPipeline();',
+          'export const right = rightMixed.mixedPipeline();'
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'mixedPipeline',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-mixed-library.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const contexts = output.references.map((ref: { context: string }) => ref.context);
+
+      expect(contexts.some((context: string) => context.includes('leftMixed.mixedPipeline'))).toBe(true);
+      expect(contexts.some((context: string) => context.includes('rightMixed.mixedPipeline'))).toBe(false);
+    });
+
+    it('應該保留 split barrel re-export 的指定符號引用', async () => {
+      await fixture.writeFile('src/left-split-source.ts', 'export function splitPipeline() { return "left"; }');
+      await fixture.writeFile('src/right-split-source.ts', 'export function splitPipeline() { return "right"; }');
+      await fixture.writeFile(
+        'src/left-split-barrel.ts',
+        [
+          'import { splitPipeline } from "./left-split-source.js";',
+          'export { splitPipeline };'
+        ].join('\n')
+      );
+      await fixture.writeFile(
+        'src/use-left-split.ts',
+        'import { splitPipeline } from "./left-split-barrel.js";\nexport const value = splitPipeline();'
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'splitPipeline',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/left-split-source.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const referenceFiles = output.references.map((ref: { file: string }) => ref.file);
+
+      expect(referenceFiles.some((file: string) => file.includes('use-left-split.ts'))).toBe(true);
+    });
+
+    it('無效 --at 位置應回傳清楚錯誤', async () => {
+      await fixture.writeFile('src/valid-target.ts', 'export function locatedTarget() {}');
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'locatedTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/valid-target.ts:99',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('locatedTarget');
+      expect(output.error).toContain('src/valid-target.ts:99');
+    });
+  });
+
   describe('JSON 輸出結構驗證', () => {
     it('應該包含完整的輸出結構', async () => {
       await fixture.writeFile('test.ts', 'export function testFn() {}');

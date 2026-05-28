@@ -40,6 +40,7 @@ export {
   type ReferenceItem,
   type ReferenceType,
   type DefinitionLocation,
+  type SymbolIdentity,
   type CallHierarchyResult,
   type CallHierarchyDirection,
   type IncomingCallItem,

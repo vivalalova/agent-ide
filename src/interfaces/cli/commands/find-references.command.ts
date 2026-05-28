@@ -18,7 +18,8 @@ import {
   type FindReferencesResult,
   type ReferenceItem,
   type ReferenceType,
-  type DefinitionLocation
+  type DefinitionLocation,
+  type SymbolIdentity
 } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
@@ -28,11 +29,14 @@ import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/comma
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
+import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
+import { filterReferencesToSelectedSymbol } from '@interfaces/cli/commands/symbol-reference-filter.js';
 
 /** find-references 命令選項 */
 interface FindReferencesOptions {
   path: string;
   format: string;
+  at?: string;
 }
 
 /**
@@ -43,6 +47,7 @@ export function setupFindReferencesCommand(program: Command, context: CommandCon
     .command('find-references <symbol>')
     .description('查找符號的定義和所有引用')
     .option('-p, --path <path>', '專案路徑', '.')
+    .option('-a, --at <location>', '指定符號位置 (file:line:column)，用於區分同名符號')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
     .action(async (symbol: string, options: FindReferencesOptions, command: Command) => {
       await handleFindReferencesCommand(symbol, options, context, command);
@@ -93,13 +98,22 @@ async function handleFindReferencesCommand(
 
     // 查找符號定義
     const symbolResults = await indexEngine.findSymbol(symbolName);
+    const targetResult = resolveSymbolTarget(symbolName, symbolResults, projectPath, options.at);
+    if (!targetResult.success) {
+      outputHandler.outputError(targetResult.error, format);
+      process.exitCode = 1;
+      return;
+    }
+
+    const selectedSymbolResults = targetResult.resolution.selectedResults;
+    const symbolIdentities: SymbolIdentity[] = targetResult.resolution.symbols;
     let definition: DefinitionLocation | null = null;
     let definitions: DefinitionLocation[] = [];
     let symbolType = 'unknown';
 
-    if (symbolResults.length > 0) {
+    if (selectedSymbolResults.length > 0) {
       // 收集所有定義位置
-      definitions = symbolResults.map(result => ({
+      definitions = selectedSymbolResults.map(result => ({
         file: result.symbol.location.filePath,
         line: result.symbol.location.range.start.line,
         column: result.symbol.location.range.start.column
@@ -107,7 +121,7 @@ async function handleFindReferencesCommand(
 
       // 第一個定義（向後相容）
       definition = definitions[0];
-      symbolType = symbolResults[0].symbol.type;
+      symbolType = selectedSymbolResults[0].symbol.type;
     }
 
     // 建立 SymbolFinder 查找所有引用
@@ -117,9 +131,9 @@ async function handleFindReferencesCommand(
     // 收集所有引用（包括所有同名符號的定義）
     let refs: SymbolReference[] = [];
 
-    if (symbolResults.length > 0) {
+    if (selectedSymbolResults.length > 0) {
       // 有找到定義：使用完整 Symbol 資訊查找引用
-      const symbols = symbolResults.map(r => r.symbol);
+      const symbols = selectedSymbolResults.map(r => r.symbol);
       const refsMap = await symbolFinder.findReferencesMultiple(symbols, filePaths);
 
       // 合併所有同名符號的引用
@@ -127,6 +141,15 @@ async function handleFindReferencesCommand(
         const key = serializeSymbolKey(symbolToKey(symbol));
         const symbolRefs = refsMap.get(key) ?? [];
         refs.push(...symbolRefs);
+      }
+
+      if (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0]) {
+        refs = await filterReferencesToSelectedSymbol(
+          refs,
+          selectedSymbolResults[0].symbol,
+          projectPath,
+          context.fileSystem
+        );
       }
     } else {
       // 無定義：使用作用域感知查找（fallback）
@@ -155,6 +178,8 @@ async function handleFindReferencesCommand(
       type: symbolType,
       definition,
       definitions: definitions.length > 1 ? definitions : undefined,
+      symbols: symbolIdentities,
+      targetSymbol: targetResult.resolution.targetSymbol,
       references,
       summary: {
         totalReferences: references.length,
