@@ -104,6 +104,43 @@ describe('parseChangeSignatureChanges', () => {
     });
   });
 
+  it('splits parameters after comparison-expression defaults', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'enabled:boolean=left < right,label:string=ready',
+      targetFilePath: '/workspace/source.ts'
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      name: 'enabled',
+      defaultValue: 'left < right',
+      callSiteValue: 'left < right'
+    });
+    expect(changes[1]).toMatchObject({
+      name: 'label',
+      defaultValue: '\'ready\'',
+      callSiteValue: '\'ready\''
+    });
+  });
+
+  it('keeps generic type and generic default commas inside one added parameter', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'lookup:Map<string, number>=new Map<string, number>(),enabled:boolean=false',
+      targetFilePath: '/workspace/source.ts'
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      name: 'lookup',
+      parameterType: 'Map<string, number>',
+      defaultValue: 'new Map<string, number>()'
+    });
+    expect(changes[1]).toMatchObject({
+      name: 'enabled',
+      defaultValue: 'false'
+    });
+  });
+
   it('accepts repeated --add values', () => {
     const changes = parseChangeSignatureChanges({
       add: ['label:string=default', 'enabled:boolean=false']

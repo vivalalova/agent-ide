@@ -588,10 +588,10 @@ function getTypeScriptSyntaxError(source: string, syntaxMode?: SyntaxValidationM
 
 function splitAddParameters(add: string | readonly string[]): string[] {
   const addInputs = Array.isArray(add) ? add : [add];
-  return addInputs.flatMap(input => splitTopLevelComma(input));
+  return addInputs.flatMap(input => splitAddParameterList(input));
 }
 
-function splitTopLevelComma(input: string): string[] {
+function splitAddParameterList(input: string): string[] {
   const parts: string[] = [];
   let current = '';
   let quote: '\'' | '"' | '`' | null = null;
@@ -600,8 +600,11 @@ function splitTopLevelComma(input: string): string[] {
   let bracketDepth = 0;
   let braceDepth = 0;
   let angleDepth = 0;
+  let insideDefaultValue = false;
 
-  for (const char of input) {
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index];
+
     if (quote) {
       current += char;
       if (escaped) {
@@ -626,12 +629,25 @@ function splitTopLevelComma(input: string): string[] {
     if (char === ']') { bracketDepth = Math.max(0, bracketDepth - 1); }
     if (char === '{') { braceDepth += 1; }
     if (char === '}') { braceDepth = Math.max(0, braceDepth - 1); }
-    if (char === '<') { angleDepth += 1; }
-    if (char === '>') { angleDepth = Math.max(0, angleDepth - 1); }
+    if (!insideDefaultValue) {
+      if (char === '<') { angleDepth += 1; }
+      if (char === '>') { angleDepth = Math.max(0, angleDepth - 1); }
+    }
 
-    if (char === ',' && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && angleDepth === 0) {
+    const atTopLevel = isAtTopLevelParameterSyntax(parenDepth, bracketDepth, braceDepth, angleDepth);
+    if (char === '=' && !insideDefaultValue && atTopLevel) {
+      insideDefaultValue = true;
+    }
+
+    if (
+      char === ','
+      && atTopLevel
+      && startsAddParameterSpec(input, index + 1)
+    ) {
       parts.push(current.trim());
       current = '';
+      insideDefaultValue = false;
+      angleDepth = 0;
       continue;
     }
 
@@ -643,6 +659,51 @@ function splitTopLevelComma(input: string): string[] {
   }
 
   return parts;
+}
+
+function isAtTopLevelParameterSyntax(
+  parenDepth: number,
+  bracketDepth: number,
+  braceDepth: number,
+  angleDepth: number
+): boolean {
+  return parenDepth === 0
+    && bracketDepth === 0
+    && braceDepth === 0
+    && angleDepth === 0;
+}
+
+function startsAddParameterSpec(input: string, startIndex: number): boolean {
+  let index = startIndex;
+  while (index < input.length && /\s/.test(input[index])) {
+    index += 1;
+  }
+
+  if (!isIdentifierStart(input[index])) {
+    return false;
+  }
+
+  index += 1;
+  while (index < input.length && isIdentifierPart(input[index])) {
+    index += 1;
+  }
+  while (index < input.length && /\s/.test(input[index])) {
+    index += 1;
+  }
+
+  return index >= input.length
+    || input[index] === ':'
+    || input[index] === '='
+    || input[index] === '@'
+    || input[index] === ',';
+}
+
+function isIdentifierStart(char: string | undefined): boolean {
+  return char !== undefined && /[$_\p{ID_Start}]/u.test(char);
+}
+
+function isIdentifierPart(char: string | undefined): boolean {
+  return char !== undefined && /[$_\u200C\u200D\p{ID_Continue}]/u.test(char);
 }
 
 function normalizeDefaultValue(parameterType: string | undefined, defaultValue: string | undefined): string | undefined {
