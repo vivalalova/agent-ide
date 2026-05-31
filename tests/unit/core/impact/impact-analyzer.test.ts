@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ImpactAnalyzer } from '@core/impact/impact-analyzer.js';
+import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createMockFileSystem, createMockFileStats } from '../_helpers/mock-factories.js';
 
 describe('ImpactAnalyzer', () => {
@@ -36,6 +37,20 @@ describe('ImpactAnalyzer', () => {
 
       expect(result.filePath).toContain('foo.ts');
       expect(result.dependencies).toEqual([]);
+    });
+
+    it('Given .ts and .d.ts siblings, when resolving extensionless import, then prefers runtime source file', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/src/entry.ts': 'import \'./foo\';\n',
+        '/src/foo.ts': 'export const foo = 1;\n',
+        '/src/foo.d.ts': 'export declare const foo: number;\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      const result = await analyzer.analyzeFile('/src/entry.ts');
+
+      expect(result.dependencies.map(dependency => dependency.path)).toEqual(['/src/foo.ts']);
     });
   });
 

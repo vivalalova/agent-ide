@@ -14,6 +14,8 @@ export interface ParseTask {
   filePath: string;
   /** 檔案內容（主執行緒預讀） */
   content: string;
+  /** 額外 Parser 模組路徑，worker 會在解析前載入 */
+  parserModulePaths?: readonly string[];
 }
 
 /**
@@ -39,4 +41,6 @@ export interface WorkerPoolOptions {
   maxThreads?: number;
   /** 最小執行緒數（預設：1） */
   minThreads?: number;
+  /** 額外 Parser 模組路徑，會套用到所有任務 */
+  parserModulePaths?: readonly string[];
 }

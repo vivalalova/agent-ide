@@ -30,6 +30,10 @@ import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import {
+  ParserCapabilityName,
+  getUnsupportedParserCapabilityMessage
+} from '@interfaces/cli/parser-capability-guard.js';
 
 interface MovePathContext {
   readonly projectRoot: string;
@@ -448,6 +452,16 @@ async function handleMoveMemberCommand(
 
     // 取得 ParserRegistry（單例）
     const parserRegistry = ParserRegistry.getInstance();
+    const unsupportedCapability = getUnsupportedParserCapabilityMessage(
+      sourceFilePath,
+      parserRegistry,
+      ParserCapabilityName.MoveMember
+    );
+    if (unsupportedCapability) {
+      outputHandler.outputError(unsupportedCapability, format, 'move');
+      process.exitCode = 1;
+      return;
+    }
 
     // 建立引擎
     const moveMemberEngine = new MoveMemberEngine(

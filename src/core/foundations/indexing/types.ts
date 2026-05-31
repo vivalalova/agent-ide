@@ -13,6 +13,8 @@ import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 export const CLI_INDEX_DEFAULTS = {
   /** 支援的程式語言副檔名 */
   includeExtensions: SOURCE_FILE_EXTENSIONS,
+  /** 外部 Parser 模組路徑 */
+  parserModulePaths: [] as const,
   /** 排除的目錄模式 */
   excludePatterns: [
     'node_modules/**',
@@ -81,6 +83,7 @@ export interface IndexConfig {
   readonly workspacePath: string;
   readonly excludePatterns: readonly string[];
   readonly includeExtensions: readonly string[];
+  readonly parserModulePaths?: readonly string[];
   readonly maxFileSize: number;
   readonly enablePersistence: boolean;
   readonly persistencePath: string | undefined;
@@ -287,6 +290,7 @@ export function createIndexConfig(
     workspacePath,
     excludePatterns: options?.excludePatterns || ['node_modules/**', '.git/**', 'dist/**'],
     includeExtensions: options?.includeExtensions || SOURCE_FILE_EXTENSIONS,
+    parserModulePaths: options?.parserModulePaths || [],
     maxFileSize: options?.maxFileSize || 1024 * 1024, // 1MB
     enablePersistence: options?.enablePersistence || true,
     persistencePath: options?.persistencePath,
@@ -344,6 +348,7 @@ export function isIndexConfig(value: unknown): value is IndexConfig {
     obj.workspacePath.trim().length > 0 &&
     Array.isArray(obj.excludePatterns) &&
     Array.isArray(obj.includeExtensions) &&
+    (obj.parserModulePaths === undefined || Array.isArray(obj.parserModulePaths)) &&
     typeof obj.maxFileSize === 'number' &&
     obj.maxFileSize > 0 &&
     typeof obj.enablePersistence === 'boolean' &&

@@ -7,23 +7,17 @@
  */
 
 import * as path from 'path';
-import { ParserRegistry } from '@infrastructure/parser/index.js';
-import { TypeScriptParser } from '@plugins/typescript/parser.js';
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import {
+  ParserRegistry,
+  initializeDefaultParsers,
+  initializeParserModules
+} from '@infrastructure/parser/index.js';
 import type { ParseTask, ParseResult } from '../types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 // Worker 初始化（每個 Worker 執行一次）
 const registry = ParserRegistry.getInstance();
-
-// 確保 Parser 已註冊
-if (!registry.getParser('.ts')) {
-  registry.register(new TypeScriptParser());
-}
-
-if (!registry.getParser('.js')) {
-  registry.register(new JavaScriptParser());
-}
+initializeDefaultParsers(registry);
 
 /**
  * 解析單一檔案
@@ -34,6 +28,7 @@ if (!registry.getParser('.js')) {
  */
 export default async function parseFile(task: ParseTask): Promise<ParseResult> {
   const { filePath, content } = task;
+  await initializeParserModules(registry, task.parserModulePaths ?? []);
   const ext = path.extname(filePath);
   const parser = registry.getParser(ext);
 

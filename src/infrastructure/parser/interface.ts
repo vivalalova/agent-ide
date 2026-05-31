@@ -4,7 +4,13 @@
  */
 
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
-import type { CodeEdit, Definition, Usage, ValidationResult } from '@infrastructure/parser/types.js';
+import type {
+  CodeEdit,
+  Definition,
+  ParserCapabilities,
+  Usage,
+  ValidationResult
+} from '@infrastructure/parser/types.js';
 import type { Location } from '@shared/types/core.js';
 
 // ===== Import 語句解析相關型別 =====
@@ -136,6 +142,12 @@ export interface ParserPlugin {
    * 應該釋放插件使用的所有資源
    */
   dispose(): Promise<void>;
+
+  /**
+   * 宣告 Parser 支援的語意能力。
+   * 未宣告的能力一律視為不支援，避免非 TS/JS Parser 落入語言專屬重構流程。
+   */
+  getCapabilities?(): ParserCapabilities;
 
   // ===== 檔案過濾支援 =====
 
@@ -322,6 +334,43 @@ export function supportsExtension(plugin: ParserPlugin, extension: string): bool
  */
 export function supportsLanguage(plugin: ParserPlugin, language: string): boolean {
   return (plugin.supportedLanguages as string[]).includes(language);
+}
+
+/**
+ * Parser 能力預設值
+ */
+export const DEFAULT_PARSER_CAPABILITIES: ParserCapabilities = {
+  supportsRename: false,
+  supportsGoToDefinition: false,
+  supportsFindUsages: false,
+  supportsCodeActions: false,
+  supportsChangeSignature: false,
+  supportsCallHierarchy: false,
+  supportsMoveMember: false
+};
+
+/**
+ * 讀取 Parser 能力，未宣告欄位維持 fast-fail 預設。
+ */
+export function getParserCapabilities(plugin: ParserPlugin | null | undefined): ParserCapabilities {
+  if (!plugin?.getCapabilities) {
+    return DEFAULT_PARSER_CAPABILITIES;
+  }
+
+  return {
+    ...DEFAULT_PARSER_CAPABILITIES,
+    ...plugin.getCapabilities()
+  };
+}
+
+/**
+ * 檢查 Parser 是否宣告支援特定能力。
+ */
+export function parserSupportsCapability(
+  plugin: ParserPlugin | null | undefined,
+  capability: keyof ParserCapabilities
+): boolean {
+  return getParserCapabilities(plugin)[capability] === true;
 }
 
 // ===== 作用域感知符號查找相關型別 =====

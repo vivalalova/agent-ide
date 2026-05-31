@@ -25,6 +25,7 @@ export {
   isSourceFileExtension,
   stripSourceFileExtension,
   getSourceLanguage,
+  hasRuntimeImportExtensionCandidates,
   getImportResolutionExtensions
 } from './source-file-extensions.js';
 

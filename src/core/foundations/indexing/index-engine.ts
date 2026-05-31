@@ -34,7 +34,7 @@ import {
 
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
-import { ParserRegistry } from '@infrastructure/parser/index.js';
+import { ParserRegistry, getRegisteredSourceFileExtensions } from '@infrastructure/parser/index.js';
 import { initializeDefaultParsers } from '@infrastructure/parser/index.js';
 
 /**
@@ -53,14 +53,6 @@ export class IndexEngine {
   private _indexed = false;
 
   constructor(config: IndexConfig, fileSystem: IFileSystem) {
-    // 驗證配置
-    this.validateConfig(config);
-
-    this.config = config;
-    this.fileIndex = new FileIndex(config);
-    this.symbolIndex = new SymbolIndex();
-    this.fileSystem = fileSystem;
-
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
     const registry = ParserRegistry.getInstance();
     if (registry.isDisposed) {
@@ -73,12 +65,34 @@ export class IndexEngine {
     // 確保所有內建 Parser 已註冊（透過 infrastructure 層初始化）
     initializeDefaultParsers(this.parserRegistry);
 
+    // 驗證配置
+    this.validateConfig(config);
+
+    this.config = this.mergeRegisteredParserExtensions(config);
+    this.fileIndex = new FileIndex(this.config);
+    this.symbolIndex = new SymbolIndex();
+    this.fileSystem = fileSystem;
+
     // 建立 Worker Pool（多執行緒解析）
     // 測試環境禁用 Worker Pool，避免 worker 清理問題
     const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
     this.parserPool = isTestEnv ? null : createParserWorkerPool({
-      maxThreads: this.config.maxConcurrency
+      maxThreads: this.config.maxConcurrency,
+      parserModulePaths: this.config.parserModulePaths ?? []
     });
+  }
+
+  private mergeRegisteredParserExtensions(config: IndexConfig): IndexConfig {
+    const includeExtensions = getRegisteredSourceFileExtensions(
+      this.parserRegistry,
+      config.includeExtensions
+    );
+
+    return {
+      ...config,
+      includeExtensions,
+      parserModulePaths: config.parserModulePaths ?? []
+    };
   }
 
   /**
@@ -576,7 +590,11 @@ export class IndexEngine {
         const fileInfo = await this.createFileInfoFromContent(filePath, stat, content);
 
         taskMap.set(filePath, {
-          task: { filePath, content },
+          task: {
+            filePath,
+            content,
+            parserModulePaths: this.config.parserModulePaths ?? []
+          },
           fileInfo,
           content
         });
@@ -660,6 +678,12 @@ export class IndexEngine {
    * 根據副檔名判斷語言
    */
   private getLanguageFromExtension(extension: string): string | undefined {
+    const parser = this.parserRegistry.getParser(extension);
+    const parserLanguage = parser?.supportedLanguages[0];
+    if (parserLanguage) {
+      return parserLanguage;
+    }
+
     const languageMap: Record<string, string> = {
       '.java': 'java',
       '.cpp': 'cpp',

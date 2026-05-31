@@ -5,7 +5,14 @@
 
 import * as path from 'path';
 import * as ts from 'typescript';
-import { Dependency, DependencyType, isSourceFileExtension } from '@shared/types/index.js';
+import {
+  type Dependency,
+  DependencyType,
+  isJavaScriptSourceExtension,
+  isSourceFileExtension,
+  isTypeScriptSourceExtension
+} from '@shared/types/index.js';
+import type { ParserRegistry } from '@infrastructure/parser/index.js';
 import type { PathResolver } from './path-resolver.js';
 import type { FileScanner } from './file-scanner.js';
 
@@ -24,7 +31,8 @@ export class DependencyExtractor {
 
   constructor(
     pathResolver: PathResolver,
-    fileScanner: FileScanner
+    fileScanner: FileScanner,
+    private readonly parserRegistry?: ParserRegistry
   ) {
     this.pathResolver = pathResolver;
     this.fileScanner = fileScanner;
@@ -40,8 +48,12 @@ export class DependencyExtractor {
     const dependencies: Dependency[] = [];
     const fileExt = path.extname(filePath);
 
-    if (!isSourceFileExtension(fileExt)) {
+    if (!isSourceFileExtension(fileExt) && !this.parserRegistry?.getParser(fileExt)) {
       return dependencies;
+    }
+
+    if (!isTypeScriptSourceExtension(fileExt) && !isJavaScriptSourceExtension(fileExt)) {
+      return this.extractParserDependencies(content, filePath);
     }
 
     const dependencySpecs = this.extractDependencySpecs(content, filePath);
@@ -56,6 +68,31 @@ export class DependencyExtractor {
           isRelative: resolvedPath.isRelative,
           importedSymbols: [],
           isTypeOnly: dependencySpec.isTypeOnly,
+        });
+      }
+    }
+
+    return dependencies;
+  }
+
+  private async extractParserDependencies(content: string, filePath: string): Promise<Dependency[]> {
+    const parser = this.parserRegistry?.getParser(path.extname(filePath));
+    if (!parser) {
+      return [];
+    }
+
+    const ast = await parser.parse(content, filePath);
+    const parserDependencies = await parser.extractDependencies(ast);
+    const dependencies: Dependency[] = [];
+
+    for (const parserDependency of parserDependencies) {
+      const resolvedPath = await this.pathResolver.resolvePath(parserDependency.path, filePath);
+
+      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath)) {
+        dependencies.push({
+          ...parserDependency,
+          path: resolvedPath.resolvedPath,
+          isRelative: resolvedPath.isRelative
         });
       }
     }

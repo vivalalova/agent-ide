@@ -25,6 +25,10 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { isJavaScriptSourceExtension } from '@shared/types/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import {
+  ParserCapabilityName,
+  getUnsupportedParserCapabilityMessage
+} from '@interfaces/cli/parser-capability-guard.js';
 
 /** Change Signature 命令選項 */
 interface ChangeSignatureOptions {
@@ -110,6 +114,19 @@ async function handleChangeSignatureCommand(
       return;
     }
 
+    // 取得 ParserRegistry（單例）
+    const parserRegistry = ParserRegistry.getInstance();
+    const unsupportedCapability = getUnsupportedParserCapabilityMessage(
+      filePath,
+      parserRegistry,
+      ParserCapabilityName.ChangeSignature
+    );
+    if (unsupportedCapability) {
+      outputHandler.outputError(unsupportedCapability, format, 'change-signature');
+      process.exitCode = 1;
+      return;
+    }
+
     // 解析變更操作
     const changes = parseChangeSignatureChanges({
       ...options,
@@ -126,9 +143,6 @@ async function handleChangeSignatureCommand(
       console.log(`   修改函式簽名: ${resolvedFunctionName}`);
       console.log(`   檔案: ${path.relative(process.cwd(), filePath)}`);
     }
-
-    // 取得 ParserRegistry（單例）
-    const parserRegistry = ParserRegistry.getInstance();
 
     // 建立引擎
     const changeSignatureEngine = new ChangeSignatureEngine(

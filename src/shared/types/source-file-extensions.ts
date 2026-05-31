@@ -25,12 +25,18 @@ export function isJavaScriptSourceExtension(extension: string): boolean {
   return (JAVASCRIPT_SOURCE_EXTENSIONS as readonly string[]).includes(extension);
 }
 
-export function isSourceFileExtension(extension: string): boolean {
-  return (SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension);
+export function isSourceFileExtension(
+  extension: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): boolean {
+  return sourceExtensions.includes(extension);
 }
 
-export function stripSourceFileExtension(filePath: string): string {
-  const extension = SOURCE_FILE_EXTENSIONS.find(sourceExtension => filePath.endsWith(sourceExtension));
+export function stripSourceFileExtension(
+  filePath: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): string {
+  const extension = sourceExtensions.find(sourceExtension => filePath.endsWith(sourceExtension));
   return extension ? filePath.slice(0, -extension.length) : filePath;
 }
 
@@ -46,6 +52,13 @@ export function getSourceLanguage(extension: string): string | undefined {
   return undefined;
 }
 
-export function getImportResolutionExtensions(importExtension: string): readonly string[] {
-  return RUNTIME_IMPORT_EXTENSION_CANDIDATES[importExtension] ?? SOURCE_FILE_EXTENSIONS;
+export function hasRuntimeImportExtensionCandidates(importExtension: string): boolean {
+  return Object.prototype.hasOwnProperty.call(RUNTIME_IMPORT_EXTENSION_CANDIDATES, importExtension);
+}
+
+export function getImportResolutionExtensions(
+  importExtension: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): readonly string[] {
+  return RUNTIME_IMPORT_EXTENSION_CANDIDATES[importExtension] ?? sourceExtensions;
 }

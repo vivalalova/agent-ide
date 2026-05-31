@@ -6,7 +6,7 @@ This file provides guidance to Codex when working with code in this repository.
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：10 核心模組、2 內建 Parser（TS/JS）、可註冊額外 Parser 副檔名、Unicode 識別符支援
 
 **環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.7
 
@@ -52,6 +52,14 @@ src/
 ├── plugins/              # typescript/ | javascript/ Parser
 └── interfaces/           # CLI
 ```
+
+### Parser 語言擴充契約
+
+- **單一註冊來源**：預設 Parser 由 `infrastructure/parser/initializer.ts` 管理；CLI、IndexEngine、worker 都必須呼叫同一套 bootstrap，禁止各自 hardcode TS/JS 註冊。
+- **副檔名來源**：索引、搜尋、impact、cycles 以 `ParserRegistry.getSupportedExtensions()` 合併 `includeExtensions`；新增 Parser 後不可另存一份副檔名清單。
+- **worker 擴充**：worker 任務可帶 `parserModulePaths`，worker 解析前會載入外部 Parser module；測試需覆蓋非 TS/JS extension。
+- **能力邊界**：`change-signature`、`call-hierarchy`、`move-member` 仍是 TS/JS 語意流程；非 TS/JS Parser 必須透過 `getCapabilities()` 明確宣告支援，否則 CLI fast-fail。
+- **測試要求**：新增語言支援時至少用假 Parser 驗證 indexing/search、impact/cycles、worker bootstrap，以及不支援能力的錯誤訊息。
 
 ### Core 設計原則
 

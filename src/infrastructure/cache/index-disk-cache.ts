@@ -45,10 +45,11 @@ export class IndexDiskCache {
    */
   async computeCacheKey(
     projectPath: string,
-    projectFileSystem: IFileSystem
+    projectFileSystem: IFileSystem,
+    includeExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
   ): Promise<string> {
     try {
-      const extensions = SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`);
+      const extensions = includeExtensions.map(extension => `**/*${extension}`);
       const excludePatterns = ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'];
 
       const allFiles: string[] = [];

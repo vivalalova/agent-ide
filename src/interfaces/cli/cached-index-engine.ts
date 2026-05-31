@@ -59,7 +59,11 @@ export async function createAndIndexWithCache(
   const diskCache = new IndexDiskCache(projectPath, configKey, options.cacheDir);
 
   // 計算當前 cache key
-  const currentKey = await diskCache.computeCacheKey(projectPath, fileSystem);
+  const currentKey = await diskCache.computeCacheKey(
+    projectPath,
+    fileSystem,
+    indexEngine.getConfig().includeExtensions
+  );
 
   // 嘗試載入快取
   const cached = await diskCache.load();

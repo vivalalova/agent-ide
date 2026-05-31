@@ -8,7 +8,11 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { DependencyGraph } from '@core/foundations/dependency-graph/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import {
+  ParserRegistry,
+  getRegisteredSourceFileExtensions,
+  initializeDefaultParsers
+} from '@infrastructure/parser/index.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -43,6 +47,7 @@ export class ImpactAnalyzer {
   private pathResolver: PathResolver;
   private fileScanner: FileScanner;
   private dependencyExtractor: DependencyExtractor;
+  private readonly parserRegistry: ParserRegistry;
 
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
@@ -50,9 +55,13 @@ export class ImpactAnalyzer {
     this.cycleDetector = new CycleDetector();
     this.cache = createLRUCache<string, CacheEntry>(1000);
     this.fileSystem = fileSystem;
+    this.parserRegistry = ParserRegistry.getInstance();
+    initializeDefaultParsers(this.parserRegistry);
 
     // 使用預設選項並合併使用者選項
-    const defaultOptions = this.createDefaultAnalysisOptions();
+    const defaultOptions = this.createDefaultAnalysisOptions(
+      getRegisteredSourceFileExtensions(this.parserRegistry)
+    );
     this.options = { ...defaultOptions, ...options };
 
     // 初始化子模組
@@ -60,7 +69,8 @@ export class ImpactAnalyzer {
     this.fileScanner = new FileScanner(fileSystem, this.options);
     this.dependencyExtractor = new DependencyExtractor(
       this.pathResolver,
-      this.fileScanner
+      this.fileScanner,
+      this.parserRegistry
     );
   }
 
@@ -365,14 +375,15 @@ export class ImpactAnalyzer {
    * 建立預設分析選項
    * @returns 預設選項
    */
-  private createDefaultAnalysisOptions(): ExtendedDependencyAnalysisOptions {
+  private createDefaultAnalysisOptions(sourceFileExtensions: readonly string[]): ExtendedDependencyAnalysisOptions {
     return {
       includeNodeModules: false,
       followSymlinks: true,
       maxDepth: 100,
       excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-      includePatterns: SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`),
-      concurrency: 4
+      includePatterns: sourceFileExtensions.map(extension => `**/*${extension}`),
+      concurrency: 4,
+      sourceFileExtensions
     };
   }
 

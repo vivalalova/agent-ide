@@ -84,18 +84,22 @@ export interface ExtendedDependencyAnalysisOptions extends DependencyAnalysisOpt
   readonly verbose?: boolean;
   /** TypeScript 路徑別名映射（鍵為別名前綴，值為絕對路徑） */
   readonly pathAliases?: Record<string, string>;
+  /** runtime 已註冊 Parser 支援的原始碼副檔名 */
+  readonly sourceFileExtensions?: readonly string[];
 }
 
 /**
  * 建立預設依賴分析選項
  */
-export function createDefaultAnalysisOptions(): DependencyAnalysisOptions {
+export function createDefaultAnalysisOptions(
+  sourceFileExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): DependencyAnalysisOptions {
   return {
     includeNodeModules: false,
     followSymlinks: true,
     maxDepth: 100,
     excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-    includePatterns: SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`)
+    includePatterns: sourceFileExtensions.map(extension => `**/*${extension}`)
   };
 }
 

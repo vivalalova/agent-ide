@@ -146,6 +146,15 @@ export interface ParserCapabilities {
 
   /** 是否支援程式碼動作 */
   readonly supportsCodeActions: boolean;
+
+  /** 是否支援 change-signature 重構 */
+  readonly supportsChangeSignature?: boolean;
+
+  /** 是否支援 call-hierarchy 分析 */
+  readonly supportsCallHierarchy?: boolean;
+
+  /** 是否支援 move-member 重構 */
+  readonly supportsMoveMember?: boolean;
 }
 
 /**
@@ -408,4 +417,3 @@ export interface BabelASTExtension extends AST {
 export function hasBabelAST(ast: AST): ast is BabelASTExtension {
   return 'babelAST' in ast && ast.babelAST !== null && ast.babelAST !== undefined;
 }
-

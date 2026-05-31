@@ -13,6 +13,8 @@ import { ParserWorkerPool, createParserWorkerPool, type ParseTask } from '@infra
 /** Fixtures 根目錄 */
 const FIXTURES_ROOT = path.resolve(__dirname, '../../fixtures');
 const SAMPLE_PROJECT = path.join(FIXTURES_ROOT, 'sample-project');
+const TOY_PROJECT = path.join(FIXTURES_ROOT, 'toy-project');
+const TOY_PARSER_MODULE = path.join(FIXTURES_ROOT, 'toy-parser.mjs');
 
 describe('Worker Pool E2E - 多執行緒 AST 解析', () => {
   let pool: ParserWorkerPool;
@@ -77,6 +79,29 @@ describe('Worker Pool E2E - 多執行緒 AST 解析', () => {
 
       // index.ts 應該有 import 語句
       expect(result.dependencies.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('應該透過任務指定的 Parser 模組解析額外語言', async () => {
+      const filePath = path.join(TOY_PROJECT, 'main.toy');
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const task: ParseTask = {
+        filePath,
+        content,
+        parserModulePaths: [TOY_PARSER_MODULE]
+      };
+
+      const result = await pool.parseFile(task);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.symbols.map(symbol => symbol.name)).toContain('WorkerAlpha');
+      expect(result.dependencies).toEqual([
+        {
+          path: './dep.toy',
+          type: 'import',
+          isRelative: true,
+          importedSymbols: []
+        }
+      ]);
     });
 
     it('應該處理語法錯誤並返回錯誤訊息', async () => {

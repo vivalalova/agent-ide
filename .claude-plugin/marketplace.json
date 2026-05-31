@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "agent-ide",
-      "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS.",
+      "description": "Refactoring & analysis: rename, move, dependency cycles, impact analysis, deadcode detection, snapshots. TS/JS plus registered parser extensions.",
       "source": "./plugins/skills/agent-ide",
       "category": "development",
       "version": "0.13.7"

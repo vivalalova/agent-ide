@@ -5,8 +5,7 @@
 
 import { Command } from 'commander';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { TypeScriptParser } from '@plugins/typescript/parser.js';
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { initializeDefaultParsers } from '@infrastructure/parser/initializer.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import { logger, LogLevel } from '@infrastructure/logging/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
@@ -88,35 +87,7 @@ export class AgentIdeCLI {
         return;
       }
 
-      // 在測試環境中，檢查是否已經有測試 Parser 註冊
-      if (process.env.NODE_ENV === 'test') {
-        // 如果所有測試 Parser 都已經註冊，就不需要重複註冊
-        const tsParser = registry.getParserByName('typescript');
-        const jsParser = registry.getParserByName('javascript');
-        if (tsParser && jsParser) {
-          return;
-        }
-      }
-
-      // 嘗試註冊內建的 TypeScript Parser
-      try {
-        const tsParser = new TypeScriptParser();
-        if (!registry.getParserByName('typescript')) {
-          registry.register(tsParser);
-        }
-      } catch (tsError) {
-        logger.verbose('parser', `TypeScript parser loading failed: ${tsError}`);
-      }
-
-      // 嘗試註冊內建的 JavaScript Parser
-      try {
-        const jsParser = new JavaScriptParser();
-        if (!registry.getParserByName('javascript')) {
-          registry.register(jsParser);
-        }
-      } catch (jsError) {
-        logger.verbose('parser', `JavaScript parser loading failed: ${jsError}`);
-      }
+      initializeDefaultParsers(registry);
 
     } catch (error) {
       logger.verbose('parser', `Parser initialization warning: ${error}`);

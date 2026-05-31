@@ -30,6 +30,10 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
 import { createSelectedSymbolLocationFilter } from '@interfaces/cli/commands/symbol-reference-filter.js';
+import {
+  ParserCapabilityName,
+  getUnsupportedParserCapabilityMessage
+} from '@interfaces/cli/parser-capability-guard.js';
 
 /** call-hierarchy 命令選項 */
 interface CallHierarchyCommandOptions {
@@ -166,6 +170,20 @@ async function handleCallHierarchyCommand(
 
     const selectedSymbols = targetResult.resolution.selectedResults;
     const symbolIdentities: SymbolIdentity[] = targetResult.resolution.symbols;
+    const parserRegistry = ParserRegistry.getInstance();
+
+    for (const selectedSymbol of selectedSymbols) {
+      const unsupportedCapability = getUnsupportedParserCapabilityMessage(
+        selectedSymbol.symbol.location.filePath,
+        parserRegistry,
+        ParserCapabilityName.CallHierarchy
+      );
+      if (unsupportedCapability) {
+        outputHandler.outputError(unsupportedCapability, format);
+        process.exitCode = 1;
+        return;
+      }
+    }
 
     // 收集所有定義位置（用於多定義場景）
     const allDefinitions: FunctionDefinitionInfo[] = selectedSymbols.map(sym => ({
@@ -180,7 +198,6 @@ async function handleCallHierarchyCommand(
     const definitionLine = functionSymbol.symbol.location.range.start.line;
 
     // 建立分析器並執行分析
-    const parserRegistry = ParserRegistry.getInstance();
     const analyzer = createCallHierarchyAnalyzer(parserRegistry, context.fileSystem);
 
     const selectedSymbol = selectedSymbols[0]?.symbol;

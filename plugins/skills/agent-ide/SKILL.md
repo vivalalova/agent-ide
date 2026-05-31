@@ -1,11 +1,11 @@
 ---
 name: agent-ide
-description: "Use Agent IDE CLI for TypeScript/JavaScript code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, add parameters with distinct call-site values via --call-site-value, detect dead code or remove dead code with --apply, check CLI usage/help, or manage index cache with --no-cache/--cache-dir. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
+description: "Use Agent IDE CLI for TypeScript/JavaScript and registered parser-extension code intelligence, dependency analysis, symbol disambiguation, and safe refactoring. Trigger when Codex needs to inspect TS/JS projects, analyze cycles or impact, search symbols, find references with --at, trace call hierarchy with --at, rename safely, move files/directories/members, update imports, change function signatures and call sites, add parameters with distinct call-site values via --call-site-value, detect dead code or remove dead code with --apply, check CLI usage/help, manage index cache with --no-cache/--cache-dir, or verify parser language extension behavior. Matches agent-ide, cycles, impact, search, find-references, call-hierarchy, rename, move, change-signature, deadcode."
 ---
 
 # Agent IDE
 
-TS/JS 程式碼智能重構工具。
+TS/JS 與已註冊 Parser extension 的程式碼智能重構工具。
 
 ## 功能列表
 
@@ -26,6 +26,13 @@ TS/JS 程式碼智能重構工具。
 - `--no-cache`：停用索引快取
 - `--cache-dir <path>`：覆寫索引快取目錄
 - `--verbose`：顯示詳細處理資訊
+
+## Parser Extension 契約
+
+- CLI、IndexEngine、worker 共用 `initializeDefaultParsers()`；新增語言時不要在各入口重複 hardcode 副檔名。
+- indexing/search/impact/cycles 以 `ParserRegistry.getSupportedExtensions()` 納入額外 Parser extension。
+- worker 可透過 `parserModulePaths` 載入額外 Parser module。
+- `change-signature`、`call-hierarchy`、`move-member` 對非 TS/JS Parser 預設 fast-fail；Parser 必須用 `getCapabilities()` 明確宣告支援才可進入語言專屬流程。
 
 ## 最佳實踐
 

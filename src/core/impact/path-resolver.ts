@@ -7,8 +7,8 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { PathResolutionResult, ExtendedDependencyAnalysisOptions } from './types.js';
 import {
-  SOURCE_FILE_EXTENSIONS,
-  getImportResolutionExtensions
+  getImportResolutionExtensions,
+  hasRuntimeImportExtensionCandidates
 } from '@shared/types/index.js';
 
 /**
@@ -108,8 +108,11 @@ export class PathResolver {
     isRelative: boolean
   ): Promise<PathResolutionResult> {
     const importExtension = path.extname(basePath);
-    const extensions = getImportResolutionExtensions(importExtension);
-    const usesRuntimeImportExtension = extensions !== SOURCE_FILE_EXTENSIONS;
+    const extensions = getImportResolutionExtensions(
+      importExtension,
+      this.options.sourceFileExtensions
+    );
+    const usesRuntimeImportExtension = hasRuntimeImportExtensionCandidates(importExtension);
     const normalizedPath = usesRuntimeImportExtension
       ? basePath.slice(0, -importExtension.length)
       : basePath;
