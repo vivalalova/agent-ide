@@ -34,21 +34,26 @@ import {
 
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
-import { ParserRegistry, getRegisteredSourceFileExtensions } from '@infrastructure/parser/index.js';
-import { initializeDefaultParsers } from '@infrastructure/parser/index.js';
+import {
+  ParserRegistry,
+  getRegisteredSourceFileExtensions,
+  initializeDefaultParsers,
+  initializeParserModules
+} from '@infrastructure/parser/index.js';
 
 /**
  * 索引引擎類別
  * 協調檔案索引、符號索引和解析器的核心引擎
  */
 export class IndexEngine {
-  private readonly config: IndexConfig;
+  private config: IndexConfig;
   private readonly fileIndex: FileIndex;
   private readonly symbolIndex: SymbolIndex;
   private readonly parserRegistry: ParserRegistry;
   private readonly fileSystem: IFileSystem;
   /** Worker Pool（測試環境為 null，使用單執行緒解析） */
   private readonly parserPool: ParserWorkerPool | null;
+  private parserModulesInitialized = false;
   private _disposed = false;
   private _indexed = false;
 
@@ -93,6 +98,20 @@ export class IndexEngine {
       includeExtensions,
       parserModulePaths: config.parserModulePaths ?? []
     };
+  }
+
+  async initializeConfiguredParserModules(): Promise<void> {
+    if (this.parserModulesInitialized) {
+      return;
+    }
+
+    const parserModulePaths = this.config.parserModulePaths ?? [];
+    if (parserModulePaths.length > 0) {
+      await initializeParserModules(this.parserRegistry, parserModulePaths);
+      this.config = this.mergeRegisteredParserExtensions(this.config);
+    }
+
+    this.parserModulesInitialized = true;
   }
 
   /**
@@ -215,6 +234,8 @@ export class IndexEngine {
       throw new Error(`無法存取目錄: ${dirPath}`);
     }
 
+    await this.initializeConfiguredParserModules();
+
     // 使用 glob 模式查找檔案
     const includePatterns = this.config.includeExtensions.map(ext =>
       `**/*${ext}`
@@ -281,6 +302,8 @@ export class IndexEngine {
    */
   async indexFile(filePath: string): Promise<void> {
     try {
+      await this.initializeConfiguredParserModules();
+
       const stat = await this.fileSystem.getStats(filePath);
 
       // 檢查檔案大小，超過限制則跳過

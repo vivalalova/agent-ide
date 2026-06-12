@@ -39,6 +39,7 @@ export async function createAndIndexWithCache(
 ): Promise<IndexEngine> {
   const indexConfig = createIndexConfig(projectPath, configDefaults);
   const indexEngine = new IndexEngine(indexConfig, fileSystem);
+  await indexEngine.initializeConfiguredParserModules();
 
   // 測試環境自動 noCache（避免污染 ~/.cache）
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';

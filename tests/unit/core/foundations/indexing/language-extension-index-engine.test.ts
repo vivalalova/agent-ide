@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   IndexEngine,
@@ -10,6 +11,8 @@ import {
 } from '@infrastructure/parser/index.js';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createToyParser } from '../../../../helpers/toy-parser.js';
+
+const TOY_PARSER_MODULE = path.resolve('tests/fixtures/toy-parser.mjs');
 
 describe('IndexEngine language extension support', () => {
   beforeEach(() => {
@@ -39,6 +42,33 @@ describe('IndexEngine language extension support', () => {
 
     expect(engine.getConfig().includeExtensions).toContain('.toy');
     const results = await engine.findSymbol('Alpha');
+    expect(results).toHaveLength(1);
+    expect(results[0].fileInfo.language).toBe('toy');
+    expect(results[0].symbol.location.filePath).toBe('/project/src/main.toy');
+  });
+
+  it('indexes files for parser modules declared in config', async () => {
+    resetDefaultParserFactoriesForTesting();
+    ParserRegistry.resetInstance();
+
+    const fileSystem = new MemFileSystem();
+    await fileSystem.fromJSON({
+      '/project/package.json': '{}',
+      '/project/src/main.toy': 'symbol ModuleAlpha\n'
+    });
+
+    const engine = new IndexEngine(
+      createIndexConfig('/project', {
+        enablePersistence: false,
+        parserModulePaths: [TOY_PARSER_MODULE]
+      }),
+      fileSystem
+    );
+
+    await engine.indexProject('/project');
+
+    expect(engine.getConfig().includeExtensions).toContain('.toy');
+    const results = await engine.findSymbol('ModuleAlpha');
     expect(results).toHaveLength(1);
     expect(results[0].fileInfo.language).toBe('toy');
     expect(results[0].symbol.location.filePath).toBe('/project/src/main.toy');

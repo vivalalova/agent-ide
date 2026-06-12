@@ -24,6 +24,20 @@ function registerParserIfMissing(registry: ParserRegistry, parser: ParserPlugin)
   const alreadyRegistered = parser.supportedExtensions.some(extension => registry.getParser(extension));
   if (!alreadyRegistered) {
     registry.register(parser);
+    return;
+  }
+
+  disposeUnregisteredParser(parser);
+}
+
+function disposeUnregisteredParser(parser: ParserPlugin): void {
+  try {
+    const disposeResult = parser.dispose();
+    if (disposeResult instanceof Promise) {
+      void disposeResult.catch(() => undefined);
+    }
+  } catch {
+    // Best-effort cleanup for a parser instance that never entered the registry.
   }
 }
 
