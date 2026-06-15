@@ -164,6 +164,110 @@ export const b = shared();
       expect(consumerB).not.toMatch(/from ['"].*shared-fn['"]/);
     });
 
+    it('外部 barrel re-export 引用被移動成員時也會更新路徑', async () => {
+      await fixture.writeFile('src/shared-fn.ts', `export function shared(): string {
+  return 'shared';
+}
+`);
+      await fixture.writeFile('src/barrel.ts', `export { shared } from './shared-fn';
+`);
+      await fixture.writeFile('src/new-home.ts', '');
+
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/shared-fn.ts')}:1`, fixture.getFilePath('src/new-home.ts'),
+          '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const barrel = await fixture.memfs.readFile(fixture.getFilePath('src/barrel.ts'), 'utf-8') as string;
+      expect(barrel).toContain('export { shared } from \'./new-home\';');
+      expect(barrel).not.toContain('from \'./shared-fn\'');
+    });
+
+    it('外部多行 barrel re-export 引用被移動成員時也會更新路徑', async () => {
+      await fixture.writeFile('src/shared-fn.ts', `export function shared(): string {
+  return 'shared';
+}
+`);
+      await fixture.writeFile('src/barrel.ts', `export {
+  shared,
+} from './shared-fn';
+`);
+      await fixture.writeFile('src/new-home.ts', '');
+
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/shared-fn.ts')}:1`, fixture.getFilePath('src/new-home.ts'),
+          '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const barrel = await fixture.memfs.readFile(fixture.getFilePath('src/barrel.ts'), 'utf-8') as string;
+      expect(barrel).toContain(`export {
+  shared,
+} from './new-home';`);
+      expect(barrel).not.toContain('from \'./shared-fn\'');
+    });
+
+    it('外部 star barrel re-export 應補上被移動成員的新 re-export 並保留原 star export', async () => {
+      await fixture.writeFile('src/shared-fn.ts', `export function shared(): string {
+  return 'shared';
+}
+
+export function other(): string {
+  return 'other';
+}
+`);
+      await fixture.writeFile('src/barrel.ts', `export * from './shared-fn';
+`);
+      await fixture.writeFile('src/new-home.ts', '');
+
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/shared-fn.ts')}:1`, fixture.getFilePath('src/new-home.ts'),
+          '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const barrel = await fixture.memfs.readFile(fixture.getFilePath('src/barrel.ts'), 'utf-8') as string;
+      expect(barrel).toContain('export { shared } from \'./new-home\';');
+      expect(barrel).toContain('export * from \'./shared-fn\';');
+    });
+
+    it('外部 type-only barrel re-export 引用被移動成員時也會更新路徑', async () => {
+      await fixture.writeFile('src/shared-fn.ts', `export interface SharedShape {
+  value: string;
+}
+`);
+      await fixture.writeFile('src/barrel.ts', `export type { SharedShape } from './shared-fn';
+`);
+      await fixture.writeFile('src/new-home.ts', '');
+
+      const result = await executeCLI(
+        ['move', `${fixture.getFilePath('src/shared-fn.ts')}:1`, fixture.getFilePath('src/new-home.ts'),
+          '-p', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      const barrel = await fixture.memfs.readFile(fixture.getFilePath('src/barrel.ts'), 'utf-8') as string;
+      expect(barrel).toContain('export type { SharedShape } from \'./new-home\';');
+      expect(barrel).not.toContain('from \'./shared-fn\'');
+    });
+
     it('移動一個成員不影響 consumer 中對其他成員的 import', async () => {
       await fixture.writeFile('src/multi-export.ts', `export function A(): string {
   return 'A';

@@ -158,7 +158,8 @@ export class IndexDiskCache {
    */
   getCachePath(): string {
     const baseDir = this.cacheDir
-      ?? join(homedir(), '.cache', 'agent-ide', hashProjectPath(this.projectPath), this.configKey);
+      ? join(this.cacheDir, hashProjectPath(this.projectPath), this.configKey)
+      : join(homedir(), '.cache', 'agent-ide', hashProjectPath(this.projectPath), this.configKey);
     return join(baseDir, 'index.json');
   }
 

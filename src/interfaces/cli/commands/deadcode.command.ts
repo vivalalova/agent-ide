@@ -239,7 +239,7 @@ async function handleDeadCodeCommand(
     outputHandler.outputError(`Dead code ${action}失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine.disposeAsync();
   }
 }
 

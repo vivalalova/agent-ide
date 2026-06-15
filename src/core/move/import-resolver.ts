@@ -56,13 +56,24 @@ export class ImportResolver {
       }
 
       // 解析 ES6 import（包含 import type 語法）
-      const importMatches = line.matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
+      const importStatement = this.collectMultilineImportStatement(lines, i);
+      const importMatches = (importStatement?.statement ?? line).matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
       for (const match of importMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement(ImportStatementType.IMPORT, importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(
+          ImportStatementType.IMPORT,
+          importPath,
+          importStatement ? importStatement.startLineIndex + 1 : lineNumber,
+          importStatement ? lines[importStatement.startLineIndex].indexOf('import') : match.index || 0,
+          importStatement ? lines.slice(importStatement.startLineIndex, importStatement.endLineIndex + 1).join('\n') : line
+        );
         if (statement) {
           statements.push(statement);
         }
+      }
+      if (importStatement && importStatement.endLineIndex > importStatement.startLineIndex) {
+        i = importStatement.endLineIndex;
+        continue;
       }
 
       // 解析 ES6 export from（包含單行和多行）
@@ -110,6 +121,37 @@ export class ImportResolver {
     }
 
     return statements;
+  }
+
+  /**
+   * 收集多行的 import 語句。
+   */
+  private collectMultilineImportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number; startLineIndex: number } | null {
+    const startLine = lines[startIndex];
+    if (!startLine.includes('import') || /\bimport\s*\(/.test(startLine)) {
+      return null;
+    }
+
+    if (this.isCompleteImportStatement(startLine)) {
+      return { statement: startLine, endLineIndex: startIndex, startLineIndex: startIndex };
+    }
+
+    let fullStatement = startLine;
+    for (let i = startIndex + 1; i < lines.length; i++) {
+      fullStatement += ' ' + lines[i].trim();
+      if (this.isCompleteImportStatement(fullStatement)) {
+        return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
+      }
+      if (i - startIndex > 200) {
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  private isCompleteImportStatement(statement: string): boolean {
+    return /import\s+(?:type\s+)?(?:(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`][^'"`]+['"`]/.test(statement);
   }
 
   /**

@@ -286,7 +286,7 @@ async function handleCallHierarchyCommand(
     outputHandler.outputError(`呼叫層次分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine.disposeAsync();
   }
 }
 

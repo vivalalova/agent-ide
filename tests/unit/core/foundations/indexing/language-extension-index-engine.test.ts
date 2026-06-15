@@ -13,6 +13,7 @@ import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createToyParser } from '../../../../helpers/toy-parser.js';
 
 const TOY_PARSER_MODULE = path.resolve('tests/fixtures/toy-parser.mjs');
+const DIRECT_TOY_PARSER_MODULE = path.resolve('tests/fixtures/direct-disposable-toy-parser.mjs');
 
 describe('IndexEngine language extension support', () => {
   beforeEach(() => {
@@ -72,5 +73,65 @@ describe('IndexEngine language extension support', () => {
     expect(results).toHaveLength(1);
     expect(results[0].fileInfo.language).toBe('toy');
     expect(results[0].symbol.location.filePath).toBe('/project/src/main.toy');
+  });
+
+  it('keeps shared direct parser modules alive until every IndexEngine releases them', async () => {
+    resetDefaultParserFactoriesForTesting();
+    ParserRegistry.resetInstance();
+
+    const fileSystem = new MemFileSystem();
+    await fileSystem.fromJSON({
+      '/project/package.json': '{}',
+      '/project/src/main.toy': 'symbol SharedAlpha\n'
+    });
+
+    const config = createIndexConfig('/project', {
+      enablePersistence: false,
+      parserModulePaths: [DIRECT_TOY_PARSER_MODULE]
+    });
+    const firstEngine = new IndexEngine(config, fileSystem);
+    const secondEngine = new IndexEngine(config, fileSystem);
+
+    try {
+      await firstEngine.initializeConfiguredParserModules();
+      await secondEngine.initializeConfiguredParserModules();
+      await secondEngine.disposeAsync();
+
+      await firstEngine.indexProject('/project');
+      const results = await firstEngine.findSymbol('SharedAlpha');
+      expect(results).toHaveLength(1);
+    } finally {
+      await firstEngine.disposeAsync();
+    }
+  });
+
+  it('keeps shared factory parser modules alive until every IndexEngine releases them', async () => {
+    resetDefaultParserFactoriesForTesting();
+    ParserRegistry.resetInstance();
+
+    const fileSystem = new MemFileSystem();
+    await fileSystem.fromJSON({
+      '/project/package.json': '{}',
+      '/project/src/main.toy': 'symbol SharedFactoryAlpha\n'
+    });
+
+    const config = createIndexConfig('/project', {
+      enablePersistence: false,
+      parserModulePaths: [TOY_PARSER_MODULE]
+    });
+    const firstEngine = new IndexEngine(config, fileSystem);
+    const secondEngine = new IndexEngine(config, fileSystem);
+
+    try {
+      await firstEngine.initializeConfiguredParserModules();
+      await secondEngine.initializeConfiguredParserModules();
+      await firstEngine.disposeAsync();
+
+      await secondEngine.indexProject('/project');
+      const results = await secondEngine.findSymbol('SharedFactoryAlpha');
+      expect(results).toHaveLength(1);
+    } finally {
+      await secondEngine.disposeAsync();
+    }
   });
 });

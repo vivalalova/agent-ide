@@ -45,12 +45,23 @@ describe('IndexDiskCache', () => {
   describe('getCachePath', () => {
     it('cacheDir override가 있으면 해당 경로 사용', () => {
       const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
-      expect(cache.getCachePath()).toBe(join(tmpCacheDir, 'index.json'));
+      expect(dirname(dirname(dirname(cache.getCachePath())))).toBe(tmpCacheDir);
+      expect(cache.getCachePath().endsWith(join('default', 'index.json'))).toBe(true);
     });
 
-    it('projectPath가 다르면 경로가 다르다', () => {
-      const cache1 = new IndexDiskCache('/proj/a', 'default', tmpCacheDir + '/a');
-      const cache2 = new IndexDiskCache('/proj/b', 'default', tmpCacheDir + '/b');
+    it('cacheDir override 下仍用 configKey 隔離路徑', () => {
+      const cache1 = new IndexDiskCache('/proj', 'config-a', tmpCacheDir);
+      const cache2 = new IndexDiskCache('/proj', 'config-b', tmpCacheDir);
+
+      expect(cache1.getCachePath().endsWith(join('config-a', 'index.json'))).toBe(true);
+      expect(cache2.getCachePath().endsWith(join('config-b', 'index.json'))).toBe(true);
+      expect(cache1.getCachePath()).not.toBe(cache2.getCachePath());
+    });
+
+    it('同一個 cacheDir 下不同 projectPath 仍隔離路徑', () => {
+      const cache1 = new IndexDiskCache('/proj/a', 'default', tmpCacheDir);
+      const cache2 = new IndexDiskCache('/proj/b', 'default', tmpCacheDir);
+
       expect(cache1.getCachePath()).not.toBe(cache2.getCachePath());
     });
   });

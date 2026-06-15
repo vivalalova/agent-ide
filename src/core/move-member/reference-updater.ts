@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { MemberDefinition, ReferenceUpdate, MoveMemberOptions } from './types.js';
+import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
 
@@ -17,6 +17,16 @@ interface ParsedImportMember {
   name: string;
   /** 別名（如 A as B 中的 B） */
   alias?: string;
+  /** 是否為 type-only specifier（如 export { type A }） */
+  typeOnly?: boolean;
+}
+
+type ImportExportStatementKind = 'import' | 'import type' | 'export' | 'export type';
+
+interface ImportExportStatement {
+  readonly text: string;
+  readonly startLineIndex: number;
+  readonly endLineIndex: number;
 }
 
 /**
@@ -51,7 +61,11 @@ export class ReferenceUpdater {
 
       // 掃描每一行找 import 語句
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+        const statement = this.collectImportExportStatement(lines, i);
+        if (!statement) {continue;}
+
+        i = statement.endLineIndex;
+        const line = statement.text;
 
         // 檢查是否是 import 語句且包含成員名稱和來源路徑
         const importPathMatch = this.extractImportPath(line);
@@ -68,6 +82,29 @@ export class ReferenceUpdater {
         // 比較路徑（考慮副檔名）
         if (!this.pathsMatch(resolvedImportPath, normalizedSourceFile)) {continue;}
 
+        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
+        const quoteChar = this.detectQuoteChar(line);
+
+        if (this.isStarReExport(line)) {
+          const newImport = `${this.createMemberReExport(member, newRelativePath, quoteChar)}\n${line}`;
+          updates.push({
+            filePath,
+            originalImport: line,
+            newImport,
+            location: {
+              filePath,
+              range: {
+                start: { line: statement.startLineIndex + 1, column: 1 },
+                end: {
+                  line: statement.endLineIndex + 1,
+                  column: lines[statement.endLineIndex].length + 1
+                }
+              }
+            }
+          });
+          continue;
+        }
+
         // 解析 import 中的所有成員
         const importedMembers = this.parseImportedMembers(line);
         if (importedMembers.length === 0) {continue;}
@@ -76,13 +113,10 @@ export class ReferenceUpdater {
         const memberToMove = importedMembers.find(m => m.name === member.name);
         if (!memberToMove) {continue;}
 
-        // 計算新的相對路徑
-        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
-        const quoteChar = this.detectQuoteChar(line);
-
         // 根據是否有其他成員決定如何更新 import
         const otherMembers = importedMembers.filter(m => m.name !== member.name);
         let newImport: string;
+        const statementKind = this.getStatementKind(line);
 
         if (otherMembers.length === 0) {
           // 只有一個成員，直接替換路徑
@@ -93,16 +127,12 @@ export class ReferenceUpdater {
         } else {
           // 有多個成員，需要分離 import
           // 生成保留在原位置的 import
-          const remainingMembersStr = otherMembers.map(m =>
-            m.alias ? `${m.name} as ${m.alias}` : m.name
-          ).join(', ');
-          const remainingImport = `import { ${remainingMembersStr} } from ${quoteChar}${importPathMatch}${quoteChar};`;
+          const remainingMembersStr = otherMembers.map(m => this.formatImportedMember(m)).join(', ');
+          const remainingImport = `${statementKind} { ${remainingMembersStr} } from ${quoteChar}${importPathMatch}${quoteChar};`;
 
           // 生成移動到新位置的 import
-          const movedMemberStr = memberToMove.alias
-            ? `${memberToMove.name} as ${memberToMove.alias}`
-            : memberToMove.name;
-          const newLocationImport = `import { ${movedMemberStr} } from ${quoteChar}${newRelativePath}${quoteChar};`;
+          const movedMemberStr = this.formatImportedMember(memberToMove);
+          const newLocationImport = `${statementKind} { ${movedMemberStr} } from ${quoteChar}${newRelativePath}${quoteChar};`;
 
           // 合併成新的 import（新位置的 import 在前）
           newImport = `${newLocationImport}\n${remainingImport}`;
@@ -116,8 +146,11 @@ export class ReferenceUpdater {
             location: {
               filePath,
               range: {
-                start: { line: i + 1, column: 1 },
-                end: { line: i + 1, column: line.length + 1 }
+                start: { line: statement.startLineIndex + 1, column: 1 },
+                end: {
+                  line: statement.endLineIndex + 1,
+                  column: lines[statement.endLineIndex].length + 1
+                }
               }
             }
           });
@@ -128,6 +161,35 @@ export class ReferenceUpdater {
     return updates;
   }
 
+  private collectImportExportStatement(
+    lines: readonly string[],
+    startLineIndex: number
+  ): ImportExportStatement | null {
+    const startLine = lines[startLineIndex];
+    const trimmedStart = startLine.trim();
+    if (!trimmedStart.startsWith('import ') && !trimmedStart.startsWith('export ')) {
+      return null;
+    }
+
+    let text = startLine;
+    if (this.extractImportPath(text)) {
+      return { text, startLineIndex, endLineIndex: startLineIndex };
+    }
+
+    for (let endLineIndex = startLineIndex + 1; endLineIndex < lines.length; endLineIndex++) {
+      text += `\n${lines[endLineIndex]}`;
+      if (this.extractImportPath(text)) {
+        return { text, startLineIndex, endLineIndex };
+      }
+
+      if (lines[endLineIndex].includes(';')) {
+        break;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * 解析 import 語句中的成員列表
    */
@@ -135,7 +197,7 @@ export class ReferenceUpdater {
     const members: ParsedImportMember[] = [];
 
     // 匹配 { A, B as C, D } 形式
-    const match = line.match(/import\s*\{([^}]+)\}\s*from/);
+    const match = line.match(/(?:import|export)\s+(?:type\s+)?\{([^}]+)\}\s*from/);
     if (!match) {return members;}
 
     const membersStr = match[1];
@@ -144,17 +206,50 @@ export class ReferenceUpdater {
     for (const part of memberParts) {
       const trimmed = part.trim();
       if (!trimmed) {continue;}
+      const typeOnly = trimmed.startsWith('type ');
+      const memberText = typeOnly ? trimmed.slice('type '.length).trim() : trimmed;
 
       // 檢查是否有別名 (name as alias)
-      const aliasMatch = trimmed.match(/^(\w+)\s+as\s+(\w+)$/);
+      const aliasMatch = memberText.match(/^(\w+)\s+as\s+(\w+)$/);
       if (aliasMatch) {
-        members.push({ name: aliasMatch[1], alias: aliasMatch[2] });
+        members.push({ name: aliasMatch[1], alias: aliasMatch[2], typeOnly });
       } else {
-        members.push({ name: trimmed });
+        members.push({ name: memberText, typeOnly });
       }
     }
 
     return members;
+  }
+
+  private isStarReExport(line: string): boolean {
+    return /^\s*export\s+\*\s+from\s+['"`]/.test(line);
+  }
+
+  private createMemberReExport(member: MemberDefinition, importPath: string, quoteChar: string): string {
+    const statementKind = member.type === MemberType.Interface || member.type === MemberType.TypeAlias
+      ? 'export type'
+      : 'export';
+
+    return `${statementKind} { ${member.name} } from ${quoteChar}${importPath}${quoteChar};`;
+  }
+
+  private formatImportedMember(member: ParsedImportMember): string {
+    const memberText = member.alias ? `${member.name} as ${member.alias}` : member.name;
+    return member.typeOnly ? `type ${memberText}` : memberText;
+  }
+
+  private getStatementKind(line: string): ImportExportStatementKind {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('export type ')) {
+      return 'export type';
+    }
+    if (trimmed.startsWith('export ')) {
+      return 'export';
+    }
+    if (trimmed.startsWith('import type ')) {
+      return 'import type';
+    }
+    return 'import';
   }
 
   /**

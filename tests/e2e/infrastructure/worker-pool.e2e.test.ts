@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { tmpdir } from 'os';
 import { ParserWorkerPool, createParserWorkerPool, type ParseTask } from '@infrastructure/worker-pool/index.js';
 
 /** Fixtures 根目錄 */
@@ -15,6 +16,9 @@ const FIXTURES_ROOT = path.resolve(__dirname, '../../fixtures');
 const SAMPLE_PROJECT = path.join(FIXTURES_ROOT, 'sample-project');
 const TOY_PROJECT = path.join(FIXTURES_ROOT, 'toy-project');
 const TOY_PARSER_MODULE = path.join(FIXTURES_ROOT, 'toy-parser.mjs');
+const INVALID_PARSER_MODULE = path.join(FIXTURES_ROOT, 'invalid-parser.mjs');
+const DISPOSABLE_TOY_PARSER_MODULE = path.join(FIXTURES_ROOT, 'disposable-toy-parser.mjs');
+const DIRECT_DISPOSABLE_TOY_PARSER_MODULE = path.join(FIXTURES_ROOT, 'direct-disposable-toy-parser.mjs');
 
 describe('Worker Pool E2E - 多執行緒 AST 解析', () => {
   let pool: ParserWorkerPool;
@@ -102,6 +106,104 @@ describe('Worker Pool E2E - 多執行緒 AST 解析', () => {
           importedSymbols: []
         }
       ]);
+    });
+
+    it('不應讓任務指定的 Parser 模組污染後續任務', async () => {
+      const tempPool = createParserWorkerPool({ maxThreads: 1, minThreads: 1 });
+      const filePath = path.join(TOY_PROJECT, 'main.toy');
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      try {
+        const withModule = await tempPool.parseFile({
+          filePath,
+          content,
+          parserModulePaths: [TOY_PARSER_MODULE]
+        });
+        expect(withModule.errors).toHaveLength(0);
+
+        const withoutModule = await tempPool.parseFile({ filePath, content });
+
+        expect(withoutModule.errors).toContain('No parser for extension: .toy');
+      } finally {
+        await tempPool.destroy();
+      }
+    });
+
+    it('Parser 模組初始化中途失敗時不應污染後續任務', async () => {
+      const tempPool = createParserWorkerPool({ maxThreads: 1, minThreads: 1 });
+      const filePath = path.join(TOY_PROJECT, 'main.toy');
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      try {
+        const withInvalidModule = await tempPool.parseFile({
+          filePath,
+          content,
+          parserModulePaths: [TOY_PARSER_MODULE, INVALID_PARSER_MODULE]
+        });
+        expect(withInvalidModule.errors.join('\n')).toContain('valid ParserPlugin');
+
+        const withoutModule = await tempPool.parseFile({ filePath, content });
+        expect(withoutModule.errors).toContain('No parser for extension: .toy');
+      } finally {
+        await tempPool.destroy();
+      }
+    });
+
+    it('任務指定的 Parser 模組清理時應釋放 parser', async () => {
+      const tempDir = fs.mkdtempSync(path.join(tmpdir(), 'agent-ide-worker-dispose-'));
+      const disposeLog = path.join(tempDir, 'dispose.log');
+      process.env.AGENT_IDE_DISPOSE_LOG = disposeLog;
+      const tempPool = createParserWorkerPool({ maxThreads: 1, minThreads: 1 });
+      const filePath = path.join(TOY_PROJECT, 'main.toy');
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      try {
+        const result = await tempPool.parseFile({
+          filePath,
+          content,
+          parserModulePaths: [DISPOSABLE_TOY_PARSER_MODULE]
+        });
+        expect(result.errors).toHaveLength(0);
+        expect(fs.readFileSync(disposeLog, 'utf-8')).toContain('disposed');
+      } finally {
+        await tempPool.destroy();
+        delete process.env.AGENT_IDE_DISPOSE_LOG;
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('直接 export 的 ParserPlugin 模組不應在任務清理時被 dispose 後重用', async () => {
+      const tempDir = fs.mkdtempSync(path.join(tmpdir(), 'agent-ide-worker-direct-dispose-'));
+      const disposeLog = path.join(tempDir, 'dispose.log');
+      process.env.AGENT_IDE_DIRECT_DISPOSE_LOG = disposeLog;
+      const tempPool = createParserWorkerPool({ maxThreads: 1, minThreads: 1 });
+      const filePath = path.join(TOY_PROJECT, 'main.toy');
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      try {
+        const first = await tempPool.parseFile({
+          filePath,
+          content,
+          parserModulePaths: [DIRECT_DISPOSABLE_TOY_PARSER_MODULE]
+        });
+        expect(first.errors).toHaveLength(0);
+
+        const second = await tempPool.parseFile({
+          filePath,
+          content,
+          parserModulePaths: [DIRECT_DISPOSABLE_TOY_PARSER_MODULE]
+        });
+        expect(second.errors).toHaveLength(0);
+      } finally {
+        await tempPool.destroy();
+        delete process.env.AGENT_IDE_DIRECT_DISPOSE_LOG;
+      }
+
+      try {
+        expect(fs.readFileSync(disposeLog, 'utf-8')).toContain('direct disposed');
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
     });
 
     it('應該處理語法錯誤並返回錯誤訊息', async () => {

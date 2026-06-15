@@ -13,7 +13,12 @@ import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput, FileOperationType } from '@infrastructure/changeset/index.js';
+import {
+  ChangeApplicator,
+  convertChangesetToPreviewInput,
+  FileOperationType,
+  type Changeset
+} from '@infrastructure/changeset/index.js';
 import {
   createUnifiedOutputHandler,
   OutputFormat
@@ -265,10 +270,7 @@ async function handleMoveCommand(
         from: op.sourcePath,
         to: op.targetPath ?? op.sourcePath
       }));
-    const pathUpdates = changeset.textChanges.map(tc => ({
-      file: tc.filePath,
-      edits: tc.edits.length
-    }));
+    const pathUpdates = createPathUpdateSummaries(changeset);
 
     // Dry-run 模式只輸出預覽
     if (options.dryRun) {
@@ -305,7 +307,7 @@ async function handleMoveCommand(
         outputMutationWithLegacyFields(outputHandler, previewInput, format, {
           ...createMoveLegacyFields(pathContext),
           moved: result.movedFiles.length > 0,
-          pathUpdates: [],
+          pathUpdates,
           message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
         });
       } else {
@@ -322,6 +324,46 @@ async function handleMoveCommand(
     process.exitCode = 1;
     if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
+}
+
+function createPathUpdateSummaries(changeset: Changeset): Array<{
+  filePath: string;
+  line: number;
+  oldImport: string;
+  newImport: string;
+}> {
+  return changeset.textChanges.flatMap(textChange =>
+    textChange.edits.map(edit => ({
+      filePath: getOutputPathForTextChange(changeset, textChange.filePath),
+      line: edit.range.start.line,
+      oldImport: extractOldImport(edit.description),
+      newImport: edit.newText
+    }))
+  );
+}
+
+function getOutputPathForTextChange(changeset: Changeset, filePath: string): string {
+  for (const operation of changeset.fileOperations) {
+    if (operation.type !== FileOperationType.Move || !operation.targetPath) {
+      continue;
+    }
+
+    if (filePath === operation.sourcePath) {
+      return operation.targetPath;
+    }
+
+    const sourcePrefix = operation.sourcePath + path.sep;
+    if (filePath.startsWith(sourcePrefix)) {
+      return path.join(operation.targetPath, filePath.slice(sourcePrefix.length));
+    }
+  }
+
+  return filePath;
+}
+
+function extractOldImport(description: string | undefined): string {
+  const match = description?.match(/^Update import: ([\s\S]*) → [\s\S]*$/);
+  return match?.[1] ?? '';
 }
 
 function createMovePathContext(input: MovePathContext): MovePathContext {
@@ -459,6 +501,16 @@ async function handleMoveMemberCommand(
     );
     if (unsupportedCapability) {
       outputHandler.outputError(unsupportedCapability, format, 'move');
+      process.exitCode = 1;
+      return;
+    }
+    const unsupportedTargetCapability = getUnsupportedParserCapabilityMessage(
+      targetFilePath,
+      parserRegistry,
+      ParserCapabilityName.MoveMember
+    );
+    if (unsupportedTargetCapability) {
+      outputHandler.outputError(unsupportedTargetCapability, format, 'move');
       process.exitCode = 1;
       return;
     }

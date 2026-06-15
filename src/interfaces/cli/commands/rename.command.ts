@@ -248,7 +248,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       commandName: 'rename'
     });
     } finally {
-      indexEngine.dispose();
+      await indexEngine.disposeAsync();
     }
   } catch (error) {
     const errorMsg = getErrorMessage(error);

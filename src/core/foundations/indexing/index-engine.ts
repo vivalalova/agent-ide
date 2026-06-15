@@ -36,9 +36,11 @@ import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
 import {
   ParserRegistry,
+  disposeRegisteredParserModules,
   getRegisteredSourceFileExtensions,
   initializeDefaultParsers,
-  initializeParserModules
+  initializeParserModules,
+  type RegisteredParserModule
 } from '@infrastructure/parser/index.js';
 
 /**
@@ -53,6 +55,7 @@ export class IndexEngine {
   private readonly fileSystem: IFileSystem;
   /** Worker Pool（測試環境為 null，使用單執行緒解析） */
   private readonly parserPool: ParserWorkerPool | null;
+  private registeredParserModules: readonly RegisteredParserModule[] = [];
   private parserModulesInitialized = false;
   private _disposed = false;
   private _indexed = false;
@@ -107,7 +110,7 @@ export class IndexEngine {
 
     const parserModulePaths = this.config.parserModulePaths ?? [];
     if (parserModulePaths.length > 0) {
-      await initializeParserModules(this.parserRegistry, parserModulePaths);
+      this.registeredParserModules = await initializeParserModules(this.parserRegistry, parserModulePaths);
       this.config = this.mergeRegisteredParserExtensions(this.config);
     }
 
@@ -792,17 +795,28 @@ export class IndexEngine {
    * 釋放資源
    */
   dispose(): void {
+    this.disposeAsync().catch(() => {
+      // graceful-degradation: keep the legacy synchronous dispose contract.
+    });
+  }
+
+  async disposeAsync(): Promise<void> {
     if (!this._disposed) {
       this.clear();
       this._disposed = true;
 
-      // 釋放 Worker Pool 資源（非阻塞，測試環境無 pool）
-      if (this.parserPool) {
-        this.parserPool.destroy().catch(() => {
-          // graceful-degradation: dispose 時 pool 可能已銷毀，忽略銷毀失敗
-        });
-      }
+      await Promise.all([
+        this.parserPool
+          ? this.parserPool.destroy().catch(() => undefined)
+          : Promise.resolve(),
+        this.disposeParserModules().catch(() => undefined)
+      ]);
     }
+  }
+
+  private async disposeParserModules(): Promise<void> {
+    await disposeRegisteredParserModules(this.parserRegistry, this.registeredParserModules);
+    this.registeredParserModules = [];
   }
 
 }

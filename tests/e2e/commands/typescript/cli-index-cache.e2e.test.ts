@@ -89,7 +89,9 @@ describe('IndexDiskCache: 실제 디스크 읽쓰기', () => {
     const memfs = new MemFileSystem();
     await memfs.writeFile('/proj/src/hello.ts', 'export const hello = "world";');
 
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
+    expect(dirname(dirname(dirname(cache.getCachePath())))).toBe(cacheDir);
+    expect(cache.getCachePath().endsWith(join('default', 'index.json'))).toBe(true);
 
     const mockEngine = {
       snapshot: () => ({ fileEntries: new Map() })
@@ -103,14 +105,30 @@ describe('IndexDiskCache: 실제 디스크 읽쓰기', () => {
     expect(loaded!.version).toBe(CACHE_VERSION);
   });
 
+  it('custom cacheDir 仍依 configKey 隔離 cache 檔案', () => {
+    const first = new IndexDiskCache('/proj', 'config-a', cacheDir);
+    const second = new IndexDiskCache('/proj', 'config-b', cacheDir);
+
+    expect(first.getCachePath().endsWith(join('config-a', 'index.json'))).toBe(true);
+    expect(second.getCachePath().endsWith(join('config-b', 'index.json'))).toBe(true);
+    expect(first.getCachePath()).not.toBe(second.getCachePath());
+  });
+
+  it('同一個 custom cacheDir 下不同 project 仍依 projectPath 隔離 cache 檔案', () => {
+    const first = new IndexDiskCache('/proj/a', 'default', cacheDir);
+    const second = new IndexDiskCache('/proj/b', 'default', cacheDir);
+
+    expect(first.getCachePath()).not.toBe(second.getCachePath());
+  });
+
   it('캐시 파일이 없으면 load는 null 반환', async () => {
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const loaded = await cache.load();
     expect(loaded).toBeNull();
   });
 
   it('corrupt JSON → load는 null 반환 (throw 없음)', async () => {
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const cachePath = cache.getCachePath();
 
     await mkdir(dirname(cachePath), { recursive: true });
@@ -121,7 +139,7 @@ describe('IndexDiskCache: 실제 디스크 읽쓰기', () => {
   });
 
   it('version 불일치 → load는 null 반환', async () => {
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const cachePath = cache.getCachePath();
 
     const badData = {
@@ -146,7 +164,7 @@ describe('IndexDiskCache.computeCacheKey', () => {
     const memfs = new MemFileSystem();
     await memfs.writeFile('/proj/src/a.ts', 'export const a = 1;');
 
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const k1 = await cache.computeCacheKey('/proj', memfs);
     const k2 = await cache.computeCacheKey('/proj', memfs);
     expect(k1).toBe(k2);
@@ -156,7 +174,7 @@ describe('IndexDiskCache.computeCacheKey', () => {
     const memfs = new MemFileSystem();
     await memfs.writeFile('/proj/src/a.ts', 'const a = 1;');
 
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const k1 = await cache.computeCacheKey('/proj', memfs);
 
     await memfs.writeFile('/proj/src/b.ts', 'const b = 2;');
@@ -189,7 +207,7 @@ describe('createAndIndexWithCache: noCache=true 경로', () => {
     engine.dispose();
 
     // 캐시 파일 없음 (noCache=true이므로)
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const cached = await cache.load();
     expect(cached).toBeNull();
   });
@@ -199,7 +217,7 @@ describe('createAndIndexWithCache: noCache=true 경로', () => {
 
 describe('IndexDiskCache.hydrateEngine', () => {
   it('유효한 data → 성공 (true)', async () => {
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const cachePath = cache.getCachePath();
     await writeValidCache(cachePath, 'hydrate-key');
 
@@ -217,7 +235,7 @@ describe('IndexDiskCache.hydrateEngine', () => {
   });
 
   it('버전 불일치 data → false (throw 없음)', () => {
-    const cache = new IndexDiskCache('/proj', cacheDir);
+    const cache = new IndexDiskCache('/proj', 'default', cacheDir);
     const badData: SerializedIndexData = {
       version: '0.0.0',
       cacheKey: 'x',

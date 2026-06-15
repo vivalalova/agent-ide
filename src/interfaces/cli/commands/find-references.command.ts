@@ -201,7 +201,7 @@ async function handleFindReferencesCommand(
     outputHandler.outputError(`${errorPrefix}: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine.disposeAsync();
   }
 }
 

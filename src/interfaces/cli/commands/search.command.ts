@@ -148,6 +148,6 @@ async function handleSearchCommand(
     outputHandler.outputError(`搜尋符號失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine.disposeAsync();
   }
 }

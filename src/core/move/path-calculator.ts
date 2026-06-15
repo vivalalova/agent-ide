@@ -206,10 +206,14 @@ export class PathCalculator {
             newPath
           );
 
-          const newImport = importStatement.rawStatement.replace(
-            new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-            `$1${newImportPath}$1`
+          const newImport = this.replaceModuleSpecifier(
+            importStatement.rawStatement,
+            importStatement.path,
+            newImportPath
           );
+          if (newImport === importStatement.rawStatement) {
+            continue;
+          }
 
           updates.push({
             filePath,
@@ -351,14 +355,20 @@ export class PathCalculator {
 
           // 如果路徑改變了，加入更新列表
           if (newImportPath !== importStatement.path) {
+            const newImport = this.replaceModuleSpecifier(
+              importStatement.rawStatement,
+              importStatement.path,
+              newImportPath
+            );
+            if (newImport === importStatement.rawStatement) {
+              continue;
+            }
+
             updates.push({
               filePath: target, // 注意：這裡是 target，因為更新會在檔案移動後套用
               line: importStatement.position.line,
               oldImport: importStatement.rawStatement,
-              newImport: importStatement.rawStatement.replace(
-                new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-                `$1${newImportPath}$1`
-              )
+              newImport
             });
           }
         }
@@ -419,14 +429,20 @@ export class PathCalculator {
 
               // 如果路徑改變了，加入更新列表
               if (newImportPath !== importStatement.path) {
+                const newImport = this.replaceModuleSpecifier(
+                  importStatement.rawStatement,
+                  importStatement.path,
+                  newImportPath
+                );
+                if (newImport === importStatement.rawStatement) {
+                  continue;
+                }
+
                 updates.push({
                   filePath: target,
                   line: importStatement.position.line,
                   oldImport: importStatement.rawStatement,
-                  newImport: importStatement.rawStatement.replace(
-                    new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-                    `$1${newImportPath}$1`
-                  )
+                  newImport
                 });
               }
             }
@@ -438,5 +454,23 @@ export class PathCalculator {
     }
 
     return updates;
+  }
+
+  private replaceModuleSpecifier(rawStatement: string, oldPath: string, newPath: string): string {
+    const escapedOldPath = this.pathUtils.escapeRegex(oldPath);
+    const fromSpecifierPattern = new RegExp(
+      `(\\bfrom\\s*['"\`])${escapedOldPath}(['"\`])(?=\\s*(?:(?:with|assert)\\s+\\{[\\s\\S]*?\\}\\s*)?;?\\s*(?://[^\\n\\r]*|/\\*[\\s\\S]*?\\*/)?\\s*$)`
+    );
+    if (fromSpecifierPattern.test(rawStatement)) {
+      return rawStatement.replace(fromSpecifierPattern, `$1${newPath}$2`);
+    }
+
+    const sideEffectImportPattern = new RegExp(`(\\bimport\\s*['"\`])${escapedOldPath}(['"\`])`);
+    if (sideEffectImportPattern.test(rawStatement)) {
+      return rawStatement.replace(sideEffectImportPattern, `$1${newPath}$2`);
+    }
+
+    const callSpecifierPattern = new RegExp(`(\\b(?:require|import)\\(\\s*['"\`])${escapedOldPath}(['"\`])`);
+    return rawStatement.replace(callSpecifierPattern, `$1${newPath}$2`);
   }
 }

@@ -423,7 +423,7 @@ export class CallSiteUpdater {
   getTrailingContent(lines: readonly string[], endLine: number, closeParenColumn: number): string {
     const line = lines[endLine];
     // 找到右括號後的內容
-    return line.substring(closeParenColumn + 1);
+    return line.substring(closeParenColumn);
   }
 
   /**

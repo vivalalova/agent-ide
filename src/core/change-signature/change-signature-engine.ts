@@ -17,6 +17,7 @@ import type {
   ChangeSignatureOptions,
   ChangeSignatureResult,
   FunctionSignature,
+  ParameterDefinition,
   CallSiteUpdate,
   SignatureChange
 } from './types.js';
@@ -179,19 +180,19 @@ export class ChangeSignatureEngine {
     // 轉換 definitionUpdate
     const { filePath, originalCode, newCode, location } = result.definitionUpdate;
 
-    // originalCode 和 newCode 都是完整的一行內容
-    // 因此 range 應該從行首（column 1）開始，到行尾結束
-    const lineNumber = location.range.start.line;
-    const originalLineLength = originalCode.length;
-
-    builder.addTextChange(filePath, [{
-      range: {
-        start: { line: lineNumber, column: 1 },
-        end: { line: lineNumber, column: originalLineLength + 1 }
-      },
-      newText: newCode,
-      description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
-    }], TextEditOperationType.Modify);
+    if (!this.areParametersEquivalent(
+      result.originalSignature.parameters,
+      result.newSignature.parameters
+    )) {
+      builder.addTextChange(filePath, [{
+        range: {
+          start: location.range.start,
+          end: location.range.end
+        },
+        newText: newCode,
+        description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
+      }], TextEditOperationType.Modify);
+    }
 
     const parameterRenameEdits = await this.generateParameterRenameBodyEdits(
       result.originalSignature,
@@ -214,22 +215,14 @@ export class ChangeSignatureEngine {
     }
 
     for (const [updateFilePath, updates] of updatesByFile) {
+      const effectiveUpdates = updates.filter(update => update.originalCode !== update.newCode);
+      if (effectiveUpdates.length === 0) {
+        continue;
+      }
+
       // 跳過與 definitionUpdate 同一檔案（避免重複）
       // 已經在上面處理過了，呼叫點和定義可能在同一行
-      const edits = updates.map(update => {
-        // originalCode 和 newCode 都是完整的一行內容
-        // 因此 range 應該從行首（column 1）開始，到行尾結束
-        const lineStart = update.location.range.start.line;
-        const callOriginalLength = update.originalCode.length;
-        return {
-          range: {
-            start: { line: lineStart, column: 1 },
-            end: { line: lineStart, column: callOriginalLength + 1 }
-          },
-          newText: update.newCode,
-          description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
-        };
-      });
+      const edits = effectiveUpdates.map(update => this.createCallSiteTextEdit(update));
 
       builder.addTextChange(updateFilePath, edits, TextEditOperationType.Modify);
     }
@@ -242,6 +235,40 @@ export class ChangeSignatureEngine {
     );
 
     return builder.build();
+  }
+
+  private createCallSiteTextEdit(update: CallSiteUpdate): TextEdit {
+    const originalLines = update.originalCode.split('\n');
+    const startLine = update.location.range.start.line;
+    const endLine = startLine + originalLines.length - 1;
+    const lastLine = originalLines[originalLines.length - 1] ?? '';
+
+    return {
+      range: {
+        start: { line: startLine, column: 1 },
+        end: { line: endLine, column: lastLine.length + 1 }
+      },
+      newText: update.newCode,
+      description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
+    };
+  }
+
+  private areParametersEquivalent(
+    left: readonly ParameterDefinition[],
+    right: readonly ParameterDefinition[]
+  ): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((parameter, index) => {
+      const other = right[index];
+      return parameter.name === other.name &&
+        parameter.type === other.type &&
+        parameter.defaultValue === other.defaultValue &&
+        parameter.optional === other.optional &&
+        parameter.rest === other.rest;
+    });
   }
 
   private async validateRemovedParameterBodyReferences(
@@ -506,27 +533,224 @@ export class ChangeSignatureEngine {
     }
 
     const lines = content.split('\n');
-    const startLine = originalSignature.location.range.start.line - 1;
-    const originalLine = lines[startLine];
 
     // 生成新的參數列表
     const newParamsString = this.generateParameterString(newSignature, filePath);
+    const signatureStartOffset = originalSignature.location.range.start.offset
+      ?? this.positionToOffset(lines, originalSignature.location.range.start.line, originalSignature.location.range.start.column);
+    const parameterRange = this.findParameterListRangeWithAst(content, filePath, originalSignature)
+      ?? this.findParameterListRangeWithScanner(content, signatureStartOffset);
+    if (!parameterRange) {
+      throw new Error(`找不到函式 ${originalSignature.name} 的參數結束括號`);
+    }
+    const { openParenIndex, closeParenIndex } = parameterRange;
 
-    // 替換參數部分
-    const funcNameIndex = originalLine.indexOf(originalSignature.name);
-    const openParenIndex = originalLine.indexOf('(', funcNameIndex);
-    const closeParenIndex = this.findMatchingParen(originalLine, openParenIndex);
-
-    const newLine = originalLine.substring(0, openParenIndex + 1) +
+    const originalCode = content.slice(signatureStartOffset, closeParenIndex + 1);
+    const newCode = content.slice(signatureStartOffset, openParenIndex + 1) +
       newParamsString +
-      originalLine.substring(closeParenIndex);
+      ')';
 
     return {
       filePath,
-      originalCode: originalLine,
-      newCode: newLine,
-      location: originalSignature.location
+      originalCode,
+      newCode,
+      location: {
+        filePath,
+        range: {
+          start: this.offsetToPosition(content, signatureStartOffset),
+          end: this.offsetToPosition(content, closeParenIndex + 1)
+        }
+      }
     };
+  }
+
+  private findParameterListRangeWithAst(
+    content: string,
+    filePath: string,
+    signature: FunctionSignature
+  ): { openParenIndex: number; closeParenIndex: number } | null {
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      this.getScriptKind(filePath)
+    );
+    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
+    if (!targetFunction) {
+      return null;
+    }
+
+    const declarationStart = targetFunction.getStart(sourceFile);
+    const openParenIndex = this.findOpenParenBeforeParameters(content, declarationStart, targetFunction.parameters.pos);
+    const closeParenIndex = this.findCloseParenAfterParameters(content, targetFunction.parameters.end);
+    if (openParenIndex < 0 || closeParenIndex < 0) {
+      return null;
+    }
+
+    return { openParenIndex, closeParenIndex };
+  }
+
+  private findOpenParenBeforeParameters(content: string, declarationStart: number, parametersStart: number): number {
+    for (let i = parametersStart - 1; i >= declarationStart; i--) {
+      const char = content[i];
+      if (char === '(') {
+        return i;
+      }
+      if (!/\s/.test(char)) {
+        const fallbackIndex = content.lastIndexOf('(', parametersStart);
+        return fallbackIndex >= declarationStart ? fallbackIndex : -1;
+      }
+    }
+
+    return -1;
+  }
+
+  private findCloseParenAfterParameters(content: string, parametersEnd: number): number {
+    for (let i = parametersEnd; i < content.length; i++) {
+      const char = content[i];
+      if (char === ')') {
+        return i;
+      }
+      if (!/\s/.test(char)) {
+        return -1;
+      }
+    }
+
+    return -1;
+  }
+
+  private findParameterListRangeWithScanner(
+    content: string,
+    signatureStartOffset: number
+  ): { openParenIndex: number; closeParenIndex: number } | null {
+    const openParenIndex = content.indexOf('(', signatureStartOffset);
+    if (openParenIndex < 0) {
+      return null;
+    }
+
+    const closeParenIndex = this.findMatchingParenInContent(content, openParenIndex);
+    if (closeParenIndex < 0) {
+      return null;
+    }
+
+    return { openParenIndex, closeParenIndex };
+  }
+
+  private positionToOffset(lines: readonly string[], line: number, column: number): number {
+    let offset = 0;
+    for (let i = 0; i < line - 1; i++) {
+      offset += (lines[i]?.length ?? 0) + 1;
+    }
+    return offset + column - 1;
+  }
+
+  private offsetToPosition(content: string, offset: number): { line: number; column: number } {
+    const beforeOffset = content.slice(0, offset);
+    const line = beforeOffset.split('\n').length;
+    const lastNewline = beforeOffset.lastIndexOf('\n');
+    const column = lastNewline < 0 ? offset + 1 : offset - lastNewline;
+
+    return { line, column };
+  }
+
+  private findMatchingParenInContent(content: string, openIndex: number): number {
+    let depth = 1;
+    let quote: '"' | '\'' | '`' | null = null;
+    let inBlockComment = false;
+    let inLineComment = false;
+    let inRegexLiteral = false;
+    let inRegexCharClass = false;
+
+    for (let i = openIndex + 1; i < content.length; i++) {
+      const char = content[i];
+      const next = content[i + 1];
+
+      if (inRegexLiteral) {
+        if (char === '\\') {
+          i++;
+        } else if (char === '[') {
+          inRegexCharClass = true;
+        } else if (char === ']') {
+          inRegexCharClass = false;
+        } else if (char === '/' && !inRegexCharClass) {
+          inRegexLiteral = false;
+        }
+        continue;
+      }
+
+      if (inLineComment) {
+        if (char === '\n') {
+          inLineComment = false;
+        }
+        continue;
+      }
+
+      if (inBlockComment) {
+        if (char === '*' && next === '/') {
+          inBlockComment = false;
+          i++;
+        }
+        continue;
+      }
+
+      if (quote) {
+        if (char === '\\') {
+          i++;
+        } else if (char === quote) {
+          quote = null;
+        }
+        continue;
+      }
+
+      if (char === '/' && next === '/') {
+        inLineComment = true;
+        i++;
+        continue;
+      }
+
+      if (char === '/' && next === '*') {
+        inBlockComment = true;
+        i++;
+        continue;
+      }
+
+      if (char === '/' && this.isRegexLiteralStart(content, i, openIndex)) {
+        inRegexLiteral = true;
+        inRegexCharClass = false;
+        continue;
+      }
+
+      if (char === '"' || char === '\'' || char === '`') {
+        quote = char;
+        continue;
+      }
+
+      if (char === '(') { depth++; }
+      else if (char === ')') {
+        depth--;
+        if (depth === 0) { return i; }
+      }
+    }
+
+    return -1;
+  }
+
+  private isRegexLiteralStart(content: string, slashIndex: number, scanStartIndex: number): boolean {
+    for (let i = slashIndex - 1; i > scanStartIndex; i--) {
+      const char = content[i];
+      if (/\s/.test(char)) {
+        continue;
+      }
+
+      if (char === '>' && content[i - 1] === '=') {
+        return true;
+      }
+
+      return '=(:,[!&|?{};'.includes(char);
+    }
+
+    return false;
   }
 
   /**
@@ -608,21 +832,6 @@ export class ChangeSignatureEngine {
 
       return result;
     }).join(', ');
-  }
-
-  /**
-   * 找到匹配的括號
-   */
-  private findMatchingParen(line: string, openIndex: number): number {
-    let depth = 1;
-    for (let i = openIndex + 1; i < line.length; i++) {
-      if (line[i] === '(') { depth++; }
-      else if (line[i] === ')') {
-        depth--;
-        if (depth === 0) { return i; }
-      }
-    }
-    return line.length;
   }
 
   /**

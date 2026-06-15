@@ -268,23 +268,7 @@ export class MoveEngine {
           }
         }
         const content = await this.fileSystem.readFile(readPath, 'utf-8') as string;
-        const lines = content.split('\n');
-
-        const edits: TextEdit[] = updates.map(update => {
-          const lineIndex = update.line - 1;
-          const lineContent = lines[lineIndex] ?? '';
-          const startCol = lineContent.indexOf(update.oldImport) + 1;
-          const endCol = startCol + update.oldImport.length;
-
-          return {
-            range: {
-              start: { line: update.line, column: startCol },
-              end: { line: update.line, column: endCol }
-            },
-            newText: update.newImport,
-            description: `Update import: ${update.oldImport} → ${update.newImport}`
-          };
-        });
+        const edits: TextEdit[] = updates.map(update => this.createPathUpdateTextEdit(content, update));
 
         // 對於被移動檔案，使用原始路徑來建立 TextChange（轉換器會從該路徑讀取）
         // 實際的檔案移動由 fileOperations 處理
@@ -300,6 +284,43 @@ export class MoveEngine {
         .addError(getErrorMessage(error))
         .build();
     }
+  }
+
+  private createPathUpdateTextEdit(content: string, update: PathUpdate): TextEdit {
+    const lineStartOffset = this.positionToOffset(content, update.line, 1);
+    const startOffset = content.indexOf(update.oldImport, lineStartOffset);
+    if (startOffset < 0) {
+      throw new Error(`找不到 import 語句: ${update.oldImport}`);
+    }
+
+    const endOffset = startOffset + update.oldImport.length;
+    return {
+      range: {
+        start: this.offsetToPosition(content, startOffset),
+        end: this.offsetToPosition(content, endOffset)
+      },
+      newText: update.newImport,
+      description: `Update import: ${update.oldImport} → ${update.newImport}`
+    };
+  }
+
+  private positionToOffset(content: string, line: number, column: number): number {
+    const lines = content.split('\n');
+    let offset = 0;
+    for (let i = 0; i < line - 1; i++) {
+      offset += (lines[i]?.length ?? 0) + 1;
+    }
+
+    return offset + column - 1;
+  }
+
+  private offsetToPosition(content: string, offset: number): { line: number; column: number } {
+    const beforeOffset = content.slice(0, offset);
+    const line = beforeOffset.split('\n').length;
+    const lastNewline = beforeOffset.lastIndexOf('\n');
+    const column = lastNewline < 0 ? offset + 1 : offset - lastNewline;
+
+    return { line, column };
   }
 
   /**

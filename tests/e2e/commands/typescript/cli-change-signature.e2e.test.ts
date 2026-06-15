@@ -171,6 +171,131 @@ log('test');
       }
     });
 
+    it('應該正確更新多行函式簽名', async () => {
+      const testFile = `${fixture.rootPath}/test-add-multiline-signature.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function log(
+  message: string,
+): void {
+  console.log(message);
+}
+
+log('test');
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'log', '-p', fixture.rootPath, '--add', 'level:string=info', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      expect(updated).toContain('function log(message: string, level: string = \'info\'): void {');
+      expect(updated).not.toContain('  message: string,\n): void');
+    });
+
+    it('應該忽略參數預設字串中的右括號', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-string-paren.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function log(
+  message: string = ")",
+): void {
+  console.log(message);
+}
+
+log();
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'log', '-p', fixture.rootPath, '--add', 'level:string=info', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      expect(updated).toContain('message: string = ")"');
+      expect(updated).toContain('level: string = \'info\'');
+    });
+
+    it('應該忽略參數預設 regex literal 中的右括號', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-regex-paren.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function match(
+  pattern: RegExp = /\\)/,
+): boolean {
+  return pattern.test(')');
+}
+
+match();
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'match', '-p', fixture.rootPath, '--add', 'strict:boolean=true', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      expect(updated).toContain('pattern: RegExp = /\\)/');
+      expect(updated).toContain('strict: boolean = true');
+    });
+
+    it('應該忽略 arrow function 預設值回傳 regex literal 中的右括號', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-arrow-regex-paren.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function match(
+  getPattern = () => /\\)/,
+): boolean {
+  return getPattern().test(')');
+}
+
+match();
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'match', '-p', fixture.rootPath, '--add', 'strict:boolean=true', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      expect(updated).toContain('getPattern = () => /\\)/');
+      expect(updated).toContain('strict: boolean = true');
+    });
+
+    it('應該用 AST 範圍處理 template literal interpolation 中的右括號', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-template-interpolation-paren.ts`;
+      await fixture.memfs.writeFile(testFile, [
+        'function format(input: string): string {',
+        '  return input;',
+        '}',
+        '',
+        'function render(',
+        '  value: string = `${format(")")}`,',
+        '): string {',
+        '  return value;',
+        '}',
+        '',
+        'render();',
+        ''
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'render', '-p', fixture.rootPath, '--add', 'strict:boolean=true', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      expect(updated).toContain('value: string = `${format(")")}`');
+      expect(updated).toContain('strict: boolean = true');
+    });
+
     it('應該把未加引號的 string 預設值輸出為字串 literal', async () => {
       const testFile = `${fixture.rootPath}/test-add-string-default.ts`;
       await fixture.memfs.writeFile(testFile, `
@@ -744,6 +869,45 @@ const result = calc(10, 5);
       expect(result.exitCode).toBe(0);
       const fileContent = await fixture.memfs.readFile(testFile, 'utf-8');
       expect(fileContent).toBe(originalContent);
+    });
+
+    it('dry-run JSON 應正確呈現多行呼叫點更新', async () => {
+      const testFile = `${fixture.rootPath}/test-dry-run-multiline-call.ts`;
+      const originalContent = [
+        'function calc(a: number, b: number): number {',
+        '  return a - b;',
+        '}',
+        '',
+        'const result = calc(',
+        '  10,',
+        '  5,',
+        ');',
+        ''
+      ].join('\n');
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'calc', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const fileContent = await fixture.memfs.readFile(testFile, 'utf-8');
+      expect(fileContent).toBe(originalContent);
+
+      const output = JSON.parse(result.stdout);
+      const changedLines = output.files.flatMap((file: any) =>
+        file.hunks.flatMap((hunk: any) => hunk.lines)
+      );
+      expect(changedLines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'delete', content: '  10,' }),
+          expect.objectContaining({ type: 'delete', content: '  5,' }),
+          expect.objectContaining({ type: 'add', content: '  5,' }),
+          expect.objectContaining({ type: 'add', content: '  10,' }),
+          expect.objectContaining({ type: 'add', content: ');' })
+        ])
+      );
     });
   });
 

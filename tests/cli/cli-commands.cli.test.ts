@@ -144,7 +144,8 @@ describe('CLI 整合測試', () => {
 
         expect(result.success).toBe(true);
         const cacheEntries = readdirSync(cacheDir, { recursive: true }).map(String);
-        expect(cacheEntries).toContain('index.json');
+        expect(cacheEntries.some(entry => entry.endsWith('index.json'))).toBe(true);
+        expect(cacheEntries).not.toContain('index.json');
       } finally {
         rmSync(cacheDir, { recursive: true, force: true });
       }

@@ -9,8 +9,11 @@
 import * as path from 'path';
 import {
   ParserRegistry,
+  disposePersistentParserModules,
+  disposeRegisteredParserModules,
   initializeDefaultParsers,
-  initializeParserModules
+  initializeParserModules,
+  type RegisteredParserModule
 } from '@infrastructure/parser/index.js';
 import type { ParseTask, ParseResult } from '../types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -28,20 +31,23 @@ initializeDefaultParsers(registry);
  */
 export default async function parseFile(task: ParseTask): Promise<ParseResult> {
   const { filePath, content } = task;
-  await initializeParserModules(registry, task.parserModulePaths ?? []);
-  const ext = path.extname(filePath);
-  const parser = registry.getParser(ext);
-
-  if (!parser) {
-    return {
-      filePath,
-      symbols: [],
-      dependencies: [],
-      errors: [`No parser for extension: ${ext}`]
-    };
-  }
-
+  let registeredParsers: readonly RegisteredParserModule[] = [];
   try {
+    registeredParsers = await initializeParserModules(registry, task.parserModulePaths ?? [], {
+      isolateModuleInstances: true
+    });
+    const ext = path.extname(filePath);
+    const parser = registry.getParser(ext);
+
+    if (!parser) {
+      return {
+        filePath,
+        symbols: [],
+        dependencies: [],
+        errors: [`No parser for extension: ${ext}`]
+      };
+    }
+
     const ast = await parser.parse(content, filePath);
     const symbols = await parser.extractSymbols(ast);
     const dependencies = await parser.extractDependencies(ast);
@@ -67,5 +73,15 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
       dependencies: [],
       errors: [errorMessage]
     };
+  } finally {
+    await disposeTaskParsers(registeredParsers);
   }
+}
+
+async function disposeTaskParsers(registeredParsers: readonly RegisteredParserModule[]): Promise<void> {
+  await disposeRegisteredParserModules(registry, registeredParsers);
+}
+
+export async function teardown(): Promise<void> {
+  await disposePersistentParserModules();
 }

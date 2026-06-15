@@ -45,10 +45,12 @@ export { getRegisteredSourceFileExtensions } from './source-extensions.js';
 
 // 匯出初始化函式
 export {
+  disposePersistentParserModules,
+  disposeRegisteredParserModules,
   getDefaultParserFactories,
   initializeDefaultParsers,
   initializeParserModules,
   registerDefaultParserFactory,
   resetDefaultParserFactoriesForTesting
 } from './initializer.js';
-export type { ParserFactory } from './initializer.js';
+export type { InitializeParserModulesOptions, ParserFactory, RegisteredParserModule } from './initializer.js';

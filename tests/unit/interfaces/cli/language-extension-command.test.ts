@@ -87,12 +87,34 @@ describe('CLI language extension support', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('未宣告支援 move-member');
   });
+
+  it('fast-fails move member when the target parser lacks declared capabilities', async () => {
+    const memfs = await createToyProject();
+
+    const result = await executeCLI(
+      [
+        'move',
+        'src/source.ts:1',
+        'src/target.toy',
+        '--path',
+        '/project',
+        '--dry-run',
+        '--format',
+        'json'
+      ],
+      { memfs }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain('未宣告支援 move-member');
+  });
 });
 
 async function createToyProject(): Promise<MemFileSystem> {
   const memfs = new MemFileSystem();
   await memfs.fromJSON({
     '/project/package.json': '{}',
+    '/project/src/source.ts': 'export function moveMe(): string { return "ok"; }\n',
     '/project/src/main.toy': 'symbol Alpha\n',
     '/project/src/target.toy': ''
   });
