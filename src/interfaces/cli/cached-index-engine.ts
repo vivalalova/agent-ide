@@ -59,12 +59,21 @@ export async function createAndIndexWithCache(
 
   const diskCache = new IndexDiskCache(projectPath, configKey, options.cacheDir);
 
-  // 計算當前 cache key
+  // 計算當前 cache key（exclude 清單由索引實際使用的設定傳入，維持 SSoT）
+  const engineConfig = indexEngine.getConfig();
   const currentKey = await diskCache.computeCacheKey(
     projectPath,
     fileSystem,
-    indexEngine.getConfig().includeExtensions
+    engineConfig.includeExtensions,
+    engineConfig.excludePatterns
   );
+
+  // 無法可靠計算 key → 不信任快取（不讀不寫），直接完整索引
+  if (currentKey === null) {
+    logger.verbose('cache', 'Cache key unavailable — skipping cache, full index');
+    await indexEngine.indexProject(projectPath);
+    return indexEngine;
+  }
 
   // 嘗試載入快取
   const cached = await diskCache.load();

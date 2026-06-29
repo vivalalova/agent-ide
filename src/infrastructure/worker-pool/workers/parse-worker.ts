@@ -9,7 +9,6 @@
 import * as path from 'path';
 import {
   ParserRegistry,
-  disposePersistentParserModules,
   disposeRegisteredParserModules,
   initializeDefaultParsers,
   initializeParserModules,
@@ -80,8 +79,4 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
 
 async function disposeTaskParsers(registeredParsers: readonly RegisteredParserModule[]): Promise<void> {
   await disposeRegisteredParserModules(registry, registeredParsers);
-}
-
-export async function teardown(): Promise<void> {
-  await disposePersistentParserModules();
 }

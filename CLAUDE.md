@@ -102,6 +102,12 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 - 覆蓋率驗證使用 `pnpm test:coverage`；日常 `pnpm test` 為 Unit + 關鍵 TS E2E 快速路徑
 - `tests/fixtures/` 專案必須可編譯
 
+### 🚨 Bug 重現即測試案例（禁拋棄式重現）
+
+- bug 修復**先寫 reproduction test**（先紅後綠），重現案例直接寫成 `tests/` 下的 test case + 需要的 fixture 專案放 `tests/fixtures/`，成為永久 regression 覆蓋
+- **禁**用 scratchpad／臨時目錄做一次性手動重現後丟棄：可重用的案例才留得住、下次回歸才驗得到
+- 共用 fixture 用 `loadFixture()` 載入；單檔案案例可在測試內 `fixture.writeFile()` 寫入
+
 ## CLI 命令
 
 ### 輸出格式

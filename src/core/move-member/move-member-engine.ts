@@ -9,7 +9,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import type { Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { MemberExtractor } from './member-extractor.js';
-import { ReferenceUpdater } from './reference-updater.js';
+import { ReferenceUpdater, type ReferenceUpdaterPathConfig } from './reference-updater.js';
 import { FileChangePreparer } from './file-change-preparer.js';
 import { ChangeApplier } from './change-applier.js';
 import {
@@ -31,10 +31,11 @@ export class MoveMemberEngine {
 
   constructor(
     parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    private readonly fileSystem: IFileSystem,
+    pathConfig?: ReferenceUpdaterPathConfig
   ) {
     this.memberExtractor = new MemberExtractor(parserRegistry, fileSystem);
-    this.referenceUpdater = new ReferenceUpdater(fileSystem);
+    this.referenceUpdater = new ReferenceUpdater(fileSystem, pathConfig);
     this.fileChangePreparer = new FileChangePreparer(fileSystem);
     this.changeApplier = new ChangeApplier(fileSystem);
   }
@@ -251,7 +252,8 @@ export class MoveMemberEngine {
  */
 export function createMoveMemberEngine(
   parserRegistry: ParserRegistry,
-  fileSystem: IFileSystem
+  fileSystem: IFileSystem,
+  pathConfig?: ReferenceUpdaterPathConfig
 ): MoveMemberEngine {
-  return new MoveMemberEngine(parserRegistry, fileSystem);
+  return new MoveMemberEngine(parserRegistry, fileSystem, pathConfig);
 }

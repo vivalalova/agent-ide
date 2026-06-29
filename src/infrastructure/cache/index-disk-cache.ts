@@ -39,24 +39,32 @@ export class IndexDiskCache {
     private readonly cacheDir?: string,
   ) {}
 
+  /** computeCacheKey 預設排除模式（caller 未傳入時的向後相容值） */
+  private static readonly DEFAULT_EXCLUDE_PATTERNS: readonly string[] = [
+    'node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'
+  ];
+
   /**
    * 計算目前專案的 cache key
-   * sha256(sorted paths + sorted mtimes)
+   * sha256(sorted paths + sorted mtimes + sizes)
+   *
+   * @returns 成功時回傳 hash；無法可靠計算 key（如 glob 拋錯）時回傳 null，
+   *   代表「不要信任快取」——caller 應跳過讀寫快取，避免 false cache hit。
    */
   async computeCacheKey(
     projectPath: string,
     projectFileSystem: IFileSystem,
-    includeExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
-  ): Promise<string> {
+    includeExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS,
+    excludePatterns: readonly string[] = IndexDiskCache.DEFAULT_EXCLUDE_PATTERNS
+  ): Promise<string | null> {
     try {
       const extensions = includeExtensions.map(extension => `**/*${extension}`);
-      const excludePatterns = ['node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'];
 
       const allFiles: string[] = [];
       for (const pattern of extensions) {
         const files = await projectFileSystem.glob(pattern, {
           cwd: projectPath,
-          ignore: excludePatterns,
+          ignore: [...excludePatterns],
           absolute: true
         });
         allFiles.push(...files);
@@ -65,13 +73,14 @@ export class IndexDiskCache {
       // 排序並去重
       const uniqueFiles = [...new Set(allFiles)].sort();
 
-      // 取得每個檔案的 mtime
-      const mtimePairs: Array<{ path: string; mtime: number }> = [];
+      // 取得每個檔案的 mtime 與 size（size 變幾乎必抓到內容變更，
+      // 防 mtime 保留型操作如 git checkout / cp -p 造成 stale cache）
+      const fileStats: Array<{ path: string; mtime: number; size: number }> = [];
       await Promise.all(
         uniqueFiles.map(async (filePath) => {
           try {
             const stat = await projectFileSystem.getStats(filePath);
-            mtimePairs.push({ path: filePath, mtime: stat.modifiedTime.getTime() });
+            fileStats.push({ path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size });
           } catch {
             // 靜默跳過無法 stat 的檔案
           }
@@ -79,17 +88,18 @@ export class IndexDiskCache {
       );
 
       // 按路徑排序（已是排序狀態，但 Promise.all 不保序）
-      mtimePairs.sort((a, b) => a.path.localeCompare(b.path));
+      fileStats.sort((a, b) => a.path.localeCompare(b.path));
 
       // 計算 hash
-      const hashInput = mtimePairs
-        .map(p => `${p.path}:${p.mtime}`)
+      const hashInput = fileStats
+        .map(p => `${p.path}:${p.mtime}:${p.size}`)
         .join('\n');
 
       return createHash('sha256').update(hashInput).digest('hex');
     } catch {
-      // fallback: 穩定 sentinel，確保 cache miss（不用時間戳避免每次產生新 key）
-      return 'cache-key-unavailable';
+      // 無法可靠計算 key（如 glob 拋錯）→ 回 null 代表「不要信任快取」，
+      // 避免回穩定 sentinel 造成兩次失敗 key 相等的 false cache hit
+      return null;
     }
   }
 

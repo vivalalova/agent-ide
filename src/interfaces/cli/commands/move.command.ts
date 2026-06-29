@@ -515,10 +515,17 @@ async function handleMoveMemberCommand(
       return;
     }
 
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 解析任意別名
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+
     // 建立引擎
     const moveMemberEngine = new MoveMemberEngine(
       parserRegistry,
-      context.fileSystem
+      context.fileSystem,
+      {
+        pathAliases: tsconfigPathConfig.pathAliases,
+        baseUrl: tsconfigPathConfig.baseUrl
+      }
     );
 
     // 決定目標類型

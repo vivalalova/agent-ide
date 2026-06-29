@@ -11,6 +11,7 @@ import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
 import { CACHE_VERSION } from '@core/foundations/indexing/index-cache-serializer.js';
 import type { SerializedIndexData } from '@core/foundations/indexing/index-cache-serializer.js';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 let tmpCacheDir: string;
 
@@ -100,6 +101,42 @@ describe('IndexDiskCache', () => {
       expect(key1).toBe(key2);
       expect(typeof key1).toBe('string');
       expect(key1.length).toBeGreaterThan(0);
+    });
+
+    // 受控 fake fs：精確控制每個檔案的 mtime / size，computeCacheKey 只用 glob + getStats
+    function makeFakeFs(files: ReadonlyArray<{ path: string; mtimeMs: number; size: number }>): IFileSystem {
+      return {
+        async glob() { return files.map(f => f.path); },
+        async getStats(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no stat: ${filePath}`); }
+          return { size: f.size, modifiedTime: new Date(f.mtimeMs) };
+        }
+      } as unknown as IFileSystem;
+    }
+
+    it('內容變更但 mtime 不變(size 改變)須產生不同 key (P-B: 防 stale cache)', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      // 同路徑、同 mtime,但內容變了(size 不同)——例如 git checkout/cp -p 保留 mtime
+      const before = makeFakeFs([{ path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 100 }]);
+      const after = makeFakeFs([{ path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 250 }]);
+
+      const keyBefore = await cache.computeCacheKey('/proj', before);
+      const keyAfter = await cache.computeCacheKey('/proj', after);
+
+      expect(keyBefore).not.toBe(keyAfter);
+    });
+
+    it('glob 失敗時不得回穩定 sentinel(避免 false cache hit) (P-F)', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const throwingFs = {
+        async glob() { throw new Error('glob exploded'); },
+        async getStats() { throw new Error('unreachable'); }
+      } as unknown as IFileSystem;
+
+      const key = await cache.computeCacheKey('/proj', throwingFs);
+      // 不能是會在下次同樣失敗時命中的穩定字串;null 代表「無法計算 key → 不要信任快取」
+      expect(key).toBeNull();
     });
   });
 

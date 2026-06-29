@@ -640,14 +640,15 @@ export class IndexEngine {
     fileInfo: FileInfo,
     _content: string
   ): Promise<void> {
+    // 先將檔案加入索引（與單執行緒 indexFile 一致：先 addFile 再判斷錯誤），
+    // 確保解析失敗的檔案也會留在索引中（帶 parseErrors），而非被靜默丟棄
+    await this.fileIndex.addFile(fileInfo);
+
     // 處理解析錯誤
     if (result.errors.length > 0) {
       await this.fileIndex.setFileParseErrors(result.filePath, result.errors);
       return;
     }
-
-    // 新增到檔案索引
-    await this.fileIndex.addFile(fileInfo);
 
     // 更新檔案索引的符號和依賴
     await this.fileIndex.setFileSymbols(result.filePath, result.symbols);
