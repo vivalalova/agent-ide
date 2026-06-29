@@ -238,15 +238,12 @@ export class ChangeSignatureEngine {
   }
 
   private createCallSiteTextEdit(update: CallSiteUpdate): TextEdit {
-    const originalLines = update.originalCode.split('\n');
-    const startLine = update.location.range.start.line;
-    const endLine = startLine + originalLines.length - 1;
-    const lastLine = originalLines[originalLines.length - 1] ?? '';
-
+    // 直接使用呼叫點的精確範圍（函式名第一個字元到右括號之後），
+    // newText 為重建後的呼叫運算式。如此同一行的不同呼叫會產生互不重疊的 edit。
     return {
       range: {
-        start: { line: startLine, column: 1 },
-        end: { line: endLine, column: lastLine.length + 1 }
+        start: update.location.range.start,
+        end: update.location.range.end
       },
       newText: update.newCode,
       description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
@@ -355,12 +352,17 @@ export class ChangeSignatureEngine {
           const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
           const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
 
+          // 物件 shorthand 屬性（如 `return { userId }`）：識別字同時是屬性鍵與值側引用。
+          // 直接替換會連屬性鍵一起改掉，因此展開為 `key: newName`，保留對外屬性鍵、只更新值側引用。
+          const isShorthand = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node;
+          const newText = isShorthand ? `${node.text}: ${newName}` : newName;
+
           edits.push({
             range: {
               start: { line: start.line + 1, column: start.character + 1 },
               end: { line: end.line + 1, column: end.character + 1 }
             },
-            newText: newName,
+            newText,
             description: `Rename parameter reference ${node.text} -> ${newName}`
           });
         }

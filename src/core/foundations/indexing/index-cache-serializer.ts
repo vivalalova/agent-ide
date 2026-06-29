@@ -36,6 +36,7 @@ interface SerializedSymbol {
   readonly attributes: readonly string[] | undefined;
   readonly superclass: string | undefined;
   readonly implements: readonly string[] | undefined;
+  readonly isImported?: boolean;
 }
 
 /**
@@ -201,7 +202,8 @@ export class IndexCacheSerializer {
       modifiers: [...symbol.modifiers],
       attributes: symbol.attributes ? [...symbol.attributes] : undefined,
       superclass: symbol.superclass,
-      implements: symbol.implements ? [...symbol.implements] : undefined
+      implements: symbol.implements ? [...symbol.implements] : undefined,
+      isImported: (symbol as { isImported?: boolean }).isImported
     };
   }
 
@@ -226,8 +228,9 @@ export class IndexCacheSerializer {
       modifiers: [...symbol.modifiers],
       ...(symbol.attributes !== undefined ? { attributes: [...symbol.attributes] } : {}),
       ...(symbol.superclass !== undefined ? { superclass: symbol.superclass } : {}),
-      ...(symbol.implements !== undefined ? { implements: [...symbol.implements] } : {})
-    };
+      ...(symbol.implements !== undefined ? { implements: [...symbol.implements] } : {}),
+      ...(symbol.isImported !== undefined ? { isImported: symbol.isImported } : {})
+    } as Symbol;
   }
 
   // ── private: Scope（flatten parent to path string） ──

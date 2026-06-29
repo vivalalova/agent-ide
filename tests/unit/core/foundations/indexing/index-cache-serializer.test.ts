@@ -230,6 +230,23 @@ describe('IndexCacheSerializer', () => {
 
       expect(restored.get('ns')!.symbols[0].scope).toBeUndefined();
     });
+
+    it('Symbol isImported 旗標 roundtrip 保留（消歧義過濾依賴此欄位）', () => {
+      const importedSym = { ...makeSymbol('helper', { type: SymbolType.Variable }), isImported: true } as Symbol;
+      const definitionSym = makeSymbol('helper', { type: SymbolType.Function });
+
+      const entry = makeEntry('/src/imp.ts', { symbols: [importedSym, definitionSym] });
+      const entries = new Map([['imp', entry]]);
+      const partial = serializer.serialize(entries);
+      const data: SerializedIndexData = { ...partial, cacheKey: 'k-imp' };
+      const restored = serializer.deserialize(data);
+
+      const restoredSyms = restored.get('imp')!.symbols;
+      // import-only candidate 必須在 cache roundtrip 後仍可辨識
+      expect((restoredSyms[0] as { isImported?: boolean }).isImported).toBe(true);
+      // 真正的定義不應被誤標為 import
+      expect((restoredSyms[1] as { isImported?: boolean }).isImported).toBeUndefined();
+    });
   });
 
   describe('version mismatch', () => {

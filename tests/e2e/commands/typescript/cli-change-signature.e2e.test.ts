@@ -899,13 +899,14 @@ const result = calc(10, 5);
       const changedLines = output.files.flatMap((file: any) =>
         file.hunks.flatMap((hunk: any) => hunk.lines)
       );
+      // 多行呼叫的引數應在預覽中正確對調（呼叫點 edit 為精確範圍，
+      // 函式名行與 `);` 行屬共用 converter 對跨行 edit 的邊界呈現，不在語意斷言內）
       expect(changedLines).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ type: 'delete', content: '  10,' }),
           expect.objectContaining({ type: 'delete', content: '  5,' }),
           expect.objectContaining({ type: 'add', content: '  5,' }),
-          expect.objectContaining({ type: 'add', content: '  10,' }),
-          expect.objectContaining({ type: 'add', content: ');' })
+          expect.objectContaining({ type: 'add', content: '  10,' })
         ])
       );
     });
@@ -1104,6 +1105,85 @@ const r = combo(1, 'x');
         const output = JSON.parse(result.stdout);
         expect(output.success).toBe(true);
       }
+    });
+  });
+
+  describe('回歸: 呼叫點與 body 編輯正確性', () => {
+    it('--add 與 --reorder 併用時不得丟棄新增的參數', async () => {
+      const testFile = `${fixture.rootPath}/regression-add-reorder.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+const result = add(1, 2);
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--add', 'c:boolean=true', '--reorder', 'b,a', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      // 新增的參數 c 必須保留（重排不得吃掉它）
+      expect(updated).toContain('c: boolean = true');
+      // 定義順序應為 b, a, c
+      expect(updated).toMatch(/function add\(\s*b: number,\s*a: number,\s*c: boolean = true\s*\): number/);
+      // 呼叫點應同時重排並補上新增參數的值
+      expect(updated).toContain('add(2, 1, true)');
+    });
+
+    it('同一行多個（含巢狀）呼叫點應各自正確重排', async () => {
+      const testFile = `${fixture.rootPath}/regression-multi-call.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+const sum = add(1, 2) + add(3, 4);
+const nested = add(add(5, 6), 7);
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'b,a', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      // 同一行兩個獨立呼叫各自重排，不得互相覆寫
+      expect(updated).toContain('const sum = add(2, 1) + add(4, 3);');
+      // 巢狀呼叫：內外層都重排，且不得遺失任何引數
+      expect(updated).toContain('const nested = add(7, add(6, 5));');
+    });
+
+    it('--rename 不得改動物件 shorthand 屬性鍵（應展開保留鍵）', async () => {
+      const testFile = `${fixture.rootPath}/regression-rename-shorthand.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function build(userId: string): { userId: string } {
+  return { userId };
+}
+`.trim());
+
+      const result = await executeCLI(
+        ['change-signature', testFile, 'build', '-p', fixture.rootPath, '--rename', 'userId:accountId', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expectValidTypeScript(updated);
+      // 參數本身重命名
+      expect(updated).toContain('function build(accountId: string)');
+      // shorthand 須展開成 key: value，保留對外屬性鍵 userId
+      expect(updated).toContain('return { userId: accountId };');
+      // 不得把屬性鍵一起改名
+      expect(updated).not.toContain('{ accountId }');
+      // 回傳型別註解的屬性鍵不受影響
+      expect(updated).toContain('{ userId: string }');
     });
   });
 
