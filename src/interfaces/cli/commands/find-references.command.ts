@@ -30,7 +30,7 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
-import { filterReferencesToSelectedSymbol } from '@interfaces/cli/commands/symbol-reference-filter.js';
+import { filterReferencesToSelectedSymbol, findReExportAliasReferences } from '@interfaces/cli/commands/symbol-reference-filter.js';
 
 /** find-references 命令選項 */
 interface FindReferencesOptions {
@@ -150,6 +150,22 @@ async function handleFindReferencesCommand(
           projectPath,
           context.fileSystem
         );
+      }
+
+      // 補上單層 re-export 別名引用：索引與 SymbolFinder 都以名稱比對，
+      // 故 `export { X as Y }` 改名 re-export 後、下游 `import { Y }; Y()` 的引用會漏抓。
+      const aliasSourceSymbols = (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0])
+        ? [selectedSymbolResults[0].symbol]
+        : symbols;
+      for (const symbol of aliasSourceSymbols) {
+        const aliasRefs = await findReExportAliasReferences(
+          symbol,
+          projectPath,
+          context.fileSystem,
+          filePaths,
+          (filePath, bindingSymbol) => symbolFinder.findReferencesInFileWithSymbol(filePath, bindingSymbol)
+        );
+        refs.push(...aliasRefs);
       }
     } else {
       // 無定義：使用作用域感知查找（fallback）

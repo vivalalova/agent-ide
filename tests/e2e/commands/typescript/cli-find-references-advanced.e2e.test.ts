@@ -222,4 +222,107 @@ export function getPair(): StringPair {
       expect(result.exitCode).toBe(1);
     });
   });
+
+  // MARK: - re-export 別名追蹤
+
+  describe('re-export 別名追蹤 (P-J)', () => {
+    it('應該透過 barrel re-export 別名找到 consumer 的實際呼叫引用', async () => {
+      await fixture.writeFile('src/pipeline.ts', [
+        'export function selectedPipeline(): number {',
+        '  return 1;',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/index.ts', [
+        'export { selectedPipeline as renamed } from \'./pipeline.js\';'
+      ].join('\n'));
+      await fixture.writeFile('src/consumer.ts', [
+        'import { renamed } from \'./index.js\';',
+        '',
+        'export function consume(): number {',
+        '  return renamed();',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['find-references', 'selectedPipeline', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // consumer.ts 中透過別名 renamed 的引用必須被找到
+      expect(
+        output.references.some(
+          (r: { file: string; context: string }) =>
+            r.file.endsWith('consumer.ts') && r.context.includes('renamed')
+        )
+      ).toBe(true);
+
+      // 整體引用數：定義（pipeline.ts）+ re-export（index.ts）+ consumer.ts import + consumer.ts 呼叫 = 至少 3
+      expect(output.summary.totalReferences).toBeGreaterThanOrEqual(3);
+
+      // consumer.ts 裡 `import { renamed }` 那一行的引用型別必須是 'import'，不得是 'definition'
+      const consumerImportRef = output.references.find(
+        (r: any) => r.file.endsWith('consumer.ts') && r.context.includes('import { renamed }')
+      );
+      expect(consumerImportRef).toBeDefined();
+      expect(consumerImportRef.type).toBe('import');
+    });
+
+    it('別名引用追蹤不得誤報同名遮蔽變數或字串字面值', async () => {
+      await fixture.writeFile('src/pipeline.ts', [
+        'export function selectedPipeline(): number {',
+        '  return 1;',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/index.ts', [
+        'export { selectedPipeline as renamed } from \'./pipeline.js\';'
+      ].join('\n'));
+      await fixture.writeFile('src/consumer.ts', [
+        'import { renamed } from \'./index.js\';',
+        '',
+        'export function useIt(): number {',
+        '  return renamed();',
+        '}',
+        '',
+        'export function unrelated(): number {',
+        '  const renamed = 99;',
+        '  return renamed + renamed;',
+        '}',
+        '',
+        'const message = \'renamed should not match in string\';'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['find-references', 'selectedPipeline', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：consumer.ts 第 4 行的 renamed() 呼叫必須被找到
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('consumer.ts') && r.context.includes('return renamed()')
+        )
+      ).toBe(true);
+
+      // 負向（核心）：不得誤報遮蔽變數與字串字面值
+      const contexts: string[] = output.references.map((r: any) => r.context);
+      expect(contexts.some((c: string) => c.includes('const renamed = 99'))).toBe(false);
+      expect(contexts.some((c: string) => c.includes('renamed + renamed'))).toBe(false);
+      expect(contexts.some((c: string) => c.includes('should not match in string'))).toBe(false);
+
+      // consumer.ts 內的引用數應為 2（import binding + renamed() 呼叫），不含遮蔽變數那 3 處
+      expect(
+        output.references.filter((r: any) => r.file.endsWith('consumer.ts')).length
+      ).toBe(2);
+    });
+  });
 });
