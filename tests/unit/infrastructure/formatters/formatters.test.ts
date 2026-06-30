@@ -370,6 +370,42 @@ describe('DiffGenerator', () => {
       // 當只有一行時，格式可能是 @@ -10 +10 @@ 或 @@ -10,1 +10,1 @@
       expect(hunk.header).toMatch(/@@ -\d+,?\d* \+\d+,?\d* @@/);
     });
+
+    it('多行修改：未變更的首尾行應渲染為 context，不得呈現為 delete+add，且不計入增刪統計', () => {
+      const input: PreviewInput = {
+        command: PreviewCommand.Refactor,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/a.ts',
+          originalContent: 'foo(\n  a,\n  b\n)',
+          // 多行 modify：首行 'foo(' 與末行 ')' 內容不變，只有中間兩行對調
+          changes: [{ line: 1, oldContent: 'foo(\n  a,\n  b\n)', newContent: 'foo(\n  b,\n  a\n)' }]
+        }]
+      };
+
+      const result = generatePreviewResult(input, 3);
+      const allLines = result.files[0].hunks.flatMap(h => h.lines);
+      const addOrDelete = allLines
+        .filter(l => l.type === ChangeLineType.Add || l.type === ChangeLineType.Delete)
+        .map(l => l.content);
+      const contextContents = allLines
+        .filter(l => l.type === ChangeLineType.Context)
+        .map(l => l.content);
+
+      // 未變更的首尾行不得出現在 add/delete
+      expect(addOrDelete).not.toContain('foo(');
+      expect(addOrDelete).not.toContain(')');
+      // 應作為 context 出現
+      expect(contextContents).toContain('foo(');
+      expect(contextContents).toContain(')');
+      // 真正變更的兩行仍須呈現
+      expect(addOrDelete).toContain('  a,');
+      expect(addOrDelete).toContain('  b,');
+      // 統計只計真正變更的 2 行，不被 no-op 邊界灌水
+      expect(result.summary.additions).toBe(2);
+      expect(result.summary.deletions).toBe(2);
+      expect(result.summary.totalChanges).toBe(4);
+    });
   });
 });
 

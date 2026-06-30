@@ -177,11 +177,16 @@ function processMultiLineEditEnd(
   // 因此 suffix = lineContent.substring(endCol - 1) 是正確的
   const suffix = lineContent.substring(endCol - 1);
 
-  // 將 suffix 附加到最後一個有新內容的 change
+  // 將 suffix 附加到「最後一個帶有新內容的 change」（即新內容的最後一行）。
+  // 不能直接用 changes[changes.length - 1]：跨行編輯的中間行刪除會被 push 在
+  // 起始行的 insert 之後，導致陣列尾端是 newContent=null 的刪除，suffix 會被靜默丟棄，
+  // 使預覽的新內容缺漏結尾字元（例如 `);` 掉成 `)`）。
   if (suffix) {
-    const lastChange = changes[changes.length - 1];
-    if (lastChange && lastChange.newContent !== null) {
-      lastChange.newContent += suffix;
+    for (let i = changes.length - 1; i >= 0; i--) {
+      if (changes[i].newContent !== null) {
+        changes[i].newContent += suffix;
+        break;
+      }
     }
   }
 

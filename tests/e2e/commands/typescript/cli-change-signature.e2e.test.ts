@@ -899,8 +899,8 @@ const result = calc(10, 5);
       const changedLines = output.files.flatMap((file: any) =>
         file.hunks.flatMap((hunk: any) => hunk.lines)
       );
-      // 多行呼叫的引數應在預覽中正確對調（呼叫點 edit 為精確範圍，
-      // 函式名行與 `);` 行屬共用 converter 對跨行 edit 的邊界呈現，不在語意斷言內）
+      // 多行呼叫的引數應在預覽中正確對調；未變更的函式名行與 `);` 行應呈現為 context，
+      // 不得出現假的 delete+add
       expect(changedLines).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ type: 'delete', content: '  10,' }),
@@ -909,6 +909,11 @@ const result = calc(10, 5);
           expect.objectContaining({ type: 'add', content: '  10,' })
         ])
       );
+      const addDelContents = changedLines
+        .filter((l: any) => l.type === 'delete' || l.type === 'add')
+        .map((l: any) => l.content);
+      expect(addDelContents).not.toContain('const result = calc(');
+      expect(addDelContents).not.toContain(');');
     });
   });
 

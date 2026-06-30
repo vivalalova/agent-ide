@@ -159,6 +159,31 @@ function expandMultilineChanges(changes: LineChange[]): LineChange[] {
 }
 
 /**
+ * 抵銷同一行號上內容相同的 delete/add 配對。
+ * 多行編輯的首尾邊界行常被拆成「刪除原內容 + 新增相同內容」，
+ * 兩者相消後實際未變更，應視為 context（不計入增刪統計），
+ * 避免預覽出現假變更行、以及統計數字灌水。
+ */
+function cancelIdenticalLineChanges(
+  deletedContents: string[],
+  addedContents: string[]
+): { unchanged: string[]; remainingDeletes: string[]; remainingAdds: string[] } {
+  const remainingAdds = [...addedContents];
+  const remainingDeletes: string[] = [];
+  const unchanged: string[] = [];
+  for (const deleted of deletedContents) {
+    const matchIndex = remainingAdds.indexOf(deleted);
+    if (matchIndex !== -1) {
+      remainingAdds.splice(matchIndex, 1);
+      unchanged.push(deleted);
+    } else {
+      remainingDeletes.push(deleted);
+    }
+  }
+  return { unchanged, remainingDeletes, remainingAdds };
+}
+
+/**
  * 從一組變更建立 hunk
  */
 function createHunk(originalLines: string[], changes: LineChange[], contextLines: number): DiffHunk {
@@ -199,34 +224,24 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
 
   // 遍歷範圍內的每一行
   for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-    const hasDelete = deleteMap.has(lineNum);
-    const hasAdd = addMap.has(lineNum);
+    const deletedContents = deleteMap.get(lineNum) ?? [];
+    const addedContents = addMap.get(lineNum) ?? [];
 
-    if (hasDelete || hasAdd) {
-      // 有變更的行
-      // 先輸出刪除
-      if (hasDelete) {
-        const deletedContents = deleteMap.get(lineNum) ?? [];
-        for (const content of deletedContents) {
-          lines.push({
-            type: ChangeLineType.Delete,
-            lineNumber: lineNum,
-            content
-          });
-          oldLineCount++;
-        }
+    if (deletedContents.length > 0 || addedContents.length > 0) {
+      const { unchanged, remainingDeletes, remainingAdds } = cancelIdenticalLineChanges(deletedContents, addedContents);
+
+      for (const content of remainingDeletes) {
+        lines.push({ type: ChangeLineType.Delete, lineNumber: lineNum, content });
+        oldLineCount++;
       }
-      // 再輸出新增
-      if (hasAdd) {
-        const addedContents = addMap.get(lineNum) ?? [];
-        for (const content of addedContents) {
-          lines.push({
-            type: ChangeLineType.Add,
-            lineNumber: lineNum,
-            content
-          });
-          newLineCount++;
-        }
+      for (const content of unchanged) {
+        lines.push({ type: ChangeLineType.Context, lineNumber: lineNum, content });
+        oldLineCount++;
+        newLineCount++;
+      }
+      for (const content of remainingAdds) {
+        lines.push({ type: ChangeLineType.Add, lineNumber: lineNum, content });
+        newLineCount++;
       }
     } else if (lineNum <= maxOriginalLine) {
       // Context 行（只有在原始檔案範圍內才輸出 context）
