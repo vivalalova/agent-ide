@@ -463,13 +463,16 @@ export class DeclarationAnalyzer {
     const parameters: FormattedParameter[] = [];
 
     for (const param of node.parameters) {
+      const isRest = !!param.dotDotDotToken;
+
       if (!ts.isIdentifier(param.name)) {
         // 跳過解構參數等複雜情況，使用整體表示
         const paramText = param.getText(sourceFile);
         parameters.push({
           name: paramText.split(':')[0].trim(),
           type: param.type ? param.type.getText(sourceFile) : 'any',
-          optional: !!param.questionToken || !!param.initializer
+          optional: !!param.questionToken || !!param.initializer,
+          rest: isRest
         });
         continue;
       }
@@ -483,7 +486,8 @@ export class DeclarationAnalyzer {
         name: paramName,
         type: paramType,
         optional,
-        defaultValue
+        defaultValue,
+        rest: isRest
       });
     }
 

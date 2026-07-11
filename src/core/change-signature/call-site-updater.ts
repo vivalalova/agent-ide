@@ -384,6 +384,15 @@ export class CallSiteUpdater {
       }
     }
 
+    // 保留超出宣告固定參數個數的尾端多餘引數（對應 rest/variadic 參數）：
+    // 參數映射把 rest 參數視為單一位置，只消費了它對應的第一個引數，
+    // 其餘 arguments[declaredParameterCount..] 需依原順序接在輸出尾端，避免被靜默丟棄。
+    // 被 remove 的參數位於 [0, declaredParameterCount)，其引數已由映射階段處理（丟棄），不受此影響。
+    const declaredParameterCount = originalSignature.parameters.length;
+    for (let i = declaredParameterCount; i < callSite.arguments.length; i++) {
+      processedResult.push(argumentOverrides?.get(i) ?? callSite.arguments[i].value);
+    }
+
     return processedResult;
   }
 
@@ -501,10 +510,9 @@ export class CallSiteUpdater {
       return args.join(', ');
     }
 
-    // 多行格式
+    // 多行格式：每個引數間恆以 ',\n' 分隔；trailingComma 只決定「最後一個引數後」是否補逗號（見下行）
     const formattedArgs = args.map(arg => `${style.indent}${arg}`);
-    const separator = style.trailingComma ? ',\n' : ',\n';
-    return '\n' + formattedArgs.join(separator) + (style.trailingComma ? ',' : '') + '\n';
+    return '\n' + formattedArgs.join(',\n') + (style.trailingComma ? ',' : '') + '\n';
   }
 
 }

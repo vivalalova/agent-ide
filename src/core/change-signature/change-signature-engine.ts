@@ -21,9 +21,16 @@ import type {
   CallSiteUpdate,
   SignatureChange
 } from './types.js';
-import { ChangeSignatureErrorCode, isRemoveParameterChange, isRenameParameterChange } from './types.js';
+import {
+  ChangeSignatureErrorCode,
+  isAddParameterChange,
+  isRemoveParameterChange,
+  isReorderParametersChange,
+  isRenameParameterChange
+} from './types.js';
 import { resolveParameterIndex } from './utils.js';
 import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
+import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 
 /**
  * Change Signature Engine
@@ -37,7 +44,7 @@ export class ChangeSignatureEngine {
   private readonly callSiteUpdater: CallSiteUpdater;
 
   constructor(
-    parserRegistry: ParserRegistry,
+    private readonly parserRegistry: ParserRegistry,
     private readonly fileSystem: IFileSystem
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
@@ -86,32 +93,47 @@ export class ChangeSignatureEngine {
     const newSignature = this.transformer.applyChangesToSignature(originalSignature, options.changes);
 
     // 4. 取得所有呼叫點
-    // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
-    let effectiveProjectRoot = options.projectRoot;
-    if (path.isAbsolute(options.filePath) && !options.filePath.startsWith(effectiveProjectRoot)) {
-      effectiveProjectRoot = path.dirname(options.filePath);
-      // 嘗試向上找到 package.json 所在目錄
-      let searchDir = effectiveProjectRoot;
-      while (searchDir !== path.dirname(searchDir)) {
-        const packageJsonPath = path.join(searchDir, 'package.json');
-        try {
-          const exists = await this.fileSystem.exists(packageJsonPath);
-          if (exists) {
-            effectiveProjectRoot = searchDir;
-            break;
+    // 純 rename / change-type（不含 add/remove/reorder）不改變呼叫點的參數映射，
+    // 對呼叫點而言語意等價 → 跳過掃描與重寫，避免產生純重新排版（如 `fn(a,b)` -> `fn(a, b)`）的噪音 diff。
+    const requiresCallSiteRewrite = this.changesRequireCallSiteRewrite(options.changes);
+    let callSites: CallSite[] = [];
+
+    if (requiresCallSiteRewrite) {
+      // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
+      let effectiveProjectRoot = options.projectRoot;
+      if (path.isAbsolute(options.filePath) && !options.filePath.startsWith(effectiveProjectRoot)) {
+        effectiveProjectRoot = path.dirname(options.filePath);
+        // 嘗試向上找到 package.json 所在目錄
+        let searchDir = effectiveProjectRoot;
+        while (searchDir !== path.dirname(searchDir)) {
+          const packageJsonPath = path.join(searchDir, 'package.json');
+          try {
+            const exists = await this.fileSystem.exists(packageJsonPath);
+            if (exists) {
+              effectiveProjectRoot = searchDir;
+              break;
+            }
+          } catch {
+            // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
           }
-        } catch {
-          // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
+          searchDir = path.dirname(searchDir);
         }
-        searchDir = path.dirname(searchDir);
       }
+
+      const projectFiles = options.targetFiles ?? await this.getProjectFiles(effectiveProjectRoot);
+
+      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標函式」的檔案——目標定義檔本身，
+      // 以及直接 import 該符號自目標檔的檔案。避免全專案掃同名而誤改跨檔的同名自由函式。
+      const relevantFiles = await this.filterFilesReferencingTarget(
+        projectFiles,
+        options.filePath,
+        options.functionName
+      );
+
+      // 只查找獨立函式呼叫（非 method call）
+      const allCallSites = await this.symbolFinder.findCallSites(options.functionName, relevantFiles);
+      callSites = allCallSites.filter(cs => !cs.isMethodCall);
     }
-
-    const projectFiles = options.targetFiles ?? await this.getProjectFiles(effectiveProjectRoot);
-
-    // 只查找獨立函式呼叫（非 method call）
-    const allCallSites = await this.symbolFinder.findCallSites(options.functionName, projectFiles);
-    const callSites = allCallSites.filter(cs => !cs.isMethodCall);
 
     // 5. 生成定義更新
     const definitionUpdate = await this.generateDefinitionUpdate(
@@ -121,19 +143,16 @@ export class ChangeSignatureEngine {
     );
 
     // 6. 生成呼叫點更新
-    const callSiteUpdates = await this.callSiteUpdater.generateCallSiteUpdates(
-      callSites,
-      originalSignature,
-      newSignature,
-      options.changes
-    );
+    const callSiteUpdates = requiresCallSiteRewrite
+      ? await this.callSiteUpdater.generateCallSiteUpdates(
+        callSites,
+        originalSignature,
+        newSignature,
+        options.changes
+      )
+      : [];
 
-    // 7. 執行或預覽
-    if (!options.preview) {
-      await this.applyChanges(definitionUpdate, callSiteUpdates);
-    }
-
-    // 8. 計算影響的檔案
+    // 7. 計算影響的檔案
     const affectedFiles = new Set<string>();
     affectedFiles.add(definitionUpdate.filePath);
     for (const update of callSiteUpdates) {
@@ -146,7 +165,9 @@ export class ChangeSignatureEngine {
       newSignature,
       definitionUpdate,
       callSiteUpdates,
-      executed: !options.preview,
+      // 本方法從不直接寫入檔案：實際寫入統一經由 generateChangeset() 產生的
+      // Changeset + ChangeApplicator 完成（見 CLI 呼叫路徑），故恆為 false。
+      executed: false,
       stats: {
         callSitesUpdated: callSiteUpdates.length,
         filesAffected: affectedFiles.size
@@ -250,6 +271,18 @@ export class ChangeSignatureEngine {
     };
   }
 
+  /**
+   * 判斷變更集合是否需要重寫呼叫點。
+   * 呼叫點的參數映射（順序/數量）只受 Add/Remove/Reorder 影響（見 CallSiteUpdater.createParameterMapping）；
+   * 純 rename、change-type（或兩者組合）不改變呼叫點的引數順序或數量，跳過呼叫點掃描與重寫。
+   * 混合變更（如 rename + reorder）因含 Reorder 仍會回傳 true。
+   */
+  private changesRequireCallSiteRewrite(changes: readonly SignatureChange[]): boolean {
+    return changes.some(change =>
+      isAddParameterChange(change) || isRemoveParameterChange(change) || isReorderParametersChange(change)
+    );
+  }
+
   private areParametersEquivalent(
     left: readonly ParameterDefinition[],
     right: readonly ParameterDefinition[]
@@ -341,37 +374,29 @@ export class ChangeSignatureEngine {
 
     const edits: TextEdit[] = [];
 
-    const visit = (node: ts.Node): void => {
-      if (node !== body && this.isFunctionLikeDeclaration(node)) {
+    this.forEachBodyIdentifierReference(body, new Set(renameMap.keys()), (node) => {
+      const newName = renameMap.get(node.text);
+      if (!newName) {
         return;
       }
+      const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
 
-      if (ts.isIdentifier(node)) {
-        const newName = renameMap.get(node.text);
-        if (newName && !this.shouldSkipParameterIdentifier(node)) {
-          const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-          const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+      // 物件 shorthand 屬性（如 `return { userId }`）：識別字同時是屬性鍵與值側引用。
+      // 直接替換會連屬性鍵一起改掉，因此展開為 `key: newName`，保留對外屬性鍵、只更新值側引用。
+      const isShorthand = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node;
+      const newText = isShorthand ? `${node.text}: ${newName}` : newName;
 
-          // 物件 shorthand 屬性（如 `return { userId }`）：識別字同時是屬性鍵與值側引用。
-          // 直接替換會連屬性鍵一起改掉，因此展開為 `key: newName`，保留對外屬性鍵、只更新值側引用。
-          const isShorthand = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node;
-          const newText = isShorthand ? `${node.text}: ${newName}` : newName;
+      edits.push({
+        range: {
+          start: { line: start.line + 1, column: start.character + 1 },
+          end: { line: end.line + 1, column: end.character + 1 }
+        },
+        newText,
+        description: `Rename parameter reference ${node.text} -> ${newName}`
+      });
+    });
 
-          edits.push({
-            range: {
-              start: { line: start.line + 1, column: start.character + 1 },
-              end: { line: end.line + 1, column: end.character + 1 }
-            },
-            newText,
-            description: `Rename parameter reference ${node.text} -> ${newName}`
-          });
-        }
-      }
-
-      ts.forEachChild(node, visit);
-    };
-
-    ts.forEachChild(body, visit);
     return edits;
   }
 
@@ -400,20 +425,110 @@ export class ChangeSignatureEngine {
 
     const usedNames = new Set<string>();
 
-    const visit = (node: ts.Node): void => {
-      if (node !== body && this.isFunctionLikeDeclaration(node)) {
+    this.forEachBodyIdentifierReference(body, names, (node) => {
+      usedNames.add(node.text);
+    });
+
+    return Array.from(usedNames);
+  }
+
+  /**
+   * 遍歷函式 body 內對指定名稱集合的識別字引用，並回呼每個命中的引用節點。
+   *
+   * 與舊行為（無條件跳過所有巢狀函式）不同：預設會遞迴進入巢狀函式（閉包），
+   * 只有當某巢狀函式「遮蔽」了某個目標名稱時，才對該子樹略過該名稱。
+   * 遮蔽判定：巢狀函式宣告同名參數，或其作用域內以 const/let/var/function/class 重新宣告同名。
+   * rename（改名閉包內引用）與 remove（偵測參數是否仍被使用）兩處共用此遍歷。
+   */
+  private forEachBodyIdentifierReference(
+    body: ts.Node,
+    names: ReadonlySet<string>,
+    onReference: (node: ts.Identifier) => void
+  ): void {
+    const visit = (node: ts.Node, liveNames: ReadonlySet<string>): void => {
+      if (liveNames.size === 0) {
         return;
       }
 
-      if (ts.isIdentifier(node) && names.has(node.text) && !this.shouldSkipParameterIdentifier(node)) {
-        usedNames.add(node.text);
+      // 進入巢狀函式時，移除被該函式遮蔽的名稱後再遞迴其子樹
+      let childLiveNames = liveNames;
+      if (this.isFunctionLikeDeclaration(node)) {
+        const shadowed = this.collectFunctionScopeDeclaredNames(node as ts.FunctionLikeDeclaration);
+        if (shadowed.size > 0) {
+          childLiveNames = new Set([...liveNames].filter(name => !shadowed.has(name)));
+        }
       }
 
-      ts.forEachChild(node, visit);
+      if (
+        ts.isIdentifier(node)
+        && liveNames.has(node.text)
+        && !this.shouldSkipParameterIdentifier(node)
+      ) {
+        onReference(node);
+      }
+
+      ts.forEachChild(node, (child) => visit(child, childLiveNames));
     };
 
-    ts.forEachChild(body, visit);
-    return Array.from(usedNames);
+    ts.forEachChild(body, (child) => visit(child, names));
+  }
+
+  /**
+   * 收集某函式作用域「自身」宣告的名稱（用於遮蔽判定）：
+   * 參數名 + 該作用域內 const/let/var/function/class 宣告，不跨入更深層的巢狀函式作用域。
+   */
+  private collectFunctionScopeDeclaredNames(func: ts.FunctionLikeDeclaration): Set<string> {
+    const declared = new Set<string>();
+
+    for (const parameter of func.parameters) {
+      this.collectBindingNames(parameter.name, declared);
+    }
+
+    const body = 'body' in func ? func.body : undefined;
+    if (!body) {
+      return declared;
+    }
+
+    const scan = (node: ts.Node): void => {
+      // 巢狀函式宣告的名稱綁定在「當前」作用域，但其 body 屬於更深作用域，不再往下掃
+      if (node !== body && this.isFunctionLikeDeclaration(node)) {
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          declared.add(node.name.text);
+        }
+        return;
+      }
+
+      if (ts.isVariableDeclaration(node)) {
+        this.collectBindingNames(node.name, declared);
+      }
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        declared.add(node.name.text);
+      }
+      if (ts.isClassDeclaration(node) && node.name) {
+        declared.add(node.name.text);
+      }
+
+      ts.forEachChild(node, scan);
+    };
+
+    ts.forEachChild(body, scan);
+    return declared;
+  }
+
+  /**
+   * 從 binding name（識別字或解構樣式）收集所有繫結的識別字名稱
+   */
+  private collectBindingNames(name: ts.BindingName, target: Set<string>): void {
+    if (ts.isIdentifier(name)) {
+      target.add(name.text);
+      return;
+    }
+
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element)) {
+        this.collectBindingNames(element.name, target);
+      }
+    }
   }
 
   private findFunctionLikeDeclaration(
@@ -756,56 +871,6 @@ export class ChangeSignatureEngine {
   }
 
   /**
-   * 執行變更
-   */
-  private async applyChanges(
-    definitionUpdate: { filePath: string; originalCode: string; newCode: string },
-    callSiteUpdates: readonly CallSiteUpdate[]
-  ): Promise<void> {
-    // 按檔案分組
-    const fileUpdates = new Map<string, Array<{ originalCode: string; newCode: string; line: number }>>();
-
-    // 加入定義更新
-    if (!fileUpdates.has(definitionUpdate.filePath)) {
-      fileUpdates.set(definitionUpdate.filePath, []);
-    }
-    const defUpdates = fileUpdates.get(definitionUpdate.filePath);
-    defUpdates?.push({
-      originalCode: definitionUpdate.originalCode,
-      newCode: definitionUpdate.newCode,
-      line: 0 // 會在下面重新計算
-    });
-
-    // 加入呼叫點更新
-    for (const update of callSiteUpdates) {
-      if (!fileUpdates.has(update.filePath)) {
-        fileUpdates.set(update.filePath, []);
-      }
-      const callUpdates = fileUpdates.get(update.filePath);
-      callUpdates?.push({
-        originalCode: update.originalCode,
-        newCode: update.newCode,
-        line: update.location.range.start.line
-      });
-    }
-
-    // 套用到每個檔案
-    for (const [filePath, updates] of fileUpdates) {
-      let content = await this.fileUtils.readFile(filePath);
-      if (!content) { continue; }
-
-      // 從後往前替換，避免行號偏移
-      const sortedUpdates = updates.sort((a, b) => b.line - a.line);
-
-      for (const update of sortedUpdates) {
-        content = content.replace(update.originalCode, update.newCode);
-      }
-
-      await this.fileSystem.writeFile(filePath, content);
-    }
-  }
-
-  /**
    * 生成參數字串
    */
   private generateParameterString(signature: FunctionSignature, filePath: string): string {
@@ -834,6 +899,110 @@ export class ChangeSignatureEngine {
 
       return result;
     }).join(', ');
+  }
+
+  /**
+   * 過濾出「語意上可能引用目標函式」的檔案：目標定義檔本身，
+   * 以及直接（named / default）import 目標符號自目標檔的檔案。
+   *
+   * 界線（記載於此）：僅解析相對路徑 import；alias / node_modules /
+   * 透過中介檔 re-export 的間接 import 不在判定範圍內。此為「寧可漏掃、不可誤傷」
+   * 的取捨——避免把跨檔同名的不同符號呼叫點誤改。命名空間 import（`import * as ns`）
+   * 的呼叫形如 `ns.fn(...)`，屬 method call 已在後續被過濾，故不需納入。
+   */
+  private async filterFilesReferencingTarget(
+    files: readonly string[],
+    targetFilePath: string,
+    functionName: string
+  ): Promise<string[]> {
+    const targetAbsolute = path.resolve(targetFilePath);
+    const result: string[] = [];
+
+    for (const file of files) {
+      if (path.resolve(file) === targetAbsolute) {
+        result.push(file);
+        continue;
+      }
+      if (await this.fileImportsSymbolFromTarget(file, targetAbsolute, functionName)) {
+        result.push(file);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 判斷檔案是否以本地名稱 functionName 直接 import 目標檔匯出的符號。
+   * 呼叫點以「本地繫結名稱」呼叫，且 findCallSites 只比對 functionName，
+   * 故僅需確認本地繫結名稱等於 functionName。
+   */
+  private async fileImportsSymbolFromTarget(
+    filePath: string,
+    targetAbsolute: string,
+    functionName: string
+  ): Promise<boolean> {
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
+    if (!parser?.getImportDeclarations) {
+      return false;
+    }
+
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content) {
+      return false;
+    }
+
+    const declarations = parser.getImportDeclarations(content) ?? [];
+    for (const declaration of declarations) {
+      if (declaration.isTypeOnly) {
+        continue; // type-only import 不會產生 runtime 呼叫點
+      }
+      if (!this.importSpecifierResolvesToTarget(filePath, declaration.moduleSpecifier, targetAbsolute)) {
+        continue;
+      }
+
+      const bindsLocalName =
+        declaration.defaultImport === functionName
+        || declaration.namedImports.some(spec => (spec.alias ?? spec.name) === functionName);
+      if (bindsLocalName) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 判斷相對路徑 import specifier 是否解析到目標檔（含省略副檔名與 index 檔慣例）。
+   * 非相對路徑（alias / node_modules）一律回傳 false（界線見 filterFilesReferencingTarget）。
+   */
+  private importSpecifierResolvesToTarget(
+    importerFilePath: string,
+    moduleSpecifier: string,
+    targetAbsolute: string
+  ): boolean {
+    if (!moduleSpecifier.startsWith('.')) {
+      return false;
+    }
+
+    const resolvedBase = path.resolve(path.dirname(importerFilePath), moduleSpecifier);
+    const sourceExtensionPattern = /\.(?:ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
+    const targetWithoutExtension = targetAbsolute.replace(sourceExtensionPattern, '');
+
+    // 直接命中（specifier 含或不含副檔名）
+    if (resolvedBase === targetAbsolute || resolvedBase === targetWithoutExtension) {
+      return true;
+    }
+
+    // index 檔慣例：`import './dir'` 對應 `./dir/index.<ext>`
+    if (
+      sourceExtensionPattern.test(targetAbsolute)
+      && path.basename(targetWithoutExtension) === 'index'
+      && resolvedBase === path.dirname(targetAbsolute)
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   /**

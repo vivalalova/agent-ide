@@ -482,6 +482,8 @@ export interface FormattedParameter {
   optional: boolean;
   /** 預設值（如果有） */
   defaultValue?: string;
+  /** 是否為 rest 參數（`...args`）；由 AST 的 dotDotDotToken 判定 */
+  rest?: boolean;
 }
 
 /**

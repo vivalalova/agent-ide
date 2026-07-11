@@ -90,7 +90,8 @@ export class SignatureParser {
       type: param.type !== 'any' ? param.type : undefined,
       defaultValue: param.defaultValue,
       optional: param.optional,
-      rest: param.name.startsWith('...'),
+      // 優先採用 AST 判定的 rest 旗標；字串路徑（無此欄位）fallback 到名稱前綴
+      rest: param.rest ?? param.name.startsWith('...'),
       range: {
         start: { line: lineNumber, column: index * 10 },
         end: { line: lineNumber, column: index * 10 + param.name.length }

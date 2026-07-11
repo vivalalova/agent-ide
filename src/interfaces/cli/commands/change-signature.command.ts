@@ -110,7 +110,6 @@ async function handleChangeSignatureCommand(
     if (!(await context.fileSystem.exists(filePath))) {
       outputHandler.outputError(`檔案不存在: ${filePath}`, format, 'change-signature');
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -363,11 +362,14 @@ export function parseChangeSignatureChanges(options: ChangeSignatureParseOptions
   }
 
   // 解析 --change-type 參數
+  // 與 --add 共用深度感知切割：只在頂層逗號切 mapping、只在第一個冒號切名稱/型別，
+  // 避免箭頭型別（`(e: Event) => void`）的冒號或泛型（`Map<string, number>`）的逗號被天真切斷。
   if (options.changeType) {
-    const mappings = options.changeType.split(',');
+    const mappings = splitTopLevelParameterList(options.changeType);
     for (const mapping of mappings) {
-      const [name, newType] = mapping.split(':').map(s => s.trim());
+      const { name, type: newType } = splitParameterNameAndType(mapping);
       if (name && newType) {
+        validateParameterType(name, newType, syntaxMode);
         changes.push({
           type: SignatureChangeType.ChangeParameterType,
           parameterNameOrIndex: name,
@@ -413,10 +415,8 @@ function parseAddParameter(
     }
   }
 
-  // 解析名稱和類型
-  const typeSeparatorIndex = nameTypePart.indexOf(':');
-  const name = (typeSeparatorIndex >= 0 ? nameTypePart.slice(0, typeSeparatorIndex) : nameTypePart).trim();
-  const type = typeSeparatorIndex >= 0 ? nameTypePart.slice(typeSeparatorIndex + 1).trim() : '';
+  // 解析名稱和類型（與 --change-type 共用第一個冒號切法）
+  const { name, type } = splitParameterNameAndType(nameTypePart);
   if (!name) {
     throw new Error(`無效的 --add 參數語法: ${param}`);
   }
@@ -602,10 +602,32 @@ function getTypeScriptSyntaxError(source: string, syntaxMode?: SyntaxValidationM
 
 function splitAddParameters(add: string | readonly string[]): string[] {
   const addInputs = Array.isArray(add) ? add : [add];
-  return addInputs.flatMap(input => splitAddParameterList(input));
+  return addInputs.flatMap(input => splitTopLevelParameterList(input));
 }
 
-function splitAddParameterList(input: string): string[] {
+/**
+ * 從參數規格切出名稱與型別。
+ * 名稱恆為識別符（不含冒號），故取「第一個冒號」為分界即可正確保留含冒號/箭頭的型別。
+ * 由 --add 與 --change-type 共用（SSOT）。
+ */
+function splitParameterNameAndType(input: string): { name: string; type: string } {
+  const separatorIndex = input.indexOf(':');
+  if (separatorIndex < 0) {
+    return { name: input.trim(), type: '' };
+  }
+  return {
+    name: input.slice(0, separatorIndex).trim(),
+    type: input.slice(separatorIndex + 1).trim()
+  };
+}
+
+/**
+ * 深度感知的頂層逗號切割：把逗號分隔的參數規格清單切成個別條目。
+ * 追蹤引號、()、[]、{}、<> 巢狀深度，僅在頂層逗號（且其後緊接一個新參數規格）處切分，
+ * 避免型別內的逗號（如泛型 `Map<string, number>`）被誤切。
+ * 由 --add 與 --change-type 共用（SSOT）。
+ */
+function splitTopLevelParameterList(input: string): string[] {
   const parts: string[] = [];
   let current = '';
   let quote: '\'' | '"' | '`' | null = null;
