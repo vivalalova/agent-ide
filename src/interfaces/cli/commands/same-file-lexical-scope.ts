@@ -191,6 +191,12 @@ function getLexicalDeclarationName(node: ts.Node): ts.Identifier | undefined {
     return node.name;
   }
 
+  // 解構綁定（`const { a: b } = obj`、`const [x] = arr`、`function f({ a })`）：
+  // node.name 是實際綁定進 scope 的本地名稱（`{ a: b }` 綁的是 b，propertyName 才是 a）
+  if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
+    return node.name;
+  }
+
   if (ts.isImportSpecifier(node) && ts.isIdentifier(node.name)) {
     return node.name;
   }
@@ -203,8 +209,39 @@ function getLexicalDeclarationScope(node: ts.Node): ts.Node {
     return findAncestor(node, ts.isFunctionLike) ?? node.getSourceFile();
   }
 
-  if (ts.isVariableDeclaration(node) && isVarDeclaration(node)) {
-    return findAncestor(node, ts.isFunctionLike) ?? node.getSourceFile();
+  // 解構綁定：沿祖先鏈找到所屬的 VariableDeclaration 或 Parameter（跨巢狀解構亦適用，
+  // 中間可能經過多層 BindingElement/BindingPattern），再套用該宣告種類的 scope 規則
+  if (ts.isBindingElement(node)) {
+    const bindingRoot = findAncestor(
+      node,
+      ancestor => ts.isVariableDeclaration(ancestor) || ts.isParameter(ancestor)
+    );
+    return bindingRoot ? getLexicalDeclarationScope(bindingRoot) : node.getSourceFile();
+  }
+
+  if (ts.isVariableDeclaration(node)) {
+    if (isVarDeclaration(node)) {
+      return findAncestor(node, ts.isFunctionLike) ?? node.getSourceFile();
+    }
+
+    // `catch (e) { ... }`：block-scoped 宣告本體是 CatchClause，非 VariableDeclarationList
+    if (ts.isCatchClause(node.parent)) {
+      return node.parent;
+    }
+
+    // `for (const x of …)` / `for (const x in …)` / `for (let x; …)`：宣告位於迴圈頭，
+    // 迴圈本體是宣告的兄弟節點而非子節點，scope 須取整個迴圈語句（頭+本體）才涵蓋本體引用，
+    // 且讓迴圈外的同名引用正確落在 scope 之外、不被誤判為遮蔽
+    if (ts.isVariableDeclarationList(node.parent)) {
+      const loopStatement = node.parent.parent;
+      if (
+        ts.isForStatement(loopStatement)
+        || ts.isForOfStatement(loopStatement)
+        || ts.isForInStatement(loopStatement)
+      ) {
+        return loopStatement;
+      }
+    }
   }
 
   return findAncestor(node, parent => ts.isBlock(parent) || ts.isSourceFile(parent)) ?? node.getSourceFile();
