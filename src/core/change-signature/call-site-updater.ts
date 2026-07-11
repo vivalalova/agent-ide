@@ -232,41 +232,139 @@ export class CallSiteUpdater {
    * 取得呼叫運算式「呼叫起點到引數列表開括號」之間的原始文字
    * （含 callee 名稱、泛型型別引數 `<T>`、optional chaining `?.`），
    * 供重建時保留原始語法，只重組括號內的引數。
+   *
+   * 注意：引數前的註解（若有）會被丟棄，prefix 只保留到開括號為止，
+   * 確保輸出恆為合法呼叫（見 computeCodeStateMask 的註解/字串感知掃描）。
    */
   private extractCallPrefix(callSite: CallSite, lines: readonly string[]): string {
     if (callSite.arguments.length > 0) {
-      // 有引數：呼叫起點到第一個引數起點之間，最後一個 `(` 即為引數列表開括號
-      // （型別引數內的括號必然更早出現，且開括號到第一個引數間只有 trivia）
+      // 有引數：呼叫起點到第一個引數起點之間，最後一個「非註解/字串內」的 `(` 即為引數列表開括號
       const firstArgStart = callSite.arguments[0].range.start;
       const beforeFirstArg = this.extractTextRange(callSite.location.range.start, firstArgStart, lines);
-      const openParenIndex = beforeFirstArg.lastIndexOf('(');
+      const codeMask = this.computeCodeStateMask(beforeFirstArg);
+      let openParenIndex = -1;
+      for (let i = beforeFirstArg.length - 1; i >= 0; i--) {
+        if (beforeFirstArg[i] === '(' && codeMask[i]) {
+          openParenIndex = i;
+          break;
+        }
+      }
       return openParenIndex >= 0 ? beforeFirstArg.substring(0, openParenIndex + 1) : beforeFirstArg;
     }
 
-    // 無引數：整個呼叫運算式文字尾端必為右括號，從尾端反向配對找到對應開括號
+    // 無引數：整個呼叫運算式文字尾端必為右括號，找到與其對應的左括號
     const fullText = this.extractCallExpression(callSite, lines);
     const matchIndex = this.findMatchingOpenParenFromEnd(fullText);
     return matchIndex >= 0 ? fullText.substring(0, matchIndex + 1) : `${callSite.functionName}(`;
   }
 
   /**
-   * 從文字尾端的右括號開始反向配對括號深度，找到與其對應的左括號 index。
+   * 找到與文字尾端右括號對應的左括號 index。
    * 適用於已知文字以 ')' 結尾的情況（如整個呼叫運算式）。
+   *
+   * 用 computeCodeStateMask 排除註解/字串內的括號後，正向以堆疊配對括號深度；
+   * 由於堆疊逐一配對、最後一次成功配對必對應文字尾端的 ')'，故正向掃描即可取得答案
+   * （不需另外反向掃描一次，與 extractCallPrefix 共用同一狀態機邏輯）。
    */
   private findMatchingOpenParenFromEnd(text: string): number {
-    let depth = 0;
-    for (let i = text.length - 1; i >= 0; i--) {
+    const codeMask = this.computeCodeStateMask(text);
+    const openIndexStack: number[] = [];
+    let matchedOpenIndex = -1;
+
+    for (let i = 0; i < text.length; i++) {
+      if (!codeMask[i]) {
+        continue;
+      }
       const char = text[i];
-      if (char === ')') {
-        depth++;
-      } else if (char === '(') {
-        depth--;
-        if (depth === 0) {
-          return i;
+      if (char === '(') {
+        openIndexStack.push(i);
+      } else if (char === ')') {
+        const openIndex = openIndexStack.pop();
+        if (openIndex !== undefined) {
+          matchedOpenIndex = openIndex;
         }
       }
     }
-    return -1;
+
+    return matchedOpenIndex;
+  }
+
+  /**
+   * 逐字掃描文字，標記每個字元是否處於「程式碼」狀態（非區塊/行註解、非字串內容）。
+   * 供括號匹配時排除註解與字串內容中恰巧出現的 `(`/`)` 干擾判定
+   * （如 `fnc(/* ( *\/ 1, 2)` 的區塊註解、`fn<'('>(x)` 型別引數內的字串）。
+   *
+   * 回傳與 text 等長的布林陣列，true 表示該位置字元屬於程式碼狀態。
+   */
+  private computeCodeStateMask(text: string): boolean[] {
+    type ScanState =
+      | { readonly kind: 'code' }
+      | { readonly kind: 'lineComment' }
+      | { readonly kind: 'blockComment' }
+      | { readonly kind: 'string'; readonly quote: string };
+
+    const mask: boolean[] = new Array(text.length).fill(true);
+    let state: ScanState = { kind: 'code' };
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const next = text[i + 1];
+
+      if (state.kind === 'lineComment') {
+        mask[i] = false;
+        if (char === '\n') {
+          state = { kind: 'code' };
+        }
+        continue;
+      }
+
+      if (state.kind === 'blockComment') {
+        mask[i] = false;
+        if (char === '*' && next === '/') {
+          mask[i + 1] = false;
+          state = { kind: 'code' };
+          i++;
+        }
+        continue;
+      }
+
+      if (state.kind === 'string') {
+        mask[i] = false;
+        if (char === '\\' && i + 1 < text.length) {
+          // 跳脫字元：連同下一個字元一併視為字串內容，避免跳脫的引號被誤判為結尾
+          mask[i + 1] = false;
+          i++;
+          continue;
+        }
+        if (char === state.quote) {
+          state = { kind: 'code' };
+        }
+        continue;
+      }
+
+      // state.kind === 'code'
+      if (char === '/' && next === '/') {
+        mask[i] = false;
+        mask[i + 1] = false;
+        state = { kind: 'lineComment' };
+        i++;
+        continue;
+      }
+      if (char === '/' && next === '*') {
+        mask[i] = false;
+        mask[i + 1] = false;
+        state = { kind: 'blockComment' };
+        i++;
+        continue;
+      }
+      if (char === '"' || char === '\'' || char === '`') {
+        mask[i] = false;
+        state = { kind: 'string', quote: char };
+      }
+      // 其餘為一般程式碼字元，維持 mask[i] = true
+    }
+
+    return mask;
   }
 
   /**
@@ -394,7 +492,7 @@ export class CallSiteUpdater {
   mapCallSiteArguments(
     callSite: CallSite,
     parameterMapping: Map<number, ParameterMappingInfo>,
-    changes: readonly SignatureChange[],
+    _changes: readonly SignatureChange[],
     originalSignature: FunctionSignature,
     argumentOverrides?: ReadonlyMap<number, string>
   ): string[] {
@@ -411,8 +509,10 @@ export class CallSiteUpdater {
       result.push('');
     }
 
-    // 映射原始參數與新增參數
-    const addedPositions = new Set<number>();
+    // 映射原始參數與新增參數。
+    // 新增參數的值與位置以 parameterMapping 為唯一來源（newIndex 已反映 add 與
+    // reorder 的合成結果）；不得另以 change.position 直接填值——呼叫點缺必要引數時
+    // 兩種來源會指向不同 slot，導致同一個新增值被重複填入兩處
     for (const [originalIndex, { newIndex, value }] of parameterMapping.entries()) {
       if (originalIndex >= 0) {
         if (originalIndex < callSite.arguments.length) {
@@ -432,20 +532,6 @@ export class CallSiteUpdater {
       } else {
         if (value !== undefined) {
           result[newIndex] = value;
-          addedPositions.add(newIndex);
-        }
-      }
-    }
-
-    // 填入新增參數的值
-    for (const change of changes) {
-      if (isAddParameterChange(change)) {
-        // 使用 callSiteValue 或 defaultValue（驗證階段已確保至少有一個值）
-        const value = change.callSiteValue ?? change.defaultValue ?? '';
-        const position = change.position < 0 ? result.length - 1 : Math.min(change.position, result.length - 1);
-        if (position >= 0 && position < result.length && !result[position]) {
-          result[position] = value;
-          addedPositions.add(position);
         }
       }
     }
@@ -466,17 +552,9 @@ export class CallSiteUpdater {
 
     // 建立最終結果
     for (let i = 0; i <= lastNonEmptyIndex; i++) {
-      if (result[i] === OMITTED_PARAMETER_MARKER) {
-        // 省略的可選參數，但後面有其他參數，需要填入 undefined
+      if (result[i] === OMITTED_PARAMETER_MARKER || result[i] === '') {
+        // 省略的可選參數後面還有其他參數，或呼叫點缺值的 slot：填入 undefined 保住語法
         processedResult.push('undefined');
-      } else if (result[i] === '') {
-        // 空值，檢查是否是新增的位置
-        if (addedPositions.has(i)) {
-          processedResult.push('undefined');
-        } else {
-          // 不應該出現的情況，填入 undefined 以避免語法錯誤
-          processedResult.push('undefined');
-        }
       } else {
         processedResult.push(result[i]);
       }

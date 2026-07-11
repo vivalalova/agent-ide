@@ -1,5 +1,5 @@
 /**
- * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，8 筆）
+ * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，12 筆）
  *
  * 每個測試斷言「正確行為」，在缺陷修復前預期為紅燈（reproduction test）。
  * 缺陷清單：
@@ -11,12 +11,18 @@
  *   6. --reorder 重寫呼叫點時型別引數（泛型 `<T>`）與 optional chaining `?.` 被丟棄
  *   7. --reorder 重寫巢狀引數時，外層包裹呼叫（如 `wrap(...)`）被靜默吃掉
  *   8. --reorder 透過 barrel re-export 匯入的消費端呼叫點未同步更新
+ *   9. 呼叫點引數前的區塊註解內括號騙過 prefix 擷取（lastIndexOf('(') 命中註解內括號）
+ *   10. --reorder 透過 tsconfig paths 別名（非相對 specifier）匯入的消費端呼叫點未同步更新
+ *   11. --reorder 與 --add 同時使用時，既有呼叫點缺引數的補值與新參數預設值兩個填值
+ *       來源不同步，導致重寫後同一數值被重複填入
+ *   12. 巢狀函式內 if 區塊的同名 const 被誤當整函式遮蔽，rename 漏改閉包引用、
+ *       remove 誤判參數未使用而放行
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
-describe('CLI change-signature - 已確認缺陷（手動重現，8 筆）', () => {
+describe('CLI change-signature - 已確認缺陷（手動重現，12 筆）', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -391,6 +397,179 @@ export const out = fmt('x', 2);
         .filter((line: any) => line.type === 'add')
         .map((line: any) => line.content);
       expect(consumerAddedLines.some((l: string) => l.includes('fmt(2, \'x\')'))).toBe(true);
+    });
+  });
+
+  describe('缺陷9: 呼叫點引數前註解內括號騙過 prefix 擷取', () => {
+    it('引數前的區塊註解（含括號）不應讓重寫後的呼叫點產生未關閉註解的無效碼', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect9-comment-paren-prefix.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function fnc(a: number, b: number): number { return a + b; }
+const r = fnc(/* ( */ 1, 2);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'fnc',
+          '-p', fixture.rootPath,
+          '--reorder', 'b,a',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：引數前註解可被丟棄，但輸出必須是合法呼叫 `fnc(2, 1)`；
+      // 目前的壞行為是 prefix 擷取用 lastIndexOf('(') 命中註解內的括號，
+      // 產生 `fnc(/* (2, 1)` 這種未關閉區塊註解的無效碼
+      expect(addedLines.some((l: string) => l.includes('fnc(2, 1)'))).toBe(true);
+      expect(addedLines.some((l: string) => l.includes('fnc(/* (2, 1)'))).toBe(false);
+    });
+  });
+
+  describe('缺陷10: --reorder 透過 tsconfig paths 別名匯入的消費端呼叫點未同步更新', () => {
+    it('透過 tsconfig paths 別名匯入函式的消費端呼叫點應同步重排', async () => {
+      // 先讀現有 tsconfig，只疊加 baseUrl/paths，不自創其餘欄位
+      const tsconfigRaw = await fixture.memfs.readFile(fixture.getFilePath('tsconfig.json'), 'utf-8') as string;
+      const tsconfig = JSON.parse(tsconfigRaw);
+      tsconfig.compilerOptions.baseUrl = '.';
+      tsconfig.compilerOptions.paths = { '@app/*': ['src/*'] };
+      await fixture.writeFile('tsconfig.json', JSON.stringify(tsconfig, null, 2));
+
+      await fixture.writeFile('src/als-lib.ts', `export function alsFmt(label: string, times: number): string { return label.repeat(times); }
+`);
+      await fixture.writeFile('src/als-consumer.ts', `import { alsFmt } from '@app/als-lib';
+export const out = alsFmt('x', 2);
+`);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', fixture.getFilePath('src/als-lib.ts'),
+          '--function', 'alsFmt',
+          '-p', fixture.rootPath,
+          '--reorder', 'times,label',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 正確行為：src/als-consumer.ts 的呼叫點應更新為 alsFmt(2, 'x')；
+      // 目前的壞行為是非相對 specifier（tsconfig paths 別名）一律被排除，consumer 無任何變更
+      const consumerFile = output.files.find((f: any) => f.filePath.includes('als-consumer.ts'));
+      expect(consumerFile).toBeDefined();
+      const consumerAddedLines = consumerFile.hunks
+        .flatMap((hunk: any) => hunk.lines)
+        .filter((line: any) => line.type === 'add')
+        .map((line: any) => line.content);
+      expect(consumerAddedLines.some((l: string) => l.includes('alsFmt(2, \'x\')'))).toBe(true);
+    });
+  });
+
+  describe('缺陷11: --reorder 與 --add 同時使用時呼叫點填值重複', () => {
+    it('既有呼叫點缺引數的補值與新參數預設值不應在重寫後重複出現', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect11-reorder-add-duplicate-fill.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function trio(a: number, b: number, c: number): number { return a + b + c; }
+const r = trio(1, 2);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'trio',
+          '-p', fixture.rootPath,
+          '--reorder', 'c,a,b',
+          '--add', 'x:number=9@0',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 只驗呼叫點那一行（非函式定義行），輸出完整形狀由修復定義，此處保持寬鬆
+      const callSiteLine = addedLines.find((l: string) => l.includes('trio(') && !l.includes('function trio'));
+      expect(callSiteLine).toBeDefined();
+      // 正確行為：填入 c 缺值與新增參數 x 預設值兩個來源應同步，字元 9 只應出現一次；
+      // 目前的壞行為是兩個填值來源不同步，9 出現兩次
+      const nineCount = (callSiteLine!.match(/9/g) ?? []).length;
+      expect(nineCount).toBe(1);
+    });
+  });
+
+  describe('缺陷12: 巢狀函式內區塊遮蔽被誤當整函式遮蔽', () => {
+    it('--rename 應改到巢狀閉包中引用外層參數的識別符，僅區塊內遮蔽宣告不改', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect12-block-shadow-rename.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function report(userId: string): string {
+  function inner(flag: boolean): string {
+    if (flag) {
+      const userId = 'local';
+      return userId;
+    }
+    return userId;
+  }
+  return inner(false);
+}
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'report',
+          '-p', fixture.rootPath,
+          '--rename', 'userId:uid',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：閉包中引用外層參數的 `return userId;` 應改為 `return uid;`；
+      // 區塊內遮蔽宣告（const userId = 'local'）與其引用不得改動。
+      // 目前的壞行為是 if 區塊內的宣告被當成整個巢狀函式的遮蔽，閉包引用漏改殘留舊名
+      expect(addedLines.some((l: string) => l.includes('return uid;'))).toBe(true);
+      expect(addedLines.some((l: string) => l.includes('const uid ='))).toBe(false);
+    });
+
+    it('--remove 對僅在巢狀閉包中使用的參數應拒絕移除', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect12-block-shadow-remove.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function audit(traceId: string): string {
+  function inner(flag: boolean): string {
+    if (flag) {
+      const traceId = 'x';
+      return traceId;
+    }
+    return traceId;
+  }
+  return inner(false);
+}
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'audit',
+          '-p', fixture.rootPath,
+          '--remove', 'traceId',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // 正確行為：參數仍被巢狀閉包引用（inner 的 `return traceId;`），移除應被驗證拒絕；
+      // 目前的壞行為是 if 區塊內同名宣告讓引用偵測整函式漏算，移除被放行、留下懸空引用
+      expect(result.exitCode).not.toBe(0);
     });
   });
 });

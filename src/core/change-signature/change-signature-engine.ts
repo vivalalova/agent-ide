@@ -31,6 +31,8 @@ import {
 import { resolveParameterIndex } from './utils.js';
 import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
+import { ImportResolver } from '@core/move/import-resolver.js';
+import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 
 /**
  * 中介檔（barrel）的單層 re-export 轉發資訊
@@ -40,6 +42,12 @@ interface ReexportForward {
   readonly moduleSpecifier: string;
   /** 具名轉發的原始符號名稱；undefined 表示 `export * from` 轉發全部匯出 */
   readonly exportedName?: string;
+}
+
+/** tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
+export interface ChangeSignaturePathConfig {
+  readonly pathAliases?: Record<string, string>;
+  readonly baseUrl?: string;
 }
 
 /**
@@ -52,10 +60,12 @@ export class ChangeSignatureEngine {
   private readonly validator: SignatureValidator;
   private readonly transformer: SignatureTransformer;
   private readonly callSiteUpdater: CallSiteUpdater;
+  private readonly pathUtils: PathUtils;
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    private readonly fileSystem: IFileSystem,
+    pathConfig?: ChangeSignaturePathConfig
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
     this.signatureParser = new SignatureParser(parserRegistry, fileSystem);
@@ -63,6 +73,15 @@ export class ChangeSignatureEngine {
     this.validator = new SignatureValidator();
     this.transformer = new SignatureTransformer();
     this.callSiteUpdater = new CallSiteUpdater(fileSystem, parserRegistry);
+    // 重用 file-move 的 PathUtils 解析 import specifier（相對路徑、tsconfig paths 別名、
+    // baseUrl、index 檔慣例），與 move / move-member 同一把尺（Single Source of Truth）
+    this.pathUtils = new PathUtils(
+      new ImportResolver({
+        pathAliases: pathConfig?.pathAliases ?? {},
+        baseUrl: pathConfig?.baseUrl,
+        supportedExtensions: ALLOWED_EXTENSIONS
+      })
+    );
   }
 
   /**
@@ -460,13 +479,14 @@ export class ChangeSignatureEngine {
         return;
       }
 
-      // 進入巢狀函式時，移除被該函式遮蔽的名稱後再遞迴其子樹
+      // 進入會建立作用域的節點時，移除被「該作用域自身宣告」遮蔽的名稱後再遞迴子樹。
+      // 遮蔽按作用域粒度計：函式層＝參數 + body 內 var（提升）；區塊層（Block／迴圈頭／
+      // catch）＝該層直接的 let/const/class/function 宣告，只遮該子樹——不得把區塊內
+      // 宣告當整函式遮蔽，否則閉包對外層參數的引用會被漏算（rename 漏改、remove 誤放行）
       let childLiveNames = liveNames;
-      if (this.isFunctionLikeDeclaration(node)) {
-        const shadowed = this.collectFunctionScopeDeclaredNames(node as ts.FunctionLikeDeclaration);
-        if (shadowed.size > 0) {
-          childLiveNames = new Set([...liveNames].filter(name => !shadowed.has(name)));
-        }
+      const shadowed = this.collectScopeShadowedNames(node);
+      if (shadowed.size > 0) {
+        childLiveNames = new Set([...liveNames].filter(name => !shadowed.has(name)));
       }
 
       if (
@@ -484,10 +504,22 @@ export class ChangeSignatureEngine {
   }
 
   /**
-   * 收集某函式作用域「自身」宣告的名稱（用於遮蔽判定）：
-   * 參數名 + 該作用域內 const/let/var/function/class 宣告，不跨入更深層的巢狀函式作用域。
+   * 收集某作用域節點「自身」宣告的名稱（用於遮蔽判定），按節點種類分流：
+   * 函式層與區塊層分開計，讓區塊內宣告只遮蔽該區塊子樹。
    */
-  private collectFunctionScopeDeclaredNames(func: ts.FunctionLikeDeclaration): Set<string> {
+  private collectScopeShadowedNames(node: ts.Node): Set<string> {
+    if (this.isFunctionLikeDeclaration(node)) {
+      return this.collectFunctionLevelShadowedNames(node as ts.FunctionLikeDeclaration);
+    }
+    return this.collectBlockLevelDeclaredNames(node);
+  }
+
+  /**
+   * 函式層遮蔽：參數名 + body 內 var 宣告（var 提升到函式層，整個函式子樹被遮蔽）。
+   * let/const/class/function 屬區塊層，由 collectBlockLevelDeclaredNames 於所屬
+   * 區塊節點處理；不跨入更深層的巢狀函式作用域。
+   */
+  private collectFunctionLevelShadowedNames(func: ts.FunctionLikeDeclaration): Set<string> {
     const declared = new Set<string>();
 
     for (const parameter of func.parameters) {
@@ -500,28 +532,67 @@ export class ChangeSignatureEngine {
     }
 
     const scan = (node: ts.Node): void => {
-      // 巢狀函式宣告的名稱綁定在「當前」作用域，但其 body 屬於更深作用域，不再往下掃
-      if (node !== body && this.isFunctionLikeDeclaration(node)) {
-        if (ts.isFunctionDeclaration(node) && node.name) {
-          declared.add(node.name.text);
-        }
+      // 更深巢狀函式的宣告屬其自身作用域，不再往下掃
+      if (this.isFunctionLikeDeclaration(node)) {
         return;
       }
-
-      if (ts.isVariableDeclaration(node)) {
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isVariableDeclarationList(node.parent)
+        && (node.parent.flags & ts.NodeFlags.BlockScoped) === 0
+      ) {
         this.collectBindingNames(node.name, declared);
       }
-      if (ts.isFunctionDeclaration(node) && node.name) {
-        declared.add(node.name.text);
-      }
-      if (ts.isClassDeclaration(node) && node.name) {
-        declared.add(node.name.text);
-      }
-
       ts.forEachChild(node, scan);
     };
 
     ts.forEachChild(body, scan);
+    return declared;
+  }
+
+  /**
+   * 區塊層遮蔽：該作用域節點「直接」宣告的 let/const/class/function 名稱
+   * （Block 的頂層語句、迴圈頭的 block-scoped 宣告、catch 變數），
+   * 不遞迴更深區塊——更深區塊由各自節點在遍歷時處理。
+   */
+  private collectBlockLevelDeclaredNames(node: ts.Node): Set<string> {
+    const declared = new Set<string>();
+
+    if (ts.isBlock(node)) {
+      for (const statement of node.statements) {
+        if (
+          ts.isVariableStatement(statement)
+          && (statement.declarationList.flags & ts.NodeFlags.BlockScoped) !== 0
+        ) {
+          for (const declaration of statement.declarationList.declarations) {
+            this.collectBindingNames(declaration.name, declared);
+          }
+        }
+        if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name) {
+          declared.add(statement.name.text);
+        }
+      }
+      return declared;
+    }
+
+    if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+      const initializer = node.initializer;
+      if (
+        initializer
+        && ts.isVariableDeclarationList(initializer)
+        && (initializer.flags & ts.NodeFlags.BlockScoped) !== 0
+      ) {
+        for (const declaration of initializer.declarations) {
+          this.collectBindingNames(declaration.name, declared);
+        }
+      }
+      return declared;
+    }
+
+    if (ts.isCatchClause(node) && node.variableDeclaration) {
+      this.collectBindingNames(node.variableDeclaration.name, declared);
+    }
+
     return declared;
   }
 
@@ -917,7 +988,8 @@ export class ChangeSignatureEngine {
    * 以及透過單層 barrel re-export（`export { name } from '<spec>'` 未 alias 改名，
    * 或 `export * from '<spec>'`）間接 import 到目標符號的檔案。
    *
-   * 界線（記載於此）：僅解析相對路徑 import；alias / node_modules 不在判定範圍內；
+   * 界線（記載於此）：import specifier 解析涵蓋相對路徑與 tsconfig paths 別名／baseUrl
+   * （交由 PathUtils，與 move / move-member 同一把尺）；node_modules 套件不在判定範圍內；
    * re-export 轉發僅涵蓋單層（consumer -> 一層中介檔 -> 目標檔），不遞迴多層 barrel，
    * 且中介檔的 re-export 若對符號改名（`export { f as g }`）視為不同符號、不算轉發。
    * 此為「寧可漏掃、不可誤傷」的取捨——避免把跨檔同名的不同符號呼叫點誤改。
@@ -1099,37 +1171,18 @@ export class ChangeSignatureEngine {
   }
 
   /**
-   * 判斷相對路徑 import specifier 是否解析到目標檔（含省略副檔名與 index 檔慣例）。
-   * 非相對路徑（alias / node_modules）一律回傳 false（界線見 filterFilesReferencingTarget）。
+   * 判斷 import specifier 是否解析到目標檔。
+   * 解析交由 PathUtils（相對路徑、tsconfig paths 別名、baseUrl），
+   * pathsMatch 處理省略副檔名與 index 檔慣例；node_modules 套件 specifier
+   * 的解析結果不會命中專案內目標檔、自然排除（界線見 filterFilesReferencingTarget）。
    */
   private importSpecifierResolvesToTarget(
     importerFilePath: string,
     moduleSpecifier: string,
     targetAbsolute: string
   ): boolean {
-    if (!moduleSpecifier.startsWith('.')) {
-      return false;
-    }
-
-    const resolvedBase = path.resolve(path.dirname(importerFilePath), moduleSpecifier);
-    const sourceExtensionPattern = /\.(?:ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
-    const targetWithoutExtension = targetAbsolute.replace(sourceExtensionPattern, '');
-
-    // 直接命中（specifier 含或不含副檔名）
-    if (resolvedBase === targetAbsolute || resolvedBase === targetWithoutExtension) {
-      return true;
-    }
-
-    // index 檔慣例：`import './dir'` 對應 `./dir/index.<ext>`
-    if (
-      sourceExtensionPattern.test(targetAbsolute)
-      && path.basename(targetWithoutExtension) === 'index'
-      && resolvedBase === path.dirname(targetAbsolute)
-    ) {
-      return true;
-    }
-
-    return false;
+    const resolved = this.pathUtils.resolveImportPath(moduleSpecifier, importerFilePath);
+    return this.pathUtils.pathsMatch(resolved, targetAbsolute);
   }
 
   /**
