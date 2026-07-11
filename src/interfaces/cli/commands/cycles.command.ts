@@ -106,6 +106,5 @@ async function handleCyclesCommand(
     const errorMessage = getErrorMessage(error);
     outputHandler.outputError(`依賴分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }

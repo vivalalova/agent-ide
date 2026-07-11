@@ -145,6 +145,9 @@ export class DeadCodeRemover {
       `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
     );
 
+    // 附上結構化統計資料（權威來源，供 CLI 層讀取，避免對 description/edits 字串反推）
+    builder.withMetadata({ ...preview.summary });
+
     // 加入警告
     for (const warning of preview.warnings ?? []) {
       builder.addWarning(warning);

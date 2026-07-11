@@ -73,7 +73,6 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   if (!from || !to) {
     outputHandler.outputError('必須指定符號名稱和新名稱。使用方式: agent-ide rename --symbol <name> --new-name <name>', format, 'rename');
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     return;
   }
 
@@ -95,7 +94,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   }
 
   if (!isJsonFormat) {
-    console.log(`   重新命名 ${from}   ${to}`);
+    process.stderr.write(`   重新命名 ${from}   ${to}\n`);
   }
 
   try {
@@ -135,7 +134,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     // 1. 查找符號
     if (!isJsonFormat) {
-      console.log(`   查找符號 "${from}"...`);
+      process.stderr.write(`   查找符號 "${from}"...\n`);
     }
     const searchResults = await indexEngine.findSymbol(from);
 
@@ -237,7 +236,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
 
     // 執行變更類命令統一流程
     if (!isJsonFormat && !options.dryRun) {
-      console.log('   執行重新命名...');
+      process.stderr.write('   執行重新命名...\n');
     }
 
     await executeMutationCommand(changeset, {

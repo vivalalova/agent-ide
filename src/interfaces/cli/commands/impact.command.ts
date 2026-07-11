@@ -87,7 +87,7 @@ async function handleImpactCommand(
   }
 
   if (format !== OutputFormat.Json) {
-    console.log('💥 影響分析...');
+    process.stderr.write('💥 影響分析...\n');
   }
 
   try {
@@ -129,7 +129,6 @@ async function handleImpactCommand(
     const errorMessage = getErrorMessage(error);
     outputHandler.outputError(`依賴分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
 

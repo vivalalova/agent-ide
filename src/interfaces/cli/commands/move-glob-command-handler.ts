@@ -69,7 +69,6 @@ export async function handleGlobMoveCommand(
         'move'
       );
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -97,7 +96,6 @@ export async function handleGlobMoveCommand(
         'move'
       );
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
@@ -156,7 +154,6 @@ export async function handleGlobMoveCommand(
           'move'
         );
         process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
       }
 
@@ -216,13 +213,11 @@ export async function handleGlobMoveCommand(
     } else {
       outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
   } catch (error) {
     const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }
 

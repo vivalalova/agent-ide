@@ -48,6 +48,9 @@ export class ChangesetBuilder {
   /** 警告訊息列表 */
   private warnings: string[] = [];
 
+  /** 命令特定的結構化統計資料 */
+  private metadata: Record<string, unknown> | undefined;
+
   /**
    * 設定命令類型
    * @param command - 命令類型
@@ -216,6 +219,17 @@ export class ChangesetBuilder {
   }
 
   /**
+   * 設定命令特定的結構化統計資料
+   * 供 CLI 層讀取權威計數（如刪除數、清理數），避免對 description/edits 字串反推
+   * @param metadata - 結構化統計資料
+   * @returns this - 支援鏈式調用
+   */
+  withMetadata(metadata: Record<string, unknown>): this {
+    this.metadata = metadata;
+    return this;
+  }
+
+  /**
    * 建構 Changeset
    * @returns 完整的 Changeset 物件
    */
@@ -227,7 +241,8 @@ export class ChangesetBuilder {
       command: this.command,
       success: this.errors.length === 0,
       errors: this.errors.length > 0 ? this.errors : undefined,
-      warnings: this.warnings.length > 0 ? this.warnings : undefined
+      warnings: this.warnings.length > 0 ? this.warnings : undefined,
+      metadata: this.metadata
     };
   }
 }

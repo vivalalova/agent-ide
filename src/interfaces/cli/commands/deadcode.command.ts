@@ -9,7 +9,8 @@ import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js'
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,
-  type DeadCodeDetectionResult
+  type DeadCodeDetectionResult,
+  type RemovalSummary
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { PreviewCommand } from '@infrastructure/formatters/index.js';
@@ -100,7 +101,7 @@ async function handleDeadCodeCommand(
   const deadCodeExecutionFields = createDeadCodeExecutionFields(willApply);
 
   if (!isJsonFormat) {
-    console.log(willApply ? '   檢測並刪除 Dead Code...' : '   檢測 Dead Code（預覽模式）...');
+    process.stderr.write(willApply ? '   檢測並刪除 Dead Code...\n' : '   檢測 Dead Code（預覽模式）...\n');
   }
 
   const projectPath = options.path || process.cwd();
@@ -202,7 +203,7 @@ async function handleDeadCodeCommand(
 
     // 4. 執行變更類命令統一流程
     if (!isJsonFormat && willApply) {
-      console.log('   執行刪除...');
+      process.stderr.write('   執行刪除...\n');
     }
 
     const result = await executeMutationCommand(changeset, {
@@ -214,12 +215,10 @@ async function handleDeadCodeCommand(
       legacyFields: deadCodeExecutionFields,
       onSuccess: () => {
         if (!isJsonFormat) {
-          const totalRemovals = changeset.textChanges
-            .flatMap(tc => tc.edits)
-            .filter(e => e.description?.startsWith('Remove ')).length;
-          const importsCleanedUp = changeset.textChanges
-            .flatMap(tc => tc.edits)
-            .filter(e => e.description?.includes('import')).length;
+          // 權威來源：DeadCodeRemover.generateChangeset() 附加的 RemovalSummary（避免對 description/edits 字串反推）
+          const summary = changeset.metadata as RemovalSummary | undefined;
+          const totalRemovals = summary?.totalRemovals ?? 0;
+          const importsCleanedUp = summary?.importsCleanedUp ?? 0;
 
           console.log(`\n   已刪除 ${totalRemovals} 個 dead code`);
           if (importsCleanedUp > 0) {
