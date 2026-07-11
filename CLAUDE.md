@@ -79,6 +79,14 @@ src/
 | Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試（快速無 coverage） |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
 
+### Fixtures（`tests/fixtures/`）
+
+E2E 測試用的範例專案與 parser 模組：
+
+- **專案 fixture**（`sample-project/`、`js-project/`…）：磁碟上的迷你 TS/JS 專案。`loadFixture(name)` 把整個目錄載入**全新 memfs 虛擬根目錄**（目錄內容有程序內快取），測試對檔案的讀寫都發生在記憶體、不碰磁碟原檔，每個測試拿獨立副本、天然隔離
+- **parser 模組 fixture**（`toy-parser.mjs` 等根層 `.mjs`）：測試 parser 註冊/生命週期用的假 parser 模組
+- 新 bug 重現需要特定專案形狀時建新 fixture 目錄（見下方「Bug 重現即測試案例」）；單檔案案例優先用 `fixture.writeFile()` 動態寫入既有 fixture，不必開新目錄
+
 ### E2E 測試模式
 
 ```typescript
