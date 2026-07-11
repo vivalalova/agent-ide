@@ -154,6 +154,8 @@ export function resetDefaultParserFactoriesForTesting(): void {
   persistentParserModules.clear();
   persistentParserModuleGenerations.clear();
   persistentParserModuleInitializations.clear();
+  isolatedModuleClassifications.clear();
+  isolatedFactoryModuleCache.clear();
 }
 
 /**
@@ -183,7 +185,7 @@ export async function initializeParserModules(
         continue;
       }
 
-      const parserModule = await import(toImportSpecifier(modulePath, options.isolateModuleInstances ?? false));
+      const parserModule = await loadIsolatedParserModule(modulePath, moduleKey);
       const parserModuleInstance = createParserFromModule(parserModule, modulePath, options);
       const registeredParserName = registerParserIfMissing(
         registry,
@@ -364,6 +366,21 @@ async function releasePersistentParserModule(
   }
 }
 
+/**
+ * 從模組物件解析出 parser candidate（factory 函式或直接的 ParserPlugin 實例）。
+ * 欄位優先序是模組契約的唯一權威定義，`createParserFromModule` 與
+ * isolate 模式的 factory 分類都引用這裡，禁各自重複一份判斷順序。
+ */
+function resolveParserCandidate(parserModule: unknown): unknown {
+  const moduleRecord = parserModule as Record<string, unknown>;
+  return (
+    moduleRecord.default ??
+    moduleRecord.parser ??
+    moduleRecord.createParser ??
+    moduleRecord.createParserPlugin
+  );
+}
+
 function createParserFromModule(
   parserModule: unknown,
   modulePath: string,
@@ -374,12 +391,7 @@ function createParserFromModule(
   persistentModuleKey?: string;
   reloadAfterDispose: boolean;
 } {
-  const moduleRecord = parserModule as Record<string, unknown>;
-  const parserCandidate =
-    moduleRecord.default ??
-    moduleRecord.parser ??
-    moduleRecord.createParser ??
-    moduleRecord.createParserPlugin;
+  const parserCandidate = resolveParserCandidate(parserModule);
   const createdFromFactory = typeof parserCandidate === 'function';
   const parser = createdFromFactory ? parserCandidate() : parserCandidate;
 
@@ -398,6 +410,52 @@ function createParserFromModule(
 }
 
 let isolatedModuleCounter = 0;
+
+/**
+ * moduleKey → 是否為 factory 模組（export 一個每次呼叫都產生新 ParserPlugin 的函式）。
+ * 只有第一個 task 需要實際重載模組來判斷；判斷結果快取後，同一 moduleKey 後續 task
+ * 不再需要「isolate 語意」本體其實是「每 task 全新 parser 實例」而非「每 task 全新模組副本」——
+ * 對 factory 模組而言，重複呼叫 factory() 本身就滿足這個語意，不必每次都重新 import 破 ESM 快取
+ * （那正是 worker 記憶體隨 task 數線性增長的根因：Node ESM loader 對每個不同 query string 的
+ * import 都會保留獨立模組實例，永不 GC）。
+ */
+const isolatedModuleClassifications = new Map<string, boolean>();
+/**
+ * moduleKey → 已快取的 factory 模組命名空間（僅 factory 模組才會進這裡）。
+ * 每個 factory moduleKey 只在整個 worker 生命週期保留這一份，數量隨「相異模組路徑數」有界，
+ * 非隨「task 數」無界增長。
+ */
+const isolatedFactoryModuleCache = new Map<string, unknown>();
+
+/**
+ * isolate 模式下載入 parser 模組。
+ *
+ * - 尚未分類的 moduleKey：用唯一 query string 重載一次以取得可分類的模組實例（僅此一次，
+ *   之後同 moduleKey 依分類結果決定是否重載）。
+ * - 已知是 factory 模組：直接回傳快取的模組命名空間，呼叫端會再呼叫 factory() 取得新 parser 實例。
+ * - 已知模組頂層有狀態、export 的是單例 ParserPlugin（非 factory）：重載模組是取得新實例的唯一
+ *   手段（見 `direct-disposable-toy-parser.mjs` 契約與其 regression test），維持每 task 唯一
+ *   query string 重載，此路徑的模組實例累積問題本次未修（見回報）。
+ */
+async function loadIsolatedParserModule(modulePath: string, moduleKey: string): Promise<unknown> {
+  const cachedFactoryModule = isolatedFactoryModuleCache.get(moduleKey);
+  if (cachedFactoryModule) {
+    return cachedFactoryModule;
+  }
+
+  const isKnownFactory = isolatedModuleClassifications.get(moduleKey);
+  if (isKnownFactory === false) {
+    return import(toImportSpecifier(modulePath, true));
+  }
+
+  const parserModule = await import(toImportSpecifier(modulePath, true));
+  const isFactory = typeof resolveParserCandidate(parserModule) === 'function';
+  isolatedModuleClassifications.set(moduleKey, isFactory);
+  if (isFactory) {
+    isolatedFactoryModuleCache.set(moduleKey, parserModule);
+  }
+  return parserModule;
+}
 
 function toImportSpecifier(modulePath: string, isolateModuleInstance: boolean): string {
   const specifier = toBaseImportSpecifier(modulePath);
