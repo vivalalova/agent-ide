@@ -4,43 +4,31 @@
  */
 
 import * as path from 'path';
-import { createHash } from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import {
   ParserWorkerPool,
-  createParserWorkerPool,
-  type ParseTask,
-  type ParseResult
+  createParserWorkerPool
 } from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
-import { getSourceLanguage } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { logger } from '@infrastructure/logging/index.js';
 import type {
   IndexConfig,
   IndexStats,
   FileInfo,
   FileIndexEntry,
   SymbolSearchResult,
-  SearchOptions,
-  BatchIndexOptions
+  SearchOptions
 } from './types.js';
-import {
-  createFileInfo,
-  shouldIndexFile,
-  calculateProgress
-} from './types.js';
+import { shouldIndexFile } from './types.js';
 
 import { FileIndex } from './file-index.js';
 import { SymbolIndex } from './symbol-index.js';
+import { IndexBatchParser } from './index-batch-parser.js';
+import { ParserModuleLifecycle } from './index-parser-lifecycle.js';
 import {
   ParserRegistry,
-  disposeRegisteredParserModules,
-  getRegisteredSourceFileExtensions,
-  initializeDefaultParsers,
-  initializeParserModules,
-  type RegisteredParserModule
+  initializeDefaultParsers
 } from '@infrastructure/parser/index.js';
 
 /**
@@ -55,8 +43,8 @@ export class IndexEngine {
   private readonly fileSystem: IFileSystem;
   /** Worker Pool（測試環境為 null，使用單執行緒解析） */
   private readonly parserPool: ParserWorkerPool | null;
-  private registeredParserModules: readonly RegisteredParserModule[] = [];
-  private parserModulesInitialized = false;
+  private readonly parserModuleLifecycle: ParserModuleLifecycle;
+  private readonly batchParser: IndexBatchParser;
   private _disposed = false;
   private _indexed = false;
 
@@ -76,6 +64,7 @@ export class IndexEngine {
     // 驗證配置
     this.validateConfig(config);
 
+    this.parserModuleLifecycle = new ParserModuleLifecycle(this.parserRegistry);
     this.config = this.mergeRegisteredParserExtensions(config);
     this.fileIndex = new FileIndex(this.config);
     this.symbolIndex = new SymbolIndex();
@@ -88,33 +77,23 @@ export class IndexEngine {
       maxThreads: this.config.maxConcurrency,
       parserModulePaths: this.config.parserModulePaths ?? []
     });
+
+    this.batchParser = new IndexBatchParser(
+      this.fileSystem,
+      this.parserRegistry,
+      this.parserPool,
+      this.fileIndex,
+      this.symbolIndex,
+      (filePath: string) => this.indexFile(filePath)
+    );
   }
 
   private mergeRegisteredParserExtensions(config: IndexConfig): IndexConfig {
-    const includeExtensions = getRegisteredSourceFileExtensions(
-      this.parserRegistry,
-      config.includeExtensions
-    );
-
-    return {
-      ...config,
-      includeExtensions,
-      parserModulePaths: config.parserModulePaths ?? []
-    };
+    return this.parserModuleLifecycle.mergeRegisteredParserExtensions(config);
   }
 
   async initializeConfiguredParserModules(): Promise<void> {
-    if (this.parserModulesInitialized) {
-      return;
-    }
-
-    const parserModulePaths = this.config.parserModulePaths ?? [];
-    if (parserModulePaths.length > 0) {
-      this.registeredParserModules = await initializeParserModules(this.parserRegistry, parserModulePaths);
-      this.config = this.mergeRegisteredParserExtensions(this.config);
-    }
-
-    this.parserModulesInitialized = true;
+    this.config = await this.parserModuleLifecycle.initializeConfigured(this.config);
   }
 
   /**
@@ -265,7 +244,7 @@ export class IndexEngine {
     );
 
     // 批次索引檔案
-    await this.batchIndexFiles(filesToIndex, {
+    await this.batchParser.batchIndexFiles(filesToIndex, this.config, {
       concurrency: this.config.maxConcurrency,
       batchSize: 10,
       progressCallback: (_progress) => {
@@ -318,7 +297,7 @@ export class IndexEngine {
 
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
-      const fileInfo = await this.createFileInfoFromStat(filePath, stat);
+      const fileInfo = await this.batchParser.createFileInfoFromStat(filePath, stat);
 
       // 新增到檔案索引
       await this.fileIndex.addFile(fileInfo);
@@ -511,222 +490,6 @@ export class IndexEngine {
   }
 
   /**
-   * 批次索引檔案
-   * - 生產環境：使用 Worker Pool 多執行緒解析
-   * - 測試環境：使用單執行緒逐檔解析（避免 worker 清理問題）
-   */
-  private async batchIndexFiles(files: string[], options: BatchIndexOptions): Promise<void> {
-    const { batchSize, progressCallback } = options;
-    const totalFiles = files.length;
-    let processedFiles = 0;
-    const errors: string[] = [];
-
-    // 測試環境：單執行緒逐檔解析
-    if (!this.parserPool) {
-      logger.verbose('indexer', `Indexing ${totalFiles} files (single-thread)`);
-      for (const filePath of files) {
-        try {
-          await this.indexFile(filePath);
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : '未知錯誤';
-          errors.push(`${filePath}: ${errorMessage}`);
-        }
-
-        processedFiles++;
-        progressCallback({
-          totalFiles,
-          processedFiles,
-          currentFile: filePath,
-          percentage: calculateProgress(processedFiles, totalFiles),
-          errors: [...errors]
-        });
-      }
-
-      logger.verbose('indexer', `Done: ${processedFiles} indexed, ${errors.length} errors`);
-      if (errors.length > 0) {
-        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
-      }
-      return;
-    }
-
-    // 生產環境：Worker Pool 多執行緒解析
-    logger.verbose('indexer', `Indexing ${totalFiles} files (worker pool)`);
-    for (let i = 0; i < files.length; i += batchSize) {
-      const batch = files.slice(i, i + batchSize);
-
-      // 1. 準備解析任務（主執行緒讀取檔案）
-      const taskMap = await this.prepareParseTasks(batch);
-
-      // 2. Worker Pool 並行解析（CPU 密集操作在 worker 執行緒）
-      const tasks = Array.from(taskMap.values()).map(t => t.task);
-      const parseResults = await this.parserPool.parseFiles(tasks);
-
-      // 3. 主執行緒更新索引（使用 filePath 匹配）
-      for (const result of parseResults) {
-        const prepared = taskMap.get(result.filePath);
-        if (!prepared) {
-          errors.push(`${result.filePath}: 找不到對應的準備任務`);
-          continue;
-        }
-
-        try {
-          await this.updateIndexFromParseResult(result, prepared.fileInfo, prepared.content);
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : '未知錯誤';
-          errors.push(`${result.filePath}: ${errorMessage}`);
-        }
-
-        processedFiles++;
-        progressCallback({
-          totalFiles,
-          processedFiles,
-          currentFile: result.filePath,
-          percentage: calculateProgress(processedFiles, totalFiles),
-          errors: [...errors]
-        });
-      }
-    }
-
-    if (errors.length > 0) {
-      diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `索引過程中發生 ${errors.length} 個錯誤: ${errors.join(', ')}`);
-    }
-  }
-
-  /**
-   * 準備解析任務
-   * 在主執行緒讀取檔案內容和 stat，傳給 worker 解析
-   * 回傳 Map 以 filePath 為 key，確保與 parseResults 正確對應
-   */
-  private async prepareParseTasks(files: string[]): Promise<Map<string, {
-    task: ParseTask;
-    fileInfo: FileInfo;
-    content: string;
-  }>> {
-    const taskMap = new Map<string, { task: ParseTask; fileInfo: FileInfo; content: string }>();
-
-    await Promise.all(files.map(async (filePath) => {
-      try {
-        const stat = await this.fileSystem.getStats(filePath);
-
-        // 跳過大檔案
-        if (stat.size > this.config.maxFileSize) {
-          return;
-        }
-
-        const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-        const fileInfo = await this.createFileInfoFromContent(filePath, stat, content);
-
-        taskMap.set(filePath, {
-          task: {
-            filePath,
-            content,
-            parserModulePaths: this.config.parserModulePaths ?? []
-          },
-          fileInfo,
-          content
-        });
-      } catch (error) {
-        diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${error instanceof Error ? error.message : String(error)}`, filePath);
-      }
-    }));
-
-    return taskMap;
-  }
-
-  /**
-   * 從解析結果更新索引
-   */
-  private async updateIndexFromParseResult(
-    result: ParseResult,
-    fileInfo: FileInfo,
-    _content: string
-  ): Promise<void> {
-    // 先將檔案加入索引（與單執行緒 indexFile 一致：先 addFile 再判斷錯誤），
-    // 確保解析失敗的檔案也會留在索引中（帶 parseErrors），而非被靜默丟棄
-    await this.fileIndex.addFile(fileInfo);
-
-    // 處理解析錯誤
-    if (result.errors.length > 0) {
-      await this.fileIndex.setFileParseErrors(result.filePath, result.errors);
-      return;
-    }
-
-    // 更新檔案索引的符號和依賴
-    await this.fileIndex.setFileSymbols(result.filePath, result.symbols);
-    await this.fileIndex.setFileDependencies(result.filePath, result.dependencies);
-
-    // 新增符號到符號索引
-    await this.symbolIndex.addSymbols(result.symbols, fileInfo);
-  }
-
-  /**
-   * 從內容建立 FileInfo（避免重複讀取檔案）
-   */
-  private async createFileInfoFromContent(
-    filePath: string,
-    stat: Awaited<ReturnType<typeof this.fileSystem.getStats>>,
-    content: string
-  ): Promise<FileInfo> {
-    const extension = path.extname(filePath);
-    const language = this.getLanguageFromExtension(extension);
-    const checksum = createHash('sha256').update(content).digest('hex');
-
-    return createFileInfo(
-      filePath,
-      stat.modifiedTime,
-      stat.size,
-      extension,
-      language,
-      checksum
-    );
-  }
-
-  /**
-   * 從檔案統計資訊建立 FileInfo
-   */
-  private async createFileInfoFromStat(filePath: string, stat: Awaited<ReturnType<typeof this.fileSystem.getStats>>): Promise<FileInfo> {
-    const extension = path.extname(filePath);
-    const language = this.getLanguageFromExtension(extension);
-
-    // 計算檔案 checksum
-    const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
-    const checksum = createHash('sha256').update(content).digest('hex');
-
-    return createFileInfo(
-      filePath,
-      stat.modifiedTime,
-      stat.size,
-      extension,
-      language,
-      checksum
-    );
-  }
-
-  /**
-   * 根據副檔名判斷語言
-   */
-  private getLanguageFromExtension(extension: string): string | undefined {
-    const parser = this.parserRegistry.getParser(extension);
-    const parserLanguage = parser?.supportedLanguages[0];
-    if (parserLanguage) {
-      return parserLanguage;
-    }
-
-    const languageMap: Record<string, string> = {
-      '.java': 'java',
-      '.cpp': 'cpp',
-      '.c': 'c',
-      '.cs': 'csharp',
-      '.php': 'php',
-      '.rb': 'ruby',
-      '.go': 'go',
-      '.rs': 'rust'
-    };
-
-    return getSourceLanguage(extension) ?? languageMap[extension];
-  }
-
-  /**
    * 檢查檔案是否需要重新索引
    */
   async needsReindexing(filePath: string): Promise<boolean> {
@@ -817,8 +580,7 @@ export class IndexEngine {
   }
 
   private async disposeParserModules(): Promise<void> {
-    await disposeRegisteredParserModules(this.parserRegistry, this.registeredParserModules);
-    this.registeredParserModules = [];
+    await this.parserModuleLifecycle.dispose();
   }
 
 }
