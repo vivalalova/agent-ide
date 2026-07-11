@@ -155,13 +155,18 @@ export class FileChangePreparer {
     let finalCode: string;
     if (dependencyImports) {
       const importInsertLine = this.findImportInsertPosition(lines);
+      // 成員插入點不得落在 import 區內：若指定位置早於 import 區結尾，
+      // clamp 到 import 區之後，避免 [memberInsertLine, importInsertLine) 這段
+      // import 行同時被 slice(importInsertLine, memberInsertLine) 略過、又被
+      // slice(memberInsertLine) 重新納入而複製一份
+      const memberInsertLine = Math.max(insertLine, importInsertLine);
       const newLines = [
         ...lines.slice(0, importInsertLine),
         dependencyImports,
-        ...lines.slice(importInsertLine, insertLine),
+        ...lines.slice(importInsertLine, memberInsertLine),
         '',
         memberCode,
-        ...lines.slice(insertLine)
+        ...lines.slice(memberInsertLine)
       ];
       finalCode = this.ensureTrailingNewline(newLines.join('\n'));
     } else {

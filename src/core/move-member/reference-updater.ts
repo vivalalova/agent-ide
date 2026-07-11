@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 
@@ -103,7 +103,15 @@ export class ReferenceUpdater {
         // 比較路徑（考慮副檔名與 index 目錄解析）
         if (!this.pathUtils.pathsMatch(resolvedImportPath, options.sourceFile)) {continue;}
 
-        const newRelativePath = this.calculateRelativePath(filePath, options.target.filePath);
+        // 依原始 import specifier 的樣式（是否帶副檔名、alias/baseUrl 相對路徑）
+        // 回填新路徑，重用 file-move 既有的 PathUtils 邏輯（Single Source of Truth），
+        // 避免像 calculateRelativePath 一樣一律去除副檔名而破壞 NodeNext/ESM 解析
+        const newRelativePath = this.pathUtils.calculateNewImportPathPreservingStyle(
+          importPathMatch,
+          filePath,
+          options.sourceFile,
+          options.target.filePath
+        );
         const quoteChar = this.detectQuoteChar(line);
 
         if (this.isStarReExport(line)) {
@@ -464,23 +472,6 @@ export class ReferenceUpdater {
       return directImport ? directImport[1] : null;
     }
     return match[1];
-  }
-
-  /**
-   * 計算相對路徑
-   */
-  private calculateRelativePath(from: string, to: string): string {
-    const fromDir = path.dirname(from);
-    let relativePath = path.relative(fromDir, to);
-
-    relativePath = stripSourceFileExtension(relativePath);
-
-    // 確保以 ./ 開頭
-    if (!relativePath.startsWith('.')) {
-      relativePath = './' + relativePath;
-    }
-
-    return relativePath;
   }
 
   /**
