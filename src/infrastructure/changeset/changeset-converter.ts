@@ -191,13 +191,26 @@ function processMultiLineEditEnd(
   // 不能直接用 changes[changes.length - 1]：跨行編輯的中間行刪除會被 push 在
   // 起始行的 insert 之後，導致陣列尾端是 newContent=null 的刪除，suffix 會被靜默丟棄，
   // 使預覽的新內容缺漏結尾字元（例如 `);` 掉成 `)`）。
+  //
+  // 純刪除範圍（newText 為空）時，整個 changes 陣列可能全是 newContent=null 的
+  // delete（起始行也整行被吃掉、轉成 createDeleteLineChange，見 processMultiLineEditStart），
+  // 此時找不到可附掛對象。suffix 非空代表結尾行實際上有內容會被保留下來，
+  // 不能沿用「找不到就丟棄」；改為將結尾行本身轉為 modify（oldContent 為原整行、
+  // newContent 為保留的 suffix），避免預覽把實際會保留的片段誤顯示成已刪除。
+  let attached = false;
   if (suffix) {
     for (let i = changes.length - 1; i >= 0; i--) {
       if (changes[i].newContent !== null) {
         changes[i].newContent += suffix;
+        attached = true;
         break;
       }
     }
+  }
+
+  if (suffix && !attached) {
+    changes.push(createModifyLineChange(lineNum, lineContent, suffix));
+    return;
   }
 
   // 結束行本身被刪除（原內容消失）

@@ -347,6 +347,45 @@ describe('convertChangesetToPreviewInput', () => {
     });
   });
 
+  // MARK: - 純刪除範圍丟棄結尾行 suffix regression（endCol 起被保留）
+
+  describe('純刪除範圍丟棄結尾行 suffix regression', () => {
+    it('刪除範圍終止於結尾行中段時，該行 endCol 起被保留的 suffix 不應被靜默丟棄', async () => {
+      // 模擬刪除一段以整行開始、但終止於下一行中段的程式碼：
+      // range 從 line1 col1 到 line3 col3，newText 為空字串。
+      // line3 內容為 `}; const keep = 1;`，endCol=3 表示刪除涵蓋前兩個字元 `};`，
+      // 從 column 3 起（含前導空白）的 ` const keep = 1;` 屬於 endCol 之後、應被保留。
+      const line1 = 'const unused = () => {';
+      const line2 = '  return 1;';
+      const line3 = '}; const keep = 1;';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(`${line1}\n${line2}\n${line3}`);
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/b.ts',
+          edits: [{ range: createTestRange(1, 1, 3, 3), newText: '' }]
+        }]
+      });
+
+      const result = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = result.fileChanges[0].changes;
+
+      // 正確行為：line3 保留段 ` const keep = 1;` 必須出現在某個 change 的 newContent 中
+      // （例如以 modify 形式呈現：oldContent 為整行 line3，newContent 為保留的 suffix）
+      expect(
+        changes.some(c => typeof c.newContent === 'string' && c.newContent.includes('const keep = 1;'))
+      ).toBe(true);
+
+      // Bug：目前的壞行為是 line3 被當成純刪除（newContent: null），
+      // suffix 被靜默丟棄，沒有任何 change 保留它、統計把 keep 段誤當已刪
+      const line3IsPureDelete = changes.some(c => c.line === 3 && c.newContent === null);
+      const suffixKeptSomewhere = changes.some(
+        c => typeof c.newContent === 'string' && c.newContent.includes('const keep = 1;')
+      );
+      expect(line3IsPureDelete && !suffixKeptSomewhere).toBe(false);
+    });
+  });
+
   // MARK: - 檔案操作轉換
 
   describe('檔案操作轉換', () => {
