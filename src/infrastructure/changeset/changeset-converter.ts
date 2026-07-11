@@ -146,7 +146,17 @@ function processMultiLineEditStart(
 
   // 起始行：原內容被替換為 prefix + newText 的第一行
   const newLines = newContent.split('\n');
-  changes.push(createModifyLineChange(lineNum, lineContent, newLines[0] ?? ''));
+  const firstLine = newLines[0] ?? '';
+
+  // 沒有插入新行、且該行的新內容為空字串：代表這行完全被吃掉、沒有任何內容留下
+  // （例如整行連同換行一起刪除）。此時應表示為純刪除，而非「修改成空字串」——
+  // 後者會讓 diff 統計把它同時算成一筆刪除與一筆新增（假新增），造成統計虛增。
+  if (newLines.length === 1 && firstLine === '') {
+    changes.push(createDeleteLineChange(lineNum, lineContent));
+    return changes;
+  }
+
+  changes.push(createModifyLineChange(lineNum, lineContent, firstLine));
 
   // 若 newText 包含換行，後續行為新增行
   for (let i = 1; i < newLines.length; i++) {
@@ -226,8 +236,15 @@ function processMultiLineEdit(
     return [];
   }
 
+  // end.column === 1 是 LSP exclusive end：end 行完全在刪除範圍之外
+  // （代表「刪除到 end 行開頭之前」，即整行連同換行一起刪除），
+  // 該行本身不屬於此次編輯、不應產生任何 change，需整行保留在 context。
+  // 因此遍歷範圍需排除 end.line，實際刪除只涵蓋 start.line 到 end.line - 1。
+  const isEndLineExcluded = end.column === 1;
+  const lastLineToProcess = isEndLineExcluded ? end.line - 1 : end.line;
+
   // 逐行處理：起始行 → 中間行 → 結束行
-  for (let lineNum = start.line; lineNum <= end.line && lineNum <= originalLines.length; lineNum++) {
+  for (let lineNum = start.line; lineNum <= lastLineToProcess && lineNum <= originalLines.length; lineNum++) {
     const lineContent = originalLines[lineNum - 1] ?? '';
 
     if (lineNum === start.line) {
@@ -236,6 +253,7 @@ function processMultiLineEdit(
       changes.push(...startChanges);
     } else if (lineNum === end.line) {
       // 結束行：保留 endCol 之後，附加到前一個 change
+      // （isEndLineExcluded 時 lastLineToProcess < end.line，此分支不會被執行）
       processMultiLineEditEnd(lineNum, lineContent, end.column, changes);
     } else {
       // 中間行：完全刪除

@@ -302,6 +302,51 @@ describe('convertChangesetToPreviewInput', () => {
     });
   });
 
+  // MARK: - 假變更行 regression（deadcode 整行刪除接續 unchanged 行）
+
+  describe('假變更行 regression：跨行刪除接續 unchanged 行（LSP exclusive end, endCol=1）', () => {
+    it('刪除前兩行（函式宣告＋尾隨空行）不應把第三行 unchanged 內容假造成變更', async () => {
+      // 模擬 deadcode 刪除 dead() 函式：其後緊接一個空白行，
+      // range-expander 會把 range 擴展到吞掉該空行，
+      // end 落在下一行（keep() 那行）的 column 1 —— LSP exclusive end，
+      // 意即「刪除到此列之前」，keep() 那行本身應維持不變、不出現在任何 change 中。
+      const deadLine = 'function dead() { return 1; }';
+      const blankLine = '';
+      const keepLine = 'export function keep() { return 2; }';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(
+        `${deadLine}\n${blankLine}\n${keepLine}`
+      );
+
+      const changeset = createChangeset({
+        command: ChangesetCommand.Deadcode,
+        textChanges: [{
+          filePath: '/a.ts',
+          edits: [{ range: createTestRange(1, 1, 3, 1), newText: '' }]
+        }]
+      });
+
+      const result = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = result.fileChanges[0].changes;
+
+      // 正確行為：只有 line1、line2 被刪除，line3（keep，unchanged）不應出現在任何 change 中
+      expect(changes).toHaveLength(2);
+      expect(
+        changes.some(c => c.oldContent === keepLine || c.newContent === keepLine)
+      ).toBe(false);
+      expect(changes.find(c => c.line === 3)).toBeUndefined();
+
+      // line1 應為純刪除，不應把 line3 內容 reattach 成 newContent（假新增行）
+      expect(changes[0]).toEqual({ line: 1, oldContent: deadLine, newContent: null });
+      expect(changes[1]).toEqual({ line: 2, oldContent: blankLine, newContent: null });
+
+      // 統計不應虛增：只有 2 筆刪除、0 筆新增
+      const deletions = changes.filter(c => c.newContent === null).length;
+      const additions = changes.filter(c => c.oldContent === null).length;
+      expect(deletions).toBe(2);
+      expect(additions).toBe(0);
+    });
+  });
+
   // MARK: - 檔案操作轉換
 
   describe('檔案操作轉換', () => {
