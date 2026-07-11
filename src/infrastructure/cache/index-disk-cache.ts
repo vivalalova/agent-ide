@@ -5,18 +5,20 @@
  */
 
 import { homedir } from 'os';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { join, dirname } from 'path';
 import { readFile, writeFile, mkdir, rename as fsRename, access } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
+import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/types.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import {
   IndexCacheSerializer,
   CACHE_VERSION,
   type SerializedIndexData
 } from '@core/foundations/indexing/index-cache-serializer.js';
+import { packageVersion } from '@infrastructure/package-info.js';
 
 /**
  * 計算 projectPath hash（用於快取目錄名稱）
@@ -39,11 +41,6 @@ export class IndexDiskCache {
     private readonly cacheDir?: string,
   ) {}
 
-  /** computeCacheKey 預設排除模式（caller 未傳入時的向後相容值） */
-  private static readonly DEFAULT_EXCLUDE_PATTERNS: readonly string[] = [
-    'node_modules/**', 'dist/**', '.git/**', 'build/**', 'coverage/**'
-  ];
-
   /**
    * 計算目前專案的 cache key
    * sha256(sorted paths + sorted mtimes + sizes)
@@ -55,7 +52,8 @@ export class IndexDiskCache {
     projectPath: string,
     projectFileSystem: IFileSystem,
     includeExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS,
-    excludePatterns: readonly string[] = IndexDiskCache.DEFAULT_EXCLUDE_PATTERNS
+    // caller 未傳入時的向後相容值：與 CLI 索引實際使用的預設值同一來源（SSOT）
+    excludePatterns: readonly string[] = CLI_INDEX_DEFAULTS.excludePatterns
   ): Promise<string | null> {
     try {
       const extensions = includeExtensions.map(extension => `**/*${extension}`);
@@ -152,7 +150,8 @@ export class IndexDiskCache {
       };
 
       const json = JSON.stringify(data);
-      const tmpPath = `${cachePath}.tmp`;
+      // tmp 檔名帶 pid + 隨機字串：避免併發冷啟時兩個程序互踩同一個 tmp 檔（torn write）
+      const tmpPath = `${cachePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
 
       // Atomic write: write to tmp, then rename
       await writeFile(tmpPath, json, 'utf-8');
@@ -165,11 +164,16 @@ export class IndexDiskCache {
 
   /**
    * 取得快取檔案路徑
+   *
+   * 路徑包含 package.json 的 version（程式版本，SSOT 見 @infrastructure/package-info.js）：
+   * 程式改版時自動切到新目錄，不再依賴人工手動 bump CACHE_VERSION 才能讓舊快取失效。
+   * CACHE_VERSION（見 index-cache-serializer.ts）語意不同，是序列化 schema 版本，
+   * 用於同一程式版本內、序列化格式變更但版本號未變的情況，兩者都需檢查、缺一不可。
    */
   getCachePath(): string {
     const baseDir = this.cacheDir
-      ? join(this.cacheDir, hashProjectPath(this.projectPath), this.configKey)
-      : join(homedir(), '.cache', 'agent-ide', hashProjectPath(this.projectPath), this.configKey);
+      ? join(this.cacheDir, hashProjectPath(this.projectPath), this.configKey, packageVersion)
+      : join(homedir(), '.cache', 'agent-ide', hashProjectPath(this.projectPath), this.configKey, packageVersion);
     return join(baseDir, 'index.json');
   }
 

@@ -14,6 +14,7 @@ import type { SerializedIndexData } from '@core/foundations/indexing/index-cache
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { packageVersion } from '@infrastructure/package-info.js';
 
 let cacheDir: string;
 let fixture: FixtureContext;
@@ -90,8 +91,8 @@ describe('IndexDiskCache: 실제 디스크 읽쓰기', () => {
     await memfs.writeFile('/proj/src/hello.ts', 'export const hello = "world";');
 
     const cache = new IndexDiskCache('/proj', 'default', cacheDir);
-    expect(dirname(dirname(dirname(cache.getCachePath())))).toBe(cacheDir);
-    expect(cache.getCachePath().endsWith(join('default', 'index.json'))).toBe(true);
+    expect(dirname(dirname(dirname(dirname(cache.getCachePath()))))).toBe(cacheDir);
+    expect(cache.getCachePath().endsWith(join('default', packageVersion, 'index.json'))).toBe(true);
 
     const mockEngine = {
       snapshot: () => ({ fileEntries: new Map() })
@@ -109,8 +110,8 @@ describe('IndexDiskCache: 실제 디스크 읽쓰기', () => {
     const first = new IndexDiskCache('/proj', 'config-a', cacheDir);
     const second = new IndexDiskCache('/proj', 'config-b', cacheDir);
 
-    expect(first.getCachePath().endsWith(join('config-a', 'index.json'))).toBe(true);
-    expect(second.getCachePath().endsWith(join('config-b', 'index.json'))).toBe(true);
+    expect(first.getCachePath().endsWith(join('config-a', packageVersion, 'index.json'))).toBe(true);
+    expect(second.getCachePath().endsWith(join('config-b', packageVersion, 'index.json'))).toBe(true);
     expect(first.getCachePath()).not.toBe(second.getCachePath());
   });
 

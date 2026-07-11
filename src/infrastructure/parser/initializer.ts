@@ -38,6 +38,13 @@ interface PersistentParserModuleRecord {
 
 const persistentParserModules = new Map<string, PersistentParserModuleRecord>();
 const persistentParserModuleGenerations = new Map<string, number>();
+/**
+ * moduleKey → 進行中的 import+register in-flight promise（單飛去重）。
+ * 兩個 engine 同時初始化同一 persistent module 時，後到者共享同一個 promise 的結果，
+ * 而非各自 get-check-miss 後各跑一次 import+register（會導致其一被判定為「額外」而
+ * 提早 dispose、refCount 少計，見 disposePersistentParserModules 的提前 unregister 問題）。
+ */
+const persistentParserModuleInitializations = new Map<string, Promise<PersistentParserModuleRecord | null>>();
 
 function registerParserIfMissing(
   registry: ParserRegistry,
@@ -146,6 +153,7 @@ export function resetDefaultParserFactoriesForTesting(): void {
   extraParserFactories.length = 0;
   persistentParserModules.clear();
   persistentParserModuleGenerations.clear();
+  persistentParserModuleInitializations.clear();
 }
 
 /**
@@ -162,16 +170,16 @@ export async function initializeParserModules(
   try {
     for (const modulePath of modulePaths) {
       const moduleKey = toBaseImportSpecifier(modulePath);
-      const existingPersistentModule = options.isolateModuleInstances
-        ? undefined
-        : persistentParserModules.get(moduleKey);
-      if (existingPersistentModule) {
-        existingPersistentModule.refCount++;
-        registeredParsers.push({
-          name: existingPersistentModule.registeredName,
-          disposeOnUnregister: false,
-          persistentModuleKey: moduleKey
-        });
+
+      if (!options.isolateModuleInstances) {
+        const acquired = await acquirePersistentParserModule(registry, modulePath, moduleKey, options);
+        if (acquired) {
+          registeredParsers.push({
+            name: acquired.registeredName,
+            disposeOnUnregister: false,
+            persistentModuleKey: moduleKey
+          });
+        }
         continue;
       }
 
@@ -183,30 +191,10 @@ export async function initializeParserModules(
         parserModuleInstance.disposeOnUnregister
       );
       if (registeredParserName) {
-        const registeredParser: RegisteredParserModule = {
+        registeredParsers.push({
           name: registeredParserName,
           disposeOnUnregister: parserModuleInstance.disposeOnUnregister
-        };
-
-        if (parserModuleInstance.persistentModuleKey) {
-          persistentParserModules.set(parserModuleInstance.persistentModuleKey, {
-            parser: parserModuleInstance.parser,
-            registeredName: registeredParserName,
-            reloadAfterDispose: parserModuleInstance.reloadAfterDispose,
-            refCount: 1
-          });
-          registeredParsers.push({
-            ...registeredParser,
-            persistentModuleKey: parserModuleInstance.persistentModuleKey
-          });
-        } else {
-          registeredParsers.push(registeredParser);
-        }
-      } else if (parserModuleInstance.persistentModuleKey) {
-        disposeUnregisteredParser(parserModuleInstance.parser);
-        if (parserModuleInstance.reloadAfterDispose) {
-          bumpPersistentParserModuleGeneration(parserModuleInstance.persistentModuleKey);
-        }
+        });
       }
     }
   } catch (error) {
@@ -215,6 +203,78 @@ export async function initializeParserModules(
   }
 
   return registeredParsers;
+}
+
+/**
+ * 取得（或建立）persistent parser module 記錄，對同一 moduleKey 的併發初始化單飛去重。
+ * 已存在 → 直接 +1 refCount；進行中 → 等同一個 in-flight promise，完成後各自 +1 refCount；
+ * 都沒有 → 成為 leader，實際跑 import+register 並寫入 map（refCount 從 1 起算）。
+ */
+async function acquirePersistentParserModule(
+  registry: ParserRegistry,
+  modulePath: string,
+  moduleKey: string,
+  options: InitializeParserModulesOptions
+): Promise<{ registeredName: string } | null> {
+  const existingRecord = persistentParserModules.get(moduleKey);
+  if (existingRecord) {
+    existingRecord.refCount++;
+    return { registeredName: existingRecord.registeredName };
+  }
+
+  let initPromise = persistentParserModuleInitializations.get(moduleKey);
+  const isLeader = !initPromise;
+  if (isLeader) {
+    initPromise = importAndRegisterPersistentModule(registry, modulePath, moduleKey, options);
+    persistentParserModuleInitializations.set(moduleKey, initPromise);
+    const cleanup = (): void => {
+      persistentParserModuleInitializations.delete(moduleKey);
+    };
+    // 兩個 handler 都不重拋，避免產生第二條無人接手的 rejected promise chain
+    void initPromise.then(cleanup, cleanup);
+  }
+
+  const record = await initPromise;
+  if (!record) {
+    return null;
+  }
+  if (!isLeader) {
+    // leader 已把自己算進 refCount:1，這裡是額外的等待者，各自 +1
+    record.refCount++;
+  }
+  return { registeredName: record.registeredName };
+}
+
+async function importAndRegisterPersistentModule(
+  registry: ParserRegistry,
+  modulePath: string,
+  moduleKey: string,
+  options: InitializeParserModulesOptions
+): Promise<PersistentParserModuleRecord | null> {
+  const parserModule = await import(toImportSpecifier(modulePath, options.isolateModuleInstances ?? false));
+  const parserModuleInstance = createParserFromModule(parserModule, modulePath, options);
+  const registeredParserName = registerParserIfMissing(
+    registry,
+    parserModuleInstance.parser,
+    parserModuleInstance.disposeOnUnregister
+  );
+
+  if (!registeredParserName) {
+    disposeUnregisteredParser(parserModuleInstance.parser);
+    if (parserModuleInstance.reloadAfterDispose) {
+      bumpPersistentParserModuleGeneration(moduleKey);
+    }
+    return null;
+  }
+
+  const record: PersistentParserModuleRecord = {
+    parser: parserModuleInstance.parser,
+    registeredName: registeredParserName,
+    reloadAfterDispose: parserModuleInstance.reloadAfterDispose,
+    refCount: 1
+  };
+  persistentParserModules.set(moduleKey, record);
+  return record;
 }
 
 export async function disposePersistentParserModules(

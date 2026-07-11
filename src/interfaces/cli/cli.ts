@@ -21,31 +21,10 @@ import {
   setupSearchCommand,
   type CommandContext
 } from '@interfaces/cli/commands/index.js';
-import { readFileSync } from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { readPackageVersion, packageVersion } from '@infrastructure/package-info.js';
 
-// 讀取 package.json 版本
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const packageJsonPath = path.resolve(__dirname, '../../../package.json');
-
-export function readPackageVersion(targetPath: string = packageJsonPath): string {
-  let packageJson: { version?: unknown };
-  try {
-    packageJson = JSON.parse(readFileSync(targetPath, 'utf-8')) as { version?: unknown };
-  } catch (error) {
-    throw new Error(`Cannot read package version from ${targetPath}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  if (typeof packageJson.version !== 'string' || packageJson.version.trim().length === 0) {
-    throw new Error(`Invalid package version in ${targetPath}`);
-  }
-
-  return packageJson.version;
-}
-
-const packageVersion = readPackageVersion();
+// re-export：維持既有 public API（單一權威來源見 @infrastructure/package-info.js）
+export { readPackageVersion };
 
 export class AgentIdeCLI {
   private program: Command;

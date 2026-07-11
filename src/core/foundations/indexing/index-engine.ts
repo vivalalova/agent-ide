@@ -197,8 +197,9 @@ export class IndexEngine {
   /**
    * 獲取有效的排除模式
    * 整合 config 設定和所有 parser 的預設排除模式
+   * public：cache key 計算需要與索引實際使用的排除集合一致（SSOT），見 cached-index-engine.ts
    */
-  private getEffectiveExcludePatterns(): string[] {
+  getEffectiveExcludePatterns(): string[] {
     // 取得 config 的排除模式
     const configPatterns = [...this.config.excludePatterns];
 
@@ -803,8 +804,8 @@ export class IndexEngine {
 
   async disposeAsync(): Promise<void> {
     if (!this._disposed) {
-      this.clear();
       this._disposed = true;
+      await this.clear();
 
       await Promise.all([
         this.parserPool

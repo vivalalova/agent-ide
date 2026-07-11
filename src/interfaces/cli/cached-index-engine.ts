@@ -59,13 +59,14 @@ export async function createAndIndexWithCache(
 
   const diskCache = new IndexDiskCache(projectPath, configKey, options.cacheDir);
 
-  // 計算當前 cache key（exclude 清單由索引實際使用的設定傳入，維持 SSoT）
+  // 計算當前 cache key（exclude 清單改用索引實際生效的排除集合，即 config + parser 預設，
+  // 維持 SSoT——避免 cache key 只看 config.excludePatterns、比索引實際排除的還窄，造成過度失效）
   const engineConfig = indexEngine.getConfig();
   const currentKey = await diskCache.computeCacheKey(
     projectPath,
     fileSystem,
     engineConfig.includeExtensions,
-    engineConfig.excludePatterns
+    indexEngine.getEffectiveExcludePatterns()
   );
 
   // 無法可靠計算 key → 不信任快取（不讀不寫），直接完整索引

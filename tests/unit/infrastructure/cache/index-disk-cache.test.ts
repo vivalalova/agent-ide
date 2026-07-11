@@ -8,6 +8,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
+import { packageVersion } from '@infrastructure/package-info.js';
 import { CACHE_VERSION } from '@core/foundations/indexing/index-cache-serializer.js';
 import type { SerializedIndexData } from '@core/foundations/indexing/index-cache-serializer.js';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
@@ -46,16 +47,16 @@ describe('IndexDiskCache', () => {
   describe('getCachePath', () => {
     it('cacheDir override가 있으면 해당 경로 사용', () => {
       const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
-      expect(dirname(dirname(dirname(cache.getCachePath())))).toBe(tmpCacheDir);
-      expect(cache.getCachePath().endsWith(join('default', 'index.json'))).toBe(true);
+      expect(dirname(dirname(dirname(dirname(cache.getCachePath()))))).toBe(tmpCacheDir);
+      expect(cache.getCachePath().endsWith(join('default', packageVersion, 'index.json'))).toBe(true);
     });
 
     it('cacheDir override 下仍用 configKey 隔離路徑', () => {
       const cache1 = new IndexDiskCache('/proj', 'config-a', tmpCacheDir);
       const cache2 = new IndexDiskCache('/proj', 'config-b', tmpCacheDir);
 
-      expect(cache1.getCachePath().endsWith(join('config-a', 'index.json'))).toBe(true);
-      expect(cache2.getCachePath().endsWith(join('config-b', 'index.json'))).toBe(true);
+      expect(cache1.getCachePath().endsWith(join('config-a', packageVersion, 'index.json'))).toBe(true);
+      expect(cache2.getCachePath().endsWith(join('config-b', packageVersion, 'index.json'))).toBe(true);
       expect(cache1.getCachePath()).not.toBe(cache2.getCachePath());
     });
 
