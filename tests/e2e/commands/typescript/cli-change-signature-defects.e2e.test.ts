@@ -1,5 +1,5 @@
 /**
- * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，5 筆）
+ * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，8 筆）
  *
  * 每個測試斷言「正確行為」，在缺陷修復前預期為紅燈（reproduction test）。
  * 缺陷清單：
@@ -8,12 +8,15 @@
  *   3. 呼叫點多餘引數（超過原參數個數）被丟棄
  *   4. rest 參數 `...` 被吃掉
  *   5. 跨檔案同名自由函式被越權重寫
+ *   6. --reorder 重寫呼叫點時型別引數（泛型 `<T>`）與 optional chaining `?.` 被丟棄
+ *   7. --reorder 重寫巢狀引數時，外層包裹呼叫（如 `wrap(...)`）被靜默吃掉
+ *   8. --reorder 透過 barrel re-export 匯入的消費端呼叫點未同步更新
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
-describe('CLI change-signature - 已確認缺陷（手動重現，5 筆）', () => {
+describe('CLI change-signature - 已確認缺陷（手動重現，8 筆）', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -235,6 +238,159 @@ const v = reset(9);
       // 目前的壞行為是它被誤判為同一符號，其呼叫點 reset(9) 被錯誤重寫成 reset(undefined, 9)
       const bFiles = output.files.filter((f: any) => f.filePath.includes('regression-defect5-b.ts'));
       expect(bFiles).toHaveLength(0);
+    });
+  });
+
+  describe('缺陷6: --reorder 重寫呼叫點時型別引數與 optional chaining 被丟棄', () => {
+    it('呼叫點的泛型型別引數 <T> 不應被丟棄', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect6-generic-type-arg.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function pick<T>(key: string, count: number): T {
+  return undefined as unknown as T;
+}
+
+const r = pick<number>('n', 1);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'pick',
+          '-p', fixture.rootPath,
+          '--reorder', 'count,key',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：呼叫點的型別引數 `<number>` 應保留，僅重排值引數；
+      // 目前的壞行為是型別引數被丟棄，變成 `pick(1, 'n')`
+      expect(addedLines.some((l: string) => l.includes('pick<number>(1, \'n\')'))).toBe(true);
+    });
+
+    it('呼叫點的 optional chaining `?.` 不應被丟棄', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect6-optional-chaining-call.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function fire(a: number, b: number): void {}
+
+fire?.(1, 2);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'fire',
+          '-p', fixture.rootPath,
+          '--reorder', 'b,a',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：`?.` 應保留，重寫後仍是安全呼叫；
+      // 目前的壞行為是 `?.` 被丟棄，變成 `fire(2, 1)`（語意從安全呼叫變成可能 runtime throw）
+      expect(addedLines.some((l: string) => l.includes('fire?.(2, 1)'))).toBe(true);
+    });
+  });
+
+  describe('缺陷7: --reorder 重寫巢狀引數時外層包裹呼叫被吃掉', () => {
+    it('巢狀呼叫中作為引數的包裹呼叫（如 wrap(...)）不應被靜默刪除', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect7-nested-wrapper-call.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function combine(first: number, second: number): number { return first + second; }
+function wrap(value: number): number { return value; }
+const result = combine(wrap(combine(1, 2)), 3);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'combine',
+          '-p', fixture.rootPath,
+          '--reorder', 'second,first',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：外層兩個引數互換、內層 combine(1, 2) 呼叫也重排，wrap(...) 保留；
+      // 目前的壞行為是 wrap(...) 被靜默刪除，變成 `combine(3, combine(2, 1))`
+      expect(addedLines.some((l: string) => l.includes('combine(3, wrap(combine(2, 1)))'))).toBe(true);
+    });
+
+    it('內層目標呼叫是外層引數子運算式時，引數其餘文字（如 `+ 1`）不應被吃掉', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect7-nested-subexpression.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function add(a: number, b: number): number { return a + b; }
+const n = add(add(5, 6) + 1, 7);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'add',
+          '-p', fixture.rootPath,
+          '--reorder', 'b,a',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：外層兩個引數互換、內層 add(5, 6) 呼叫也重排，`+ 1` 保留；
+      // 目前的壞行為是 `+ 1` 被吃掉，變成 `add(7, add(6, 5))`
+      expect(addedLines.some((l: string) => l.includes('add(7, add(6, 5) + 1)'))).toBe(true);
+    });
+  });
+
+  describe('缺陷8: --reorder 透過 barrel re-export 匯入的消費端呼叫點未同步更新', () => {
+    it('透過 barrel re-export 匯入函式的消費端呼叫點應同步重排', async () => {
+      await fixture.writeFile('src/regression-defect8-fmt.ts', `
+export function fmt(label: string, times: number): string { return label.repeat(times); }
+`.trim());
+      await fixture.writeFile('src/regression-defect8-barrel.ts', `
+export { fmt } from './regression-defect8-fmt';
+`.trim());
+      await fixture.writeFile('src/regression-defect8-consumer.ts', `
+import { fmt } from './regression-defect8-barrel';
+export const out = fmt('x', 2);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', fixture.getFilePath('src/regression-defect8-fmt.ts'),
+          '--function', 'fmt',
+          '-p', fixture.rootPath,
+          '--reorder', 'times,label',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      // 正確行為：src/regression-defect8-consumer.ts 的呼叫點應更新為 fmt(2, 'x')；
+      // 目前的壞行為是 consumer 呼叫點漏改，仍停留在 fmt('x', 2)
+      const consumerFile = output.files.find((f: any) => f.filePath.includes('regression-defect8-consumer.ts'));
+      expect(consumerFile).toBeDefined();
+      const consumerAddedLines = consumerFile.hunks
+        .flatMap((hunk: any) => hunk.lines)
+        .filter((line: any) => line.type === 'add')
+        .map((line: any) => line.content);
+      expect(consumerAddedLines.some((l: string) => l.includes('fmt(2, \'x\')'))).toBe(true);
     });
   });
 });

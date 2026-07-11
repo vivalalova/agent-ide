@@ -18,7 +18,7 @@ import {
 import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 import { FileUtils, createFileUtils } from '@core/foundations/index.js';
-import type { Range } from '@shared/types/core.js';
+import type { Position, Range } from '@shared/types/core.js';
 import { isPositionBefore } from '@shared/types/core.js';
 
 /**
@@ -182,11 +182,17 @@ export class CallSiteUpdater {
    * 從呼叫點的精確範圍擷取原始呼叫運算式文字（函式名第一個字元到右括號之後）
    */
   private extractCallExpression(callSite: CallSite, lines: readonly string[]): string {
-    const { start, end } = callSite.location.range;
+    return this.extractTextRange(callSite.location.range.start, callSite.location.range.end, lines);
+  }
+
+  /**
+   * 擷取兩個位置之間的原始文字（1-based line/column，支援跨行）
+   */
+  private extractTextRange(start: Position, end: Position, lines: readonly string[]): string {
     const startLineIndex = start.line - 1;
     const endLineIndex = end.line - 1;
     const startCol = start.column - 1; // 0-based
-    const endCol = end.column - 1; // 0-based（右括號之後）
+    const endCol = end.column - 1; // 0-based
 
     if (startLineIndex === endLineIndex) {
       return lines[startLineIndex].substring(startCol, endCol);
@@ -199,6 +205,68 @@ export class CallSiteUpdater {
     }
     segments.push(lines[endLineIndex].substring(0, endCol));
     return segments.join('\n');
+  }
+
+  /**
+   * 計算 target 位置相對於 base 位置在「以 base 為起點擷取的文字」中的字元偏移量
+   * （與 extractTextRange 的拼接方式一致：跨行以 '\n' 相接）
+   */
+  private offsetWithinRange(base: Position, target: Position, lines: readonly string[]): number {
+    if (target.line === base.line) {
+      return target.column - base.column;
+    }
+
+    const baseLineIndex = base.line - 1;
+    let offset = lines[baseLineIndex].length - (base.column - 1); // base 到該行行尾
+    offset += 1; // 換行符號
+
+    for (let i = baseLineIndex + 1; i < target.line - 1; i++) {
+      offset += lines[i].length + 1; // 中間完整行 + 換行符號
+    }
+
+    offset += target.column - 1; // target 所在行內偏移
+    return offset;
+  }
+
+  /**
+   * 取得呼叫運算式「呼叫起點到引數列表開括號」之間的原始文字
+   * （含 callee 名稱、泛型型別引數 `<T>`、optional chaining `?.`），
+   * 供重建時保留原始語法，只重組括號內的引數。
+   */
+  private extractCallPrefix(callSite: CallSite, lines: readonly string[]): string {
+    if (callSite.arguments.length > 0) {
+      // 有引數：呼叫起點到第一個引數起點之間，最後一個 `(` 即為引數列表開括號
+      // （型別引數內的括號必然更早出現，且開括號到第一個引數間只有 trivia）
+      const firstArgStart = callSite.arguments[0].range.start;
+      const beforeFirstArg = this.extractTextRange(callSite.location.range.start, firstArgStart, lines);
+      const openParenIndex = beforeFirstArg.lastIndexOf('(');
+      return openParenIndex >= 0 ? beforeFirstArg.substring(0, openParenIndex + 1) : beforeFirstArg;
+    }
+
+    // 無引數：整個呼叫運算式文字尾端必為右括號，從尾端反向配對找到對應開括號
+    const fullText = this.extractCallExpression(callSite, lines);
+    const matchIndex = this.findMatchingOpenParenFromEnd(fullText);
+    return matchIndex >= 0 ? fullText.substring(0, matchIndex + 1) : `${callSite.functionName}(`;
+  }
+
+  /**
+   * 從文字尾端的右括號開始反向配對括號深度，找到與其對應的左括號 index。
+   * 適用於已知文字以 ')' 結尾的情況（如整個呼叫運算式）。
+   */
+  private findMatchingOpenParenFromEnd(text: string): number {
+    let depth = 0;
+    for (let i = text.length - 1; i >= 0; i--) {
+      const char = text[i];
+      if (char === ')') {
+        depth++;
+      } else if (char === '(') {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+    }
+    return -1;
   }
 
   /**
@@ -221,11 +289,13 @@ export class CallSiteUpdater {
     const isMultiline = startLineIndex !== endLineIndex;
 
     // 計算引數值覆寫：若某引數的範圍包含某個內層目標呼叫，
-    // 改用該內層呼叫重排後的文字（遞迴套用）。
+    // 將該引數原文中對應的內層呼叫片段拼接替換為內層重排後的文字（遞迴套用），
+    // 引數其餘文字（如外層包裹呼叫、運算子）原樣保留。
     const argumentOverrides = this.computeNestedArgumentOverrides(
       callSite,
       allCallSites,
-      rebuiltByCallSite
+      rebuiltByCallSite,
+      lines
     );
 
     // 建立新的參數列表
@@ -237,44 +307,72 @@ export class CallSiteUpdater {
       argumentOverrides
     );
 
+    // 保留原始呼叫文字中「呼叫起點到引數列表開括號」之間的部分
+    // （callee 名稱、泛型型別引數 `<T>`、optional chaining `?.`），只重組括號內引數
+    const prefix = this.extractCallPrefix(callSite, lines);
+
     if (isMultiline) {
       // 多行呼叫點：保留原始風格
       const originalStyle = this.detectCallStyle(lines, startLineIndex, endLineIndex);
       const newArgsString = this.formatArgsWithStyle(newArgs, originalStyle);
-      return `${callSite.functionName}(${newArgsString})`;
+      return `${prefix}${newArgsString})`;
     }
 
     // 單行呼叫點
-    return `${callSite.functionName}(${newArgs.join(', ')})`;
+    return `${prefix}${newArgs.join(', ')})`;
   }
 
   /**
-   * 計算巢狀引數覆寫：將每個包含內層目標呼叫的引數 index 映射到內層重排後的文字。
+   * 計算巢狀引數覆寫：將每個包含內層目標呼叫的引數 index 映射到「拼接後」的引數文字——
+   * 引數原文保留，僅將其中每個頂層被包含的內層目標呼叫片段換成內層重排後文字。
+   *
+   * 「頂層」：內層呼叫彼此巢狀時只處理最外層那個，因其 rebuilt 文字已含更內層的重排結果
+   * （rebuiltByCallSite 由內而外就緒）。同一引數可能含多個互不巢狀的頂層內層呼叫，全部替換。
    */
   private computeNestedArgumentOverrides(
     callSite: CallSite,
     allCallSites: readonly CallSite[],
-    rebuiltByCallSite: ReadonlyMap<CallSite, string>
+    rebuiltByCallSite: ReadonlyMap<CallSite, string>,
+    lines: readonly string[]
   ): Map<number, string> {
     const overrides = new Map<number, string>();
 
     for (let argIndex = 0; argIndex < callSite.arguments.length; argIndex++) {
       const argRange = callSite.arguments[argIndex].range;
 
+      const containedInner: Array<{ range: Range; rebuilt: string }> = [];
       for (const inner of allCallSites) {
         if (inner === callSite) {
           continue;
         }
         const rebuilt = rebuiltByCallSite.get(inner);
-        if (rebuilt === undefined) {
-          continue;
-        }
-        // 內層呼叫的範圍落在此引數範圍內 → 用內層重排後文字取代
-        if (this.rangeContainsOrEquals(argRange, inner.location.range)) {
-          overrides.set(argIndex, rebuilt);
-          break;
+        if (rebuilt !== undefined && this.rangeContainsOrEquals(argRange, inner.location.range)) {
+          containedInner.push({ range: inner.location.range, rebuilt });
         }
       }
+      const topLevelInner = containedInner.filter(inner =>
+        !containedInner.some(other =>
+          other !== inner && this.rangeStrictlyContains(other.range, inner.range)
+        )
+      );
+
+      if (topLevelInner.length === 0) {
+        continue;
+      }
+
+      // 由右至左替換，避免先替換的片段改變後面片段的位移
+      const sortedByStartDescending = [...topLevelInner].sort((a, b) =>
+        isPositionBefore(a.range.start, b.range.start) ? 1 : -1
+      );
+
+      let spliced = this.extractTextRange(argRange.start, argRange.end, lines);
+      for (const inner of sortedByStartDescending) {
+        const relativeStart = this.offsetWithinRange(argRange.start, inner.range.start, lines);
+        const relativeEnd = this.offsetWithinRange(argRange.start, inner.range.end, lines);
+        spliced = spliced.slice(0, relativeStart) + inner.rebuilt + spliced.slice(relativeEnd);
+      }
+
+      overrides.set(argIndex, spliced);
     }
 
     return overrides;

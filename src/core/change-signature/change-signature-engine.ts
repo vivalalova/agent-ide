@@ -33,6 +33,16 @@ import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/inde
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 
 /**
+ * 中介檔（barrel）的單層 re-export 轉發資訊
+ */
+interface ReexportForward {
+  /** re-export 的來源模組路徑（`from '<spec>'`） */
+  readonly moduleSpecifier: string;
+  /** 具名轉發的原始符號名稱；undefined 表示 `export * from` 轉發全部匯出 */
+  readonly exportedName?: string;
+}
+
+/**
  * Change Signature Engine
  */
 export class ChangeSignatureEngine {
@@ -903,12 +913,16 @@ export class ChangeSignatureEngine {
 
   /**
    * 過濾出「語意上可能引用目標函式」的檔案：目標定義檔本身，
-   * 以及直接（named / default）import 目標符號自目標檔的檔案。
+   * 直接（named / default）import 目標符號自目標檔的檔案，
+   * 以及透過單層 barrel re-export（`export { name } from '<spec>'` 未 alias 改名，
+   * 或 `export * from '<spec>'`）間接 import 到目標符號的檔案。
    *
-   * 界線（記載於此）：僅解析相對路徑 import；alias / node_modules /
-   * 透過中介檔 re-export 的間接 import 不在判定範圍內。此為「寧可漏掃、不可誤傷」
-   * 的取捨——避免把跨檔同名的不同符號呼叫點誤改。命名空間 import（`import * as ns`）
-   * 的呼叫形如 `ns.fn(...)`，屬 method call 已在後續被過濾，故不需納入。
+   * 界線（記載於此）：僅解析相對路徑 import；alias / node_modules 不在判定範圍內；
+   * re-export 轉發僅涵蓋單層（consumer -> 一層中介檔 -> 目標檔），不遞迴多層 barrel，
+   * 且中介檔的 re-export 若對符號改名（`export { f as g }`）視為不同符號、不算轉發。
+   * 此為「寧可漏掃、不可誤傷」的取捨——避免把跨檔同名的不同符號呼叫點誤改。
+   * 命名空間 import（`import * as ns`）與 `export * as ns from` 的呼叫/轉發形如
+   * `ns.fn(...)`，屬 method call 已在後續被過濾，故不需納入。
    */
   private async filterFilesReferencingTarget(
     files: readonly string[],
@@ -917,13 +931,16 @@ export class ChangeSignatureEngine {
   ): Promise<string[]> {
     const targetAbsolute = path.resolve(targetFilePath);
     const result: string[] = [];
+    // per-run cache：同一次呼叫內，同一個中介檔（barrel）的 re-export 轉發只解析一次，
+    // 避免多個 consumer 檔重複讀取/解析同一個中介檔
+    const reexportCache = new Map<string, readonly ReexportForward[]>();
 
     for (const file of files) {
       if (path.resolve(file) === targetAbsolute) {
         result.push(file);
         continue;
       }
-      if (await this.fileImportsSymbolFromTarget(file, targetAbsolute, functionName)) {
+      if (await this.fileImportsSymbolFromTarget(file, targetAbsolute, functionName, files, reexportCache)) {
         result.push(file);
       }
     }
@@ -932,14 +949,16 @@ export class ChangeSignatureEngine {
   }
 
   /**
-   * 判斷檔案是否以本地名稱 functionName 直接 import 目標檔匯出的符號。
-   * 呼叫點以「本地繫結名稱」呼叫，且 findCallSites 只比對 functionName，
-   * 故僅需確認本地繫結名稱等於 functionName。
+   * 判斷檔案是否以本地名稱 functionName 直接或透過單層 barrel re-export
+   * import 目標檔匯出的符號。呼叫點以「本地繫結名稱」呼叫，且 findCallSites
+   * 只比對 functionName，故僅需確認本地繫結名稱等於 functionName。
    */
   private async fileImportsSymbolFromTarget(
     filePath: string,
     targetAbsolute: string,
-    functionName: string
+    functionName: string,
+    allFiles: readonly string[],
+    reexportCache: Map<string, readonly ReexportForward[]>
   ): Promise<boolean> {
     const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (!parser?.getImportDeclarations) {
@@ -956,19 +975,127 @@ export class ChangeSignatureEngine {
       if (declaration.isTypeOnly) {
         continue; // type-only import 不會產生 runtime 呼叫點
       }
-      if (!this.importSpecifierResolvesToTarget(filePath, declaration.moduleSpecifier, targetAbsolute)) {
-        continue;
-      }
 
       const bindsLocalName =
         declaration.defaultImport === functionName
         || declaration.namedImports.some(spec => (spec.alias ?? spec.name) === functionName);
-      if (bindsLocalName) {
+      if (!bindsLocalName) {
+        continue;
+      }
+
+      if (this.importSpecifierResolvesToTarget(filePath, declaration.moduleSpecifier, targetAbsolute)) {
+        return true;
+      }
+
+      if (await this.resolvesToTargetViaSingleLevelReexport(
+        filePath,
+        declaration.moduleSpecifier,
+        functionName,
+        targetAbsolute,
+        allFiles,
+        reexportCache
+      )) {
         return true;
       }
     }
 
     return false;
+  }
+
+  /**
+   * 單層 re-export 判定：import specifier 若解析到專案內某個「中介檔」
+   * （非目標檔本身），讀取該中介檔的匯出宣告，檢查是否以 named（未被 alias
+   * 改名）或 star 形式將目標檔的 functionName 轉發出來。僅單層，不遞迴。
+   *
+   * 模組路徑解析沿用 importSpecifierResolvesToTarget：先找出 consumer 的
+   * import specifier 解析到的中介檔，再確認中介檔的 re-export specifier
+   * 是否解析回目標檔。
+   */
+  private async resolvesToTargetViaSingleLevelReexport(
+    consumerFilePath: string,
+    moduleSpecifier: string,
+    functionName: string,
+    targetAbsolute: string,
+    allFiles: readonly string[],
+    reexportCache: Map<string, readonly ReexportForward[]>
+  ): Promise<boolean> {
+    const intermediateFile = allFiles.find(candidate =>
+      this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, path.resolve(candidate))
+    );
+    if (!intermediateFile) {
+      return false;
+    }
+
+    const forwards = await this.getReexportForwards(intermediateFile, reexportCache);
+    return forwards.some(forward => {
+      if (forward.exportedName !== undefined && forward.exportedName !== functionName) {
+        return false;
+      }
+      return this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute);
+    });
+  }
+
+  /**
+   * 取得中介檔的 re-export 轉發清單（含 per-run cache，避免重複讀取/解析同一檔案）
+   */
+  private async getReexportForwards(
+    filePath: string,
+    cache: Map<string, readonly ReexportForward[]>
+  ): Promise<readonly ReexportForward[]> {
+    const cached = cache.get(filePath);
+    if (cached) {
+      return cached;
+    }
+
+    const forwards = await this.parseReexportForwards(filePath);
+    cache.set(filePath, forwards);
+    return forwards;
+  }
+
+  /**
+   * 解析檔案中的 re-export 轉發宣告：`export { name } from '<spec>'`
+   * （未 alias 改名）與 `export * from '<spec>'`。
+   * 與呼叫點解析（call-site-parser.ts）相同的取捨：直接以 TS AST 解析語法結構，
+   * 不依賴副檔名（TS parser 亦可解析 .js 檔案的語法）。
+   */
+  private async parseReexportForwards(filePath: string): Promise<ReexportForward[]> {
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content) {
+      return [];
+    }
+
+    const forwards: ReexportForward[] = [];
+    const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement) || statement.isTypeOnly) {
+        continue;
+      }
+
+      const moduleSpecifier = statement.moduleSpecifier;
+      if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) {
+        continue; // 非 re-export（純 local export，無 from 子句）
+      }
+
+      if (!statement.exportClause) {
+        // `export * from '<spec>'`：轉發全部匯出
+        forwards.push({ moduleSpecifier: moduleSpecifier.text });
+        continue;
+      }
+
+      if (ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          // 只收未被 alias 改名者：`export { f as g }` 不算轉發同一符號
+          if (!element.isTypeOnly && !element.propertyName) {
+            forwards.push({ moduleSpecifier: moduleSpecifier.text, exportedName: element.name.text });
+          }
+        }
+      }
+      // `export * as ns from '<spec>'`（NamespaceExport）不在單層轉發判定範圍內：
+      // 消費端須以 `ns.fn(...)` method call 呼叫，已被既有 method call 過濾排除
+    }
+
+    return forwards;
   }
 
   /**
