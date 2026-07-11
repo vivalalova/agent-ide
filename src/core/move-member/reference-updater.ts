@@ -181,7 +181,8 @@ export class ReferenceUpdater {
             existingTargetImport.statementKind,
             mergedMembers,
             existingTargetImport.importPath,
-            existingTargetImport.quoteChar
+            existingTargetImport.quoteChar,
+            existingTargetImport.defaultPrefix
           );
           updates.push({
             filePath,
@@ -263,10 +264,14 @@ export class ReferenceUpdater {
     statementKind: ImportExportStatementKind,
     members: readonly ParsedImportMember[],
     importPath: string,
-    quoteChar: string
+    quoteChar: string,
+    defaultPrefix: string | null
   ): string {
     const membersStr = members.map(m => this.formatImportedMember(m)).join(', ');
-    return `${statementKind} { ${membersStr} } from ${quoteChar}${importPath}${quoteChar};`;
+    // 既有語句帶 default / namespace 前綴（import Foo, { ... } / import * as NS, { ... }）
+    // 時必須保留，否則 merge 重建會讓前綴綁定從檔案中消失
+    const prefixStr = defaultPrefix ? `${defaultPrefix}, ` : '';
+    return `${statementKind} ${prefixStr}{ ${membersStr} } from ${quoteChar}${importPath}${quoteChar};`;
   }
 
   /**
@@ -284,6 +289,7 @@ export class ReferenceUpdater {
     members: ParsedImportMember[];
     importPath: string;
     quoteChar: string;
+    defaultPrefix: string | null;
   } | null {
     for (let i = 0; i < lines.length; i++) {
       const statement = this.collectImportExportStatement(lines, i);
@@ -302,15 +308,22 @@ export class ReferenceUpdater {
       const resolved = this.pathUtils.resolveImportPath(importPath, fromFile);
       if (!this.pathUtils.pathsMatch(resolved, options.target.filePath)) {continue;}
 
+      // 只有純值 import（非 import type、非 export/export-from）才產生本地值綁定，
+      // 可安全併入 moved 成員；export-from 不產生本地綁定、import type 併入後值綁定會消失，
+      // 兩者皆不可併入，走既有 else 路徑另建新的值 import
+      const statementKind = this.getStatementKind(statement.text);
+      if (statementKind !== 'import') {continue;}
+
       const members = this.parseImportedMembers(statement.text);
       if (members.length === 0) {continue;}
 
       return {
         statement,
-        statementKind: this.getStatementKind(statement.text),
+        statementKind,
         members,
         importPath,
-        quoteChar: this.detectQuoteChar(statement.text)
+        quoteChar: this.detectQuoteChar(statement.text),
+        defaultPrefix: this.extractDefaultPrefix(statement.text)
       };
     }
 
@@ -352,14 +365,22 @@ export class ReferenceUpdater {
       return { text, startLineIndex, endLineIndex: startLineIndex };
     }
 
+    // 起始行本身已是完整語句（含 ';'）卻取不到路徑 → 這是與 import/export-from
+    // 無關的完整語句（如無 from 的 `export { x };`），不得繼續吸收下一行造成跨語句融合
+    if (text.includes(';')) {
+      return null;
+    }
+
     for (let endLineIndex = startLineIndex + 1; endLineIndex < lines.length; endLineIndex++) {
       text += `\n${lines[endLineIndex]}`;
       if (this.extractImportPath(text)) {
         return { text, startLineIndex, endLineIndex };
       }
 
-      if (lines[endLineIndex].includes(';')) {
-        break;
+      // 累積文字已終止（含 ';'）仍未取得路徑 → 語句已結束但不是我們要處理的
+      // import/export-from，終止延續，禁止再吸收下一條無關語句
+      if (text.includes(';')) {
+        return null;
       }
     }
 
