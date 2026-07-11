@@ -325,4 +325,101 @@ export function getPair(): StringPair {
       ).toBe(2);
     });
   });
+
+  // MARK: - --at 過濾器丟棄前向引用 regression
+
+  describe('--at 過濾器不應丟棄前向引用（非提升宣告的真引用）regression', () => {
+    it('const 定義在後：--at 鎖定 const 定義時，定義前的真實引用不應被丟棄', async () => {
+      await fixture.writeFile('src/forward-ref-const.ts', [
+        'export function useLater() {',
+        '  return config.value;',
+        '}',
+        'export const config = { value: 42 };'
+      ].join('\n'));
+
+      // 不帶 --at：驗證 baseline 應含 line 2（config.value 的使用）與 line 4（定義）
+      const baseline = await executeCLI(
+        ['find-references', 'config', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+      const baselineOutput: any = JSON.parse(baseline.stdout);
+      expect(baselineOutput.references.some((r: any) => r.line === 2)).toBe(true);
+      expect(baselineOutput.references.some((r: any) => r.line === 4)).toBe(true);
+
+      // 帶 --at 鎖定 config 的定義位置（line 4, column 14，取自 baseline 的 definition）
+      const result = await executeCLI(
+        [
+          'find-references',
+          'config',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-const.ts:4:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：帶 --at 後 line 2 的前向引用被靜默丟棄，只剩 line 4 的定義本身
+      expect(output.references.some((r: any) => r.line === 2)).toBe(true);
+    });
+
+    it('class 定義在後：--at 鎖定 class 定義時，定義前的真實引用不應被丟棄', async () => {
+      await fixture.writeFile('src/forward-ref-class.ts', [
+        'export function useClass() { return new Later(); }',
+        'export class Later {}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'Later',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-class.ts:2:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：new Later() 在 line 1 的前向引用被 --at 過濾器丟棄
+      expect(output.references.some((r: any) => r.line === 1)).toBe(true);
+    });
+
+    it('arrow function const 定義在後：--at 鎖定 const 定義時，定義前的真實呼叫引用不應被丟棄', async () => {
+      await fixture.writeFile('src/forward-ref-arrow.ts', [
+        'export function callArrow() { return handler(); }',
+        'export const handler = () => 1;'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'handler',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-arrow.ts:2:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：handler() 在 line 1 的前向呼叫引用被 --at 過濾器丟棄
+      expect(output.references.some((r: any) => r.line === 1)).toBe(true);
+    });
+  });
 });

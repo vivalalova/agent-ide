@@ -34,7 +34,10 @@ interface SymbolReferenceFilterContext {
 interface SelectedSymbolBindings {
   readonly directNames: Set<string>;
   readonly namespaceNames: Set<string>;
+  /** 檔內真正指向目標符號的 re-export 符號 token（具名 / 本地 re-export）；供裸名 identifier 比對 */
   readonly exportedNames: Set<string>;
+  /** `export *` 轉出目標符號的模組圖資訊；檔內無符號 token，僅供模組供給判斷、不參與 identifier 比對 */
+  readonly starReExportedNames: Set<string>;
   readonly ownerNames: Set<string>;
 }
 
@@ -330,12 +333,11 @@ async function symbolLocationTargetsSelectedSymbol(
   filterContext: SymbolReferenceFilterContext
 ): Promise<boolean> {
   const referenceFile = normalizePath(location.file);
-  const content = await readTextFile(referenceFile, filterContext.fileSystem);
   if (referenceFile === filterContext.targetFile) {
-    return sameFileLocationTargetsSelectedSymbol(content, referenceFile, location, filterContext);
+    return await sameFileLocationTargetsSelectedSymbol(referenceFile, location, filterContext);
   }
 
-  const analysis = await getSelectedSymbolFileAnalysis(content, referenceFile, filterContext);
+  const analysis = await getSelectedSymbolFileAnalysis(referenceFile, filterContext);
   return locationMatchesSelectedBinding(
     analysis.sourceFile,
     location,
@@ -350,7 +352,6 @@ async function readTextFile(filePath: string, fileSystem: IFileSystem): Promise<
 }
 
 async function getSelectedSymbolFileAnalysis(
-  content: string,
   filePath: string,
   filterContext: SymbolReferenceFilterContext
 ): Promise<SelectedSymbolFileAnalysis> {
@@ -360,12 +361,13 @@ async function getSelectedSymbolFileAnalysis(
     return cached;
   }
 
-  const sourceFile = getSourceFile(filePath, content, filterContext);
+  const sourceFile = await getOrReadSourceFile(filePath, filterContext);
 
   const bindings: SelectedSymbolBindings = {
     directNames: new Set<string>(),
     namespaceNames: new Set<string>(),
     exportedNames: new Set<string>(),
+    starReExportedNames: new Set<string>(),
     ownerNames: new Set<string>()
   };
   const analysis: SelectedSymbolFileAnalysis = { sourceFile, bindings };
@@ -420,6 +422,22 @@ function getSourceFile(
   );
   filterContext.sourceFileCache.set(normalizedFilePath, sourceFile);
   return sourceFile;
+}
+
+/**
+ * 取得（快取的）SourceFile；僅在快取未命中時才讀檔。
+ * 同檔多條引用共用同一份 analysis / sourceFile cache，避免每條引用重讀整檔的重複 IO。
+ */
+async function getOrReadSourceFile(
+  filePath: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<ts.SourceFile> {
+  const cached = filterContext.sourceFileCache.get(normalizePath(filePath));
+  if (cached) {
+    return cached;
+  }
+  const content = await readTextFile(filePath, filterContext.fileSystem);
+  return getSourceFile(filePath, content, filterContext);
 }
 
 async function addImportBindings(
@@ -480,7 +498,14 @@ async function addExportBindings(
       exportClauseExposesSymbol(node.exportClause, symbolName)
       && await moduleSpecifierProvidesSelectedSymbol(node.moduleSpecifier, fromFile, filterContext)
     ) {
-      bindings.exportedNames.add(symbolName);
+      if (node.exportClause) {
+        // 具名 / namespace re-export：clause 內有真正指向目標符號的 token，屬引用，供裸名比對
+        bindings.exportedNames.add(symbolName);
+      } else {
+        // `export *`：檔內沒有符號 token，僅記錄模組圖轉出資訊，
+        // 不得讓整檔任意同名 identifier 因此被誤判為引用
+        bindings.starReExportedNames.add(symbolName);
+      }
     }
     return;
   }
@@ -556,9 +581,10 @@ async function moduleFileProvidesSelectedSymbol(
 
   filterContext.visitingModuleFiles.add(normalizedFilePath);
   try {
-    const content = await readTextFile(normalizedFilePath, filterContext.fileSystem);
-    const analysis = await getSelectedSymbolFileAnalysis(content, normalizedFilePath, filterContext);
-    const providesSymbol = analysis.bindings.exportedNames.has(filterContext.selectedSymbol.name);
+    const analysis = await getSelectedSymbolFileAnalysis(normalizedFilePath, filterContext);
+    const symbolName = filterContext.selectedSymbol.name;
+    const providesSymbol = analysis.bindings.exportedNames.has(symbolName)
+      || analysis.bindings.starReExportedNames.has(symbolName);
     if (providesSymbol) {
       filterContext.moduleProviderCache.set(normalizedFilePath, true);
     }
@@ -744,7 +770,29 @@ function identifierTargetsSelectedBinding(
     return expressionTargetsSelectedBinding(parent, bindings, selectedSymbol, sourceFile);
   }
 
-  return bindings.directNames.has(node.text) || bindings.exportedNames.has(node.text);
+  if (bindings.directNames.has(node.text) && !identifierShadowedByLocalDeclaration(node, sourceFile)) {
+    return true;
+  }
+
+  return bindings.exportedNames.has(node.text);
+}
+
+/**
+ * 判斷跨檔引用位置的 identifier 是否被「更近的非 import 詞法宣告」遮蔽。
+ *
+ * directNames 只以裸名比對命中該檔任意同名 identifier，會把遮蔽 import 的區域宣告
+ * （for-of / for / catch 變數、參數、區域 const/let/var/function/class）誤判為對匯入符號的引用。
+ * 複用同檔作用域機制 findNearestLexicalDeclarationName：若引用位置最近的可見詞法宣告
+ * 不是 import binding，代表該名稱被區域宣告遮蔽，非目標引用。import binding 視為模組層宣告參與比較。
+ */
+function identifierShadowedByLocalDeclaration(node: ts.Identifier, sourceFile: ts.SourceFile): boolean {
+  const nearest = findNearestLexicalDeclarationName(sourceFile, node, node.text);
+  return nearest !== undefined && !isImportBindingName(nearest);
+}
+
+/** 詞法宣告名稱節點是否來自 import binding（具名 import specifier 的 local 名） */
+function isImportBindingName(name: ts.Identifier): boolean {
+  return ts.isImportSpecifier(name.parent);
 }
 
 async function getSelectedOwnerName(
@@ -827,13 +875,12 @@ function getMemberNameNode(member: ts.ClassElement): ts.Identifier | undefined {
   return undefined;
 }
 
-function sameFileLocationTargetsSelectedSymbol(
-  content: string,
+async function sameFileLocationTargetsSelectedSymbol(
   filePath: string,
   location: SymbolLocationTarget,
   filterContext: SymbolReferenceFilterContext
-): boolean {
-  const sourceFile = getSourceFile(filePath, content, filterContext);
+): Promise<boolean> {
+  const sourceFile = await getOrReadSourceFile(filePath, filterContext);
   const referenceNode = findReferenceNodeAtLocation(sourceFile, location, filterContext.selectedSymbol.name);
   if (!referenceNode) {
     return false;
@@ -928,11 +975,11 @@ function sameFilePropertyAccessTargetsSelectedSymbol(
     return false;
   }
 
-  if (
-    propertyAccess.expression.kind === ts.SyntaxKind.ThisKeyword
-    && nodeIsInsideClass(propertyAccess, ownerName)
-  ) {
-    return true;
+  if (propertyAccess.expression.kind === ts.SyntaxKind.ThisKeyword) {
+    const enclosingClass = findAncestor(propertyAccess, ts.isClassDeclaration);
+    return !!enclosingClass
+      && ts.isClassDeclaration(enclosingClass)
+      && classChainTargetsOwner(enclosingClass, candidate => candidate === ownerName, sourceFile);
   }
 
   return receiverTargetsOwnerName(
@@ -962,7 +1009,11 @@ function findNearestLexicalDeclarationName(
         || (
           scopeStart <= referenceStart
           && referenceStart <= scopeEnd
-          && (isHoistedLexicalDeclaration(node) || nameStart <= referenceStart)
+          && (
+            isHoistedLexicalDeclaration(node)
+            || nameStart <= referenceStart
+            || isModuleOrFunctionBodyScope(scope)
+          )
         );
 
       if (isVisible) {
@@ -1024,6 +1075,15 @@ function isHoistedLexicalDeclaration(node: ts.Node): boolean {
   return ts.isFunctionDeclaration(node);
 }
 
+/**
+ * 模組層（SourceFile）或函式體層級（Block 的父節點是函式）的 scope：
+ * 這類 scope 內的識別符綁定屬靜態詞法解析，非 runtime TDZ 概念，
+ * 宣告在整個 scope 內皆可見，不受「宣告需在引用之前」的順序限制。
+ */
+function isModuleOrFunctionBodyScope(scope: ts.Node): boolean {
+  return ts.isSourceFile(scope) || (ts.isBlock(scope) && ts.isFunctionLike(scope.parent));
+}
+
 function findAncestor(
   node: ts.Node,
   predicate: (ancestor: ts.Node) => boolean
@@ -1047,6 +1107,14 @@ function receiverTargetsSelectedOwner(
 ): boolean {
   if (bindings.ownerNames.size === 0) {
     return false;
+  }
+
+  if (receiver.kind === ts.SyntaxKind.ThisKeyword) {
+    // 子類 this.method() 呼叫繼承自 owner 的成員：沿 enclosing class 的 heritage 鏈判斷
+    const enclosingClass = findAncestor(receiver, ts.isClassDeclaration);
+    return !!enclosingClass
+      && ts.isClassDeclaration(enclosingClass)
+      && classChainTargetsOwner(enclosingClass, candidate => bindings.ownerNames.has(candidate), sourceFile);
   }
 
   if (ts.isParenthesizedExpression(receiver)) {
@@ -1145,9 +1213,80 @@ function variableInitializedWithOwner(
   return matches;
 }
 
-function nodeIsInsideClass(node: ts.Node, ownerName: string): boolean {
-  const classNode = findAncestor(node, ts.isClassDeclaration);
-  return !!classNode && ts.isClassDeclaration(classNode) && !!classNode.name && classNode.name.text === ownerName;
+/**
+ * 沿 class 的 heritage（extends）鏈判斷 this.method() 是否指向 owner 的成員。
+ *
+ * 供同檔（owner 名比對）與跨檔（consumer 檔內 import 的 ownerNames 比對）兩路共用，
+ * 呼叫端以 ownerMatches 決定「哪些名稱算 owner」。方法名相符已由呼叫端先確認。
+ *
+ * 規則：
+ *   - enclosing class 自身或鏈上任一祖類名稱命中 owner → 指向 owner 成員。
+ *   - 遇到沒有 extends 的類且非 owner → this 指向本類成員，非 owner。
+ *   - heritage 表達式非單純識別符、或父類定義不在同檔（跨檔 heritage 無法在此解析）→
+ *     採保守放行（extends 存在且方法名已相符），與 reference-finder 既有寬鬆策略一致，
+ *     寧可保留可能的繼承呼叫也不漏報。
+ */
+function classChainTargetsOwner(
+  classNode: ts.ClassDeclaration,
+  ownerMatches: (candidateClassName: string) => boolean,
+  sourceFile: ts.SourceFile
+): boolean {
+  let current: ts.ClassDeclaration | undefined = classNode;
+  const visited = new Set<ts.ClassDeclaration>();
+
+  while (current) {
+    if (current.name && ownerMatches(current.name.text)) {
+      return true;
+    }
+    if (visited.has(current)) {
+      return false;
+    }
+    visited.add(current);
+
+    const extendsClause = current.heritageClauses?.find(
+      clause => clause.token === ts.SyntaxKind.ExtendsKeyword
+    );
+    if (!extendsClause || extendsClause.types.length === 0) {
+      return false;
+    }
+
+    const baseExpression = extendsClause.types[0].expression;
+    if (!ts.isIdentifier(baseExpression)) {
+      return true;
+    }
+    if (ownerMatches(baseExpression.text)) {
+      return true;
+    }
+
+    const baseClass = findClassDeclarationByName(sourceFile, baseExpression.text);
+    if (!baseClass) {
+      return true;
+    }
+    current = baseClass;
+  }
+
+  return false;
+}
+
+function findClassDeclarationByName(
+  sourceFile: ts.SourceFile,
+  className: string
+): ts.ClassDeclaration | undefined {
+  let found: ts.ClassDeclaration | undefined;
+
+  const visit = (node: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (ts.isClassDeclaration(node) && node.name?.text === className) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return found;
 }
 
 function nodeNameMatchesSelectedSymbol(

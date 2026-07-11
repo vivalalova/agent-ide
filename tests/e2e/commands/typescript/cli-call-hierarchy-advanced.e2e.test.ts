@@ -219,4 +219,46 @@ export function bothCaller() {
       expect(output.summary.uniqueFiles).toBeDefined();
     });
   });
+
+  // MARK: - --at 過濾器丟棄前向引用 regression
+
+  describe('--at 過濾器不應丟棄前向引用（非提升宣告的真實 caller）regression', () => {
+    it('arrow function const 定義在後：--at 鎖定定義時，定義前的 caller 不應從 incoming 消失', async () => {
+      await fixture.writeFile('src/ch-forward-ref-arrow.ts', [
+        'export function callArrow() { return handler(); }',
+        'export const handler = () => 1;'
+      ].join('\n'));
+
+      // 不帶 --at：baseline 應找到 callArrow 這個 incoming caller
+      const baseline = await executeCLI(
+        ['call-hierarchy', 'handler', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+      const baselineOutput: any = JSON.parse(baseline.stdout);
+      expect(baselineOutput.incoming.map((c: any) => c.caller)).toContain('callArrow');
+
+      // 帶 --at 鎖定 handler 的定義位置（line 2, column 14）
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'handler',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/ch-forward-ref-arrow.ts:2:14',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：--at 鎖定後 callArrow 這個定義前的真實 caller 從 incoming 消失
+      expect(output.incoming.map((c: any) => c.caller)).toContain('callArrow');
+    });
+  });
 });
