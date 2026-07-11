@@ -11,6 +11,16 @@
  *   6. 呼叫路徑漏做遮蔽檢查，區域變數（含函式型別）遮蔽 import 後的呼叫仍被誤報為引用
  *   7. 解構綁定（`const { x } = obj`）遮蔽 import 時看不見遮蔽，綁定與其引用被誤報為引用
  *   8. `default import` 無條件視為 owner，未比對實際綁定的類別，繼承自不同類別的同名方法被誤報為引用
+ *   9. `import dfiRun from './x'` 這種 default import 綁定的是 default export，
+ *      未比對具名 export 與 default export 是不同符號，consumer 對 default binding 的
+ *      使用被誤報為對同名具名 export 的引用
+ *   10. namespace import（`import * as ns from './x'`）的 receiver 未做遮蔽檢查，
+ *      區域參數同名遮蔽 ns 後，`ns.member` 仍被誤報為對匯出 member 的引用
+ *   11. receiver 的型別僅由「型別註記」（`const x: T = ...`）確立、非 `new T()`
+ *      初始化時，過濾層看不見該型別綁定，`x.method()` 呼叫被誤報為漏報（丟棄）
+ *   12. 巢狀 block 內宣告在引用之後（use-before-declare）的同名區域變數，其
+ *      詞法綁定（非 TDZ 語意）未被辨識，閉包內對該變數的引用被誤判為指向
+ *      外層 import，導致誤報
  *
  * 每筆 bug 均先以不帶 --at 或另一真實引用佐證資料存在，再以 --at 佐證過濾器造成誤報/漏報。
  */
@@ -474,6 +484,278 @@ describe('CLI find-references --at 過濾器作用域感知 regression', () => {
       expect(
         output.references.some(
           (r: any) => r.file.endsWith('own-consumer.ts') && r.context.includes('.method()')
+        )
+      ).toBe(false);
+    });
+  });
+
+  // MARK: - default import 綁定的是 default export，誤留同名具名 export 的引用
+
+  describe('default import 同名綁定誤留 regression', () => {
+    it('--at 鎖定具名 export 定義時，consumer 對 default import 綁定的使用不應被誤報為引用', async () => {
+      await fixture.writeFile('src/dfi-target.ts', [
+        'export function dfiRun(): number { return 1; }',
+        'export default function dfiOther(): number { return 2; }'
+      ].join('\n'));
+      await fixture.writeFile('src/dfi-consumer.ts', [
+        'import dfiRun from \'./dfi-target\';',
+        'export const x = dfiRun();'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'dfiRun',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/dfi-target.ts:1:17',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：dfi-target.ts 內具名 dfiRun 定義本身應被找到
+      expect(
+        output.references.some((r: any) => r.file.endsWith('dfi-target.ts') && r.line === 1)
+      ).toBe(true);
+
+      // Bug：dfi-consumer.ts 的 `import dfiRun from './dfi-target'` 綁定的是
+      // default export（dfiOther），並非具名 dfiRun；import 行與呼叫行都不應
+      // 被誤報為對具名 dfiRun 的引用
+      expect(
+        output.references.some((r: any) => r.file.endsWith('dfi-consumer.ts'))
+      ).toBe(false);
+    });
+  });
+
+  // MARK: - namespace receiver 無遮蔽檢查誤留
+
+  describe('namespace import receiver 無遮蔽檢查 regression', () => {
+    it('--at 跨檔過濾應找到合法的 namespace 引用，但不應把被參數遮蔽的 namespace receiver 誤報為引用', async () => {
+      await fixture.writeFile('src/nsr-target.ts', [
+        'export const nsrVal = 1;'
+      ].join('\n'));
+      await fixture.writeFile('src/nsr-consumer.ts', [
+        'import * as api from \'./nsr-target\';',
+        'export const real = api.nsrVal;',
+        'export function shadowed(api: { nsrVal: number }): number {',
+        '  return api.nsrVal;',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'nsrVal',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/nsr-target.ts:1:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：透過真正的 namespace import 對 nsrVal 的引用必須被找到
+      expect(
+        output.references.some(
+          (r: any) =>
+            r.file.endsWith('nsr-consumer.ts')
+            && r.context.includes('export const real = api.nsrVal')
+        )
+      ).toBe(true);
+
+      // Bug：shadowed() 內 api 被函式參數遮蔽（型別是普通物件，非 namespace），
+      // `return api.nsrVal` 誤報為對匯出 nsrVal 的引用
+      expect(
+        output.references.some(
+          (r: any) =>
+            r.file.endsWith('nsr-consumer.ts')
+            && r.context.includes('return api.nsrVal')
+        )
+      ).toBe(false);
+    });
+  });
+
+  // MARK: - 型別註記確立 receiver 型別被誤判為漏報
+
+  describe('型別註記（非 new 初始化）確立 receiver 型別 regression', () => {
+    it('--at 鎖定方法定義時，僅由型別註記確立型別的 receiver 呼叫不應被漏報', async () => {
+      await fixture.writeFile('src/tan-target.ts', [
+        'export class TanOwner {',
+        '  method(): number { return 1; }',
+        '}',
+        'export function makeTanOwner(): TanOwner { return new TanOwner(); }'
+      ].join('\n'));
+      await fixture.writeFile('src/tan-consumer.ts', [
+        'import { TanOwner, makeTanOwner } from \'./tan-target\';',
+        'const svc: TanOwner = makeTanOwner();',
+        'export const x = svc.method();'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'method',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/tan-target.ts:2:3',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：tan-target.ts 內 method 定義本身應被找到
+      expect(
+        output.references.some((r: any) => r.file.endsWith('tan-target.ts') && r.line === 2)
+      ).toBe(true);
+
+      // Bug：svc 的型別僅由型別註記 `const svc: TanOwner = ...` 確立（非 new 初始化），
+      // 過濾層只認 new 初始化，`svc.method()` 因而被誤刪（漏報）
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('tan-consumer.ts') && r.context.includes('svc.method()')
+        )
+      ).toBe(true);
+    });
+  });
+
+  // MARK: - 巢狀 block use-before-declare 閉包誤綁外層
+
+  describe('巢狀 block 內 use-before-declare 區域變數誤綁外層 regression', () => {
+    it('--at 跨檔過濾不應把閉包內先用後宣告、詞法綁定同 block 變數的引用誤判為對外層 import 的引用', async () => {
+      await fixture.writeFile('src/nbk-target.ts', [
+        'export const nbkVal = 1;'
+      ].join('\n'));
+      await fixture.writeFile('src/nbk-consumer.ts', [
+        'import { nbkVal } from \'./nbk-target\';',
+        'export function make(): () => number {',
+        '  {',
+        '    const cb = (): number => nbkVal;',
+        '    const nbkVal = 2;',
+        '    void nbkVal;',
+        '    return cb;',
+        '  }',
+        '}',
+        'export const real = nbkVal;'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'nbkVal',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/nbk-target.ts:1:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：import 行與 make() 之外對真正匯入 nbkVal 的引用（export const real = nbkVal）必須被找到
+      expect(
+        output.references.some((r: any) => r.file.endsWith('nbk-consumer.ts') && r.line === 1)
+      ).toBe(true);
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('nbk-consumer.ts') && r.context.includes('export const real = nbkVal')
+        )
+      ).toBe(true);
+
+      // Bug：cb 閉包內 `nbkVal` 靜態綁定同 block 稍後宣告的 `const nbkVal = 2`
+      // （詞法綁定，TDZ 不影響綁定對象），不應被誤綁到外層 import
+      expect(
+        output.references.some(
+          (r: any) =>
+            r.file.endsWith('nbk-consumer.ts')
+            && r.context.includes('const cb = (): number => nbkVal')
+        )
+      ).toBe(false);
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('nbk-consumer.ts') && r.context.includes('const nbkVal = 2')
+        )
+      ).toBe(false);
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('nbk-consumer.ts') && r.context.includes('void nbkVal')
+        )
+      ).toBe(false);
+    });
+  });
+
+  // MARK: - receiver 變數判定不看最近綁定誤留
+
+  describe('receiver 變數宣告不看最近綁定 regression', () => {
+    it('--at 鎖定方法定義時，被區域物件遮蔽的 receiver 呼叫不應被誤報為 owner 成員引用', async () => {
+      await fixture.writeFile('src/rsh-target.ts', [
+        'export class RshOwner {',
+        '  method(): number { return 1; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/rsh-consumer.ts', [
+        'import { RshOwner } from \'./rsh-target.js\';',
+        'export const svc = new RshOwner();',
+        'export function localScope(): number {',
+        '  const svc = { method: (): number => 2 };',
+        '  return svc.method();',
+        '}',
+        'export const real = svc.method();'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'method',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/rsh-target.ts:2:3',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：模組層 svc 以 new RshOwner() 建立，real 行是真引用、應保留
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('rsh-consumer.ts') && r.context.includes('const real = svc.method()')
+        )
+      ).toBe(true);
+
+      // Bug：localScope 內 svc 被區域物件宣告遮蔽，其 method() 呼叫不是 owner 成員引用；
+      // 目前的壞行為是 receiver 判定全檔掃描「引用前同名 new Owner() 宣告」即命中、誤留
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('rsh-consumer.ts') && r.context.includes('return svc.method()')
         )
       ).toBe(false);
     });

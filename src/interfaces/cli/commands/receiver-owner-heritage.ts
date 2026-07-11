@@ -12,12 +12,12 @@
 import * as ts from 'typescript';
 import type { SelectedSymbolBindings } from './symbol-reference-filter-types.js';
 import { findAncestor } from './ast-node-location.js';
+import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
 
 export function receiverTargetsSelectedOwner(
   receiver: ts.Expression,
   bindings: SelectedSymbolBindings,
-  sourceFile: ts.SourceFile,
-  referenceStart: number
+  sourceFile: ts.SourceFile
 ): boolean {
   if (bindings.ownerNames.size === 0) {
     return false;
@@ -32,7 +32,7 @@ export function receiverTargetsSelectedOwner(
   }
 
   if (ts.isParenthesizedExpression(receiver)) {
-    return receiverTargetsSelectedOwner(receiver.expression, bindings, sourceFile, referenceStart);
+    return receiverTargetsSelectedOwner(receiver.expression, bindings, sourceFile);
   }
 
   if (ts.isNewExpression(receiver)) {
@@ -40,8 +40,7 @@ export function receiverTargetsSelectedOwner(
   }
 
   if (ts.isIdentifier(receiver)) {
-    return bindings.ownerNames.has(receiver.text)
-      || variableInitializedWithSelectedOwner(receiver.text, sourceFile, referenceStart, bindings);
+    return identifierReceiverEstablishesOwner(receiver, sourceFile, candidate => bindings.ownerNames.has(candidate));
   }
 
   return false;
@@ -54,25 +53,13 @@ function constructorTargetsSelectedOwner(
   return ts.isIdentifier(expression) && bindings.ownerNames.has(expression.text);
 }
 
-function variableInitializedWithSelectedOwner(
-  variableName: string,
-  sourceFile: ts.SourceFile,
-  referenceStart: number,
-  bindings: SelectedSymbolBindings
-): boolean {
-  return variableInitializedWithOwner(variableName, sourceFile, referenceStart, ownerName =>
-    bindings.ownerNames.has(ownerName)
-  );
-}
-
 export function receiverTargetsOwnerName(
   receiver: ts.Expression,
   ownerName: string,
-  sourceFile: ts.SourceFile,
-  referenceStart: number
+  sourceFile: ts.SourceFile
 ): boolean {
   if (ts.isParenthesizedExpression(receiver)) {
-    return receiverTargetsOwnerName(receiver.expression, ownerName, sourceFile, referenceStart);
+    return receiverTargetsOwnerName(receiver.expression, ownerName, sourceFile);
   }
 
   if (ts.isNewExpression(receiver)) {
@@ -80,10 +67,7 @@ export function receiverTargetsOwnerName(
   }
 
   if (ts.isIdentifier(receiver)) {
-    return receiver.text === ownerName
-      || variableInitializedWithOwner(receiver.text, sourceFile, referenceStart, candidateOwnerName =>
-        candidateOwnerName === ownerName
-      );
+    return identifierReceiverEstablishesOwner(receiver, sourceFile, candidate => candidate === ownerName);
   }
 
   return false;
@@ -93,38 +77,55 @@ function constructorTargetsOwnerName(expression: ts.Expression, ownerName: strin
   return ts.isIdentifier(expression) && expression.text === ownerName;
 }
 
-function variableInitializedWithOwner(
-  variableName: string,
+/**
+ * identifier receiver 是否綁定到 owner：以檔內「最近可見詞法宣告」為準，
+ * 不做全檔任意同名宣告掃描（後者會讓被區域宣告遮蔽的 receiver 誤綁外層宣告）。
+ *
+ * - 綁定到 import 或檔內 class 宣告 → receiver 名稱即 owner 名稱的直接引用，名稱比對。
+ * - 綁定到變數宣告 → 唯該宣告本身可確立 owner 型別（new Owner() 或型別註記）才算。
+ * - 綁定到其餘形式（參數、解構等無 owner 型別資訊）→ 非 owner。
+ * - 檔內無宣告（default import 綁定、全域）→ 名稱比對。
+ */
+function identifierReceiverEstablishesOwner(
+  receiver: ts.Identifier,
   sourceFile: ts.SourceFile,
-  referenceStart: number,
   ownerMatches: (ownerName: string) => boolean
 ): boolean {
-  let matches = false;
+  const nearest = findNearestLexicalDeclarationName(sourceFile, receiver, receiver.text);
+  if (!nearest) {
+    return ownerMatches(receiver.text);
+  }
 
-  const visit = (node: ts.Node): void => {
-    if (matches) {
-      return;
-    }
+  const declaration = nearest.parent;
+  if (ts.isImportSpecifier(declaration) || ts.isClassDeclaration(declaration)) {
+    return ownerMatches(receiver.text);
+  }
 
-    if (
-      ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.name.text === variableName
-      && node.initializer
-      && node.getStart(sourceFile) < referenceStart
-      && ts.isNewExpression(node.initializer)
-      && ts.isIdentifier(node.initializer.expression)
-      && ownerMatches(node.initializer.expression.text)
-    ) {
-      matches = true;
-      return;
-    }
+  return ts.isVariableDeclaration(declaration)
+    && variableDeclarationEstablishesOwner(declaration, ownerMatches);
+}
 
-    ts.forEachChild(node, visit);
-  };
+/**
+ * 變數宣告是否可確立 owner 型別：`new Owner()` 初始化，或型別註記
+ * `const svc: Owner = makeOwner()`（工廠／DI 常見形狀，初始化式非 new 亦可）。
+ */
+function variableDeclarationEstablishesOwner(
+  node: ts.VariableDeclaration,
+  ownerMatches: (ownerName: string) => boolean
+): boolean {
+  if (
+    node.initializer
+    && ts.isNewExpression(node.initializer)
+    && ts.isIdentifier(node.initializer.expression)
+    && ownerMatches(node.initializer.expression.text)
+  ) {
+    return true;
+  }
 
-  visit(sourceFile);
-  return matches;
+  return !!node.type
+    && ts.isTypeReferenceNode(node.type)
+    && ts.isIdentifier(node.type.typeName)
+    && ownerMatches(node.type.typeName.text);
 }
 
 /**

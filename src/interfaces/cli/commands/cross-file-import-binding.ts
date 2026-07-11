@@ -25,10 +25,11 @@ import {
   getOrReadSourceFile,
   normalizePath,
   pathMatchesTarget,
-  resolveModuleFile
+  resolveModuleFile,
+  tryGetSourceFile
 } from './module-file-resolver.js';
 import { nodeStartsAtLocation } from './ast-node-location.js';
-import { findNearestLexicalDeclarationName } from './same-file-lexical-scope.js';
+import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
 import { receiverTargetsSelectedOwner } from './receiver-owner-heritage.js';
 
 export async function getSelectedSymbolFileAnalysis(
@@ -88,7 +89,8 @@ async function addImportBindings(
   filterContext: SymbolReferenceFilterContext,
   bindings: SelectedSymbolBindings
 ): Promise<void> {
-  if (!await moduleSpecifierProvidesSelectedSymbol(node.moduleSpecifier, fromFile, filterContext)) {
+  const moduleFile = await resolveProvidingModuleFile(node.moduleSpecifier, fromFile, filterContext);
+  if (moduleFile === null) {
     return;
   }
 
@@ -99,11 +101,17 @@ async function addImportBindings(
     return;
   }
 
-  if (importClause.name?.text === symbolName) {
-    bindings.directNames.add(importClause.name.text);
-  }
-  if (ownerName && importClause.name) {
-    bindings.ownerNames.add(importClause.name.text);
+  if (importClause.name) {
+    // default import 綁定的是模組的 default export 本身，不是任意同名具名 export；
+    // 必須先解析目標檔 default export 底層實際宣告的名稱，比對相符才算真綁定
+    // （對 owner 亦同：default export 宣告的是誰，才決定 import 本地名稱算不算 owner）
+    const defaultExportName = await getDefaultExportDeclaredName(moduleFile, filterContext);
+    if (importClause.name.text === symbolName && defaultExportName === symbolName) {
+      bindings.directNames.add(importClause.name.text);
+    }
+    if (ownerName && defaultExportName === ownerName) {
+      bindings.ownerNames.add(importClause.name.text);
+    }
   }
 
   const namedBindings = importClause.namedBindings;
@@ -188,12 +196,89 @@ async function moduleSpecifierProvidesSelectedSymbol(
   fromFile: string,
   filterContext: SymbolReferenceFilterContext
 ): Promise<boolean> {
+  return await resolveProvidingModuleFile(moduleSpecifier, fromFile, filterContext) !== null;
+}
+
+/** 解析 module specifier 對應的檔案路徑，僅在該檔確實提供選定符號時回傳；否則回傳 null。 */
+async function resolveProvidingModuleFile(
+  moduleSpecifier: ts.Expression | undefined,
+  fromFile: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<string | null> {
   if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) {
-    return false;
+    return null;
   }
 
   const moduleFile = await resolveModuleFile(moduleSpecifier.text, fromFile, filterContext);
-  return moduleFile !== null && await moduleFileProvidesSelectedSymbol(moduleFile, filterContext);
+  if (moduleFile === null || !await moduleFileProvidesSelectedSymbol(moduleFile, filterContext)) {
+    return null;
+  }
+
+  return moduleFile;
+}
+
+/**
+ * 解析（並依 filterContext 快取）目標模組檔 default export 底層宣告的名稱；
+ * 無 default export 或無法判定名稱則回傳 undefined。
+ */
+async function getDefaultExportDeclaredName(
+  moduleFile: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<string | undefined> {
+  const normalizedModuleFile = normalizePath(moduleFile);
+  if (filterContext.defaultExportDeclaredNameCache.has(normalizedModuleFile)) {
+    return filterContext.defaultExportDeclaredNameCache.get(normalizedModuleFile);
+  }
+
+  const sourceFile = await tryGetSourceFile(moduleFile, filterContext);
+  const declaredName = sourceFile ? findDefaultExportDeclaredName(sourceFile) : undefined;
+  filterContext.defaultExportDeclaredNameCache.set(normalizedModuleFile, declaredName);
+  return declaredName;
+}
+
+/**
+ * 掃描檔案頂層陳述式，找出 default export 底層宣告名稱，支援四種形式：
+ * `export default function <name>`、`export default class <name>`、
+ * `export default <Identifier>`（指向本檔既有宣告）、`export { <name> as default }`（本檔內具名宣告）。
+ * `export { <name> as default } from './x'` 這種轉出他檔的 default 不在此列（名稱屬於他檔、非本檔宣告），
+ * 一律視為無法判定。一個檔案至多一個 default export（TS 編譯期即擋重複宣告），命中即回傳。
+ */
+function findDefaultExportDeclaredName(sourceFile: ts.SourceFile): string | undefined {
+  for (const statement of sourceFile.statements) {
+    if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
+      && statement.name
+      && hasDefaultKeyword(statement)
+    ) {
+      return statement.name.text;
+    }
+
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals && ts.isIdentifier(statement.expression)) {
+      return statement.expression.text;
+    }
+
+    if (
+      ts.isExportDeclaration(statement)
+      && !statement.moduleSpecifier
+      && statement.exportClause
+      && !ts.isNamespaceExport(statement.exportClause)
+    ) {
+      const defaultElement = statement.exportClause.elements.find(element => element.name.text === 'default');
+      if (defaultElement?.propertyName) {
+        return defaultElement.propertyName.text;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/** 節點是否帶有 `default` modifier（`export default function/class ...`） */
+function hasDefaultKeyword(node: ts.Node): boolean {
+  if (!ts.canHaveModifiers(node)) {
+    return false;
+  }
+  return !!ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword);
 }
 
 async function moduleFileProvidesSelectedSymbol(
@@ -280,11 +365,15 @@ function expressionTargetsSelectedBinding(
     ts.isPropertyAccessExpression(expression)
     && expression.name.text === selectedSymbol.name
   ) {
-    if (ts.isIdentifier(expression.expression) && bindings.namespaceNames.has(expression.expression.text)) {
+    if (
+      ts.isIdentifier(expression.expression)
+      && bindings.namespaceNames.has(expression.expression.text)
+      && !identifierShadowedByLocalDeclaration(expression.expression, sourceFile)
+    ) {
       return true;
     }
 
-    return receiverTargetsSelectedOwner(expression.expression, bindings, sourceFile, expression.getStart(sourceFile));
+    return receiverTargetsSelectedOwner(expression.expression, bindings, sourceFile);
   }
 
   return false;
@@ -322,7 +411,8 @@ function identifierTargetsSelectedBinding(
  * （for-of / for / catch 變數、參數、解構綁定、區域 const/let/var/function/class）誤判為對匯入符號的引用。
  * 複用同檔作用域機制 findNearestLexicalDeclarationName：若引用位置最近的可見詞法宣告
  * 不是 import binding，代表該名稱被區域宣告遮蔽，非目標引用。import binding 視為模組層宣告參與比較。
- * Identifier 與 CallExpression callee 兩條匹配路徑都要過這道檢查，尺一致才不會漏放呼叫式引用。
+ * Identifier、CallExpression callee、namespace receiver（`ns.member` 的 `ns`）三條匹配路徑
+ * 都要過這道檢查，尺一致才不會漏放呼叫式引用、也不會把被遮蔽的 namespace receiver 誤留。
  */
 function identifierShadowedByLocalDeclaration(node: ts.Identifier, sourceFile: ts.SourceFile): boolean {
   const nearest = findNearestLexicalDeclarationName(sourceFile, node, node.text);

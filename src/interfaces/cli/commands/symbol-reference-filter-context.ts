@@ -31,6 +31,7 @@ export async function createSymbolReferenceFilterContext(
     visitingModuleFiles: new Set(),
     fileAnalysisCache: new Map(),
     sourceFileCache: new Map(),
+    defaultExportDeclaredNameCache: new Map(),
     moduleResolution
   };
 }

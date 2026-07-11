@@ -17,6 +17,8 @@ export interface SymbolReferenceFilterContext {
   readonly visitingModuleFiles: Set<string>;
   readonly fileAnalysisCache: Map<string, SelectedSymbolFileAnalysis>;
   readonly sourceFileCache: Map<string, ts.SourceFile>;
+  /** 檔案 default export 底層宣告名稱快取；`undefined` 代表已判定該檔無 default export（或無法判定名稱） */
+  readonly defaultExportDeclaredNameCache: Map<string, string | undefined>;
   readonly moduleResolution: TsconfigPathConfig;
 }
 
