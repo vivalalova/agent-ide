@@ -144,8 +144,11 @@ export const client = { url: API_URL };
   });
 
   describe('Issue #58 核心修復：目標目錄有同名檔案時保持相對路徑', () => {
-    it('目標目錄已有同名檔案時，應保持相對路徑不變', async () => {
-      // Given: 源目錄和目標目錄都有 controller.ts
+    it('目標目錄有同名但無關的檔案、原檔仍在原位時，應改寫指向原位置', async () => {
+      // Given: 原目錄的 controller.ts 沒有被移動（仍在原位），
+      // 目標目錄碰巧有一個同名但不相干的 controller.ts。
+      // 若保留 ./controller，import 會靜默綁到 NewController（沒有 OldController 匯出），
+      // 移出的檔案直接編譯不過——同名存在 ≠ 同一個檔。
       await fixture.writeFile('src/old/controller.ts', `
 export class OldController {}
 `);
@@ -155,7 +158,7 @@ export class OldModule {
   ctrl = new OldController();
 }
 `);
-      // 目標目錄也有 controller.ts
+      // 目標目錄有同名但無關的 controller.ts
       await fixture.writeFile('src/new/controller.ts', `
 export class NewController {}
 `);
@@ -172,14 +175,14 @@ export class NewController {}
         { memfs: fixture.memfs }
       );
 
-      // Then: 應該成功且保持 ./controller 不變
+      // Then: 原檔仍在原位 → 必須改寫指回原位置，不因目標目錄碰巧同名而保留
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
 
       const movedContent = await fixture.readFile('src/new/module.ts');
-      // 關鍵：./controller 應該保持不變（因為目標目錄有 controller.ts）
-      expect(movedContent).toContain('from \'./controller\'');
+      expect(movedContent).toContain('from \'../old/controller\'');
+      expect(movedContent).not.toContain('from \'./controller\'');
     });
 
     it('目標目錄沒有同名檔案時，應更新為指向原位置', async () => {
@@ -312,16 +315,12 @@ export class SiteCapacityModule {
     });
 
     it('增量移動：先移動 controller，再移動 module，import 應保持不變', async () => {
-      // Given: 模擬增量移動場景
-      // 目標目錄已經有 controller（模擬第一步已完成）
-      await fixture.writeFile('src/old/controller.ts', `
-export class Controller {}
-`);
+      // Given: 模擬增量移動場景——第一步（移動 controller）已完成，
+      // 所以 controller 只存在於目標目錄、原位置已沒有它
       await fixture.writeFile('src/old/module.ts', `
 import { Controller } from './controller';
 export class Module { ctrl = new Controller(); }
 `);
-      // 目標目錄已有 controller（模擬第一步已完成的狀態）
       await fixture.writeFile('src/new/controller.ts', `
 export class Controller {}
 `);

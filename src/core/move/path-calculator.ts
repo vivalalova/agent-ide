@@ -340,8 +340,22 @@ export class PathCalculator {
             }
           }
 
-          // 如果目標目錄有同名檔案，保持相對路徑不變，跳過更新
-          if (targetFileExists) {
+          // 檢查這個 import 目前解析到的原始檔案是否仍存在於原位置。
+          // 只有「原檔已不在原位（已被搬走）」時，目標目錄的同名檔案才代表
+          // 這是連帶／增量搬移的結果；原檔仍在原位時，目標目錄的同名檔案
+          // 只是巧合，繼續保留相對路徑會讓 import 靜默綁到錯誤的模組。
+          let sourceFileStillExists = false;
+          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
+            const fullPath = normalizedResolved + ext;
+            if (await this.fileSystem.exists(fullPath)) {
+              sourceFileStillExists = true;
+              break;
+            }
+          }
+
+          // 如果目標目錄有同名檔案，且原檔已不在原位（已被搬移過去），
+          // 保持相對路徑不變，跳過更新
+          if (targetFileExists && !sourceFileStillExists) {
             continue;
           }
 
