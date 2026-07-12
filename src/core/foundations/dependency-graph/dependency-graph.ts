@@ -182,37 +182,48 @@ export class DependencyGraph {
   }
 
   /**
-   * 取得節點的傳遞依賴（含快取）
+   * 取得節點的傳遞依賴（未設限時含快取）
    * @param filePath 檔案路徑
+   * @param maxDepth 最大遍歷深度，未指定時不設限
    * @returns 傳遞依賴列表
    */
-  getTransitiveDependencies(filePath: string): string[] {
-    // 檢查快取
-    const cached = this.transitiveDepCache.get(filePath);
-    if (cached) {
-      return [...cached];
+  getTransitiveDependencies(filePath: string, maxDepth?: number): string[] {
+    // 只有未設限的結果可使用以檔案路徑為鍵的快取
+    if (maxDepth === undefined) {
+      const cached = this.transitiveDepCache.get(filePath);
+      if (cached) {
+        return [...cached];
+      }
     }
 
-    const visited = new Set<string>();
-    visited.add(filePath);
+    const visited = new Set([filePath]);
     const result: string[] = [];
+    const queue: Array<{ filePath: string; depth: number }> = [
+      { filePath, depth: 0 }
+    ];
+    let queueIndex = 0;
 
-    const dfs = (currentPath: string) => {
+    while (queueIndex < queue.length) {
+      const { filePath: currentPath, depth } = queue[queueIndex++];
+      if (maxDepth !== undefined && depth >= maxDepth) {
+        continue;
+      }
+
       const dependencies = this.getDependencies(currentPath);
 
       for (const dep of dependencies) {
         if (!visited.has(dep)) {
           visited.add(dep);
           result.push(dep);
-          dfs(dep);
+          queue.push({ filePath: dep, depth: depth + 1 });
         }
       }
-    };
+    }
 
-    dfs(filePath);
-
-    // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
-    this.setCacheWithEviction(this.transitiveDepCache, filePath, result);
+    if (maxDepth === undefined) {
+      // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
+      this.setCacheWithEviction(this.transitiveDepCache, filePath, result);
+    }
 
     return result;
   }

@@ -197,11 +197,7 @@ export class ImpactAnalyzer {
     const normalizedPath = path.resolve(filePath);
     const opts = this.getDefaultQueryOptions(options);
 
-    if (opts.maxDepth === 1) {
-      return this.getDependencies(normalizedPath);
-    }
-
-    return this.graph.getTransitiveDependencies(normalizedPath);
+    return this.graph.getTransitiveDependencies(normalizedPath, opts.maxDepth);
   }
 
   /**

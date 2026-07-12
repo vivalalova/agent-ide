@@ -88,4 +88,29 @@ describe('ImpactAnalyzer', () => {
       expect(stats.totalDependencies).toBe(0);
     });
   });
+
+  describe('getTransitiveDependencies - maxDepth 限制', () => {
+    it('Given a→b→c→d 依賴鏈, when maxDepth 2, then 只回傳兩層內的依賴', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/project/a.ts': 'import \'./b\';\n',
+        '/project/b.ts': 'import \'./c\';\n',
+        '/project/c.ts': 'import \'./d\';\n',
+        '/project/d.ts': 'export const d = 1;\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      await analyzer.analyzeProject('/project');
+
+      const deps = analyzer.getTransitiveDependencies('/project/a.ts', {
+        includeTransitive: true,
+        maxDepth: 2,
+        direction: 'dependencies'
+      });
+
+      expect(deps).toContain('/project/b.ts');
+      expect(deps).toContain('/project/c.ts');
+      expect(deps).not.toContain('/project/d.ts');
+    });
+  });
 });
