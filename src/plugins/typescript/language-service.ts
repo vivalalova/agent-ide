@@ -3,7 +3,9 @@
  * 提供 Language Service 初始化、檔案管理與符號位置查詢
  */
 
+import * as path from 'path';
 import * as ts from 'typescript';
+import { stripSourceFileExtension } from '@shared/types/index.js';
 import type { Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import type { TypeScriptSymbol } from './types.js';
 
@@ -64,6 +66,17 @@ export interface ILanguageServiceManager extends Disposable {
     sourceFile: ts.SourceFile,
     getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
   ): number | undefined;
+
+  /**
+   * 收集目前檔案中 LS 單檔掛載無法綁回的直接引用範圍：
+   * namespace import 成員存取（`ns.member`）與 barrel re-export specifier（`export { x } from './a'`）
+   * @param symbol 目標符號（跨檔定義）
+   * @param sourceFile 目前檔案
+   */
+  getAstDirectReferenceSpans(
+    symbol: TypeScriptSymbol,
+    sourceFile: ts.SourceFile
+  ): Array<{ start: number; end: number }>;
 }
 
 /**
@@ -268,25 +281,43 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     // 真實綁定點解析同檔引用——自動排除同名的 interface/type 屬性簽名鍵、object literal
     // 鍵、成員存取（x.name）等非綁定 token（缺陷 R2）。
     //
-    // 找不到 import binding（該檔僅巧合含同名 token、自身另有同名宣告、或以 namespace
-    // import `ns.member` 形式使用）時回傳 undefined，讓引用查找對該檔得空結果——絕不可
-    // 回退為 foreign 節點的位置，否則會依偏移量巧合誤改無關符號。
-    return this.findImportBindingPosition(sourceFile, symbol.name);
+    // 找不到 import binding（該檔僅巧合含同名 token、自身另有同名宣告、或該檔的 import
+    // 來自不同來源模組）時回傳 undefined，讓引用查找對該檔得空結果——絕不可回退為 foreign
+    // 節點的位置，否則會依偏移量巧合誤改無關符號。
+    return this.findImportBindingPosition(sourceFile, symbol.name, symbol.location.filePath);
   }
 
   /**
    * 在目前檔案的頂層 import 宣告中，尋找匯入指定符號名稱的 binding 位置。
-   * 具名 import 有別名時 anchor 於被匯入名稱（propertyName），使改名只動被匯入名稱、
-   * 保留本地別名。namespace import（`import * as ns`）不在此處理（回傳 undefined）。
+   *
+   * 錨定前先驗證 import 語句的 module specifier 解析後確實指向目標符號的定義檔
+   * （`definitionFilePath`）——否則「同名但不同來源模組」的 import 會被誤錨定而誤改（缺陷 F2a）。
+   *
+   * 具名 import 有別名時 anchor 於被匯入名稱（propertyName），使改名只動被匯入名稱、保留本地別名。
+   * namespace import（`import * as ns`）底下的 `ns.member` 引用不在此處理——見
+   * {@link getNamespaceMemberReferenceSpans}（改走 AST 直接收集，不依賴 LS 跨模組解析）。
    */
   private findImportBindingPosition(
     sourceFile: ts.SourceFile,
-    symbolName: string
+    symbolName: string,
+    definitionFilePath: string
   ): number | undefined {
     for (const statement of sourceFile.statements) {
       if (!ts.isImportDeclaration(statement) || !statement.importClause) {
         continue;
       }
+      // 來源模組驗證：module specifier 須解析到目標符號的定義檔，才可錨定（缺陷 F2a）。
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+      if (!this.moduleSpecifierMatchesDefinition(
+        sourceFile.fileName,
+        statement.moduleSpecifier.text,
+        definitionFilePath
+      )) {
+        continue;
+      }
+
       const importClause = statement.importClause;
 
       // default import：`import Foo from '...'`
@@ -307,6 +338,158 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       }
     }
     return undefined;
+  }
+
+  /**
+   * 收集目前檔案中「LS 在單檔掛載模式下無法綁回 export symbol」的直接引用範圍，涵蓋：
+   *   1. namespace import 成員存取 `ns.member`（缺陷 F2b）
+   *   2. barrel re-export specifier `export { x } from './a'`（缺陷 R2-1）
+   *
+   * 為何不走 LS：兩者都需解析來源模組才能綁回 export symbol，而本專案每次 findReferences 只把
+   * 「當前單一檔案」掛進 Language Service（見 parser.findReferences → ensureInitialized），其餘檔案
+   * 僅靠 host 的 ts.sys 磁碟讀取回退。memfs / 未落盤環境下來源模組無法解析，`ns` 退化為 any、
+   * re-export specifier 也綁不回定義，LS.findReferences 得空。
+   *
+   * 改以 AST 直接判定：相關 import/export 語句已通過來源模組驗證（specifier 解析到
+   * definitionFilePath），則 `ns.member`（ns 為 namespace 本地名、member 名等於目標符號名）與
+   * re-export 的 named specifier（有別名時取 propertyName 側）在語意上「就是」對目標符號的引用，
+   * 無歧義。回傳全部命中範圍，與 LS 路徑的引用形狀一致，且僅涵蓋當前檔案。
+   */
+  getAstDirectReferenceSpans(
+    symbol: TypeScriptSymbol,
+    sourceFile: ts.SourceFile
+  ): Array<{ start: number; end: number }> {
+    const spans: Array<{ start: number; end: number }> = [];
+
+    // (2) barrel re-export specifier：`export { x } from './a'`
+    for (const statement of sourceFile.statements) {
+      if (
+        !ts.isExportDeclaration(statement)
+        || !statement.moduleSpecifier
+        || !ts.isStringLiteral(statement.moduleSpecifier)
+        || !statement.exportClause
+        || !ts.isNamedExports(statement.exportClause)
+      ) {
+        continue;
+      }
+      if (!this.moduleSpecifierMatchesDefinition(
+        sourceFile.fileName,
+        statement.moduleSpecifier.text,
+        symbol.location.filePath
+      )) {
+        continue;
+      }
+      for (const element of statement.exportClause.elements) {
+        // 來源模組中的名稱：有別名時為 propertyName（`export { A as B }` 的 A），否則為 name。
+        // 改名只動來源側名稱，保留對外別名（`export { a as b }` 改 a、不改 b）。
+        const sourceName = element.propertyName?.text ?? element.name.text;
+        if (sourceName === symbol.name) {
+          const anchorNode = element.propertyName ?? element.name;
+          spans.push({
+            start: anchorNode.getStart(sourceFile),
+            end: anchorNode.getEnd()
+          });
+        }
+      }
+    }
+
+    // (1) namespace import 成員存取：`ns.member`
+    const namespaceLocalNames = this.collectVerifiedNamespaceLocalNames(
+      sourceFile,
+      symbol.location.filePath
+    );
+    if (namespaceLocalNames.length > 0) {
+      const memberName = symbol.name;
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isPropertyAccessExpression(node)
+          && ts.isIdentifier(node.expression)
+          && namespaceLocalNames.includes(node.expression.text)
+          && node.name.text === memberName
+        ) {
+          spans.push({
+            start: node.name.getStart(sourceFile),
+            end: node.name.getEnd()
+          });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+    }
+
+    return spans;
+  }
+
+  /**
+   * 收集目前檔案中、來源模組確實解析到 `definitionFilePath` 的 namespace import 本地名稱。
+   */
+  private collectVerifiedNamespaceLocalNames(
+    sourceFile: ts.SourceFile,
+    definitionFilePath: string
+  ): string[] {
+    const names: string[] = [];
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement) || !statement.importClause) {
+        continue;
+      }
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+      if (!this.moduleSpecifierMatchesDefinition(
+        sourceFile.fileName,
+        statement.moduleSpecifier.text,
+        definitionFilePath
+      )) {
+        continue;
+      }
+      const named = statement.importClause.namedBindings;
+      if (named && ts.isNamespaceImport(named)) {
+        names.push(named.name.text);
+      }
+    }
+    return names;
+  }
+
+  /**
+   * 驗證 import 的 module specifier 從 `importingFileName` 解析後是否指向 `definitionFilePath`。
+   *
+   * 僅處理相對路徑 specifier：本地定義檔必經相對路徑（`./`、`../`）匯入才可在此無專案設定下解析。
+   * 非相對（bare / baseUrl / alias）需 ImportResolver 的專案設定（path aliases、baseUrl），
+   * language-service 錨定層無此上下文，保守回傳 false 不錨定。
+   *
+   * 副檔名處理：TS/JS 可省略副檔名、且 specifier 常以 `.js` 指向 `.ts` 原始檔，故兩側皆
+   * 去除來源副檔名後比對；並處理目錄 import 指向 `index.*` 的情形。
+   */
+  private moduleSpecifierMatchesDefinition(
+    importingFileName: string,
+    moduleSpecifier: string,
+    definitionFilePath: string
+  ): boolean {
+    if (!moduleSpecifier.startsWith('.')) {
+      return false;
+    }
+
+    const fromDir = path.dirname(importingFileName);
+    const resolvedNoExt = stripSourceFileExtension(
+      path.normalize(path.resolve(fromDir, moduleSpecifier))
+    );
+    const definitionNoExt = stripSourceFileExtension(
+      path.normalize(path.resolve(definitionFilePath))
+    );
+
+    if (resolvedNoExt === definitionNoExt) {
+      return true;
+    }
+
+    // 目錄 import 指向 index 檔：specifier 解析到目錄，定義檔為該目錄下的 index.*
+    if (
+      path.basename(definitionNoExt) === 'index'
+      && path.dirname(definitionNoExt) === resolvedNoExt
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   /**

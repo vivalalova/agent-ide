@@ -226,51 +226,84 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     const fileName = typedAst.tsSourceFile.fileName;
 
-    // 取得符號位置
+    const references: Reference[] = [];
+
+    // 取得符號位置（同檔定義或 named/default import binding 的 anchor）
     const symbolPosition = this.languageServiceManager.getSymbolPosition(
       typedSymbol,
       typedAst.tsSourceFile,
       (node) => this.scopeAnalyzer.getIdentifierFromSymbolNode(node) ?? undefined
     );
-    if (symbolPosition === undefined) {
-      return [];
-    }
 
-    // 使用 Language Service 查找引用
-    const referencesResult = this.languageServiceManager.languageService.findReferences(fileName, symbolPosition);
+    // 使用 Language Service 從 anchor 查找引用
+    if (symbolPosition !== undefined) {
+      const referencesResult = this.languageServiceManager.languageService.findReferences(fileName, symbolPosition);
 
-    if (!referencesResult) {
-      return [];
-    }
+      for (const refSymbol of referencesResult ?? []) {
+        for (const ref of refSymbol.references) {
+          const sourceFile = this.languageServiceManager.getSourceFileFromFileName(ref.fileName);
+          if (!sourceFile) { continue; }
 
-    const references: Reference[] = [];
+          const range: Range = {
+            start: tsPositionToPosition(sourceFile, ref.textSpan.start),
+            end: tsPositionToPosition(sourceFile, ref.textSpan.start + ref.textSpan.length)
+          };
 
-    for (const refSymbol of referencesResult) {
-      for (const ref of refSymbol.references) {
-        const sourceFile = this.languageServiceManager.getSourceFileFromFileName(ref.fileName);
-        if (!sourceFile) { continue; }
+          const refType: ReferenceType = ref.isDefinition
+            ? ReferenceType.Definition
+            : ReferenceType.Usage;
 
-        const range: Range = {
-          start: tsPositionToPosition(sourceFile, ref.textSpan.start),
-          end: tsPositionToPosition(sourceFile, ref.textSpan.start + ref.textSpan.length)
-        };
-
-        const refType: ReferenceType = ref.isDefinition
-          ? ReferenceType.Definition
-          : ReferenceType.Usage;
-
-        references.push({
-          symbol,
-          location: {
-            filePath: ref.fileName,
-            range
-          },
-          type: refType
-        });
+          references.push({
+            symbol,
+            location: {
+              filePath: ref.fileName,
+              range
+            },
+            type: refType
+          });
+        }
       }
     }
 
+    // LS 單檔掛載無法綁回的直接引用（缺陷 F2b：`ns.member`；缺陷 R2-1：barrel re-export
+    // specifier）：LS 需跨模組解析才能綁回 export，但此處每次僅掛載單一檔案（memfs/未落盤環境
+    // 無法解析），故改由 AST 直接收集當前檔案的命中。
+    // 去重：混用 named + namespace/re-export 時，落盤環境下 LS 可能已由 named anchor 一併回傳，
+    // 避免同一範圍重複產生 TextChange。
+    const seenRanges = new Set(
+      references
+        .filter(ref => ref.location.filePath === fileName)
+        .map(ref => this.rangeKey(ref.location.range))
+    );
+    const astDirectSpans = this.languageServiceManager.getAstDirectReferenceSpans(
+      typedSymbol,
+      typedAst.tsSourceFile
+    );
+    for (const span of astDirectSpans) {
+      const range: Range = {
+        start: tsPositionToPosition(typedAst.tsSourceFile, span.start),
+        end: tsPositionToPosition(typedAst.tsSourceFile, span.end)
+      };
+      const key = this.rangeKey(range);
+      if (seenRanges.has(key)) {
+        continue;
+      }
+      seenRanges.add(key);
+      references.push({
+        symbol,
+        location: { filePath: fileName, range },
+        type: ReferenceType.Usage
+      });
+    }
+
     return references;
+  }
+
+  /**
+   * 產生 Range 的去重鍵（行列座標）
+   */
+  private rangeKey(range: Range): string {
+    return `${range.start.line}:${range.start.column}-${range.end.line}:${range.end.column}`;
   }
 
   /**
