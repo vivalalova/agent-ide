@@ -117,7 +117,7 @@ export class ImportResolver {
       const requireMatches = line.matchAll(/require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
       for (const match of requireMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement(ImportStatementType.REQUIRE, importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(ImportStatementType.REQUIRE, importPath, lineNumber, line.length - line.trimStart().length, line);
         if (statement) {
           statements.push(statement);
         }
@@ -127,7 +127,7 @@ export class ImportResolver {
       const dynamicImportMatches = line.matchAll(/import\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
       for (const match of dynamicImportMatches) {
         const importPath = match[1];
-        const statement = this.createImportStatement(ImportStatementType.DYNAMIC_IMPORT, importPath, lineNumber, match.index || 0, line);
+        const statement = this.createImportStatement(ImportStatementType.DYNAMIC_IMPORT, importPath, lineNumber, line.length - line.trimStart().length, line);
         if (statement) {
           statements.push(statement);
         }
@@ -417,6 +417,7 @@ export class ImportResolver {
     columnIndex: number,
     rawStatement: string
   ): ImportStatement | null {
+    // columnIndex 必須指向 rawStatement trim 後在該行的起始位置，供下游以 column 錨定替換。
     const position = createPosition(lineNumber, columnIndex + 1);
     const range = createRange(position, createPosition(lineNumber, columnIndex + rawStatement.length));
 

@@ -117,10 +117,11 @@ export class PathCalculator {
         : path.resolve(projectRoot, update.filePath)
     }));
 
-    // 去重：使用 filePath + line + oldImport 作為唯一鍵
+    // 去重：有 column 時區分同一行的不同 import；未提供時維持既有鍵語意
     const seen = new Set<string>();
     const uniqueUpdates = normalizedUpdates.filter(update => {
-      const key = `${update.filePath}:${update.line}:${update.oldImport}`;
+      const baseKey = `${update.filePath}:${update.line}:${update.oldImport}`;
+      const key = update.column === undefined ? baseKey : `${baseKey}:${update.column}`;
       if (seen.has(key)) {
         return false;
       }
@@ -218,6 +219,7 @@ export class PathCalculator {
           updates.push({
             filePath,
             line: importStatement.position.line,
+            column: importStatement.position.column,
             oldImport: importStatement.rawStatement,
             newImport
           });
@@ -381,6 +383,7 @@ export class PathCalculator {
             updates.push({
               filePath: target, // 注意：這裡是 target，因為更新會在檔案移動後套用
               line: importStatement.position.line,
+              column: importStatement.position.column,
               oldImport: importStatement.rawStatement,
               newImport
             });
@@ -455,6 +458,7 @@ export class PathCalculator {
                 updates.push({
                   filePath: target,
                   line: importStatement.position.line,
+                  column: importStatement.position.column,
                   oldImport: importStatement.rawStatement,
                   newImport
                 });

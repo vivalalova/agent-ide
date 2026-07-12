@@ -284,8 +284,7 @@ export class MoveEngine {
   }
 
   private createPathUpdateTextEdit(content: string, update: PathUpdate): TextEdit {
-    const lineStartOffset = this.positionToOffset(content, update.line, 1);
-    const startOffset = content.indexOf(update.oldImport, lineStartOffset);
+    const startOffset = this.findPathUpdateStartOffset(content, update);
     if (startOffset < 0) {
       throw new Error(`找不到 import 語句: ${update.oldImport}`);
     }
@@ -299,6 +298,16 @@ export class MoveEngine {
       newText: update.newImport,
       description: `Update import: ${update.oldImport} → ${update.newImport}`
     };
+  }
+
+  private findPathUpdateStartOffset(content: string, update: PathUpdate): number {
+    if (update.column === undefined) {
+      const lineStartOffset = this.positionToOffset(content, update.line, 1);
+      return content.indexOf(update.oldImport, lineStartOffset);
+    }
+
+    const startOffset = this.positionToOffset(content, update.line, update.column);
+    return content.startsWith(update.oldImport, startOffset) ? startOffset : -1;
   }
 
   private positionToOffset(content: string, line: number, column: number): number {
@@ -470,19 +479,37 @@ export class MoveEngine {
 
       let newContent = content;
 
-      // 對於多行語句，需要特別處理
+      // 先按原始內容的列位置從後往前套用，避免前面的替換改變後續 offset
+      const anchoredUpdates = updates
+        .filter(update => update.column !== undefined)
+        .map(update => {
+          const startOffset = this.findPathUpdateStartOffset(content, update);
+          if (startOffset < 0) {
+            throw new Error(`找不到 import 語句: ${update.oldImport}`);
+          }
+          return { update, startOffset };
+        })
+        .sort((a, b) => b.startOffset - a.startOffset);
+
+      for (const { update, startOffset } of anchoredUpdates) {
+        const endOffset = startOffset + update.oldImport.length;
+        newContent = newContent.substring(0, startOffset) + update.newImport + newContent.substring(endOffset);
+      }
+
+      // 沒有列位置的舊來源沿用首次字串匹配與多行規範化行為
       for (const update of updates) {
-        // 直接使用字串替換，支援多行
+        if (update.column !== undefined) {
+          continue;
+        }
+
         newContent = newContent.replace(update.oldImport, update.newImport);
 
-        // 如果未找到完全匹配，嘗試規範化並再試一次
         if (newContent.indexOf(update.oldImport) === -1) {
-          // 嘗試將多行 oldImport 規範化（移除額外的空格和換行）
           const normalizedOldImport = update.oldImport.replace(/\s+/g, ' ').trim();
           const contentNormalized = newContent.replace(/\s+/g, ' ');
 
           if (contentNormalized.indexOf(normalizedOldImport) !== -1) {
-            newContent = content; // 重置
+            newContent = content;
             newContent = newContent.replace(
               new RegExp(this.pathUtils.escapeRegex(normalizedOldImport).replace(/\s+/g, '\\s+'), 'g'),
               update.newImport.replace(/\s+/g, ' ').trim()

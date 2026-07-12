@@ -348,6 +348,8 @@ export interface MoveResult {
 export interface PathUpdate {
   readonly filePath: string;
   readonly line: number;
+  /** import 在該行的起始列（1-based）；未提供時沿用舊的首次匹配行為 */
+  readonly column?: number;
   readonly oldImport: string;
   readonly newImport: string;
 }

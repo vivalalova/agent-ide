@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { MoveEngine } from '@core/move/move-engine.js';
+import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createMockFileSystem } from '../_helpers/mock-factories.js';
 
 describe('MoveEngine', () => {
@@ -127,6 +128,26 @@ describe('MoveEngine', () => {
       expect(readDirectory).toHaveBeenCalledTimes(2);
       expect(readDirectory).toHaveBeenNthCalledWith(1, projectRoot);
       expect(readDirectory).toHaveBeenNthCalledWith(2, '/project/src');
+    });
+  });
+
+  describe('moveFile - 同行多個相同 import', () => {
+    it('Given 同一行兩個相同的 side-effect import, when moveFile, then 兩個都更新為新路徑', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/project/old.ts': 'export default 1;\n',
+        '/project/importer.ts': 'import \'./old\'; import \'./old\';\n'
+      });
+      const engine = new MoveEngine(fileSystem);
+
+      const result = await engine.moveFile(
+        { source: '/project/old.ts', target: '/project/new.ts' },
+        { projectRoot: '/project' }
+      );
+
+      expect(result.success).toBe(true);
+      const content = await fileSystem.readFile('/project/importer.ts', 'utf-8');
+      expect(content).toBe('import \'./new\'; import \'./new\';\n');
     });
   });
 });
