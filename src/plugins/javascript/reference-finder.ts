@@ -148,11 +148,6 @@ export class ReferenceFinder {
           return;
         }
 
-        // 過濾：跳過 import 的原始名稱
-        if (babel.isImportSpecifier(parent) && parent.imported === path.node) {
-          return;
-        }
-
         // 分析引用詳情（使用快取的變數類型映射）
         const refInfo = this.analyzeIdentifierReference(path, variableTypes);
 
@@ -193,6 +188,18 @@ export class ReferenceFinder {
     variableTypes: VariableTypeMap
   ): ReferenceAnalysis | null {
     const parent = path.parent;
+
+    // import 語句內的標識符（named/default/namespace specifier 的 local 綁定）
+    // 只是綁定本身，不是對該符號的真正使用（對齊 TS 側 D4 修復：避免「只被
+    // import 從未使用」的符號因 import specifier 被誤算成一次使用而永遠判定為存活）
+    if (this.isInImportStatement(path)) {
+      return {
+        kind: ScopedReferenceKind.Import,
+        containerName: this.findContainerName(path),
+        isMethodCall: false
+      };
+    }
+
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;
     let receiverType: string | undefined;
@@ -257,6 +264,13 @@ export class ReferenceFinder {
     }
 
     return undefined;
+  }
+
+  /**
+   * 檢查標識符是否位於 import 語句內（named/default/namespace specifier 的 local 節點）
+   */
+  private isInImportStatement(path: NodePath<babel.Identifier>): boolean {
+    return path.findParent((p) => babel.isImportDeclaration(p.node)) !== null;
   }
 
   /**

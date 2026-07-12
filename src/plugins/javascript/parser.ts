@@ -50,7 +50,8 @@ import {
   createSymbol,
   createScope,
   createReference,
-  createDependency
+  createDependency,
+  isFunctionLocalSymbol
 } from '@shared/types/index.js';
 import {
   JavaScriptAST,
@@ -196,16 +197,16 @@ export class JavaScriptParser implements ParserPlugin {
     traverse(typedAst.babelAST, {
       // 處理各種宣告節點
       FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-        this.extractFunctionSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractFunctionSymbol(path, symbols, typedAst.sourceFile);
         this.extractParameterSymbols(path.node.params, path.node.id?.name, symbols, typedAst.sourceFile);
       },
 
       ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
-        this.extractClassSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractClassSymbol(path, symbols, typedAst.sourceFile);
       },
 
       VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-        this.extractVariableSymbol(path.node, symbols, typedAst.sourceFile, this.getNearestFunctionName(path));
+        this.extractVariableSymbol(path, symbols, typedAst.sourceFile, this.getNearestFunctionName(path));
       },
 
       ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
@@ -494,54 +495,85 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private extractFunctionSymbol(
-    node: babel.FunctionDeclaration,
+    path: NodePath<babel.FunctionDeclaration>,
     symbols: JavaScriptSymbol[],
     sourceFile: string
   ): void {
+    const node = path.node;
     if (node.id) {
       const symbol = this.createSymbolFromNode(
         node,
         node.id.name,
         SymbolType.Function,
-        sourceFile
+        sourceFile,
+        { modifiers: this.getExportModifiers(path.parentPath) },
+        undefined,
+        node.id
       );
       symbols.push(symbol);
     }
   }
 
   private extractClassSymbol(
-    node: babel.ClassDeclaration,
+    path: NodePath<babel.ClassDeclaration>,
     symbols: JavaScriptSymbol[],
     sourceFile: string
   ): void {
+    const node = path.node;
     if (node.id) {
       const symbol = this.createSymbolFromNode(
         node,
         node.id.name,
         SymbolType.Class,
-        sourceFile
+        sourceFile,
+        { modifiers: this.getExportModifiers(path.parentPath) },
+        undefined,
+        node.id
       );
       symbols.push(symbol);
     }
   }
 
   private extractVariableSymbol(
-    node: babel.VariableDeclarator,
+    path: NodePath<babel.VariableDeclarator>,
     symbols: JavaScriptSymbol[],
     sourceFile: string,
     functionScopeName?: string
   ): void {
+    const node = path.node;
     if (babel.isIdentifier(node.id)) {
       const symbol = this.createSymbolFromNode(
         node,
         node.id.name,
         SymbolType.Variable,
         sourceFile,
-        {},
-        functionScopeName ? createScope('function', functionScopeName) : undefined
+        { modifiers: this.getExportModifiers(path.parentPath?.parentPath) },
+        functionScopeName ? createScope('function', functionScopeName) : undefined,
+        node.id
       );
       symbols.push(symbol);
     }
+  }
+
+  /**
+   * 計算宣告節點的 export 相關 modifiers（對齊 TS 側 getNodeModifiers 詞彙：'export'、'default'）
+   * Babel AST 的 export 資訊不掛在宣告節點本身，而是外層的
+   * ExportNamedDeclaration / ExportDefaultDeclaration 容器節點；呼叫端負責傳入正確的容器：
+   * - FunctionDeclaration/ClassDeclaration：容器即為自身的 parentPath
+   * - VariableDeclarator：export 掛在外層 VariableDeclaration 的 parentPath（statement），
+   *   呼叫端需多跳一層傳入 `path.parentPath?.parentPath`
+   */
+  private getExportModifiers(container: NodePath | null | undefined): string[] {
+    if (!container) {
+      return [];
+    }
+    if (babel.isExportDefaultDeclaration(container.node)) {
+      return ['export', 'default'];
+    }
+    if (babel.isExportNamedDeclaration(container.node)) {
+      return ['export'];
+    }
+    return [];
   }
 
   private extractParameterSymbols(
@@ -599,7 +631,10 @@ export class JavaScriptParser implements ParserPlugin {
         node,
         node.key.name,
         SymbolType.Function,
-        sourceFile
+        sourceFile,
+        {},
+        undefined,
+        node.key
       );
       symbols.push(symbol);
     }
@@ -615,7 +650,10 @@ export class JavaScriptParser implements ParserPlugin {
         node,
         node.key.name,
         SymbolType.Variable,
-        sourceFile
+        sourceFile,
+        {},
+        undefined,
+        node.key
       );
       symbols.push(symbol);
     }
@@ -631,7 +669,10 @@ export class JavaScriptParser implements ParserPlugin {
         node,
         node.key.name,
         SymbolType.Function,
-        sourceFile
+        sourceFile,
+        {},
+        undefined,
+        node.key
       );
       symbols.push(symbol);
     }
@@ -647,7 +688,10 @@ export class JavaScriptParser implements ParserPlugin {
         node,
         node.key.name,
         SymbolType.Variable,
-        sourceFile
+        sourceFile,
+        {},
+        undefined,
+        node.key
       );
       symbols.push(symbol);
     }
@@ -658,13 +702,17 @@ export class JavaScriptParser implements ParserPlugin {
     name: string,
     type: SymbolType,
     sourceFile: string,
-    options: { isImported?: boolean; isExported?: boolean } = {},
-    scope?: Scope
+    options: { isImported?: boolean; isExported?: boolean; modifiers?: string[] } = {},
+    scope?: Scope,
+    identifierNode: babel.Node = node
   ): JavaScriptSymbol {
-    const range = this.getNodeRange(node);
+    // 位置錨定於名稱識別符本身（對齊 TS 側 getSymbolIdentifierRange 語意），
+    // 而非整個宣告節點的起點；未特別指定 identifierNode 的呼叫端（如 import specifier）
+    // 沿用原節點範圍
+    const range = this.getNodeRange(identifierNode);
     const location = { filePath: sourceFile, range };
 
-    const baseSymbol = createSymbol(name, type, location, scope, []);
+    const baseSymbol = createSymbol(name, type, location, scope, options.modifiers ?? []);
 
     return {
       ...baseSymbol,
@@ -792,7 +840,7 @@ export class JavaScriptParser implements ParserPlugin {
       return false;
     }
 
-    if (this.isFunctionLocalSymbol(symbol)) {
+    if (isFunctionLocalSymbol(symbol)) {
       if (babel.isMemberExpression(parent) && parent.property === node && !parent.computed) {
         return false;
       }
@@ -803,10 +851,6 @@ export class JavaScriptParser implements ParserPlugin {
     // 基本的作用域檢查
     // Babel traverse 的 path 已經處理了作用域，字串和註解不會進入這裡
     return true;
-  }
-
-  private isFunctionLocalSymbol(symbol: JavaScriptSymbol): boolean {
-    return symbol.scope?.type === 'function' || symbol.scope?.type === 'block';
   }
 
   private isSameBabelBinding(path: NodePath<babel.Identifier>, symbol: JavaScriptSymbol): boolean {
@@ -1048,6 +1092,19 @@ export class JavaScriptParser implements ParserPlugin {
     startLine: number
   ): Range | null {
     return this.declarationAnalyzer.getFullDeclarationRange(code, symbolName, symbolType, startLine);
+  }
+
+  /**
+   * 計算多宣告子語句中，一組已知 dead 的宣告子協調後的刪除範圍
+   * 委託給 DeclarationAnalyzer
+   */
+  computeDeclaratorGroupRemovalRanges(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null {
+    return this.declarationAnalyzer.computeDeclaratorGroupRemovalRanges(code, anchorSymbolName, startLine, deadNames);
   }
 
   getImportDeclarations(code: string): ImportDeclaration[] | null {
