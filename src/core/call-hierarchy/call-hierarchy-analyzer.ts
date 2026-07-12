@@ -268,8 +268,22 @@ export class CallHierarchyAnalyzer {
         return outgoing;
       }
 
+      // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
+      const isNestedDefinitionBoundary = (node: ts.Node): boolean =>
+        ts.isFunctionDeclaration(node) ||
+        (ts.isFunctionExpression(node) && node.name !== undefined) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isGetAccessor(node) ||
+        ts.isSetAccessor(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isClassExpression(node);
+
       // 遍歷函數 body 找出所有 CallExpression
       const findCallsInNode = (node: ts.Node): void => {
+        if (isNestedDefinitionBoundary(node)) {
+          return;
+        }
+
         if (ts.isCallExpression(node)) {
           const callInfo = this.extractCallInfo(node, sourceFile);
           if (callInfo) {
@@ -370,7 +384,28 @@ export class CallHierarchyAnalyzer {
     }
 
     // 在目標函式內找所有 CallExpression
+    // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
     (targetFunctionPath as import('@babel/traverse').NodePath).traverse({
+      FunctionDeclaration(path) {
+        path.skip();
+      },
+      FunctionExpression(path) {
+        if (path.node.id) {
+          path.skip();
+        }
+      },
+      ObjectMethod(path) {
+        path.skip();
+      },
+      ClassMethod(path) {
+        path.skip();
+      },
+      ClassDeclaration(path) {
+        path.skip();
+      },
+      ClassExpression(path) {
+        path.skip();
+      },
       CallExpression(callPath) {
         const node = callPath.node;
         const expr = node.callee;

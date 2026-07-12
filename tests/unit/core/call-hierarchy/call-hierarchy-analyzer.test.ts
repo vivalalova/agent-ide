@@ -239,6 +239,40 @@ export function target() {
       ]));
     });
 
+    it('Given TypeScript 函數內有巢狀具名函數, when analyze outgoing, then 巢狀函數內的呼叫不應歸屬外層函數', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested.ts': `
+function outer() {
+  function inner() {
+    sideEffect();
+  }
+  bar();
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer', ['/src/nested.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).toContain('bar');
+      expect(callees).not.toContain('sideEffect');
+    });
+
+    it('Given TypeScript 函數內有匿名 arrow function callback, when analyze outgoing, then callback 內的呼叫仍歸屬外層函數', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested-anonymous.ts': `
+function outer2() {
+  items.map(x => transform(x));
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer2', ['/src/nested-anonymous.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).toContain('transform');
+    });
+
     it('Given JavaScript caller 在另一個檔案, when analyze incoming, then 用 Babel AST 找到 caller 名稱與 context', async () => {
       const analyzer = await createAnalyzerWithRealParsers({
         '/src/target.js': `
