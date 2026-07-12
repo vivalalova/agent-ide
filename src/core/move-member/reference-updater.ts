@@ -248,6 +248,16 @@ export class ReferenceUpdater {
     member: MemberDefinition,
     sourceFileChange: FileChange
   ): ReferenceUpdate | null {
+    // class method 被搬走後，class 內其他成員若仍以 `this.<name>()` 呼叫，補一個
+    // 頂層 import 救不回語意：`this.<name>` 是實例成員存取，與模組作用域的
+    // import binding 是兩回事，塞這個 import 只會產生指向不存在導出的假 import
+    // （且與剩餘 class 內任何同名成員/binding 衝突遮蔽），故 method 類成員一律
+    // 跳過來源檔自我引用 import 插入（見 T4 ground：此路徑在 buildSourceSelfReferenceImport
+    // 對 member.type 無判斷時必然觸發，非臆測防衛）
+    if (member.type === MemberType.Method) {
+      return null;
+    }
+
     const referencePattern = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
     if (!referencePattern.test(sourceFileChange.newCode)) {
       return null;

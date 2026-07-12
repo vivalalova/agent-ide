@@ -58,15 +58,57 @@ export function findBlockEnd(lines: string[], startLine: number): number {
 }
 
 /**
- * 在類別內找到程式碼區塊結尾
- * 與 findBlockEnd 邏輯相同，語義上用於類別內部成員
+ * 找到方法宣告的結尾，並判定該宣告是否含 body
  *
- * @param lines 類別內部程式碼行陣列
- * @param startLine 起始行索引（0-based）
- * @returns 區塊結束行索引
+ * 從宣告行開始逐字掃描（沿用 findBlockEnd 的 mask/小括號深度判定），找到參數列表
+ * 結束後第一個出現的 `{`（進入方法本體）或 `;`（純簽章結尾，無 body）：
+ * - 先遇到 `{`：委派 findBlockEnd 找到方法本體結束行，hasBody = true
+ * - 先遇到 `;`：純簽章宣告（如 overload signature、abstract 方法），結尾即該行，
+ *   hasBody = false
+ *
+ * 背景（T4 bug）：舊行為對「無 body 的方法簽章」（如 overload 的
+ * `foo(a: number): void;`）誤用 findBlockEnd，導致掃描跨越到後面幾行才找到的
+ * `{`（實際屬於下一個 overload 簽章或真正的實作），讓簽章候選的範圍誤跨越、
+ * 與實作候選的範圍重疊，最終搬移時只選中其中一個候選、留下孤兒簽章。
+ *
+ * @param lines 程式碼行陣列
+ * @param declLine 宣告本身所在行索引（0-based）
+ * @returns 結尾行索引（0-based）與是否含 body
  */
-export function findBlockEndInClass(lines: string[], startLine: number): number {
-  return findBlockEnd(lines, startLine);
+export function findMethodDeclarationEnd(
+  lines: string[],
+  declLine: number
+): { endLine: number; hasBody: boolean } {
+  const text = lines.slice(declLine).join('\n');
+  const codeMask = computeCodeStateMask(text);
+
+  let parenDepth = 0;
+  let lineIndex = declLine;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '\n') {
+      lineIndex++;
+      continue;
+    }
+
+    if (!codeMask[i]) {
+      continue;
+    }
+
+    if (char === '(') {
+      parenDepth++;
+    } else if (char === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (char === '{' && parenDepth === 0) {
+      return { endLine: findBlockEnd(lines, declLine), hasBody: true };
+    } else if (char === ';' && parenDepth === 0) {
+      return { endLine: lineIndex, hasBody: false };
+    }
+  }
+
+  return { endLine: declLine, hasBody: false };
 }
 
 /**

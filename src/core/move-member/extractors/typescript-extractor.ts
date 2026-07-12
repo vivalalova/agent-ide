@@ -6,7 +6,7 @@
 import { MemberType, type MemberDefinition } from '../types.js';
 import {
   findBlockEnd,
-  findBlockEndInClass,
+  findMethodDeclarationEnd,
   findTypeAliasEnd,
   findStatementEnd
 } from '../utils/range-finder.js';
@@ -251,32 +251,73 @@ export function extractClassMembers(
   let match;
 
   // 方法
+  // overload 方法（多個同名簽章宣告 + 一個實作）逐行 regex 會各自產生一個候選；
+  // 若直接各自建立成員，簽章候選（無 body）與實作候選範圍會重疊，導致依位置選取
+  // 「最小範圍」時只選中實作、簽章淪為孤兒宣告（見 T4 bug）。因此先收集每個候選
+  // 是否含 body，再把「連續、同名、且前面皆為無 body 簽章」的候選群組合併成單一
+  // 成員單位（範圍＝第一個簽章起點到實作結尾），讓指向群組內任一行都選中整組。
+  interface RawMethodCandidate {
+    readonly matchText: string;
+    readonly name: string;
+    readonly startLineIndex: number;
+    readonly endLineIndex: number;
+    readonly hasBody: boolean;
+  }
+
   const methodPattern = /^[ \t]*(public|private|protected)?[ \t]*(static)?[ \t]*(async)?[ \t]*(\w+)[ \t]*\([^)]*\)/gm;
+  const rawMethodCandidates: RawMethodCandidate[] = [];
   while ((match = methodPattern.exec(classBody)) !== null) {
     // 跳過 constructor
     if (match[4] === 'constructor') { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
     const declLineIndex = relativeLineNumber - 1;
-    const endLine = findBlockEndInClass(bodyLines, declLineIndex);
+    const { endLine: bodyEndLineIndex, hasBody } = findMethodDeclarationEnd(bodyLines, declLineIndex);
 
     // 成員範圍含前面連續的 @decorator 行（與 class 提取共用同一判定，見 M3 bug）
     const startLineIndex = findDeclarationStartWithDecorators(bodyLines, declLineIndex);
+
+    rawMethodCandidates.push({
+      matchText: match[0],
+      name: match[4],
+      startLineIndex,
+      endLineIndex: bodyEndLineIndex,
+      hasBody
+    });
+  }
+
+  let candidateIndex = 0;
+  while (candidateIndex < rawMethodCandidates.length) {
+    const groupStart = rawMethodCandidates[candidateIndex];
+    let groupEnd = candidateIndex;
+    while (
+      groupEnd + 1 < rawMethodCandidates.length &&
+      !rawMethodCandidates[groupEnd].hasBody &&
+      rawMethodCandidates[groupEnd + 1].name === groupStart.name
+    ) {
+      groupEnd++;
+    }
+
+    const lastCandidate = rawMethodCandidates[groupEnd];
+    const startLineIndex = groupStart.startLineIndex;
+    const endLine = lastCandidate.endLineIndex;
     const lineNumber = classStartLine + bodyStartLine - 1 + startLineIndex;
     const sourceCode = bodyLines.slice(startLineIndex, endLine + 1).join('\n');
 
     members.push(createMember(
-      match[4],
+      lastCandidate.name,
       MemberType.Method,
       filePath,
       lineNumber,
       classStartLine + bodyStartLine - 1 + endLine,
       sourceCode,
       className,
-      extractModifiers(match[0]),
+      extractModifiers(lastCandidate.matchText),
       extractDocumentation(bodyLines, startLineIndex),
       extractDependencies(sourceCode)
     ));
+
+    candidateIndex = groupEnd + 1;
   }
 
   // 屬性
