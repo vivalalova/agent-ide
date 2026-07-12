@@ -285,6 +285,15 @@ describe('DependencyGraph', () => {
 
       expect(graph.getTransitiveDependencies('/src/a.ts')).toEqual([]);
     });
+
+    it('應該在雙節點循環中排除起點本身', () => {
+      graph.addDependency('/src/a.ts', '/src/b.ts');
+      graph.addDependency('/src/b.ts', '/src/a.ts');
+
+      const transitive = graph.getTransitiveDependencies('/src/a.ts');
+
+      expect(transitive).toEqual(['/src/b.ts']);
+    });
   });
 
   describe('getTransitiveDependents', () => {
@@ -323,6 +332,15 @@ describe('DependencyGraph', () => {
 
       // 循環依賴時，傳遞依賴者可能包含所有節點
       expect(transitive.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('應該在雙節點循環中排除起點本身', () => {
+      graph.addDependency('/src/a.ts', '/src/b.ts');
+      graph.addDependency('/src/b.ts', '/src/a.ts');
+
+      const transitive = graph.getTransitiveDependents('/src/a.ts');
+
+      expect(transitive).toEqual(['/src/b.ts']);
     });
   });
 

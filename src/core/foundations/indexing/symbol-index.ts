@@ -111,14 +111,13 @@ export class SymbolIndex {
     for (const symbolName of symbolNames) {
       const nameEntries = this.symbolsByName.get(symbolName);
       if (nameEntries) {
-        const idx = nameEntries.findIndex(entry =>
-          entry.fileInfo.filePath === filePath
+        const filtered = nameEntries.filter(entry =>
+          entry.fileInfo.filePath !== filePath
         );
-        if (idx !== -1) {
-          nameEntries.splice(idx, 1);
-          if (nameEntries.length === 0) {
-            this.symbolsByName.delete(symbolName);
-          }
+        if (filtered.length === 0) {
+          this.symbolsByName.delete(symbolName);
+        } else {
+          this.symbolsByName.set(symbolName, filtered);
         }
       }
     }

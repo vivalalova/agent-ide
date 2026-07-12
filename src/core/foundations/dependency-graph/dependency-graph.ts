@@ -194,6 +194,7 @@ export class DependencyGraph {
     }
 
     const visited = new Set<string>();
+    visited.add(filePath);
     const result: string[] = [];
 
     const dfs = (currentPath: string) => {
@@ -229,6 +230,7 @@ export class DependencyGraph {
     }
 
     const visited = new Set<string>();
+    visited.add(filePath);
     const result: string[] = [];
 
     const dfs = (currentPath: string) => {
