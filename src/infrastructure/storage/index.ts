@@ -9,6 +9,9 @@ export type { IFileSystem } from './file-system.interface.js';
 export { FileSystem } from './file-system.js';
 export { MemFileSystem } from './mem-file-system.js';
 
+// Atomic write 輔助函數
+export { createUniqueTempPath } from './atomic-write.js';
+
 // 型別定義
 export type {
   DirectoryEntry,

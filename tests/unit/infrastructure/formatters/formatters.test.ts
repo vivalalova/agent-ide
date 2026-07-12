@@ -406,6 +406,36 @@ describe('DiffGenerator', () => {
       expect(result.summary.deletions).toBe(2);
       expect(result.summary.totalChanges).toBe(4);
     });
+
+    it('單筆 LineChange 內嵌多行且刪多於增時，不應漏算尾端刪除行（G5）', () => {
+      // createHunk 用 expandedChanges 最後一個元素算 endLine；當刪除行數
+      // 多於新增行數時，展開後陣列的最後一個元素會是某個 newLine（其 .line
+      // 遠小於最大的 oldLine），導致 endLine 被算小、尾端刪除行被跳過。
+      const oldLines = Array.from({ length: 10 }, (_, i) => `old${i + 1}`);
+      const originalContent = oldLines.join('\n');
+
+      const input: PreviewInput = {
+        command: PreviewCommand.Refactor,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/b.ts',
+          originalContent,
+          changes: [{ line: 1, oldContent: originalContent, newContent: 'new1' }]
+        }]
+      };
+
+      const result = generatePreviewResult(input, 0);
+      const allLines = result.files[0].hunks.flatMap(h => h.lines);
+      const deletedContents = allLines
+        .filter(l => l.type === ChangeLineType.Delete)
+        .map(l => l.content);
+
+      // 10 行舊內容都應該出現在刪除行中
+      for (const oldLine of oldLines) {
+        expect(deletedContents).toContain(oldLine);
+      }
+      expect(result.summary.deletions).toBe(10);
+    });
   });
 });
 

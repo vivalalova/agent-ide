@@ -220,7 +220,15 @@ export class TTLStrategy<K, V> implements CacheStrategy<K, V> {
       }
     }
 
-    return keyToEvict;
+    if (keyToEvict !== undefined) {
+      return keyToEvict;
+    }
+
+    // 沒有任何項目帶 expiresAt（如 defaultTTL 未設定、逐筆 set() 也未帶 customTTL）：
+    // 無 TTL 候選可淘汰時 fallback 淘汰最舊插入的項目，確保 maxSize 恆成立
+    // （Map 迭代順序即插入順序，第一個 key 即最舊）——否則 evict() 會 no-op，
+    // 但 set() 持續寫入，快取無上限增長。
+    return items.keys().next().value;
   }
 
   clear(): void {

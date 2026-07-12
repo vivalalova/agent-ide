@@ -499,6 +499,24 @@ describe('MemoryCache with different strategies', () => {
     expect(cache.size()).toBe(3);
     cache.dispose();
   });
+
+  it('should respect maxSize with TTL strategy even when no item has an expiresAt (G4)', () => {
+    // TTLStrategy.selectEvictionKey() 在所有項目都沒有 expiresAt 時回傳
+    // undefined（見 strategies.ts），evict() 因此變成 no-op，但 set()
+    // 仍持續寫入 —— maxSize 形同虛設。這裡不帶 defaultTTL（= 0，永不過期），
+    // 讓每筆項目都沒有 expiresAt，重現此情境。
+    const cache = new MemoryCache<string, string>({
+      maxSize: 2,
+      evictionStrategy: EvictionStrategy.TTL
+    });
+
+    cache.set('key1', 'value1');
+    cache.set('key2', 'value2');
+    cache.set('key3', 'value3');
+
+    expect(cache.size()).toBeLessThanOrEqual(2);
+    cache.dispose();
+  });
 });
 
 // ============================================
@@ -698,13 +716,14 @@ describe('TTLStrategy', () => {
     expect(keyToEvict).toBe('key2');
   });
 
-  it('should return undefined for items without expiresAt', () => {
+  it('should fall back to the oldest-inserted key when no item has expiresAt', () => {
     const now = Date.now();
     const items = new Map<string, CacheItem<any>>();
     items.set('key1', { value: 1, createdAt: now, lastAccessedAt: now, accessCount: 0 });
+    items.set('key2', { value: 2, createdAt: now, lastAccessedAt: now, accessCount: 0 });
 
     const keyToEvict = strategy.selectEvictionKey(items);
-    expect(keyToEvict).toBeUndefined();
+    expect(keyToEvict).toBe('key1');
   });
 });
 

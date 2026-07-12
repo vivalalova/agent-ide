@@ -12,6 +12,7 @@ import {
   AtomicWriteOptions,
 } from './types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { createUniqueTempPath } from './atomic-write.js';
 
 /** Node.js 系統錯誤介面 */
 interface NodeSystemError extends Error {
@@ -77,7 +78,8 @@ export class FileSystem implements IFileSystem {
    * 原子寫入檔案
    */
   private async atomicWrite(filePath: string, content: string | Buffer, options: AtomicWriteOptions): Promise<void> {
-    const tempPath = filePath + (options.tempSuffix || this.tempSuffix);
+    // 唯一 tmp 路徑（pid + 隨機字串）：避免併發寫入同一目標檔案時共用同一個 tmp 檔而互踩
+    const tempPath = createUniqueTempPath(filePath, options.tempSuffix || this.tempSuffix);
 
     try {
       await fs.writeFile(tempPath, content, { encoding: options.encoding });

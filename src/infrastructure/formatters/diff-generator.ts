@@ -190,13 +190,19 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
   // Bug #34 修復：展開多行變更
   const expandedChanges = expandMultilineChanges(changes);
 
-  const firstChange = expandedChanges[0];
-  const lastChange = expandedChanges[expandedChanges.length - 1];
+  // Bug (G5) 修復：不能只看 expandedChanges 的第一/最後元素算範圍。
+  // expandMultilineChanges 展開單一多行變更時排列為 [...oldLines, ...newLines]，
+  // 刪多於增時陣列最後一個元素會是某個 newLine，其 .line 遠小於最大的
+  // oldLine，導致用「最後元素」算 endLine 會把尾端刪除行漏算。改用所有
+  // 元素的最小/最大 .line 計算範圍。
+  const lineNumbers = expandedChanges.map(c => c.line);
+  const minLine = Math.min(...lineNumbers);
+  const maxLine = Math.max(...lineNumbers);
 
   // 計算 hunk 範圍（包含 context）
   // 注意：endLine 不限制在 originalLines.length，因為可能有新增行超出原始範圍
-  const startLine = Math.max(1, firstChange.line - contextLines);
-  const endLine = lastChange.line + contextLines;
+  const startLine = Math.max(1, minLine - contextLines);
+  const endLine = maxLine + contextLines;
   // 原始檔案的最大可用行號
   const maxOriginalLine = originalLines.length;
 

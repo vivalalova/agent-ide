@@ -5,11 +5,11 @@
  */
 
 import { homedir } from 'os';
-import { createHash, randomBytes } from 'crypto';
+import { createHash } from 'crypto';
 import { join, dirname } from 'path';
 import { readFile, writeFile, mkdir, rename as fsRename, access } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
-import type { IFileSystem } from '@infrastructure/storage/index.js';
+import { createUniqueTempPath, type IFileSystem } from '@infrastructure/storage/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/types.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
@@ -150,8 +150,8 @@ export class IndexDiskCache {
       };
 
       const json = JSON.stringify(data);
-      // tmp 檔名帶 pid + 隨機字串：避免併發冷啟時兩個程序互踩同一個 tmp 檔（torn write）
-      const tmpPath = `${cachePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+      // 唯一 tmp 路徑（pid + 隨機字串）：避免併發冷啟時兩個程序互踩同一個 tmp 檔（torn write）
+      const tmpPath = createUniqueTempPath(cachePath, '.tmp');
 
       // Atomic write: write to tmp, then rename
       await writeFile(tmpPath, json, 'utf-8');
