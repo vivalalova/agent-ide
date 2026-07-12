@@ -58,22 +58,20 @@ export class CycleDetector {
             });
           }
         }
-      } else if (scc.size > 1 && scc.size <= opts.maxCycleLength) {
-        // 找出 SCC 中的實際循環路徑
-        const cyclePaths = this.findCyclePathsInSCC(graph, [...scc.nodes]);
+      } else if (scc.size > 1) {
+        // 找出 SCC 中的實際循環路徑（已保證回傳長度 <= opts.maxCycleLength）
+        const cyclePaths = this.findCyclePathsInSCC(graph, [...scc.nodes], opts.maxCycleLength);
 
         for (const cyclePath of cyclePaths) {
-          if (cyclePath.length <= opts.maxCycleLength) {
-            cycles.push({
-              cycle: cyclePath,
-              length: cyclePath.length,
-              severity: calculateCycleSeverity(cyclePath.length)
-            });
+          cycles.push({
+            cycle: cyclePath,
+            length: cyclePath.length,
+            severity: calculateCycleSeverity(cyclePath.length)
+          });
 
-            // 如果不需要報告所有循環，找到第一個就停止
-            if (!opts.reportAllCycles) {
-              break;
-            }
+          // 如果不需要報告所有循環，找到第一個就停止
+          if (!opts.reportAllCycles) {
+            break;
           }
         }
       }
@@ -166,9 +164,10 @@ export class CycleDetector {
    * 在強連通分量中找出循環路徑
    * @param graph 依賴圖
    * @param sccNodes SCC 中的節點
-   * @returns 循環路徑列表
+   * @param maxCycleLength 允許的最大循環長度，超過此長度的循環不回傳
+   * @returns 循環路徑列表（保證每條長度 <= maxCycleLength）
    */
-  private findCyclePathsInSCC(graph: DependencyGraph, sccNodes: string[]): string[][] {
+  private findCyclePathsInSCC(graph: DependencyGraph, sccNodes: string[], maxCycleLength: number): string[][] {
     const cycles: string[][] = [];
     const visited = new Set<string>();
 
@@ -178,28 +177,31 @@ export class CycleDetector {
         continue;
       }
 
-      const cycle = this.findShortestCyclePath(graph, startNode, sccNodes);
+      const cycle = this.findShortestCyclePath(graph, startNode, sccNodes, maxCycleLength);
       if (cycle && cycle.length > 1) {
         cycles.push(cycle);
         // 標記這個循環中的所有節點為已訪問
         cycle.forEach(node => visited.add(node));
       }
+      // BFS 落空（cycle 為 null）時不標記 visited，讓其他起點仍有機會找到自己的短循環
     }
 
     return cycles;
   }
 
   /**
-   * 找出從指定節點開始的最短循環路徑
+   * 找出從指定節點開始、長度不超過 maxLength 的最短循環路徑
    * @param graph 依賴圖
    * @param startNode 起始節點
    * @param sccNodes 限制搜尋範圍的節點
-   * @returns 循環路徑或 null
+   * @param maxLength 允許的最大循環長度
+   * @returns 循環路徑或 null（找不到合規循環）
    */
   private findShortestCyclePath(
     graph: DependencyGraph,
     startNode: string,
-    sccNodes: string[]
+    sccNodes: string[],
+    maxLength: number
   ): string[] | null {
     const sccSet = new Set(sccNodes);
     const queue: Array<{ node: string; path: string[] }> = [{
@@ -224,8 +226,16 @@ export class CycleDetector {
 
       for (const dep of dependencies) {
         if (dep === startNode && path.length > 1) {
-          // 找到循環
-          return path;
+          // 找到循環，長度 = path.length，需在上限內才算合規
+          if (path.length <= maxLength) {
+            return path;
+          }
+          continue;
+        }
+
+        // 已達長度上限，不再展開新節點（仍允許上方在當前長度收口成環）
+        if (path.length >= maxLength) {
+          continue;
         }
 
         if (!path.includes(dep)) {
