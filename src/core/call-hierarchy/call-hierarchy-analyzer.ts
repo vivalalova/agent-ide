@@ -95,7 +95,8 @@ export class CallHierarchyAnalyzer {
         definitionFile,
         functionName,
         definitionRange,
-        options.depth
+        options.depth,
+        projectFiles
       );
       outgoing.push(...outgoingCalls);
     }
@@ -146,20 +147,48 @@ export class CallHierarchyAnalyzer {
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
     const visited = new Set<string>();
+    const localDefinitionCache = new Map<string, boolean>();
 
     const findCallsRecursive = async (
       targetName: string,
-      currentDepth: number
+      currentDepth: number,
+      targetDefinitionFile: string
     ): Promise<void> => {
-      if (currentDepth > depth || visited.has(targetName)) {
+      const targetKey = `${targetDefinitionFile}:${targetName}`;
+      if (currentDepth > depth || visited.has(targetKey)) {
         return;
       }
-      visited.add(targetName);
+      visited.add(targetKey);
 
       let callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
       if (currentDepth === 1 && targetCallSiteFilter) {
         callSites = await this.filterCallSites(callSites, targetCallSiteFilter);
       }
+
+      // 只有遞迴層需要以 caller 定義檔錨定；depth 1 維持既有的全專案查找行為。
+      if (currentDepth > 1) {
+        const anchoredCallSites: CallSite[] = [];
+        for (const callSite of callSites) {
+          const callSiteFile = callSite.location.filePath;
+          if (callSiteFile === targetDefinitionFile) {
+            anchoredCallSites.push(callSite);
+            continue;
+          }
+
+          const cacheKey = `${callSiteFile}:${targetName}`;
+          let hasLocalDefinition = localDefinitionCache.get(cacheKey);
+          if (hasLocalDefinition === undefined) {
+            hasLocalDefinition = (await this.findFunctionDefinition(targetName, [callSiteFile])) !== null;
+            localDefinitionCache.set(cacheKey, hasLocalDefinition);
+          }
+
+          if (!hasLocalDefinition) {
+            anchoredCallSites.push(callSite);
+          }
+        }
+        callSites = anchoredCallSites;
+      }
+
       if (callSites.length === 0) {
         return;
       }
@@ -183,7 +212,7 @@ export class CallHierarchyAnalyzer {
         const context = contexts.get(key) || '';
 
         // 只排除目標函數自己的遞迴呼叫；同檔案其他 caller 仍然是有效 incoming。
-        if (callSite.location.filePath === definitionFile && callerInfo?.name === targetName) {
+        if (callSite.location.filePath === targetDefinitionFile && callerInfo?.name === targetName) {
           continue;
         }
 
@@ -205,11 +234,11 @@ export class CallHierarchyAnalyzer {
 
       // 遞迴查找（如果深度允許）
       for (const caller of callersToRecurse.values()) {
-        await findCallsRecursive(caller.name, currentDepth + 1);
+        await findCallsRecursive(caller.name, currentDepth + 1, caller.file);
       }
     };
 
-    await findCallsRecursive(functionName, 1);
+    await findCallsRecursive(functionName, 1, definitionFile);
     return incoming;
   }
 
@@ -230,16 +259,23 @@ export class CallHierarchyAnalyzer {
 
   /**
    * 找出 outgoing 呼叫（目標函數呼叫了誰）
-   * @param depth 預留參數：未來可用於遞迴深度控制或效能優化
+   * @param depth 遞迴深度
    */
   private async findOutgoingCalls(
     filePath: string,
     functionName: string,
     functionRange: Range,
-    _depth: number // Reserved: 未來可實作遞迴分析或深度限制優化
+    depth: number,
+    projectFiles: readonly string[],
+    visitedDefinitions: Set<string> = new Set(),
+    visitedCallSites: Set<string> = new Set()
   ): Promise<OutgoingCall[]> {
     const outgoing: OutgoingCall[] = [];
-    const visited = new Set<string>();
+    const definitionKey = `${filePath}:${functionName}`;
+    if (visitedDefinitions.has(definitionKey)) {
+      return outgoing;
+    }
+    visitedDefinitions.add(definitionKey);
 
     const content = await this.fileUtils.readFile(filePath);
     if (!content) {
@@ -257,63 +293,90 @@ export class CallHierarchyAnalyzer {
 
       if (!sourceFile) {
         if (hasBabelAST(ast)) {
-          return this.findOutgoingCallsFromBabel(ast.babelAST, ast.sourceCode, functionName, filePath, functionRange, visited);
+          outgoing.push(...this.findOutgoingCallsFromBabel(
+            ast.babelAST,
+            ast.sourceCode,
+            functionName,
+            filePath,
+            functionRange,
+            visitedCallSites
+          ));
         }
-        return outgoing;
-      }
-
-      // 找到目標函數的 AST 節點
-      const functionNode = this.findFunctionNode(sourceFile, functionName, functionRange);
-      if (!functionNode || !functionNode.body) {
-        return outgoing;
-      }
-
-      // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
-      const isNestedDefinitionBoundary = (node: ts.Node): boolean =>
-        ts.isFunctionDeclaration(node) ||
-        (ts.isFunctionExpression(node) && node.name !== undefined) ||
-        ts.isMethodDeclaration(node) ||
-        ts.isGetAccessor(node) ||
-        ts.isSetAccessor(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isClassExpression(node);
-
-      // 遍歷函數 body 找出所有 CallExpression
-      const findCallsInNode = (node: ts.Node): void => {
-        if (isNestedDefinitionBoundary(node)) {
-          return;
+      } else {
+        // 找到目標函數的 AST 節點
+        const functionNode = this.findFunctionNode(sourceFile, functionName, functionRange);
+        if (!functionNode || !functionNode.body) {
+          return outgoing;
         }
 
-        if (ts.isCallExpression(node)) {
-          const callInfo = this.extractCallInfo(node, sourceFile);
-          if (callInfo) {
-            const key = `${callInfo.callee}:${callInfo.line}:${callInfo.column}`;
-            if (!visited.has(key)) {
-              visited.add(key);
+        // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
+        const isNestedDefinitionBoundary = (node: ts.Node): boolean =>
+          ts.isFunctionDeclaration(node) ||
+          (ts.isFunctionExpression(node) && node.name !== undefined) ||
+          ts.isMethodDeclaration(node) ||
+          ts.isGetAccessor(node) ||
+          ts.isSetAccessor(node) ||
+          ts.isClassDeclaration(node) ||
+          ts.isClassExpression(node);
 
-              outgoing.push({
-                callee: callInfo.callee,
-                location: {
-                  filePath,
-                  range: {
-                    start: { line: callInfo.line, column: callInfo.column },
-                    end: { line: callInfo.line, column: callInfo.column + callInfo.callee.length }
-                  }
-                },
-                context: callInfo.context,
-                isMethodCall: callInfo.isMethodCall,
-                receiver: callInfo.receiver
-              });
+        // 遍歷函數 body 找出所有 CallExpression
+        const findCallsInNode = (node: ts.Node): void => {
+          if (isNestedDefinitionBoundary(node)) {
+            return;
+          }
+
+          if (ts.isCallExpression(node)) {
+            const callInfo = this.extractCallInfo(node, sourceFile);
+            if (callInfo) {
+              const key = `${filePath}:${callInfo.callee}:${callInfo.line}:${callInfo.column}`;
+              if (!visitedCallSites.has(key)) {
+                visitedCallSites.add(key);
+
+                outgoing.push({
+                  callee: callInfo.callee,
+                  location: {
+                    filePath,
+                    range: {
+                      start: { line: callInfo.line, column: callInfo.column },
+                      end: { line: callInfo.line, column: callInfo.column + callInfo.callee.length }
+                    }
+                  },
+                  context: callInfo.context,
+                  isMethodCall: callInfo.isMethodCall,
+                  receiver: callInfo.receiver
+                });
+              }
             }
           }
-        }
 
-        ts.forEachChild(node, findCallsInNode);
-      };
+          ts.forEachChild(node, findCallsInNode);
+        };
 
-      findCallsInNode(functionNode.body);
+        findCallsInNode(functionNode.body);
+      }
     } catch (error) {
       diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    if (depth > 1) {
+      const directCalls = [...outgoing];
+      for (const call of directCalls) {
+        const calleeDefinition = await this.findFunctionDefinition(call.callee, projectFiles);
+        if (!calleeDefinition) {
+          continue;
+        }
+
+        const deeperCalls = await this.findOutgoingCalls(
+          calleeDefinition.location.filePath,
+          call.callee,
+          calleeDefinition.location.range,
+          depth - 1,
+          projectFiles,
+          visitedDefinitions,
+          visitedCallSites
+        );
+        outgoing.push(...deeperCalls);
+      }
     }
 
     return outgoing;
@@ -430,7 +493,7 @@ export class CallHierarchyAnalyzer {
 
         const line = loc.start.line; // 1-based
         const column = loc.start.column + 1; // 轉為 1-based
-        const key = `${callee}:${line}:${column}`;
+        const key = `${filePath}:${callee}:${line}:${column}`;
         if (visited.has(key)) { return; }
         visited.add(key);
 

@@ -300,4 +300,67 @@ export function jsCaller() {
       ]);
     });
   });
+
+  describe('outgoing 遞迴深度', () => {
+    const chainFiles = {
+      '/src/chain.ts': [
+        'export function leaf() {',
+        '  return 1;',
+        '}',
+        'export function mid() {',
+        '  return leaf();',
+        '}',
+        'export function top() {',
+        '  return mid();',
+        '}'
+      ].join('\n')
+    };
+
+    it('Given 呼叫鏈 top→mid→leaf 且 depth 1, when analyze outgoing, then 只含直接呼叫 mid', async () => {
+      const analyzer = await createAnalyzerWithRealParsers(chainFiles);
+
+      const result = await analyzer.analyze('top', ['/src/chain.ts'], { direction: 'outgoing', depth: 1 });
+
+      expect(result?.outgoing.map(call => call.callee)).toEqual(['mid']);
+    });
+
+    it('Given 呼叫鏈 top→mid→leaf 且 depth 2, when analyze outgoing, then 包含第二層的 leaf', async () => {
+      const analyzer = await createAnalyzerWithRealParsers(chainFiles);
+
+      const result = await analyzer.analyze('top', ['/src/chain.ts'], { direction: 'outgoing', depth: 2 });
+
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+      expect(callees).toContain('mid');
+      expect(callees).toContain('leaf');
+    });
+  });
+
+  describe('incoming 遞迴錨定 caller 定義檔', () => {
+    it('Given 兩檔各自定義同名 shared, when depth 2 incoming, then 不把另一個 shared 的 caller 誤列', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/a.ts': [
+          'export function target() {}',
+          'export function shared() {',
+          '  target();',
+          '}',
+          'export function topA() {',
+          '  shared();',
+          '}'
+        ].join('\n'),
+        '/src/b.ts': [
+          'function shared() {}',
+          'export function topB() {',
+          '  shared();',
+          '}'
+        ].join('\n')
+      });
+
+      const result = await analyzer.analyze('target', ['/src/a.ts', '/src/b.ts'], { direction: 'incoming', depth: 2 });
+
+      const callers = result?.incoming.map(call => call.caller) ?? [];
+      expect(callers).toContain('shared');
+      expect(callers).toContain('topA');
+      expect(callers).not.toContain('topB');
+    });
+  });
 });
