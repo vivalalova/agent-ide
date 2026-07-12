@@ -114,16 +114,17 @@ async function handleDeadCodeCommand(
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;
 
-  const indexEngine = await createAndIndexWithCache(
-    projectPath,
-    context.fileSystem,
-    CLI_INDEX_DEFAULTS,
-    { noCache, cacheDir: globalOpts.cacheDir }
-  );
-
   const parserRegistry = ParserRegistry.getInstance();
 
+  let indexEngine: Awaited<ReturnType<typeof createAndIndexWithCache>> | undefined;
+
   try {
+    indexEngine = await createAndIndexWithCache(
+      projectPath,
+      context.fileSystem,
+      CLI_INDEX_DEFAULTS,
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     // 1. 執行 dead code 檢測
     const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);
@@ -238,7 +239,7 @@ async function handleDeadCodeCommand(
     outputHandler.outputError(`Dead code ${action}失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    await indexEngine.disposeAsync();
+    await indexEngine?.disposeAsync();
   }
 }
 

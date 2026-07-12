@@ -106,14 +106,15 @@ async function handleCallHierarchyCommand(
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;
 
-  const indexEngine = await createAndIndexWithCache(
-    projectPath,
-    context.fileSystem,
-    CLI_INDEX_DEFAULTS,
-    { noCache, cacheDir: globalOpts.cacheDir }
-  );
+  let indexEngine: Awaited<ReturnType<typeof createAndIndexWithCache>> | undefined;
 
   try {
+    indexEngine = await createAndIndexWithCache(
+      projectPath,
+      context.fileSystem,
+      CLI_INDEX_DEFAULTS,
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     const indexedFiles = indexEngine.getAllIndexedFiles();
     const filePaths = indexedFiles.map(f => f.filePath);
@@ -286,7 +287,7 @@ async function handleCallHierarchyCommand(
     outputHandler.outputError(`呼叫層次分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    await indexEngine.disposeAsync();
+    await indexEngine?.disposeAsync();
   }
 }
 
