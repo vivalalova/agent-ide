@@ -231,21 +231,13 @@ export class SymbolIndex {
             fileInfo: entry.fileInfo,
             score
           });
-
-          if (results.length >= maxResults) {
-            break;
-          }
         }
-      }
-
-      if (results.length >= maxResults) {
-        break;
       }
     }
 
-    // 根據分數排序
+    // 根據分數排序後再截斷結果
     results.sort((a, b) => b.score - a.score);
-    return results;
+    return results.slice(0, maxResults);
   }
 
   /**
