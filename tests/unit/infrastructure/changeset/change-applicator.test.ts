@@ -598,6 +598,71 @@ describe('ChangeApplicator', () => {
     });
   });
 
+  // MARK: - 重疊 TextEdit 偵測（CA-1 regression）
+
+  describe('重疊 TextEdit 偵測（CA-1）', () => {
+    it('範圍部分重疊、內容不同的 edits 不應靜默毀損內容', async () => {
+      // content: 'abcdefghij'
+      // edit1: col3-6 (0-based offset [2,5)) "cde" -> "X"
+      // edit2: col5-8 (0-based offset [4,7)) "efg" -> "Y"
+      // 兩者在 offset [4,5)（字元 'e'）重疊，屬衝突編輯
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abcdefghij');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/overlap.ts',
+          edits: [
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' },
+            { range: createTestRange(1, 5, 1, 8), newText: 'Y' }
+          ]
+        }]
+      });
+
+      const result = await sut.apply(changeset);
+
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/overlap.ts')?.[1];
+
+      if (result.success) {
+        // 若回報成功，寫入內容不得是重疊編輯互相踩踏產生的毀損結果
+        expect(writtenContent).not.toBe('abXhij');
+      } else {
+        // 至少要明確回報失敗原因，不能默默吞掉
+        expect(result.errors?.length ?? 0).toBeGreaterThan(0);
+      }
+    });
+
+    it('完全相同範圍、相同新文字的重複編輯：不得靜默毀損（要嘛正確 dedupe，要嘛明確報錯）', async () => {
+      // content: 'abcdefghij'
+      // 兩筆完全相同的 edit：col3-6 "cde" -> "X"
+      // 正確結果只能是二選一：
+      //   (a) dedupe 後只套用一次 -> 'abXfghij'
+      //   (b) 明確回報失敗（success:false + errors）
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abcdefghij');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/dup.ts',
+          edits: [
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' },
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' }
+          ]
+        }]
+      });
+
+      const result = await sut.apply(changeset);
+
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/dup.ts')?.[1];
+
+      if (result.success) {
+        expect(writtenContent).toBe('abXfghij');
+      } else {
+        expect(result.errors?.length ?? 0).toBeGreaterThan(0);
+      }
+    });
+  });
+
   // MARK: - 邊界情況
 
   describe('邊界情況', () => {

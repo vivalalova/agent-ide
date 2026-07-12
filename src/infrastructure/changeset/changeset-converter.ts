@@ -129,19 +129,31 @@ function processSingleLineEdit(
  * @param lineContent - 原始行內容
  * @param startCol - 1-based 起始列號
  * @param newText - 要插入的新文字
+ * @param composableSingleEdits - 同起始行、範圍不重疊（可安全合成）的單行編輯；
+ *   例如 move-member M4 在行首補的零寬 import 插入。這些編輯的結束列 <= startCol，
+ *   代表它們只動到 prefix 之前的字元，與本次跨行編輯消費的範圍互不重疊，
+ *   ChangeApplicator 實際寫入時兩者都會套用，預覽須合成後一併呈現，不能只留一筆
  * @returns 起始行的 LineChange 陣列（可能包含新增行）
  */
 function processMultiLineEditStart(
   lineNum: number,
   lineContent: string,
   startCol: number,
-  newText: string
+  newText: string,
+  composableSingleEdits?: readonly TextEdit[]
 ): LineChange[] {
   const changes: LineChange[] = [];
 
   // startCol 是 1-based，substring 是 0-based
   // 範例：startCol=3 表示從第 3 列開始刪除，保留 0~2（即前 2 個字元）
-  const prefix = lineContent.substring(0, startCol - 1);
+  let prefix = lineContent.substring(0, startCol - 1);
+
+  // 合成同起始行的可組合單行編輯：它們的範圍全落在 prefix 之內（見上方參數說明），
+  // 直接對 prefix 套用即可得到「兩者都寫入後」的正確前綴
+  if (composableSingleEdits && composableSingleEdits.length > 0) {
+    prefix = applyEditsToLine(prefix, [...composableSingleEdits]);
+  }
+
   const newContent = prefix + newText;
 
   // 起始行：原內容被替換為 prefix + newText 的第一行
@@ -233,21 +245,18 @@ function processMultiLineEditMiddle(lineNum: number, lineContent: string): LineC
  * 刪除多行並插入新內容
  * @param edit - 跨行編輯操作
  * @param originalLines - 原始檔案各行
- * @param processedLines - 已處理的行號集合（會原地修改）
+ * @param processedLines - 已處理的行號集合（會原地修改，供其他跨行編輯避免重複處理同一行）
+ * @param composableSingleEdits - 呼叫端已判定與本次編輯起始行不衝突、可安全合成的同行單行編輯
  * @returns LineChange 陣列
  */
 function processMultiLineEdit(
   edit: TextEdit,
   originalLines: string[],
-  processedLines: Set<number>
+  processedLines: Set<number>,
+  composableSingleEdits?: readonly TextEdit[]
 ): LineChange[] {
   const changes: LineChange[] = [];
   const { start, end } = edit.range;
-
-  // 跳過起始行已被單行編輯處理的情況
-  if (processedLines.has(start.line)) {
-    return [];
-  }
 
   // end.column === 1 是 LSP exclusive end：end 行完全在刪除範圍之外
   // （代表「刪除到 end 行開頭之前」，即整行連同換行一起刪除），
@@ -261,8 +270,10 @@ function processMultiLineEdit(
     const lineContent = originalLines[lineNum - 1] ?? '';
 
     if (lineNum === start.line) {
-      // 起始行：保留 startCol 之前 + 新內容
-      const startChanges = processMultiLineEditStart(lineNum, lineContent, start.column, edit.newText);
+      // 起始行：保留 startCol 之前 + 新內容（若有可合成的同行單行編輯一併套用）
+      const startChanges = processMultiLineEditStart(
+        lineNum, lineContent, start.column, edit.newText, composableSingleEdits
+      );
       changes.push(...startChanges);
     } else if (lineNum === end.line) {
       // 結束行：保留 endCol 之後，附加到前一個 change
@@ -316,20 +327,50 @@ function convertEditsToLineChanges(
     }
   }
 
-  // 第二步：處理單行編輯 — 同行多編輯合併處理
+  // 第二步：處理跨行編輯 — 與同起始行的單行編輯有兩種關係：
+  // 1. 真衝突（範圍重疊）：單行編輯的結束列 > 跨行編輯的起始列，兩者搶同一段字元
+  //    → 維持原行為，捨棄整筆跨行編輯，只留單行編輯自己的呈現
+  // 2. 可合成（範圍不重疊，如零寬 import 插入接在整檔替換前）
+  //    → ChangeApplicator 實寫時兩者都會套用，預覽需合成後一併顯示，不能只留一筆；
+  //      該行的單行編輯改由跨行編輯的起始行處理吸收，稍後跳過其獨立輸出
+  // processedLines 只追蹤「已被某個跨行編輯的起始/中間/結束行佔用」，供後續跨行編輯
+  // 之間彼此避讓（例如某編輯的中間/結束行剛好是另一編輯的起始行）
+  const processedLines = new Set<number>();
+  const mergedSingleLineKeys = new Set<number>();
+
+  for (const edit of multiLineEdits) {
+    const { start } = edit.range;
+    if (processedLines.has(start.line)) {
+      continue;
+    }
+
+    const sameLineEdits = singleLineEditsByLine.get(start.line);
+    let composableSingleEdits: TextEdit[] | undefined;
+
+    if (sameLineEdits) {
+      const hasRealConflict = sameLineEdits.some(e => e.range.end.column > start.column);
+      if (hasRealConflict) {
+        // 真衝突：照舊捨棄此跨行編輯，該行單行編輯維持獨立呈現
+        continue;
+      }
+      composableSingleEdits = sameLineEdits;
+      mergedSingleLineKeys.add(start.line);
+    }
+
+    const multiChanges = processMultiLineEdit(edit, originalLines, processedLines, composableSingleEdits);
+    changes.push(...multiChanges);
+  }
+
+  // 第三步：處理單行編輯 — 同行多編輯合併處理；已併入跨行編輯起始行的合成結果者跳過，
+  // 避免同一行被重複輸出兩筆 change
   for (const [lineNum, lineEdits] of singleLineEditsByLine) {
+    if (mergedSingleLineKeys.has(lineNum)) {
+      continue;
+    }
     const change = processSingleLineEdit(lineNum, lineEdits, originalLines);
     if (change) {
       changes.push(change);
     }
-  }
-
-  // 第三步：處理跨行編輯 — 避免與已處理的單行編輯衝突
-  const processedLines = new Set<number>(singleLineEditsByLine.keys());
-
-  for (const edit of multiLineEdits) {
-    const multiChanges = processMultiLineEdit(edit, originalLines, processedLines);
-    changes.push(...multiChanges);
   }
 
   // 按行號排序確保輸出順序一致
