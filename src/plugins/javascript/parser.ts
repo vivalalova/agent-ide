@@ -611,12 +611,18 @@ export class JavaScriptParser implements ParserPlugin {
     symbols: JavaScriptSymbol[],
     sourceFile: string
   ): void {
+    // 位置錨定於 local binding 識別符（node.local），而非整個 specifier 節點
+    // （default/named import 通常等價，但 named alias `foo as bar` 與
+    // namespace import `* as ns` 的 specifier 範圍起點會落在 exported name
+    // 或 `*`，並非實際綁定於程式碼中的 local name）
     const symbol = this.createSymbolFromNode(
       node,
       node.local.name,
       SymbolType.Variable,
       sourceFile,
-      { isImported: true }
+      { isImported: true },
+      undefined,
+      node.local
     );
     symbols.push(symbol);
   }
