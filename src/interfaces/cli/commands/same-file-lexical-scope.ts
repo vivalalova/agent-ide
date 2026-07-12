@@ -14,7 +14,12 @@ import type {
   SymbolReferenceFilterContext
 } from './symbol-reference-filter-types.js';
 import { getOrReadSourceFile } from './module-file-resolver.js';
-import { findAncestor, nodeNameMatchesSelectedSymbol, nodeStartsAtLocation } from './ast-node-location.js';
+import {
+  findAncestor,
+  isExcludedPropertyKeyIdentifier,
+  nodeNameMatchesSelectedSymbol,
+  nodeStartsAtLocation
+} from './ast-node-location.js';
 import { classChainTargetsOwner, receiverTargetsOwnerName } from './receiver-owner-heritage.js';
 import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
 
@@ -91,6 +96,12 @@ function sameFileReferenceTargetsSelectedSymbol(
   }
 
   if (!ts.isIdentifier(referenceNode)) {
+    return false;
+  }
+
+  // interface/type literal 屬性簽名鍵與 object literal 非 shorthand 鍵：名稱字面重合，
+  // 但不是對選定綁定的引用（shorthand 例外，見 helper 文件）。
+  if (isExcludedPropertyKeyIdentifier(referenceNode)) {
     return false;
   }
 

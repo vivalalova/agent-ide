@@ -28,7 +28,7 @@ import {
   resolveModuleFile,
   tryGetSourceFile
 } from './module-file-resolver.js';
-import { nodeStartsAtLocation } from './ast-node-location.js';
+import { isExcludedPropertyKeyIdentifier, nodeStartsAtLocation } from './ast-node-location.js';
 import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
 import { receiverTargetsSelectedOwner } from './receiver-owner-heritage.js';
 
@@ -393,6 +393,12 @@ function identifierTargetsSelectedBinding(
     && parent.name.text === selectedSymbol.name
   ) {
     return expressionTargetsSelectedBinding(parent, bindings, selectedSymbol, sourceFile);
+  }
+
+  // interface/type literal 屬性簽名鍵與 object literal 非 shorthand 鍵：名稱字面重合，
+  // 但不是對選定綁定的引用，裸名比對前先排除（shorthand 例外，見 helper 文件）。
+  if (isExcludedPropertyKeyIdentifier(node)) {
+    return false;
   }
 
   if (bindings.directNames.has(node.text) && !identifierShadowedByLocalDeclaration(node, sourceFile)) {

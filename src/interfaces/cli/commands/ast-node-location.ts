@@ -40,3 +40,20 @@ export function nodeStartsAtLocation(
   return line + 1 === location.line
     && (location.column === undefined || character + 1 === location.column);
 }
+
+/**
+ * 是否為 interface / type literal 的屬性簽名鍵（`{ name: T }` 的 `name`）
+ * 或 object literal 的非 shorthand 屬性鍵（`{ name: value }` 的 `name`）。
+ *
+ * 這兩種鍵與成員存取（`x.name`）同屬「名稱字面重合但非對綁定的引用」，命中即應排除，
+ * 不參與裸名（directNames / nodeNameMatchesSelectedSymbol）比對。
+ * `ShorthandPropertyAssignment`（`{ name }`）刻意不在此列——它同時是鍵也是對該綁定的
+ * 真實引用，必須維持可比對。
+ */
+export function isExcludedPropertyKeyIdentifier(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return (
+    (ts.isPropertySignature(parent) && parent.name === node)
+    || (ts.isPropertyAssignment(parent) && parent.name === node)
+  );
+}

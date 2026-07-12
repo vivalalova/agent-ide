@@ -114,6 +114,20 @@ function getLexicalDeclarationScope(node: ts.Node): ts.Node {
       ) {
         return loopStatement;
       }
+
+      // `case 1: let y = 1;`（無大括號）：祖鏈為 VariableDeclarationList → VariableStatement →
+      // CaseClause/DefaultClause → CaseBlock，下面泛用 fallback 只認得 Block／SourceFile、
+      // `ts.isBlock()` 對 CaseBlock 回傳 false，會直接跳到外層函式 Block，導致 case 內宣告
+      // 誤判為遮蔽整個函式。case 內若有明確 `{ }` 會先命中該內層 Block（優先於 CaseBlock），
+      // 因此只在宣告與 CaseBlock 之間沒有其他 Block 時才收斂為 CaseBlock（ECMA-262：case 內
+      // let/const 的 TDZ scope 涵蓋整個 CaseBlock）
+      const nearestBoundary = findAncestor(
+        node,
+        ancestor => ts.isBlock(ancestor) || ts.isCaseBlock(ancestor) || ts.isSourceFile(ancestor)
+      );
+      if (nearestBoundary && ts.isCaseBlock(nearestBoundary)) {
+        return nearestBoundary;
+      }
     }
   }
 
