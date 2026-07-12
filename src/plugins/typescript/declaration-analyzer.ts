@@ -85,6 +85,12 @@ export class DeclarationAnalyzer {
         return null;
       }
 
+      // 多宣告子語句（如 `let a, b;`）：findDeclarationNode 已回傳精確的目標 VariableDeclaration
+      // 節點（而非整個 VariableStatement），偵測粒度＝刪除粒度，只刪這個宣告子（含前後逗號手術）
+      if (ts.isVariableDeclaration(targetNode)) {
+        return this.computeDeclaratorRemovalRange(sourceFile, targetNode);
+      }
+
       // 取得完整範圍（包含前導註解）
       // getFullStart() 包含前導 trivia（空白、註解）
       // getStart() 是實際程式碼開始位置
@@ -147,7 +153,7 @@ export class DeclarationAnalyzer {
       const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 
       if (this.isMatchingDeclaration(node, symbolName, symbolType, nodeStartLine, startLine)) {
-        result = node;
+        result = this.resolveMatchedDeclarationNode(node, symbolName, symbolType);
         return;
       }
 
@@ -156,6 +162,62 @@ export class DeclarationAnalyzer {
 
     ts.forEachChild(sourceFile, visit);
     return result;
+  }
+
+  /**
+   * 將 isMatchingDeclaration 判定為符合的節點，收斂為實際要刪除的目標節點
+   *
+   * 對多宣告子的 VariableStatement（如 `let a, b;`），偵測粒度是單一宣告子
+   * （每個變數各自獨立判定是否為 dead code），刪除粒度必須與之一致，
+   * 故回傳精確的目標 VariableDeclaration 節點，而非整個語句。
+   * 單一宣告子時維持回傳整個語句節點（含前導註解等既有行為不變）。
+   */
+  private resolveMatchedDeclarationNode(node: ts.Node, symbolName: string, symbolType: string): ts.Node {
+    if (
+      (symbolType === 'variable' || symbolType === 'constant')
+      && ts.isVariableStatement(node)
+      && node.declarationList.declarations.length > 1
+    ) {
+      const target = node.declarationList.declarations.find(
+        decl => ts.isIdentifier(decl.name) && decl.name.text === symbolName
+      );
+      if (target) {
+        return target;
+      }
+    }
+    return node;
+  }
+
+  /**
+   * 計算多宣告子語句中，單一宣告子的精確刪除範圍（文字手術）
+   *
+   * 三種位置：
+   * - 首位／中間：連同其後的逗號（刪到下一個宣告子的起始位置）
+   * - 末位：連同其前的逗號（從前一個宣告子的結尾開始刪）
+   */
+  private computeDeclaratorRemovalRange(sourceFile: ts.SourceFile, declarator: ts.VariableDeclaration): Range {
+    // VariableDeclaration.parent 型別是 VariableDeclarationList | CatchClause；
+    // 透過 resolveMatchedDeclarationNode 產生的節點必然來自 VariableStatement.declarationList，
+    // 此處窄化型別以安全存取 .declarations（CatchClause 分支僅為防禦性 fallback，理論上不會走到）
+    const parent = declarator.parent;
+    const declarations = ts.isVariableDeclarationList(parent) ? parent.declarations : [declarator];
+    const index = declarations.indexOf(declarator);
+    const isLast = index === declarations.length - 1;
+
+    const startPos = isLast && index > 0
+      ? declarations[index - 1].getEnd()
+      : declarator.getStart(sourceFile);
+    const endPos = isLast
+      ? declarator.getEnd()
+      : declarations[index + 1].getStart(sourceFile);
+
+    const startLC = sourceFile.getLineAndCharacterOfPosition(startPos);
+    const endLC = sourceFile.getLineAndCharacterOfPosition(endPos);
+
+    return {
+      start: { line: startLC.line + 1, column: startLC.character + 1, offset: startPos },
+      end: { line: endLC.line + 1, column: endLC.character + 1, offset: endPos }
+    };
   }
 
   /**

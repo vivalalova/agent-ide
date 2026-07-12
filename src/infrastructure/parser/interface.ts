@@ -398,7 +398,9 @@ export enum ScopedReferenceKind {
   /** 寫入引用（如變數賦值） */
   Write = 'write',
   /** 呼叫引用（如函式/方法呼叫） */
-  Call = 'call'
+  Call = 'call',
+  /** import 語句內的綁定（specifier/alias/default/namespace），僅為綁定非真正使用 */
+  Import = 'import'
 }
 
 /**

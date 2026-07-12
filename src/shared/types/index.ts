@@ -12,7 +12,7 @@ export * from './symbol.js';
 export * from './ast.js';
 
 // 行號工具函數
-export { isSameLine, toOneBased, toZeroBased } from './line-number.js';
+export { toOneBased, toZeroBased } from './line-number.js';
 
 // Source file extension helpers
 export {

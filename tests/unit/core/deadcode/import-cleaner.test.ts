@@ -354,6 +354,25 @@ function unused() {}`;
       expect(result).toBe('import type { User } from \'./types\';');
     });
 
+    it('D3 reproduction：混合 per-specifier type 修飾符時，保留下來的 type specifier 不應遺失 type 前綴', () => {
+      // import { type Props, render } from './x'；render 未使用被清除，Props 保留
+      // 但 Props 本身帶 per-specifier `type` 修飾符（非整句 `import type {`），
+      // isTypeImport 只判斷整句是否為 `import type {`，per-specifier 的 type 修飾符
+      // 在 import-parser.ts 轉換時已遺失（symbols 只有 name/alias，無 isTypeOnly），
+      // 導致這裡重新產生語句時遺失 Props 的 type 修飾符。
+      const stmt = {
+        statement: 'import { type Props, render } from \'./x\';',
+        range: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 42, offset: 41 } },
+        symbols: [{ name: 'Props' }, { name: 'render' }],
+        hasDefault: false,
+        isNamespace: false
+      };
+
+      const result = (importCleaner as never)['generatePartialImport'](stmt, ['Props']);
+
+      expect(result).toBe('import { type Props } from \'./x\';');
+    });
+
     it('當 from 路徑無法解析時應返回 null', () => {
       const stmt = {
         statement: 'import { a } invalid syntax',

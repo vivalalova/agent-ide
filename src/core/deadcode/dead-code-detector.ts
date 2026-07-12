@@ -5,7 +5,6 @@
 
 import type { Symbol } from '@shared/types/symbol.js';
 import { SymbolType } from '@shared/types/symbol.js';
-import { isSameLine } from '@shared/types/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index.js';
 import {
@@ -116,21 +115,30 @@ export class DeadCodeDetector {
 
         // 分析引用：過濾掉定義位置本身
         const symbolLine = symbol.location.range.start.line;
+        const symbolColumn = symbol.location.range.start.column;
         const symbolFile = symbol.location.filePath;
 
         const usageRefs = references.filter(ref => {
-          // 排除定義位置
-          const refLine = ref.location.range.start.line;
+          // 排除定義位置本身：symbol.location.range.start 是宣告識別符節點自身的精確位置
+          // （TS 經 tsPositionToPosition、JS 經 babelLocationToPosition 轉換，line/column
+          // 皆為 1-based），scoped 引用查找到的宣告識別符出現位置與其完全相同。
+          // 故用「同檔案 + line + column 完全相等」精確比對，只排除宣告識別符自身；
+          // 不可用鄰近行的模糊容差（會把緊鄰宣告下一行的真實使用誤排除為「定義行」）。
+          const refPos = ref.location.range.start;
+          const isDeclarationIdentifier = ref.location.filePath === symbolFile
+            && refPos.line === symbolLine
+            && refPos.column === symbolColumn;
 
-          // 定義位置過濾：同檔案、同行（使用 isSameLine 處理 0/1-indexed 差異）
-          const isDefinitionLine = ref.location.filePath === symbolFile
-            && isSameLine(refLine, symbolLine);
-
-          if (isDefinitionLine) {
+          if (isDeclarationIdentifier) {
             return false;
           }
-          // 只計算 usage 類型
-          return ref.type === SymbolReferenceType.Usage;
+          // 計算 usage 與寫入（Definition，如重新賦值）類型：只被寫入從未被讀取的變數
+          // （如 `let x = 1; x = 2;`）雖然實質上是 dead code，但刪除範圍目前只涵蓋宣告，
+          // 不包含孤兒賦值語句；保守判定為非 dead（有寫入代表符號仍「活著」），避免刪除
+          // 宣告後留下語法上仍有效、但語意孤兒的賦值語句（D2）。Import/Export 類型的
+          // specifier 引用不算 usage/寫入信號（D4：避免「只被 import 從未使用」的符號
+          // 永遠判定為存活）。
+          return ref.type === SymbolReferenceType.Usage || ref.type === SymbolReferenceType.Definition;
         });
 
         const hasExport = symbol.modifiers.includes('export');

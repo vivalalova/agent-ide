@@ -4,72 +4,11 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  isSameLine,
   toOneBased,
   toZeroBased
 } from '@shared/types/line-number.js';
 
 describe('line-number', () => {
-  // MARK: - isSameLine
-
-  describe('isSameLine', () => {
-    describe('tolerance=1（預設）', () => {
-      interface SameLineTestCase {
-        scenario: string;
-        line1: number;
-        line2: number;
-        expected: boolean;
-      }
-
-      it.each<SameLineTestCase>([
-        { scenario: '相同行號', line1: 5, line2: 5, expected: true },
-        { scenario: '相差 1 行', line1: 5, line2: 6, expected: true },
-        { scenario: '相差 -1 行', line1: 6, line2: 5, expected: true },
-        { scenario: '相差 2 行', line1: 5, line2: 7, expected: false },
-        { scenario: '相差 -2 行', line1: 7, line2: 5, expected: false },
-        { scenario: '第 0 行和第 1 行', line1: 0, line2: 1, expected: true },
-        { scenario: '極大差異', line1: 1, line2: 1000, expected: false }
-      ])('$scenario 應為 $expected', ({ line1, line2, expected }) => {
-        expect(isSameLine(line1, line2)).toBe(expected);
-      });
-    });
-
-    describe('tolerance=0（嚴格模式）', () => {
-      interface StrictModeTestCase {
-        scenario: string;
-        line1: number;
-        line2: number;
-        expected: boolean;
-      }
-
-      it.each<StrictModeTestCase>([
-        { scenario: '相同行號', line1: 5, line2: 5, expected: true },
-        { scenario: '相差 1 行', line1: 5, line2: 6, expected: false },
-        { scenario: '相差 -1 行', line1: 6, line2: 5, expected: false },
-        { scenario: '第 0 行和第 0 行', line1: 0, line2: 0, expected: true }
-      ])('$scenario 應為 $expected', ({ line1, line2, expected }) => {
-        expect(isSameLine(line1, line2, 0)).toBe(expected);
-      });
-    });
-
-    describe('邊界情況', () => {
-      it('負數行號應正確處理', () => {
-        expect(isSameLine(-1, 0)).toBe(true);
-        expect(isSameLine(-1, 1)).toBe(false);
-      });
-
-      it('極大行號應正確處理', () => {
-        expect(isSameLine(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBe(true);
-        expect(isSameLine(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER - 1)).toBe(true);
-      });
-
-      it('零和零應為同一行', () => {
-        expect(isSameLine(0, 0)).toBe(true);
-        expect(isSameLine(0, 0, 0)).toBe(true);
-      });
-    });
-  });
-
   // MARK: - toOneBased
 
   describe('toOneBased', () => {

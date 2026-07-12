@@ -15,6 +15,7 @@ import {
 } from '@infrastructure/parser/index.js';
 import { tsNodeToRange } from './types.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 
 /**
  * 標識符引用分析結果
@@ -35,6 +36,8 @@ interface IdentifierReferenceInfo {
  * 提供作用域感知的符號引用查找
  */
 export class ReferenceFinder {
+  private readonly scopeAnalyzer: ScopeAnalyzer = createScopeAnalyzer();
+
   /**
    * 建立引用查找器
    * @param compilerOptions TypeScript 編譯選項
@@ -132,6 +135,17 @@ export class ReferenceFinder {
     sourceFile: ts.SourceFile
   ): IdentifierReferenceInfo | null {
     const parent = node.parent;
+
+    // import 語句內的標識符（specifier/alias/default/namespace）只是綁定本身，
+    // 不是對該符號的真正使用（D4：避免「只被 import 從未使用」的符號因 import
+    // specifier 被誤算成一次使用而永遠判定為存活）
+    if (this.scopeAnalyzer.isInImportStatement(node)) {
+      return {
+        kind: ScopedReferenceKind.Import,
+        containerName: this.findContainerName(node),
+        isMethodCall: false
+      };
+    }
 
     // 判斷引用類型
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;

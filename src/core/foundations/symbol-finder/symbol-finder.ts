@@ -209,9 +209,7 @@ export class SymbolFinder {
                 refs.push({
                   symbolName: symbol.name,
                   location: ref.location,
-                  type: ref.type === 'definition'
-                    ? SymbolReferenceType.Definition
-                    : SymbolReferenceType.Usage,
+                  type: this.mapParserReferenceTypeString(ref.type),
                   context
                 });
               }
@@ -449,8 +447,27 @@ export class SymbolFinder {
     switch (kind) {
       case ScopedReferenceKind.Write:
         return SymbolReferenceType.Definition;
+      case ScopedReferenceKind.Import:
+        return SymbolReferenceType.Import;
       case ScopedReferenceKind.Call:
       case ScopedReferenceKind.Read:
+      default:
+        return SymbolReferenceType.Usage;
+    }
+  }
+
+  /**
+   * 將 Parser（ReferenceType 字串：'definition' | 'usage' | 'declaration' | 'import'）
+   * 的引用類型字串轉換為 SymbolReferenceType
+   * 供 findReferencesMultiple 的 fallback 分支與 convertParserRefToSymbolReference 共用，
+   * 避免同一套映射邏輯散落兩處（Single Source of Truth）
+   */
+  private mapParserReferenceTypeString(type: string): SymbolReferenceType {
+    switch (type) {
+      case 'definition':
+        return SymbolReferenceType.Definition;
+      case 'import':
+        return SymbolReferenceType.Import;
       default:
         return SymbolReferenceType.Usage;
     }
@@ -479,9 +496,7 @@ export class SymbolFinder {
     return {
       symbolName,
       location: ref.location,
-      type: ref.type === 'definition'
-        ? SymbolReferenceType.Definition
-        : SymbolReferenceType.Usage,
+      type: this.mapParserReferenceTypeString(ref.type),
       context
     };
   }

@@ -36,6 +36,14 @@ export class RangeExpander {
         range.start.line
       );
       if (parserRange) {
+        // 多宣告子語句（如 `let a, b;`）的精確手術範圍：起點不在行首，代表這是
+        // 單一宣告子的文字手術範圍（已含正確的逗號銜接），非整條語句/整行刪除。
+        // 行導向的後續處理（前導註解、行首對齊、擴展至行尾）皆假設整行刪除，
+        // 套用會誤吃掉本行其餘內容（如末位宣告子後的分號），故直接原樣回傳。
+        if (parserRange.start.column > 1) {
+          return parserRange;
+        }
+
         // Parser 成功解析，處理後續空行
         const lines = content.split('\n');
         const declarationStartLine = this.findDeclarationStartLine(lines, range.start.line - 1, symbolType, symbolName);

@@ -136,11 +136,19 @@ export class ImportCleaner {
     // 檢查 default import 是否仍需保留
     const keepDefault = defaultSymbol && usedSymbols.includes(defaultSymbol.name);
 
+    // per-specifier type 修飾符（如 `import { type Props, render }`）：內部模型
+    // （ImportSymbolInfo）不保留此資訊，故直接從原始語句文字重新解析，取得每個
+    // named symbol 原始名稱是否帶有 `type ` 前綴，重建時才不會遺失（D3）
+    const typeOnlyNames = this.parseNamedSpecifierTypeMarkers(stmt.statement);
+
     // 過濾出需要保留的 named symbols，並保留別名資訊
     // 同時檢查 name 和 alias，因為 usedSymbols 可能包含別名
     const keptNamedSymbols = namedSymbols
       .filter(s => usedSymbols.includes(s.name) || (s.alias && usedSymbols.includes(s.alias)))
-      .map(s => s.alias ? `${s.name} as ${s.alias}` : s.name);
+      .map(s => {
+        const base = s.alias ? `${s.name} as ${s.alias}` : s.name;
+        return typeOnlyNames.has(s.name) ? `type ${base}` : base;
+      });
 
     // 判斷是否需要 type 關鍵字（僅對純 named import）
     const isTypeImport = stmt.statement.match(/import\s+type\s*\{/);
@@ -160,6 +168,36 @@ export class ImportCleaner {
 
     // 沒有任何符號需要保留
     return null;
+  }
+
+  /**
+   * 從原始 import 語句文字解析出帶有 per-specifier `type ` 修飾符的 named symbol
+   * 原始名稱集合（如 `import { type Props, render }` → { 'Props' }）
+   *
+   * 只在整句非 `import type { ... }`（whole-statement type-only）時才有意義，
+   * TS 語法不允許 `import type { type Foo }` 疊加修飾符，故無需另外排除。
+   */
+  private parseNamedSpecifierTypeMarkers(statement: string): Set<string> {
+    const typeOnlyNames = new Set<string>();
+    const bracesMatch = statement.match(/\{([^}]*)\}/);
+    if (!bracesMatch) {
+      return typeOnlyNames;
+    }
+
+    for (const rawPart of bracesMatch[1].split(',')) {
+      const part = rawPart.trim();
+      if (!part.startsWith('type ')) {
+        continue;
+      }
+      const rest = part.slice('type '.length).trim();
+      const asMatch = rest.match(/^(\w+)\s+as\s+\w+$/);
+      const originalName = asMatch ? asMatch[1] : rest;
+      if (originalName) {
+        typeOnlyNames.add(originalName);
+      }
+    }
+
+    return typeOnlyNames;
   }
 
   /**
