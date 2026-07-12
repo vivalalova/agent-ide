@@ -166,6 +166,26 @@ export class SignatureValidator {
   }
 
   /**
+   * 驗證 rest 參數是否位於參數列表最後。TypeScript 規則：rest 參數必須是最後一個
+   * 參數，置於非最後位置是無效語法。此檢查作用於「變更後」的最終參數列表（由呼叫端
+   * 傳入 transformer 運算後的結果），無論觸發原因是 reorder、add 或其他變更組合皆
+   * 一併涵蓋，不需在各變更類型分支各自模擬一套順序邏輯。
+   */
+  validateRestParameterIsLast(
+    parameters: readonly ParameterDefinition[]
+  ): ChangeSignatureValidationError | null {
+    const restIndex = parameters.findIndex(p => p.rest);
+    if (restIndex >= 0 && restIndex !== parameters.length - 1) {
+      return {
+        code: ChangeSignatureErrorCode.RestParameterNotLast,
+        message: `Rest 參數 '${parameters[restIndex].name}' 必須位於參數列表最後`,
+        parameterName: parameters[restIndex].name
+      };
+    }
+    return null;
+  }
+
+  /**
    * 解析參數名稱
    */
   resolveParameterName(signature: FunctionSignature, nameOrIndex: string | number): string | undefined {

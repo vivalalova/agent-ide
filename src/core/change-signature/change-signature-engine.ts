@@ -118,8 +118,21 @@ export class ChangeSignatureEngine {
       );
     }
 
+    // 2b. 參數 rename 時，先於 transform 前修正其他參數預設值字串中對該參數的引用
+    // （AST 位置改寫，見 rewriteOtherParameterDefaultsForRename），讓後續由結構欄位
+    // 重建的定義文字天然帶有正確引用，避免另外產生會與定義區塊整體重寫互相重疊的 text edit。
+    const signatureForTransform = await this.rewriteOtherParameterDefaultsForRename(originalSignature, options.changes);
+
     // 3. 計算新簽名
-    const newSignature = this.transformer.applyChangesToSignature(originalSignature, options.changes);
+    const newSignature = this.transformer.applyChangesToSignature(signatureForTransform, options.changes);
+
+    // 3b. 驗證變更後的最終參數順序：rest 參數必須位於最後。此檢查作用於 transformer
+    // 算出的最終列表，無論觸發原因是 reorder、add 或其他變更組合皆一併涵蓋，不需在
+    // 各變更類型分支各自模擬一套順序邏輯（Single Source of Truth：與 transformer 同一份計算）。
+    const restOrderError = this.validator.validateRestParameterIsLast(newSignature.parameters);
+    if (restOrderError) {
+      return this.createErrorResult(restOrderError.code, restOrderError.message);
+    }
 
     // 4. 取得所有呼叫點
     // 純 rename / change-type（不含 add/remove/reorder）不改變呼叫點的參數映射，
@@ -352,12 +365,134 @@ export class ChangeSignatureEngine {
       return null;
     }
 
-    const usedNames = await this.findBodyParameterReferences(signature, new Set(removedNames));
-    if (usedNames.length === 0) {
+    const references = await this.findParameterReferencesBySource(signature, new Set(removedNames));
+    if (references.inBody.length === 0 && references.inParameterDefaults.length === 0) {
       return null;
     }
 
-    return `無法移除參數 ${usedNames.join(', ')}：仍在函式 body 中使用`;
+    const messages: string[] = [];
+    if (references.inBody.length > 0) {
+      messages.push(`無法移除參數 ${references.inBody.join(', ')}：仍在函式 body 中使用`);
+    }
+    if (references.inParameterDefaults.length > 0) {
+      messages.push(`無法移除參數 ${references.inParameterDefaults.join(', ')}：仍被其他參數的預設值引用`);
+    }
+    return messages.join('；');
+  }
+
+  /**
+   * 參數 rename 時，AST 位置改寫「其他參數」預設值（initializer）中對該參數的引用
+   * （如 `timeout = config.defaultTimeout` 內的 `config` 改名時，同步改寫此處引用）。
+   * 在呼叫 transformer 之前於輸入資料上修正 defaultValue 字串，讓
+   * generateDefinitionUpdate 重建的參數列表文字天然帶有正確引用；不額外對這段文字
+   * 產生 text edit，避免與定義區塊整體重寫（同一段參數列表文字）互相重疊。
+   * 遮蔽規則與 body 引用改寫共用同一個底層走訪（visitNodeForReferences）。
+   */
+  private async rewriteOtherParameterDefaultsForRename(
+    signature: FunctionSignature,
+    changes: readonly SignatureChange[]
+  ): Promise<FunctionSignature> {
+    const renameMap = new Map<string, string>();
+
+    for (const change of changes) {
+      if (!isRenameParameterChange(change)) {
+        continue;
+      }
+
+      const index = resolveParameterIndex(signature.parameters, change.parameterNameOrIndex);
+      const parameter = index >= 0 ? signature.parameters[index] : undefined;
+      if (parameter && parameter.name !== change.newName) {
+        renameMap.set(parameter.name, change.newName);
+      }
+    }
+
+    if (renameMap.size === 0) {
+      return signature;
+    }
+
+    const content = await this.fileUtils.readFile(signature.location.filePath);
+    if (!content) {
+      return signature;
+    }
+
+    const sourceFile = ts.createSourceFile(
+      signature.location.filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      this.getScriptKind(signature.location.filePath)
+    );
+    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
+    if (!targetFunction) {
+      return signature;
+    }
+
+    const names = new Set(renameMap.keys());
+    let changed = false;
+    const parameters = signature.parameters.map((parameter, index) => {
+      const initializer = targetFunction.parameters[index]?.initializer;
+      if (!initializer) {
+        return parameter;
+      }
+
+      const rewritten = this.rewriteExpressionTextForRename(initializer, sourceFile, names, renameMap);
+      if (rewritten === parameter.defaultValue) {
+        return parameter;
+      }
+
+      changed = true;
+      return { ...parameter, defaultValue: rewritten };
+    });
+
+    return changed ? { ...signature, parameters } : signature;
+  }
+
+  /**
+   * 以識別字節點位置（相對 expression 自身起點）切割重組字串，改寫其中對
+   * renameMap 內名稱的引用。禁用整段字串替換（如 String.replace）：那會誤傷
+   * 同名子字串（字串常量、註解、其他識別字前綴等），位置導向的切割重組才精確對應
+   * 實際識別字節點；物件 shorthand 屬性（如 `b = { a }`）展開為 `key: newName`，
+   * 與 body 改寫（generateParameterRenameBodyEdits）同一慣例。
+   */
+  private rewriteExpressionTextForRename(
+    expression: ts.Expression,
+    sourceFile: ts.SourceFile,
+    names: ReadonlySet<string>,
+    renameMap: ReadonlyMap<string, string>
+  ): string {
+    const originalText = expression.getText(sourceFile);
+    const expressionStart = expression.getStart(sourceFile);
+
+    const matches: Array<{ start: number; end: number; replacement: string }> = [];
+    this.visitNodeForReferences(expression, names, (node) => {
+      const newName = renameMap.get(node.text);
+      if (!newName) {
+        return;
+      }
+      const isShorthand = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node;
+      matches.push({
+        start: node.getStart(sourceFile) - expressionStart,
+        end: node.getEnd() - expressionStart,
+        replacement: isShorthand ? `${node.text}: ${newName}` : newName
+      });
+    });
+
+    if (matches.length === 0) {
+      return originalText;
+    }
+
+    matches.sort((a, b) => a.start - b.start);
+
+    let result = '';
+    let cursor = 0;
+    for (const match of matches) {
+      result += originalText.slice(cursor, match.start);
+      result += match.replacement;
+      cursor = match.end;
+    }
+    result += originalText.slice(cursor);
+
+    return result;
   }
 
   private async generateParameterRenameBodyEdits(
@@ -403,6 +538,9 @@ export class ChangeSignatureEngine {
 
     const edits: TextEdit[] = [];
 
+    // 僅掃描 body：其他參數預設值中的引用已在 rewriteOtherParameterDefaultsForRename
+    // （transform 前）處理為 defaultValue 字串修正，這裡若再對同一段文字產生 text edit，
+    // 會與 generateDefinitionUpdate 對整個參數列表的整段重寫互相重疊。
     this.forEachBodyIdentifierReference(body, new Set(renameMap.keys()), (node) => {
       const newName = renameMap.get(node.text);
       if (!newName) {
@@ -429,13 +567,39 @@ export class ChangeSignatureEngine {
     return edits;
   }
 
-  private async findBodyParameterReferences(
+  /**
+   * 掃描函式 body 與所有參數自身預設值（initializer）表達式內、對指定名稱集合的
+   * 識別字引用，依來源分類回呼（body / parameter-default）。涵蓋「參數預設值引用
+   * 其他參數」的情況（如 `timeout = config.defaultTimeout` 對 config 的引用）；
+   * findParameterReferencesBySource（移除參數前檢查是否仍被引用）以此為單一來源，
+   * body 與 initializer 兩種掃描範圍不再各自維護一套走訪邏輯。
+   */
+  private forEachParameterReference(
+    targetFunction: ts.FunctionLikeDeclaration,
+    names: ReadonlySet<string>,
+    onReference: (node: ts.Identifier, source: 'body' | 'parameter-default') => void
+  ): void {
+    const body = 'body' in targetFunction ? targetFunction.body : undefined;
+    if (body) {
+      this.forEachBodyIdentifierReference(body, names, (node) => onReference(node, 'body'));
+    }
+
+    for (const parameter of targetFunction.parameters) {
+      if (parameter.initializer) {
+        this.visitNodeForReferences(parameter.initializer, names, (node) => onReference(node, 'parameter-default'));
+      }
+    }
+  }
+
+  private async findParameterReferencesBySource(
     signature: FunctionSignature,
     names: ReadonlySet<string>
-  ): Promise<string[]> {
+  ): Promise<{ inBody: string[]; inParameterDefaults: string[] }> {
+    const empty = { inBody: [] as string[], inParameterDefaults: [] as string[] };
+
     const content = await this.fileUtils.readFile(signature.location.filePath);
     if (!content) {
-      return [];
+      return empty;
     }
 
     const sourceFile = ts.createSourceFile(
@@ -446,19 +610,18 @@ export class ChangeSignatureEngine {
       this.getScriptKind(signature.location.filePath)
     );
     const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
-    const body = targetFunction && 'body' in targetFunction ? targetFunction.body : undefined;
-
-    if (!body) {
-      return [];
+    if (!targetFunction) {
+      return empty;
     }
 
-    const usedNames = new Set<string>();
+    const inBody = new Set<string>();
+    const inParameterDefaults = new Set<string>();
 
-    this.forEachBodyIdentifierReference(body, names, (node) => {
-      usedNames.add(node.text);
+    this.forEachParameterReference(targetFunction, names, (node, source) => {
+      (source === 'body' ? inBody : inParameterDefaults).add(node.text);
     });
 
-    return Array.from(usedNames);
+    return { inBody: Array.from(inBody), inParameterDefaults: Array.from(inParameterDefaults) };
   }
 
   /**
@@ -474,33 +637,43 @@ export class ChangeSignatureEngine {
     names: ReadonlySet<string>,
     onReference: (node: ts.Identifier) => void
   ): void {
-    const visit = (node: ts.Node, liveNames: ReadonlySet<string>): void => {
-      if (liveNames.size === 0) {
-        return;
-      }
+    ts.forEachChild(body, (child) => this.visitNodeForReferences(child, names, onReference));
+  }
 
-      // 進入會建立作用域的節點時，移除被「該作用域自身宣告」遮蔽的名稱後再遞迴子樹。
-      // 遮蔽按作用域粒度計：函式層＝參數 + body 內 var（提升）；區塊層（Block／迴圈頭／
-      // catch）＝該層直接的 let/const/class/function 宣告，只遮該子樹——不得把區塊內
-      // 宣告當整函式遮蔽，否則閉包對外層參數的引用會被漏算（rename 漏改、remove 誤放行）
-      let childLiveNames = liveNames;
-      const shadowed = this.collectScopeShadowedNames(node);
-      if (shadowed.size > 0) {
-        childLiveNames = new Set([...liveNames].filter(name => !shadowed.has(name)));
-      }
+  /**
+   * 識別字引用走訪的共用底層實作：檢查節點自身是否為命中的識別字，並依作用域遮蔽
+   * 規則遞迴子節點。body 掃描（forEachBodyIdentifierReference）與 initializer 掃描
+   * （forEachParameterReference、rewriteExpressionTextForRename）皆以此為單一實作，
+   * 避免各自重複一套走訪＋遮蔽邏輯（Single Source of Truth）。
+   */
+  private visitNodeForReferences(
+    node: ts.Node,
+    liveNames: ReadonlySet<string>,
+    onReference: (node: ts.Identifier) => void
+  ): void {
+    if (liveNames.size === 0) {
+      return;
+    }
 
-      if (
-        ts.isIdentifier(node)
-        && liveNames.has(node.text)
-        && !this.shouldSkipParameterIdentifier(node)
-      ) {
-        onReference(node);
-      }
+    // 進入會建立作用域的節點時，移除被「該作用域自身宣告」遮蔽的名稱後再遞迴子樹。
+    // 遮蔽按作用域粒度計：函式層＝參數 + body 內 var（提升）；區塊層（Block／迴圈頭／
+    // catch）＝該層直接的 let/const/class/function 宣告，只遮該子樹——不得把區塊內
+    // 宣告當整函式遮蔽，否則閉包對外層參數的引用會被漏算（rename 漏改、remove 誤放行）
+    let childLiveNames = liveNames;
+    const shadowed = this.collectScopeShadowedNames(node);
+    if (shadowed.size > 0) {
+      childLiveNames = new Set([...liveNames].filter(name => !shadowed.has(name)));
+    }
 
-      ts.forEachChild(node, (child) => visit(child, childLiveNames));
-    };
+    if (
+      ts.isIdentifier(node)
+      && liveNames.has(node.text)
+      && !this.shouldSkipParameterIdentifier(node)
+    ) {
+      onReference(node);
+    }
 
-    ts.forEachChild(body, (child) => visit(child, names));
+    ts.forEachChild(node, (child) => this.visitNodeForReferences(child, childLiveNames, onReference));
   }
 
   /**

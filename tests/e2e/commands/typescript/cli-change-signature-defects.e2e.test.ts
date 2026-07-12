@@ -1,5 +1,5 @@
 /**
- * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，12 筆）
+ * CLI change-signature 命令 E2E 測試 - 已確認缺陷（手動重現，14 筆）
  *
  * 每個測試斷言「正確行為」，在缺陷修復前預期為紅燈（reproduction test）。
  * 缺陷清單：
@@ -17,12 +17,15 @@
  *       來源不同步，導致重寫後同一數值被重複填入
  *   12. 巢狀函式內 if 區塊的同名 const 被誤當整函式遮蔽，rename 漏改閉包引用、
  *       remove 誤判參數未使用而放行
+ *   13. 參數預設值引用其他參數時未被處理：移除被引用的參數未擋下、
+ *       rename 未同步改寫其他參數預設值中的引用
+ *   14. --reorder 允許把 rest 參數移到非最後位置，產生無效 TS
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
-describe('CLI change-signature - 已確認缺陷（手動重現，12 筆）', () => {
+describe('CLI change-signature - 已確認缺陷（手動重現，14 筆）', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -570,6 +573,101 @@ function audit(traceId: string): string {
       // 正確行為：參數仍被巢狀閉包引用（inner 的 `return traceId;`），移除應被驗證拒絕；
       // 目前的壞行為是 if 區塊內同名宣告讓引用偵測整函式漏算，移除被放行、留下懸空引用
       expect(result.exitCode).not.toBe(0);
+    });
+  });
+
+  describe('缺陷13: 參數預設值引用其他參數的情況未被處理', () => {
+    it('移除仍被其他參數預設值引用的參數應被拒絕且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect13-remove-referenced-by-default.ts`;
+      const originalContent = `
+function process(config: { defaultTimeout: number }, timeout = config.defaultTimeout): number {
+  return timeout;
+}
+
+process({ defaultTimeout: 5 });
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'process',
+          '-p', fixture.rootPath,
+          '--remove', 'config',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // 正確行為：與既有「刪除仍在函式 body 中使用的參數應該失敗」規則一致，
+      // 另一參數 timeout 的預設值 `config.defaultTimeout` 也引用了 config，移除應被拒絕；
+      // 目前的壞行為是驗證只掃 func.body，不看 parameters[i].initializer，
+      // 移除被放行、產生引用不存在參數的壞碼
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('rename 應同步改寫其他參數預設值中對該參數的引用', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect13-rename-default-reference.ts`;
+      await fixture.memfs.writeFile(testFile, `
+function fn(a: number, b = a + 1): number {
+  return b;
+}
+
+fn(1);
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'fn',
+          '-p', fixture.rootPath,
+          '--rename', 'a:x',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：新定義中 b 的預設值應同步改為 `b = x + 1`；
+      // 目前的壞行為是只有參數自身名稱被改，其他參數預設值裡的舊名 `a` 不會被改寫，
+      // 產生引用不存在識別符 `a` 的壞碼 `b = a + 1`
+      expect(addedLines.some((l: string) => l.includes('b = x + 1'))).toBe(true);
+    });
+  });
+
+  describe('缺陷14: --reorder 允許把 rest 參數移到非最後位置', () => {
+    it('把 rest 參數重排到非最後位置應被驗證拒絕且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect14-reorder-rest-not-last.ts`;
+      const originalContent = `
+function fn(a: number, ...rest: number[]): number {
+  return a + rest.length;
+}
+
+fn(1, 2, 3);
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'fn',
+          '-p', fixture.rootPath,
+          '--reorder', 'rest,a',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // 正確行為：rest 參數必須在最後，重排到非最後位置是無效 TS，應被驗證擋下；
+      // 目前的壞行為是 signature-validator 只驗「可選在必選後」，沒驗「rest 必須最後」，
+      // 產生無效碼 `function fn(...rest: number[], a: number)`
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
     });
   });
 });
