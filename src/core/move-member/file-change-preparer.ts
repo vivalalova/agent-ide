@@ -41,6 +41,8 @@ interface ImportSymbolInfo {
 interface SourceSymbolInfo {
   /** 本地定義的 export 符號 */
   localExports: Set<string>;
+  /** 本地定義的 default export 符號 */
+  defaultExports: Set<string>;
   /** import 的符號對應的來源，key 為程式碼中實際引用的 local binding 名稱 */
   importedSymbols: Map<string, ImportSymbolInfo>;
 }
@@ -252,9 +254,10 @@ export class FileChangePreparer {
       if (dep === member.name) { continue; }
 
       if (symbolInfo.localExports.has(dep)) {
-        // 依賴來自來源檔案的本地 export，需要從來源檔案 import（使用 named import）
+        // 依賴來自來源檔案的本地 export，依 export 類型決定 import 形式
         const relativePath = this.calculateRelativePath(targetFile, sourceFile);
-        addNeeded(relativePath, ImportType.Named, false, dep, dep);
+        const importType = symbolInfo.defaultExports.has(dep) ? ImportType.Default : ImportType.Named;
+        addNeeded(relativePath, importType, false, dep, dep);
       } else if (symbolInfo.importedSymbols.has(dep)) {
         // 依賴來自外部模組，保持原本的 import 類型、別名與 type 修飾
         const importInfo = symbolInfo.importedSymbols.get(dep);
@@ -385,11 +388,28 @@ export class FileChangePreparer {
 
   /**
    * 分析來源檔案的符號（本地 export 和 import）
-   * import 分析改用 Parser AST（見 indexImportedSymbols）；本地 export 偵測維持既有正則
-   * （非本次缺陷範圍，行為不變）
+   * import 分析改用 Parser AST（見 indexImportedSymbols）；本地 export 偵測使用正則
    */
   private analyzeSourceSymbols(content: string, filePath: string): SourceSymbolInfo {
     const localExports = new Set<string>();
+    const defaultExports = new Set<string>();
+
+    // export default [async] function NAME / export default class NAME
+    // 僅匹配具名宣告；匿名 default export 維持不辨識
+    const defaultExportPattern = new RegExp(
+      'export\\s+default\\s+(?:async\\s+)?function\\s+(\\w+)|' +
+      'export\\s+default\\s+class\\s+(\\w+)',
+      'g'
+    );
+
+    let match;
+    while ((match = defaultExportPattern.exec(content)) !== null) {
+      const name = match[1] ?? match[2];
+      if (name !== undefined) {
+        localExports.add(name);
+        defaultExports.add(name);
+      }
+    }
 
     // 複合正則：匹配所有 export 語句
     const exportPattern = new RegExp(
@@ -410,7 +430,6 @@ export class FileChangePreparer {
       'g'
     );
 
-    let match;
     while ((match = exportPattern.exec(content)) !== null) {
       if (match[7] !== undefined) {
         // export { A, B }
@@ -423,7 +442,7 @@ export class FileChangePreparer {
       }
     }
 
-    return { localExports, importedSymbols: this.indexImportedSymbols(content, filePath) };
+    return { localExports, defaultExports, importedSymbols: this.indexImportedSymbols(content, filePath) };
   }
 
   /**
