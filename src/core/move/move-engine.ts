@@ -225,11 +225,8 @@ export class MoveEngine {
       .withDescription(`Moved '${path.basename(source)}' to '${path.basename(target)}'`);
 
     try {
-      // 驗證路徑（只讀驗證，不建立目錄）
-      await this.validatePathsForChangeset(source, target);
-
-      // 檢查是否為目錄
-      const isDirectory = await this.fileSystem.isDirectory(source);
+      // 驗證路徑（只讀驗證，不建立目錄），並取得是否為目錄
+      const isDirectory = await this.validatePathsForChangeset(source, target);
 
       // 收集 import 更新
       const pathUpdates = updateImports
@@ -326,12 +323,19 @@ export class MoveEngine {
   /**
    * 驗證路徑（只讀版本，用於 generateChangeset）
    * 不建立任何目錄，只做驗證
+   *
+   * @returns source 是否為目錄
    */
-  private async validatePathsForChangeset(source: string, target: string): Promise<void> {
+  private async validatePathsForChangeset(source: string, target: string): Promise<boolean> {
     // 檢查來源是否存在
     const sourceExists = await this.fileSystem.exists(source);
     if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
+    }
+
+    const isDirectory = await this.fileSystem.isDirectory(source);
+    if (isDirectory) {
+      this.assertTargetNotWithinSource(source, target);
     }
 
     // 檢查目標是否已存在
@@ -339,6 +343,8 @@ export class MoveEngine {
     if (targetExists) {
       throw new Error(`目標路徑已存在: ${target}`);
     }
+
+    return isDirectory;
   }
 
   /**
@@ -349,6 +355,10 @@ export class MoveEngine {
     const sourceExists = await this.fileSystem.exists(source);
     if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
+    }
+
+    if (await this.fileSystem.isDirectory(source)) {
+      this.assertTargetNotWithinSource(source, target);
     }
 
     // 檢查目標路徑的父目錄
@@ -363,6 +373,21 @@ export class MoveEngine {
     const targetExists = await this.fileSystem.exists(target);
     if (targetExists) {
       throw new Error(`目標路徑已存在: ${target}`);
+    }
+  }
+
+  /**
+   * 目錄移動時，目標不得等於來源、也不得位於來源之內
+   * （比照 Unix mv 的 cannot move to a subdirectory of itself 語意），
+   * 避免 moveDirectory() 遞迴自我嵌套直到 ENAMETOOLONG 才失敗
+   */
+  private assertTargetNotWithinSource(source: string, target: string): void {
+    const resolvedSource = path.resolve(source);
+    const resolvedTarget = path.resolve(target);
+    if (resolvedTarget === resolvedSource || resolvedTarget.startsWith(resolvedSource + path.sep)) {
+      throw new Error(
+        `無法將目錄移動到其自身或其子目錄內: 來源 ${source} 目標 ${target}`
+      );
     }
   }
 

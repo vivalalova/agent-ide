@@ -57,15 +57,29 @@ export class ImportResolver {
 
       // 解析 ES6 import（包含 import type 語法）
       const importStatement = this.collectMultilineImportStatement(lines, i);
-      const importMatches = (importStatement?.statement ?? line).matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
+      // 只有真正跨行的 import 語句（一個區塊只會有一筆 import）才用整段多行文字；
+      // 單行內可能有多個 import 指向不同（或相同）模組，各自的 rawStatement 必須
+      // 以「該 import 在行內的實際出現位置」（match[0]）切出，避免同行多筆 import
+      // 共用同一份整行文字，造成後續去重誤判與替換錯位（見 C7 regression）
+      const multilineSpan = importStatement && importStatement.endLineIndex > importStatement.startLineIndex
+        ? importStatement
+        : null;
+      const searchText = importStatement?.statement ?? line;
+      const importMatches = searchText.matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
       for (const match of importMatches) {
         const importPath = match[1];
+        const rawStatementText = multilineSpan
+          ? lines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1).join('\n')
+          : this.appendTrailingSemicolonIfAdjacent(searchText, match);
+        const columnIndex = multilineSpan
+          ? lines[multilineSpan.startLineIndex].indexOf('import')
+          : (match.index ?? 0);
         const statement = this.createImportStatement(
           ImportStatementType.IMPORT,
           importPath,
           importStatement ? importStatement.startLineIndex + 1 : lineNumber,
-          importStatement ? lines[importStatement.startLineIndex].indexOf('import') : match.index || 0,
-          importStatement ? lines.slice(importStatement.startLineIndex, importStatement.endLineIndex + 1).join('\n') : line
+          columnIndex,
+          rawStatementText
         );
         if (statement) {
           statements.push(statement);
@@ -121,6 +135,18 @@ export class ImportResolver {
     }
 
     return statements;
+  }
+
+  /**
+   * 單行 import 的 rawStatement 若緊接著一個 `;`，把它併入 rawStatement，
+   * 使輸出（pathUpdates 的 oldImport/newImport）與修復同行多 import 去重問題前
+   * 的逐字語句保持一致。不影響去重鍵唯一性：唯一性來自 match[0] 本身
+   * （不同 specifier 的文字本就不同），加不加分號都唯一。
+   */
+  private appendTrailingSemicolonIfAdjacent(searchText: string, match: RegExpMatchArray): string {
+    const matched = match[0];
+    const nextCharIndex = (match.index ?? 0) + matched.length;
+    return searchText[nextCharIndex] === ';' ? matched + ';' : matched;
   }
 
   /**
