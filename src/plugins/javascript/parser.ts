@@ -1117,7 +1117,7 @@ export class JavaScriptParser implements ParserPlugin {
     return this.declarationAnalyzer.getImportDeclarations(code);
   }
 
-  formatSignature(code: string, functionName: string, line: number): FormattedSignature | null {
+  formatSignature(code: string, functionName: string, line?: number): FormattedSignature | null {
     return this.declarationAnalyzer.formatSignature(code, functionName, line);
   }
 

@@ -1091,12 +1091,28 @@ export class ChangeSignatureEngine {
     if (!parameterRange) {
       throw new Error(`找不到函式 ${originalSignature.name} 的參數結束括號`);
     }
-    const { openParenIndex, closeParenIndex } = parameterRange;
+    let originalCode: string;
+    let newCode: string;
+    let replacementEndOffset: number;
 
-    const originalCode = content.slice(signatureStartOffset, closeParenIndex + 1);
-    const newCode = content.slice(signatureStartOffset, openParenIndex + 1) +
-      newParamsString +
-      ')';
+    if ('parameterStartIndex' in parameterRange) {
+      // 裸單參數箭頭函式沒有參數列表括號；只能替換 AST 精確指出的參數，
+      // 不可讓 scanner fallback 跨到後續呼叫點的括號。
+      const { parameterStartIndex, parameterEndIndex } = parameterRange;
+      const replacement = newSignature.parameters.length === 1
+        ? newParamsString
+        : `(${newParamsString})`;
+      originalCode = content.slice(signatureStartOffset, parameterEndIndex);
+      newCode = content.slice(signatureStartOffset, parameterStartIndex) + replacement;
+      replacementEndOffset = parameterEndIndex;
+    } else {
+      const { openParenIndex, closeParenIndex } = parameterRange;
+      originalCode = content.slice(signatureStartOffset, closeParenIndex + 1);
+      newCode = content.slice(signatureStartOffset, openParenIndex + 1) +
+        newParamsString +
+        ')';
+      replacementEndOffset = closeParenIndex + 1;
+    }
 
     return {
       filePath,
@@ -1106,7 +1122,7 @@ export class ChangeSignatureEngine {
         filePath,
         range: {
           start: this.offsetToPosition(content, signatureStartOffset),
-          end: this.offsetToPosition(content, closeParenIndex + 1)
+          end: this.offsetToPosition(content, replacementEndOffset)
         }
       }
     };
@@ -1116,7 +1132,13 @@ export class ChangeSignatureEngine {
     content: string,
     filePath: string,
     signature: FunctionSignature
-  ): { openParenIndex: number; closeParenIndex: number } | null {
+  ): {
+    openParenIndex: number;
+    closeParenIndex: number;
+  } | {
+    parameterStartIndex: number;
+    parameterEndIndex: number;
+  } | null {
     const sourceFile = ts.createSourceFile(
       filePath,
       content,
@@ -1132,11 +1154,22 @@ export class ChangeSignatureEngine {
     const declarationStart = targetFunction.getStart(sourceFile);
     const openParenIndex = this.findOpenParenBeforeParameters(content, declarationStart, targetFunction.parameters.pos);
     const closeParenIndex = this.findCloseParenAfterParameters(content, targetFunction.parameters.end);
-    if (openParenIndex < 0 || closeParenIndex < 0) {
-      return null;
+
+    if (openParenIndex >= 0 && closeParenIndex >= 0) {
+      return { openParenIndex, closeParenIndex };
     }
 
-    return { openParenIndex, closeParenIndex };
+    // 裸單參數箭頭函式（`x => ...`）的 AST 參數節點本身就是可替換的完整範圍。
+    // 這裡必須直接回傳該範圍，否則 scanner 會把宣告後的呼叫點括號誤認為參數列表。
+    if (ts.isArrowFunction(targetFunction) && targetFunction.parameters.length === 1 && openParenIndex < 0) {
+      const parameter = targetFunction.parameters[0];
+      return {
+        parameterStartIndex: parameter.getStart(sourceFile),
+        parameterEndIndex: parameter.getEnd()
+      };
+    }
+
+    return null;
   }
 
   private findOpenParenBeforeParameters(content: string, declarationStart: number, parametersStart: number): number {

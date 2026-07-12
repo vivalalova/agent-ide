@@ -441,13 +441,13 @@ export class DeclarationAnalyzer {
    * JavaScript 沒有型別標註，型別統一為 'any'
    * @param code - 原始程式碼
    * @param functionName - 函數名稱
-   * @param line - 函數所在行號
+   * @param line - 函數所在行號（可選；未提供時取第一個匹配的宣告）
    * @returns 格式化後的簽章或 null
    */
   formatSignature(
     code: string,
     functionName: string,
-    line: number
+    line?: number
   ): FormattedSignature | null {
     const ast = this.parseWithCache(code, {
       sourceType: 'unambiguous',
@@ -459,11 +459,14 @@ export class DeclarationAnalyzer {
     }
 
     let foundParams: babel.Node[] | null = null;
+    let foundStartLine: number | undefined;
 
     traverse(ast, {
       FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-        if (path.node.id?.name === functionName && this.isNodeLineMatch(path.node, line)) {
+        if (path.node.id?.name === functionName
+            && (line === undefined || this.isNodeLineMatch(path.node, line))) {
           foundParams = path.node.params;
+          foundStartLine = path.node.loc?.start.line;
           path.stop();
         }
       },
@@ -473,8 +476,9 @@ export class DeclarationAnalyzer {
             && path.node.id.name === functionName
             && path.node.init
             && (babel.isArrowFunctionExpression(path.node.init) || babel.isFunctionExpression(path.node.init))
-            && this.isNodeLineMatch(path.node, line)) {
+            && (line === undefined || this.isNodeLineMatch(path.node, line))) {
           foundParams = path.node.init.params;
+          foundStartLine = path.node.loc?.start.line;
           path.stop();
         }
       },
@@ -482,14 +486,15 @@ export class DeclarationAnalyzer {
       ClassMethod: (path: NodePath<babel.ClassMethod>) => {
         if (babel.isIdentifier(path.node.key)
             && path.node.key.name === functionName
-            && this.isNodeLineMatch(path.node, line)) {
+            && (line === undefined || this.isNodeLineMatch(path.node, line))) {
           foundParams = path.node.params;
+          foundStartLine = path.node.loc?.start.line;
           path.stop();
         }
       }
     });
 
-    if (!foundParams) {
+    if (!foundParams || foundStartLine === undefined) {
       return null;
     }
 
@@ -497,7 +502,8 @@ export class DeclarationAnalyzer {
 
     return {
       parameters,
-      returnType: 'any'
+      returnType: 'any',
+      startLine: foundStartLine
     };
   }
 
