@@ -7,7 +7,7 @@ import type { Symbol, Scope, ScopeType, Dependency } from '@shared/types/index.j
 import { SymbolType, DependencyType } from '@shared/types/index.js';
 import type { FileInfo, FileIndexEntry } from './types.js';
 
-export const CACHE_VERSION = '1.1.0';
+export const CACHE_VERSION = '1.1.1';
 
 /**
  * 序列化後的 Scope（tree → flat parent path）

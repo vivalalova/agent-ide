@@ -693,7 +693,7 @@ export class JavaScriptParser implements ParserPlugin {
       const symbol = this.createSymbolFromNode(
         node,
         node.key.name,
-        SymbolType.Variable,
+        SymbolType.Property,
         sourceFile,
         {},
         undefined,

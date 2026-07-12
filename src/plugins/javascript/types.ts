@@ -151,7 +151,7 @@ export const BABEL_SYMBOL_TYPE_MAP: Partial<Record<string, SymbolType>> = {
   'ImportDefaultSpecifier': SymbolType.Variable,
   'ImportSpecifier': SymbolType.Variable,
   'ImportNamespaceSpecifier': SymbolType.Variable,
-  'ObjectProperty': SymbolType.Variable,
+  'ObjectProperty': SymbolType.Property,
   'ObjectMethod': SymbolType.Function
 };
 
