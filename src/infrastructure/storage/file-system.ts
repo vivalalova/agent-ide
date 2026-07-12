@@ -369,6 +369,7 @@ export class FileSystem implements IFileSystem {
       ignore: options.ignore,
       dot: options.dot,
       absolute: options.absolute,
+      nodir: options.onlyFiles,
     };
 
     if (options.followSymlinks) {
