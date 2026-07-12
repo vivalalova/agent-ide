@@ -222,8 +222,11 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
     targetSymbol = await resolveParserBackedSymbol(targetSymbol, context, ParserRegistry.getInstance(), Boolean(options.at));
+    // 無條件注入 ParserRegistry：讓所有符號（含非 function-local 的頂層 const/function/class）
+    // 的引用查找都走 AST 感知路徑（SymbolFinder → Language Service），而非降級為 `\bname\b`
+    // 純文字匹配。純文字匹配會誤改同名的 interface 屬性鍵、object literal 鍵與成員存取（缺陷 R2）。
     const renameEngine = new RenameEngine(
-      isFunctionLocalSymbol(targetSymbol) ? ParserRegistry.getInstance() : undefined,
+      ParserRegistry.getInstance(),
       context.fileSystem
     );
 
@@ -285,11 +288,6 @@ async function resolveParserBackedSymbol(
   }
 
   return resolved ?? symbol;
-}
-
-function isFunctionLocalSymbol(symbol: CodeSymbol): boolean {
-  const scopeType = symbol.scope?.type;
-  return Boolean(symbol.location?.filePath) && (scopeType === 'function' || scopeType === 'block');
 }
 
 /**

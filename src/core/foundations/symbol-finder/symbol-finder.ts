@@ -575,7 +575,12 @@ export class SymbolFinder {
 
       const references = await parser.findReferences(ast, targetSymbol);
 
-      return references.map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
+      // 只保留目前檔案的引用：此方法語意為「查找單一檔案內的引用」，逐檔迭代時各檔獨立
+      // 負責自己的引用。Language Service 在模組可解析時可能回傳跨檔引用，若不過濾會被
+      // 呼叫端（rename 逐檔收集）錯誤歸屬到目前檔案，造成重複或張冠李戴。
+      return references
+        .filter(ref => ref.location.filePath === filePath)
+        .map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
     } catch (error) {
       // Parser 失敗，降級到文字匹配
       diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);

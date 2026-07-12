@@ -279,6 +279,34 @@ export function getScopeDepth(scope: Scope): number {
 }
 
 /**
+ * 判斷符號是否為「函式區域符號」——即無法被其他檔案引用、只存在於單一檔案內的符號。
+ *
+ * 單一權威定義（SSOT）：沿 scope 父鏈只要出現 function 或 block scope 即為區域符號。
+ * 依賴 scope 語意為「宣告所在的 enclosing scope」（見 symbol-extractor visitNode）：
+ * - 頂層 function / class / interface / const 等：enclosing scope 為 module/global，鏈中無
+ *   function/block → 非區域，需跨檔處理引用。
+ * - 函式內的區域變數 / 參數 / 巢狀函式：enclosing 鏈含 function → 區域，只需處理定義檔。
+ * - class 方法：enclosing scope 為 class（其上為 module）→ 非區域（方法可被跨檔透過成員存取引用）。
+ *
+ * 呼叫端（rename.command、reference-updater）一律引用此定義，禁自行重寫判定邏輯。
+ */
+export function isFunctionLocalSymbol(symbol: Symbol): boolean {
+  if (!symbol.location?.filePath) {
+    return false;
+  }
+
+  let scope: Scope | undefined = symbol.scope;
+  while (scope) {
+    if (scope.type === 'function' || scope.type === 'block') {
+      return true;
+    }
+    scope = scope.parent;
+  }
+
+  return false;
+}
+
+/**
  * 檢查兩個 Symbol 是否在同一 Scope
  */
 export function isSameScope(symbol1: Symbol, symbol2: Symbol): boolean {

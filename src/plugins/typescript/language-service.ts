@@ -254,11 +254,59 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     sourceFile: ts.SourceFile,
     getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
   ): number | undefined {
-    const identifier = getIdentifierFromSymbolNode(symbol.tsNode);
-    if (!identifier) {
-      return undefined;
+    const identifier = symbol.tsNode ? getIdentifierFromSymbolNode(symbol.tsNode) : undefined;
+
+    // 符號宣告就在目前檔案（定義檔，或 function-local 單檔查找）：
+    // 直接用符號自身識別符位置。
+    if (identifier && identifier.getSourceFile().fileName === sourceFile.fileName) {
+      return identifier.getStart(sourceFile);
     }
-    return identifier.getStart(sourceFile);
+
+    // 跨檔引用查找：符號宣告在其他檔案，foreign 節點的偏移量在目前檔案無意義
+    // （會落在錯誤位置導致 Language Service 解析出無關符號、甚至誤改到不相干的宣告）。
+    // 改以「目前檔案中匯入該符號的 import binding」為 anchor，讓 Language Service 從
+    // 真實綁定點解析同檔引用——自動排除同名的 interface/type 屬性簽名鍵、object literal
+    // 鍵、成員存取（x.name）等非綁定 token（缺陷 R2）。
+    //
+    // 找不到 import binding（該檔僅巧合含同名 token、自身另有同名宣告、或以 namespace
+    // import `ns.member` 形式使用）時回傳 undefined，讓引用查找對該檔得空結果——絕不可
+    // 回退為 foreign 節點的位置，否則會依偏移量巧合誤改無關符號。
+    return this.findImportBindingPosition(sourceFile, symbol.name);
+  }
+
+  /**
+   * 在目前檔案的頂層 import 宣告中，尋找匯入指定符號名稱的 binding 位置。
+   * 具名 import 有別名時 anchor 於被匯入名稱（propertyName），使改名只動被匯入名稱、
+   * 保留本地別名。namespace import（`import * as ns`）不在此處理（回傳 undefined）。
+   */
+  private findImportBindingPosition(
+    sourceFile: ts.SourceFile,
+    symbolName: string
+  ): number | undefined {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement) || !statement.importClause) {
+        continue;
+      }
+      const importClause = statement.importClause;
+
+      // default import：`import Foo from '...'`
+      if (importClause.name && importClause.name.text === symbolName) {
+        return importClause.name.getStart(sourceFile);
+      }
+
+      const named = importClause.namedBindings;
+      if (named && ts.isNamedImports(named)) {
+        for (const element of named.elements) {
+          // 被匯入名稱：有別名時為 propertyName（`import { A as B }` 的 A），否則為 name
+          const importedName = element.propertyName?.text ?? element.name.text;
+          if (importedName === symbolName) {
+            const anchorNode = element.propertyName ?? element.name;
+            return anchorNode.getStart(sourceFile);
+          }
+        }
+      }
+    }
+    return undefined;
   }
 
   /**

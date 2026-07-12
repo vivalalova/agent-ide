@@ -66,7 +66,20 @@ export class TypeScriptSymbolExtractor {
   private visitNode(node: TypeScriptASTNode, context: VisitContext): void {
     const tsNode = node.tsNode;
 
-    // 處理作用域變化
+    // 提取符號（必須在 handleScopeChange 之前）
+    // scope 語意統一為「宣告所在的 enclosing scope」：先在目前 scope（= 外層 scope）
+    // 下提取此宣告的符號，之後才 push 此節點自身建立的 scope。這樣 scope-creating
+    // 宣告（function/class/interface/namespace）記錄的是 enclosing scope，而非自身 scope，
+    // 與其他符號一致。class 成員不受影響——成員是在訪問 class 子節點時提取，屆時 class
+    // scope 已被父層 push，成員的 enclosing scope 正確為該 class scope。
+    if (isSymbolDeclaration(tsNode)) {
+      const symbol = this.extractSymbolFromNode(tsNode, context);
+      if (symbol) {
+        this.symbols.push(symbol);
+      }
+    }
+
+    // 處理作用域變化（push 此節點自身建立的 scope，供子節點使用）
     const scopeChange = this.handleScopeChange(tsNode);
 
     // 更新 context：檢查當前節點是否為 ObjectLiteral
@@ -74,14 +87,6 @@ export class TypeScriptSymbolExtractor {
     const childContext: VisitContext = {
       insideObjectLiteral: context.insideObjectLiteral || isObjectLiteral
     };
-
-    // 提取符號
-    if (isSymbolDeclaration(tsNode)) {
-      const symbol = this.extractSymbolFromNode(tsNode, context);
-      if (symbol) {
-        this.symbols.push(symbol);
-      }
-    }
 
     // 遞歸處理子節點（傳遞更新後的 context）
     for (const child of node.children) {
