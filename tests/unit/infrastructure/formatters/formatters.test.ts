@@ -436,6 +436,28 @@ describe('DiffGenerator', () => {
       }
       expect(result.summary.deletions).toBe(10);
     });
+
+    it('R2-8：超大 hunk（單筆 LineChange 含 20 萬行刪除）不應因 Math.min/max spread 拋出例外', () => {
+      const lineCount = 200_000;
+      const oldLines = Array.from({ length: lineCount }, (_, i) => `line${i}`);
+      const originalContent = oldLines.join('\n');
+
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/huge-r28.ts',
+          originalContent,
+          // 單筆 LineChange，oldContent 內含 20 萬行 → expandMultilineChanges 展開成
+          // 20 萬個獨立 LineChange，createHunk 對展開結果 map 出的 lineNumbers 陣列
+          // 用 Math.min(...lineNumbers) / Math.max(...lineNumbers) spread 呼叫，
+          // 目前的壞行為是陣列過大觸發 V8 引數上限，拋出 RangeError
+          changes: [{ line: 1, oldContent: originalContent, newContent: null }]
+        }]
+      };
+
+      expect(() => generatePreviewResult(input, 3)).not.toThrow();
+    });
   });
 });
 

@@ -195,9 +195,14 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
   // 刪多於增時陣列最後一個元素會是某個 newLine，其 .line 遠小於最大的
   // oldLine，導致用「最後元素」算 endLine 會把尾端刪除行漏算。改用所有
   // 元素的最小/最大 .line 計算範圍。
-  const lineNumbers = expandedChanges.map(c => c.line);
-  const minLine = Math.min(...lineNumbers);
-  const maxLine = Math.max(...lineNumbers);
+  // 注意：禁用 Math.min(...lineNumbers) / Math.max(...lineNumbers)，
+  // spread 大量參數會超過 V8 函式參數上限並拋出 RangeError（R2-8），改單迴圈一次遍歷取兩值
+  let minLine = expandedChanges[0].line;
+  let maxLine = expandedChanges[0].line;
+  for (const c of expandedChanges) {
+    if (c.line < minLine) { minLine = c.line; }
+    if (c.line > maxLine) { maxLine = c.line; }
+  }
 
   // 計算 hunk 範圍（包含 context）
   // 注意：endLine 不限制在 originalLines.length，因為可能有新增行超出原始範圍
