@@ -1193,9 +1193,9 @@ function build(userId: string): { userId: string } {
   });
 
   describe('Class 方法', () => {
-    it('應該處理 class 方法的簽章修改', async () => {
+    it('存在方法呼叫點時應拒絕 class 方法的簽章修改（無 receiver 型別解析，重寫不安全）', async () => {
       const testFile = `${fixture.rootPath}/test-class-method.ts`;
-      await fixture.memfs.writeFile(testFile, `
+      const source = `
 class Calculator {
   add(a: number, b: number): number {
     return a + b;
@@ -1204,18 +1204,20 @@ class Calculator {
 
 const calc = new Calculator();
 const result = calc.add(1, 2);
-`.trim());
+`.trim();
+      await fixture.memfs.writeFile(testFile, source);
 
       const result = await executeCLI(
         ['change-signature', testFile, 'add', '-p', fixture.rootPath, '--reorder', 'b,a', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      if (result.stdout) {
-        const output = JSON.parse(result.stdout);
-        expect(output.success).toBe(true);
-      }
+      // T1 修復後語意：偵測到方法呼叫點（calc.add(1, 2)）即拒絕，非零 exit 且檔案不變，
+      // 不得成功執行卻靜默跳過方法呼叫點造成定義與呼叫點不一致
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(source);
     });
   });
 

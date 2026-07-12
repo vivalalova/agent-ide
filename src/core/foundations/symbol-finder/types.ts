@@ -41,6 +41,8 @@ export interface CallSite {
   readonly arguments: readonly CallSiteArgument[];
   readonly isMethodCall: boolean;
   readonly receiver?: string;
+  /** 是否為 `new X(...)` 建構子呼叫點（NewExpression）；一般函式/方法呼叫為 undefined/false */
+  readonly isNewExpression?: boolean;
 }
 
 /**

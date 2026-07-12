@@ -348,14 +348,18 @@ export class SymbolFinder {
   /**
    * 查找函式的所有呼叫點
    */
-  async findCallSites(functionName: string, projectFiles: readonly string[]): Promise<CallSite[]> {
+  async findCallSites(
+    functionName: string,
+    projectFiles: readonly string[],
+    options?: { readonly includeNewExpressions?: boolean }
+  ): Promise<CallSite[]> {
     const results: CallSite[] = [];
 
     // 批次並行處理（控制並發數避免 fd 耗盡）
     for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
       const batch = projectFiles.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map(filePath => this.findCallSitesInFile(filePath, functionName))
+        batch.map(filePath => this.findCallSitesInFile(filePath, functionName, options))
       );
       for (const callSites of batchResults) {
         results.push(...callSites);
@@ -367,8 +371,14 @@ export class SymbolFinder {
 
   /**
    * 查找檔案中的函式呼叫點
+   *
+   * @param options.includeNewExpressions - 是否一併掃描 `new X(...)` 建構子呼叫點；預設 false
    */
-  async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
+  async findCallSitesInFile(
+    filePath: string,
+    functionName: string,
+    options?: { readonly includeNewExpressions?: boolean }
+  ): Promise<CallSite[]> {
     const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
@@ -384,7 +394,7 @@ export class SymbolFinder {
       await parser.parse(content, filePath);
 
       // 使用 CallSiteParser 查找呼叫點
-      return this.callSiteParser.findCallSitesInFile(filePath, content, functionName);
+      return this.callSiteParser.findCallSitesInFile(filePath, content, functionName, options);
     } catch (error) {
       diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return [];

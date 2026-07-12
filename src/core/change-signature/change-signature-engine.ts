@@ -101,6 +101,21 @@ export class ChangeSignatureEngine {
       );
     }
 
+    // 1b. overload 簽章群偵測（T3）：同 scope 有多個同名 function-like 宣告且含無 body 的
+    // overload 簽章時，任何簽章變更只會命中其中一個宣告（findFunctionNode 前序取第一個），
+    // 且 reorder/add 對各異參數列的 overload 群語意不明確 → 偵測即拒絕，不做「聰明地」全群改寫。
+    // 偵測邏輯放定位層，不改共用 findFunctionNode 的回傳語意（deadcode 亦依賴之），防跨模組回歸。
+    const overloadDeclarationLines = await this.detectOverloadSignatureGroup(originalSignature);
+    if (overloadDeclarationLines) {
+      const positions = overloadDeclarationLines
+        .map(line => `${originalSignature.location.filePath}:${line}`)
+        .join(', ');
+      return this.createErrorResult(
+        ChangeSignatureErrorCode.OverloadSignatureGroup,
+        `不支援 overload 簽章群的簽章變更：${options.functionName} 有 ${overloadDeclarationLines.length} 個同名宣告（${positions}）`
+      );
+    }
+
     // 2. 驗證變更
     const validationErrors = this.validator.validateChanges(originalSignature, options.changes);
     if (validationErrors.length > 0) {
@@ -164,17 +179,59 @@ export class ChangeSignatureEngine {
 
       const projectFiles = options.targetFiles ?? await this.getProjectFiles(effectiveProjectRoot);
 
-      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標函式」的檔案——目標定義檔本身，
-      // 以及直接 import 該符號自目標檔的檔案。避免全專案掃同名而誤改跨檔的同名自由函式。
+      // T2：constructor 目標的呼叫點是 `new ClassName(...)`（NewExpression），以「類別名」定位，
+      // 與一般函式的名稱比對同保真度；非 constructor 目標維持以函式名定位一般呼叫點。
+      const constructorClassName = (originalSignature.name === 'constructor' && originalSignature.className)
+        ? originalSignature.className
+        : undefined;
+      const isConstructorTarget = constructorClassName !== undefined;
+      const searchName = constructorClassName ?? options.functionName;
+
+      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標」的檔案——目標定義檔本身，
+      // 以及直接 import 該符號（constructor 為類別名）自目標檔的檔案。避免全專案掃同名而誤改跨檔同名符號。
       const relevantFiles = await this.filterFilesReferencingTarget(
         projectFiles,
         options.filePath,
-        options.functionName
+        searchName
       );
 
-      // 只查找獨立函式呼叫（非 method call）
-      const allCallSites = await this.symbolFinder.findCallSites(options.functionName, relevantFiles);
-      callSites = allCallSites.filter(cs => !cs.isMethodCall);
+      // constructor 目標才 opt-in 掃描 new-expression，避免變更其他消費端（如 call-hierarchy）行為。
+      const allCallSites = await this.symbolFinder.findCallSites(
+        searchName,
+        relevantFiles,
+        { includeNewExpressions: isConstructorTarget }
+      );
+
+      if (isConstructorTarget) {
+        // `new ns.ClassName(...)`（帶 receiver）需型別解析才能確認指向同一類別，無此基礎設施 → 拒絕。
+        const qualifiedNewCallSites = allCallSites.filter(cs => cs.isNewExpression && cs.isMethodCall);
+        if (qualifiedNewCallSites.length > 0) {
+          return this.createErrorResult(
+            ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+            `偵測到 ${qualifiedNewCallSites.length} 個限定式建構子呼叫點（new receiver.Class(...)），` +
+            `無型別解析無法安全重寫：${this.formatCallSitePositions(qualifiedNewCallSites)}`
+          );
+        }
+        callSites = allCallSites.filter(cs => cs.isNewExpression === true && !cs.isMethodCall);
+      } else if (originalSignature.isMethod) {
+        // T1：目標「本身是 class 方法」時，同名的方法呼叫點（`calc.add(1, 2)`）確為對目標的引用，
+        // 但重寫需 receiver 型別解析才能避免把無關類別的同名方法（各種 `.add()`）一起改壞；本工具
+        // 無型別解析基礎設施。故偵測到即拒絕，不再靜默丟棄——靜默丟棄會造成定義改了、方法呼叫點
+        // 沒動的毀損（success:true 但呼叫端停在舊引數順序）。
+        const methodCallSites = allCallSites.filter(cs => cs.isMethodCall);
+        if (methodCallSites.length > 0) {
+          return this.createErrorResult(
+            ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+            `偵測到 ${methodCallSites.length} 個方法呼叫點，方法呼叫點重寫不受支援（需 receiver 型別解析）：` +
+            `${this.formatCallSitePositions(methodCallSites)}`
+          );
+        }
+        callSites = allCallSites.filter(cs => !cs.isMethodCall);
+      } else {
+        // 目標是頂層函數／變數函數：同名的方法呼叫點（如 `console.log(...)` 之於頂層 `log`）屬無關符號，
+        // 頂層函數不可能被 `obj.method()` 形式引用，靜默過濾為正確行為（不觸發拒絕）。
+        callSites = allCallSites.filter(cs => !cs.isMethodCall);
+      }
 
       // 呼叫點含 spread 引數（如 `f(...values)`）時，CallSiteUpdater 依「定位索引」重新映射
       // 引數（add/remove/reorder 皆會改變定位映射，見 changesRequireCallSiteRewrite），但單一
@@ -331,7 +388,7 @@ export class ChangeSignatureEngine {
   /**
    * 檢查呼叫點清單中是否有引數為 spread element（如 `...values`）。
    * 只需文字前綴判斷：CallSiteArgument.value 是引數節點的原始原始碼文字（見
-   * call-site-parser.ts extractArgumentsFromCallExpression／parseArgumentsMultiline），
+   * call-site-parser.ts extractArguments／parseArgumentsMultiline），
    * `...` 只會出現在 spread/rest 引數的開頭，不會是其他合法運算式文字的前三個字元
    * （optional chaining 是 `?.`，字串/樣板字面量以引號開頭），故無誤判風險。
    * 回傳第一個命中的呼叫點對應的錯誤訊息；無命中回傳 null。
@@ -841,6 +898,68 @@ export class ChangeSignatureEngine {
         this.collectBindingNames(element.name, target);
       }
     }
+  }
+
+  /** 將呼叫點清單格式化為 `filePath:line` 的逗號分隔字串（供拒絕訊息列位置） */
+  private formatCallSitePositions(callSites: readonly CallSite[]): string {
+    return callSites
+      .map(cs => `${cs.location.filePath}:${cs.location.range.start.line}`)
+      .join(', ');
+  }
+
+  /**
+   * 偵測目標是否屬於 overload 簽章群：同一 scope 內有 ≥2 個同名的 FunctionDeclaration／
+   * MethodDeclaration，且其中存在無 body 者（overload 簽章；實作宣告才有 body）。
+   * 回傳每個同名宣告的行號（1-based，供拒絕訊息列位置）；非 overload 群時回傳 null。
+   *
+   * overload 群的簽章與實作必為「同一父節點」（模組層 statements 或 class members）的直接子節點，
+   * 故以定位到的目標節點之 parent 為 scope 邊界收集兄弟宣告，不會把不同 class／作用域的同名符號
+   * 誤判為同群。findFunctionLikeDeclaration 以名稱＋行號定位（overload 情況為第一個簽章）。
+   */
+  private async detectOverloadSignatureGroup(signature: FunctionSignature): Promise<number[] | null> {
+    const content = await this.fileUtils.readFile(signature.location.filePath);
+    if (!content) {
+      return null;
+    }
+
+    const sourceFile = ts.createSourceFile(
+      signature.location.filePath,
+      content,
+      ts.ScriptTarget.Latest,
+      true,
+      this.getScriptKind(signature.location.filePath)
+    );
+    const target = this.findFunctionLikeDeclaration(sourceFile, signature);
+    if (!target || (!ts.isFunctionDeclaration(target) && !ts.isMethodDeclaration(target))) {
+      return null;
+    }
+
+    const isSameNameFunctionLike = (
+      node: ts.Node
+    ): node is ts.FunctionDeclaration | ts.MethodDeclaration => {
+      if (ts.isFunctionDeclaration(node)) {
+        return node.name?.text === signature.name;
+      }
+      if (ts.isMethodDeclaration(node)) {
+        return ts.isIdentifier(node.name) && node.name.text === signature.name;
+      }
+      return false;
+    };
+
+    const siblings: Array<ts.FunctionDeclaration | ts.MethodDeclaration> = [];
+    ts.forEachChild(target.parent, (child) => {
+      if (isSameNameFunctionLike(child)) {
+        siblings.push(child);
+      }
+    });
+
+    if (siblings.length < 2 || !siblings.some(node => node.body === undefined)) {
+      return null;
+    }
+
+    return siblings.map(node =>
+      sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+    );
   }
 
   private findFunctionLikeDeclaration(
