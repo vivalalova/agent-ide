@@ -95,40 +95,82 @@ export function findTypeAliasEnd(lines: string[], startLine: number): number {
  * 找到陳述句結尾
  * 處理多行箭頭函式：追蹤括號深度，避免將參數預設值的 `=` 誤判為語句結束
  *
+ * 逐字元累計括號深度時比照 findBlockEnd 套用 computeCodeStateMask，只對 mask
+ * 標記為 code 的字元做括號/分號/等號判定，避免字串/模板字面值/註解內恰巧出現
+ * 的 `(`/`)`/`;`/`=` 干擾判定（見 R2-7 bug：字串內不成對的 `)` 使 parenDepth 失步）。
+ *
  * @param lines 程式碼行陣列
  * @param startLine 起始行索引（0-based）
  * @returns 陳述句結束行索引
  */
 export function findStatementEnd(lines: string[], startLine: number): number {
+  const text = lines.slice(startLine).join('\n');
+  const codeMask = computeCodeStateMask(text);
+
   let parenDepth = 0;
+  let lineIndex = startLine;
+  let hasSemicolon = false;
+  let hasEquals = false;
+  let hasArrow = false;
+  let hasBrace = false;
 
-  for (let i = startLine; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 追蹤括號深度
-    for (const char of line) {
-      if (char === '(') {
-        parenDepth++;
-      } else if (char === ')') {
-        parenDepth--;
-      }
-    }
-
-    // 只有括號外的 `;` 或 `=` 才是語句結束
+  const evaluateLine = (): number | undefined => {
     if (parenDepth === 0) {
-      if (line.includes(';')) {
-        return i;
+      if (hasSemicolon) {
+        return lineIndex;
       }
       // 非箭頭函式的賦值（且不是起始行）
-      if (line.includes('=') && !line.includes('=>') && i > startLine) {
-        return i;
+      if (hasEquals && !hasArrow && lineIndex > startLine) {
+        return lineIndex;
       }
     }
-
     // 檢查是否是多行箭頭函式或物件（括號必須已閉合）
-    if (parenDepth === 0 && line.includes('{')) {
-      return findBlockEnd(lines, i);
+    if (parenDepth === 0 && hasBrace) {
+      return findBlockEnd(lines, lineIndex);
     }
+    return undefined;
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '\n') {
+      const result = evaluateLine();
+      if (result !== undefined) {
+        return result;
+      }
+      lineIndex++;
+      hasSemicolon = false;
+      hasEquals = false;
+      hasArrow = false;
+      hasBrace = false;
+      continue;
+    }
+
+    if (!codeMask[i]) {
+      continue;
+    }
+
+    if (char === '(') {
+      parenDepth++;
+    } else if (char === ')') {
+      parenDepth--;
+    } else if (char === ';') {
+      hasSemicolon = true;
+    } else if (char === '=') {
+      hasEquals = true;
+      if (text[i + 1] === '>') {
+        hasArrow = true;
+      }
+    } else if (char === '{') {
+      hasBrace = true;
+    }
+  }
+
+  // 處理最後一行（join 不含結尾換行，需在迴圈外再評估一次）
+  const finalResult = evaluateLine();
+  if (finalResult !== undefined) {
+    return finalResult;
   }
 
   return startLine;
