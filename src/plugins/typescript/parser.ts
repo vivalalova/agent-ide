@@ -469,13 +469,13 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     if (ts.isIdentifier(node)) {
       const name = node.text;
       const symbols = await this.extractSymbols(ast);
+      const matchingSymbols = symbols.filter(symbol => symbol.name === name);
+      const scopedSymbol = this.findInnermostScopedSymbol(matchingSymbols, node);
+      const symbol = scopedSymbol ?? matchingSymbols[0];
 
-      // 查找匹配名稱的符號定義
-      for (const symbol of symbols) {
-        if (symbol.name === name) {
-          // 直接返回符號的定義位置（不需要檢查 isReferenceToSymbol，因為我們是在查找定義）
-          return createDefinition(symbol.location, this.symbolTypeToDefinitionKind(symbol.type));
-        }
+      if (symbol) {
+        // 直接返回符號的定義位置（不需要檢查 isReferenceToSymbol，因為我們是在查找定義）
+        return createDefinition(symbol.location, this.symbolTypeToDefinitionKind(symbol.type));
       }
     }
 
@@ -780,6 +780,32 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
           bestMatch = symbol;
           bestMatchSize = size;
         }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  private findInnermostScopedSymbol(symbols: Symbol[], referenceNode: ts.Identifier): Symbol | null {
+    let bestMatch: Symbol | null = null;
+    let bestScope: ts.Node | null = null;
+
+    for (const symbol of symbols) {
+      const typedSymbol = symbol as TypeScriptSymbol;
+      const declarationScope = this.scopeAnalyzer.getScopeContainer(typedSymbol.tsNode);
+
+      // 只選擇宣告所在作用域包含參考位置的宣告
+      if (!this.scopeAnalyzer.isInScopeChain(referenceNode, declarationScope)) {
+        continue;
+      }
+
+      // 同一作用域保留 extractSymbols 順序，巢狀作用域則選擇更內層者
+      if (
+        !bestMatch
+        || (bestScope && this.scopeAnalyzer.isInScopeChain(declarationScope, bestScope))
+      ) {
+        bestMatch = symbol;
+        bestScope = declarationScope;
       }
     }
 
