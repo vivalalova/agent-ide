@@ -449,8 +449,8 @@ describe('CLI rename conflict-detection - 衝突檢測與多符號消歧', () =>
   // MARK: - 衝突解決行為
 
   describe('衝突解決行為', () => {
-    it('帶衝突的重命名在非 dry-run 時也能執行', async () => {
-      // Given: 會產生衝突的重命名（保留字）
+    it('帶衝突的重命名在非 dry-run 時應被拒絕套用且檔案不變', async () => {
+      // Given: 會產生衝突的重命名（保留字 'type'）
 
       // 先記錄原始內容
       const originalContent = await fixture.memfs.readFile(
@@ -459,25 +459,26 @@ describe('CLI rename conflict-detection - 衝突檢測與多符號消歧', () =>
       );
       expect(originalContent).toContain('UserAddress');
 
-      // When: 執行實際重命名（帶衝突）
+      // When: 嘗試執行實際重命名（帶衝突）
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'UserAddress', '--to', 'type', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      // Then: 應該成功執行（儘管有衝突警告）
-      expect(result.exitCode).toBe(0);
+      // Then: 非 dry-run 偵測到衝突警告應拒絕套用（exitCode 非 0）
+      expect(result.exitCode).not.toBe(0);
 
       const output = JSON.parse(result.stdout);
-      expect(output.success).toBe(true);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('衝突');
 
-      // 檔案應該被修改
+      // 檔案應維持原樣，不應被寫入
       const modifiedContent = await fixture.memfs.readFile(
         `${fixture.rootPath}/src/types/user.ts`,
         'utf-8'
       );
-      // 檢查有變更發生（不檢查具體內容，因為 'type' 是常見字串）
-      expect(modifiedContent).not.toBe(originalContent);
+      expect(modifiedContent).toBe(originalContent);
+      expect(modifiedContent).toContain('UserAddress');
     });
 
     it('無效識別符衝突不應阻止預覽', async () => {

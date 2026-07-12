@@ -7,6 +7,7 @@ import type { Command } from 'commander';
 import * as path from 'path';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { RenameEngine } from '@core/rename/rename-engine.js';
+import { ConflictType } from '@core/rename/types.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
@@ -240,6 +241,23 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 執行變更類命令統一流程
     if (!isJsonFormat && !options.dryRun) {
       process.stderr.write('   執行重新命名...\n');
+    }
+
+    if (!options.dryRun) {
+      // 驗證衝突以 type:message warning 傳遞；未知 warning 維持原本可套用語意。
+      const conflictWarnings = (changeset.warnings ?? []).filter(warning =>
+        Object.values(ConflictType).some(type => warning.startsWith(`${type}:`))
+      );
+
+      if (conflictWarnings.length > 0) {
+        outputHandler.outputError(
+          `重新命名存在衝突，無法套用：\n${conflictWarnings.map(warning => `   ${warning}`).join('\n')}`,
+          format,
+          'rename'
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
 
     await executeMutationCommand(changeset, {
