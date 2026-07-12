@@ -376,7 +376,18 @@ describe('ChangeApplicator', () => {
     });
 
     it('後續檔案操作失敗時應刪除已建立的檔案', async () => {
-      vi.mocked(mockFileSystem.exists).mockResolvedValue(true);
+      // '/created.ts' 是全新建立的檔案：備份當下（createBackups）尚不存在，
+      // 寫入後（rollback 檢查時）才存在，故需依呼叫順序回傳 false→true；
+      // 其餘路徑維持原本 blanket true。
+      let createdFileExists = false;
+      vi.mocked(mockFileSystem.exists).mockImplementation(async (path: string) => {
+        if (path === '/created.ts') {
+          const existedBefore = createdFileExists;
+          createdFileExists = true;
+          return existedBefore;
+        }
+        return true;
+      });
 
       const changeset = createChangeset({
         fileOperations: [

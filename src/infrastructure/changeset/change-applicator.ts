@@ -208,16 +208,28 @@ export class ChangeApplicator {
     // 備份檔案操作
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
-        case FileOperationType.Create:
-          // 新建檔案：備份為 null（回滾時刪除）
+        case FileOperationType.Create: {
+          // 新建檔案：若目標已存在則備份原始內容，否則備份為 null（回滾時刪除）
           if (operation.targetPath) {
-            backups.push({
-              filePath: operation.targetPath,
-              originalContent: null,
-              type: BackupType.Create
-            });
+            const exists = await this.fileSystem.exists(operation.targetPath);
+
+            if (exists) {
+              const content = await this.fileSystem.readFile(operation.targetPath, 'utf-8');
+              backups.push({
+                filePath: operation.targetPath,
+                originalContent: content as string,
+                type: BackupType.Delete
+              });
+            } else {
+              backups.push({
+                filePath: operation.targetPath,
+                originalContent: null,
+                type: BackupType.Create
+              });
+            }
           }
           break;
+        }
 
         case FileOperationType.Delete: {
           // 刪除檔案：備份內容
