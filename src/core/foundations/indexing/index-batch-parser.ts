@@ -178,6 +178,9 @@ export class IndexBatchParser {
     // 確保解析失敗的檔案也會留在索引中（帶 parseErrors），而非被靜默丟棄
     await this.fileIndex.addFile(fileInfo);
 
+    // 重新索引前先清除該檔案的舊符號，避免內容變更後留下 stale entry
+    await this.symbolIndex.removeFileSymbols(result.filePath);
+
     // 處理解析錯誤
     if (result.errors.length > 0) {
       await this.fileIndex.setFileParseErrors(result.filePath, result.errors);

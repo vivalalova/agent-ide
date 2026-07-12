@@ -302,6 +302,9 @@ export class IndexEngine {
       // 新增到檔案索引
       await this.fileIndex.addFile(fileInfo);
 
+      // 重新索引前先清除該檔案的舊符號，避免內容變更後留下 stale entry
+      await this.symbolIndex.removeFileSymbols(filePath);
+
       // 標記索引已建立（即使只索引了一個檔案）
       this._indexed = true;
 
@@ -347,11 +350,6 @@ export class IndexEngine {
       const exists = await this.fileSystem.exists(filePath);
       if (!exists) {
         throw new Error('檔案不存在');
-      }
-
-      // 如果檔案已在索引中，先移除
-      if (this.isIndexed(filePath)) {
-        await this.removeFile(filePath);
       }
 
       // 重新索引檔案
