@@ -36,7 +36,7 @@ export class MoveMemberEngine {
   ) {
     this.memberExtractor = new MemberExtractor(parserRegistry, fileSystem);
     this.referenceUpdater = new ReferenceUpdater(fileSystem, pathConfig);
-    this.fileChangePreparer = new FileChangePreparer(fileSystem);
+    this.fileChangePreparer = new FileChangePreparer(fileSystem, parserRegistry);
     this.changeApplier = new ChangeApplier(fileSystem);
   }
 

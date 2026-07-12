@@ -5,10 +5,13 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import type { ParserRegistry } from '@infrastructure/parser/registry.js';
+import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
 import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange } from './types.js';
 import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { stripSourceFileExtension } from '@shared/types/index.js';
+import { FileUtils } from '@core/foundations/index.js';
 
 /**
  * Import 類型
@@ -21,10 +24,15 @@ enum ImportType {
 
 /**
  * Import 符號資訊
+ * 以程式碼中實際引用的 local binding 名稱為 key（見 indexImportedSymbols）
  */
 interface ImportSymbolInfo {
   modulePath: string;
   type: ImportType;
+  /** 原始 imported/exported 名稱：named import 若有 `as` 別名時與 local binding 不同 */
+  importedName: string;
+  /** 是否為 type-only（語句層級 `import type` 或該 specifier 層級 `{ type X }`） */
+  isTypeOnly: boolean;
 }
 
 /**
@@ -33,7 +41,7 @@ interface ImportSymbolInfo {
 interface SourceSymbolInfo {
   /** 本地定義的 export 符號 */
   localExports: Set<string>;
-  /** import 的符號對應的來源 { symbolName -> ImportSymbolInfo } */
+  /** import 的符號對應的來源，key 為程式碼中實際引用的 local binding 名稱 */
   importedSymbols: Map<string, ImportSymbolInfo>;
 }
 
@@ -42,7 +50,10 @@ interface SourceSymbolInfo {
  * 負責準備來源檔案和目標檔案的程式碼變更
  */
 export class FileChangePreparer {
-  constructor(private readonly fileSystem: IFileSystem) {}
+  constructor(
+    private readonly fileSystem: IFileSystem,
+    private readonly parserRegistry?: ParserRegistry
+  ) {}
 
   /**
    * 準備來源檔案變更
@@ -110,20 +121,21 @@ export class FileChangePreparer {
       memberCode = 'export ' + memberCode;
     }
 
-    // 分析成員依賴並生成需要的 import
+    // 自動判斷檔案是否存在
+    const content = await this.readFile(target.filePath);
+    const isNewFile = content === null;
+
+    // 分析成員依賴並生成需要的 import（需先知道目標檔既有 import 才能判重，避免重複插入）
     const sourceContent = await this.readFile(options.sourceFile);
     const dependencyImports = sourceContent
       ? await this.generateDependencyImports(
           member,
           sourceContent,
           options.sourceFile,
-          target.filePath
+          target.filePath,
+          content
         )
       : '';
-
-    // 自動判斷檔案是否存在
-    const content = await this.readFile(target.filePath);
-    const isNewFile = content === null;
 
     if (isNewFile) {
       // 新檔案：生成完整的檔案內容
@@ -207,20 +219,34 @@ export class FileChangePreparer {
 
   /**
    * 生成成員依賴的 import
+   * @param targetContent 目標檔既有內容（null 表示目標檔尚不存在），用於判重避免重複插入（S4）
    */
   private async generateDependencyImports(
     member: MemberDefinition,
     sourceContent: string,
     sourceFile: string,
-    targetFile: string
+    targetFile: string,
+    targetContent: string | null
   ): Promise<string> {
-    const symbolInfo = this.analyzeSourceSymbols(sourceContent);
+    const symbolInfo = this.analyzeSourceSymbols(sourceContent, sourceFile);
+    const existingTargetBindings = targetContent
+      ? this.collectExistingBindings(targetContent, targetFile)
+      : new Map<string, Set<string>>();
 
-    // 按 modulePath 和 importType 分組
-    // key: `${modulePath}::${importType}`, value: Set<symbolName>
-    const neededImports: Map<string, { modulePath: string; type: ImportType; symbols: Set<string> }> = new Map();
+    // 按 modulePath + importType + isTypeOnly 分組
+    // key: `${modulePath}::${importType}::${isTypeOnly}`, value: Map<localName, importedName>
+    const neededImports: Map<string, { modulePath: string; type: ImportType; isTypeOnly: boolean; symbols: Map<string, string> }> = new Map();
 
-    // 分析成員依賴的符號
+    const addNeeded = (modulePath: string, type: ImportType, isTypeOnly: boolean, localName: string, importedName: string): void => {
+      // 目標檔該 module 下已有同名 local binding：視為已可解析，跳過避免重複宣告（S4）
+      if (existingTargetBindings.get(modulePath)?.has(localName)) { return; }
+      const key = `${modulePath}::${type}::${isTypeOnly}`;
+      const entry = neededImports.get(key) ?? { modulePath, type, isTypeOnly, symbols: new Map<string, string>() };
+      entry.symbols.set(localName, importedName);
+      neededImports.set(key, entry);
+    };
+
+    // 分析成員依賴的符號（member.dependencies 內的名稱即程式碼中實際引用的 local binding）
     for (const dep of member.dependencies) {
       // 跳過成員自己的名稱
       if (dep === member.name) { continue; }
@@ -228,42 +254,43 @@ export class FileChangePreparer {
       if (symbolInfo.localExports.has(dep)) {
         // 依賴來自來源檔案的本地 export，需要從來源檔案 import（使用 named import）
         const relativePath = this.calculateRelativePath(targetFile, sourceFile);
-        const key = `${relativePath}::${ImportType.Named}`;
-        if (!neededImports.has(key)) {
-          neededImports.set(key, { modulePath: relativePath, type: ImportType.Named, symbols: new Set() });
-        }
-        neededImports.get(key)?.symbols.add(dep);
+        addNeeded(relativePath, ImportType.Named, false, dep, dep);
       } else if (symbolInfo.importedSymbols.has(dep)) {
-        // 依賴來自外部模組，保持原本的 import 類型
+        // 依賴來自外部模組，保持原本的 import 類型、別名與 type 修飾
         const importInfo = symbolInfo.importedSymbols.get(dep);
-        if (!importInfo) {continue;}
-        const key = `${importInfo.modulePath}::${importInfo.type}`;
-        if (!neededImports.has(key)) {
-          neededImports.set(key, { modulePath: importInfo.modulePath, type: importInfo.type, symbols: new Set() });
-        }
-        neededImports.get(key)?.symbols.add(dep);
+        if (!importInfo) { continue; }
+        addNeeded(importInfo.modulePath, importInfo.type, importInfo.isTypeOnly, dep, importInfo.importedName);
       }
     }
 
     // 生成 import 語句
     const importLines: string[] = [];
-    for (const { modulePath, type, symbols } of neededImports.values()) {
-      const symbolList = Array.from(symbols).sort();
+    for (const { modulePath, type, isTypeOnly, symbols } of neededImports.values()) {
+      if (symbols.size === 0) { continue; }
+      const typePrefix = isTypeOnly ? 'type ' : '';
 
       switch (type) {
-        case ImportType.Namespace:
+        case ImportType.Namespace: {
           // import * as name from 'module' - 只取第一個符號作為 namespace 名稱
-          importLines.push(`import * as ${symbolList[0]} from '${modulePath}';`);
+          const [localName] = symbols.keys();
+          importLines.push(`import ${typePrefix}* as ${localName} from '${modulePath}';`);
           break;
-        case ImportType.Default:
+        }
+        case ImportType.Default: {
           // import name from 'module' - 只取第一個符號作為 default 名稱
-          importLines.push(`import ${symbolList[0]} from '${modulePath}';`);
+          const [localName] = symbols.keys();
+          importLines.push(`import ${typePrefix}${localName} from '${modulePath}';`);
           break;
+        }
         case ImportType.Named:
-        default:
-          // import { A, B } from 'module'
-          importLines.push(`import { ${symbolList.join(', ')} } from '${modulePath}';`);
+        default: {
+          // import { A, B as C } from 'module'（保留別名：local binding 與 imported name 不同時用 as 映射）
+          const parts = Array.from(symbols.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([localName, importedName]) => localName === importedName ? localName : `${importedName} as ${localName}`);
+          importLines.push(`import ${typePrefix}{ ${parts.join(', ')} } from '${modulePath}';`);
           break;
+        }
       }
     }
 
@@ -286,21 +313,86 @@ export class FileChangePreparer {
   }
 
   /**
-   * 分析來源檔案的符號（本地 export 和 import）
-   * 使用單一複合正則表達式，一次遍歷完成所有分析
+   * 用 Parser AST 解析 import 宣告（SSOT：與 deadcode/move 模組共用同一份
+   * ParserPlugin.getImportDeclarations 介面），取得每個 import 的 local binding 名稱、
+   * imported 名稱、default/namespace/named 種類、per-specifier 與語句層級的 type 修飾、
+   * module specifier。Parser 不支援或解析失敗時回傳空陣列（無法辨識的依賴不隨遷，
+   * 與既有行為一致，非新增的降級分支）
    */
-  private analyzeSourceSymbols(content: string): SourceSymbolInfo {
-    const localExports = new Set<string>();
+  private parseImportDeclarations(content: string, filePath: string): ImportDeclaration[] {
+    if (!this.parserRegistry) { return []; }
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
+    return parser?.getImportDeclarations?.(content) ?? [];
+  }
+
+  /**
+   * 索引來源檔案的 import：key 為程式碼中實際引用的 local binding 名稱
+   * （named import 若有 `as` 別名，local binding 與 imported name 不同）
+   */
+  private indexImportedSymbols(content: string, filePath: string): Map<string, ImportSymbolInfo> {
     const importedSymbols = new Map<string, ImportSymbolInfo>();
 
-    // 複合正則：匹配所有 import 和 export 語句
-    const combinedPattern = new RegExp(
-      // import { A, B } from 'module'
-      'import\\s+\\{([^}]+)\\}\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
-      // import * as name from 'module'
-      'import\\s+\\*\\s+as\\s+(\\w+)\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
-      // import name from 'module' (default)
-      'import\\s+(\\w+)\\s+from\\s+[\'"]([^\'"]+)[\'"]|' +
+    for (const decl of this.parseImportDeclarations(content, filePath)) {
+      if (decl.defaultImport) {
+        importedSymbols.set(decl.defaultImport, {
+          modulePath: decl.moduleSpecifier,
+          type: ImportType.Default,
+          importedName: decl.defaultImport,
+          isTypeOnly: decl.isTypeOnly
+        });
+      }
+      if (decl.namespaceImport) {
+        importedSymbols.set(decl.namespaceImport, {
+          modulePath: decl.moduleSpecifier,
+          type: ImportType.Namespace,
+          importedName: decl.namespaceImport,
+          isTypeOnly: decl.isTypeOnly
+        });
+      }
+      for (const named of decl.namedImports ?? []) {
+        const localName = named.alias ?? named.name;
+        importedSymbols.set(localName, {
+          modulePath: decl.moduleSpecifier,
+          type: ImportType.Named,
+          importedName: named.name,
+          isTypeOnly: decl.isTypeOnly || !!named.isTypeOnly
+        });
+      }
+    }
+
+    return importedSymbols;
+  }
+
+  /**
+   * 收集檔案既有 import 已提供的 local binding，供插入依賴 import 前判重（S4）
+   * key: moduleSpecifier → 該 module 下已存在的 local binding 名稱集合
+   */
+  private collectExistingBindings(content: string, filePath: string): Map<string, Set<string>> {
+    const bindings = new Map<string, Set<string>>();
+
+    for (const decl of this.parseImportDeclarations(content, filePath)) {
+      const set = bindings.get(decl.moduleSpecifier) ?? new Set<string>();
+      if (decl.defaultImport) { set.add(decl.defaultImport); }
+      if (decl.namespaceImport) { set.add(decl.namespaceImport); }
+      for (const named of decl.namedImports ?? []) {
+        set.add(named.alias ?? named.name);
+      }
+      bindings.set(decl.moduleSpecifier, set);
+    }
+
+    return bindings;
+  }
+
+  /**
+   * 分析來源檔案的符號（本地 export 和 import）
+   * import 分析改用 Parser AST（見 indexImportedSymbols）；本地 export 偵測維持既有正則
+   * （非本次缺陷範圍，行為不變）
+   */
+  private analyzeSourceSymbols(content: string, filePath: string): SourceSymbolInfo {
+    const localExports = new Set<string>();
+
+    // 複合正則：匹配所有 export 語句
+    const exportPattern = new RegExp(
       // export const/let/var NAME
       'export\\s+(?:const|let|var)\\s+(\\w+)|' +
       // export [async] function NAME
@@ -319,50 +411,19 @@ export class FileChangePreparer {
     );
 
     let match;
-    while ((match = combinedPattern.exec(content)) !== null) {
-      if (match[1] !== undefined) {
-        // import { A, B } from 'module'
-        const symbols = this.parseSymbolList(match[1]);
-        const modulePath = match[2];
-        for (const symbol of symbols) {
-          importedSymbols.set(symbol, { modulePath, type: ImportType.Named });
-        }
-      } else if (match[3] !== undefined) {
-        // import * as name from 'module'
-        importedSymbols.set(match[3], { modulePath: match[4], type: ImportType.Namespace });
-      } else if (match[5] !== undefined) {
-        // import name from 'module' (default)
-        if (!importedSymbols.has(match[5])) {
-          importedSymbols.set(match[5], { modulePath: match[6], type: ImportType.Default });
-        }
-      } else if (match[7] !== undefined) {
-        // export const/let/var
-        localExports.add(match[7]);
-      } else if (match[8] !== undefined) {
-        // export function
-        localExports.add(match[8]);
-      } else if (match[9] !== undefined) {
-        // export class
-        localExports.add(match[9]);
-      } else if (match[10] !== undefined) {
-        // export interface
-        localExports.add(match[10]);
-      } else if (match[11] !== undefined) {
-        // export type
-        localExports.add(match[11]);
-      } else if (match[12] !== undefined) {
-        // export enum
-        localExports.add(match[12]);
-      } else if (match[13] !== undefined) {
+    while ((match = exportPattern.exec(content)) !== null) {
+      if (match[7] !== undefined) {
         // export { A, B }
-        const symbols = this.parseSymbolList(match[13]);
-        for (const symbol of symbols) {
+        for (const symbol of this.parseSymbolList(match[7])) {
           localExports.add(symbol);
         }
+      } else {
+        const name = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? match[6];
+        if (name !== undefined) { localExports.add(name); }
       }
     }
 
-    return { localExports, importedSymbols };
+    return { localExports, importedSymbols: this.indexImportedSymbols(content, filePath) };
   }
 
   /**
