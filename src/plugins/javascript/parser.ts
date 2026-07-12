@@ -70,13 +70,13 @@ import {
   JAVASCRIPT_EXCLUDE_PATTERNS,
   matchesAnyPattern,
   validateParserInput,
-  validateRenameInput
+  validateRenameInput,
+  computeContentHash
 } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
-import { createHash } from 'node:crypto';
 
 /**
  * AST 快取項目
@@ -133,21 +133,13 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   /**
-   * 計算程式碼內容的 hash
-   * 用於快取驗證
-   */
-  private computeContentHash(content: string): string {
-    return createHash('sha256').update(content).digest('hex');
-  }
-
-  /**
    * 解析 JavaScript 程式碼
    */
   async parse(code: string, filePath: string): Promise<AST> {
     validateParserInput(code, filePath);
 
     // 檢查 AST 快取
-    const contentHash = this.computeContentHash(code);
+    const contentHash = computeContentHash(code);
     const cached = this.astCache.get(filePath);
     if (cached && cached.contentHash === contentHash) {
       return cached.ast;
@@ -954,7 +946,7 @@ export class JavaScriptParser implements ParserPlugin {
    */
   private async getOrCreateSymbolIndex(ast: JavaScriptAST): Promise<SymbolIndexCache> {
     const cacheKey = ast.sourceFile;
-    const contentHash = this.computeContentHash(ast.sourceCode);
+    const contentHash = computeContentHash(ast.sourceCode);
     const cached = this.symbolIndexCache.get(cacheKey);
 
     // 驗證快取：檔案存在且 hash 相同（MemoryCache.get() 自動更新 lastAccessedAt）

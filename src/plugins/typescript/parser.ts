@@ -57,11 +57,11 @@ import {
   TYPESCRIPT_EXCLUDE_PATTERNS,
   matchesAnyPattern,
   validateParserInput,
-  validateRenameInput
+  validateRenameInput,
+  computeContentHash
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
-import { createHash } from 'node:crypto';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -115,21 +115,13 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   /**
-   * 計算程式碼內容的雜湊值
-   * 用於快取驗證
-   */
-  private computeContentHash(content: string): string {
-    return createHash('sha256').update(content).digest('hex');
-  }
-
-  /**
    * 解析 TypeScript 程式碼
    */
   async parse(code: string, filePath: string): Promise<AST> {
     validateParserInput(code, filePath);
 
     // 檢查 AST 快取
-    const contentHash = this.computeContentHash(code);
+    const contentHash = computeContentHash(code);
     const cached = this.astCache.get(filePath);
     if (cached && cached.contentHash === contentHash) {
       return cached.ast;

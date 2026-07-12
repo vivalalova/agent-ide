@@ -3,6 +3,7 @@
  * TypeScript 和 JavaScript Parser 共享的邏輯
  */
 
+import { createHash } from 'node:crypto';
 import type { Range, Position } from '@shared/types/core.js';
 import type {
   Documentation,
@@ -15,6 +16,18 @@ import {
   NON_FACTORY_RETURN_TYPES,
   FACTORY_NAME_PREFIXES
 } from './constants.js';
+
+/**
+ * 計算程式碼內容的雜湊值（SHA256，全內容）
+ * 用於 AST/符號索引快取驗證與快取 key；全內容雜湊避免「同長度+同前綴」
+ * 的弱雜湊（如僅取長度+前 N 字元）造成不同內容碰撞、靜默拿到錯誤快取結果
+ *
+ * @param content 原始程式碼內容
+ * @returns SHA256 十六進位雜湊字串
+ */
+export function computeContentHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
 
 /**
  * 檢查節點行號是否匹配目標行號

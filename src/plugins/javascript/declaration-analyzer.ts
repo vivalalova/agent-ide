@@ -15,7 +15,7 @@ import type {
   Documentation
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
-import { isLineMatch, parseJSDocContent } from '@plugins/shared/index.js';
+import { isLineMatch, parseJSDocContent, computeContentHash } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 
@@ -32,13 +32,6 @@ export class DeclarationAnalyzer {
   private readonly astCache: MemoryCache<string, babel.File> = createLRUCache(10);
 
   /**
-   * 計算程式碼雜湊（簡易版本）
-   */
-  private computeHash(code: string): string {
-    return `${code.length}:${code.substring(0, 100)}`;
-  }
-
-  /**
    * 解析並快取 AST
    * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
@@ -46,7 +39,7 @@ export class DeclarationAnalyzer {
     code: string,
     options: ParserOptions
   ): babel.File | null {
-    const hash = this.computeHash(code);
+    const hash = computeContentHash(code);
 
     // 檢查快取（MemoryCache.get() 自動更新 lastAccessedAt）
     const cached = this.astCache.get(hash);

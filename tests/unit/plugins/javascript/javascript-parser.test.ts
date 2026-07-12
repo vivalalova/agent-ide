@@ -508,4 +508,46 @@ describe('JavaScriptParser', () => {
       expect(ast).toBeDefined();
     });
   });
+
+  // MARK: - 弱雜湊快取碰撞（G1）
+  // DeclarationAnalyzer.computeHash 與 ReferenceFinder.computeCodeHash 都只用
+  // `${code.length}:前 100 字元` 當快取 key，兩份「長度相同、前 100 字元相同、
+  // 之後內容不同」的程式碼會拿到彼此的快取結果。
+
+  describe('弱雜湊快取碰撞', () => {
+    // 100 字元的固定 banner：'/' + 98 個 '*' + '/'
+    const BANNER = '/' + '*'.repeat(98) + '/';
+
+    function makeCode(letter: string): string {
+      return `${BANNER}\nimport { helper${letter} } from './module-${letter.toLowerCase()}.js';\nexport function use${letter}() { return helper${letter}(); }\n`;
+    }
+
+    const codeA = makeCode('A');
+    const codeB = makeCode('B');
+
+    it('前提：codeA 與 codeB 長度相同且前 100 字元相同（碰撞條件成立）', () => {
+      expect(codeA.length).toBe(codeB.length);
+      expect(codeA.substring(0, 100)).toBe(codeB.substring(0, 100));
+      expect(codeA).not.toBe(codeB);
+    });
+
+    it('getImportDeclarations 不應該讓 codeB 拿到 codeA 的快取結果', () => {
+      const declsA = parser.getImportDeclarations(codeA);
+      const declsB = parser.getImportDeclarations(codeB);
+
+      expect(declsA?.[0]?.moduleSpecifier).toBe('./module-a.js');
+      // 目前因弱雜湊碰撞會回傳 codeA 快取的 './module-a.js'
+      expect(declsB?.[0]?.moduleSpecifier).toBe('./module-b.js');
+    });
+
+    it('findScopedReferences 不應該讓 codeB 拿到 codeA 的快取 AST', () => {
+      const refsA = parser.findScopedReferences(codeA, 'helperA');
+      const refsB = parser.findScopedReferences(codeB, 'helperB');
+
+      expect(refsA?.length).toBeGreaterThanOrEqual(1);
+      // 目前因弱雜湊碰撞會沿用 codeA 的快取 AST，其中沒有 helperB
+      // 識別符，導致回傳空陣列
+      expect(refsB?.length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });

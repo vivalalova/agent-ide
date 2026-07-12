@@ -16,12 +16,10 @@ import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { computeContentHash } from '@plugins/shared/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
-
-/** 程式碼雜湊樣本長度（前 N 字元） */
-const CODE_HASH_SAMPLE_LENGTH = 100;
 
 /**
  * 引用分析結果
@@ -63,28 +61,11 @@ export class ReferenceFinder {
   private readonly astCache: MemoryCache<string, ASTCacheEntry> = createLRUCache(50);
 
   /**
-   * 計算程式碼的雜湊值（用於快取 key）
-   * 使用 djb2 演算法計算雜湊，比簡易長度+前綴更可靠
-   */
-  private computeCodeHash(code: string): string {
-    let hash = 5381;
-    const sampleLength = Math.min(code.length, CODE_HASH_SAMPLE_LENGTH);
-
-    for (let i = 0; i < sampleLength; i++) {
-      hash = ((hash << 5) + hash) + code.charCodeAt(i);
-      hash = hash & hash; // 轉為 32 位元整數
-    }
-
-    // 結合長度確保不同大小的檔案不會碰撞
-    return `${code.length}:${hash >>> 0}`;
-  }
-
-  /**
    * 取得或建立 AST 快取（僅解析 AST，不做 traverse）
    * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
   private getOrCreateASTCache(code: string): ASTCacheEntry | null {
-    const hash = this.computeCodeHash(code);
+    const hash = computeContentHash(code);
     // MemoryCache.get() 自動更新 lastAccessedAt
     const cached = this.astCache.get(hash);
 

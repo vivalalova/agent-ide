@@ -26,7 +26,8 @@ export {
   isRelativePath,
   UNICODE_IDENTIFIER_PATTERN,
   isValidUnicodeIdentifier,
-  matchesAnyPattern
+  matchesAnyPattern,
+  computeContentHash
 } from './parser-helpers.js';
 
 // 驗證邏輯
