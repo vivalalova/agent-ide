@@ -12,9 +12,9 @@ import {
   type FileOperation,
   type ApplyResult,
   type ApplyOptions,
-  type BackupEntry,
-  type TextEdit
+  type BackupEntry
 } from './types.js';
+import { applyTextEdits } from './apply-text-edits.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
@@ -273,188 +273,12 @@ export class ChangeApplicator {
     atomic: boolean
   ): Promise<void> {
     const content = await this.fileSystem.readFile(textChange.filePath, 'utf-8');
-    const newContent = this.applyEdits(content as string, textChange.edits);
+    // 委派給共用的編輯套用核心（dedupe→重疊檢查→排序→套用），實寫終態的單一權威來源
+    const newContent = applyTextEdits(content as string, textChange.edits);
 
     await this.fileSystem.writeFile(textChange.filePath, newContent, {
       fsync: atomic
     });
-  }
-
-  /**
-   * 應用編輯操作到內容
-   * 從後往前排序以避免位置偏移
-   * @param content 原始內容
-   * @param edits 編輯操作列表
-   * @returns 修改後的內容
-   */
-  private applyEdits(content: string, edits: readonly TextEdit[]): string {
-    if (edits.length === 0) {
-      return content;
-    }
-
-    // 空內容特殊處理：所有 edit 的位置都視為插入到開頭
-    // 這是因為對空內容而言，任何位置的插入都等同於從頭開始
-    if (content === '') {
-      return edits.map(e => e.newText).join('');
-    }
-
-    // 完全相同（range 與 newText 皆相同）的重複編輯屬合法冪等操作，靜默 dedupe 為一筆
-    const dedupedEdits = this.dedupeIdenticalEdits(edits);
-
-    // 只分割一次，用於計算 offset
-    const lines = this.splitLines(content);
-
-    // 去重後仍有範圍重疊（以原始 offset 判定）即為衝突編輯，fast-fail：
-    // 絕不靜默套用會互相踩踏的編輯，讓呼叫端（apply()）走既有錯誤/回滾路徑
-    this.assertNoOverlappingEdits(dedupedEdits, lines);
-
-    // 按位置從後往前排序（避免位置偏移）
-    const sortedEdits = [...dedupedEdits].sort((a, b) => {
-      // 先比較行號
-      if (a.range.start.line !== b.range.start.line) {
-        return b.range.start.line - a.range.start.line; // 從後往前
-      }
-      // 同行則比較列號
-      return b.range.start.column - a.range.start.column;
-    });
-
-    let result = content;
-
-    // 依序應用編輯（直接在字串上操作，避免重複 join/split）
-    for (const edit of sortedEdits) {
-      const { range, newText } = edit;
-
-      // 計算起始和結束偏移
-      const startOffset = this.calculateOffset(lines, range.start.line, range.start.column);
-      const endOffset = this.calculateOffset(lines, range.end.line, range.end.column);
-
-      // 直接在字串上替換指定範圍
-      result = result.substring(0, startOffset) + newText + result.substring(endOffset);
-    }
-
-    return result;
-  }
-
-  /**
-   * 去除完全相同（range 與 newText 皆相同）的重複編輯
-   * 這是合法的冪等情況（例如上游對同一筆變更重複產生），靜默 dedupe 為一筆即可，
-   * 不應被後續的重疊偵測誤判為衝突
-   * @param edits 原始編輯操作列表
-   * @returns 去重後的編輯操作列表（保留原始相對順序）
-   */
-  private dedupeIdenticalEdits(edits: readonly TextEdit[]): TextEdit[] {
-    const seen = new Set<string>();
-    const deduped: TextEdit[] = [];
-
-    for (const edit of edits) {
-      const { start, end } = edit.range;
-      const key = `${start.line}:${start.column}-${end.line}:${end.column} ${edit.newText}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      deduped.push(edit);
-    }
-
-    return deduped;
-  }
-
-  /**
-   * 偵測去重後仍存在的範圍重疊編輯，重疊時直接拋錯（fast-fail）
-   *
-   * 重疊判定以「原始內容」計算出的 offset 為準（同一份 lines，僅計算一次）：
-   * - 零寬插入（start === end）與相鄰編輯（前一筆的 end === 後一筆的 start）
-   *   兩者的範圍在字元層級並無重疊，不算衝突（move-member M4 的零寬 import 插入
-   *   與後續整檔替換即依賴此邊界不誤殺）
-   * - 僅當前一筆（依 start 遞增排序後）的結束 offset 嚴格大於後一筆的起始 offset，
-   *   代表兩者實際字元範圍互踩，才視為衝突
-   *
-   * @param edits 已去重的編輯操作列表
-   * @param lines 原始內容分割後的行陣列（用於計算 offset）
-   * @throws Error 偵測到重疊編輯時，訊息包含兩筆編輯各自的 range 與 offset
-   */
-  private assertNoOverlappingEdits(edits: readonly TextEdit[], lines: string[]): void {
-    if (edits.length < 2) {
-      return;
-    }
-
-    const withOffsets = edits
-      .map(edit => ({
-        edit,
-        start: this.calculateOffset(lines, edit.range.start.line, edit.range.start.column),
-        end: this.calculateOffset(lines, edit.range.end.line, edit.range.end.column)
-      }))
-      .sort((a, b) => a.start - b.start || a.end - b.end);
-
-    for (let i = 1; i < withOffsets.length; i++) {
-      const prev = withOffsets[i - 1];
-      const curr = withOffsets[i];
-
-      if (prev.end > curr.start) {
-        const describe = (r: typeof prev): string =>
-          `[${r.edit.range.start.line}:${r.edit.range.start.column}-${r.edit.range.end.line}:${r.edit.range.end.column}]（offset [${r.start},${r.end})）`;
-        throw new Error(
-          `偵測到重疊的 TextEdit：${describe(prev)} 與 ${describe(curr)} 重疊`
-        );
-      }
-    }
-  }
-
-  /**
-   * 分割內容為行（保留換行符）
-   * @param content 原始內容
-   * @returns 行陣列
-   */
-  private splitLines(content: string): string[] {
-    if (!content) {return [];}
-    const lines = content.split('\n');
-    // 保留換行符（除了最後一行）
-    return lines.map((line, i) =>
-      i < lines.length - 1 ? line + '\n' : line
-    ).filter(line => line.length > 0 || lines.length === 1);
-  }
-
-  /**
-   * 計算指定位置的字元偏移量
-   *
-   * 座標系統說明：
-   * - line: 行號（1-based），有效範圍 [1, lines.length+1]
-   *   - 1 = 第一行
-   *   - lines.length+1 = 檔案末尾（用於追加內容）
-   * - column: 列號（1-based），有效範圍 [1, 當前行長度+1]
-   *   - 1 = 行首
-   *   - 行長度+1 = 行尾（用於行尾插入）
-   *
-   * 超出範圍的處理：
-   * - line > lines.length: 視為檔案末尾，offset 為檔案總長度
-   * - column > 行長度: 視為行尾，offset 為該行最後一個字元後
-   *
-   * @param lines 行陣列
-   * @param line 行號（1-based，從 1 開始，允許 lines.length+1 用於檔案末尾插入）
-   * @param column 列號（1-based，從 1 開始，允許行長度+1 用於行尾插入）
-   * @returns 字元偏移量
-   * @throws Error 當行號 < 1 或列號 < 1 時
-   */
-  private calculateOffset(lines: string[], line: number, column: number): number {
-    // 驗證基本參數（只禁止負數，超出範圍允許用於插入操作）
-    if (line < 1) {
-      throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
-    }
-    if (column < 1) {
-      throw new Error(`無效的列號: ${column}，列號必須 >= 1（1-based 索引）`);
-    }
-
-    let offset = 0;
-
-    // 累加前面所有行的長度（使用邊界檢查避免越界）
-    for (let i = 0; i < line - 1 && i < lines.length; i++) {
-      offset += lines[i].length;
-    }
-
-    // 加上當前行的列偏移
-    offset += column - 1;
-
-    return offset;
   }
 
   /**

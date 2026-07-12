@@ -663,6 +663,90 @@ describe('ChangeApplicator', () => {
     });
   });
 
+  // MARK: - 空內容快速路徑繞過 dedupe regression（C4）
+
+  describe('空內容快速路徑繞過 dedupe（C4）', () => {
+    it('空內容時完全相同的重複零寬插入編輯應 dedupe 為一筆，而非各自套用', async () => {
+      // applyEdits 對空內容（content === ''）有獨立快速路徑（直接 join 所有 newText），
+      // 繞過 dedupeIdenticalEdits：完全相同的重複編輯在非空內容路徑會被 dedupe 為冪等的一筆，
+      // 但空內容路徑目前會把兩筆完全相同的編輯都套用，導致內容重複
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/empty.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 1), newText: 'x' },
+            { range: createTestRange(1, 1, 1, 1), newText: 'x' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 正確行為：與非空內容路徑一致，完全相同的重複編輯視為冪等操作，dedupe 後只套用一次
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/empty.ts',
+        'x',
+        { fsync: true }
+      );
+    });
+  });
+
+  // MARK: - 排序缺 tiebreak regression（C5）
+
+  describe('applyEdits 排序缺 tiebreak（C5）', () => {
+    it('輸入順序為 [零寬插入, 整段替換] 時，同起點編輯結果不應依賴輸入順序', async () => {
+      // 排序只比較 range.start（第 312-319 行），同起點時無 tiebreak，
+      // 依賴 Array.prototype.sort 的穩定排序保留輸入順序 —— 但這會讓「從後往前套用」
+      // 在同起點時把先出現的零寬插入誤置於後套用的整段替換之後，導致插入內容被替換蓋掉、
+      // 甚至吃掉不該吃的字元
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abc');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/tie1.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 1), newText: 'I' },
+            { range: createTestRange(1, 1, 1, 4), newText: 'X' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 正確行為：同起點時零寬插入須保留在整段替換結果之前，輸出應為 'IX'
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/tie1.ts',
+        'IX',
+        { fsync: true }
+      );
+    });
+
+    it('輸入順序為 [整段替換, 零寬插入] 時，同起點編輯結果不應依賴輸入順序', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abc');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/tie2.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 4), newText: 'X' },
+            { range: createTestRange(1, 1, 1, 1), newText: 'I' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 兩種輸入順序都必須得到相同結果 'IX'，不得因輸入順序不同而改變輸出
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/tie2.ts',
+        'IX',
+        { fsync: true }
+      );
+    });
+  });
+
   // MARK: - 邊界情況
 
   describe('邊界情況', () => {

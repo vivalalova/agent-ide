@@ -97,6 +97,57 @@ function applyEditsToLine(originalLine: string, edits: TextEdit[]): string {
 }
 
 /**
+ * 合併「offset 相鄰、不重疊」的編輯
+ *
+ * 兩筆編輯 [a,b) 與 [b,c)（前一筆結束位置 === 後一筆起始位置）在套用結果上完全等同於
+ * 單筆 [a,c) 且 newText 為兩者串接——這是 ChangeApplicator 實寫時本就成立的等價關係。
+ *
+ * 逐筆的 line-based 預覽組裝把每一「行」歸給單一編輯（processedLines 以行號標記），
+ * 因此當兩筆跨行編輯共用一條邊界行（前一筆的結束行 === 後一筆的起始行）時，後一筆會被
+ * 誤判為「該行已處理」而整筆丟棄，且前一筆會把該行本應被後一筆取代的 suffix 錯誤保留，
+ * 導致預覽與實寫分歧。先在此把相鄰編輯融合成單筆連續替換，該邊界行就只屬於一筆編輯，
+ * 預覽與實寫回到一致（此即 C6 場景）。
+ *
+ * 僅融合「嚴格相鄰」的編輯（座標相接）；有間隙或分屬不同區塊的編輯不融合，維持各自獨立呈現，
+ * 不影響 change-signature reorder（同位置換行）或 deadcode 多段刪除（段間保留行）的粒度。
+ *
+ * @param edits 原始編輯列表
+ * @returns 融合相鄰編輯後的列表（保序）
+ */
+function mergeAdjacentEdits(edits: readonly TextEdit[]): TextEdit[] {
+  if (edits.length < 2) {
+    return [...edits];
+  }
+
+  // 依起始座標排序，讓相鄰編輯前後相接
+  const sorted = [...edits].sort((a, b) =>
+    a.range.start.line !== b.range.start.line
+      ? a.range.start.line - b.range.start.line
+      : a.range.start.column - b.range.start.column
+  );
+
+  const merged: TextEdit[] = [];
+  for (const edit of sorted) {
+    const prev = merged[merged.length - 1];
+    // 前一筆的結束座標 === 這一筆的起始座標 ⇒ 兩者字元範圍相接、可安全融合
+    if (
+      prev &&
+      prev.range.end.line === edit.range.start.line &&
+      prev.range.end.column === edit.range.start.column
+    ) {
+      merged[merged.length - 1] = {
+        range: { start: prev.range.start, end: edit.range.end },
+        newText: prev.newText + edit.newText
+      };
+    } else {
+      merged.push(edit);
+    }
+  }
+
+  return merged;
+}
+
+/**
  * 處理單行編輯
  * 將同一行的多個編輯操作合併後產生 LineChange
  * @param lineNum - 1-based 行號
@@ -292,17 +343,26 @@ function processMultiLineEdit(
 
 /**
  * 將 TextEdit 列表轉換為 LineChange 列表
+ *
+ * 先融合 offset 相鄰的編輯（見 mergeAdjacentEdits），確保沒有任兩筆編輯共用同一條邊界行，
+ * 逐筆的 line-based 組裝才不會把後一筆整段丟棄（C6）；再依既有的單行 / 跨行分類處理。
+ * 逐筆組裝（而非「算出終態再做行級 diff」）是刻意保留的：它以「編輯範圍」為粒度，
+ * 能區分 change-signature reorder（同位置換內容 → 兩行都顯示）與 deadcode 多段刪除
+ * （段間保留行 → context），這是 edit-agnostic 的行級 diff 無法同時滿足的。
+ *
  * @param originalContent - 原始檔案內容
  * @param edits - 文字編輯操作列表
  * @returns LineChange 陣列
  */
 function convertEditsToLineChanges(
   originalContent: string,
-  edits: readonly TextEdit[]
+  rawEdits: readonly TextEdit[]
 ): LineChange[] {
-  if (edits.length === 0) {
+  if (rawEdits.length === 0) {
     return [];
   }
+
+  const edits = mergeAdjacentEdits(rawEdits);
 
   const originalLines = originalContent.split('\n');
   const changes: LineChange[] = [];

@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertChangesetToPreviewInput } from '@infrastructure/changeset/changeset-converter.js';
+import { ChangeApplicator } from '@infrastructure/changeset/change-applicator.js';
 import { PreviewCommand } from '@infrastructure/formatters/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { ChangesetCommand, FileOperationType, type Changeset } from '@infrastructure/changeset/types.js';
@@ -383,6 +384,51 @@ describe('convertChangesetToPreviewInput', () => {
         c => typeof c.newContent === 'string' && c.newContent.includes('const keep = 1;')
       );
       expect(line3IsPureDelete && !suffixKeptSomewhere).toBe(false);
+    });
+  });
+
+  // MARK: - 跨行相鄰編輯被 processedLines 誤丟棄 regression（C6）
+
+  describe('跨行相鄰編輯被 processedLines 誤丟棄（C6）', () => {
+    it('offset 相鄰（不重疊）的第二筆跨行編輯不應被 processedLines 整筆丟棄，預覽須與實寫一致', async () => {
+      // content: 'abcdef\nghijkl\nmnop'
+      // edit1: range 1:1-2:4 -> 'X'（跨行，起始行 1、結束行 2）
+      // edit2: range 2:4-3:1 -> 'Y'（跨行，起始行 2、結束行 3）
+      // 兩者以 offset 計算是相鄰、不重疊（第一筆結束 offset === 第二筆起始 offset），
+      // ChangeApplicator 依此規則判定合法、兩筆都會套用（實寫結果 'XYmnop'）。
+      // 但 convertEditsToLineChanges 用 processedLines（第 341-345 行）以「行號」判斷是否已處理：
+      // edit1 處理完會把 line1、line2 都標記進 processedLines，
+      // edit2 的 start.line=2 命中 processedLines，導致整筆 edit2 被跳過丟棄，
+      // 與 offset 層級「相鄰不算重疊」的規則不一致
+      const content = 'abcdef\nghijkl\nmnop';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(content);
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/c6.ts',
+          edits: [
+            { range: createTestRange(1, 1, 2, 4), newText: 'X' },
+            { range: createTestRange(2, 4, 3, 1), newText: 'Y' }
+          ]
+        }]
+      });
+
+      // 先驗證 applicator 實際寫入結果：兩筆 offset 相鄰編輯合法、都應套用
+      const applicator = new ChangeApplicator(mockFileSystem);
+      const applyResult = await applicator.apply(changeset);
+      expect(applyResult.success).toBe(true);
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/c6.ts')?.[1];
+      expect(writtenContent).toBe('XYmnop');
+
+      // 再驗證預覽必須與實寫結果一致：不得只呈現第一筆編輯、丟棄第二筆
+      const previewResult = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = previewResult.fileChanges[0].changes;
+
+      // Bug 現況：edit2 整筆被丟棄，line1 只吸收了 edit1 的 'X' 與 line2 未被消費的 suffix 'jkl'，
+      // 變成 'Xjkl'，完全沒有 'Y' 的痕跡（等效預覽內容為 'Xjkl\nmnop'，與實寫 'XYmnop' 不一致）
+      expect(changes.some(c => c.newContent === 'Xjkl')).toBe(false);
+      expect(changes.some(c => typeof c.newContent === 'string' && c.newContent.startsWith('XY'))).toBe(true);
     });
   });
 
