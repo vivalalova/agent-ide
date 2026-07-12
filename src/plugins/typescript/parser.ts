@@ -809,6 +809,19 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   /**
+   * 計算多宣告子語句中，一組已知 dead 的宣告子協調後的刪除範圍
+   * 委託給 DeclarationAnalyzer
+   */
+  computeDeclaratorGroupRemovalRanges(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null {
+    return this.declarationAnalyzer.computeDeclaratorGroupRemovalRanges(code, anchorSymbolName, startLine, deadNames);
+  }
+
+  /**
    * 解析程式碼中的所有 import 宣告
    * 委託給 DeclarationAnalyzer
    */

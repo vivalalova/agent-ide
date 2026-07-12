@@ -199,6 +199,25 @@ export interface ParserPlugin {
     startLine: number
   ): Range | null;
 
+  /**
+   * 計算多宣告子語句（如 `let a, b;`）中，一組已知 dead 的宣告子名稱協調後的刪除範圍
+   * 用於 deadcode 模組同語句多個 dead 宣告子時的協調刪除，避免逐宣告子各自呼叫
+   * getFullDeclarationRange 時算出重疊、造成語法毀損的刪除範圍
+   * @param code 完整的檔案內容
+   * @param anchorSymbolName 群組中任一宣告子名稱，用來定位所屬語句
+   * @param startLine anchorSymbolName 所在行號（1-based）
+   * @param deadNames 同一語句中已知為 dead 的宣告子名稱集合（含 anchorSymbolName）
+   * @returns 依序回傳每個連續 dead run 的刪除範圍；全部宣告子皆 dead 時為單一元素
+   *          （整條語句範圍）。Parser 不支援此能力或非多宣告子語句時回傳 null，
+   *          呼叫端應 fallback 至逐一呼叫 getFullDeclarationRange
+   */
+  computeDeclaratorGroupRemovalRanges?(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null;
+
   // ===== Import 語句解析支援 =====
 
   /**

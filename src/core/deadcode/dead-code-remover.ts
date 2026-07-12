@@ -7,6 +7,7 @@ import { minimatch } from 'minimatch';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
+import { SymbolType } from '@shared/types/symbol.js';
 import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type {
@@ -226,6 +227,12 @@ export class DeadCodeRemover {
 
   /**
    * 產生刪除操作
+   *
+   * 同一 VariableStatement 中若有多個 dead 宣告子（如 `let a, b;` 兩者皆 dead），
+   * 逐項獨立呼叫 expandRangeToFullDeclaration 各自算出的手術範圍會互相重疊，--apply 後
+   * 造成語法毀損（D5）。先把可能同屬一語句的 variable/constant dead 項目分組（同檔案、
+   * 同行），交給 RangeExpander.expandDeclaratorGroupRanges 一次協調出彼此不重疊的範圍，
+   * 而非逐一獨立計算；非多宣告子語句或其他符號類型維持既有逐項處理路徑不變。
    */
   private async generateRemovalOperations(
     items: readonly DeadCodeItem[]
@@ -233,34 +240,118 @@ export class DeadCodeRemover {
     const operations: RemovalOperation[] = [];
     const warnings: string[] = [];
 
-    for (const item of items) {
+    const { groups, singles } = this.partitionMultiDeclaratorGroups(items);
+
+    for (const group of groups) {
+      const content = await this.readFile(group.filePath);
+      if (!content) {
+        warnings.push(`跳過 ${group.items.map(i => i.name).join(', ')}：無法讀取檔案 ${group.filePath}`);
+        continue;
+      }
+
+      const anchor = group.items[0];
+      const deadNames = new Set(group.items.map(i => i.name));
+      const coordinatedRanges = this.rangeExpander.expandDeclaratorGroupRanges(
+        content,
+        anchor.location.range.start.line,
+        anchor.name,
+        deadNames,
+        anchor.type,
+        group.filePath
+      );
+
+      if (coordinatedRanges) {
+        // Parser 確認為同一多宣告子語句：改用協調後、彼此不重疊的範圍產生操作
+        for (const range of coordinatedRanges) {
+          operations.push({
+            filePath: group.filePath,
+            range,
+            originalCode: this.fileOperations.extractCode(content, range),
+            symbolName: group.items.map(i => i.name).join(', '),
+            symbolType: anchor.type
+          });
+        }
+        continue;
+      }
+
+      // Parser 不支援跨宣告子協調，或非多宣告子語句：fallback 至既有逐項獨立處理
+      for (const item of group.items) {
+        operations.push(this.buildIndividualRemovalOperation(item, content));
+      }
+    }
+
+    for (const item of singles) {
       const content = await this.readFile(item.location.filePath);
       if (!content) {
         warnings.push(`跳過 ${item.name}：無法讀取檔案 ${item.location.filePath}`);
         continue;
       }
 
-      // 擴展範圍以包含完整宣告（含 JSDoc 註解）
-      const expandedRange = this.rangeExpander.expandRangeToFullDeclaration(
-        content,
-        item.location.range,
-        item.type,
-        item.name,
-        item.location.filePath
-      );
-
-      const originalCode = this.fileOperations.extractCode(content, expandedRange);
-
-      operations.push({
-        filePath: item.location.filePath,
-        range: expandedRange,
-        originalCode,
-        symbolName: item.name,
-        symbolType: item.type
-      });
+      operations.push(this.buildIndividualRemovalOperation(item, content));
     }
 
     return { operations, warnings };
+  }
+
+  /**
+   * 產生單一 dead code 項目的刪除操作（既有逐項獨立處理路徑）
+   */
+  private buildIndividualRemovalOperation(item: DeadCodeItem, content: string): RemovalOperation {
+    // 擴展範圍以包含完整宣告（含 JSDoc 註解）
+    const expandedRange = this.rangeExpander.expandRangeToFullDeclaration(
+      content,
+      item.location.range,
+      item.type,
+      item.name,
+      item.location.filePath
+    );
+
+    return {
+      filePath: item.location.filePath,
+      range: expandedRange,
+      originalCode: this.fileOperations.extractCode(content, expandedRange),
+      symbolName: item.name,
+      symbolType: item.type
+    };
+  }
+
+  /**
+   * 把可能同屬一個多宣告子 VariableStatement 的 dead 項目分組：
+   * 同檔案、同行、且皆為 variable/constant 類型的多個 dead 項目視為候選群組
+   * （單一多宣告子語句的多個宣告子在原始碼中必然同行）；其餘（含只有單一候選的行）
+   * 維持逐項獨立處理，交由呼叫端走既有路徑。
+   */
+  private partitionMultiDeclaratorGroups(
+    items: readonly DeadCodeItem[]
+  ): { groups: Array<{ filePath: string; items: DeadCodeItem[] }>; singles: DeadCodeItem[] } {
+    const candidateGroups = new Map<string, DeadCodeItem[]>();
+    const singles: DeadCodeItem[] = [];
+
+    for (const item of items) {
+      if (item.type !== SymbolType.Variable && item.type !== SymbolType.Constant) {
+        singles.push(item);
+        continue;
+      }
+
+      const key = `${item.location.filePath}:${item.location.range.start.line}`;
+      const bucket = candidateGroups.get(key);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        candidateGroups.set(key, [item]);
+      }
+    }
+
+    const groups: Array<{ filePath: string; items: DeadCodeItem[] }> = [];
+    for (const bucket of candidateGroups.values()) {
+      if (bucket.length > 1) {
+        groups.push({ filePath: bucket[0].location.filePath, items: bucket });
+      } else {
+        singles.push(bucket[0]);
+      }
+    }
+
+    return { groups, singles };
   }
 
   /**

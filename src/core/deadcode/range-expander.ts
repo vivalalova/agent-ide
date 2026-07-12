@@ -36,35 +36,91 @@ export class RangeExpander {
         range.start.line
       );
       if (parserRange) {
-        // 多宣告子語句（如 `let a, b;`）的精確手術範圍：起點不在行首，代表這是
-        // 單一宣告子的文字手術範圍（已含正確的逗號銜接），非整條語句/整行刪除。
-        // 行導向的後續處理（前導註解、行首對齊、擴展至行尾）皆假設整行刪除，
-        // 套用會誤吃掉本行其餘內容（如末位宣告子後的分號），故直接原樣回傳。
-        if (parserRange.start.column > 1) {
-          return parserRange;
-        }
-
-        // Parser 成功解析，處理後續空行
-        const lines = content.split('\n');
-        const declarationStartLine = this.findDeclarationStartLine(lines, range.start.line - 1, symbolType, symbolName);
-        const startLine = this.findAttachedLeadingStartLine(lines, declarationStartLine);
-        let endLine = parserRange.end.line - 1; // 轉為 0-based
-        let includesTrailingBlankLine = false;
-        if (endLine < lines.length - 1 && lines[endLine + 1]?.trim() === '') {
-          endLine++;
-          includesTrailingBlankLine = true;
-        }
-        return {
-          start: startLine === parserRange.start.line - 1
-            ? parserRange.start
-            : this.createLineStartPosition(lines, startLine),
-          end: this.createRangeEndPosition(lines, endLine, includesTrailingBlankLine)
-        };
+        return this.wrapParserRange(content, parserRange, range.start.line, symbolType, symbolName);
       }
     }
 
     // 2. Fallback：使用原有的字串匹配邏輯
     return this.expandRangeByStringMatching(content, range, symbolType, symbolName);
+  }
+
+  /**
+   * 計算同一 VariableStatement 中多個已知 dead 的宣告子協調後的刪除範圍（D5：跨宣告子避免重疊）
+   *
+   * 逐宣告子各自呼叫 expandRangeToFullDeclaration 在同語句有多個 dead 宣告子時，各自算出的
+   * 「首位吃尾逗號」「末位吃前逗號」範圍會互相重疊，--apply 後造成語法毀損。本方法一次把
+   * 整組 dead 名稱交給 parser 統一協調（全部 dead 時整句刪除；部分 dead 時合併相鄰 dead
+   * 宣告子為單一 run 各自做逗號手術），保證回傳的範圍彼此不重疊。
+   *
+   * @param content 原始程式碼
+   * @param startLine anchorSymbolName 所在行號（1-based）
+   * @param anchorSymbolName 群組中任一宣告子名稱，用來定位所屬語句
+   * @param deadNames 同一語句中已知為 dead 的宣告子名稱集合（含 anchorSymbolName）
+   * @param symbolType 符號類型（variable/constant）
+   * @param filePath 檔案路徑，用來決定要使用哪個 Parser
+   * @returns 每個 range 皆已完成前導/結尾包裝處理（等同 expandRangeToFullDeclaration 的效果）；
+   *          Parser 不支援此能力或非多宣告子語句時回傳 null，呼叫端應 fallback 至對群組內
+   *          每個項目各自呼叫 expandRangeToFullDeclaration
+   */
+  expandDeclaratorGroupRanges(
+    content: string,
+    startLine: number,
+    anchorSymbolName: string,
+    deadNames: ReadonlySet<string>,
+    symbolType: SymbolType,
+    filePath: string
+  ): Range[] | null {
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
+    if (!parser?.computeDeclaratorGroupRemovalRanges) {
+      return null;
+    }
+
+    const parserRanges = parser.computeDeclaratorGroupRemovalRanges(content, anchorSymbolName, startLine, deadNames);
+    if (!parserRanges) {
+      return null;
+    }
+
+    return parserRanges.map(parserRange =>
+      this.wrapParserRange(content, parserRange, startLine, symbolType, anchorSymbolName)
+    );
+  }
+
+  /**
+   * 包裝 parser 回傳的範圍：多宣告子語句的單一宣告子／run 手術範圍（起點不在行首）
+   * 直接原樣回傳；整條語句的範圍（起點在行首）則補上前導註解與結尾空行處理
+   *
+   * 多宣告子語句（如 `let a, b;`）的精確手術範圍：起點不在行首，代表這是
+   * 單一宣告子（或合併後的 run）的文字手術範圍（已含正確的逗號銜接），非整條語句/整行刪除。
+   * 行導向的後續處理（前導註解、行首對齊、擴展至行尾）皆假設整行刪除，
+   * 套用會誤吃掉本行其餘內容（如末位宣告子後的分號），故直接原樣回傳。
+   */
+  private wrapParserRange(
+    content: string,
+    parserRange: Range,
+    originalStartLine: number,
+    symbolType: SymbolType,
+    symbolName: string
+  ): Range {
+    if (parserRange.start.column > 1) {
+      return parserRange;
+    }
+
+    // Parser 成功解析，處理後續空行
+    const lines = content.split('\n');
+    const declarationStartLine = this.findDeclarationStartLine(lines, originalStartLine - 1, symbolType, symbolName);
+    const startLine = this.findAttachedLeadingStartLine(lines, declarationStartLine);
+    let endLine = parserRange.end.line - 1; // 轉為 0-based
+    let includesTrailingBlankLine = false;
+    if (endLine < lines.length - 1 && lines[endLine + 1]?.trim() === '') {
+      endLine++;
+      includesTrailingBlankLine = true;
+    }
+    return {
+      start: startLine === parserRange.start.line - 1
+        ? parserRange.start
+        : this.createLineStartPosition(lines, startLine),
+      end: this.createRangeEndPosition(lines, endLine, includesTrailingBlankLine)
+    };
   }
 
   /**
