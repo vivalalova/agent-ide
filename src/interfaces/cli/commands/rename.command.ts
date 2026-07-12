@@ -22,6 +22,7 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
+import { isImportedSymbol } from '@interfaces/cli/commands/symbol-target-resolver.js';
 
 /** Rename 命令選項 */
 interface RenameOptions {
@@ -146,13 +147,17 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     }
 
     // 2. 處理多符號情況
+    // import binding 只供 --at 錨定，不應作為獨立定義參與未指定 --at 的消歧。
+    const definitionCandidates = searchResults.filter(result => !isImportedSymbol(result.symbol));
+    const targetCandidates = definitionCandidates.length > 0 ? definitionCandidates : searchResults;
+    const candidatesForSelection = options.at ? searchResults : targetCandidates;
     let targetSymbol;
 
-    if (searchResults.length > 1) {
+    if (candidatesForSelection.length > 1) {
       // 有指定 --at 時，過濾到指定位置
       if (options.at) {
         const location = parsePathLocationAbsolute(options.at, workspacePath);
-        const filtered = searchResults.filter(result => {
+        const filtered = candidatesForSelection.filter(result => {
           const symbolPath = result.symbol.location.filePath;
           const symbolLine = result.symbol.location.range.start.line;
           const symbolColumn = result.symbol.location.range.start.column;
@@ -199,7 +204,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         targetSymbol = filtered[0].symbol;
       } else {
         // 沒有指定 --at，報錯並列出所有符號
-        const lines = searchResults.map((result, index) => {
+        const lines = candidatesForSelection.map((result, index) => {
           const loc = result.symbol.location;
           const relPath = path.relative(workspacePath, loc.filePath);
           const symbolType = result.symbol.type || 'symbol';
@@ -207,7 +212,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         });
 
         outputHandler.outputError(
-          `找到 ${searchResults.length} 個同名符號 "${from}"，請用 --at 指定位置：\n\n${lines.join('\n')}\n\n` +
+          `找到 ${candidatesForSelection.length} 個同名符號 "${from}"，請用 --at 指定位置：\n\n${lines.join('\n')}\n\n` +
           `用法: agent-ide rename --from ${from} --to ${to} --at <file:line:column>`,
           format,
           'rename'
@@ -216,7 +221,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
         return;
       }
     } else {
-      targetSymbol = searchResults[0].symbol;
+      targetSymbol = candidatesForSelection[0].symbol;
     }
 
     // 取得所有專案檔案

@@ -121,7 +121,8 @@ function dedupeSymbolIdentities(symbols: readonly SymbolIdentity[]): SymbolIdent
   return uniqueSymbols;
 }
 
-function isImportedSymbol(symbol: Symbol): boolean {
+/** 判斷是否為 parser 產生的 import-only binding 候選。 */
+export function isImportedSymbol(symbol: Symbol): boolean {
   return (symbol as { readonly isImported?: boolean }).isImported === true;
 }
 

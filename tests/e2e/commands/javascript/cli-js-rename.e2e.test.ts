@@ -109,6 +109,10 @@ describe('CLI rename - JavaScript 專案', () => {
 
   describe('錯誤處理', () => {
     it('同名符號錯誤應列出可直接用於 --at 的 1-based 位置', async () => {
+      // formatName 在 utils.js 已有一個真定義，service.js 只是 import binding（非歧義來源）。
+      // 額外寫入一個獨立的真定義（不 import utils 的 formatName），使其構成真歧義以觸發錯誤路徑。
+      await fixture.writeFile('src/extra-format.js', 'export function formatName(a) {\n  return a;\n}\n');
+
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'formatName', '--to', 'formatDisplayName', '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }
@@ -117,6 +121,7 @@ describe('CLI rename - JavaScript 專案', () => {
       expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
       expect(output.error).toContain('src/utils.js:1:');
+      expect(output.error).toContain('src/extra-format.js:1:');
       expect(output.error).not.toContain('.js:0:');
     });
 
