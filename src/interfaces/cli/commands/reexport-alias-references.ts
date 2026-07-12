@@ -11,10 +11,9 @@
  */
 
 import * as ts from 'typescript';
-import { type SymbolReference, SymbolReferenceType } from '@core/foundations/symbol-finder/index.js';
+import { type SymbolReference } from '@core/foundations/symbol-finder/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { type Symbol, SymbolType } from '@shared/types/symbol.js';
-import type { TypeScriptSymbol } from '@plugins/typescript/types.js';
+import type { Symbol } from '@shared/types/symbol.js';
 import {
   normalizePath,
   pathMatchesTarget,
@@ -22,6 +21,7 @@ import {
   tryGetSourceFile
 } from './module-file-resolver.js';
 import { createSymbolReferenceFilterContext } from './symbol-reference-filter-context.js';
+import { findImportBindingReferences } from './import-binding-references.js';
 
 /**
  * 單層 re-export 別名引用追蹤。
@@ -98,59 +98,21 @@ export async function findReExportAliasReferences(
           if (importedName !== aliasName) {
             continue;
           }
-          // 以 import binding 的真實 identifier 節點構造符號，走 LS 精確（作用域感知）查找，
-          // 避免字串版 findReferencesInFile 降級成整檔文字匹配而吞同名遮蔽變數與字串字面值。
-          const bindingSymbol = createImportBindingSymbol(element.name, sourceFile, normalizedFile);
-          const aliasRefs = await findReferencesWithSymbol(normalizedFile, bindingSymbol);
-          // 只保留落在被查詢檔的引用：LS 會跨模組解析回傳其他檔的引用，
-          // 但共用 converter 以被查詢檔的行內容填 context，跨檔引用會 context 錯位；
-          // re-export 模組本身的別名 token 已由原始 finder 在同一行涵蓋。
-          for (const ref of aliasRefs) {
-            if (normalizePath(ref.location.filePath) !== normalizedFile) {
-              continue;
-            }
-            // 別名是以 import binding 的 identifier 為錨點查找，故 LS 會把該 import specifier
-            // 本身標成 binding 的 definition；但符號真正的定義在原始模組，這裡應呈現為 import。
-            collected.push(
-              ref.type === SymbolReferenceType.Definition
-                ? { ...ref, type: SymbolReferenceType.Import }
-                : ref
-            );
-          }
+          // 以 import binding 的真實 identifier 節點構造符號，走 LS 精確（作用域感知）查找；
+          // 共用 helper 會過濾跨檔結果，並將 binding definition 歸類為 import。
+          const aliasRefs = await findImportBindingReferences(
+            element.name,
+            sourceFile,
+            normalizedFile,
+            findReferencesWithSymbol
+          );
+          collected.push(...aliasRefs);
         }
       }
     }
   }
 
   return collected;
-}
-
-/**
- * 以 import binding 的 identifier 節點構造 TypeScriptSymbol，供 LS 精確查找使用。
- * 帶上真實 tsNode，讓 SymbolFinder 走 Language Service 的作用域感知路徑，
- * 而非字串名稱的整檔文字匹配降級路徑。
- */
-function createImportBindingSymbol(
-  identifier: ts.Identifier,
-  sourceFile: ts.SourceFile,
-  filePath: string
-): TypeScriptSymbol {
-  const start = sourceFile.getLineAndCharacterOfPosition(identifier.getStart(sourceFile));
-  const end = sourceFile.getLineAndCharacterOfPosition(identifier.getEnd());
-  return {
-    name: identifier.text,
-    type: SymbolType.Variable,
-    location: {
-      filePath,
-      range: {
-        start: { line: start.line + 1, column: start.character + 1 },
-        end: { line: end.line + 1, column: end.character + 1 }
-      }
-    },
-    scope: undefined,
-    modifiers: [],
-    tsNode: identifier
-  };
 }
 
 /** 具來源模組的具名 import/re-export，萃取出模組路徑字面與 specifier 元素 */

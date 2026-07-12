@@ -221,7 +221,7 @@ async function resolveProvidingModuleFile(
  * 解析（並依 filterContext 快取）目標模組檔 default export 底層宣告的名稱；
  * 無 default export 或無法判定名稱則回傳 undefined。
  */
-async function getDefaultExportDeclaredName(
+export async function getDefaultExportDeclaredName(
   moduleFile: string,
   filterContext: SymbolReferenceFilterContext
 ): Promise<string | undefined> {

@@ -30,7 +30,11 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
-import { filterReferencesToSelectedSymbol, findReExportAliasReferences } from '@interfaces/cli/commands/symbol-reference-filter.js';
+import {
+  filterReferencesToSelectedSymbol,
+  findReExportAliasReferences
+} from '@interfaces/cli/commands/symbol-reference-filter.js';
+import { findDefaultImportAliasReferences } from '@interfaces/cli/commands/default-import-alias-references.js';
 
 /** find-references 命令選項 */
 interface FindReferencesOptions {
@@ -167,6 +171,19 @@ async function handleFindReferencesCommand(
           (filePath, bindingSymbol) => symbolFinder.findReferencesInFileWithSymbol(filePath, bindingSymbol)
         );
         refs.push(...aliasRefs);
+      }
+
+      if (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0]) {
+        // 補上 default import 別名引用：錨定到模組 default export 時，本地名稱可能不同，
+        // 名稱搜尋會漏掉 import binding 與其使用點；結果沿用命令末端的統一 dedupe。
+        const defaultImportAliasRefs = await findDefaultImportAliasReferences(
+          selectedSymbolResults[0].symbol,
+          projectPath,
+          context.fileSystem,
+          filePaths,
+          (filePath, bindingSymbol) => symbolFinder.findReferencesInFileWithSymbol(filePath, bindingSymbol)
+        );
+        refs.push(...defaultImportAliasRefs);
       }
     } else {
       // 無定義：使用作用域感知查找（fallback）
