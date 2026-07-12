@@ -299,6 +299,54 @@ describe('MemoryCache', () => {
   });
 });
 
+describe('MemoryCache maxMemory 上限強制（C9 defect regression）', () => {
+  // C9：MemoryCache 建構時接受並驗證 maxMemory 選項，但 set()（memory-cache.ts）
+  // 只檢查 this.cache.size >= this.options.maxSize 來決定是否淘汰，從未讀取
+  // this.options.maxMemory，導致 maxMemory 完全沒有作用 —— 單筆超過上限的項目、
+  // 或多筆總和超過上限後新寫入的項目，都會被無限制保留。
+  // calculateSize()（memory-cache.ts）對字串的估算是 value.length * 2（bytes）。
+
+  it('單筆項目大小已超過 maxMemory 時，該項目不得被保留', () => {
+    const cache = new MemoryCache<string, string>({
+      maxSize: 100,
+      maxMemory: 5, // 5 bytes 預算
+      enableStats: true
+    });
+
+    // 'toolong' 長度 7，calculateSize = 7 * 2 = 14 bytes，遠超過 5 bytes 預算
+    cache.set('k', 'toolong');
+
+    // 正確行為：單筆已超出 maxMemory 預算的項目不應被保留；
+    // 目前的壞行為是 set() 從未檢查 maxMemory，項目照樣寫入且可讀出
+    expect(cache.get('k')).toBeUndefined();
+
+    cache.dispose();
+  });
+
+  it('maxMemory 足夠容納多筆時，寫入超出預算的新項目應淘汰最舊項目使總用量 ≤ maxMemory', () => {
+    const cache = new MemoryCache<string, string>({
+      maxSize: 100, // 夠大，確保不會因為 maxSize（筆數）觸發淘汰
+      maxMemory: 30, // 每筆字串 size = 5 字元 * 2 = 10 bytes，預算剛好容納 3 筆
+      enableStats: true
+    });
+
+    cache.set('k0', 'v0000'); // 10 bytes，累計 10
+    cache.set('k1', 'v1111'); // 10 bytes，累計 20
+    cache.set('k2', 'v2222'); // 10 bytes，累計 30（已達預算上限）
+    cache.set('k3', 'v3333'); // 再寫入 10 bytes 會使累計達 40，超過 30 的預算
+
+    // 正確行為：寫入 k3 前應先淘汰最舊的 k0，讓總用量回到 ≤ 30；
+    // 目前的壞行為是 set() 不檢查 maxMemory，四筆全部保留、總用量達 40
+    expect(cache.get('k0')).toBeUndefined();
+    expect(cache.get('k3')).toBe('v3333');
+
+    const stats = cache.getStats();
+    expect(stats.memoryUsage).toBeLessThanOrEqual(30);
+
+    cache.dispose();
+  });
+});
+
 describe('MemoryCache with TTL strategy', () => {
   it('should start cleanup timer with TTL strategy', () => {
     vi.useFakeTimers();
