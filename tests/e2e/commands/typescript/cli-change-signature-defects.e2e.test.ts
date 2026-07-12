@@ -670,4 +670,36 @@ fn(1, 2, 3);
       expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
     });
   });
+
+  describe('R2-2: --rename 誤改型別位置的同名識別符', () => {
+    it('參數改名不應波及其他參數預設值 as 型別斷言中的同名型別識別符', async () => {
+      const testFile = `${fixture.rootPath}/regression-r2-2-rename-type-position.ts`;
+      await fixture.memfs.writeFile(testFile, `
+interface FormatterR22 { pad: number }
+declare const valueR22: unknown;
+export function fR22(FormatterR22: number, opts: unknown = valueR22 as FormatterR22) { return opts; }
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'fR22',
+          '-p', fixture.rootPath,
+          '--rename', 'FormatterR22:fmtR22',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      const addedLines = getAddedLines(output);
+      // 正確行為：參數本身改名為 fmtR22，但 `valueR22 as FormatterR22` 的 FormatterR22
+      // 是型別位置的識別符（指向 interface FormatterR22，非該參數），不應被改名；
+      // 目前的壞行為是 visitNodeForReferences 無型別/值判別，兩者同名時型別位置也被誤改
+      expect(addedLines.some((l: string) => l.includes('fmtR22: number'))).toBe(true);
+      expect(addedLines.some((l: string) => l.includes('valueR22 as FormatterR22'))).toBe(true);
+      expect(addedLines.some((l: string) => l.includes('valueR22 as fmtR22'))).toBe(false);
+    });
+  });
 });

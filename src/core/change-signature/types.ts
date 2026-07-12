@@ -259,7 +259,9 @@ export enum ChangeSignatureErrorCode {
   /** 可選參數位於必選參數之前（TypeScript 規則違反） */
   OptionalBeforeRequired = 'optional-before-required',
   /** rest 參數不在參數列表最後（TypeScript 規則違反） */
-  RestParameterNotLast = 'rest-parameter-not-last'
+  RestParameterNotLast = 'rest-parameter-not-last',
+  /** 呼叫點含 spread 引數，無法靜態重新映射定位引數（add/remove/reorder） */
+  SpreadArgumentCallSite = 'spread-argument-call-site'
 }
 
 /**

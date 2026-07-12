@@ -175,6 +175,21 @@ export class ChangeSignatureEngine {
       // 只查找獨立函式呼叫（非 method call）
       const allCallSites = await this.symbolFinder.findCallSites(options.functionName, relevantFiles);
       callSites = allCallSites.filter(cs => !cs.isMethodCall);
+
+      // 呼叫點含 spread 引數（如 `f(...values)`）時，CallSiteUpdater 依「定位索引」重新映射
+      // 引數（add/remove/reorder 皆會改變定位映射，見 changesRequireCallSiteRewrite），但單一
+      // spread 引數在原始碼中只佔一個 AST 引數位置、實際可能展開對應多個宣告參數，其真正數量
+      // 與內容只能在執行期得知，無法靜態決定要搬到哪個新位置——連「只在尾端新增參數」也一樣會壞
+      // （spread 涵蓋不到的後續必要參數位置會被誤判成「省略」而補 undefined，見 call-site-updater
+      // mapCallSiteArguments 對 `param.optional || param.defaultValue` 的省略判斷）。
+      // 純 rename／change-type 不需要呼叫點重寫（見 changesRequireCallSiteRewrite），不會走到此檢查。
+      const spreadCallSiteError = this.findSpreadCallSiteError(callSites);
+      if (spreadCallSiteError) {
+        return this.createErrorResult(
+          ChangeSignatureErrorCode.SpreadArgumentCallSite,
+          spreadCallSiteError
+        );
+      }
     }
 
     // 5. 生成定義更新
@@ -311,6 +326,25 @@ export class ChangeSignatureEngine {
       newText: update.newCode,
       description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
     };
+  }
+
+  /**
+   * 檢查呼叫點清單中是否有引數為 spread element（如 `...values`）。
+   * 只需文字前綴判斷：CallSiteArgument.value 是引數節點的原始原始碼文字（見
+   * call-site-parser.ts extractArgumentsFromCallExpression／parseArgumentsMultiline），
+   * `...` 只會出現在 spread/rest 引數的開頭，不會是其他合法運算式文字的前三個字元
+   * （optional chaining 是 `?.`，字串/樣板字面量以引號開頭），故無誤判風險。
+   * 回傳第一個命中的呼叫點對應的錯誤訊息；無命中回傳 null。
+   */
+  private findSpreadCallSiteError(callSites: readonly CallSite[]): string | null {
+    for (const callSite of callSites) {
+      const hasSpreadArgument = callSite.arguments.some(arg => arg.value.startsWith('...'));
+      if (hasSpreadArgument) {
+        return `呼叫點 ${callSite.functionName}(...) 於 ${callSite.location.filePath}:${callSite.location.range.start.line} 含 spread 引數，` +
+          '無法靜態重新映射定位引數，change-signature 的新增/移除/重排參數操作已中止';
+      }
+    }
+    return null;
   }
 
   /**
@@ -673,7 +707,31 @@ export class ChangeSignatureEngine {
       onReference(node);
     }
 
-    ts.forEachChild(node, (child) => this.visitNodeForReferences(child, childLiveNames, onReference));
+    ts.forEachChild(node, (child) => this.visitChildForReferences(child, childLiveNames, onReference));
+  }
+
+  /**
+   * 型別位置的子樹整棵跳過遞迴：TS 值／型別是兩個獨立命名空間，型別節點
+   * （TypeReference、TypeLiteral、AsExpression／SatisfiesExpression／TypeAssertion
+   * 的 .type、參數與變數宣告的型別標註等）內的識別字查找的是型別空間繫結，
+   * 與同名參數（值空間繫結）無關——即使兩者剛好同名也不構成引用（R2-2）。
+   * 唯一例外是 TypeQueryNode（`typeof x`）：語法上掛在型別位置，但 exprName
+   * 語意上查詢的是值空間繫結，仍須繼續視為值引用遞迴，否則「參數只在
+   * typeof 中被引用」會被誤判為未使用而放行移除，留下懸空引用。
+   */
+  private visitChildForReferences(
+    child: ts.Node,
+    liveNames: ReadonlySet<string>,
+    onReference: (node: ts.Identifier) => void
+  ): void {
+    if (ts.isTypeNode(child)) {
+      if (ts.isTypeQueryNode(child)) {
+        this.visitNodeForReferences(child.exprName, liveNames, onReference);
+      }
+      return;
+    }
+
+    this.visitNodeForReferences(child, liveNames, onReference);
   }
 
   /**
