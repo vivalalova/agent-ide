@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions } from './types.js';
+import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions, type FileChange } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
@@ -69,14 +69,26 @@ export class ReferenceUpdater {
    */
   async prepareReferenceUpdates(
     options: MoveMemberOptions,
-    member: MemberDefinition
+    member: MemberDefinition,
+    sourceFileChange: FileChange
   ): Promise<ReferenceUpdate[]> {
     const updates: ReferenceUpdate[] = [];
     const projectFiles = await this.getProjectFiles(options.projectRoot);
 
     for (const filePath of projectFiles) {
-      // 跳過來源檔案和目標檔案
-      if (filePath === options.sourceFile || filePath === options.target.filePath) {
+      // 跳過目標檔案：成員本體已在該檔，無需再處理其 import 語句
+      if (filePath === options.target.filePath) {
+        continue;
+      }
+
+      // 來源檔案本身不會有「指向自己」的既有 import 語句可改寫，但移除成員後，
+      // 檔內其餘程式碼若仍引用該成員，需補上對目標檔的新 import（見 M4 bug：
+      // 原本對 sourceFile 一律 continue 跳過，導致同檔殘留引用變成未定義符號）
+      if (filePath === options.sourceFile) {
+        const selfReferenceUpdate = this.buildSourceSelfReferenceImport(options, member, sourceFileChange);
+        if (selfReferenceUpdate) {
+          updates.push(selfReferenceUpdate);
+        }
         continue;
       }
 
@@ -217,6 +229,54 @@ export class ReferenceUpdater {
     }
 
     return updates;
+  }
+
+  /**
+   * 檢查來源檔在成員移除後是否仍殘留對該成員的引用，若有則補上對目標檔的 import（M4）
+   *
+   * 範圍座標固定為檔案最開頭（line 1, column 1 的零寬插入），而非依 sourceFileChange.newCode
+   * 計算「現有 import 之後」等相對位置：因為 Changeset 會將這筆更新與 sourceFileChange 的
+   * 整檔替換合併為同一個 FileTextChange，兩者的 offset 都以「移除成員前的原始檔案」座標系統
+   * 計算（見 ChangeApplicator.applyEdits：同一檔案的多個 edits 共用同一份、僅計算一次的
+   * lines/offset）。檔案開頭（offset 0）在任何座標系統下皆恆為同一位置，是唯一不受此限制、
+   * 可安全採用的插入點。
+   *
+   * @returns 需要補上的 import 更新；來源檔移除成員後已無殘留引用則回傳 null
+   */
+  private buildSourceSelfReferenceImport(
+    options: MoveMemberOptions,
+    member: MemberDefinition,
+    sourceFileChange: FileChange
+  ): ReferenceUpdate | null {
+    const referencePattern = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
+    if (!referencePattern.test(sourceFileChange.newCode)) {
+      return null;
+    }
+
+    const relativePath = this.pathUtils.calculateNewImportPath(options.sourceFile, options.target.filePath);
+    const importKeyword = this.isTypeOnlyMember(member) ? 'import type' : 'import';
+    const importStatement = `${importKeyword} { ${member.name} } from '${relativePath}';`;
+
+    return {
+      filePath: options.sourceFile,
+      originalImport: '',
+      newImport: `${importStatement}\n`,
+      location: {
+        filePath: options.sourceFile,
+        range: {
+          start: { line: 1, column: 1 },
+          end: { line: 1, column: 1 }
+        }
+      }
+    };
+  }
+
+  /**
+   * 判斷成員是否為僅型別存在的宣告（interface / type alias）
+   * 與 createMemberReExport 共用同一判定，避免兩處各自實作條件判斷分歧
+   */
+  private isTypeOnlyMember(member: MemberDefinition): boolean {
+    return member.type === MemberType.Interface || member.type === MemberType.TypeAlias;
   }
 
   /**
@@ -439,9 +499,7 @@ export class ReferenceUpdater {
   }
 
   private createMemberReExport(member: MemberDefinition, importPath: string, quoteChar: string): string {
-    const statementKind = member.type === MemberType.Interface || member.type === MemberType.TypeAlias
-      ? 'export type'
-      : 'export';
+    const statementKind = this.isTypeOnlyMember(member) ? 'export type' : 'export';
 
     return `${statementKind} { ${member.name} } from ${quoteChar}${importPath}${quoteChar};`;
   }

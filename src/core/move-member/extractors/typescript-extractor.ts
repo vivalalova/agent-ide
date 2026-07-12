@@ -96,9 +96,18 @@ export function listTypeScriptMembers(
   // 類別定義
   const classPattern = /^([ \t]*)(export[ \t]+)?(abstract[ \t]+)?class[ \t]+(\w+)/gm;
   while ((match = classPattern.exec(content)) !== null) {
-    const lineNumber = content.substring(0, match.index).split('\n').length;
-    const endLine = findBlockEnd(lines, lineNumber - 1);
-    const sourceCode = lines.slice(lineNumber - 1, endLine + 1).join('\n');
+    const declLineNumber = content.substring(0, match.index).split('\n').length;
+    const declLineIndex = declLineNumber - 1;
+    const endLine = findBlockEnd(lines, declLineIndex);
+    // 傳給 extractClassMembers 的來源碼維持從 class 宣告行開始（不含 decorator），
+    // 讓類別內部成員的行號計算不受 decorator 影響
+    const classSourceCode = lines.slice(declLineIndex, endLine + 1).join('\n');
+
+    // 成員本身（供搬移）的範圍需含前面連續的 @decorator 行，否則搬移後
+    // decorator 會遺失、來源檔留下孤兒 decorator（見 M3 bug）
+    const startLineIndex = findDeclarationStartWithDecorators(lines, declLineIndex);
+    const lineNumber = startLineIndex + 1;
+    const sourceCode = lines.slice(startLineIndex, endLine + 1).join('\n');
 
     members.push(createMember(
       match[4],
@@ -109,13 +118,13 @@ export function listTypeScriptMembers(
       sourceCode,
       undefined,
       extractModifiers(match[0]),
-      extractDocumentation(lines, lineNumber - 1),
+      extractDocumentation(lines, startLineIndex),
       extractDependencies(sourceCode)
     ));
 
     // 如果是特定類別，提取其成員
     if (!filterClassName || match[4] === filterClassName) {
-      const classMembers = extractClassMembers(sourceCode, filePath, match[4], lineNumber);
+      const classMembers = extractClassMembers(classSourceCode, filePath, match[4], declLineNumber);
       members.push(...classMembers);
     }
   }
@@ -248,9 +257,13 @@ export function extractClassMembers(
     if (match[4] === 'constructor') { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
-    const lineNumber = classStartLine + bodyStartLine - 1 + relativeLineNumber - 1;
-    const endLine = findBlockEndInClass(bodyLines, relativeLineNumber - 1);
-    const sourceCode = bodyLines.slice(relativeLineNumber - 1, endLine + 1).join('\n');
+    const declLineIndex = relativeLineNumber - 1;
+    const endLine = findBlockEndInClass(bodyLines, declLineIndex);
+
+    // 成員範圍含前面連續的 @decorator 行（與 class 提取共用同一判定，見 M3 bug）
+    const startLineIndex = findDeclarationStartWithDecorators(bodyLines, declLineIndex);
+    const lineNumber = classStartLine + bodyStartLine - 1 + startLineIndex;
+    const sourceCode = bodyLines.slice(startLineIndex, endLine + 1).join('\n');
 
     members.push(createMember(
       match[4],
@@ -261,7 +274,7 @@ export function extractClassMembers(
       sourceCode,
       className,
       extractModifiers(match[0]),
-      extractDocumentation(bodyLines, relativeLineNumber - 1),
+      extractDocumentation(bodyLines, startLineIndex),
       extractDependencies(sourceCode)
     ));
   }
@@ -328,6 +341,23 @@ function createMember(
 }
 
 /**
+ * 找到宣告的起始行索引，含前面連續的 `@decorator` 行
+ * 供 class / method 提取共用，避免 decorator 判定重複實作兩份（見 M3 bug：
+ * decorator 不在宣告範圍內時，搬移後來源檔留下孤兒 decorator、目標檔遺失 decorator）
+ *
+ * @param lines 程式碼行陣列（class 提取傳整檔 lines；method 提取傳 class 內部 bodyLines）
+ * @param declLine 宣告本身（如 `class X` 或 `run()`）所在行索引（0-based）
+ * @returns 含 decorator 的起始行索引（0-based）；無 decorator 時等於 declLine
+ */
+function findDeclarationStartWithDecorators(lines: string[], declLine: number): number {
+  let start = declLine;
+  while (start > 0 && lines[start - 1].trim().startsWith('@')) {
+    start--;
+  }
+  return start;
+}
+
+/**
  * 提取修飾符
  */
 function extractModifiers(declaration: string): string[] {
@@ -376,7 +406,10 @@ export function extractDocumentation(lines: string[], memberLine: number): strin
       if (!line.startsWith('//')) {
         break;
       }
-      docLines.unshift(line.substring(2).trim());
+      // 保留原始 `//` 前綴（含標記本身），而非剝除後的純文字：
+      // documentation 會被寫回目標檔（見 file-change-preparer.ts），
+      // 剝過前綴的純文字拼回檔案會變成不合法的裸露文字
+      docLines.unshift(line);
       i--;
     }
     return docLines.join('\n');

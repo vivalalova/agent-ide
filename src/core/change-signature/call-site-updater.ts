@@ -17,7 +17,7 @@ import {
 } from './types.js';
 import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
-import { FileUtils, createFileUtils } from '@core/foundations/index.js';
+import { FileUtils, createFileUtils, computeCodeStateMask } from '@core/foundations/index.js';
 import type { Position, Range } from '@shared/types/core.js';
 import { isPositionBefore } from '@shared/types/core.js';
 
@@ -241,7 +241,7 @@ export class CallSiteUpdater {
       // 有引數：呼叫起點到第一個引數起點之間，最後一個「非註解/字串內」的 `(` 即為引數列表開括號
       const firstArgStart = callSite.arguments[0].range.start;
       const beforeFirstArg = this.extractTextRange(callSite.location.range.start, firstArgStart, lines);
-      const codeMask = this.computeCodeStateMask(beforeFirstArg);
+      const codeMask = computeCodeStateMask(beforeFirstArg);
       let openParenIndex = -1;
       for (let i = beforeFirstArg.length - 1; i >= 0; i--) {
         if (beforeFirstArg[i] === '(' && codeMask[i]) {
@@ -267,7 +267,7 @@ export class CallSiteUpdater {
    * （不需另外反向掃描一次，與 extractCallPrefix 共用同一狀態機邏輯）。
    */
   private findMatchingOpenParenFromEnd(text: string): number {
-    const codeMask = this.computeCodeStateMask(text);
+    const codeMask = computeCodeStateMask(text);
     const openIndexStack: number[] = [];
     let matchedOpenIndex = -1;
 
@@ -287,84 +287,6 @@ export class CallSiteUpdater {
     }
 
     return matchedOpenIndex;
-  }
-
-  /**
-   * 逐字掃描文字，標記每個字元是否處於「程式碼」狀態（非區塊/行註解、非字串內容）。
-   * 供括號匹配時排除註解與字串內容中恰巧出現的 `(`/`)` 干擾判定
-   * （如 `fnc(/* ( *\/ 1, 2)` 的區塊註解、`fn<'('>(x)` 型別引數內的字串）。
-   *
-   * 回傳與 text 等長的布林陣列，true 表示該位置字元屬於程式碼狀態。
-   */
-  private computeCodeStateMask(text: string): boolean[] {
-    type ScanState =
-      | { readonly kind: 'code' }
-      | { readonly kind: 'lineComment' }
-      | { readonly kind: 'blockComment' }
-      | { readonly kind: 'string'; readonly quote: string };
-
-    const mask: boolean[] = new Array(text.length).fill(true);
-    let state: ScanState = { kind: 'code' };
-
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      const next = text[i + 1];
-
-      if (state.kind === 'lineComment') {
-        mask[i] = false;
-        if (char === '\n') {
-          state = { kind: 'code' };
-        }
-        continue;
-      }
-
-      if (state.kind === 'blockComment') {
-        mask[i] = false;
-        if (char === '*' && next === '/') {
-          mask[i + 1] = false;
-          state = { kind: 'code' };
-          i++;
-        }
-        continue;
-      }
-
-      if (state.kind === 'string') {
-        mask[i] = false;
-        if (char === '\\' && i + 1 < text.length) {
-          // 跳脫字元：連同下一個字元一併視為字串內容，避免跳脫的引號被誤判為結尾
-          mask[i + 1] = false;
-          i++;
-          continue;
-        }
-        if (char === state.quote) {
-          state = { kind: 'code' };
-        }
-        continue;
-      }
-
-      // state.kind === 'code'
-      if (char === '/' && next === '/') {
-        mask[i] = false;
-        mask[i + 1] = false;
-        state = { kind: 'lineComment' };
-        i++;
-        continue;
-      }
-      if (char === '/' && next === '*') {
-        mask[i] = false;
-        mask[i + 1] = false;
-        state = { kind: 'blockComment' };
-        i++;
-        continue;
-      }
-      if (char === '"' || char === '\'' || char === '`') {
-        mask[i] = false;
-        state = { kind: 'string', quote: char };
-      }
-      // 其餘為一般程式碼字元，維持 mask[i] = true
-    }
-
-    return mask;
   }
 
   /**

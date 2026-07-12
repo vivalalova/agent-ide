@@ -18,3 +18,6 @@ export * from './symbol-finder/index.js';
 
 // 檔案工具
 export * from './file-utils.js';
+
+// 程式碼狀態掃描（括號/引號/註解感知）
+export * from './code-state-mask.js';

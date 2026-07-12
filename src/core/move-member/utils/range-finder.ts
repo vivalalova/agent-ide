@@ -3,27 +3,53 @@
  * 程式碼區塊範圍查找工具
  */
 
+import { computeCodeStateMask } from '@core/foundations/index.js';
+
 /**
  * 找到程式碼區塊結尾（大括號配對）
+ *
+ * 逐字元累計括號深度，並用 computeCodeStateMask 跳過字串/模板字面值/註解內的括號，
+ * 避免其干擾配對判定。同時追蹤小括號深度：只有小括號深度為 0 時的 `{`/`}` 才計入
+ * 區塊深度，讓宣告主體開括號之前、參數列表內的自我封閉 `{...}`（如預設值物件
+ * `(opts = { a: 1 }) => {`）不會被誤判為區塊已結束（見 M1 bug：合法巢狀括號在
+ * 語法上必然與外層小括號同深度成對出現，故此判定對正常程式碼恆成立）。
  *
  * @param lines 程式碼行陣列
  * @param startLine 起始行索引（0-based）
  * @returns 區塊結束行索引
  */
 export function findBlockEnd(lines: string[], startLine: number): number {
+  const text = lines.slice(startLine).join('\n');
+  const codeMask = computeCodeStateMask(text);
+
   let depth = 0;
   let foundStart = false;
+  let parenDepth = 0;
+  let lineIndex = startLine;
 
-  for (let i = startLine; i < lines.length; i++) {
-    for (const char of lines[i]) {
-      if (char === '{') {
-        depth++;
-        foundStart = true;
-      } else if (char === '}') {
-        depth--;
-        if (foundStart && depth === 0) {
-          return i;
-        }
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '\n') {
+      lineIndex++;
+      continue;
+    }
+
+    if (!codeMask[i]) {
+      continue;
+    }
+
+    if (char === '(') {
+      parenDepth++;
+    } else if (char === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (char === '{' && parenDepth === 0) {
+      depth++;
+      foundStart = true;
+    } else if (char === '}' && parenDepth === 0) {
+      depth--;
+      if (foundStart && depth === 0) {
+        return lineIndex;
       }
     }
   }

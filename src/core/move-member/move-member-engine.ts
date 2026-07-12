@@ -88,7 +88,7 @@ export class MoveMemberEngine {
 
     // 5. 查找並準備引用更新
     const referenceUpdates = options.updateReferences !== false
-      ? await this.referenceUpdater.prepareReferenceUpdates(options, member)
+      ? await this.referenceUpdater.prepareReferenceUpdates(options, member, sourceFileChange)
       : [];
 
     // 6. 執行或預覽
