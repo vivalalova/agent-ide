@@ -8,6 +8,7 @@ import * as ts from 'typescript';
 import { stripSourceFileExtension } from '@shared/types/index.js';
 import type { Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import type { TypeScriptSymbol } from './types.js';
+import { identifierShadowedByLocalDeclaration } from './lexical-scope-binding.js';
 
 /**
  * 檔案資訊
@@ -406,6 +407,9 @@ export class LanguageServiceManager implements ILanguageServiceManager {
           && ts.isIdentifier(node.expression)
           && namespaceLocalNames.includes(node.expression.text)
           && node.name.text === memberName
+          // 該 `ns` 位置若被更近的區域宣告（參數、區域變數、內層函式等 value binding）遮蔽，
+          // 則此 `ns.member` 綁的是遮蔽者、非 namespace import，不是對目標符號的引用，須跳過。
+          && !identifierShadowedByLocalDeclaration(node.expression, sourceFile)
         ) {
           spans.push({
             start: node.name.getStart(sourceFile),

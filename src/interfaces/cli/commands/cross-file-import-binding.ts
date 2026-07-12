@@ -29,7 +29,7 @@ import {
   tryGetSourceFile
 } from './module-file-resolver.js';
 import { isExcludedPropertyKeyIdentifier, nodeStartsAtLocation } from './ast-node-location.js';
-import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
+import { identifierShadowedByLocalDeclaration } from '@plugins/typescript/lexical-scope-binding.js';
 import { receiverTargetsSelectedOwner } from './receiver-owner-heritage.js';
 
 export async function getSelectedSymbolFileAnalysis(
@@ -408,24 +408,4 @@ function identifierTargetsSelectedBinding(
   // exportedNames 只在具名 re-export 子句本身（ExportSpecifier）命中：`export { foo } from './x'`
   // 檔內任意同名 identifier（如函式內區域變數）並非該 export clause 的 token，不得裸名誤留
   return bindings.exportedNames.has(node.text) && ts.isExportSpecifier(node.parent);
-}
-
-/**
- * 判斷跨檔引用位置的 identifier 是否被「更近的非 import 詞法宣告」遮蔽。
- *
- * directNames 只以裸名比對命中該檔任意同名 identifier，會把遮蔽 import 的區域宣告
- * （for-of / for / catch 變數、參數、解構綁定、區域 const/let/var/function/class）誤判為對匯入符號的引用。
- * 複用同檔作用域機制 findNearestLexicalDeclarationName：若引用位置最近的可見詞法宣告
- * 不是 import binding，代表該名稱被區域宣告遮蔽，非目標引用。import binding 視為模組層宣告參與比較。
- * Identifier、CallExpression callee、namespace receiver（`ns.member` 的 `ns`）三條匹配路徑
- * 都要過這道檢查，尺一致才不會漏放呼叫式引用、也不會把被遮蔽的 namespace receiver 誤留。
- */
-function identifierShadowedByLocalDeclaration(node: ts.Identifier, sourceFile: ts.SourceFile): boolean {
-  const nearest = findNearestLexicalDeclarationName(sourceFile, node, node.text);
-  return nearest !== undefined && !isImportBindingName(nearest);
-}
-
-/** 詞法宣告名稱節點是否來自 import binding（具名 import specifier 的 local 名） */
-function isImportBindingName(name: ts.Identifier): boolean {
-  return ts.isImportSpecifier(name.parent);
 }

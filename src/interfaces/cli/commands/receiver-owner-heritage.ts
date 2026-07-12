@@ -11,8 +11,10 @@
 
 import * as ts from 'typescript';
 import type { SelectedSymbolBindings } from './symbol-reference-filter-types.js';
-import { findAncestor } from './ast-node-location.js';
-import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
+import {
+  findAncestor,
+  findNearestLexicalDeclarationName
+} from '@plugins/typescript/lexical-scope-binding.js';
 
 export function receiverTargetsSelectedOwner(
   receiver: ts.Expression,

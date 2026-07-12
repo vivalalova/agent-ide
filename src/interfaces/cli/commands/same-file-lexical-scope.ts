@@ -5,7 +5,8 @@
  * This is the hand-written scope model the filter keeps instead of the TypeScript Language
  * Service (see the module comment in `symbol-reference-filter.ts` for why LS is not used as
  * the single authoritative source). Nearest-binding resolution lives in
- * `nearest-lexical-declaration.ts`（供本檔、跨檔遮蔽檢查與 receiver 判定三路共用）。
+ * `@plugins/typescript/lexical-scope-binding.ts`（供本檔、跨檔遮蔽檢查、receiver 判定與
+ * plugin 層 namespace member 錨定共用）。
  */
 
 import * as ts from 'typescript';
@@ -15,13 +16,15 @@ import type {
 } from './symbol-reference-filter-types.js';
 import { getOrReadSourceFile } from './module-file-resolver.js';
 import {
-  findAncestor,
   isExcludedPropertyKeyIdentifier,
   nodeNameMatchesSelectedSymbol,
   nodeStartsAtLocation
 } from './ast-node-location.js';
 import { classChainTargetsOwner, receiverTargetsOwnerName } from './receiver-owner-heritage.js';
-import { findNearestLexicalDeclarationName } from './nearest-lexical-declaration.js';
+import {
+  findAncestor,
+  findNearestLexicalDeclarationName
+} from '@plugins/typescript/lexical-scope-binding.js';
 
 export async function sameFileLocationTargetsSelectedSymbol(
   filePath: string,

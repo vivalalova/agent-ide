@@ -1,15 +1,35 @@
 /**
- * Nearest-visible lexical declaration lookup, shared by the `--at` filter family:
- * the same-file path (does a reference bind the selected declaration), the cross-file
- * shadow check (is an imported binding shadowed by a nearer local declaration), and
- * the receiver-owner judgement (which declaration does a receiver identifier bind to).
+ * Lexical-scope binding / shadow analysis over a single TypeScript SourceFile.
  *
- * 獨立成模組的原因：receiver-owner-heritage 與 same-file-lexical-scope 互有依賴需求，
- * 共用的最近綁定解析抽到此處避免模組循環。
+ * 手寫的詞法作用域模型，供兩層共用：
+ *   - CLI 的 `--at` 引用過濾家族（same-file / 跨檔遮蔽 / receiver 判定）
+ *   - plugin 層 language-service 的 AST 直接引用收集（namespace `ns.member` 錨定）
+ *
+ * 過去只在 CLI 層（interfaces/cli/commands）存在，但 plugin 層的 namespace member 錨定
+ * 同樣需要「該 receiver 是否被更近的區域宣告遮蔽」的判定；plugin 不能反向依賴 interfaces，
+ * 故將這組純 AST／位置分析（無任何 CLI 依賴）下沉到此，兩層一律引用、禁止各自複製一份。
+ *
+ * 與 `scope-analyzer.ts` 的 class-based `isShadowed` 是不同機制、服務不同消費端；此處是
+ * 引用過濾家族先前逐步修正累積的位置式綁定模型（涵蓋 for-of / catch / case block /
+ * 解構 / TDZ 等邊界），不與前者合併。
  */
 
 import * as ts from 'typescript';
-import { findAncestor } from './ast-node-location.js';
+
+export function findAncestor(
+  node: ts.Node,
+  predicate: (ancestor: ts.Node) => boolean
+): ts.Node | undefined {
+  let current = node.parent;
+  while (current) {
+    if (predicate(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+
+  return undefined;
+}
 
 export function findNearestLexicalDeclarationName(
   sourceFile: ts.SourceFile,
@@ -45,6 +65,25 @@ export function findNearestLexicalDeclarationName(
 
   visit(sourceFile);
   return best?.name;
+}
+
+/**
+ * 判斷引用位置的 identifier 是否被「更近的非 import 詞法宣告」遮蔽。
+ *
+ * 若引用位置最近的可見詞法宣告不是 import binding，代表該名稱被區域宣告
+ * （參數、區域 const/let/var/function/class、解構綁定、for-of / for / catch 變數）遮蔽，
+ * 非對匯入符號／namespace import 的引用。import binding 視為模組層宣告參與比較，故不算遮蔽。
+ * 裸名 identifier、CallExpression callee、namespace receiver（`ns.member` 的 `ns`）都要過這道
+ * 檢查，尺一致才不會漏放呼叫式引用、也不會把被遮蔽的 namespace receiver 誤留。
+ */
+export function identifierShadowedByLocalDeclaration(node: ts.Identifier, sourceFile: ts.SourceFile): boolean {
+  const nearest = findNearestLexicalDeclarationName(sourceFile, node, node.text);
+  return nearest !== undefined && !isImportBindingName(nearest);
+}
+
+/** 詞法宣告名稱節點是否來自 import binding（具名 import specifier 的 local 名） */
+function isImportBindingName(name: ts.Identifier): boolean {
+  return ts.isImportSpecifier(name.parent);
 }
 
 function getLexicalDeclarationName(node: ts.Node): ts.Identifier | undefined {
