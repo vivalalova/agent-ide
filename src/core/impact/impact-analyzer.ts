@@ -31,6 +31,10 @@ import { DependencyExtractor } from './dependency-extractor.js';
 interface CacheEntry {
   data: FileDependencies;
   lastModified: Date;
+  /** 檔案大小；與 mtime 一同判斷快取是否失效（見 analyzeFile），
+   * 防 mtime 保留型操作（cp -p、git checkout、粗粒度 FS）造成 stale cache，
+   * 判準對齊 index-disk-cache.ts 的 mtime+size 快取 key 設計 */
+  size: number;
 }
 
 /**
@@ -91,7 +95,8 @@ export class ImpactAnalyzer {
     if (cacheEntry) {
       try {
         const stat = await this.fileSystem.getStats(normalizedPath);
-        if (stat.modifiedTime <= cacheEntry.lastModified) {
+        // mtime 未變新且 size 相同才視為快取有效：mtime 單獨比對在 mtime 保留型操作下會誤判命中
+        if (stat.modifiedTime <= cacheEntry.lastModified && stat.size === cacheEntry.size) {
           // MemoryCache 自動更新 lastAccessedAt
           return cacheEntry.data;
         }
@@ -119,7 +124,8 @@ export class ImpactAnalyzer {
       // 更新快取（MemoryCache 自動處理 LRU 淘汰）
       this.cache.set(normalizedPath, {
         data: result,
-        lastModified: stat.modifiedTime
+        lastModified: stat.modifiedTime,
+        size: stat.size
       });
 
       // 更新依賴圖
