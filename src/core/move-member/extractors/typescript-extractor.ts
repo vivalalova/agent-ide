@@ -10,6 +10,16 @@ import {
   findTypeAliasEnd,
   findStatementEnd
 } from '../utils/range-finder.js';
+import { UNICODE_IDENTIFIER_PATTERN } from '@plugins/shared/index.js';
+
+/**
+ * 識別符字元類（去除 UNICODE_IDENTIFIER_PATTERN 的 `^`/`$` anchor），供內嵌
+ * 組合進逐行掃描用的較大 regex。專案宣稱支援 Unicode 識別符，此處與
+ * rename 引擎、parser 共用同一份定義（Single Source of Truth），避免各處
+ * 各自定義出現 ASCII-only 的 `\w+` 而漏掉 Unicode 命名（見 C7 bug：Unicode
+ * 命名 method 因此抽取失敗，導致按位置移動時 fallback 選中外層 class）
+ */
+const IDENTIFIER_PATTERN_SOURCE = UNICODE_IDENTIFIER_PATTERN.source.slice(1, -1);
 
 /** 程式語言關鍵字集合 */
 const KEYWORDS = new Set([
@@ -264,7 +274,10 @@ export function extractClassMembers(
     readonly hasBody: boolean;
   }
 
-  const methodPattern = /^[ \t]*(public|private|protected)?[ \t]*(static)?[ \t]*(async)?[ \t]*(\w+)[ \t]*\([^)]*\)/gm;
+  const methodPattern = new RegExp(
+    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(${IDENTIFIER_PATTERN_SOURCE})[ \\t]*\\([^)]*\\)`,
+    'gmu'
+  );
   const rawMethodCandidates: RawMethodCandidate[] = [];
   while ((match = methodPattern.exec(classBody)) !== null) {
     // 跳過 constructor
@@ -502,5 +515,48 @@ function extractDependencies(sourceCode: string): string[] {
     }
   }
 
+  // 提取一般識別符讀取（如 `n * rate` 中的 rate）：上面幾條規則只認型別標註、
+  // 呼叫、以及大寫命名變數，未涵蓋一般小寫變數的單純讀取，導致引用模組級小寫
+  // 常數的成員搬移後，目標檔漏補該常數的 import（見 C8 bug）。排除區域宣告
+  // （參數、const/let/var）、關鍵字、基本型別與屬性存取（`obj.prop` 的 prop）
+  const localNames = extractLocallyDeclaredNames(sourceCode);
+  const identifierPattern = /(?<![.\w$])([A-Za-z_$][A-Za-z0-9_$]*)\b/g;
+  while ((match = identifierPattern.exec(sourceCode)) !== null) {
+    const name = match[1];
+    if (KEYWORDS.has(name) || BASIC_TYPES.has(name) || localNames.has(name)) { continue; }
+    dependencies.push(name);
+  }
+
   return [...new Set(dependencies)];
+}
+
+/**
+ * 找出成員原始碼中所有區域宣告的名稱：函式/方法參數、`const`/`let`/`var` 區域變數。
+ * 供一般識別符讀取掃描排除，避免區域宣告（如參數名稱恰好撞名某個模組級 export）
+ * 被誤判為外部依賴（見 C8 bug 的一般識別符讀取規則）
+ */
+function extractLocallyDeclaredNames(sourceCode: string): Set<string> {
+  const names = new Set<string>();
+
+  // 參數列表：抓第一層 (...) 內每個參數宣告的名稱（含 rest 參數 `...x`）
+  const paramListMatch = sourceCode.match(/\(([^)]*)\)/);
+  if (paramListMatch) {
+    for (const param of paramListMatch[1].split(',')) {
+      const trimmed = param.trim();
+      if (!trimmed) { continue; }
+      const nameMatch = trimmed.match(/^\.{3}\s*([A-Za-z_$][A-Za-z0-9_$]*)|^([A-Za-z_$][A-Za-z0-9_$]*)/);
+      if (nameMatch) {
+        names.add(nameMatch[1] ?? nameMatch[2]);
+      }
+    }
+  }
+
+  // 區域變數宣告：const/let/var NAME
+  const declPattern = /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  let declMatch;
+  while ((declMatch = declPattern.exec(sourceCode)) !== null) {
+    names.add(declMatch[1]);
+  }
+
+  return names;
 }

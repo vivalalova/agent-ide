@@ -7,15 +7,17 @@ import * as path from 'path';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
+import { createChangesetBuilder, ChangesetCommand, TextEditOperationType, ChangeApplicator } from '@infrastructure/changeset/index.js';
 import { MemberExtractor } from './member-extractor.js';
 import { ReferenceUpdater, type ReferenceUpdaterPathConfig } from './reference-updater.js';
 import { FileChangePreparer } from './file-change-preparer.js';
-import { ChangeApplier } from './change-applier.js';
 import {
   type MoveMemberOptions,
   type MoveMemberResult,
   type MemberDefinition,
+  type FileChange,
+  type TargetFileChange,
+  type ReferenceUpdate,
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
@@ -27,7 +29,7 @@ export class MoveMemberEngine {
   private readonly memberExtractor: MemberExtractor;
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileChangePreparer: FileChangePreparer;
-  private readonly changeApplier: ChangeApplier;
+  private readonly changeApplicator: ChangeApplicator;
 
   constructor(
     parserRegistry: ParserRegistry,
@@ -37,7 +39,7 @@ export class MoveMemberEngine {
     this.memberExtractor = new MemberExtractor(parserRegistry, fileSystem);
     this.referenceUpdater = new ReferenceUpdater(fileSystem, pathConfig);
     this.fileChangePreparer = new FileChangePreparer(fileSystem, parserRegistry);
-    this.changeApplier = new ChangeApplier(fileSystem);
+    this.changeApplicator = new ChangeApplicator(fileSystem);
   }
 
   /**
@@ -91,9 +93,25 @@ export class MoveMemberEngine {
       ? await this.referenceUpdater.prepareReferenceUpdates(options, member, sourceFileChange)
       : [];
 
-    // 6. 執行或預覽
+    // 6. 執行或預覽：非預覽時透過統一 Changeset + ChangeApplicator 寫入
+    //    （atomic + rollbackOnError，中途失敗自動還原，取代舊有循序寫入無回滾的 ChangeApplier）
     if (!options.preview) {
-      await this.changeApplier.applyChanges(sourceFileChange, targetFileChange, referenceUpdates);
+      const changeset = this.buildChangeset(
+        options,
+        sourceFileChange,
+        targetFileChange,
+        referenceUpdates
+      );
+      const applyResult = await this.changeApplicator.apply(changeset, {
+        atomic: true,
+        rollbackOnError: true
+      });
+      if (!applyResult.success) {
+        return this.createErrorResult(
+          MoveMemberErrorCode.WriteFailed,
+          `寫入變更失敗，已回滾: ${(applyResult.errors ?? []).join('; ')}`
+        );
+      }
     }
 
     // 7. 計算統計
@@ -124,9 +142,6 @@ export class MoveMemberEngine {
    * 使用 preview 模式收集變更，轉換為統一的 Changeset 格式
    */
   async generateChangeset(options: MoveMemberOptions): Promise<Changeset> {
-    const builder = createChangesetBuilder()
-      .forCommand(ChangesetCommand.MoveMember);
-
     // 使用 preview 模式收集變更
     const result = await this.moveMember({
       ...options,
@@ -134,40 +149,63 @@ export class MoveMemberEngine {
     });
 
     if (!result.success) {
-      return builder
+      return createChangesetBuilder()
+        .forCommand(ChangesetCommand.MoveMember)
         .addError(result.error ?? 'Move member failed')
         .build();
     }
 
+    return this.buildChangeset(
+      options,
+      result.sourceFileChange,
+      result.targetFileChange,
+      result.referenceUpdates
+    );
+  }
+
+  /**
+   * 將已計算好的來源/目標檔案變更與引用更新組成統一 Changeset
+   * 供 generateChangeset（外部消費）與 moveMember 非預覽路徑（內部寫入）共用，
+   * 避免兩處各自組一份、SSOT
+   */
+  private buildChangeset(
+    options: MoveMemberOptions,
+    sourceFileChange: FileChange,
+    targetFileChange: TargetFileChange,
+    referenceUpdates: readonly ReferenceUpdate[]
+  ): Changeset {
+    const builder = createChangesetBuilder()
+      .forCommand(ChangesetCommand.MoveMember);
+
     // 轉換 sourceFileChange（整檔替換）
-    const sourceOriginalLines = result.sourceFileChange.originalCode.split('\n');
-    builder.addTextChange(result.sourceFileChange.filePath, [{
+    const sourceOriginalLines = sourceFileChange.originalCode.split('\n');
+    builder.addTextChange(sourceFileChange.filePath, [{
       range: {
         start: { line: 1, column: 1, offset: 0 },
-        end: { line: sourceOriginalLines.length + 1, column: 1, offset: result.sourceFileChange.originalCode.length }
+        end: { line: sourceOriginalLines.length + 1, column: 1, offset: sourceFileChange.originalCode.length }
       },
-      newText: result.sourceFileChange.newCode,
+      newText: sourceFileChange.newCode,
       description: 'Remove member from source file'
     }], TextEditOperationType.Modify);
 
     // 轉換 targetFileChange
-    if (result.targetFileChange.isNewFile) {
-      builder.addFileCreate(result.targetFileChange.filePath, result.targetFileChange.newCode);
+    if (targetFileChange.isNewFile) {
+      builder.addFileCreate(targetFileChange.filePath, targetFileChange.newCode);
     } else {
-      const targetOriginal = result.targetFileChange.originalCode ?? '';
+      const targetOriginal = targetFileChange.originalCode ?? '';
       const targetOriginalLines = targetOriginal.split('\n');
-      builder.addTextChange(result.targetFileChange.filePath, [{
+      builder.addTextChange(targetFileChange.filePath, [{
         range: {
           start: { line: 1, column: 1, offset: 0 },
           end: { line: targetOriginalLines.length + 1, column: 1, offset: targetOriginal.length }
         },
-        newText: result.targetFileChange.newCode,
+        newText: targetFileChange.newCode,
         description: 'Add member to target file'
       }], TextEditOperationType.Modify);
     }
 
     // 轉換 referenceUpdates
-    for (const update of result.referenceUpdates) {
+    for (const update of referenceUpdates) {
       builder.addTextChange(update.filePath, [{
         range: update.location.range,
         newText: update.newImport,

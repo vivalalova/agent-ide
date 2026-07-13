@@ -258,8 +258,18 @@ export class ReferenceUpdater {
       return null;
     }
 
+    // 成員搬到目標檔後若未被 export，目標檔本身就無法提供這個 binding，
+    // 任何指向它的 import 都無效（見 C9 bug）；prepareTargetFileChange 只有
+    // `member.modifiers` 含 'export' 時才會保留/補上 export，判定基準與其一致
+    if (!member.modifiers.includes('export')) {
+      return null;
+    }
+
+    // 只在真實程式碼中比對是否仍有殘留引用，排除字串常量與註解裡「提到」成員名稱
+    // 的情況（見 C9 bug：整檔 raw word regex 誤把字串內容當成真實引用）
+    const codeOnly = this.stripStringsAndComments(sourceFileChange.newCode);
     const referencePattern = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
-    if (!referencePattern.test(sourceFileChange.newCode)) {
+    if (!referencePattern.test(codeOnly)) {
       return null;
     }
 
@@ -279,6 +289,19 @@ export class ReferenceUpdater {
         }
       }
     };
+  }
+
+  /**
+   * 移除字串常量與註解內容，只留下可能構成真實引用的程式碼本體
+   * 供 buildSourceSelfReferenceImport 判斷殘留引用時排除「字串/註解裡提到成員名稱」
+   * 的誤判（見 C9 bug）。regex-based 近似（非完整 tokenizer），與本檔其餘以正則
+   * 掃描 import/export 語句的既有作法一致
+   */
+  private stripStringsAndComments(code: string): string {
+    return code
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '');
   }
 
   /**
