@@ -62,6 +62,7 @@ import {
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -212,7 +213,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   /**
    * 查找符號引用
    */
-  async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
+  async findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]> {
     const typedAst = ast as TypeScriptAST;
     const typedSymbol = symbol as TypeScriptSymbol;
 
@@ -232,7 +233,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const symbolPosition = this.languageServiceManager.getSymbolPosition(
       typedSymbol,
       typedAst.tsSourceFile,
-      (node) => this.scopeAnalyzer.getIdentifierFromSymbolNode(node) ?? undefined
+      (node) => this.scopeAnalyzer.getIdentifierFromSymbolNode(node) ?? undefined,
+      moduleResolver
     );
 
     // 使用 Language Service 從 anchor 查找引用
@@ -277,7 +279,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     );
     const astDirectSpans = this.languageServiceManager.getAstDirectReferenceSpans(
       typedSymbol,
-      typedAst.tsSourceFile
+      typedAst.tsSourceFile,
+      moduleResolver
     );
     for (const span of astDirectSpans) {
       const range: Range = {

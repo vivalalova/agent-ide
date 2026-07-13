@@ -21,6 +21,7 @@ import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 import { isImportedSymbol } from '@interfaces/cli/commands/symbol-target-resolver.js';
 
@@ -100,7 +101,11 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
   }
 
   try {
-    let workspacePath = options.path || process.cwd();
+    // 索引器（IndexEngine.indexDirectory）以 glob absolute:true 產出絕對路徑符號，
+    // 但 getAllProjectFiles 與各處裸字串路徑比對沿用 workspacePath 原樣。若 --path 為相對路徑，
+    // 兩者路徑形式分歧（相對 vs 絕對），導致定義/引用比對全數落空、rename 靜默 0 changes 或
+    // 定義端漏改（缺陷 N1／N2-a）。此處先正規化為絕對路徑，與索引 SSOT 對齊。
+    let workspacePath = path.resolve(options.path || process.cwd());
 
     // 如果路徑指向檔案，取其所在目錄
     const isFile = await context.fileSystem.isFile(workspacePath);
@@ -228,12 +233,19 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     const allProjectFiles = await getAllProjectFiles(workspacePath, context);
 
     targetSymbol = await resolveParserBackedSymbol(targetSymbol, context, ParserRegistry.getInstance(), Boolean(options.at));
+
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找），與 move / impact /
+    // change-signature 同一把尺，供跨 path alias（缺陷 C3）與多層 barrel re-export（缺陷 C4）的
+    // consumer 錨定使用。無 tsconfig 時為空設定、不影響相對路徑行為。
+    const tsconfigPathConfig = await loadTsconfigPathConfig(workspacePath, context.fileSystem);
+
     // 無條件注入 ParserRegistry：讓所有符號（含非 function-local 的頂層 const/function/class）
     // 的引用查找都走 AST 感知路徑（SymbolFinder → Language Service），而非降級為 `\bname\b`
     // 純文字匹配。純文字匹配會誤改同名的 interface 屬性鍵、object literal 鍵與成員存取（缺陷 R2）。
     const renameEngine = new RenameEngine(
       ParserRegistry.getInstance(),
-      context.fileSystem
+      context.fileSystem,
+      { pathAliases: tsconfigPathConfig.pathAliases, baseUrl: tsconfigPathConfig.baseUrl }
     );
 
     // 生成 Changeset

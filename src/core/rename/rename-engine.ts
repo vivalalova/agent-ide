@@ -16,7 +16,8 @@ import {
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
-import { ReferenceUpdater } from './reference-updater.js';
+import { ReferenceUpdater, type RenameModuleResolutionConfig } from './reference-updater.js';
+import { createIdentifierBoundaryRegex } from '@core/foundations/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
@@ -42,10 +43,14 @@ export class RenameEngine {
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileSystem: IFileSystem;
 
-  constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
+  constructor(
+    parserRegistry?: ParserRegistry,
+    fileSystem?: IFileSystem,
+    pathConfig?: RenameModuleResolutionConfig
+  ) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
-    this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem);
+    this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem, pathConfig);
   }
 
   /**
@@ -66,8 +71,9 @@ export class RenameEngine {
           const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
           const lines = content.split('\n');
 
-          // 使用單詞邊界進行精確匹配（快取 RegExp 避免重複編譯）
-          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+          // 使用 Unicode 邊界感知比對進行精確匹配（快取 RegExp 避免重複編譯）；
+          // `\b` 對純 Unicode 識別符（如 `用戶`）失效（缺陷 G6），且此處另需逸出符號名。
+          const regex = createIdentifierBoundaryRegex(symbol.name, 'g');
 
           // 查找所有包含符號名稱的行
           lines.forEach((line, lineIndex) => {

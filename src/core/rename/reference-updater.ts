@@ -4,6 +4,7 @@
  * 使用 SymbolFinder 進行精確的 AST 分析
  */
 
+import * as path from 'path';
 import {
   TextChange,
   SymbolReference
@@ -13,9 +14,17 @@ import { Symbol, isFunctionLocalSymbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils, createIdentifierBoundaryRegex } from '@core/foundations/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
+import { createTargetExposureResolver } from './target-exposure-resolver.js';
+
+/** rename 的 tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
+export interface RenameModuleResolutionConfig {
+  readonly pathAliases?: Record<string, string>;
+  readonly baseUrl?: string;
+}
 
 /**
  * 檔案快取項目
@@ -37,10 +46,16 @@ export class ReferenceUpdater {
   private readonly fileSystem: IFileSystem;
   private readonly symbolFinder?: SymbolFinder;
   private readonly fileUtils?: FileUtils;
+  private readonly pathConfig?: RenameModuleResolutionConfig;
 
-  constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
+  constructor(
+    parserRegistry?: ParserRegistry,
+    fileSystem?: IFileSystem,
+    pathConfig?: RenameModuleResolutionConfig
+  ) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
+    this.pathConfig = pathConfig;
 
     if (parserRegistry) {
       this.symbolFinder = createSymbolFinder(parserRegistry, this.fileSystem);
@@ -99,7 +114,8 @@ export class ReferenceUpdater {
    */
   async findSymbolReferencesWithSymbol(
     filePath: string,
-    symbol: Symbol
+    symbol: Symbol,
+    moduleResolver?: ModuleSpecifierResolver
   ): Promise<SymbolReference[]> {
     // 檢查參數有效性
     if (!filePath || typeof filePath !== 'string' || !symbol || !symbol.name) {
@@ -109,7 +125,7 @@ export class ReferenceUpdater {
     // 使用 SymbolFinder 的作用域感知版本查找引用
     if (this.symbolFinder) {
       try {
-        const refs = await this.symbolFinder.findReferencesInFileWithSymbol(filePath, symbol);
+        const refs = await this.symbolFinder.findReferencesInFileWithSymbol(filePath, symbol, moduleResolver);
 
         return refs.map(ref => ({
           symbolName: symbol.name,
@@ -160,8 +176,9 @@ export class ReferenceUpdater {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
 
-    // 快取 RegExp 避免重複編譯
-    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+    // 快取 RegExp 避免重複編譯；使用 Unicode 邊界感知比對，純 Unicode 識別符（如 `用戶`）
+    // 用 `\b` 會比對不到（缺陷 G6）。
+    const regex = createIdentifierBoundaryRegex(symbolName, 'g');
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
@@ -233,6 +250,22 @@ export class ReferenceUpdater {
       filesToProcess = [symbol.location.filePath];
     }
 
+    // 建立跨檔曝露述詞（一次），供錨定層判定 consumer 的 import/re-export specifier 是否曝露目標符號：
+    // 涵蓋 tsconfig path alias（缺陷 C3）與多層 barrel re-export 鏈（缺陷 C4）。函式區域符號無跨檔
+    // 引用、免建。無 tsconfig 時 pathAliases 為空，述詞退化為「相對 specifier 直接解析到定義檔或
+    // 經 barrel 轉發回定義檔」，涵蓋既有相對路徑行為。
+    const moduleResolver: ModuleSpecifierResolver | undefined =
+      symbol.location?.filePath && !isFunctionLocalSymbol(symbol)
+        ? await createTargetExposureResolver({
+          fileSystem: this.fileSystem,
+          projectFiles,
+          definitionFilePath: symbol.location.filePath,
+          symbolName: symbol.name,
+          pathAliases: this.pathConfig?.pathAliases,
+          baseUrl: this.pathConfig?.baseUrl
+        })
+        : undefined;
+
     for (const filePath of filesToProcess) {
       // 跳過無效路徑
       if (!filePath || typeof filePath !== 'string') {
@@ -240,11 +273,22 @@ export class ReferenceUpdater {
       }
 
       // 使用作用域感知的方法查找引用
-      const references = await this.findSymbolReferencesWithSymbol(filePath, symbol);
+      const references = await this.findSymbolReferencesWithSymbol(filePath, symbol, moduleResolver);
 
-      // 如果沒有找到引用，檢查是否為符號定義所在檔案
-      if (references.length === 0) {
-        if (symbol.location?.filePath === filePath && symbol.location?.range) {
+      // N2-b：別名 import（`import { x as y }`）下，Language Service 的 findReferences 會連同
+      // 別名本地綁定（`y`）的引用群組一併回傳，這些引用的實際 token 是別名 `y`、而非目標符號 `x`。
+      // rename 只應改「目標符號名的出現位置」（定義、無別名的使用、import specifier 的被匯入名），
+      // 保留使用者自訂別名 `y` 及其呼叫點不動。故排除實際 token 文字不等於目標符號名的引用
+      // （等價排除別名群組），避免把 `import { x as y }` 盲改成 `import { newName as newName }`。
+      const matchingReferences = references.filter(ref => this.referenceTokenMatchesName(ref, symbol.name));
+
+      // 如果沒有匹配到引用，檢查是否為符號定義所在檔案
+      if (matchingReferences.length === 0) {
+        // 路徑正規化後比較（縱深防禦）：symbol.location.filePath 來自索引（絕對），filePath 可能
+        // 沿用呼叫端傳入的形式，形式分歧會讓定義端漏改（缺陷 N2-a 的其中一環）。
+        if (symbol.location?.filePath
+          && path.resolve(symbol.location.filePath) === path.resolve(filePath)
+          && symbol.location?.range) {
           // 至少包含符號定義位置
           fileChanges.push({
             filePath,
@@ -259,7 +303,7 @@ export class ReferenceUpdater {
       }
 
       // 轉換為 TextChange（包含 context 資訊）
-      const changes: TextChange[] = references.map(ref => ({
+      const changes: TextChange[] = matchingReferences.map(ref => ({
         range: ref.range,
         oldText: symbol.name,
         newText: newName,
@@ -270,6 +314,24 @@ export class ReferenceUpdater {
     }
 
     return fileChanges;
+  }
+
+  /**
+   * 判定引用位置的實際 token 文字是否等於目標符號名。
+   *
+   * 用於排除別名 import 群組：Language Service 會把別名本地綁定（`import { x as y }` 的 `y`）
+   * 的引用一併回傳，其 token 為別名而非符號名，不應被 rename 動到。
+   *
+   * `context` 為引用所在整行原文（見 SymbolFinder / 文字降級路徑，皆保留未 trim 的整行）；
+   * 跨行或無 context 時無法精確取字，回傳 true 予以保留（不過度過濾）。
+   */
+  private referenceTokenMatchesName(ref: SymbolReference, symbolName: string): boolean {
+    const { context, range } = ref;
+    if (typeof context !== 'string' || range.start.line !== range.end.line) {
+      return true;
+    }
+    const token = context.slice(range.start.column - 1, range.end.column - 1);
+    return token === symbolName;
   }
 
   /**
@@ -389,13 +451,6 @@ export class ReferenceUpdater {
    */
   private isPositionInRanges(position: number, ranges: Array<[number, number]>): boolean {
     return ranges.some(([start, end]) => position > start && position < end);
-  }
-
-  /**
-   * 逸出正則表達式特殊字符
-   */
-  private escapeRegex(text: string): string {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**

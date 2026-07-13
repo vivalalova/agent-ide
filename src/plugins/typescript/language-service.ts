@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { stripSourceFileExtension } from '@shared/types/index.js';
 import type { Disposable } from '@plugins/shared/utils/memory-monitor.js';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import type { TypeScriptSymbol } from './types.js';
 import { identifierShadowedByLocalDeclaration } from './lexical-scope-binding.js';
 
@@ -65,7 +66,8 @@ export interface ILanguageServiceManager extends Disposable {
   getSymbolPosition(
     symbol: TypeScriptSymbol,
     sourceFile: ts.SourceFile,
-    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
+    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined,
+    moduleResolver?: ModuleSpecifierResolver
   ): number | undefined;
 
   /**
@@ -73,10 +75,12 @@ export interface ILanguageServiceManager extends Disposable {
    * namespace import 成員存取（`ns.member`）與 barrel re-export specifier（`export { x } from './a'`）
    * @param symbol 目標符號（跨檔定義）
    * @param sourceFile 目前檔案
+   * @param moduleResolver 選用：跨 path alias 與多層 barrel re-export 的 specifier 曝露判定
    */
   getAstDirectReferenceSpans(
     symbol: TypeScriptSymbol,
-    sourceFile: ts.SourceFile
+    sourceFile: ts.SourceFile,
+    moduleResolver?: ModuleSpecifierResolver
   ): Array<{ start: number; end: number }>;
 }
 
@@ -266,13 +270,17 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   getSymbolPosition(
     symbol: TypeScriptSymbol,
     sourceFile: ts.SourceFile,
-    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
+    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined,
+    moduleResolver?: ModuleSpecifierResolver
   ): number | undefined {
     const identifier = symbol.tsNode ? getIdentifierFromSymbolNode(symbol.tsNode) : undefined;
 
     // 符號宣告就在目前檔案（定義檔，或 function-local 單檔查找）：
     // 直接用符號自身識別符位置。
-    if (identifier && identifier.getSourceFile().fileName === sourceFile.fileName) {
+    // 路徑正規化後比較（縱深防禦）：符號位置來自索引（絕對路徑），掛載檔名可能沿用呼叫端傳入的
+    // 路徑形式。若兩者形式分歧（相對 vs 絕對）會誤判為跨檔、改走 import binding anchor，導致定義檔
+    // 自身的引用查找失敗（缺陷 N1／N2-a 的其中一環）。同一檔案在此務必判為同檔。
+    if (identifier && path.resolve(identifier.getSourceFile().fileName) === path.resolve(sourceFile.fileName)) {
       return identifier.getStart(sourceFile);
     }
 
@@ -285,7 +293,26 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     // 找不到 import binding（該檔僅巧合含同名 token、自身另有同名宣告、或該檔的 import
     // 來自不同來源模組）時回傳 undefined，讓引用查找對該檔得空結果——絕不可回退為 foreign
     // 節點的位置，否則會依偏移量巧合誤改無關符號。
-    return this.findImportBindingPosition(sourceFile, symbol.name, symbol.location.filePath);
+    return this.findImportBindingPosition(sourceFile, symbol.name, symbol.location.filePath, moduleResolver);
+  }
+
+  /**
+   * 判定 import/re-export module specifier 是否指向目標符號的來源。
+   *
+   * 有注入 moduleResolver（rename 引擎提供，具備 tsconfig 與專案檔上下文）時優先採用：可解析
+   * tsconfig path alias（缺陷 C3）並遞迴 barrel re-export 鏈（缺陷 C4）。否則退回內建的相對
+   * specifier 保守比對（find-references / call-hierarchy 等無注入者維持原行為）。
+   */
+  private specifierMatchesTarget(
+    importingFileName: string,
+    moduleSpecifier: string,
+    definitionFilePath: string,
+    moduleResolver?: ModuleSpecifierResolver
+  ): boolean {
+    if (moduleResolver) {
+      return moduleResolver(importingFileName, moduleSpecifier);
+    }
+    return this.moduleSpecifierMatchesDefinition(importingFileName, moduleSpecifier, definitionFilePath);
   }
 
   /**
@@ -301,7 +328,8 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   private findImportBindingPosition(
     sourceFile: ts.SourceFile,
     symbolName: string,
-    definitionFilePath: string
+    definitionFilePath: string,
+    moduleResolver?: ModuleSpecifierResolver
   ): number | undefined {
     for (const statement of sourceFile.statements) {
       if (!ts.isImportDeclaration(statement) || !statement.importClause) {
@@ -311,10 +339,11 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       if (!ts.isStringLiteral(statement.moduleSpecifier)) {
         continue;
       }
-      if (!this.moduleSpecifierMatchesDefinition(
+      if (!this.specifierMatchesTarget(
         sourceFile.fileName,
         statement.moduleSpecifier.text,
-        definitionFilePath
+        definitionFilePath,
+        moduleResolver
       )) {
         continue;
       }
@@ -358,7 +387,8 @@ export class LanguageServiceManager implements ILanguageServiceManager {
    */
   getAstDirectReferenceSpans(
     symbol: TypeScriptSymbol,
-    sourceFile: ts.SourceFile
+    sourceFile: ts.SourceFile,
+    moduleResolver?: ModuleSpecifierResolver
   ): Array<{ start: number; end: number }> {
     const spans: Array<{ start: number; end: number }> = [];
 
@@ -373,10 +403,11 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       ) {
         continue;
       }
-      if (!this.moduleSpecifierMatchesDefinition(
+      if (!this.specifierMatchesTarget(
         sourceFile.fileName,
         statement.moduleSpecifier.text,
-        symbol.location.filePath
+        symbol.location.filePath,
+        moduleResolver
       )) {
         continue;
       }
@@ -394,10 +425,46 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       }
     }
 
+    // (3) 別名具名 import 的被匯入名：`import { x as y } from './def'`
+    // LS 錨定於被匯入名 propertyName（x），但來源模組在單檔掛載下無法解析（memfs/未落盤）時，
+    // LS.findReferences 對該 propertyName 得空（其 export symbol 綁不回）——與 (1)(2) 同源問題（缺陷 N2-b）。
+    // 別名的本地綁定 y 與使用點 y() 屬使用者自訂別名、不應改名，故只補收被匯入名 x 的位置。
+    // 非別名 `import { x }` 的本地綁定名即 x，LS 可在單檔內綁回並回傳，無需在此重複收集。
+    for (const statement of sourceFile.statements) {
+      if (
+        !ts.isImportDeclaration(statement)
+        || !statement.importClause
+        || !ts.isStringLiteral(statement.moduleSpecifier)
+      ) {
+        continue;
+      }
+      const named = statement.importClause.namedBindings;
+      if (!named || !ts.isNamedImports(named)) {
+        continue;
+      }
+      if (!this.specifierMatchesTarget(
+        sourceFile.fileName,
+        statement.moduleSpecifier.text,
+        symbol.location.filePath,
+        moduleResolver
+      )) {
+        continue;
+      }
+      for (const element of named.elements) {
+        if (element.propertyName && element.propertyName.text === symbol.name) {
+          spans.push({
+            start: element.propertyName.getStart(sourceFile),
+            end: element.propertyName.getEnd()
+          });
+        }
+      }
+    }
+
     // (1) namespace import 成員存取：`ns.member`
     const namespaceLocalNames = this.collectVerifiedNamespaceLocalNames(
       sourceFile,
-      symbol.location.filePath
+      symbol.location.filePath,
+      moduleResolver
     );
     if (namespaceLocalNames.length > 0) {
       const memberName = symbol.name;
@@ -429,7 +496,8 @@ export class LanguageServiceManager implements ILanguageServiceManager {
    */
   private collectVerifiedNamespaceLocalNames(
     sourceFile: ts.SourceFile,
-    definitionFilePath: string
+    definitionFilePath: string,
+    moduleResolver?: ModuleSpecifierResolver
   ): string[] {
     const names: string[] = [];
     for (const statement of sourceFile.statements) {
@@ -439,10 +507,11 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       if (!ts.isStringLiteral(statement.moduleSpecifier)) {
         continue;
       }
-      if (!this.moduleSpecifierMatchesDefinition(
+      if (!this.specifierMatchesTarget(
         sourceFile.fileName,
         statement.moduleSpecifier.text,
-        definitionFilePath
+        definitionFilePath,
+        moduleResolver
       )) {
         continue;
       }
