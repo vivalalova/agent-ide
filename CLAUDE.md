@@ -115,6 +115,7 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 - bug 修復**先寫 reproduction test**（先紅後綠），重現案例直接寫成 `tests/` 下的 test case + 需要的 fixture 專案放 `tests/fixtures/`，成為永久 regression 覆蓋
 - **禁**用 scratchpad／臨時目錄做一次性手動重現後丟棄：可重用的案例才留得住、下次回歸才驗得到
 - 共用 fixture 用 `loadFixture()` 載入；單檔案案例可在測試內 `fixture.writeFile()` 寫入
+- 手動 CLI 重現／隔離實驗必帶 `--no-cache`：索引快取以路徑為 key，實驗中增刪改 fixture 檔案後不失效，會讀到舊索引汙染隔離結論
 
 ## CLI 命令
 
