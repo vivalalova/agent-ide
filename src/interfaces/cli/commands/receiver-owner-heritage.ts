@@ -16,43 +16,30 @@ import {
   findNearestLexicalDeclarationName
 } from '@plugins/typescript/lexical-scope-binding.js';
 
+/**
+ * receiver 型別對 owner 的三態歸屬：
+ *  - `'owner'`：確定為 owner（或其子類）→ 屬 owner 成員引用，保留。
+ *  - `'other'`：確定為其他型別（`new NotOwner()`、物件字面量、非 owner 型別註記等）→ 排除。
+ *  - `'unknown'`：語法層無法確定型別（工廠呼叫回傳、無型別註記的變數等）→ 由呼叫端決定，
+ *    預設寧可誤報不可漏報（保留）。工廠回傳實例（`const d = createDog(); d.bark()`）即此類：
+ *    owner 型別未 import 進本檔、初始化式非 `new`／無型別註記，型別推不出但仍是真實成員呼叫。
+ */
+type ReceiverOwnerVerdict = 'owner' | 'other' | 'unknown';
+
 export function receiverTargetsSelectedOwner(
   receiver: ts.Expression,
   bindings: SelectedSymbolBindings,
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
+  hasOwner: boolean
 ): boolean {
-  if (bindings.ownerNames.size === 0) {
+  // 選定符號並非類別成員（無 owner class 概念）→ receiver-owner 判定不適用，一律不算引用。
+  // 注意：owner class 存在但未被 import 進本檔時 ownerNames 亦為空集合，故不能用
+  // ownerNames.size === 0 當作「無 owner」的判準，否則工廠回傳實例的成員呼叫會被漏報。
+  if (!hasOwner) {
     return false;
   }
 
-  if (receiver.kind === ts.SyntaxKind.ThisKeyword) {
-    // 子類 this.method() 呼叫繼承自 owner 的成員：沿 enclosing class 的 heritage 鏈判斷
-    const enclosingClass = findAncestor(receiver, ts.isClassDeclaration);
-    return !!enclosingClass
-      && ts.isClassDeclaration(enclosingClass)
-      && classChainTargetsOwner(enclosingClass, candidate => bindings.ownerNames.has(candidate), sourceFile);
-  }
-
-  if (ts.isParenthesizedExpression(receiver)) {
-    return receiverTargetsSelectedOwner(receiver.expression, bindings, sourceFile);
-  }
-
-  if (ts.isNewExpression(receiver)) {
-    return constructorTargetsSelectedOwner(receiver.expression, bindings);
-  }
-
-  if (ts.isIdentifier(receiver)) {
-    return identifierReceiverEstablishesOwner(receiver, sourceFile, candidate => bindings.ownerNames.has(candidate));
-  }
-
-  return false;
-}
-
-function constructorTargetsSelectedOwner(
-  expression: ts.Expression,
-  bindings: SelectedSymbolBindings
-): boolean {
-  return ts.isIdentifier(expression) && bindings.ownerNames.has(expression.text);
+  return classifyReceiverOwner(receiver, candidate => bindings.ownerNames.has(candidate), sourceFile) !== 'other';
 }
 
 export function receiverTargetsOwnerName(
@@ -60,74 +47,131 @@ export function receiverTargetsOwnerName(
   ownerName: string,
   sourceFile: ts.SourceFile
 ): boolean {
-  if (ts.isParenthesizedExpression(receiver)) {
-    return receiverTargetsOwnerName(receiver.expression, ownerName, sourceFile);
-  }
-
-  if (ts.isNewExpression(receiver)) {
-    return constructorTargetsOwnerName(receiver.expression, ownerName);
-  }
-
-  if (ts.isIdentifier(receiver)) {
-    return identifierReceiverEstablishesOwner(receiver, sourceFile, candidate => candidate === ownerName);
-  }
-
-  return false;
-}
-
-function constructorTargetsOwnerName(expression: ts.Expression, ownerName: string): boolean {
-  return ts.isIdentifier(expression) && expression.text === ownerName;
+  return classifyReceiverOwner(receiver, candidate => candidate === ownerName, sourceFile) !== 'other';
 }
 
 /**
- * identifier receiver 是否綁定到 owner：以檔內「最近可見詞法宣告」為準，
+ * 判定 receiver 表達式的型別對 owner 的三態歸屬。
+ */
+function classifyReceiverOwner(
+  receiver: ts.Expression,
+  ownerMatches: (ownerName: string) => boolean,
+  sourceFile: ts.SourceFile
+): ReceiverOwnerVerdict {
+  if (ts.isParenthesizedExpression(receiver)) {
+    return classifyReceiverOwner(receiver.expression, ownerMatches, sourceFile);
+  }
+
+  if (receiver.kind === ts.SyntaxKind.ThisKeyword) {
+    // 子類 this.method() 呼叫繼承自 owner 的成員：沿 enclosing class 的 heritage 鏈判斷
+    const enclosingClass = findAncestor(receiver, ts.isClassDeclaration);
+    if (enclosingClass && ts.isClassDeclaration(enclosingClass)) {
+      return classChainTargetsOwner(enclosingClass, ownerMatches, sourceFile) ? 'owner' : 'other';
+    }
+    return 'other';
+  }
+
+  if (ts.isNewExpression(receiver)) {
+    return ts.isIdentifier(receiver.expression) && ownerMatches(receiver.expression.text) ? 'owner' : 'other';
+  }
+
+  if (ts.isIdentifier(receiver)) {
+    return classifyIdentifierReceiverOwner(receiver, sourceFile, ownerMatches);
+  }
+
+  // 其餘表達式（屬性存取鏈、索引存取等）：沿用既有保守策略，型別未確立即視為非 owner。
+  return 'other';
+}
+
+/**
+ * identifier receiver 對 owner 的三態歸屬：以檔內「最近可見詞法宣告」為準，
  * 不做全檔任意同名宣告掃描（後者會讓被區域宣告遮蔽的 receiver 誤綁外層宣告）。
  *
- * - 綁定到 import 或檔內 class 宣告 → receiver 名稱即 owner 名稱的直接引用，名稱比對。
- * - 綁定到變數宣告 → 唯該宣告本身可確立 owner 型別（new Owner() 或型別註記）才算。
- * - 綁定到其餘形式（參數、解構等無 owner 型別資訊）→ 非 owner。
+ * - 綁定到 import 或檔內 class 宣告 → receiver 名稱即型別名稱，名稱比對定 owner/other。
+ * - 綁定到變數宣告 → 交由 {@link classifyVariableDeclarationReceiverOwner} 判三態。
+ * - 綁定到其餘形式（參數、解構等無型別資訊）→ 沿用既有保守策略視為 other。
  * - 檔內無宣告（default import 綁定、全域）→ 名稱比對。
  */
-function identifierReceiverEstablishesOwner(
+function classifyIdentifierReceiverOwner(
   receiver: ts.Identifier,
   sourceFile: ts.SourceFile,
   ownerMatches: (ownerName: string) => boolean
-): boolean {
+): ReceiverOwnerVerdict {
   const nearest = findNearestLexicalDeclarationName(sourceFile, receiver, receiver.text);
   if (!nearest) {
-    return ownerMatches(receiver.text);
+    return ownerMatches(receiver.text) ? 'owner' : 'other';
   }
 
   const declaration = nearest.parent;
   if (ts.isImportSpecifier(declaration) || ts.isClassDeclaration(declaration)) {
-    return ownerMatches(receiver.text);
+    return ownerMatches(receiver.text) ? 'owner' : 'other';
   }
 
-  return ts.isVariableDeclaration(declaration)
-    && variableDeclarationEstablishesOwner(declaration, ownerMatches);
+  if (ts.isVariableDeclaration(declaration)) {
+    return classifyVariableDeclarationReceiverOwner(declaration, ownerMatches);
+  }
+
+  return 'other';
 }
 
 /**
- * 變數宣告是否可確立 owner 型別：`new Owner()` 初始化，或型別註記
- * `const svc: Owner = makeOwner()`（工廠／DI 常見形狀，初始化式非 new 亦可）。
+ * 變數宣告 receiver 對 owner 的三態歸屬：
+ * - `new Owner()` 或型別註記 `const svc: Owner = ...` → 確立為 owner。
+ * - `new NotOwner()`、物件／陣列／字面量／函式初始化，或非 owner 型別註記 → 確定為 other。
+ * - 其餘（工廠呼叫回傳、await、無初始化等，型別語法層推不出）→ unknown（保留，寧可誤報不漏報）。
  */
-function variableDeclarationEstablishesOwner(
+function classifyVariableDeclarationReceiverOwner(
   node: ts.VariableDeclaration,
   ownerMatches: (ownerName: string) => boolean
-): boolean {
+): ReceiverOwnerVerdict {
+  // new Owner() 初始化，或型別註記 const svc: Owner = makeOwner()（工廠／DI 常見形狀）
   if (
     node.initializer
     && ts.isNewExpression(node.initializer)
     && ts.isIdentifier(node.initializer.expression)
     && ownerMatches(node.initializer.expression.text)
   ) {
-    return true;
+    return 'owner';
   }
-
-  return !!node.type
+  if (
+    node.type
     && ts.isTypeReferenceNode(node.type)
     && ts.isIdentifier(node.type.typeName)
-    && ownerMatches(node.type.typeName.text);
+    && ownerMatches(node.type.typeName.text)
+  ) {
+    return 'owner';
+  }
+
+  // 初始化式形狀可確定「非 owner 實例」（含 new 其他類別、物件字面量等）
+  if (node.initializer && isDeterministicNonOwnerInitializer(node.initializer)) {
+    return 'other';
+  }
+
+  // 有型別註記但非 owner（且非上述）→ 確定非 owner
+  if (node.type && ts.isTypeReferenceNode(node.type) && ts.isIdentifier(node.type.typeName)) {
+    return 'other';
+  }
+
+  // 工廠呼叫回傳、await、無初始化等：型別無法在語法層確定
+  return 'unknown';
+}
+
+/**
+ * 初始化式是否為「型別可在語法層確定、且必非 owner 類別實例」的形狀：
+ * new 其他類別、物件／陣列字面量、原始字面量、函式表達式。
+ */
+function isDeterministicNonOwnerInitializer(init: ts.Expression): boolean {
+  return ts.isNewExpression(init)
+    || ts.isObjectLiteralExpression(init)
+    || ts.isArrayLiteralExpression(init)
+    || ts.isStringLiteral(init)
+    || ts.isNoSubstitutionTemplateLiteral(init)
+    || ts.isTemplateExpression(init)
+    || ts.isNumericLiteral(init)
+    || init.kind === ts.SyntaxKind.TrueKeyword
+    || init.kind === ts.SyntaxKind.FalseKeyword
+    || ts.isArrowFunction(init)
+    || ts.isFunctionExpression(init);
 }
 
 /**

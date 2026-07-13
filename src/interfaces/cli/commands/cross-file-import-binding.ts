@@ -325,7 +325,8 @@ export function locationMatchesSelectedBinding(
   sourceFile: ts.SourceFile,
   location: SymbolLocationTarget,
   bindings: SelectedSymbolBindings,
-  selectedSymbol: Symbol
+  selectedSymbol: Symbol,
+  selectedOwnerName: string | undefined
 ): boolean {
   let matches = false;
 
@@ -335,12 +336,12 @@ export function locationMatchesSelectedBinding(
     }
 
     if (ts.isCallExpression(node) && nodeStartsAtLocation(node, sourceFile, location)) {
-      matches = expressionTargetsSelectedBinding(node.expression, bindings, selectedSymbol, sourceFile);
+      matches = expressionTargetsSelectedBinding(node.expression, bindings, selectedSymbol, sourceFile, selectedOwnerName);
       return;
     }
 
     if (ts.isIdentifier(node) && nodeStartsAtLocation(node, sourceFile, location)) {
-      matches = identifierTargetsSelectedBinding(node, bindings, selectedSymbol, sourceFile);
+      matches = identifierTargetsSelectedBinding(node, bindings, selectedSymbol, sourceFile, selectedOwnerName);
       return;
     }
 
@@ -355,7 +356,8 @@ function expressionTargetsSelectedBinding(
   expression: ts.Expression,
   bindings: SelectedSymbolBindings,
   selectedSymbol: Symbol,
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
+  selectedOwnerName: string | undefined
 ): boolean {
   if (ts.isIdentifier(expression)) {
     return bindings.directNames.has(expression.text) && !identifierShadowedByLocalDeclaration(expression, sourceFile);
@@ -373,7 +375,14 @@ function expressionTargetsSelectedBinding(
       return true;
     }
 
-    return receiverTargetsSelectedOwner(expression.expression, bindings, sourceFile);
+    // owner 成員存取：selectedOwnerName 有值代表選定符號確為類別成員（即使 owner class
+    // 未 import 進本檔而 ownerNames 為空），據此區分「非成員符號的同名屬性」不誤留。
+    return receiverTargetsSelectedOwner(
+      expression.expression,
+      bindings,
+      sourceFile,
+      selectedOwnerName !== undefined
+    );
   }
 
   return false;
@@ -383,7 +392,8 @@ function identifierTargetsSelectedBinding(
   node: ts.Identifier,
   bindings: SelectedSymbolBindings,
   selectedSymbol: Symbol,
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
+  selectedOwnerName: string | undefined
 ): boolean {
   const parent = node.parent;
   if (
@@ -392,7 +402,7 @@ function identifierTargetsSelectedBinding(
     && parent.name === node
     && parent.name.text === selectedSymbol.name
   ) {
-    return expressionTargetsSelectedBinding(parent, bindings, selectedSymbol, sourceFile);
+    return expressionTargetsSelectedBinding(parent, bindings, selectedSymbol, sourceFile, selectedOwnerName);
   }
 
   // interface/type literal 屬性簽名鍵與 object literal 非 shorthand 鍵：名稱字面重合，

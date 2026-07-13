@@ -116,6 +116,7 @@ async function symbolLocationTargetsSelectedSymbol(
     analysis.sourceFile,
     location,
     analysis.bindings,
-    filterContext.selectedSymbol
+    filterContext.selectedSymbol,
+    filterContext.selectedOwnerName
   );
 }

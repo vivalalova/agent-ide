@@ -25,8 +25,13 @@ interface IdentifierReferenceInfo {
   kind: ScopedReferenceKind;
   /** 容器名稱（類別、函式等） */
   containerName?: string;
-  /** 是否為方法呼叫 */
+  /** 是否為方法呼叫（obj.method()） */
   isMethodCall: boolean;
+  /**
+   * 是否為屬性存取形（obj.method、obj.method()、this.method；不論是否被呼叫）。
+   * 用於區分「屬性存取」與「裸識別符」兩種引用形狀——className 過濾對兩者採不同判定。
+   */
+  isPropertyAccess: boolean;
   /** Receiver 類型（用於區分不同類別的同名方法） */
   receiverType?: string;
 }
@@ -83,16 +88,9 @@ export class ReferenceFinder {
           const refInfo = this.analyzeIdentifierReference(node, sourceFile);
 
           if (refInfo) {
-            // 如果指定了 className，過濾不匹配的引用
-            if (targetClassName && refInfo.containerName !== targetClassName) {
-              // 只有當引用確實是方法呼叫且 receiverType 不匹配時才過濾
-              if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-                // 但如果 receiverType === containerName，表示是 this.method() 呼叫
-                // 這種情況可能是子類呼叫繼承自父類的方法，不應該過濾
-                if (refInfo.receiverType !== refInfo.containerName) {
-                  return;
-                }
-              }
+            // 如果指定了 className，過濾不屬於該類別的引用
+            if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName)) {
+              return;
             }
 
             const range = tsNodeToRange(node, sourceFile);
@@ -124,6 +122,47 @@ export class ReferenceFinder {
   }
 
   /**
+   * 判斷某引用是否因不屬於目標類別而應被排除。
+   *
+   * 依引用的「形狀」分流，而非依賴常常推不出的 receiver 型別：
+   * - 目標類別內部（containerName === 目標類別）：保留（含方法定義本身、this.method）。
+   * - 屬性存取形（obj.method / obj.method() / this.method）：
+   *   - receiver 型別推不出（undefined）→ 保留（寧可誤報不可漏報；find-references 有
+   *     --at 後置過濾、deadcode 少刪安全）。
+   *   - receiver 型別即目標類別 → 保留。
+   *   - receiver 型別等於所在類別（子類 this.method() 呼叫繼承自父類的方法）→ 保留。
+   *   - receiver 型別確定為其他類別 → 排除。
+   * - 裸識別符形（standalone，非屬性存取）：在目標類別外部即詞法綁定到別的符號 → 排除。
+   */
+  private shouldExcludeByClassName(
+    refInfo: IdentifierReferenceInfo,
+    targetClassName: string
+  ): boolean {
+    // 目標類別內部的引用一律保留（方法定義本身、類別內 this-less 引用等）
+    if (refInfo.containerName === targetClassName) {
+      return false;
+    }
+
+    if (refInfo.isPropertyAccess) {
+      // 屬性存取形：靠 receiver 型別判定歸屬
+      if (refInfo.receiverType === undefined) {
+        return false;
+      }
+      if (refInfo.receiverType === targetClassName) {
+        return false;
+      }
+      // this.method()：receiverType 等於所在類別（子類呼叫繼承自父類的方法）
+      if (refInfo.receiverType === refInfo.containerName) {
+        return false;
+      }
+      return true;
+    }
+
+    // 裸識別符形且在目標類別外部：綁定到別的符號，排除
+    return true;
+  }
+
+  /**
    * 分析標識符引用的詳細資訊
    * 判斷引用類型（讀取/寫入/呼叫）和所屬容器
    * @param node TypeScript 標識符節點
@@ -143,13 +182,15 @@ export class ReferenceFinder {
       return {
         kind: ScopedReferenceKind.Import,
         containerName: this.findContainerName(node),
-        isMethodCall: false
+        isMethodCall: false,
+        isPropertyAccess: false
       };
     }
 
     // 判斷引用類型
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;
+    let isPropertyAccess = false;
     let receiverType: string | undefined;
 
     // 檢查是否為函式/方法呼叫
@@ -161,15 +202,17 @@ export class ReferenceFinder {
       }
     }
 
-    // 檢查是否為方法呼叫：obj.method()
+    // 檢查是否為屬性存取：obj.method（不論是否被呼叫）
     if (parent && ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      isPropertyAccess = true;
+      // 屬性存取皆嘗試推斷 receiver 型別（供 className 過濾判定歸屬）
+      receiverType = this.inferReceiverType(parent.expression, sourceFile);
+
+      // 進一步判斷是否為方法呼叫：obj.method()
       const grandParent = parent.parent;
       if (grandParent && ts.isCallExpression(grandParent) && grandParent.expression === parent) {
         kind = ScopedReferenceKind.Call;
         isMethodCall = true;
-
-        // 嘗試取得 receiver 的類型名稱
-        receiverType = this.inferReceiverType(parent.expression, sourceFile);
       }
     }
 
@@ -198,6 +241,7 @@ export class ReferenceFinder {
       kind,
       containerName,
       isMethodCall,
+      isPropertyAccess,
       receiverType
     };
   }

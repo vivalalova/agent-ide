@@ -29,8 +29,13 @@ interface ReferenceAnalysis {
   kind: ScopedReferenceKind;
   /** 容器名稱（類別或函式） */
   containerName?: string;
-  /** 是否為方法呼叫 */
+  /** 是否為方法呼叫（obj.method()） */
   isMethodCall: boolean;
+  /**
+   * 是否為屬性存取形（obj.method、obj.method()；不論是否被呼叫）。
+   * 用於區分「屬性存取」與「裸識別符」兩種引用形狀——className 過濾對兩者採不同判定。
+   */
+  isPropertyAccess: boolean;
   /** Receiver 類型名稱（用於區分不同類別的同名方法，如 dog.bark() 中 dog 的類型為 Dog） */
   receiverType?: string;
 }
@@ -152,11 +157,9 @@ export class ReferenceFinder {
         const refInfo = this.analyzeIdentifierReference(path, variableTypes);
 
         if (refInfo) {
-          // 如果指定了 className，過濾不匹配的引用
-          if (targetClassName && refInfo.containerName !== targetClassName) {
-            if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-              return;
-            }
+          // 如果指定了 className，過濾不屬於該類別的引用
+          if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName)) {
+            return;
           }
 
           const location = {
@@ -178,6 +181,47 @@ export class ReferenceFinder {
   }
 
   /**
+   * 判斷某引用是否因不屬於目標類別而應被排除。
+   *
+   * 依引用的「形狀」分流，而非依賴常常推不出的 receiver 型別（與 TS 側對齊）：
+   * - 目標類別內部（containerName === 目標類別）：保留（含方法定義本身、this.method）。
+   * - 屬性存取形（obj.method / obj.method()）：
+   *   - receiver 型別推不出（undefined）→ 保留（寧可誤報不可漏報；find-references 有
+   *     --at 後置過濾、deadcode 少刪安全）。
+   *   - receiver 型別即目標類別 → 保留。
+   *   - receiver 型別等於所在類別（子類 this.method() 呼叫繼承自父類的方法）→ 保留。
+   *   - receiver 型別確定為其他類別 → 排除。
+   * - 裸識別符形（standalone，非屬性存取）：在目標類別外部即詞法綁定到別的符號 → 排除。
+   */
+  private shouldExcludeByClassName(
+    refInfo: ReferenceAnalysis,
+    targetClassName: string
+  ): boolean {
+    // 目標類別內部的引用一律保留（方法定義本身、類別內 this-less 引用等）
+    if (refInfo.containerName === targetClassName) {
+      return false;
+    }
+
+    if (refInfo.isPropertyAccess) {
+      // 屬性存取形：靠 receiver 型別判定歸屬
+      if (refInfo.receiverType === undefined) {
+        return false;
+      }
+      if (refInfo.receiverType === targetClassName) {
+        return false;
+      }
+      // this.method()：receiverType 等於所在類別（子類呼叫繼承自父類的方法）
+      if (refInfo.receiverType === refInfo.containerName) {
+        return false;
+      }
+      return true;
+    }
+
+    // 裸識別符形且在目標類別外部：綁定到別的符號，排除
+    return true;
+  }
+
+  /**
    * 分析 JavaScript 標識符引用的詳細資訊
    * @param path Babel 標識符節點路徑
    * @param variableTypes 變數類型映射（來自快取）
@@ -196,12 +240,14 @@ export class ReferenceFinder {
       return {
         kind: ScopedReferenceKind.Import,
         containerName: this.findContainerName(path),
-        isMethodCall: false
+        isMethodCall: false,
+        isPropertyAccess: false
       };
     }
 
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;
+    let isPropertyAccess = false;
     let receiverType: string | undefined;
 
     // 檢查是否為函式呼叫
@@ -210,15 +256,17 @@ export class ReferenceFinder {
       isMethodCall = false;
     }
 
-    // 檢查是否為方法呼叫：obj.method()
+    // 檢查是否為屬性存取：obj.method（不論是否被呼叫）
     if (babel.isMemberExpression(parent) && parent.property === path.node && !parent.computed) {
+      isPropertyAccess = true;
+      // 屬性存取皆嘗試推斷 receiver 型別（供 className 過濾判定歸屬）
+      receiverType = this.inferReceiverType(parent.object, variableTypes);
+
+      // 進一步判斷是否為方法呼叫：obj.method()
       const grandParent = path.parentPath?.parent;
       if (babel.isCallExpression(grandParent) && grandParent.callee === parent) {
         kind = ScopedReferenceKind.Call;
         isMethodCall = true;
-
-        // 使用快取的變數類型映射來推斷 receiver 類型
-        receiverType = this.inferReceiverType(parent.object, variableTypes);
       }
     }
 
@@ -239,6 +287,7 @@ export class ReferenceFinder {
       kind,
       containerName,
       isMethodCall,
+      isPropertyAccess,
       receiverType
     };
   }
