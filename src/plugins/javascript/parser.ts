@@ -838,12 +838,18 @@ export class JavaScriptParser implements ParserPlugin {
       return false;
     }
 
-    // 🚨 過濾：跳過 import/export 的字串部分
-    // 例如：import { foo as oldName } from 'module' 中的 foo
+    // import specifier 的 imported（外部/被匯出名稱）節點
+    // 例如 `import { greet2 as g }` 中的 greet2
     if (babel.isImportSpecifier(parent) && parent.imported === node) {
-      // imported 是外部名稱，不應重命名（除非是 default）
-      // 只有 local 是本地名稱才需要重命名
-      return false;
+      // 別名 import（`import { x as y }`）：本地別名 y 及其呼叫沿用別名、不動，
+      //   唯有外部（被匯出）名稱 x 需要跟著 export 一起改名 → 視此節點為引用。
+      // 非別名 import（`import { x }`）：imported 與 local 為兩個範圍相同的節點，
+      //   交由 local 節點的 visit 處理改名，此處略過以免對同一段文字重複編輯。
+      // 函式區域符號不可能被 import 的外部名稱引用。
+      const local = parent.local;
+      return !isFunctionLocalSymbol(symbol)
+        && babel.isIdentifier(local)
+        && local.name !== node.name;
     }
 
     if (isFunctionLocalSymbol(symbol)) {
@@ -854,8 +860,26 @@ export class JavaScriptParser implements ParserPlugin {
       return this.isSameBabelBinding(path, symbol);
     }
 
-    // 基本的作用域檢查
-    // Babel traverse 的 path 已經處理了作用域，字串和註解不會進入這裡
+    // 頂層（模組層）符號：做 module binding 驗證，避免誤改「其他檔案自己的
+    // 同名頂層定義」（例如另一檔各自宣告的 `function greet`）。跨檔引用只有透過
+    // import 綁定（Babel binding.kind === 'module'）建立關聯、或就在定義檔本身
+    // （binding 即符號自身宣告節點）才算目標引用。
+    //
+    // 僅在具備完整符號（帶 babelNode，如 rename/scoped find-references）時收斂；
+    // 無 babelNode 的虛擬符號（findReferencesInFile 以名稱查找，如 deadcode
+    // import-cleaner）沿用寬鬆比對。
+    if (symbol.babelNode) {
+      const binding = path.scope.getBinding(node.name);
+      // 綁定到本檔的區域宣告（function/const/let/var/class/param，kind 非 'module'）時，
+      // 僅當它就是本符號的定義節點才算引用；否則是另一個同名的獨立符號 → 排除。
+      if (binding && binding.kind !== 'module') {
+        return this.isSameBabelBinding(path, symbol);
+      }
+    }
+
+    // 無 binding（如 namespace 成員存取，交由上層查詢過濾）或為 import/module
+    // binding：維持寬鬆候選集，符合 find-references「先廣收候選、再由 CLI 過濾層
+    // 依模組消歧」的既有設計。
     return true;
   }
 
