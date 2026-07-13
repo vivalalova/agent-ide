@@ -51,8 +51,16 @@ export class DeadCodeRemover {
 
   /**
    * 預覽刪除操作
+   *
+   * @param deadCodeItems 待刪除的死代碼項目
+   * @param projectFiles 專案全部檔案路徑（可選）。提供時 import 清理會掃描這些 consumer
+   *   檔案，清掉「引用了被刪 export 符號、但自身沒有任何刪除項」的殘留 import specifier
+   *   （N3）；未提供時退回只掃描有刪除項的檔案（向後相容）。
    */
-  async preview(deadCodeItems: readonly DeadCodeItem[]): Promise<DeadCodeRemovalPreview> {
+  async preview(
+    deadCodeItems: readonly DeadCodeItem[],
+    projectFiles?: readonly string[]
+  ): Promise<DeadCodeRemovalPreview> {
     try {
       // 1. 過濾符合條件的項目
       const { filteredItems, warnings } = this.filterItems(deadCodeItems);
@@ -68,7 +76,7 @@ export class DeadCodeRemover {
       // 3. 分析並產生 import 清理操作
       let importCleanups: ImportCleanupOperation[] = [];
       if (this.options.cleanupImports) {
-        const importResult = await this.importCleaner.analyzeImportCleanups(removals);
+        const importResult = await this.importCleaner.analyzeImportCleanups(removals, projectFiles);
         importCleanups = importResult.cleanups;
         warnings.push(...importResult.warnings);
       }
@@ -104,12 +112,15 @@ export class DeadCodeRemover {
    * @param deadCodeItems 待刪除的死代碼項目
    * @returns Changeset 變更集
    */
-  async generateChangeset(deadCodeItems: readonly DeadCodeItem[]): Promise<Changeset> {
+  async generateChangeset(
+    deadCodeItems: readonly DeadCodeItem[],
+    projectFiles?: readonly string[]
+  ): Promise<Changeset> {
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.Deadcode);
 
     // 使用現有的 preview 邏輯收集變更
-    const preview = await this.preview(deadCodeItems);
+    const preview = await this.preview(deadCodeItems, projectFiles);
 
     if (!preview.success) {
       return builder

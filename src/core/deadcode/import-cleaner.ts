@@ -3,7 +3,9 @@
  * 負責分析和清理未使用的 import
  */
 
+import * as path from 'node:path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { stripSourceFileExtension } from '@shared/types/index.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
@@ -34,16 +36,33 @@ export class ImportCleaner {
   /**
    * 分析需要清理的 import
    * 支援部分清理：當 import { A, B, C } 中只有部分符號未使用時，保留其他符號
+   *
+   * @param removals 已產生的刪除操作
+   * @param projectFiles 專案全部檔案路徑（可選）。提供時除了有刪除項的檔案，也一併掃描這些
+   *   consumer 檔案——被刪 export 符號在其他檔案的 import specifier 必須一起清掉，否則 apply
+   *   後殘留指向已不存在符號的 import，編譯必壞（N3）。未提供時只掃有刪除項的檔案（向後相容）。
    */
   async analyzeImportCleanups(
-    removals: readonly RemovalOperation[]
+    removals: readonly RemovalOperation[],
+    projectFiles?: readonly string[]
   ): Promise<{ cleanups: ImportCleanupOperation[]; warnings: string[] }> {
     const cleanups: ImportCleanupOperation[] = [];
     const warnings: string[] = [];
-    const affectedFiles = new Set(removals.map(r => r.filePath));
-    const removedSymbols = new Set(removals.map(r => r.symbolName));
+    const removalFiles = removals.map(r => r.filePath);
+    // 分組刪除操作的 symbolName 可能是逗號串接（多宣告子 run），拆開還原成個別符號名，
+    // 才能正確比對 consumer 端 import 的具名符號
+    const removedSymbols = new Set(
+      removals.flatMap(r => r.symbolName.split(',').map(name => name.trim()).filter(Boolean))
+    );
+    const removalFilesSet = new Set(removalFiles);
+    // 被刪符號定義檔（去副檔名），用來把 consumer 檔的 import 精準綁回真正被刪的來源模組，
+    // 避免「同名但來自其他模組」的 import 被誤清（誤清一個仍在使用的 import 會直接編譯壞掉）
+    const removalFilesNoExt = new Set(removalFiles.map(f => stripSourceFileExtension(f)));
+    const filesToScan = projectFiles && projectFiles.length > 0
+      ? new Set<string>([...removalFiles, ...projectFiles])
+      : new Set<string>(removalFiles);
 
-    for (const filePath of affectedFiles) {
+    for (const filePath of filesToScan) {
       const content = await this.readFile(filePath);
       if (!content) {
         warnings.push(`跳過 import 清理：無法讀取檔案 ${filePath}`);
@@ -53,8 +72,15 @@ export class ImportCleaner {
       // 解析 import 語句（以語句為單位）
       const importStatements = this.importParser.parseImportStatements(content, filePath);
       const fileRemovals = removals.filter(r => r.filePath === filePath);
+      // 純 consumer 檔（自身沒有任何刪除項）：只處理來源模組解析到「被刪符號定義檔」的 import，
+      // 其餘 import 即使有同名符號也不動。有刪除項的檔案維持既有行為（連帶清理因刪除而
+      // 變未使用的其他 import）。
+      const isConsumerOnly = !removalFilesSet.has(filePath);
 
       for (const stmt of importStatements) {
+        if (isConsumerOnly && !this.importFromRemovalFile(filePath, stmt.statement, removalFilesNoExt)) {
+          continue;
+        }
         // 找出此 import 中需要清理的符號
         const unusedSymbols: string[] = [];
         const usedSymbols: string[] = [];
@@ -198,6 +224,28 @@ export class ImportCleaner {
     }
 
     return typeOnlyNames;
+  }
+
+  /**
+   * 判斷一句 import 的來源模組（相對路徑）解析後是否指向任一被刪符號的定義檔。
+   * 只解析相對路徑（`.` 開頭）；bare specifier（套件匯入）不可能指向本地被刪檔，直接回 false。
+   * 以去副檔名後的絕對路徑比對，涵蓋 `./x`（無副檔名）與 `./x.js`（ESM 指向 .ts）兩種寫法。
+   */
+  private importFromRemovalFile(
+    consumerFilePath: string,
+    statement: string,
+    removalFilesNoExt: ReadonlySet<string>
+  ): boolean {
+    const fromMatch = statement.match(/from\s+(['"])(.+?)\1/);
+    if (!fromMatch) {
+      return false;
+    }
+    const moduleSpecifier = fromMatch[2];
+    if (!moduleSpecifier.startsWith('.')) {
+      return false;
+    }
+    const resolved = path.resolve(path.dirname(consumerFilePath), moduleSpecifier);
+    return removalFilesNoExt.has(stripSourceFileExtension(resolved));
   }
 
   /**

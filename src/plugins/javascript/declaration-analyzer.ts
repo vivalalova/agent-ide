@@ -92,6 +92,7 @@ export class DeclarationAnalyzer {
 
       let targetNode: babel.Node | null = null;
       let declaratorMatch: { declarations: babel.VariableDeclarator[]; index: number } | null = null;
+      let objectMemberMatch: { members: babel.Node[]; index: number } | null = null;
 
       traverse(ast, {
         FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
@@ -140,6 +141,29 @@ export class DeclarationAnalyzer {
               path.stop();
             }
           }
+        },
+
+        // 處理物件字面值方法（ObjectMethod，如 `const o = { dead() {...} }`）：
+        // 被索引為 SymbolType.Function，但它是物件成員、非獨立宣告。沒有專屬分支時
+        // getFullDeclarationRange 回傳 null，呼叫端 fallback 到整行/大括號展開刪除，會把
+        // 同物件內仍在使用的其他成員（甚至整個 `const o` 宣告）一起刪掉（C16）。此處改算出
+        // 精確的成員手術範圍（含分隔逗號），與多宣告子 run 移除共用同一套逗號手術邏輯。
+        ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
+          if (symbolType !== 'function' || !babel.isIdentifier(path.node.key) || path.node.key.name !== symbolName) {
+            return;
+          }
+          if (!this.isNodeLineMatch(path.node, startLine)) {
+            return;
+          }
+          const parent = path.parent;
+          if (!babel.isObjectExpression(parent)) {
+            return;
+          }
+          const index = parent.properties.indexOf(path.node);
+          if (index !== -1) {
+            objectMemberMatch = { members: [...parent.properties], index };
+            path.stop();
+          }
         }
       });
 
@@ -147,6 +171,13 @@ export class DeclarationAnalyzer {
         const match = declaratorMatch as { declarations: babel.VariableDeclarator[]; index: number };
         return this.computeDeclaratorRunRemovalRange(
           code, match.declarations, match.index, match.index, ast.comments ?? []
+        );
+      }
+
+      if (objectMemberMatch) {
+        const match = objectMemberMatch as { members: babel.Node[]; index: number };
+        return this.computeDeclaratorRunRemovalRange(
+          code, match.members, match.index, match.index, ast.comments ?? []
         );
       }
 
@@ -312,7 +343,7 @@ export class DeclarationAnalyzer {
    */
   private computeDeclaratorRunRemovalRange(
     code: string,
-    declarations: readonly babel.VariableDeclarator[],
+    declarations: readonly babel.Node[],
     startIndex: number,
     endIndex: number,
     comments: readonly babel.Comment[]
