@@ -44,6 +44,22 @@ interface ReexportForward {
   readonly exportedName?: string;
 }
 
+/**
+ * 單一檔案中對目標符號的本地繫結
+ */
+interface TargetFileBindings {
+  /**
+   * 以「識別字」直接呼叫目標的本地名稱集合：目標定義檔中的函式名本身，
+   * 以及具名／別名／default import 的本地繫結名（`import { combine as merge }` → `merge`）。
+   */
+  readonly localNames: Set<string>;
+  /**
+   * namespace import 的 receiver 名稱集合（`import * as lib` → `lib`），
+   * 呼叫形如 `<receiver>.<functionName>(...)`。
+   */
+  readonly namespaceReceivers: Set<string>;
+}
+
 /** tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
 export interface ChangeSignaturePathConfig {
   readonly pathAliases?: Record<string, string>;
@@ -187,50 +203,60 @@ export class ChangeSignatureEngine {
       const isConstructorTarget = constructorClassName !== undefined;
       const searchName = constructorClassName ?? options.functionName;
 
-      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標」的檔案——目標定義檔本身，
-      // 以及直接 import 該符號（constructor 為類別名）自目標檔的檔案。避免全專案掃同名而誤改跨檔同名符號。
-      const relevantFiles = await this.filterFilesReferencingTarget(
+      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標」的檔案。逐檔解析出目標符號的本地繫結
+      // （named／alias／default import 的本地名、namespace import 的 receiver，以及遞迴 barrel
+      // re-export 轉發），避免全專案掃同名而誤改跨檔同名符號。
+      const bindings = await this.resolveTargetBindings(
         projectFiles,
         options.filePath,
         searchName
       );
 
-      // constructor 目標才 opt-in 掃描 new-expression，避免變更其他消費端（如 call-hierarchy）行為。
-      const allCallSites = await this.symbolFinder.findCallSites(
-        searchName,
-        relevantFiles,
-        { includeNewExpressions: isConstructorTarget }
-      );
+      if (isConstructorTarget || originalSignature.isMethod) {
+        // constructor／method 目標維持既有「以目標名全域掃描 + 型別安全性拒絕」路徑：
+        // 僅取「以本地名 === 目標名」繫結的檔案（不含 alias／namespace），與舊行為對齊。
+        const relevantFiles = [...bindings.keys()].filter(
+          file => bindings.get(file)?.localNames.has(searchName)
+        );
+        // constructor 目標才 opt-in 掃描 new-expression，避免變更其他消費端（如 call-hierarchy）行為。
+        const allCallSites = await this.symbolFinder.findCallSites(
+          searchName,
+          relevantFiles,
+          { includeNewExpressions: isConstructorTarget }
+        );
 
-      if (isConstructorTarget) {
-        // `new ns.ClassName(...)`（帶 receiver）需型別解析才能確認指向同一類別，無此基礎設施 → 拒絕。
-        const qualifiedNewCallSites = allCallSites.filter(cs => cs.isNewExpression && cs.isMethodCall);
-        if (qualifiedNewCallSites.length > 0) {
-          return this.createErrorResult(
-            ChangeSignatureErrorCode.MethodCallSiteUnsupported,
-            `偵測到 ${qualifiedNewCallSites.length} 個限定式建構子呼叫點（new receiver.Class(...)），` +
-            `無型別解析無法安全重寫：${this.formatCallSitePositions(qualifiedNewCallSites)}`
-          );
+        if (isConstructorTarget) {
+          // `new ns.ClassName(...)`（帶 receiver）需型別解析才能確認指向同一類別，無此基礎設施 → 拒絕。
+          const qualifiedNewCallSites = allCallSites.filter(cs => cs.isNewExpression && cs.isMethodCall);
+          if (qualifiedNewCallSites.length > 0) {
+            return this.createErrorResult(
+              ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+              `偵測到 ${qualifiedNewCallSites.length} 個限定式建構子呼叫點（new receiver.Class(...)），` +
+              `無型別解析無法安全重寫：${this.formatCallSitePositions(qualifiedNewCallSites)}`
+            );
+          }
+          callSites = allCallSites.filter(cs => cs.isNewExpression === true && !cs.isMethodCall);
+        } else {
+          // T1：目標「本身是 class 方法」時，同名的方法呼叫點（`calc.add(1, 2)`）確為對目標的引用，
+          // 但重寫需 receiver 型別解析才能避免把無關類別的同名方法（各種 `.add()`）一起改壞；本工具
+          // 無型別解析基礎設施。故偵測到即拒絕，不再靜默丟棄——靜默丟棄會造成定義改了、方法呼叫點
+          // 沒動的毀損（success:true 但呼叫端停在舊引數順序）。
+          const methodCallSites = allCallSites.filter(cs => cs.isMethodCall);
+          if (methodCallSites.length > 0) {
+            return this.createErrorResult(
+              ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+              `偵測到 ${methodCallSites.length} 個方法呼叫點，方法呼叫點重寫不受支援（需 receiver 型別解析）：` +
+              `${this.formatCallSitePositions(methodCallSites)}`
+            );
+          }
+          callSites = allCallSites.filter(cs => !cs.isMethodCall);
         }
-        callSites = allCallSites.filter(cs => cs.isNewExpression === true && !cs.isMethodCall);
-      } else if (originalSignature.isMethod) {
-        // T1：目標「本身是 class 方法」時，同名的方法呼叫點（`calc.add(1, 2)`）確為對目標的引用，
-        // 但重寫需 receiver 型別解析才能避免把無關類別的同名方法（各種 `.add()`）一起改壞；本工具
-        // 無型別解析基礎設施。故偵測到即拒絕，不再靜默丟棄——靜默丟棄會造成定義改了、方法呼叫點
-        // 沒動的毀損（success:true 但呼叫端停在舊引數順序）。
-        const methodCallSites = allCallSites.filter(cs => cs.isMethodCall);
-        if (methodCallSites.length > 0) {
-          return this.createErrorResult(
-            ChangeSignatureErrorCode.MethodCallSiteUnsupported,
-            `偵測到 ${methodCallSites.length} 個方法呼叫點，方法呼叫點重寫不受支援（需 receiver 型別解析）：` +
-            `${this.formatCallSitePositions(methodCallSites)}`
-          );
-        }
-        callSites = allCallSites.filter(cs => !cs.isMethodCall);
       } else {
-        // 目標是頂層函數／變數函數：同名的方法呼叫點（如 `console.log(...)` 之於頂層 `log`）屬無關符號，
-        // 頂層函數不可能被 `obj.method()` 形式引用，靜默過濾為正確行為（不觸發拒絕）。
-        callSites = allCallSites.filter(cs => !cs.isMethodCall);
+        // 目標是頂層函數／變數函數：逐檔以「該檔實際繫結目標的本地名」定位呼叫點——
+        // 直接／具名／別名 import 以本地識別字呼叫（`combine(...)`、別名 `merge(...)`），
+        // namespace import 以 `<receiver>.<functionName>(...)` 呼叫。以本地名精確比對，
+        // 天然排除無關同名符號（不需再靠 method-call 全域過濾，該過濾會誤殺 namespace 呼叫）。
+        callSites = await this.collectTopLevelFunctionCallSites(bindings, options.functionName);
       }
 
       // 呼叫點含 spread 引數（如 `f(...values)`）時，CallSiteUpdater 依「定位索引」重新映射
@@ -1084,9 +1110,17 @@ export class ChangeSignatureEngine {
 
     // 生成新的參數列表
     const newParamsString = this.generateParameterString(newSignature, filePath);
-    const signatureStartOffset = originalSignature.location.range.start.offset
+
+    // 宣告替換範圍完全錨定 AST 宣告節點座標：signature-parser 的 regex 元資訊路徑
+    // 會把「同檔中先於宣告出現的同名呼叫點」誤當宣告起點（bare identifier 命中
+    // class-method 交替分支），導致 offset 指向呼叫點、與 AST 參數括號組出跨越呼叫點到
+    // 宣告的超大範圍，與呼叫點自身的重寫 edit 互相重疊。故 AST 命中時一律以 AST 宣告節點
+    // 起點為替換起點；僅在 AST 無法定位（非 TS/JS 或解析失敗）時 fallback 回 regex offset + scanner。
+    const astRange = this.findParameterListRangeWithAst(content, filePath, originalSignature);
+    const signatureStartOffset = astRange?.declarationStartIndex
+      ?? originalSignature.location.range.start.offset
       ?? this.positionToOffset(lines, originalSignature.location.range.start.line, originalSignature.location.range.start.column);
-    const parameterRange = this.findParameterListRangeWithAst(content, filePath, originalSignature)
+    const parameterRange = astRange?.range
       ?? this.findParameterListRangeWithScanner(content, signatureStartOffset);
     if (!parameterRange) {
       throw new Error(`找不到函式 ${originalSignature.name} 的參數結束括號`);
@@ -1133,11 +1167,14 @@ export class ChangeSignatureEngine {
     filePath: string,
     signature: FunctionSignature
   ): {
-    openParenIndex: number;
-    closeParenIndex: number;
-  } | {
-    parameterStartIndex: number;
-    parameterEndIndex: number;
+    declarationStartIndex: number;
+    range: {
+      openParenIndex: number;
+      closeParenIndex: number;
+    } | {
+      parameterStartIndex: number;
+      parameterEndIndex: number;
+    };
   } | null {
     const sourceFile = ts.createSourceFile(
       filePath,
@@ -1156,7 +1193,7 @@ export class ChangeSignatureEngine {
     const closeParenIndex = this.findCloseParenAfterParameters(content, targetFunction.parameters.end);
 
     if (openParenIndex >= 0 && closeParenIndex >= 0) {
-      return { openParenIndex, closeParenIndex };
+      return { declarationStartIndex: declarationStart, range: { openParenIndex, closeParenIndex } };
     }
 
     // 裸單參數箭頭函式（`x => ...`）的 AST 參數節點本身就是可替換的完整範圍。
@@ -1164,8 +1201,11 @@ export class ChangeSignatureEngine {
     if (ts.isArrowFunction(targetFunction) && targetFunction.parameters.length === 1 && openParenIndex < 0) {
       const parameter = targetFunction.parameters[0];
       return {
-        parameterStartIndex: parameter.getStart(sourceFile),
-        parameterEndIndex: parameter.getEnd()
+        declarationStartIndex: declarationStart,
+        range: {
+          parameterStartIndex: parameter.getStart(sourceFile),
+          parameterEndIndex: parameter.getEnd()
+        }
       };
     }
 
@@ -1366,113 +1406,184 @@ export class ChangeSignatureEngine {
   }
 
   /**
-   * 過濾出「語意上可能引用目標函式」的檔案：目標定義檔本身，
-   * 直接（named / default）import 目標符號自目標檔的檔案，
-   * 以及透過單層 barrel re-export（`export { name } from '<spec>'` 未 alias 改名，
-   * 或 `export * from '<spec>'`）間接 import 到目標符號的檔案。
+   * 逐檔解析出「對目標符號的本地繫結」，回傳 file -> 繫結資訊 的 map。
+   * 涵蓋：目標定義檔本身（本地名 = 目標名）、具名／別名／default import 的本地名、
+   * namespace import 的 receiver，以及透過遞迴 barrel re-export（多層 `export { name } from`
+   * 未 alias 改名，或 `export * from`）間接 import 到目標符號的檔案。
    *
    * 界線（記載於此）：import specifier 解析涵蓋相對路徑與 tsconfig paths 別名／baseUrl
    * （交由 PathUtils，與 move / move-member 同一把尺）；node_modules 套件不在判定範圍內；
-   * re-export 轉發僅涵蓋單層（consumer -> 一層中介檔 -> 目標檔），不遞迴多層 barrel，
-   * 且中介檔的 re-export 若對符號改名（`export { f as g }`）視為不同符號、不算轉發。
-   * 此為「寧可漏掃、不可誤傷」的取捨——避免把跨檔同名的不同符號呼叫點誤改。
-   * 命名空間 import（`import * as ns`）與 `export * as ns from` 的呼叫/轉發形如
-   * `ns.fn(...)`，屬 method call 已在後續被過濾，故不需納入。
+   * re-export 轉發遞迴多層並以 visited set 防環，具名轉發需未 alias 改名（`export { f as g }`
+   * 視為不同符號、不算轉發）。以「本地繫結名」精確定位呼叫點——不再靠 method-call 全域過濾，
+   * 故 namespace import 的 `ns.fn(...)` 呼叫得以被納入（見 collectTopLevelFunctionCallSites）。
    */
-  private async filterFilesReferencingTarget(
+  private async resolveTargetBindings(
     files: readonly string[],
     targetFilePath: string,
-    functionName: string
-  ): Promise<string[]> {
+    name: string
+  ): Promise<Map<string, TargetFileBindings>> {
     const targetAbsolute = path.resolve(targetFilePath);
-    const result: string[] = [];
+    const bindings = new Map<string, TargetFileBindings>();
     // per-run cache：同一次呼叫內，同一個中介檔（barrel）的 re-export 轉發只解析一次，
     // 避免多個 consumer 檔重複讀取/解析同一個中介檔
     const reexportCache = new Map<string, readonly ReexportForward[]>();
 
+    const ensure = (file: string): TargetFileBindings => {
+      let entry = bindings.get(file);
+      if (!entry) {
+        entry = { localNames: new Set<string>(), namespaceReceivers: new Set<string>() };
+        bindings.set(file, entry);
+      }
+      return entry;
+    };
+
     for (const file of files) {
       if (path.resolve(file) === targetAbsolute) {
-        result.push(file);
+        // 目標定義檔：以自身函式名做識別字呼叫（涵蓋同檔內的呼叫點）
+        ensure(file).localNames.add(name);
         continue;
       }
-      if (await this.fileImportsSymbolFromTarget(file, targetAbsolute, functionName, files, reexportCache)) {
-        result.push(file);
+
+      const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(file));
+      if (!parser?.getImportDeclarations) {
+        continue;
+      }
+      const content = await this.fileUtils.readFile(file);
+      if (!content) {
+        continue;
+      }
+
+      const declarations = parser.getImportDeclarations(content) ?? [];
+      for (const declaration of declarations) {
+        if (declaration.isTypeOnly) {
+          continue; // type-only import 不會產生 runtime 呼叫點
+        }
+
+        const moduleExposesTarget = await this.moduleExposesTargetFunction(
+          file,
+          declaration.moduleSpecifier,
+          name,
+          targetAbsolute,
+          files,
+          reexportCache
+        );
+        if (!moduleExposesTarget) {
+          continue;
+        }
+
+        // 具名 import：以「匯出名 === 目標名」判定是否指向目標，本地繫結名為 alias ?? name
+        // （`import { combine as merge }` → 匯出名 combine、本地名 merge）
+        for (const spec of declaration.namedImports) {
+          if (spec.isTypeOnly) {
+            continue;
+          }
+          if (spec.name === name) {
+            ensure(file).localNames.add(spec.alias ?? spec.name);
+          }
+        }
+
+        // default import：沿用「本地名 === 目標名」的既有啟發式判定
+        if (declaration.defaultImport === name) {
+          ensure(file).localNames.add(name);
+        }
+
+        // namespace import：`import * as ns` → `ns.<name>(...)` 呼叫
+        if (declaration.namespaceImport) {
+          ensure(file).namespaceReceivers.add(declaration.namespaceImport);
+        }
       }
     }
 
-    return result;
+    return bindings;
   }
 
   /**
-   * 判斷檔案是否以本地名稱 functionName 直接或透過單層 barrel re-export
-   * import 目標檔匯出的符號。呼叫點以「本地繫結名稱」呼叫，且 findCallSites
-   * 只比對 functionName，故僅需確認本地繫結名稱等於 functionName。
+   * 收集頂層函數／變數函數目標的呼叫點：逐檔以該檔實際繫結目標的本地名定位。
+   * - localNames：以識別字呼叫（`combine(...)`、別名 `merge(...)`），取非 method、非 new 呼叫點。
+   * - namespaceReceivers：`<receiver>.<functionName>(...)`，取 receiver 相符的 method 呼叫點。
+   * 以 (檔案:行:列) 去重，避免同一呼叫點被多個本地名重複收集。
    */
-  private async fileImportsSymbolFromTarget(
-    filePath: string,
+  private async collectTopLevelFunctionCallSites(
+    bindings: Map<string, TargetFileBindings>,
+    functionName: string
+  ): Promise<CallSite[]> {
+    const collected: CallSite[] = [];
+    const seen = new Set<string>();
+
+    const add = (callSite: CallSite): void => {
+      const { filePath, range } = callSite.location;
+      const key = `${filePath}:${range.start.line}:${range.start.column}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      collected.push(callSite);
+    };
+
+    for (const [file, binding] of bindings) {
+      for (const localName of binding.localNames) {
+        const sites = await this.symbolFinder.findCallSitesInFile(file, localName);
+        for (const site of sites) {
+          if (!site.isMethodCall && site.isNewExpression !== true) {
+            add(site);
+          }
+        }
+      }
+
+      if (binding.namespaceReceivers.size > 0) {
+        const sites = await this.symbolFinder.findCallSitesInFile(file, functionName);
+        for (const site of sites) {
+          if (site.isMethodCall && site.isNewExpression !== true && site.receiver !== undefined
+              && binding.namespaceReceivers.has(site.receiver)) {
+            add(site);
+          }
+        }
+      }
+    }
+
+    return collected;
+  }
+
+  /**
+   * 判斷某個 import specifier 是否讓 consumer 取得「源自目標檔」的 name 匯出：
+   * specifier 直接解析到目標檔，或透過（遞迴）barrel re-export 轉發 name 回目標檔。
+   */
+  private async moduleExposesTargetFunction(
+    consumerFilePath: string,
+    moduleSpecifier: string,
+    name: string,
     targetAbsolute: string,
-    functionName: string,
     allFiles: readonly string[],
     reexportCache: Map<string, readonly ReexportForward[]>
   ): Promise<boolean> {
-    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
-    if (!parser?.getImportDeclarations) {
-      return false;
+    if (this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, targetAbsolute)) {
+      return true;
     }
-
-    const content = await this.fileUtils.readFile(filePath);
-    if (!content) {
-      return false;
-    }
-
-    const declarations = parser.getImportDeclarations(content) ?? [];
-    for (const declaration of declarations) {
-      if (declaration.isTypeOnly) {
-        continue; // type-only import 不會產生 runtime 呼叫點
-      }
-
-      const bindsLocalName =
-        declaration.defaultImport === functionName
-        || declaration.namedImports.some(spec => (spec.alias ?? spec.name) === functionName);
-      if (!bindsLocalName) {
-        continue;
-      }
-
-      if (this.importSpecifierResolvesToTarget(filePath, declaration.moduleSpecifier, targetAbsolute)) {
-        return true;
-      }
-
-      if (await this.resolvesToTargetViaSingleLevelReexport(
-        filePath,
-        declaration.moduleSpecifier,
-        functionName,
-        targetAbsolute,
-        allFiles,
-        reexportCache
-      )) {
-        return true;
-      }
-    }
-
-    return false;
+    return this.resolvesToTargetViaReexport(
+      consumerFilePath,
+      moduleSpecifier,
+      name,
+      targetAbsolute,
+      allFiles,
+      reexportCache,
+      new Set<string>()
+    );
   }
 
   /**
-   * 單層 re-export 判定：import specifier 若解析到專案內某個「中介檔」
-   * （非目標檔本身），讀取該中介檔的匯出宣告，檢查是否以 named（未被 alias
-   * 改名）或 star 形式將目標檔的 functionName 轉發出來。僅單層，不遞迴。
-   *
-   * 模組路徑解析沿用 importSpecifierResolvesToTarget：先找出 consumer 的
-   * import specifier 解析到的中介檔，再確認中介檔的 re-export specifier
-   * 是否解析回目標檔。
+   * 遞迴 re-export 判定：import specifier 解析到專案內某個「中介檔」（barrel）時，
+   * 讀取其匯出宣告，若以 named（未 alias 改名）或 star 形式轉發 name，
+   * 再確認該轉發的來源 specifier 直接解析回目標檔，或（遞迴）經更深一層 barrel 轉發回目標檔。
+   * visited set 以中介檔絕對路徑去重，防止 re-export 成環時無限遞迴。
    */
-  private async resolvesToTargetViaSingleLevelReexport(
+  private async resolvesToTargetViaReexport(
     consumerFilePath: string,
     moduleSpecifier: string,
-    functionName: string,
+    name: string,
     targetAbsolute: string,
     allFiles: readonly string[],
-    reexportCache: Map<string, readonly ReexportForward[]>
+    reexportCache: Map<string, readonly ReexportForward[]>,
+    visited: Set<string>
   ): Promise<boolean> {
     const intermediateFile = allFiles.find(candidate =>
       this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, path.resolve(candidate))
@@ -1481,13 +1592,34 @@ export class ChangeSignatureEngine {
       return false;
     }
 
+    const intermediateKey = path.resolve(intermediateFile);
+    if (visited.has(intermediateKey)) {
+      return false;
+    }
+    visited.add(intermediateKey);
+
     const forwards = await this.getReexportForwards(intermediateFile, reexportCache);
-    return forwards.some(forward => {
-      if (forward.exportedName !== undefined && forward.exportedName !== functionName) {
-        return false;
+    for (const forward of forwards) {
+      if (forward.exportedName !== undefined && forward.exportedName !== name) {
+        continue;
       }
-      return this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute);
-    });
+      if (this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)) {
+        return true;
+      }
+      if (await this.resolvesToTargetViaReexport(
+        intermediateFile,
+        forward.moduleSpecifier,
+        name,
+        targetAbsolute,
+        allFiles,
+        reexportCache,
+        visited
+      )) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1557,7 +1689,7 @@ export class ChangeSignatureEngine {
    * 判斷 import specifier 是否解析到目標檔。
    * 解析交由 PathUtils（相對路徑、tsconfig paths 別名、baseUrl），
    * pathsMatch 處理省略副檔名與 index 檔慣例；node_modules 套件 specifier
-   * 的解析結果不會命中專案內目標檔、自然排除（界線見 filterFilesReferencingTarget）。
+   * 的解析結果不會命中專案內目標檔、自然排除（界線見 resolveTargetBindings）。
    */
   private importSpecifierResolvesToTarget(
     importerFilePath: string,
