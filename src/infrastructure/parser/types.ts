@@ -8,6 +8,15 @@ import { Range, Location } from '@shared/types/index.js';
 import type { AST } from '@shared/types/index.js';
 
 /**
+ * 判定某 import/re-export module specifier 是否解析到「曝露目標符號的檔案」。
+ *
+ * 由 rename 引擎層（有 IFileSystem、專案檔清單、tsconfig 設定）建構後注入 parser.findReferences，
+ * 供錨定層（language-service）判定跨 tsconfig path alias 與多層 barrel re-export 的引用；
+ * 不提供時錨定層退回內建「相對 specifier 直接解析到定義檔」的保守比對。
+ */
+export type ModuleSpecifierResolver = (importingFileName: string, moduleSpecifier: string) => boolean;
+
+/**
  * 程式碼編輯操作
  * 表示對程式碼的修改操作
  */

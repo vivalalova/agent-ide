@@ -4,6 +4,7 @@
  */
 
 import { SymbolReferenceType, type SymbolReference } from './types.js';
+import { createIdentifierBoundaryRegex } from './identifier-matcher.js';
 
 /**
  * 文字匹配器
@@ -16,7 +17,7 @@ export class TextMatcher {
   findReferencesByText(filePath: string, content: string, symbolName: string): SymbolReference[] {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
-    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+    const regex = createIdentifierBoundaryRegex(symbolName, 'g');
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
@@ -55,7 +56,7 @@ export class TextMatcher {
   findReferencesByTextFiltered(filePath: string, content: string, symbolName: string): SymbolReference[] {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
-    const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+    const regex = createIdentifierBoundaryRegex(symbolName, 'g');
     let inBlockComment = false;
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -131,7 +132,7 @@ export class TextMatcher {
     const lines = content.split('\n');
 
     for (const symbolName of symbolNames) {
-      const regex = new RegExp(`\\b${this.escapeRegex(symbolName)}\\b`, 'g');
+      const regex = createIdentifierBoundaryRegex(symbolName, 'g');
       const refs = results.get(symbolName);
       if (!refs) {
         continue;
@@ -212,7 +213,7 @@ export class TextMatcher {
   }
 
   /**
-   * 跳脫正則表達式特殊字元
+   * 跳脫正則表達式特殊字元（供 CallSiteParser 組合呼叫點樣式使用）
    */
   escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -3,10 +3,12 @@
  * 整合 AST 分析和文字匹配，提供跨檔案符號查找能力
  */
 
+import * as path from 'path';
 import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { ScopedFindReferencesOptions } from '@infrastructure/parser/interface.js';
+import type { ScopedFindReferencesOptions, ScopedReference, ParserPlugin } from '@infrastructure/parser/interface.js';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { ScopedReferenceKind } from '@infrastructure/parser/interface.js';
 
 import {
@@ -155,6 +157,11 @@ export class SymbolFinder {
         const parser = this.fileUtils.getParser(filePath);
         const lines = content.split('\n');
 
+        // 別名 import 感知：此檔以 `import { X as Y }` 形式匯入的符號，其真正使用點是本地
+        // 別名 Y，而 findScopedReferences 只依原始名 X 掃描會完全對不上（C15：使用中的
+        // export 被誤判 dead）。先建 匯入名 → 本地別名 的對應，稍後對每個目標符號補搜其別名。
+        const aliasMap = this.collectNamedImportAliases(parser, content);
+
         // 對每個目標符號查找引用
         for (const [key, symbol] of symbolKeyMap) {
           // 對於 class method，需要使用 class name 作為 containerName
@@ -174,19 +181,16 @@ export class SymbolFinder {
               const refs = results.get(key);
               if (!refs) {continue;}
               for (const ref of scopedRefs) {
-                const lineIndex = ref.location.range.start.line - 1;
-                const context = lineIndex >= 0 && lineIndex < lines.length
-                  ? lines[lineIndex]
-                  : undefined;
+                refs.push(this.scopedRefToSymbolReference(ref, symbol.name, filePath, lines));
+              }
 
-                refs.push({
-                  symbolName: symbol.name,
-                  location: { filePath, range: ref.location.range },
-                  type: this.scopedReferenceKindToType(ref.kind),
-                  context,
-                  containerName: ref.containerName,
-                  isMethodCall: ref.kind === ScopedReferenceKind.Call
-                });
+              // 補搜本地別名的引用（C15）：以原始名綁定、但使用點為別名的引用會在上面漏掉。
+              // 別名的 import binding token 本身回傳為 Import 類型，不會被誤算為 usage。
+              for (const aliasName of aliasMap.get(symbol.name) ?? []) {
+                const aliasRefs = parser.findScopedReferences(content, aliasName, { className: containerName });
+                for (const ref of aliasRefs ?? []) {
+                  refs.push(this.scopedRefToSymbolReference(ref, symbol.name, filePath, lines));
+                }
               }
               continue;
             }
@@ -253,8 +257,12 @@ export class SymbolFinder {
    * @param symbol 完整的符號資訊
    * @returns 符號引用陣列
    */
-  async findReferencesInFileWithSymbol(filePath: string, symbol: Symbol): Promise<SymbolReference[]> {
-    return this.findReferencesInFileCore(filePath, symbol, { filtered: true });
+  async findReferencesInFileWithSymbol(
+    filePath: string,
+    symbol: Symbol,
+    moduleResolver?: ModuleSpecifierResolver
+  ): Promise<SymbolReference[]> {
+    return this.findReferencesInFileCore(filePath, symbol, { filtered: true, moduleResolver });
   }
 
   /**
@@ -451,6 +459,71 @@ export class SymbolFinder {
   }
 
   /**
+   * 將 Parser 的 ScopedReference 轉換為 SymbolReference（含行內容 context）。
+   * findReferencesMultiple 的原始名/別名查找與 findReferencesInFileCore 的作用域查找共用，
+   * 避免同一套轉換邏輯散落多處（Single Source of Truth）。
+   */
+  private scopedRefToSymbolReference(
+    ref: ScopedReference,
+    symbolName: string,
+    filePath: string,
+    lines: string[]
+  ): SymbolReference {
+    const lineIndex = ref.location.range.start.line - 1;
+    const context = lineIndex >= 0 && lineIndex < lines.length
+      ? lines[lineIndex]
+      : undefined;
+
+    return {
+      symbolName,
+      location: { filePath, range: ref.location.range },
+      type: this.scopedReferenceKindToType(ref.kind),
+      context,
+      containerName: ref.containerName,
+      isMethodCall: ref.kind === ScopedReferenceKind.Call
+    };
+  }
+
+  /**
+   * 建立此檔「被匯入名稱 → 本地別名」的對應，只收錄別名與原名不同的 named import
+   * （如 `import { ping as p }` → ping → ['p']）。同一名稱可能有多個別名，故值為陣列。
+   * 供 findReferencesMultiple 對別名使用點補搜，修正別名 import 使用中的 export 被漏抓
+   * （C15）。Parser 不支援 getImportDeclarations 或解析失敗時回傳空 Map。
+   */
+  private collectNamedImportAliases(
+    parser: ParserPlugin | null | undefined,
+    content: string
+  ): Map<string, string[]> {
+    const aliasMap = new Map<string, string[]>();
+    if (!parser?.getImportDeclarations) {
+      return aliasMap;
+    }
+
+    const declarations = parser.getImportDeclarations(content);
+    if (!declarations) {
+      return aliasMap;
+    }
+
+    for (const declaration of declarations) {
+      for (const named of declaration.namedImports ?? []) {
+        if (!named.alias || named.alias === named.name) {
+          continue;
+        }
+        const aliases = aliasMap.get(named.name);
+        if (aliases) {
+          if (!aliases.includes(named.alias)) {
+            aliases.push(named.alias);
+          }
+        } else {
+          aliasMap.set(named.name, [named.alias]);
+        }
+      }
+    }
+
+    return aliasMap;
+  }
+
+  /**
    * 轉換 ScopedReferenceKind 到 SymbolReferenceType
    */
   private scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
@@ -535,6 +608,8 @@ export class SymbolFinder {
       scopeOptions?: ScopedFindReferencesOptions;
       /** 是否使用 filtered 文字匹配（過濾字串和註解） */
       filtered?: boolean;
+      /** 跨 path alias 與多層 barrel re-export 的 specifier 曝露判定（由 rename 引擎注入） */
+      moduleResolver?: ModuleSpecifierResolver;
     }
   ): Promise<SymbolReference[]> {
     const content = await this.fileUtils.readFile(filePath);
@@ -561,21 +636,7 @@ export class SymbolFinder {
       const scopedRefs = parser.findScopedReferences(content, symbolName, options.scopeOptions);
 
       if (scopedRefs) {
-        return scopedRefs.map(ref => {
-          const lineIndex = ref.location.range.start.line - 1;
-          const context = lineIndex >= 0 && lineIndex < lines.length
-            ? lines[lineIndex]
-            : undefined;
-
-          return {
-            symbolName,
-            location: { filePath, range: ref.location.range },
-            type: this.scopedReferenceKindToType(ref.kind),
-            context,
-            containerName: ref.containerName,
-            isMethodCall: ref.kind === ScopedReferenceKind.Call
-          };
-        });
+        return scopedRefs.map(ref => this.scopedRefToSymbolReference(ref, symbolName, filePath, lines));
       }
     }
 
@@ -598,13 +659,16 @@ export class SymbolFinder {
         modifiers: []
       };
 
-      const references = await parser.findReferences(ast, targetSymbol);
+      const references = await parser.findReferences(ast, targetSymbol, options?.moduleResolver);
 
       // 只保留目前檔案的引用：此方法語意為「查找單一檔案內的引用」，逐檔迭代時各檔獨立
       // 負責自己的引用。Language Service 在模組可解析時可能回傳跨檔引用，若不過濾會被
       // 呼叫端（rename 逐檔收集）錯誤歸屬到目前檔案，造成重複或張冠李戴。
+      // 路徑正規化後比較（縱深防禦）：parser 引用路徑來自 LS（絕對），filePath 可能沿用呼叫端
+      // 傳入的路徑形式，形式分歧（相對 vs 絕對）會讓同檔引用被誤篩掉（缺陷 N1／N2-a 的其中一環）。
+      const resolvedFilePath = path.resolve(filePath);
       return references
-        .filter(ref => ref.location.filePath === filePath)
+        .filter(ref => path.resolve(ref.location.filePath) === resolvedFilePath)
         .map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
     } catch (error) {
       // Parser 失敗，降級到文字匹配

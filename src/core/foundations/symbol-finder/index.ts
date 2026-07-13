@@ -24,3 +24,4 @@ export { SymbolFinder, createSymbolFinder } from './symbol-finder.js';
 // 工具類別（供進階使用）
 export { TextMatcher, createTextMatcher } from './text-matcher.js';
 export { CallSiteParser, createCallSiteParser } from './call-site-parser.js';
+export { createIdentifierBoundaryRegex } from './identifier-matcher.js';
