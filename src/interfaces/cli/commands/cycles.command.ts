@@ -57,7 +57,7 @@ async function handleCyclesCommand(
   }
 
   if (format !== OutputFormat.Json) {
-    console.log('🔄 循環依賴分析...');
+    console.log('循環依賴分析...');
   }
 
   try {
@@ -75,9 +75,11 @@ async function handleCyclesCommand(
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();
+    // reportAllCycles: true — 同一 SCC 內可能存在多條彼此獨立的環（共享部分節點），
+    // 全部回報才不會漏掉其中幾條（見 G5：只報一條導致其他環消失）
     const cycles = cycleDetector.detectCycles(graph, {
       maxCycleLength: CLI_MAX_CYCLE_LENGTH,
-      reportAllCycles: false,
+      reportAllCycles: true,
       ignoreSelfLoops: true
     });
 
