@@ -7,6 +7,28 @@ import * as path from 'path';
 import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
 
+/**
+ * Unicode 識別符字元類別（不含頭尾錨點），語意對應
+ * plugins/shared/parser-helpers.ts 的 UNICODE_IDENTIFIER_PATTERN（UAX #31：
+ * ID_Start / ID_Continue）。因架構限制 core 不可直接依賴 plugins（見
+ * infrastructure/parser/initializer.ts 的橋接說明），故在此模組內本地定義同等
+ * 字元類別，供下方 import 陳述式偵測正則辨識 Unicode 別名
+ * （如 `import * as 工具 from '...'`，見 C6 regression）。
+ */
+const UNICODE_IDENTIFIER_CLASS = '[\\p{ID_Start}_$][\\p{ID_Continue}$]*';
+
+/**
+ * 匯入陳述式偵測用正則：辨識 `import ... from '...'`
+ * （default / namespace / named / type-only 皆可），identifier 部分支援
+ * Unicode（見 C6 regression）。套用 'u' flag 以啟用 \p{} 屬性跳脫。
+ */
+const IMPORT_STATEMENT_PATTERN = new RegExp(
+  'import\\s+(?:type\\s+)?(?:(?:\\{[^}]*\\}|' + UNICODE_IDENTIFIER_CLASS + '|\\*\\s+as\\s+' + UNICODE_IDENTIFIER_CLASS + ')' +
+    '(?:\\s*,\\s*(?:\\{[^}]*\\}|' + UNICODE_IDENTIFIER_CLASS + '|\\*\\s+as\\s+' + UNICODE_IDENTIFIER_CLASS + '))*\\s+from\\s+)?' +
+    '[\'"`]([^\'"`]+)[\'"`]',
+  'gu'
+);
+
 export class ImportResolver {
   private readonly config: ImportResolverConfig;
   private readonly aliasKeys: string[];
@@ -65,15 +87,29 @@ export class ImportResolver {
         ? importStatement
         : null;
       const searchText = importStatement?.statement ?? line;
-      const importMatches = searchText.matchAll(/import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`]([^'"`]+)['"`]/g);
+      // 只在單行情境套用遮罩：字串字面值與行內註解可能包含長得像 import 陳述式
+      // 的文字（如 "import { x } from './y'" 或 // import ... 註解），若不遮罩
+      // 會被誤判成真正的 import（見 C5 regression）。跨行 import 語句本身已由
+      // collectMultilineImportStatement 驗證過是真正的程式碼，不需要再遮罩。
+      const maskedSearchText = multilineSpan ? searchText : this.maskStringsAndComments(searchText);
+      const importMatches = maskedSearchText.matchAll(IMPORT_STATEMENT_PATTERN);
       for (const match of importMatches) {
-        const importPath = match[1];
+        const matchIndex = match.index ?? 0;
+        // 一律從「未遮罩」的原始文字切出對應片段：遮罩後的 match 只用來判斷
+        // 「這裡是不是一個 import 陳述式」，真正的模組路徑與語句文字必須來自
+        // 原文（遮罩版本引號內的內容只是佔位空白，不是真正路徑）。
+        const originalMatchText = searchText.slice(matchIndex, matchIndex + match[0].length);
+        const pathMatch = originalMatchText.match(/['"`]([^'"`]+)['"`]$/);
+        if (!pathMatch) {
+          continue;
+        }
+        const importPath = pathMatch[1];
         const rawStatementText = multilineSpan
           ? lines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1).join('\n')
-          : this.appendTrailingSemicolonIfAdjacent(searchText, match);
+          : this.appendTrailingSemicolonIfAdjacent(searchText, originalMatchText, matchIndex);
         const columnIndex = multilineSpan
           ? lines[multilineSpan.startLineIndex].indexOf('import')
-          : (match.index ?? 0);
+          : matchIndex;
         const statement = this.createImportStatement(
           ImportStatementType.IMPORT,
           importPath,
@@ -140,13 +176,86 @@ export class ImportResolver {
   /**
    * 單行 import 的 rawStatement 若緊接著一個 `;`，把它併入 rawStatement，
    * 使輸出（pathUpdates 的 oldImport/newImport）與修復同行多 import 去重問題前
-   * 的逐字語句保持一致。不影響去重鍵唯一性：唯一性來自 match[0] 本身
+   * 的逐字語句保持一致。不影響去重鍵唯一性：唯一性來自 matchedText 本身
    * （不同 specifier 的文字本就不同），加不加分號都唯一。
    */
-  private appendTrailingSemicolonIfAdjacent(searchText: string, match: RegExpMatchArray): string {
-    const matched = match[0];
-    const nextCharIndex = (match.index ?? 0) + matched.length;
-    return searchText[nextCharIndex] === ';' ? matched + ';' : matched;
+  private appendTrailingSemicolonIfAdjacent(searchText: string, matchedText: string, matchIndex: number): string {
+    const nextCharIndex = matchIndex + matchedText.length;
+    return searchText[nextCharIndex] === ';' ? matchedText + ';' : matchedText;
+  }
+
+  /**
+   * 遮罩字串字面值與註解，避免內容中長得像 import 陳述式的文字被誤判為真正的
+   * import（見 C5 regression：字串字面值 "import ... from './x'" 或行內註解
+   * // import ... from './x' 不應被當成真正的 import）。
+   *
+   * 遮罩只清空字串內容與註解本身、保留引號與逐字元長度，讓後續的 import
+   * 偵測正則仍能以相同的字元位置比對；真正的路徑內容一律從遮罩前的原始文字
+   * 重新切出（見呼叫端 originalMatchText），遮罩版本只用於「這裡是不是一個
+   * import 陳述式」的形狀判斷。
+   *
+   * 僅處理單行範圍內的字串／註解；跨行字串或區塊註解的延續行已由既有的
+   * isCommentLine／collectMultilineImportStatement 邏輯另行處理，不在此方法範圍內。
+   */
+  private maskStringsAndComments(line: string): string {
+    let result = '';
+    let i = 0;
+    const length = line.length;
+
+    while (i < length) {
+      const char = line[i];
+
+      // 行內註解：// 之後直到行尾全部遮罩
+      if (char === '/' && line[i + 1] === '/') {
+        result += ' '.repeat(length - i);
+        break;
+      }
+
+      // 同行內的區塊註解：/* ... */
+      if (char === '/' && line[i + 1] === '*') {
+        const endIndex = line.indexOf('*/', i + 2);
+        if (endIndex === -1) {
+          result += ' '.repeat(length - i);
+          break;
+        }
+        result += ' '.repeat(endIndex + 2 - i);
+        i = endIndex + 2;
+        continue;
+      }
+
+      // 字串字面值（單引號、雙引號、模板字面值）：保留引號本身，遮罩內容
+      if (char === '\'' || char === '"' || char === '`') {
+        const quote = char;
+        let j = i + 1;
+        let closed = false;
+        while (j < length) {
+          if (line[j] === '\\') {
+            j += 2;
+            continue;
+          }
+          if (line[j] === quote) {
+            closed = true;
+            break;
+          }
+          j++;
+        }
+        result += quote;
+        if (closed) {
+          result += ' '.repeat(j - i - 1);
+          result += quote;
+          i = j + 1;
+        } else {
+          result += ' '.repeat(length - i - 1);
+          i = length;
+        }
+        continue;
+      }
+
+      result += char;
+      i++;
+    }
+
+    return result;
   }
 
   /**
@@ -189,8 +298,14 @@ export class ImportResolver {
       return null;
     }
 
+    // 判斷「這行是否真的含 from '...'」一律用遮罩後文字：字串字面值與行內註解
+    // 中長得像 re-export 的文字（如 "... from './x'" 或 // ... from './x'）
+    // 不應被誤判成真正的 export ... from（見 C5 regression）。回傳的 statement
+    // 仍是原始未遮罩文字，供呼叫端取得真正的路徑內容。
+    const maskedStartLine = this.maskStringsAndComments(startLine);
+
     // 如果 export 和 from 在同一行，直接返回
-    if (startLine.includes('from') && startLine.match(/from\s+['"`]/)) {
+    if (maskedStartLine.includes('from') && maskedStartLine.match(/from\s+['"`]/)) {
       return { statement: startLine, endLineIndex: startIndex, startLineIndex: startIndex };
     }
 
@@ -198,7 +313,8 @@ export class ImportResolver {
     let fullStatement = startLine;
     for (let i = startIndex + 1; i < lines.length; i++) {
       fullStatement += ' ' + lines[i].trim();
-      if (lines[i].includes('from') && lines[i].match(/from\s+['"`]/)) {
+      const maskedLine = this.maskStringsAndComments(lines[i]);
+      if (maskedLine.includes('from') && maskedLine.match(/from\s+['"`]/)) {
         return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
       }
       // 最多往後看 10 行
