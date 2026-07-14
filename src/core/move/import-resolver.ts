@@ -6,16 +6,15 @@
 import * as path from 'path';
 import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
-
-/**
- * Unicode 識別符字元類別（不含頭尾錨點），語意對應
- * plugins/shared/parser-helpers.ts 的 UNICODE_IDENTIFIER_PATTERN（UAX #31：
- * ID_Start / ID_Continue）。因架構限制 core 不可直接依賴 plugins（見
- * infrastructure/parser/initializer.ts 的橋接說明），故在此模組內本地定義同等
- * 字元類別，供下方 import 陳述式偵測正則辨識 Unicode 別名
- * （如 `import * as 工具 from '...'`，見 C6 regression）。
- */
-const UNICODE_IDENTIFIER_CLASS = '[\\p{ID_Start}_$][\\p{ID_Continue}$]*';
+import { maskStringsAndComments } from './source-masking.js';
+import {
+  collectMultilineImportStatement,
+  collectMultilineExportStatement,
+  collectMultilineCallStatement,
+  UNICODE_IDENTIFIER_CLASS,
+  EXPORT_FROM_STATEMENT_PATTERN,
+  type MultilineStatementSpan
+} from './statement-collector.js';
 
 /**
  * 匯入陳述式偵測用正則：辨識 `import ... from '...'`
@@ -78,7 +77,7 @@ export class ImportResolver {
       }
 
       // 解析 ES6 import（包含 import type 語法）
-      const importStatement = this.collectMultilineImportStatement(lines, i);
+      const importStatement = collectMultilineImportStatement(lines, i);
       // 只有真正跨行的 import 語句（一個區塊只會有一筆 import）才用整段多行文字；
       // 單行內可能有多個 import 指向不同（或相同）模組，各自的 rawStatement 必須
       // 以「該 import 在行內的實際出現位置」（match[0]）切出，避免同行多筆 import
@@ -87,11 +86,21 @@ export class ImportResolver {
         ? importStatement
         : null;
       const searchText = importStatement?.statement ?? line;
-      // 只在單行情境套用遮罩：字串字面值與行內註解可能包含長得像 import 陳述式
-      // 的文字（如 "import { x } from './y'" 或 // import ... 註解），若不遮罩
-      // 會被誤判成真正的 import（見 C5 regression）。跨行 import 語句本身已由
-      // collectMultilineImportStatement 驗證過是真正的程式碼，不需要再遮罩。
-      const maskedSearchText = multilineSpan ? searchText : this.maskStringsAndComments(searchText);
+      // 字串字面值與行內註解可能包含長得像 import 陳述式的文字（如
+      // "import { x } from './y'" 或 // import ... 註解），或多行 import 中間行
+      // 含 `// } from './decoy.js'` 這種假收尾形狀，若不遮罩會被誤判成真正的
+      // import 或誤判成真正的收尾（見 C5、P3-1 regression）。跨行情境下用
+      // 各行遮罩後以 '\n' 拼接的版本，與 searchText（未遮罩、同樣以 '\n' 拼接）
+      // 逐字元對齊，可用同一組 index 切換。
+      const maskedSearchText = multilineSpan
+        ? lines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1)
+          .map(l => maskStringsAndComments(l))
+          .join('\n')
+        : maskStringsAndComments(searchText);
+      // searchText / maskedSearchText 皆自「起始行」起算（單行時即該行，多行時為
+      // 整段 span）；baseLineIndex 為該起始行的 0-based 行索引，供下方由 matchIndex
+      // 反推 import 真實行號時作基準。
+      const baseLineIndex = importStatement ? importStatement.startLineIndex : i;
       const importMatches = maskedSearchText.matchAll(IMPORT_STATEMENT_PATTERN);
       for (const match of importMatches) {
         const matchIndex = match.index ?? 0;
@@ -104,16 +113,33 @@ export class ImportResolver {
           continue;
         }
         const importPath = pathMatch[1];
-        const rawStatementText = multilineSpan
-          ? lines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1).join('\n')
-          : this.appendTrailingSemicolonIfAdjacent(searchText, originalMatchText, matchIndex);
-        const columnIndex = multilineSpan
-          ? lines[multilineSpan.startLineIndex].indexOf('import')
-          : matchIndex;
+        // 行、列一律由 matchIndex 反推，不再靠「對起始行找第一個 'import' 關鍵字」
+        // 猜測。IMPORT_STATEMENT_PATTERN 以 `import` 起頭，match.index 即 import
+        // 關鍵字在遮罩後 span 文字中的精確 offset，交由 resolveSpanPosition 反推真實
+        // 行、列（與 export 分支共用同一定位）。舊法有兩個缺陷：
+        //  1. 對多行 span 恆把行號記成 span 起始行，但真正的 import 未必落在起始行
+        //     （起始行可能只是遮罩後才確定不含真 import 的假陽性行），造成行號歸屬錯誤；
+        //  2. indexOf('import') 在起始行遮罩後不含 'import' 時回傳 -1，column 變 -1 →
+        //     createPosition 拋「Column 必須大於等於 1」，並從 file-scanner 引用掃描
+        //     階段（無 try/catch）逸出使整個 move 失敗（見 P2-B regression）。
+        const { lineNumber: lineNumberForStatement, columnIndex } =
+          this.resolveSpanPosition(maskedSearchText, baseLineIndex, matchIndex);
+        // rawStatement 一律取「該筆 match 本身」（originalMatchText，match[0]
+        // 精確涵蓋 `import ... from '<path>'` 到 specifier 收尾引號為止），必要時併
+        // 入緊接的 `;`。單、多行皆同一切法：
+        //  - 不含關鍵字前方的任何前綴文字（如字串字面值裡的假 'import'），與 column
+        //    錨定對齊（見 P3-4 regression）；
+        //  - 不把 specifier 之後的尾隨程式碼一起吞進來。舊法多行沿用 span 結尾
+        //    （searchText.slice(matchIndex)），遇 `} from './a'; doSomething();`
+        //    這種收尾行 specifier 後還有程式碼時，rawStatement 尾端不是 `from '...'`，
+        //    下游 replaceModuleSpecifier 的「from 樣式須錨定語句結尾」lookahead 不命中
+        //    → newImport === rawStatement → 更新被靜默跳過（見 P3 複審）。
+        // 同行多筆 import 指向不同模組（C7）也靠此各取自身 match、不共用整行。
+        const rawStatementText = this.appendTrailingSemicolonIfAdjacent(searchText, originalMatchText, matchIndex);
         const statement = this.createImportStatement(
           ImportStatementType.IMPORT,
           importPath,
-          importStatement ? importStatement.startLineIndex + 1 : lineNumber,
+          lineNumberForStatement,
           columnIndex,
           rawStatementText
         );
@@ -126,48 +152,69 @@ export class ImportResolver {
         continue;
       }
 
-      // 解析 ES6 export from（包含單行和多行）
-      if (line.includes('export')) {
+      // 解析 ES6 export from（包含單行和多行）；進場檢查一律用遮罩後文字：字串
+      // 字面值／行內註解中的 'export' 字樣（如 `const note = "export ... from ..."`）
+      // 遮罩後即消失，不應觸發 export 收集（C5 的 export 版類比，見 export 分支
+      // 實驗形狀 A/B）。
+      const maskedLineForExport = maskStringsAndComments(line);
+      if (maskedLineForExport.includes('export')) {
         // 收集多行 export 語句
-        const exportStatement = this.collectMultilineExportStatement(lines, i);
+        const exportStatement = collectMultilineExportStatement(lines, i);
         if (exportStatement) {
-          const { statement: fullStatement, endLineIndex, startLineIndex } = exportStatement;
-          // 在完整語句中查找 from '../../../move/...'
-          const fromMatch = fullStatement.match(/from\s+['"`]([^'"`]+)['"`]/);
-          if (fromMatch) {
-            const importPath = fromMatch[1];
-            // 使用起始行號和原始多行語句
-            const rawStatement = lines.slice(startLineIndex, endLineIndex + 1).join('\n');
-            const statement = this.createImportStatement(ImportStatementType.EXPORT, importPath, startLineIndex + 1, lines[startLineIndex].indexOf('export'), rawStatement);
-            if (statement) {
-              statements.push(statement);
-            }
+          const { endLineIndex, startLineIndex } = exportStatement;
+          const exportSpanLines = lines.slice(startLineIndex, endLineIndex + 1);
+          const rawSpanText = exportSpanLines.join('\n');
+          // from '...' 與 export 定位一律在「遮罩後、逐字元對齊」的 span 文字上進行
+          // （字串字面值／行內註解中長得像 re-export 的假 from 已被遮罩消除），真正的
+          // 模組路徑再從未遮罩原文的同一 offset 切出（見形狀 B/C）。
+          const maskedSpanText = exportSpanLines
+            .map(l => maskStringsAndComments(l))
+            .join('\n');
+          // 對整個 span 的遮罩文字 matchAll，逐筆列舉真正的 export-from、各自建
+          // ImportStatement，rawStatement/column per-match。單行 span 可能含同行多筆
+          // （`export { a } from './x'; export { b } from './y';`，P3-DUAL-EXPORT-LINE）；
+          // 前置無 from 的本地清單（`export { setup };`）不含 from、自然不被 matchAll
+          // 命中而略過，只有真 re-export 被解析（P2-STICKY-SINGLE-ANCHOR）。多行 span
+          // 的 export-from（含 `export *` 換行形狀 P3-C、跨行具名 P2-CAP）同樣由 matchAll
+          // 就地定位其精確 offset，毋須另外猜測 export 關鍵字位置。每筆的 exportOffset
+          // 與 specifierEnd（match[0] 涵蓋至 specifier 收尾引號）交給共用 helper 建立。
+          for (const match of maskedSpanText.matchAll(EXPORT_FROM_STATEMENT_PATTERN)) {
+            const exportOffset = match.index ?? 0;
+            this.pushExportFromStatement(
+              statements, rawSpanText, maskedSpanText, startLineIndex, exportOffset, exportOffset + match[0].length
+            );
           }
-          // 跳過已處理的行
-          i = endLineIndex;
-          continue;
+          // 僅「真跨行」span 才跳行 continue（比照 import 分支）；單行 span 解析完
+          // export-from 後不可 continue——否則同行尾隨的呼叫式（如
+          // `export { a } from './keep.js'; const z = require('./real.js');`）會被跳過而
+          // 永不解析。單行時讓本輪流程繼續往下走 require/dynamic import 階段；export-from
+          // 文字不含 require(/import( 字樣，與呼叫式解析無交互。
+          if (endLineIndex > startLineIndex) {
+            i = endLineIndex;
+            continue;
+          }
         }
       }
 
-      // 解析 CommonJS require
-      const requireMatches = line.matchAll(/require\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
-      for (const match of requireMatches) {
-        const importPath = match[1];
-        const statement = this.createImportStatement(ImportStatementType.REQUIRE, importPath, lineNumber, line.length - line.trimStart().length, line);
-        if (statement) {
-          statements.push(statement);
-        }
+      // 解析 CommonJS require：module specifier 可能跨行書寫（如
+      // `require(\n  './x'\n)`），先嘗試收集完整的多行呼叫語句（見 C10
+      // regression）；非跨行時才視為單行呼叫（同行可能有多筆）。
+      const requireCall = collectMultilineCallStatement(lines, i, 'require');
+      if (requireCall && requireCall.endLineIndex > requireCall.startLineIndex) {
+        this.pushMultilineCallStatement(statements, lines, requireCall, ImportStatementType.REQUIRE, 'require');
+        i = requireCall.endLineIndex;
+        continue;
       }
+      this.pushSingleLineCallStatements(statements, line, lineNumber, ImportStatementType.REQUIRE, 'require');
 
-      // 解析動態 import
-      const dynamicImportMatches = line.matchAll(/import\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g);
-      for (const match of dynamicImportMatches) {
-        const importPath = match[1];
-        const statement = this.createImportStatement(ImportStatementType.DYNAMIC_IMPORT, importPath, lineNumber, line.length - line.trimStart().length, line);
-        if (statement) {
-          statements.push(statement);
-        }
+      // 解析動態 import，處理方式與 require 相同（見上）
+      const dynamicImportCall = collectMultilineCallStatement(lines, i, 'import');
+      if (dynamicImportCall && dynamicImportCall.endLineIndex > dynamicImportCall.startLineIndex) {
+        this.pushMultilineCallStatement(statements, lines, dynamicImportCall, ImportStatementType.DYNAMIC_IMPORT, 'import');
+        i = dynamicImportCall.endLineIndex;
+        continue;
       }
+      this.pushSingleLineCallStatements(statements, line, lineNumber, ImportStatementType.DYNAMIC_IMPORT, 'import');
     }
 
     return statements;
@@ -185,148 +232,174 @@ export class ImportResolver {
   }
 
   /**
-   * 遮罩字串字面值與註解，避免內容中長得像 import 陳述式的文字被誤判為真正的
-   * import（見 C5 regression：字串字面值 "import ... from './x'" 或行內註解
-   * // import ... from './x' 不應被當成真正的 import）。
-   *
-   * 遮罩只清空字串內容與註解本身、保留引號與逐字元長度，讓後續的 import
-   * 偵測正則仍能以相同的字元位置比對；真正的路徑內容一律從遮罩前的原始文字
-   * 重新切出（見呼叫端 originalMatchText），遮罩版本只用於「這裡是不是一個
-   * import 陳述式」的形狀判斷。
-   *
-   * 僅處理單行範圍內的字串／註解；跨行字串或區塊註解的延續行已由既有的
-   * isCommentLine／collectMultilineImportStatement 邏輯另行處理，不在此方法範圍內。
+   * 由「錨點（import／export 關鍵字）在遮罩後 span 文字中的精確 offset」反推它
+   * 相對於 span 起始行的實際行號（1-based）與列（0-based）。maskedSpanText 與其
+   * 未遮罩原文逐字元對齊（各行遮罩後以 '\n' 拼接），故 offset 之前的換行數即錨點
+   * 相對起始行的行位移，最後一個換行之後的距離即列。import 與 export 分支共用此
+   * 定位，避免各自以「對起始行找關鍵字」手刻，杜絕 P2-B／P3-4 一類行列歸屬錯誤
+   * （含 indexOf 落空回 -1 → column 為 0 拋例外）的重複缺陷。
    */
-  private maskStringsAndComments(line: string): string {
-    let result = '';
-    let i = 0;
-    const length = line.length;
+  private resolveSpanPosition(
+    maskedSpanText: string,
+    baseLineIndex: number,
+    offset: number
+  ): { lineNumber: number; columnIndex: number } {
+    const precedingText = maskedSpanText.slice(0, offset);
+    const lineOffset = precedingText.split('\n').length - 1;
+    const columnIndex = offset - (precedingText.lastIndexOf('\n') + 1);
+    return { lineNumber: baseLineIndex + lineOffset + 1, columnIndex };
+  }
 
-    while (i < length) {
-      const char = line[i];
+  /**
+   * 由 export span 的一段範圍（export 關鍵字 offset 到 specifier 收尾引號 offset）
+   * 建立並收錄一筆 EXPORT 型別 ImportStatement。單行 span 對每筆 export-from 各呼叫
+   * 一次（同行多筆），多行 span 呼叫一次。
+   *
+   * from 子句一律在「遮罩後」span 的 [exportOffset, specifierEndOffset) 範圍內定位，
+   * 真路徑再從未遮罩原文同一 offset 切出：具名區塊或註解裡的假 from（如形狀 C 的
+   * `// } from './decoy.js'`）遮罩後已消失、不會被誤取。rawStatement 自 export 關鍵字
+   * 起算、止於 specifier 收尾引號、必要時併入緊鄰的 `;`，不吞 specifier 之後的尾隨
+   * 程式碼（形狀 E）；行、列由 export 關鍵字 offset 反推，與 column 錨定同基準
+   * （P3-4 export 版）。下游 replaceModuleSpecifier 的 from 樣式已內嵌實際 oldPath
+   * 並錨定語句結尾，只替換真正的 `from '<oldPath>'`，故毋須額外傳 specifierOffset。
+   */
+  private pushExportFromStatement(
+    statements: ImportStatement[],
+    rawSpanText: string,
+    maskedSpanText: string,
+    startLineIndex: number,
+    exportOffset: number,
+    specifierEndOffset: number
+  ): void {
+    const maskedSegment = maskedSpanText.slice(exportOffset, specifierEndOffset);
+    const fromInSegment = maskedSegment.match(/from\s+['"`][^'"`]+['"`]/);
+    if (!fromInSegment || fromInSegment.index === undefined) {
+      return;
+    }
+    const fromAbsOffset = exportOffset + fromInSegment.index;
+    const originalFromText = rawSpanText.slice(fromAbsOffset, fromAbsOffset + fromInSegment[0].length);
+    const pathMatch = originalFromText.match(/from\s+['"`]([^'"`]+)['"`]/);
+    if (!pathMatch) {
+      return;
+    }
+    const { lineNumber, columnIndex } = this.resolveSpanPosition(maskedSpanText, startLineIndex, exportOffset);
+    const exportMatchText = rawSpanText.slice(exportOffset, specifierEndOffset);
+    const rawStatement = this.appendTrailingSemicolonIfAdjacent(rawSpanText, exportMatchText, exportOffset);
+    const statement = this.createImportStatement(
+      ImportStatementType.EXPORT,
+      pathMatch[1],
+      lineNumber,
+      columnIndex,
+      rawStatement
+    );
+    if (statement) {
+      statements.push(statement);
+    }
+  }
 
-      // 行內註解：// 之後直到行尾全部遮罩
-      if (char === '/' && line[i + 1] === '/') {
-        result += ' '.repeat(length - i);
-        break;
-      }
+  /**
+   * 將已收集完成的多行 require()/import() 呼叫語句轉為 ImportStatement。
+   * module specifier 一律從未遮罩的原始多行文字重新切出，遮罩版本只用於
+   * collectMultilineCallStatement 判斷「呼叫語句是否完整」（見 C9/C10 regression）。
+   *
+   * 定位真正呼叫的起點一律用遮罩後文字找 match index：起始行行尾若有註解含
+   * 完整形狀的假呼叫（如 `require( // legacy: require('./fake.js')`），對
+   * 未遮罩原文取第一個 regex 命中會抓到註解裡的假呼叫，導致真正呼叫的
+   * specifier 完全沒被解析（見 P2-1 regression）。遮罩後文字逐行拼接時保留
+   * 每行原始長度（maskStringsAndComments 只把內容置換成等長空白），與未遮罩
+   * 版本以 '\n' join 的結果字元位置一一對應，可直接用同一組 index/length 切出
+   * 未遮罩原文對應片段。
+   */
+  private pushMultilineCallStatement(
+    statements: ImportStatement[],
+    lines: string[],
+    call: MultilineStatementSpan,
+    type: ImportStatementType,
+    keyword: 'require' | 'import'
+  ): void {
+    const callLines = lines.slice(call.startLineIndex, call.endLineIndex + 1);
+    const rawStatementText = callLines.join('\n');
+    const maskedStatementText = callLines.map(l => maskStringsAndComments(l)).join('\n');
+    const callPattern = new RegExp(`\\b${keyword}\\s*\\(\\s*['"\`][^'"\`]+['"\`]\\s*\\)`);
+    const maskedMatch = maskedStatementText.match(callPattern);
+    if (!maskedMatch || maskedMatch.index === undefined) {
+      return;
+    }
+    const originalMatchText = rawStatementText.slice(maskedMatch.index, maskedMatch.index + maskedMatch[0].length);
+    // 引號區間的「位置」必須從遮罩後的呼叫文字取得，不可對 originalMatchText 重新搜尋：
+    // originalMatchText 是未遮罩原文，若起始行行尾註解含完整假呼叫，其中的假引號對
+    // 會比真正的引號對更早出現，對 originalMatchText 直接搜尋第一個引號對會抓到假的
+    // （見 P2-1 regression）。遮罩後文字中註解已整段變空白，僅真正的引號對還在，
+    // 兩者逐字元等長對齊，用遮罩版本找到的位置去原文切內容即可保證抓到真正的引號對。
+    const quoteSpanMatch = maskedMatch[0].match(/['"`][^'"`]*['"`]/);
+    if (!quoteSpanMatch || quoteSpanMatch.index === undefined) {
+      return;
+    }
+    const importPath = originalMatchText.slice(quoteSpanMatch.index + 1, quoteSpanMatch.index + quoteSpanMatch[0].length - 1);
+    // 真正 specifier（含引號）在 rawStatementText 中的絕對起始位置：下游
+    // path-calculator.replaceModuleSpecifier 遇到起始行行尾有假呼叫註解時，
+    // 「keyword( 緊接著引號」的結構假設會因中間插入的註解文字而找不到真正呼叫
+    // （見 P2-1 regression：真正呼叫的 keyword( 與引號之間隔著整段行內註解，
+    // \s* 無法跨越非空白字元），須帶上精確位置錨點才能正確定位替換，不能只靠
+    // 文字內容比對。
+    const specifierOffset = maskedMatch.index + quoteSpanMatch.index;
+    const startLine = lines[call.startLineIndex];
+    const columnIndex = startLine.length - startLine.trimStart().length;
+    const statement = this.createImportStatement(
+      type,
+      importPath,
+      call.startLineIndex + 1,
+      columnIndex,
+      rawStatementText,
+      specifierOffset
+    );
+    if (statement) {
+      statements.push(statement);
+    }
+  }
 
-      // 同行內的區塊註解：/* ... */
-      if (char === '/' && line[i + 1] === '*') {
-        const endIndex = line.indexOf('*/', i + 2);
-        if (endIndex === -1) {
-          result += ' '.repeat(length - i);
-          break;
-        }
-        result += ' '.repeat(endIndex + 2 - i);
-        i = endIndex + 2;
+  /**
+   * 解析單行內的 require()/import() 呼叫（同行可能有多筆，見既有行為）。
+   * 存在性比對一律用遮罩後文字，避免字串字面值／行內註解中長得像呼叫的文字
+   * 被誤判為真正呼叫（見 C9 regression）；module specifier 一律從未遮罩的
+   * 原始文字依相同字元位置重新切出（遮罩版本引號內容只是佔位空白）。
+   *
+   * rawStatement 與 column 一律以「該筆呼叫在行內的實際出現位置」（match）為準，
+   * 不可共用整行文字與行首縮排：同一行兩筆呼叫指向同一模組時，若都用整行當
+   * rawStatement、行首縮排當 column，下游 path-calculator 的去重鍵會碰撞，只有
+   * 第一筆被當作有效更新，第二筆殘留舊 specifier（見 P2-2 regression，比照
+   * 上方 parseImportStatements 對同行多個 ES6 import 的 C7 修復）。
+   */
+  private pushSingleLineCallStatements(
+    statements: ImportStatement[],
+    line: string,
+    lineNumber: number,
+    type: ImportStatementType,
+    keyword: 'require' | 'import'
+  ): void {
+    const maskedLine = maskStringsAndComments(line);
+    const pattern = new RegExp(`\\b${keyword}\\s*\\(\\s*['"\`][^'"\`]+['"\`]\\s*\\)`, 'g');
+    const matches = maskedLine.matchAll(pattern);
+    for (const match of matches) {
+      const matchIndex = match.index ?? 0;
+      const originalMatchText = line.slice(matchIndex, matchIndex + match[0].length);
+      const pathMatch = originalMatchText.match(/['"`]([^'"`]+)['"`]/);
+      if (!pathMatch) {
         continue;
       }
-
-      // 字串字面值（單引號、雙引號、模板字面值）：保留引號本身，遮罩內容
-      if (char === '\'' || char === '"' || char === '`') {
-        const quote = char;
-        let j = i + 1;
-        let closed = false;
-        while (j < length) {
-          if (line[j] === '\\') {
-            j += 2;
-            continue;
-          }
-          if (line[j] === quote) {
-            closed = true;
-            break;
-          }
-          j++;
-        }
-        result += quote;
-        if (closed) {
-          result += ' '.repeat(j - i - 1);
-          result += quote;
-          i = j + 1;
-        } else {
-          result += ' '.repeat(length - i - 1);
-          i = length;
-        }
-        continue;
+      const statement = this.createImportStatement(
+        type,
+        pathMatch[1],
+        lineNumber,
+        matchIndex,
+        originalMatchText
+      );
+      if (statement) {
+        statements.push(statement);
       }
-
-      result += char;
-      i++;
     }
-
-    return result;
   }
 
-  /**
-   * 收集多行的 import 語句。
-   */
-  private collectMultilineImportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number; startLineIndex: number } | null {
-    const startLine = lines[startIndex];
-    if (!startLine.includes('import') || /\bimport\s*\(/.test(startLine)) {
-      return null;
-    }
-
-    if (this.isCompleteImportStatement(startLine)) {
-      return { statement: startLine, endLineIndex: startIndex, startLineIndex: startIndex };
-    }
-
-    let fullStatement = startLine;
-    for (let i = startIndex + 1; i < lines.length; i++) {
-      fullStatement += ' ' + lines[i].trim();
-      if (this.isCompleteImportStatement(fullStatement)) {
-        return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
-      }
-      if (i - startIndex > 200) {
-        break;
-      }
-    }
-
-    return null;
-  }
-
-  private isCompleteImportStatement(statement: string): boolean {
-    return /import\s+(?:type\s+)?(?:(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`][^'"`]+['"`]/.test(statement);
-  }
-
-  /**
-   * 收集多行的 export 語句
-   */
-  private collectMultilineExportStatement(lines: string[], startIndex: number): { statement: string; endLineIndex: number; startLineIndex: number } | null {
-    const startLine = lines[startIndex];
-    if (!startLine.includes('export')) {
-      return null;
-    }
-
-    // 判斷「這行是否真的含 from '...'」一律用遮罩後文字：字串字面值與行內註解
-    // 中長得像 re-export 的文字（如 "... from './x'" 或 // ... from './x'）
-    // 不應被誤判成真正的 export ... from（見 C5 regression）。回傳的 statement
-    // 仍是原始未遮罩文字，供呼叫端取得真正的路徑內容。
-    const maskedStartLine = this.maskStringsAndComments(startLine);
-
-    // 如果 export 和 from 在同一行，直接返回
-    if (maskedStartLine.includes('from') && maskedStartLine.match(/from\s+['"`]/)) {
-      return { statement: startLine, endLineIndex: startIndex, startLineIndex: startIndex };
-    }
-
-    // 收集多行直到找到 from
-    let fullStatement = startLine;
-    for (let i = startIndex + 1; i < lines.length; i++) {
-      fullStatement += ' ' + lines[i].trim();
-      const maskedLine = this.maskStringsAndComments(lines[i]);
-      if (maskedLine.includes('from') && maskedLine.match(/from\s+['"`]/)) {
-        return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
-      }
-      // 最多往後看 10 行
-      if (i - startIndex > 10) {
-        break;
-      }
-    }
-
-    return null;
-  }
-
-  /**
   /**
    * 更新 import 路徑
    */
@@ -531,7 +604,8 @@ export class ImportResolver {
     importPath: string,
     lineNumber: number,
     columnIndex: number,
-    rawStatement: string
+    rawStatement: string,
+    specifierOffset?: number
   ): ImportStatement | null {
     // columnIndex 必須指向 rawStatement trim 後在該行的起始位置，供下游以 column 錨定替換。
     const position = createPosition(lineNumber, columnIndex + 1);
@@ -542,6 +616,16 @@ export class ImportResolver {
 
     const importedSymbols = type === ImportStatementType.IMPORT ? this.findImportedSymbols(rawStatement) : undefined;
 
+    // specifierOffset 是相對於「trim 前」rawStatement 算出來的絕對位置（見
+    // pushMultilineCallStatement），trim() 只會移除開頭空白，故需扣掉被移除的
+    // 開頭空白長度，換算成相對於最終儲存的 rawStatement（已 trim）的位置，
+    // 供下游 path-calculator 精確錨定 specifier、不受同語句內其他文字（如
+    // 起始行行尾註解裡的假呼叫）干擾（見 P2-1 regression）。
+    const leadingTrimmedLength = rawStatement.length - rawStatement.trimStart().length;
+    const adjustedSpecifierOffset = specifierOffset !== undefined
+      ? specifierOffset - leadingTrimmedLength
+      : undefined;
+
     return {
       type,
       path: importPath,
@@ -550,7 +634,8 @@ export class ImportResolver {
       range,
       isRelative,
       importedSymbols,
-      rawStatement: rawStatement.trim()
+      rawStatement: rawStatement.trim(),
+      specifierOffset: adjustedSpecifierOffset
     };
   }
 

@@ -245,6 +245,14 @@ export interface ImportStatement {
   readonly isRelative: boolean;
   readonly importedSymbols?: readonly string[];
   readonly rawStatement: string;
+  /**
+   * module specifier（含引號）在 rawStatement 中的精確起始位置（0-based）。
+   * 僅在 rawStatement 內可能夾雜與 specifier 無關的文字（如多行 require()/
+   * import() 呼叫起始行行尾的假呼叫註解）時才提供，讓下游可用位置錨定替換，
+   * 不受文字內容比對誤判影響（見 P2-1 regression）。未提供時沿用既有的
+   * 文字匹配替換行為。
+   */
+  readonly specifierOffset?: number;
 }
 
 /**

@@ -210,7 +210,8 @@ export class PathCalculator {
           const newImport = this.replaceModuleSpecifier(
             importStatement.rawStatement,
             importStatement.path,
-            newImportPath
+            newImportPath,
+            importStatement.specifierOffset
           );
           if (newImport === importStatement.rawStatement) {
             continue;
@@ -374,7 +375,8 @@ export class PathCalculator {
             const newImport = this.replaceModuleSpecifier(
               importStatement.rawStatement,
               importStatement.path,
-              newImportPath
+              newImportPath,
+              importStatement.specifierOffset
             );
             if (newImport === importStatement.rawStatement) {
               continue;
@@ -449,7 +451,8 @@ export class PathCalculator {
                 const newImport = this.replaceModuleSpecifier(
                   importStatement.rawStatement,
                   importStatement.path,
-                  newImportPath
+                  newImportPath,
+                  importStatement.specifierOffset
                 );
                 if (newImport === importStatement.rawStatement) {
                   continue;
@@ -474,7 +477,30 @@ export class PathCalculator {
     return updates;
   }
 
-  private replaceModuleSpecifier(rawStatement: string, oldPath: string, newPath: string): string {
+  /**
+   * 將 rawStatement 中的 module specifier 替換成新路徑。
+   *
+   * 優先使用 specifierOffset 精確位置錨點（若提供）：多行 require()/import()
+   * 呼叫起始行行尾若有假呼叫形狀的行內註解，「keyword( 緊接著引號」的結構假設
+   * 會因中間插入的註解文字而找不到真正呼叫的 specifier（`\s*` 無法跨越非空白
+   * 的註解內容），必須依賴解析階段算出的精確位置才能正確定位（見 P2-1
+   * regression）。位置錨點驗證失敗時（理論上不會發生）才退回既有的文字匹配。
+   */
+  private replaceModuleSpecifier(rawStatement: string, oldPath: string, newPath: string, specifierOffset?: number): string {
+    if (specifierOffset !== undefined) {
+      const quoteChar = rawStatement[specifierOffset];
+      const contentStart = specifierOffset + 1;
+      const contentEnd = contentStart + oldPath.length;
+      const isValidQuote = quoteChar === '\'' || quoteChar === '"' || quoteChar === '`';
+      if (
+        isValidQuote &&
+        rawStatement.slice(contentStart, contentEnd) === oldPath &&
+        rawStatement[contentEnd] === quoteChar
+      ) {
+        return rawStatement.slice(0, specifierOffset) + quoteChar + newPath + quoteChar + rawStatement.slice(contentEnd + 1);
+      }
+    }
+
     const escapedOldPath = this.pathUtils.escapeRegex(oldPath);
     const fromSpecifierPattern = new RegExp(
       `(\\bfrom\\s*['"\`])${escapedOldPath}(['"\`])(?=\\s*(?:(?:with|assert)\\s+\\{[\\s\\S]*?\\}\\s*)?;?\\s*(?://[^\\n\\r]*|/\\*[\\s\\S]*?\\*/)?\\s*$)`
