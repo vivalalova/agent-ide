@@ -230,6 +230,13 @@ describe('FileSystem', () => {
 
       await expect(fileSystem.createDirectory(dirPath)).resolves.not.toThrow();
     });
+
+    it('目標路徑已是檔案時不應被當成已存在的目錄而靜默成功', async () => {
+      const filePath = path.join(tempDir, 'existing-file');
+      await fs.writeFile(filePath, 'content');
+
+      await expect(fileSystem.createDirectory(filePath)).rejects.toThrow();
+    });
   });
 
   // ==========================================================================

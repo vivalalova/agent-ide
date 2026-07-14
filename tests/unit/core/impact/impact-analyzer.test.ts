@@ -54,6 +54,23 @@ describe('ImpactAnalyzer', () => {
     });
   });
 
+  describe('analyzeProject - includePatterns 邊界', () => {
+    it('Given basename 以 Xts 結尾但沒有 .ts 副檔名, when analyzeProject, then 不應納入掃描結果', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/project/src/actual.ts': 'export const actual = 1;\n',
+        '/project/src/not-a-typescript-fileXts': 'plain text\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      const result = await analyzer.analyzeProject('/project');
+
+      expect(result.fileDependencies.map(file => file.filePath)).toEqual([
+        '/project/src/actual.ts'
+      ]);
+    });
+  });
+
   describe('空圖查詢', () => {
     it('Given 空依賴圖, when getDependencies, then 回傳空陣列', () => {
       const analyzer = new ImpactAnalyzer(createMockFileSystem());

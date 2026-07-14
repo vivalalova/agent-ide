@@ -20,6 +20,7 @@ import {
   type CacheItem,
   type CacheEvent
 } from '@infrastructure/cache/types.js';
+import { CacheUtils } from '@infrastructure/cache/index.js';
 
 // === 測試常數 ===
 const DEFAULT_CACHE_SIZE = 5;
@@ -96,6 +97,21 @@ describe('MemoryCache', () => {
       smallCache.dispose();
     });
 
+    it('should not retain entries when maxSize is zero', () => {
+      const zeroSizeCache = new MemoryCache<string, string>({ maxSize: 0 });
+      zeroSizeCache.set('key1', 'value1');
+
+      expect(zeroSizeCache.size()).toBe(0);
+
+      zeroSizeCache.dispose();
+    });
+
+    it('should warn when maxSize is zero', () => {
+      expect(CacheUtils.validateCacheOptions({ maxSize: 0 })).toContain(
+        'maxSize should be greater than 0'
+      );
+    });
+
     it('should handle very large maxSize', () => {
       const largeCache = new MemoryCache<string, string>({ maxSize: 1000000 });
       largeCache.set('key1', 'value1');
@@ -118,6 +134,15 @@ describe('MemoryCache', () => {
       cache.set('key1', null);
       expect(cache.has('key1')).toBe(true);
       expect(cache.get('key1')).toBeNull();
+    });
+
+    it('should report the current item count even when request statistics are disabled', () => {
+      const noStatsCache = new MemoryCache<string, string>({ enableStats: false });
+      noStatsCache.set('key1', 'value1');
+
+      expect(noStatsCache.getStats().size).toBe(1);
+
+      noStatsCache.dispose();
     });
   });
 

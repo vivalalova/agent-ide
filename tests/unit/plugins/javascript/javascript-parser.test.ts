@@ -396,6 +396,8 @@ describe('JavaScriptParser', () => {
       // shouldIgnoreFile 使用簡單的子字串匹配
       expect(parser.shouldIgnoreFile('node_modules/package/index.js')).toBe(true);
       expect(parser.shouldIgnoreFile('src/app.js')).toBe(false);
+      expect(parser.shouldIgnoreFile('src/dist/index.js')).toBe(true);
+      expect(parser.shouldIgnoreFile('src/distance.js')).toBe(false);
     });
 
     it('isAbstractDeclaration 應該識別抽象宣告', async () => {

@@ -129,6 +129,30 @@ describe('CLI rename - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
       expect(output.summary.totalFiles).toBeGreaterThanOrEqual(2);
     });
+
+    it('不應因引用檔案所在目錄名稱包含 dist 而遺漏 rename 變更', async () => {
+      await fixture.writeFile(
+        'src/rename-target.ts',
+        'export function DistanceRenameTarget(): number { return 1; }\n'
+      );
+      await fixture.writeFile(
+        'src/distance/consumer.ts',
+        `import { DistanceRenameTarget } from '../rename-target.js';
+export const result = DistanceRenameTarget();
+`
+      );
+
+      const result = await executeCLI(
+        ['rename', '--path', fixture.rootPath, '--from', 'DistanceRenameTarget', '--to', 'RenamedDistanceTarget', '--dry-run', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.summary.totalFiles).toBeGreaterThanOrEqual(2);
+    });
   });
 
   // MARK: - 輸出格式

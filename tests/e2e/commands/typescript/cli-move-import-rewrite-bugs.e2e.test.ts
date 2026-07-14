@@ -5,6 +5,9 @@
  *     應該只更新真正的 import 陳述式，字串與註解內容要維持原樣。
  * C6: 使用 Unicode 識別符做別名的 namespace import（import * as 工具）與 default import
  *     （import 別名 from ...）時，move 完全沒更新其路徑，殘留指向已不存在的舊路徑。
+ * C9: require() 與 dynamic import() 解析未遮罩字串及行內註解，move 會改寫文件範例或註解中的
+ *     module specifier；這些內容不是實際的模組依賴，應保持原樣。
+ * C10: 多行 require() 與 dynamic import() 沒有被解析，move 後仍殘留舊 module specifier。
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -130,5 +133,71 @@ export const greeting = 別名();
     // 錯誤重現點：Unicode 別名 default import 的路徑同樣沒被更新
     expect(uniDefaultContent).not.toContain('from \'./old-default.js\'');
     expect(uniDefaultContent).toContain('from \'./fresh-default.js\'');
+  });
+});
+
+describe('CLI move - require/dynamic import 誤傷字串與行內註解 (C9)', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it('move 後，非程式碼中的 require() 與 dynamic import() 文字應保持原樣', async () => {
+    await fixture.writeFile('src/old.ts', 'export const value = 1;\n');
+    const originalContent = `const dynamicExample = "import('./old.js')";
+const requireExample = "require('./old.js')";
+const marker = 1; // import('./old.js') require('./old.js')
+`;
+    await fixture.writeFile('src/examples.ts', originalContent);
+
+    const result = await executeCLI(
+      ['move', 'src/old.ts', 'src/fresh.ts', '--path', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(await fixture.readFile('src/examples.ts')).toBe(originalContent);
+  });
+});
+
+describe('CLI move - 多行 require/dynamic import 未更新 (C10)', () => {
+  let fixture: FixtureContext;
+
+  beforeEach(async () => {
+    fixture = await loadFixture('sample-project');
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it('move 後，多行 require() 與 dynamic import() 的 module specifier 應被更新', async () => {
+    await fixture.writeFile('src/old.ts', 'export const value = 1;\n');
+    await fixture.writeFile(
+      'src/multiline-loader.ts',
+      `const dynamicValue = import(
+  './old.js'
+);
+const requireValue = require(
+  './old.js'
+);
+export { dynamicValue, requireValue };
+`
+    );
+
+    const result = await executeCLI(
+      ['move', 'src/old.ts', 'src/fresh.ts', '--path', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const loaderContent = await fixture.readFile('src/multiline-loader.ts');
+    expect(loaderContent).toContain('\'./fresh.js\'');
+    expect(loaderContent).not.toContain('\'./old.js\'');
   });
 });
