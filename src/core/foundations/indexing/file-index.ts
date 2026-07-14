@@ -299,7 +299,7 @@ export class FileIndex {
   /**
    * 檢查檔案是否需要重新索引
    */
-  needsReindexing(filePath: string, currentModified: Date): boolean {
+  needsReindexing(filePath: string, currentModified: Date, currentSize?: number): boolean {
     const entry = this.fileEntries.get(filePath);
     if (!entry) {
       return true; // 檔案不在索引中，需要索引
@@ -307,6 +307,11 @@ export class FileIndex {
 
     if (!entry.isIndexed) {
       return true; // 尚未被索引
+    }
+
+    // 檔案大小變更即使修改時間未變，也代表內容可能已變更
+    if (currentSize !== undefined && currentSize !== entry.fileInfo.size) {
+      return true;
     }
 
     // 檢查檔案修改時間

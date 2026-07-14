@@ -376,7 +376,17 @@ export class FileSystem implements IFileSystem {
       globbyOptions.follow = options.followSymlinks;
     }
 
-    const results = await globby(pattern, globbyOptions);
-    return (results as string[]).sort();
+    const results = (await globby(pattern, globbyOptions)) as string[];
+    if (!options.onlyDirectories) {
+      return results.sort();
+    }
+
+    const cwd = options.cwd ?? process.cwd();
+    const directories = await Promise.all(results.map(async result => {
+      const absolutePath = options.absolute ? result : path.resolve(cwd, result);
+      return await this.isDirectory(absolutePath) ? result : undefined;
+    }));
+
+    return directories.filter((result): result is string => result !== undefined).sort();
   }
 }

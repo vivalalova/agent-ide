@@ -77,6 +77,11 @@ export class DependencyGraph {
     this.nodes.delete(filePath);
     this.adjacencyList.delete(filePath);
     this.reverseAdjacencyList.delete(filePath);
+
+    // 移除節點會同時改變所有經過該節點的傳遞路徑；既有快取無法再由
+    // 單一邊的 from/to 精準判定，必須整體失效，避免查詢回傳已刪除節點。
+    this.transitiveDepCache.clear();
+    this.transitiveDeptsCache.clear();
   }
 
   /**

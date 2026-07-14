@@ -139,6 +139,21 @@ describe('IndexDiskCache', () => {
       // 不能是會在下次同樣失敗時命中的穩定字串;null 代表「無法計算 key → 不要信任快取」
       expect(key).toBeNull();
     });
+
+    it('任一檔案 stat 失敗時應回傳 null，避免用不完整檔案集合命中舊快取', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const partialStatsFs = {
+        async glob() { return ['/proj/src/a.ts', '/proj/src/b.ts']; },
+        async getStats(filePath: string) {
+          if (filePath.endsWith('/b.ts')) {
+            throw new Error('stat failed');
+          }
+          return { size: 100, modifiedTime: new Date(1_700_000_000_000) };
+        }
+      } as unknown as IFileSystem;
+
+      await expect(cache.computeCacheKey('/proj', partialStatsFs)).resolves.toBeNull();
+    });
   });
 
   describe('load', () => {

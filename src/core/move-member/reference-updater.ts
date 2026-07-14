@@ -10,6 +10,8 @@ import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
+import { isInsideStringOrComment } from './utils/source-text.js';
 
 /**
  * Reference Updater 的路徑解析設定（tsconfig paths + baseUrl）
@@ -39,6 +41,8 @@ interface ImportExportStatement {
   readonly startLineIndex: number;
   readonly endLineIndex: number;
 }
+
+type NamespaceMemberUsage = 'none' | 'moved-only' | 'mixed';
 
 /**
  * Reference Updater
@@ -76,11 +80,6 @@ export class ReferenceUpdater {
     const projectFiles = await this.getProjectFiles(options.projectRoot);
 
     for (const filePath of projectFiles) {
-      // 跳過目標檔案：成員本體已在該檔，無需再處理其 import 語句
-      if (filePath === options.target.filePath) {
-        continue;
-      }
-
       // 來源檔案本身不會有「指向自己」的既有 import 語句可改寫，但移除成員後，
       // 檔內其餘程式碼若仍引用該成員，需補上對目標檔的新 import（見 M4 bug：
       // 原本對 sourceFile 一律 continue 跳過，導致同檔殘留引用變成未定義符號）
@@ -101,6 +100,13 @@ export class ReferenceUpdater {
       for (let i = 0; i < lines.length; i++) {
         const statement = this.collectImportExportStatement(lines, i);
         if (!statement) {continue;}
+
+        const statementOffset = lines
+          .slice(0, statement.startLineIndex)
+          .reduce((offset, sourceLine) => offset + sourceLine.length + 1, 0);
+        if (isInsideStringOrComment(content, statementOffset)) {
+          continue;
+        }
 
         i = statement.endLineIndex;
         const line = statement.text;
@@ -127,6 +133,12 @@ export class ReferenceUpdater {
         const quoteChar = this.detectQuoteChar(line);
 
         if (this.isStarReExport(line)) {
+          // 目標檔已直接擁有搬入的成員，保留原本的 star re-export 即可；
+          // 不能再插入指向自己的 `export { member } from './target'`。
+          if (filePath === options.target.filePath) {
+            continue;
+          }
+
           const newImport = `${this.createMemberReExport(member, newRelativePath, quoteChar)}\n${line}`;
           updates.push({
             filePath,
@@ -148,7 +160,34 @@ export class ReferenceUpdater {
 
         // 解析 import 中的所有成員
         const importedMembers = this.parseImportedMembers(line);
-        if (importedMembers.length === 0) {continue;}
+        if (importedMembers.length === 0) {
+          const namespaceImport = this.extractNamespaceImport(line);
+          if (!namespaceImport) {
+            continue;
+          }
+
+          const namespaceUsage = this.getNamespaceMemberUsage(content, statement, namespaceImport, member.name);
+          if (namespaceUsage === 'mixed' ||
+            (namespaceUsage === 'moved-only' && filePath === options.target.filePath)) {
+            throw new Error(
+              `無法安全更新 namespace import '${line}'：${member.name} 與來源模組其他成員的引用無法在一次移動中保留`
+            );
+          }
+          if (namespaceUsage !== 'moved-only') {continue;}
+
+          // namespace import 只有在 consumer 沒有使用來源模組其他成員時，
+          // 才能安全地直接改模組路徑；混用情境已在上面直接拒絕，避免留下壞引用。
+          const newImport = this.replaceImportPath(line, importPathMatch, newRelativePath);
+          if (newImport !== line) {
+            updates.push({
+              filePath,
+              originalImport: line,
+              newImport,
+              location: this.createStatementLocation(filePath, statement, lines)
+            });
+          }
+          continue;
+        }
 
         // 找出需要移動的成員（可能帶別名）
         const memberToMove = importedMembers.find(m => m.name === member.name);
@@ -170,12 +209,9 @@ export class ReferenceUpdater {
         );
 
         // 嘗試把 moved 併入同檔已存在、指向目標檔的 named import（P-E）
-        const existingTargetImport = this.findExistingTargetImport(
-          lines,
-          options,
-          filePath,
-          statement
-        );
+        const existingTargetImport = filePath === options.target.filePath
+          ? null
+          : this.findExistingTargetImport(lines, options, filePath, statement);
 
         const sourceLocation = this.createStatementLocation(filePath, statement, lines);
 
@@ -206,7 +242,11 @@ export class ReferenceUpdater {
         }
 
         let newImport: string;
-        if (remainingImport) {
+        if (filePath === options.target.filePath) {
+          // 目標檔的成員本體會在同一 Changeset 中寫入；只保留來源 import
+          // 中尚未搬移的 bindings，避免留下來源 import 與本地宣告同名的衝突。
+          newImport = remainingImport;
+        } else if (remainingImport) {
           // 仍有 default 或其餘 named 留在來源檔 → 重建：目標 import 在前、來源 remaining 在後
           const movedMemberStr = this.formatImportedMember(memberToMove);
           const newLocationImport = `${statementKind} { ${movedMemberStr} } from ${quoteChar}${newRelativePath}${quoteChar};`;
@@ -488,9 +528,10 @@ export class ReferenceUpdater {
 
     // 匹配 { A, B as C, D } 形式
     // 允許可選的 default / namespace 前綴（如 import Default, { ... }）
-    const match = line.match(
-      /(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*|\*\s+as\s+[\w$]+\s*,\s*)?\{([^}]+)\}\s*from/
-    );
+    const match = line.match(new RegExp(
+      `(?:import|export)\\s+(?:type\\s+)?(?:${UNICODE_IDENTIFIER_PATTERN_SOURCE}\\s*,\\s*|\\*\\s+as\\s+${UNICODE_IDENTIFIER_PATTERN_SOURCE}\\s*,\\s*)?\\{([^}]+)\\}\\s*from`,
+      'u'
+    ));
     if (!match) {return members;}
 
     const membersStr = match[1];
@@ -503,7 +544,10 @@ export class ReferenceUpdater {
       const memberText = typeOnly ? trimmed.slice('type '.length).trim() : trimmed;
 
       // 檢查是否有別名 (name as alias)
-      const aliasMatch = memberText.match(/^(\w+)\s+as\s+(\w+)$/);
+      const aliasMatch = memberText.match(new RegExp(
+        `^(${UNICODE_IDENTIFIER_PATTERN_SOURCE})\\s+as\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})$`,
+        'u'
+      ));
       if (aliasMatch) {
         members.push({ name: aliasMatch[1], alias: aliasMatch[2], typeOnly });
       } else {
@@ -515,15 +559,62 @@ export class ReferenceUpdater {
   }
 
   /**
+   * 取得純 namespace import 的本地 binding 名稱。
+   * `import * as source from './source'` 沒有 named specifier，不能交給
+   * parseImportedMembers 處理。
+   */
+  private extractNamespaceImport(line: string): string | null {
+    const match = line.match(
+      /^\s*import\s+\*\s+as\s+([\p{ID_Start}_$][\p{ID_Continue}$]*)\s+from\s+['"`]/u
+    );
+    return match?.[1] ?? null;
+  }
+
+  /**
+   * 判斷 namespace import 對來源成員的使用形狀。
+   * 若還有其他 property 存取，不能只改 import path，否則會把那些仍留在來源檔的
+   * exports 一起切斷；目前沒有安全的單一 import 替換可保留兩邊 namespace。
+   */
+  private getNamespaceMemberUsage(
+    content: string,
+    statement: ImportExportStatement,
+    namespaceName: string,
+    memberName: string
+  ): NamespaceMemberUsage {
+    const lines = content.split('\n');
+    const codeWithoutImport = lines
+      .slice(0, statement.startLineIndex)
+      .concat(lines.slice(statement.endLineIndex + 1))
+      .join('\n');
+    const code = this.stripStringsAndComments(codeWithoutImport);
+    const escapedNamespace = this.pathUtils.escapeRegex(namespaceName);
+    const propertyPattern = new RegExp(
+      `(?<![.\\p{ID_Continue}$])${escapedNamespace}\\s*\\.\\s*([\\p{ID_Start}_$][\\p{ID_Continue}$]*)`,
+      'gu'
+    );
+    const properties = [...code.matchAll(propertyPattern)].map(match => match[1]);
+    const namespaceReferencePattern = new RegExp(
+      `(?<![.\\p{ID_Continue}$])${escapedNamespace}(?![\\p{ID_Continue}$])`,
+      'gu'
+    );
+    const referenceCount = [...code.matchAll(namespaceReferencePattern)].length;
+
+    if (referenceCount === 0) {return 'none';}
+    if (properties.length !== referenceCount) {return 'mixed';}
+    return properties.every(property => property === memberName) ? 'moved-only' : 'mixed';
+  }
+
+  /**
    * 提取 import 語句中位於 named import 子句之前的 default / namespace 前綴
    * 如 `import defaultThing, { moved } from '...'` → `defaultThing`
    *    `import * as NS, { moved } from '...'`      → `* as NS`
    * 無前綴時回傳 null
    */
   private extractDefaultPrefix(line: string): string | null {
-    const match = line.match(
-      /(?:import|export)\s+(?:type\s+)?([\w$]+|\*\s+as\s+[\w$]+)\s*,\s*\{/
-    );
+    const match = line.match(new RegExp(
+      `(?:import|export)\\s+(?:type\\s+)?(${UNICODE_IDENTIFIER_PATTERN_SOURCE}|\\*\\s+as\\s+${UNICODE_IDENTIFIER_PATTERN_SOURCE})\\s*,\\s*\\{`,
+      'u'
+    ));
     return match ? match[1].trim() : null;
   }
 

@@ -160,6 +160,9 @@ export class ParserRegistry {
         this.insertSorted(languageParsers, parserInfo);
       }
     }
+
+    // 註冊表變更後，下一次 initialize 必須重新驗證所有 Parser。
+    this.initialized = false;
   }
 
   /**
@@ -206,6 +209,9 @@ export class ParserRegistry {
         }
       }
     }
+
+    // 取消註冊也會改變已驗證的 Parser 集合。
+    this.initialized = false;
   }
 
   // ===== 查詢功能 =====

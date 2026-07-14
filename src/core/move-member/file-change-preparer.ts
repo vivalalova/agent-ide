@@ -12,6 +12,7 @@ import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getImportResolutionExtensions, stripSourceFileExtension } from '@shared/types/index.js';
 import { FileUtils } from '@core/foundations/index.js';
+import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 
 /**
  * Import 類型
@@ -397,9 +398,9 @@ export class FileChangePreparer {
     // export default [async] function NAME / export default class NAME
     // 僅匹配具名宣告；匿名 default export 維持不辨識
     const defaultExportPattern = new RegExp(
-      'export\\s+default\\s+(?:async\\s+)?function\\s+(\\w+)|' +
-      'export\\s+default\\s+class\\s+(\\w+)',
-      'g'
+      `export\\s+default\\s+(?:async\\s+)?function\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
+      `export\\s+default\\s+class\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+      'gu'
     );
 
     let match;
@@ -414,20 +415,20 @@ export class FileChangePreparer {
     // 複合正則：匹配所有 export 語句
     const exportPattern = new RegExp(
       // export const/let/var NAME
-      'export\\s+(?:const|let|var)\\s+(\\w+)|' +
+      `export\\s+(?:const|let|var)\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export [async] function NAME
-      'export\\s+(?:async\\s+)?function\\s+(\\w+)|' +
+      `export\\s+(?:async\\s+)?function\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export [abstract] class NAME
-      'export\\s+(?:abstract\\s+)?class\\s+(\\w+)|' +
+      `export\\s+(?:abstract\\s+)?class\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export interface NAME
-      'export\\s+interface\\s+(\\w+)|' +
+      `export\\s+interface\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export type NAME
-      'export\\s+type\\s+(\\w+)|' +
+      `export\\s+type\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export enum NAME
-      'export\\s+enum\\s+(\\w+)|' +
+      `export\\s+enum\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|` +
       // export { A, B }（不帶 from）
       'export\\s+\\{([^}]+)\\}(?!\\s+from)',
-      'g'
+      'gu'
     );
 
     while ((match = exportPattern.exec(content)) !== null) {

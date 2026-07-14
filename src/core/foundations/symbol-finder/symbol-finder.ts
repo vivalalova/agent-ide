@@ -29,6 +29,11 @@ import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 /** 批次並行讀取的檔案數量上限（避免 fd 耗盡） */
 const BATCH_SIZE = 20;
 
+interface NamedImportAlias {
+  readonly moduleSpecifier: string;
+  readonly localName: string;
+}
+
 /**
  * 符號查找器
  */
@@ -186,8 +191,16 @@ export class SymbolFinder {
 
               // 補搜本地別名的引用（C15）：以原始名綁定、但使用點為別名的引用會在上面漏掉。
               // 別名的 import binding token 本身回傳為 Import 類型，不會被誤算為 usage。
-              for (const aliasName of aliasMap.get(symbol.name) ?? []) {
-                const aliasRefs = parser.findScopedReferences(content, aliasName, { className: containerName });
+              const sameNameSymbols = symbolsByName.get(symbol.name) ?? [];
+              const hasAmbiguousName = sameNameSymbols.length > 1;
+              for (const alias of aliasMap.get(symbol.name) ?? []) {
+                if (
+                  hasAmbiguousName
+                  && !this.importResolvesToSymbolFile(filePath, alias.moduleSpecifier, symbol.location.filePath)
+                ) {
+                  continue;
+                }
+                const aliasRefs = parser.findScopedReferences(content, alias.localName, { className: containerName });
                 for (const ref of aliasRefs ?? []) {
                   refs.push(this.scopedRefToSymbolReference(ref, symbol.name, filePath, lines));
                 }
@@ -486,15 +499,16 @@ export class SymbolFinder {
 
   /**
    * 建立此檔「被匯入名稱 → 本地別名」的對應，只收錄別名與原名不同的 named import
-   * （如 `import { ping as p }` → ping → ['p']）。同一名稱可能有多個別名，故值為陣列。
+   * （如 `import { ping as p }` → ping → [{ moduleSpecifier, localName: 'p' }]）。
+   * 同一名稱可能有多個別名，故值為陣列。
    * 供 findReferencesMultiple 對別名使用點補搜，修正別名 import 使用中的 export 被漏抓
    * （C15）。Parser 不支援 getImportDeclarations 或解析失敗時回傳空 Map。
    */
   private collectNamedImportAliases(
     parser: ParserPlugin | null | undefined,
     content: string
-  ): Map<string, string[]> {
-    const aliasMap = new Map<string, string[]>();
+  ): Map<string, NamedImportAlias[]> {
+    const aliasMap = new Map<string, NamedImportAlias[]>();
     if (!parser?.getImportDeclarations) {
       return aliasMap;
     }
@@ -509,18 +523,43 @@ export class SymbolFinder {
         if (!named.alias || named.alias === named.name) {
           continue;
         }
-        const aliases = aliasMap.get(named.name);
-        if (aliases) {
-          if (!aliases.includes(named.alias)) {
-            aliases.push(named.alias);
-          }
-        } else {
-          aliasMap.set(named.name, [named.alias]);
+        const aliases = aliasMap.get(named.name) ?? [];
+        const alias = {
+          moduleSpecifier: declaration.moduleSpecifier,
+          localName: named.alias
+        };
+        if (!aliases.some(existing =>
+          existing.moduleSpecifier === alias.moduleSpecifier && existing.localName === alias.localName
+        )) {
+          aliases.push(alias);
         }
+        aliasMap.set(named.name, aliases);
       }
     }
 
     return aliasMap;
+  }
+
+  /**
+   * 判定 import 是否直接指向指定 symbol 所在檔案。
+   * 只處理相對／絕對路徑；node module 與未注入 tsconfig path alias 的 bare specifier 不可安全推斷。
+   * 同時容許 TypeScript 專案以 `.js` import 指向 `.ts` 檔，以及目錄 index 檔。
+   */
+  private importResolvesToSymbolFile(
+    importingFilePath: string,
+    moduleSpecifier: string,
+    symbolFilePath: string
+  ): boolean {
+    if (!moduleSpecifier.startsWith('.') && !path.isAbsolute(moduleSpecifier)) {
+      return false;
+    }
+
+    const importedPath = path.resolve(path.dirname(importingFilePath), moduleSpecifier);
+    const targetPath = path.resolve(symbolFilePath);
+    const withoutExtension = (filePath: string): string => filePath.replace(/\.[^/.]+$/, '');
+
+    return withoutExtension(importedPath) === withoutExtension(targetPath)
+      || withoutExtension(path.join(importedPath, 'index')) === withoutExtension(targetPath);
   }
 
   /**

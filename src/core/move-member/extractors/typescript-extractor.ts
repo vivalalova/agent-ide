@@ -10,7 +10,7 @@ import {
   findTypeAliasEnd,
   findStatementEnd
 } from '../utils/range-finder.js';
-import { UNICODE_IDENTIFIER_PATTERN } from '@plugins/shared/index.js';
+import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from '../utils/identifier-pattern.js';
 
 /**
  * 識別符字元類（去除 UNICODE_IDENTIFIER_PATTERN 的 `^`/`$` anchor），供內嵌
@@ -19,8 +19,6 @@ import { UNICODE_IDENTIFIER_PATTERN } from '@plugins/shared/index.js';
  * 各自定義出現 ASCII-only 的 `\w+` 而漏掉 Unicode 命名（見 C7 bug：Unicode
  * 命名 method 因此抽取失敗，導致按位置移動時 fallback 選中外層 class）
  */
-const IDENTIFIER_PATTERN_SOURCE = UNICODE_IDENTIFIER_PATTERN.source.slice(1, -1);
-
 /** 程式語言關鍵字集合 */
 const KEYWORDS = new Set([
   'if', 'else', 'while', 'for', 'switch', 'case', 'break', 'continue',
@@ -83,7 +81,10 @@ export function listTypeScriptMembers(
   let match;
 
   // 函式定義
-  const functionPattern = /^([ \t]*)(export[ \t]+)?(async[ \t]+)?function[ \t]+(\w+)/gm;
+  const functionPattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?(async[ \\t]+)?function[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = functionPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -104,7 +105,10 @@ export function listTypeScriptMembers(
   }
 
   // 類別定義
-  const classPattern = /^([ \t]*)(export[ \t]+)?(abstract[ \t]+)?class[ \t]+(\w+)/gm;
+  const classPattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?(abstract[ \\t]+)?class[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = classPattern.exec(content)) !== null) {
     const declLineNumber = content.substring(0, match.index).split('\n').length;
     const declLineIndex = declLineNumber - 1;
@@ -140,7 +144,10 @@ export function listTypeScriptMembers(
   }
 
   // 介面定義
-  const interfacePattern = /^([ \t]*)(export[ \t]+)?interface[ \t]+(\w+)/gm;
+  const interfacePattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?interface[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = interfacePattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -161,7 +168,10 @@ export function listTypeScriptMembers(
   }
 
   // 類型別名
-  const typePattern = /^([ \t]*)(export[ \t]+)?type[ \t]+(\w+)/gm;
+  const typePattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?type[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = typePattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findTypeAliasEnd(lines, lineNumber - 1);
@@ -182,7 +192,10 @@ export function listTypeScriptMembers(
   }
 
   // 常數
-  const constPattern = /^([ \t]*)(export[ \t]+)?const[ \t]+(\w+)/gm;
+  const constPattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?const[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = constPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findStatementEnd(lines, lineNumber - 1);
@@ -203,7 +216,10 @@ export function listTypeScriptMembers(
   }
 
   // 列舉
-  const enumPattern = /^([ \t]*)(export[ \t]+)?enum[ \t]+(\w+)/gm;
+  const enumPattern = new RegExp(
+    `^([ \\t]*)(export[ \\t]+)?enum[ \\t]+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gmu'
+  );
   while ((match = enumPattern.exec(content)) !== null) {
     const lineNumber = content.substring(0, match.index).split('\n').length;
     const endLine = findBlockEnd(lines, lineNumber - 1);
@@ -275,7 +291,7 @@ export function extractClassMembers(
   }
 
   const methodPattern = new RegExp(
-    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(${IDENTIFIER_PATTERN_SOURCE})[ \\t]*\\([^)]*\\)`,
+    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})[ \\t]*\\([^)]*\\)`,
     'gmu'
   );
   const rawMethodCandidates: RawMethodCandidate[] = [];
@@ -334,10 +350,15 @@ export function extractClassMembers(
   }
 
   // 屬性
-  const propertyPattern = /^[ \t]*(public|private|protected)?[ \t]*(static)?[ \t]*(readonly)?[ \t]*(\w+)[ \t]*[?:]?[ \t]*[^(]/gm;
+  const propertyPattern = new RegExp(
+    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(readonly)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})[ \\t]*[?:]?[ \\t]*[^ (]`,
+    'gmu'
+  );
   while ((match = propertyPattern.exec(classBody)) !== null) {
     // 跳過方法和 constructor
-    if (classBody.substring(match.index).match(/^\s*\w+\s*\(/)) { continue; }
+    if (classBody.substring(match.index).match(
+      new RegExp(`^\\s*${UNICODE_IDENTIFIER_PATTERN_SOURCE}\\s*\\(`, 'u')
+    )) { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
     const lineNumber = classStartLine + bodyStartLine - 1 + relativeLineNumber - 1;
@@ -480,7 +501,10 @@ function extractDependencies(sourceCode: string): string[] {
   let match;
 
   // 提取型別引用
-  const typePattern = /:\s*(\w+)(?:<|;|\s|,|\))/g;
+  const typePattern = new RegExp(
+    `:\\s*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})(?:<|;|\\s|,|\\))`,
+    'gu'
+  );
   while ((match = typePattern.exec(sourceCode)) !== null) {
     const typeName = match[1];
     if (!BASIC_TYPES.has(typeName) && !KEYWORDS.has(typeName)) {
@@ -489,7 +513,10 @@ function extractDependencies(sourceCode: string): string[] {
   }
 
   // 提取函式呼叫
-  const callPattern = /(\w+)\s*\(/g;
+  const callPattern = new RegExp(
+    `(${UNICODE_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`,
+    'gu'
+  );
   while ((match = callPattern.exec(sourceCode)) !== null) {
     const funcName = match[1];
     if (!KEYWORDS.has(funcName) && !BASIC_TYPES.has(funcName)) {
@@ -520,7 +547,10 @@ function extractDependencies(sourceCode: string): string[] {
   // 常數的成員搬移後，目標檔漏補該常數的 import（見 C8 bug）。排除區域宣告
   // （參數、const/let/var）、關鍵字、基本型別與屬性存取（`obj.prop` 的 prop）
   const localNames = extractLocallyDeclaredNames(sourceCode);
-  const identifierPattern = /(?<![.\w$])([A-Za-z_$][A-Za-z0-9_$]*)\b/g;
+  const identifierPattern = new RegExp(
+    `(?<![.\\p{ID_Continue}$])(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gu'
+  );
   while ((match = identifierPattern.exec(sourceCode)) !== null) {
     const name = match[1];
     if (KEYWORDS.has(name) || BASIC_TYPES.has(name) || localNames.has(name)) { continue; }
@@ -544,7 +574,10 @@ function extractLocallyDeclaredNames(sourceCode: string): Set<string> {
     for (const param of paramListMatch[1].split(',')) {
       const trimmed = param.trim();
       if (!trimmed) { continue; }
-      const nameMatch = trimmed.match(/^\.{3}\s*([A-Za-z_$][A-Za-z0-9_$]*)|^([A-Za-z_$][A-Za-z0-9_$]*)/);
+      const nameMatch = new RegExp(
+        `^\\.{3}\\s*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})|^(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+        'u'
+      ).exec(trimmed);
       if (nameMatch) {
         names.add(nameMatch[1] ?? nameMatch[2]);
       }
@@ -552,7 +585,10 @@ function extractLocallyDeclaredNames(sourceCode: string): Set<string> {
   }
 
   // 區域變數宣告：const/let/var NAME
-  const declPattern = /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  const declPattern = new RegExp(
+    `\\b(?:const|let|var)\\s+(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
+    'gu'
+  );
   let declMatch;
   while ((declMatch = declPattern.exec(sourceCode)) !== null) {
     names.add(declMatch[1]);

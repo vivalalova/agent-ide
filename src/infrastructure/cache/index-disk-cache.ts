@@ -73,15 +73,10 @@ export class IndexDiskCache {
 
       // 取得每個檔案的 mtime 與 size（size 變幾乎必抓到內容變更，
       // 防 mtime 保留型操作如 git checkout / cp -p 造成 stale cache）
-      const fileStats: Array<{ path: string; mtime: number; size: number }> = [];
-      await Promise.all(
+      const fileStats = await Promise.all(
         uniqueFiles.map(async (filePath) => {
-          try {
-            const stat = await projectFileSystem.getStats(filePath);
-            fileStats.push({ path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size });
-          } catch {
-            // 靜默跳過無法 stat 的檔案
-          }
+          const stat = await projectFileSystem.getStats(filePath);
+          return { path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size };
         })
       );
 

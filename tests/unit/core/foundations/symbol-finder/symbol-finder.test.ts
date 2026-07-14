@@ -15,7 +15,7 @@ import {
 } from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { ParserPlugin } from '@infrastructure/parser/interface.js';
+import { ScopedReferenceKind, type ParserPlugin } from '@infrastructure/parser/interface.js';
 import type { Symbol, SymbolType, Reference, ReferenceType } from '@shared/types/symbol.js';
 import type { AST, Location } from '@shared/types/index.js';
 
@@ -248,6 +248,55 @@ describe('SymbolFinder - findReferencesMultiple 批次查詢', () => {
       const refs = result.get(serializeSymbolKey(symbolToKey(fooSymbol))) || [];
       expect(refs.some(r => r.type === SymbolReferenceType.Definition)).toBe(true);
       expect(refs.some(r => r.type === SymbolReferenceType.Usage)).toBe(true);
+    });
+
+    it('同名 export 的 alias 使用不應被歸給未被 import 的另一個 symbol', async () => {
+      const consumerPath = '/test/consumer.ts';
+      const importedSymbolName = 'duplicateName';
+      const aliasName = 'usedDuplicateName';
+      const aliasReference = {
+        location: {
+          filePath: consumerPath,
+          range: {
+            start: { line: 2, column: 1 },
+            end: { line: 2, column: aliasName.length + 1 }
+          }
+        },
+        kind: ScopedReferenceKind.Call,
+        isExactMatch: true as const
+      };
+
+      mockFileSystem = createMockFileSystem({
+        [consumerPath]: `import { ${importedSymbolName} as ${aliasName} } from './used-source.js';\n${aliasName}();`
+      });
+      mockParser.getImportDeclarations = vi.fn();
+      vi.mocked(mockParser.getImportDeclarations).mockReturnValue([
+        {
+          range: {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 64 }
+          },
+          moduleSpecifier: './used-source.js',
+          isTypeOnly: false,
+          namedImports: [{ name: importedSymbolName, alias: aliasName }],
+          rawStatement: `import { ${importedSymbolName} as ${aliasName} } from './used-source.js'`
+        }
+      ]);
+      mockParser.findScopedReferences = vi.fn((_content, symbolName) =>
+        symbolName === aliasName ? [aliasReference] : []
+      );
+
+      symbolFinder = new SymbolFinder(mockParserRegistry, mockFileSystem);
+      const usedSymbol = createMockSymbol(importedSymbolName, 'function', { filePath: '/test/used-source.ts' });
+      const unusedSymbol = createMockSymbol(importedSymbolName, 'function', { filePath: '/test/unused-source.ts' });
+
+      const result = await symbolFinder.findReferencesMultiple(
+        [usedSymbol, unusedSymbol],
+        [consumerPath]
+      );
+
+      expect(result.get(serializeSymbolKey(symbolToKey(usedSymbol)))).toHaveLength(1);
+      expect(result.get(serializeSymbolKey(symbolToKey(unusedSymbol)))).toEqual([]);
     });
   });
 

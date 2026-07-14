@@ -493,7 +493,7 @@ export class IndexEngine {
   async needsReindexing(filePath: string): Promise<boolean> {
     try {
       const stat = await this.fileSystem.getStats(filePath);
-      return this.fileIndex.needsReindexing(filePath, stat.modifiedTime);
+      return this.fileIndex.needsReindexing(filePath, stat.modifiedTime, stat.size);
     } catch {
       // graceful-degradation: 檔案已被刪除時仍需標記重新索引以清理索引條目
       return this.fileIndex.hasFile(filePath);

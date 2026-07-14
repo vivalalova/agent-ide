@@ -1,10 +1,8 @@
 /**
- * FileSystem glob onlyFiles regression 測試
+ * FileSystem glob onlyFiles/onlyDirectories regression 測試
  *
  * H4：FileSystem.glob() 建構 globby 選項時只帶了 cwd/ignore/dot/absolute（與
- * followSymlinks），未把呼叫端傳入的 onlyFiles / onlyDirectories 轉交給
- * 底層的 glob 套件，導致 onlyFiles: true 完全被忽略，glob 結果會把符合
- * pattern 的目錄也一併列出。
+ * followSymlinks），未完整實作呼叫端傳入的 onlyFiles / onlyDirectories。
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -47,5 +45,18 @@ describe('FileSystem.glob onlyFiles regression（H4）', () => {
     // 正確行為：只應包含 src/a.ts，不應包含 src/subdir 目錄
     expect(normalized.some(p => p.endsWith('/src/subdir'))).toBe(false);
     expect(normalized.some(p => p.endsWith('/src/a.ts'))).toBe(true);
+  });
+
+  it('onlyDirectories: true 應排除符合 pattern 的檔案，只回傳目錄', async () => {
+    const results = await fileSystem.glob('src/*', {
+      cwd: tempDir,
+      onlyDirectories: true,
+      absolute: true
+    });
+
+    const normalized = results.map(p => p.replace(/\\/g, '/'));
+
+    expect(normalized.some(p => p.endsWith('/src/a.ts'))).toBe(false);
+    expect(normalized.some(p => p.endsWith('/src/subdir'))).toBe(true);
   });
 });

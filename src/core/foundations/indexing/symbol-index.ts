@@ -405,44 +405,43 @@ export class SymbolIndex {
 
   /**
    * 從其他索引中移除符號
-   * 使用 findIndex + splice 避免 O(n^2) 的 filter 重建陣列
+   * 使用反向 splice，確保同檔案內同名符號的所有 entry 都會被移除。
    */
   private removeFromOtherIndexes(symbolName: string, filePath: string): void {
     // 從類型索引中移除
     for (const [type, entries] of this.symbolsByType) {
-      const idx = entries.findIndex(entry =>
-        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
-      );
-      if (idx !== -1) {
-        entries.splice(idx, 1);
-        if (entries.length === 0) {
-          this.symbolsByType.delete(type);
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].fileInfo.filePath === filePath && entries[i].symbol.name === symbolName) {
+          entries.splice(i, 1);
         }
+      }
+      if (entries.length === 0) {
+        this.symbolsByType.delete(type);
       }
     }
 
     // 從檔案索引中移除
     const fileEntries = this.symbolsByFile.get(filePath);
     if (fileEntries) {
-      const idx = fileEntries.findIndex(entry => entry.symbol.name === symbolName);
-      if (idx !== -1) {
-        fileEntries.splice(idx, 1);
-        if (fileEntries.length === 0) {
-          this.symbolsByFile.delete(filePath);
+      for (let i = fileEntries.length - 1; i >= 0; i--) {
+        if (fileEntries[i].symbol.name === symbolName) {
+          fileEntries.splice(i, 1);
         }
+      }
+      if (fileEntries.length === 0) {
+        this.symbolsByFile.delete(filePath);
       }
     }
 
     // 從作用域索引中移除
     for (const [scopeKey, entries] of this.symbolsByScope) {
-      const idx = entries.findIndex(entry =>
-        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
-      );
-      if (idx !== -1) {
-        entries.splice(idx, 1);
-        if (entries.length === 0) {
-          this.symbolsByScope.delete(scopeKey);
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].fileInfo.filePath === filePath && entries[i].symbol.name === symbolName) {
+          entries.splice(i, 1);
         }
+      }
+      if (entries.length === 0) {
+        this.symbolsByScope.delete(scopeKey);
       }
     }
   }

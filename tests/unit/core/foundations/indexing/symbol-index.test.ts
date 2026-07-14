@@ -45,4 +45,30 @@ describe('SymbolIndex.removeFileSymbols', () => {
     const results = await index.findSymbol('run');
     expect(results).toEqual([]);
   });
+
+  it('removeSymbol 應從所有索引移除同檔案內同名符號的全部 entry', async () => {
+    const index = new SymbolIndex();
+    const filePath = '/src/multi-method.ts';
+    const fileInfo = createFileInfo(filePath);
+    const first = createMockSymbol('run', SymbolType.Function, filePath);
+    const second = {
+      ...createMockSymbol('run', SymbolType.Function, filePath),
+      location: {
+        filePath,
+        range: {
+          start: { line: 10, column: 3 },
+          end: { line: 10, column: 6 }
+        }
+      }
+    };
+
+    await index.addSymbol(first, fileInfo);
+    await index.addSymbol(second, fileInfo);
+
+    await index.removeSymbol('run', filePath);
+
+    expect(await index.findSymbol('run')).toEqual([]);
+    expect(await index.findSymbolsByType(SymbolType.Function)).toEqual([]);
+    expect(await index.getFileSymbols(filePath)).toEqual([]);
+  });
 });

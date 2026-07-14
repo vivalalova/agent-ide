@@ -40,7 +40,7 @@ import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 interface ReexportForward {
   /** re-export 的來源模組路徑（`from '<spec>'`） */
   readonly moduleSpecifier: string;
-  /** 具名轉發的原始符號名稱；undefined 表示 `export * from` 轉發全部匯出 */
+  /** 具名轉發的原始符號名稱；undefined 表示 `export * from` 轉發全部具名匯出（不含 default） */
   readonly exportedName?: string;
 }
 
@@ -1424,6 +1424,7 @@ export class ChangeSignatureEngine {
   ): Promise<Map<string, TargetFileBindings>> {
     const targetAbsolute = path.resolve(targetFilePath);
     const bindings = new Map<string, TargetFileBindings>();
+    const targetHasDefaultExport = await this.hasDefaultExportName(targetAbsolute, name);
     // per-run cache：同一次呼叫內，同一個中介檔（barrel）的 re-export 轉發只解析一次，
     // 避免多個 consumer 檔重複讀取/解析同一個中介檔
     const reexportCache = new Map<string, readonly ReexportForward[]>();
@@ -1459,36 +1460,57 @@ export class ChangeSignatureEngine {
           continue; // type-only import 不會產生 runtime 呼叫點
         }
 
-        const moduleExposesTarget = await this.moduleExposesTargetFunction(
-          file,
-          declaration.moduleSpecifier,
-          name,
-          targetAbsolute,
-          files,
-          reexportCache
-        );
-        if (!moduleExposesTarget) {
-          continue;
-        }
-
         // 具名 import：以「匯出名 === 目標名」判定是否指向目標，本地繫結名為 alias ?? name
         // （`import { combine as merge }` → 匯出名 combine、本地名 merge）
         for (const spec of declaration.namedImports) {
           if (spec.isTypeOnly) {
             continue;
           }
-          if (spec.name === name) {
+          if (spec.name !== name && spec.name !== 'default') {
+            continue;
+          }
+          const requestedExportName = spec.name === 'default' ? 'default' : name;
+          const moduleExposesTarget = await this.moduleExposesTargetFunction(
+            file,
+            declaration.moduleSpecifier,
+            name,
+            targetAbsolute,
+            files,
+            reexportCache,
+            targetHasDefaultExport,
+            requestedExportName
+          );
+          if (moduleExposesTarget) {
             ensure(file).localNames.add(spec.alias ?? spec.name);
           }
         }
 
-        // default import：沿用「本地名 === 目標名」的既有啟發式判定
-        if (declaration.defaultImport === name) {
-          ensure(file).localNames.add(name);
+        // default import 綁定的是模組 default export，本地名稱可以任意命名；
+        // 目標可以直接來自定義檔，也可以經 `export { default } from` barrel 轉發。
+        if (declaration.defaultImport !== undefined && await this.moduleExposesTargetFunction(
+          file,
+          declaration.moduleSpecifier,
+          name,
+          targetAbsolute,
+          files,
+          reexportCache,
+          targetHasDefaultExport,
+          'default'
+        )) {
+          ensure(file).localNames.add(declaration.defaultImport ?? name);
         }
 
         // namespace import：`import * as ns` → `ns.<name>(...)` 呼叫
-        if (declaration.namespaceImport) {
+        if (declaration.namespaceImport && await this.moduleExposesTargetFunction(
+          file,
+          declaration.moduleSpecifier,
+          name,
+          targetAbsolute,
+          files,
+          reexportCache,
+          targetHasDefaultExport,
+          name
+        )) {
           ensure(file).namespaceReceivers.add(declaration.namespaceImport);
         }
       }
@@ -1554,10 +1576,12 @@ export class ChangeSignatureEngine {
     name: string,
     targetAbsolute: string,
     allFiles: readonly string[],
-    reexportCache: Map<string, readonly ReexportForward[]>
+    reexportCache: Map<string, readonly ReexportForward[]>,
+    targetHasDefaultExport: boolean,
+    requestedExportName: string
   ): Promise<boolean> {
     if (this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, targetAbsolute)) {
-      return true;
+      return requestedExportName !== 'default' || targetHasDefaultExport;
     }
     return this.resolvesToTargetViaReexport(
       consumerFilePath,
@@ -1566,6 +1590,8 @@ export class ChangeSignatureEngine {
       targetAbsolute,
       allFiles,
       reexportCache,
+      targetHasDefaultExport,
+      requestedExportName,
       new Set<string>()
     );
   }
@@ -1583,6 +1609,8 @@ export class ChangeSignatureEngine {
     targetAbsolute: string,
     allFiles: readonly string[],
     reexportCache: Map<string, readonly ReexportForward[]>,
+    targetHasDefaultExport: boolean,
+    requestedExportName: string,
     visited: Set<string>
   ): Promise<boolean> {
     const intermediateFile = allFiles.find(candidate =>
@@ -1600,10 +1628,17 @@ export class ChangeSignatureEngine {
 
     const forwards = await this.getReexportForwards(intermediateFile, reexportCache);
     for (const forward of forwards) {
-      if (forward.exportedName !== undefined && forward.exportedName !== name) {
+      // `export *` 不轉發 default；其餘具名轉發必須對上實際 import 的匯出名。
+      if (forward.exportedName === undefined && requestedExportName === 'default') {
         continue;
       }
-      if (this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)) {
+      if (forward.exportedName !== undefined && forward.exportedName !== requestedExportName) {
+        continue;
+      }
+      if (
+        this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)
+        && (requestedExportName !== 'default' || targetHasDefaultExport)
+      ) {
         return true;
       }
       if (await this.resolvesToTargetViaReexport(
@@ -1613,6 +1648,8 @@ export class ChangeSignatureEngine {
         targetAbsolute,
         allFiles,
         reexportCache,
+        targetHasDefaultExport,
+        requestedExportName,
         visited
       )) {
         return true;
@@ -1683,6 +1720,52 @@ export class ChangeSignatureEngine {
     }
 
     return forwards;
+  }
+
+  /**
+   * 判斷目標檔是否以 default export 暴露指定名稱的函式／類別。
+   * default import 的本地名稱與宣告名稱可以不同，因此不能用 import 名稱比對取代這項判定。
+   */
+  private async hasDefaultExportName(filePath: string, name: string): Promise<boolean> {
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content) {
+      return false;
+    }
+
+    const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+    for (const statement of sourceFile.statements) {
+      if (
+        (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
+        && statement.name?.text === name
+        && ts.canHaveModifiers(statement)
+        && ts.getModifiers(statement)?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword)
+      ) {
+        return true;
+      }
+
+      if (
+        ts.isExportAssignment(statement)
+        && !statement.isExportEquals
+        && ts.isIdentifier(statement.expression)
+        && statement.expression.text === name
+      ) {
+        return true;
+      }
+
+      if (
+        ts.isExportDeclaration(statement)
+        && !statement.moduleSpecifier
+        && statement.exportClause
+        && ts.isNamedExports(statement.exportClause)
+        && statement.exportClause.elements.some(element =>
+          element.name.text === 'default' && element.propertyName?.text === name
+        )
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

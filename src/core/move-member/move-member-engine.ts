@@ -11,6 +11,7 @@ import { createChangesetBuilder, ChangesetCommand, TextEditOperationType, Change
 import { MemberExtractor } from './member-extractor.js';
 import { ReferenceUpdater, type ReferenceUpdaterPathConfig } from './reference-updater.js';
 import { FileChangePreparer } from './file-change-preparer.js';
+import { isInsideStringOrComment } from './utils/source-text.js';
 import {
   type MoveMemberOptions,
   type MoveMemberResult,
@@ -177,6 +178,11 @@ export class MoveMemberEngine {
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.MoveMember);
 
+    const targetReferenceUpdates = referenceUpdates.filter(update => update.filePath === targetFileChange.filePath);
+    const targetChange = targetReferenceUpdates.length > 0
+      ? this.applyTargetReferenceUpdates(targetFileChange, targetReferenceUpdates)
+      : targetFileChange;
+
     // 轉換 sourceFileChange（整檔替換）
     const sourceOriginalLines = sourceFileChange.originalCode.split('\n');
     builder.addTextChange(sourceFileChange.filePath, [{
@@ -189,23 +195,28 @@ export class MoveMemberEngine {
     }], TextEditOperationType.Modify);
 
     // 轉換 targetFileChange
-    if (targetFileChange.isNewFile) {
-      builder.addFileCreate(targetFileChange.filePath, targetFileChange.newCode);
+    if (targetChange.isNewFile) {
+      builder.addFileCreate(targetChange.filePath, targetChange.newCode);
     } else {
-      const targetOriginal = targetFileChange.originalCode ?? '';
+      const targetOriginal = targetChange.originalCode ?? '';
       const targetOriginalLines = targetOriginal.split('\n');
-      builder.addTextChange(targetFileChange.filePath, [{
+      builder.addTextChange(targetChange.filePath, [{
         range: {
           start: { line: 1, column: 1, offset: 0 },
           end: { line: targetOriginalLines.length + 1, column: 1, offset: targetOriginal.length }
         },
-        newText: targetFileChange.newCode,
+        newText: targetChange.newCode,
         description: 'Add member to target file'
       }], TextEditOperationType.Modify);
     }
 
     // 轉換 referenceUpdates
     for (const update of referenceUpdates) {
+      // 目標檔的引用已合併進整檔替換；若再附加原始座標的局部 edit，
+      // 會與整檔 range 重疊並被 ChangesetApplicator 拒絕。
+      if (update.filePath === targetFileChange.filePath) {
+        continue;
+      }
       builder.addTextChange(update.filePath, [{
         range: update.location.range,
         newText: update.newImport,
@@ -224,6 +235,53 @@ export class MoveMemberEngine {
     return builder.build();
   }
 
+  /**
+   * 將目標檔內指向來源檔的 import 更新併入目標檔整檔替換，
+   * 避免同一檔案同時存在重疊的整檔與局部 TextEdit。
+   */
+  private applyTargetReferenceUpdates(
+    targetFileChange: TargetFileChange,
+    updates: readonly ReferenceUpdate[]
+  ): TargetFileChange {
+    let newCode = targetFileChange.newCode;
+
+    for (const update of updates) {
+      const index = this.findTargetImportOffset(newCode, update.originalImport);
+      if (index === -1) {
+        throw new Error(`找不到目標檔引用更新的原始 import: ${update.originalImport}`);
+      }
+      newCode = newCode.slice(0, index) + update.newImport + newCode.slice(index + update.originalImport.length);
+    }
+
+    return { ...targetFileChange, newCode };
+  }
+
+  /**
+   * 找到真正位於 import/export 語句行首的原始文字，避免同樣內容先出現在
+   * 字串或註解時被 indexOf 誤改。
+   */
+  private findTargetImportOffset(code: string, originalImport: string): number {
+    const statement = originalImport.trimStart();
+    if (!/^(?:import|export)\b/.test(statement)) {
+      return code.indexOf(originalImport);
+    }
+
+    let searchFrom = 0;
+    while (searchFrom < code.length) {
+      const index = code.indexOf(originalImport, searchFrom);
+      if (index === -1) {
+        return -1;
+      }
+
+      const lineStart = code.lastIndexOf('\n', index - 1) + 1;
+      if (/^\s*$/.test(code.slice(lineStart, index)) && !isInsideStringOrComment(code, index)) {
+        return index;
+      }
+      searchFrom = index + 1;
+    }
+
+    return -1;
+  }
   /**
    * 驗證目標
    */

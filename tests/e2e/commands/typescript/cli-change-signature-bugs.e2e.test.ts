@@ -13,13 +13,18 @@
  *     實測：呼叫點正確重排引數順序，但函式宣告的參數順序沒有跟著改，
  *     產生「呼叫點與宣告不一致」的壞碼。
  *
+ * C15：default import 本地別名的呼叫點漏改
+ *     實測：default export 的宣告參數順序改了，但 consumer 可任意命名的 default import 呼叫點沒改。
+ * C16：default re-export 後的 default import 呼叫點漏改
+ *     實測：consumer 經 `export { default } from` barrel 匯入後，呼叫點未同步重排。
+ *
  * 每筆皆採 apply 模式（無 --dry-run）後讀檔驗證最終內容，而非只看 dry-run 的 diff JSON。
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
-describe('CLI change-signature - 缺陷 regression（C11-C14）', () => {
+describe('CLI change-signature - 缺陷 regression（C11-C16）', () => {
   let fixture: FixtureContext;
 
   beforeEach(async () => {
@@ -234,4 +239,74 @@ export function setup(count: number, name: string): void {
       expect(updated).toBe(expected);
     });
   });
+
+  describe('C15: default import 別名呼叫點漏改', () => {
+    it('透過任意本地名稱 import default export 的呼叫點應同步重排', async () => {
+      await fixture.writeFile('src/c15-lib.ts', `
+export default function combine(first: string, second: string): string { return first + second; }
+`.trim());
+      await fixture.writeFile('src/c15-app.ts', `
+import merge from './c15-lib.js';
+
+export const out = merge('a', 'b');
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', fixture.getFilePath('src/c15-lib.ts'),
+          '--function', 'combine',
+          '-p', fixture.rootPath,
+          '--reorder', 'second,first',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedLib = await fixture.memfs.readFile(fixture.getFilePath('src/c15-lib.ts'), 'utf-8') as string;
+      const updatedApp = await fixture.memfs.readFile(fixture.getFilePath('src/c15-app.ts'), 'utf-8') as string;
+
+      expect(updatedLib).toContain('export default function combine(second: string, first: string): string');
+      expect(updatedApp).toContain('merge(\'b\', \'a\')');
+    });
+  });
+
+  describe('C16: default re-export 後的 default import 呼叫點漏改', () => {
+    it('透過 `export { default } from` barrel 匯入的呼叫點應同步重排', async () => {
+      await fixture.writeFile('src/c16-lib.ts', `
+export default function combine(first: string, second: string): string { return first + second; }
+`.trim());
+      await fixture.writeFile('src/c16-barrel.ts', `
+export { default } from './c16-lib.js';
+`.trim());
+      await fixture.writeFile('src/c16-app.ts', `
+import merge from './c16-barrel.js';
+
+export const out = merge('a', 'b');
+`.trim());
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          '--file', fixture.getFilePath('src/c16-lib.ts'),
+          '--function', 'combine',
+          '-p', fixture.rootPath,
+          '--reorder', 'second,first',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const updatedLib = await fixture.memfs.readFile(fixture.getFilePath('src/c16-lib.ts'), 'utf-8') as string;
+      const updatedApp = await fixture.memfs.readFile(fixture.getFilePath('src/c16-app.ts'), 'utf-8') as string;
+
+      expect(updatedLib).toContain('export default function combine(second: string, first: string): string');
+      expect(updatedApp).toContain('merge(\'b\', \'a\')');
+    });
+  });
+
 });

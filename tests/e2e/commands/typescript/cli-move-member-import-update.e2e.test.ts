@@ -135,6 +135,192 @@ export function useDup(): number {
     expect(destImportLines[0]).toContain('existing');
   });
 
+  it('目標檔原本從來源匯入被移動成員時，應移除失效的來源 import', async () => {
+    await fixture.writeFile('src/target-source.ts', `export function targetMoved(): number {
+  return 42;
+}
+`);
+    await fixture.writeFile('src/target-home.ts', `import { targetMoved } from './target-source';
+
+export function useTargetMoved(): number {
+  return targetMoved();
+}
+`);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/target-source.ts')}:1`, fixture.getFilePath('src/target-home.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const target = await fixture.memfs.readFile(fixture.getFilePath('src/target-home.ts'), 'utf-8') as string;
+    expect(target).not.toContain('import { targetMoved } from \'./target-source\';');
+    expect(target).toContain('export function targetMoved');
+    expect(target).toContain('return targetMoved();');
+  });
+
+  it('目標檔的字串包含相同 import 文字時，應更新真正的 import 而非字串', async () => {
+    await fixture.writeFile('src/target-string-source.ts', `export function targetStringMoved(): number {
+  return 42;
+}
+`);
+    await fixture.writeFile('src/target-string-home.ts', `const importExample = "import { targetStringMoved } from './target-string-source';";
+import { targetStringMoved } from './target-string-source';
+
+export function useTargetStringMoved(): number {
+  return targetStringMoved();
+}
+`);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/target-string-source.ts')}:1`, fixture.getFilePath('src/target-string-home.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const target = await fixture.memfs.readFile(fixture.getFilePath('src/target-string-home.ts'), 'utf-8') as string;
+    expect(target).toContain('const importExample = "import { targetStringMoved } from \'./target-string-source\';";');
+    expect(target).not.toContain('import { targetStringMoved } from \'./target-string-source\';\n\nexport function useTargetStringMoved');
+    expect(target).toContain('export function targetStringMoved');
+  });
+
+  it('多行 template literal 包含相同 import 文字時，應更新真正的 import 而非 template 內容', async () => {
+    await fixture.writeFile('src/target-template-source.ts', `export function targetTemplateMoved(): number {
+  return 42;
+}
+`);
+    await fixture.writeFile('src/target-template-home.ts', [
+      'const importExample = `',
+      'import { targetTemplateMoved } from \'./target-template-source\';',
+      '`;',
+      'import { targetTemplateMoved } from \'./target-template-source\';',
+      '',
+      'export function useTargetTemplateMoved(): number {',
+      '  return targetTemplateMoved();',
+      '}',
+      ''
+    ].join('\n'));
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/target-template-source.ts')}:1`, fixture.getFilePath('src/target-template-home.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const target = await fixture.memfs.readFile(fixture.getFilePath('src/target-template-home.ts'), 'utf-8') as string;
+    expect(target).toContain('import { targetTemplateMoved } from \'./target-template-source\';\n`;');
+    expect(target).not.toContain('import { targetTemplateMoved } from \'./target-template-source\';\n\nexport function useTargetTemplateMoved');
+    expect(target).toContain('export function targetTemplateMoved');
+  });
+
+  it('consumer 只透過 namespace import 使用被移動成員時，應更新 namespace 的模組路徑', async () => {
+    await fixture.writeFile('src/namespace-source.ts', `export function namespaceMoved(): number {
+  return 42;
+}
+`);
+    await fixture.writeFile('src/namespace-target.ts', '');
+    await fixture.writeFile('src/namespace-consumer.ts', `import * as sourceModule from './namespace-source';
+
+export const namespaceValue = sourceModule.namespaceMoved();
+`);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/namespace-source.ts')}:1`, fixture.getFilePath('src/namespace-target.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+    expect(result.exitCode).toBe(0);
+
+    const consumer = await fixture.memfs.readFile(fixture.getFilePath('src/namespace-consumer.ts'), 'utf-8') as string;
+    expect(consumer).toContain('import * as sourceModule from \'./namespace-target\';');
+    expect(consumer).not.toContain('from \'./namespace-source\';');
+    expect(consumer).toContain('sourceModule.namespaceMoved();');
+  });
+
+  it('namespace import 同時使用來源其他成員時，應拒絕產生不完整的引用更新', async () => {
+    const source = `export function namespaceMixedMoved(): number {
+  return 42;
+}
+
+export function namespaceMixedKept(): number {
+  return 1;
+}
+`;
+    const target = '';
+    const consumer = `import * as sourceModule from './namespace-mixed-source';
+
+export const namespaceMixedValue = sourceModule.namespaceMixedMoved() + sourceModule.namespaceMixedKept();
+`;
+    await fixture.writeFile('src/namespace-mixed-source.ts', source);
+    await fixture.writeFile('src/namespace-mixed-target.ts', target);
+    await fixture.writeFile('src/namespace-mixed-consumer.ts', consumer);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/namespace-mixed-source.ts')}:1`, fixture.getFilePath('src/namespace-mixed-target.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-mixed-source.ts'), 'utf-8')).toBe(source);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-mixed-target.ts'), 'utf-8')).toBe(target);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-mixed-consumer.ts'), 'utf-8')).toBe(consumer);
+  });
+
+  it('目標檔的 namespace import 使用被移動成員時，應拒絕產生 self-import', async () => {
+    const source = `export function namespaceTargetMoved(): number {
+  return 42;
+}
+`;
+    const target = `import * as sourceModule from './namespace-target-source';
+
+export function useNamespaceTargetMoved(): number {
+  return sourceModule.namespaceTargetMoved();
+}
+`;
+    await fixture.writeFile('src/namespace-target-source.ts', source);
+    await fixture.writeFile('src/namespace-target-home.ts', target);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/namespace-target-source.ts')}:1`, fixture.getFilePath('src/namespace-target-home.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-target-source.ts'), 'utf-8')).toBe(source);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-target-home.ts'), 'utf-8')).toBe(target);
+  });
+
+  it('無法辨識 namespace 的動態存取時，應拒絕產生不完整的引用更新', async () => {
+    const source = `export function namespaceComputedMoved(): number {
+  return 42;
+}
+`;
+    const target = '';
+    const consumer = `import * as sourceModule from './namespace-computed-source';
+
+export const namespaceComputedValue = sourceModule['namespaceComputedMoved']();
+`;
+    await fixture.writeFile('src/namespace-computed-source.ts', source);
+    await fixture.writeFile('src/namespace-computed-target.ts', target);
+    await fixture.writeFile('src/namespace-computed-consumer.ts', consumer);
+
+    const result = await executeCLI(
+      ['move', `${fixture.getFilePath('src/namespace-computed-source.ts')}:1`, fixture.getFilePath('src/namespace-computed-target.ts'),
+        '-p', fixture.rootPath, '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-computed-source.ts'), 'utf-8')).toBe(source);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-computed-target.ts'), 'utf-8')).toBe(target);
+    expect(await fixture.memfs.readFile(fixture.getFilePath('src/namespace-computed-consumer.ts'), 'utf-8')).toBe(consumer);
+  });
+
   describe('缺陷12: 併入目標語句不分種類', () => {
     it('consumer 的值 import 不得被併入目標檔的 export-from 語句 (export { x } from)', async () => {
       await fixture.writeFile('src/mvk-source.ts', `export function mvkMoved(): number {

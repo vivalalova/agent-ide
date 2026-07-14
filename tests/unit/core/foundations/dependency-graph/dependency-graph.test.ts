@@ -81,6 +81,26 @@ describe('DependencyGraph', () => {
 
       expect(graph.getDependents('/src/c.ts')).toEqual([]);
     });
+
+    it('應該使移除節點後的傳遞查詢不再回傳快取結果', () => {
+      graph.addDependency('/src/a.ts', '/src/b.ts');
+      graph.addDependency('/src/b.ts', '/src/c.ts');
+
+      // 先建立正向與反向傳遞查詢快取。
+      expect(graph.getTransitiveDependencies('/src/a.ts')).toEqual([
+        '/src/b.ts',
+        '/src/c.ts'
+      ]);
+      expect(graph.getTransitiveDependents('/src/c.ts')).toEqual([
+        '/src/b.ts',
+        '/src/a.ts'
+      ]);
+
+      graph.removeNode('/src/b.ts');
+
+      expect(graph.getTransitiveDependencies('/src/a.ts')).toEqual([]);
+      expect(graph.getTransitiveDependents('/src/c.ts')).toEqual([]);
+    });
   });
 
   describe('addDependency', () => {

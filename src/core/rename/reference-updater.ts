@@ -28,10 +28,11 @@ export interface RenameModuleResolutionConfig {
 
 /**
  * 檔案快取項目
- * 包含內容和修改時間，用於失效檢查
+ * 包含內容、大小和修改時間，用於失效檢查
  */
 interface FileCacheEntry {
   content: string;
+  size: number;
   modifiedTime: Date;
 }
 
@@ -41,7 +42,7 @@ interface FileCacheEntry {
  * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class ReferenceUpdater {
-  /** 檔案內容快取，包含修改時間用於失效檢查 */
+  /** 檔案內容快取，包含大小與修改時間用於失效檢查 */
   private readonly fileCache: MemoryCache<string, FileCacheEntry> = createLRUCache(200);
   private readonly fileSystem: IFileSystem;
   private readonly symbolFinder?: SymbolFinder;
@@ -360,7 +361,7 @@ export class ReferenceUpdater {
 
   /**
    * 取得檔案內容
-   * 使用 modifiedTime 進行快取失效檢查
+   * 使用 size 與 modifiedTime 進行快取失效檢查
    */
   private async getFileContent(filePath: string): Promise<string | null> {
     const cached = this.fileCache.get(filePath);
@@ -369,7 +370,7 @@ export class ReferenceUpdater {
       // 檢查快取是否仍有效
       try {
         const stat = await this.fileSystem.getStats(filePath);
-        if (stat.modifiedTime <= cached.modifiedTime) {
+        if (stat.modifiedTime <= cached.modifiedTime && stat.size === cached.size) {
           return cached.content;
         }
       } catch {
@@ -386,7 +387,7 @@ export class ReferenceUpdater {
       // 取得 modifiedTime 並快取
       try {
         const stat = await this.fileSystem.getStats(filePath);
-        this.fileCache.set(filePath, { content, modifiedTime: stat.modifiedTime });
+        this.fileCache.set(filePath, { content, size: stat.size, modifiedTime: stat.modifiedTime });
       } catch {
         // graceful-degradation: 無法取得 stat 時不快取，下次會重新讀取
       }
