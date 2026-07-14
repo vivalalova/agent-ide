@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：9 核心模組、2 內建 Parser（TS/JS）、可註冊額外 Parser 副檔名、Unicode 識別符支援
 
 **環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.7
 
@@ -40,7 +40,6 @@ src/
 │   ├── foundations/      # indexing/ | dependency-graph/ | symbol-finder/ | file-utils
 │   ├── cycles/           # 循環依賴（Tarjan）
 │   ├── impact/           # 影響分析（BFS）
-│   ├── find-references/  # 符號引用
 │   ├── call-hierarchy/   # 呼叫層次
 │   ├── rename/           # 重命名+引用更新
 │   ├── change-signature/ # 參數重構
@@ -53,9 +52,17 @@ src/
 └── interfaces/           # CLI
 ```
 
+### Parser 語言擴充契約
+
+- **單一註冊來源**：預設 Parser 由 `infrastructure/parser/initializer.ts` 管理；CLI、IndexEngine、worker 都必須呼叫同一套 bootstrap，禁止各自 hardcode TS/JS 註冊。
+- **副檔名來源**：索引、搜尋、impact、cycles 以 `ParserRegistry.getSupportedExtensions()` 合併 `includeExtensions`；新增 Parser 後不可另存一份副檔名清單。
+- **worker 擴充**：worker 任務可帶 `parserModulePaths`，worker 解析前會載入外部 Parser module；測試需覆蓋非 TS/JS extension。
+- **能力邊界**：`change-signature`、`call-hierarchy`、`move-member` 仍是 TS/JS 語意流程；非 TS/JS Parser 必須透過 `getCapabilities()` 明確宣告支援，否則 CLI fast-fail。
+- **測試要求**：新增語言支援時至少用假 Parser 驗證 indexing/search、impact/cycles、worker bootstrap，以及不支援能力的錯誤訊息。
+
 ### Core 設計原則
 
-- **CLI 對應**：`core/<module>/` 對應 CLI 命令
+- **CLI 對應**：`core/<module>/` 對應 CLI 命令；例外是 `find-references`，無獨立 `core/` 模組，實作直接在 `interfaces/cli/commands/find-references.command.ts` + `infrastructure/formatters/strategies/find-references-formatter.ts` + `plugins/{typescript,javascript}/reference-finder.ts`
 - **foundations/ 層**：核心內部共用基礎設施（indexing、dependency-graph、symbol-finder、file-utils）
 - **shared/ 層**：全域共用（types、errors）- 與 `core/foundations/` 區分
 - **re-export 規則**：僅 `index.ts` barrel export 允許
@@ -65,7 +72,7 @@ src/
 ```text
 第三層：impact（依賴 cycles + foundations）
     ↓
-第二層：cycles, find-references, call-hierarchy, rename, deadcode, move, move-member, change-signature
+第二層：cycles, call-hierarchy, rename, deadcode, move, move-member, change-signature
     ↓
 第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
@@ -291,11 +298,18 @@ if (dryRun) {
 用 Claude Code CLI 驗證設定檔正確性（錯誤訊息會指出問題欄位）：
 
 ```bash
-# 1. 直接驗證 manifest
+# 1. CLI help 或 SKILL.md description 變更後，先從 TS source CLI 同步 reference/plugin metadata
+pnpm sync:skill-docs
+
+# 2. 驗證 manifest、plugin 結構、skill docs/help 對齊
 claude plugin validate .claude-plugin/marketplace.json
 claude plugin validate plugins/skills/agent-ide/plugin.json
+pnpm validate:plugin
 
-# 2. 額外做一次本地安裝 smoke test（從專案根目錄執行）
+# 3. CLI source/help 有改時，另跑一般建置驗證；docs-only metadata 可跳過 build
+pnpm build
+
+# 4. 額外做一次本地安裝 smoke test（從專案根目錄執行）
 claude plugin marketplace add . --scope local
 claude plugin install agent-ide@agent-ide-skills --scope local
 

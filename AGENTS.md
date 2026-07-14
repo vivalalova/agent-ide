@@ -6,7 +6,7 @@ This file provides guidance to Codex when working with code in this repository.
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：10 核心模組、2 內建 Parser（TS/JS）、可註冊額外 Parser 副檔名、Unicode 識別符支援
+**現況**：9 核心模組、2 內建 Parser（TS/JS）、可註冊額外 Parser 副檔名、Unicode 識別符支援
 
 **環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.7
 
@@ -40,7 +40,6 @@ src/
 │   ├── foundations/      # indexing/ | dependency-graph/ | symbol-finder/ | file-utils
 │   ├── cycles/           # 循環依賴（Tarjan）
 │   ├── impact/           # 影響分析（BFS）
-│   ├── find-references/  # 符號引用
 │   ├── call-hierarchy/   # 呼叫層次
 │   ├── rename/           # 重命名+引用更新
 │   ├── change-signature/ # 參數重構
@@ -63,7 +62,7 @@ src/
 
 ### Core 設計原則
 
-- **CLI 對應**：`core/<module>/` 對應 CLI 命令
+- **CLI 對應**：`core/<module>/` 對應 CLI 命令；例外是 `find-references`，無獨立 `core/` 模組，實作直接在 `interfaces/cli/commands/find-references.command.ts` + `infrastructure/formatters/strategies/find-references-formatter.ts` + `plugins/{typescript,javascript}/reference-finder.ts`
 - **foundations/ 層**：核心內部共用基礎設施（indexing、dependency-graph、symbol-finder、file-utils）
 - **shared/ 層**：全域共用（types、errors）- 與 `core/foundations/` 區分
 - **re-export 規則**：僅 `index.ts` barrel export 允許
@@ -73,7 +72,7 @@ src/
 ```text
 第三層：impact（依賴 cycles + foundations）
     ↓
-第二層：cycles, find-references, call-hierarchy, rename, deadcode, move, move-member, change-signature
+第二層：cycles, call-hierarchy, rename, deadcode, move, move-member, change-signature
     ↓
 第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
@@ -86,6 +85,14 @@ src/
 | E2E Full | `tests/e2e/` | `pnpm test:e2e` | 完整 CLI 端對端（memfs 隔離，無 coverage） |
 | Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試（快速無 coverage） |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
+
+### Fixtures（`tests/fixtures/`）
+
+E2E 測試用的範例專案與 parser 模組：
+
+- **專案 fixture**（`sample-project/`、`js-project/`…）：磁碟上的迷你 TS/JS 專案。`loadFixture(name)` 把整個目錄載入**全新 memfs 虛擬根目錄**（目錄內容有程序內快取），測試對檔案的讀寫都發生在記憶體、不碰磁碟原檔，每個測試拿獨立副本、天然隔離
+- **parser 模組 fixture**（`toy-parser.mjs` 等根層 `.mjs`）：測試 parser 註冊/生命週期用的假 parser 模組
+- 新 bug 重現需要特定專案形狀時建新 fixture 目錄（見下方「Bug 重現即測試案例」）；單檔案案例優先用 `fixture.writeFile()` 動態寫入既有 fixture，不必開新目錄
 
 ### E2E 測試模式
 
@@ -109,6 +116,13 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 - 覆蓋率門檻設於 `vitest.config.e2e.ts`，禁止隨意調降
 - 覆蓋率驗證使用 `pnpm test:coverage`；日常 `pnpm test` 為 Unit + 關鍵 TS E2E 快速路徑
 - `tests/fixtures/` 專案必須可編譯
+
+### 🚨 Bug 重現即測試案例（禁拋棄式重現）
+
+- bug 修復**先寫 reproduction test**（先紅後綠），重現案例直接寫成 `tests/` 下的 test case + 需要的 fixture 專案放 `tests/fixtures/`，成為永久 regression 覆蓋
+- **禁**用 scratchpad／臨時目錄做一次性手動重現後丟棄：可重用的案例才留得住、下次回歸才驗得到
+- 共用 fixture 用 `loadFixture()` 載入；單檔案案例可在測試內 `fixture.writeFile()` 寫入
+- 手動 CLI 重現／隔離實驗必帶 `--no-cache`：索引快取以路徑為 key，實驗中增刪改 fixture 檔案後不失效，會讀到舊索引汙染隔離結論
 
 ## CLI 命令
 
@@ -266,7 +280,18 @@ if (dryRun) {
 
 **開發**：規格→API→測試→實作→CLI
 **驗證**：`pnpm build && pnpm lint && pnpm test`
-**發布**：`npm version patch|minor|major` → `npm publish`
+
+### 🚨 發布機制（重要）
+
+本專案使用 **semantic-release 自動發布**，由 `.github/workflows/release.yml` 處理：
+
+- push 到 `main` → CI 跑 build + test → `npx semantic-release` 自動執行：
+  - 依 commit message（conventional commits）判斷 patch/minor/major
+  - 自動更新 `package.json` 版本（產生 `chore(release): x.y.z [skip ci]` commit）
+  - 自動建立 git tag、GitHub Release、npm publish（OIDC，無需 token）
+- Commit 規範：`feat:` → minor、`fix:` → patch、`BREAKING CHANGE:` → major、其他（`chore:`/`docs:`/`refactor:`）不觸發發版
+
+**禁止手動 `npm version` / `npm publish`**：會產生非 conventional commit 與離散 tag，與 semantic-release 衝突造成版本錯亂。需要發版只要 push 符合規範的 commit 即可。已透過 `.claude/settings.json` 的 `permissions.deny` 阻擋這些指令。
 
 ### Plugin 設定檔驗證
 
