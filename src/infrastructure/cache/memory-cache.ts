@@ -118,6 +118,11 @@ export class MemoryCache<K, V> {
    * 設定快取值
    */
   set(key: K, value: V, customTTL?: number): void {
+    // maxSize <= 0 表示不保留任何條目（非「無上限」），fail-fast 直接拒絕寫入
+    if (this.options.maxSize <= 0) {
+      return;
+    }
+
     const now = Date.now();
     const ttl = customTTL ?? this.options.defaultTTL;
     const expiresAt = ttl > 0 ? now + ttl : undefined;
@@ -160,11 +165,6 @@ export class MemoryCache<K, V> {
     // 通知策略項目被設定
     this.strategy.onSet(key, item);
 
-    // 更新統計
-    if (this.options.enableStats) {
-      this.stats.size = this.cache.size;
-    }
-
     this.emitEvent(CacheEventType.SET, key, value);
   }
 
@@ -197,11 +197,6 @@ export class MemoryCache<K, V> {
     // 通知策略項目被刪除
     this.strategy.onDelete(key);
 
-    // 更新統計
-    if (this.options.enableStats) {
-      this.stats.size = this.cache.size;
-    }
-
     this.emitEvent(CacheEventType.DELETE, key, item.value);
     return true;
   }
@@ -213,11 +208,6 @@ export class MemoryCache<K, V> {
     this.cache.clear();
     this.strategy.clear();
     this.currentMemoryUsage = 0;
-
-    if (this.options.enableStats) {
-      this.stats.size = 0;
-    }
-
 
     this.emitEvent(CacheEventType.CLEAR, undefined as unknown as K);
   }
@@ -289,7 +279,9 @@ export class MemoryCache<K, V> {
    * 取得統計資訊
    */
   getStats(): CacheStats {
-    return { ...this.stats, memoryUsage: this.currentMemoryUsage };
+    // size 是現況（目前條目數），非請求統計，不受 enableStats 影響，
+    // 因此直接引用 this.cache.size 作為權威來源，不另外記一套帳
+    return { ...this.stats, size: this.cache.size, memoryUsage: this.currentMemoryUsage };
   }
 
   /**

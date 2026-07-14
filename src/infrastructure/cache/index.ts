@@ -229,19 +229,19 @@ export class CacheUtils {
   static validateCacheOptions(options: Partial<CacheOptions>): string[] {
     const warnings: string[] = [];
 
-    if (options.maxSize && options.maxSize <= 0) {
+    if (options.maxSize !== undefined && options.maxSize <= 0) {
       warnings.push('maxSize should be greater than 0');
     }
 
-    if (options.maxMemory && options.maxMemory <= 0) {
+    if (options.maxMemory !== undefined && options.maxMemory <= 0) {
       warnings.push('maxMemory should be greater than 0');
     }
 
-    if (options.defaultTTL && options.defaultTTL < 0) {
+    if (options.defaultTTL !== undefined && options.defaultTTL < 0) {
       warnings.push('defaultTTL should not be negative');
     }
 
-    if (options.cleanupInterval && options.cleanupInterval < 1000) {
+    if (options.cleanupInterval !== undefined && options.cleanupInterval < 1000) {
       warnings.push('cleanupInterval should be at least 1000ms for performance reasons');
     }
 

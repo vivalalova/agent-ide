@@ -112,6 +112,16 @@ describe('MemoryCache', () => {
       );
     });
 
+    // P3-6: validateCacheOptions 對 cleanupInterval 的檢查用 `options.cleanupInterval && ...`
+    // 短路判斷，0 是 falsy，導致 cleanupInterval: 0（與 maxSize: 0、defaultTTL 為負值同樣
+    // 不合理的配置）完全不觸發警告。根因：src/infrastructure/cache/index.ts:244
+    // （應比照 maxSize/defaultTTL 改用 `!== undefined` 顯式判斷 undefined）。
+    it('should warn when cleanupInterval is zero (錯誤重現點：目前 0 被當成 falsy 略過檢查)', () => {
+      expect(CacheUtils.validateCacheOptions({ cleanupInterval: 0 })).toContain(
+        'cleanupInterval should be at least 1000ms for performance reasons'
+      );
+    });
+
     it('should handle very large maxSize', () => {
       const largeCache = new MemoryCache<string, string>({ maxSize: 1000000 });
       largeCache.set('key1', 'value1');
