@@ -10,6 +10,8 @@ import {
   PermissionError,
   DirectoryNotEmptyError,
   AtomicWriteOptions,
+  FileSystemError,
+  FileSystemErrorType,
 } from './types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { createUniqueTempPath } from './atomic-write.js';
@@ -150,8 +152,19 @@ export class FileSystem implements IFileSystem {
     } catch (error) {
       const nodeError = error as NodeSystemError;
       if (nodeError.code === 'EEXIST') {
-        // 目錄已存在，不是錯誤
-        return;
+        // fs.mkdir 對「路徑已存在」一律拋 EEXIST，無論該路徑現況是目錄還是檔案；
+        // 必須用 stat 分辨，目錄已存在才視為成功（idempotent），
+        // 若是檔案則 fast-fail 拋錯，禁靜默吞掉
+        const stats = await fs.stat(dirPath);
+        if (stats.isDirectory()) {
+          return;
+        }
+        throw new FileSystemError(
+          FileSystemErrorType.FILE_ALREADY_EXISTS,
+          `Path already exists and is not a directory: ${dirPath}`,
+          dirPath,
+          nodeError
+        );
       }
       if (nodeError.code === 'EACCES') {
         throw new PermissionError(dirPath, nodeError);
