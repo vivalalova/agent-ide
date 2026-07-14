@@ -8,6 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { matchesPathSegment } from '@shared/path-pattern.js';
 
 /**
  * 檔案掃描器類別
@@ -38,8 +39,8 @@ export class FileScanner {
 
         for (const entry of entries) {
           if (entry.isDirectory) {
-            // 跳過排除的目錄
-            if (EXCLUDE_PATTERNS.some(pattern => entry.name.includes(pattern))) {
+            // 跳過排除的目錄（名稱精確匹配，禁止子字串誤判如 dist 誤傷 distance）
+            if (matchesPathSegment(entry.name, EXCLUDE_PATTERNS)) {
               continue;
             }
             await walkDir(entry.path);

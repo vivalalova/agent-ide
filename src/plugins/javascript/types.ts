@@ -2,6 +2,7 @@
  * JavaScript Parser 特定型別定義
  */
 
+import { extname } from 'node:path';
 import type {
   AST,
   ASTNode,
@@ -445,7 +446,9 @@ export function createParseError(
  * 獲取檔案的預設 Babel 插件
  */
 export function getPluginsForFile(filePath: string): BabelPlugin[] {
-  const ext = filePath.substring(filePath.lastIndexOf('.'));
+  // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+  // 避免把含點號的父目錄誤判成副檔名
+  const ext = extname(filePath);
   const basePlugins = [...(DEFAULT_PARSE_OPTIONS.plugins ?? [])];
 
   // 根據副檔名調整插件

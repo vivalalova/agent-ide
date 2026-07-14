@@ -53,6 +53,15 @@ export {
 } from './types/ast.js';
 
 export {
+  // 路徑樣式比對
+  matchesGlobPattern,
+  matchesAnyGlobPattern,
+  matchesPathSegment,
+  matchesPathFragment,
+  relativizeToRoot
+} from './path-pattern.js';
+
+export {
   // 錯誤處理
   BaseError,
   ParserError,

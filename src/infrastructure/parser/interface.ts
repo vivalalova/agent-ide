@@ -3,6 +3,7 @@
  * 定義所有 Parser 插件必須實作的契約
  */
 
+import { extname } from 'node:path';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
 import type {
   CodeEdit,
@@ -529,8 +530,9 @@ export interface FormattedSignature {
  * 從檔案路徑獲取副檔名
  */
 export function getFileExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf('.');
-  return lastDot === -1 ? '' : filePath.substring(lastDot);
+  // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+  // 避免把含點號的父目錄誤判成副檔名，純隱藏檔名視為無副檔名
+  return extname(filePath);
 }
 
 /**

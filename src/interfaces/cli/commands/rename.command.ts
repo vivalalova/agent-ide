@@ -20,6 +20,7 @@ import {
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { matchesPathSegment } from '@shared/path-pattern.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
@@ -132,7 +133,10 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
       context.fileSystem,
       {
         includeExtensions: CLI_INDEX_DEFAULTS.includeExtensions,
-        excludePatterns: ['node_modules/**', '*.test.*']
+        // 索引底層 glob（node 'glob' 套件）的 ignore 樣式對無 '/' 的單段樣式
+        // 不會比對巢狀路徑（'*.test.*' 永遠比對不到 'src/foo.test.ts'，需
+        // '**/' 前綴才會在任一層級生效），故用 '**/*.test.*' 才是真正等價寫法。
+        excludePatterns: ['node_modules/**', '**/*.test.*']
       },
       { noCache, cacheDir: globalOpts.cacheDir }
     );
@@ -359,8 +363,8 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
         const fullPath = entry.path;
 
         if (entry.isDirectory) {
-          // 跳過排除的目錄
-          if (excludePatterns.some(pattern => entry.name.includes(pattern))) {
+          // 跳過排除的目錄（名稱精確匹配，禁止子字串誤判如 dist 誤傷 distance）
+          if (matchesPathSegment(entry.name, excludePatterns)) {
             continue;
           }
           await walkDir(fullPath);

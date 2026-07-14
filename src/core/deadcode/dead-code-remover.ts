@@ -4,6 +4,7 @@
  */
 
 import { minimatch } from 'minimatch';
+import { matchesPathFragment } from '@shared/path-pattern.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
@@ -421,11 +422,22 @@ export class DeadCodeRemover {
    * 支援 glob 模式（如 *.test.ts、**\/__tests__/**）和簡單字串匹配
    */
   private matchesExcludePattern(filePath: string, pattern: string): boolean {
-    // 如果 pattern 包含 glob 特殊字符，使用 minimatch
+    // 如果 pattern 包含 glob 特殊字符，使用 minimatch（此處刻意保留 matchBase:
+    // true，讓 '*.spec.ts' 這類無目錄前綴的樣式也能對到巢狀路徑的檔名部分；
+    // shared/path-pattern.ts 的共用 matcher 不提供 matchBase 語意，兩者用途不同，
+    // 不適合在此處直接替換，見該檔頭部關於此例外的說明）
     if (pattern.includes('*') || pattern.includes('?') || pattern.includes('[')) {
       return minimatch(filePath, pattern, { dot: true, matchBase: true });
     }
-    // 否則使用簡單字串包含匹配（向後相容）
+    // 純路徑片段（含 '/'）：可能是精確檔案路徑（葉節點，如 'src/legacy/api.ts'）
+    // 也可能是目錄／路徑前綴（如 'src/legacy/'），委派共用的 matchesPathFragment
+    // 同時涵蓋兩種情況，避免子字串誤傷同前綴的不同名稱（如 'src/dist' 誤殺
+    // 'src/distance/'，見 P2-A regression：葉節點檔案路徑排除永不命中）。
+    if (pattern.includes('/')) {
+      return matchesPathFragment(filePath, pattern);
+    }
+    // 否則使用簡單字串包含匹配（向後相容，允許任意檔名片段的子字串排除，
+    // 如 '.mock.' 排除任何檔名含此片段的檔案）
     return filePath.includes(pattern);
   }
 

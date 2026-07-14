@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto';
 import type { Range, Position } from '@shared/types/core.js';
+import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
 import type {
   Documentation,
   DocumentationTag,
@@ -261,7 +262,8 @@ export function isValidUnicodeIdentifier(name: string): boolean {
 
 /**
  * 檢查檔案路徑是否匹配任一模式
- * 使用簡單的字串匹配，不依賴外部 glob 套件
+ * 實際比對邏輯委派共用的 path-pattern 模組（見 @shared/path-pattern.js），
+ * 避免各 Parser 各自手刻子字串匹配造成 dist/distance 之類的誤判
  *
  * @param filePath 檔案路徑
  * @param patterns 模式列表
@@ -269,30 +271,5 @@ export function isValidUnicodeIdentifier(name: string): boolean {
  */
 export function matchesAnyPattern(filePath: string, patterns: readonly string[]): boolean {
   const normalizedPath = filePath.replace(/^\.?\//, '');
-
-  return patterns.some(pattern => {
-    try {
-      // 直接使用字串包含檢查來提高效能
-      if (pattern.includes('**')) {
-        // 對於包含 ** 的模式，進行簡單的子字串匹配
-        const simplePattern = pattern.replace(/\*\*/g, '').replace(/\//g, '');
-        if (normalizedPath.includes(simplePattern)) {
-          return true;
-        }
-      }
-
-      // 檢查檔案路徑是否匹配模式
-      if (pattern.startsWith('**/')) {
-        const suffix = pattern.substring(3);
-        if (normalizedPath.endsWith(suffix) || normalizedPath.includes('/' + suffix)) {
-          return true;
-        }
-      }
-
-      return false;
-    } catch {
-      // graceful-degradation: 無效 glob pattern 視為不匹配
-      return false;
-    }
-  });
+  return matchesAnyGlobPattern(normalizedPath, patterns);
 }

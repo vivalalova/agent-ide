@@ -3,6 +3,7 @@
  * 實作 ParserPlugin 介面
  */
 
+import { extname } from 'node:path';
 import { parse as babelParse } from '@babel/parser';
 import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
@@ -466,8 +467,9 @@ export class JavaScriptParser implements ParserPlugin {
     const options = { ...this.parseOptions };
     options.plugins = getPluginsForFile(filePath);
 
-    // 根據副檔名調整 sourceType
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
+    // 根據副檔名調整 sourceType（比照 node:path.extname 語意：以 basename 為基準取副檔名，
+    // 避免把含點號的父目錄誤判成副檔名）
+    const ext = extname(filePath);
     if (ext === '.mjs') {
       options.sourceType = 'module';
     } else if (ext === '.cjs') {
@@ -478,7 +480,9 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private getLanguageFromFilePath(filePath: string): string {
-    const ext = filePath.substring(filePath.lastIndexOf('.'));
+    // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+    // 避免把含點號的父目錄誤判成副檔名
+    const ext = extname(filePath);
     return ext === '.jsx' ? 'jsx' : 'javascript';
   }
 

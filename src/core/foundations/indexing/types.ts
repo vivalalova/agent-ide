@@ -3,8 +3,10 @@
  * 包含檔案索引、符號索引、查詢結果等型別
  */
 
+import { extname } from 'node:path';
 import type { Symbol, Dependency, SymbolType } from '@shared/types/index.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { matchesGlobPattern, relativizeToRoot } from '@shared/path-pattern.js';
 
 /**
  * CLI 命令共用的索引配置常數
@@ -291,10 +293,10 @@ export function createIndexConfig(
     excludePatterns: options?.excludePatterns || ['node_modules/**', '.git/**', 'dist/**'],
     includeExtensions: options?.includeExtensions || SOURCE_FILE_EXTENSIONS,
     parserModulePaths: options?.parserModulePaths || [],
-    maxFileSize: options?.maxFileSize || 1024 * 1024, // 1MB
-    enablePersistence: options?.enablePersistence || true,
+    maxFileSize: options?.maxFileSize ?? 1024 * 1024, // 1MB
+    enablePersistence: options?.enablePersistence ?? true,
     persistencePath: options?.persistencePath,
-    maxConcurrency: options?.maxConcurrency || 4
+    maxConcurrency: options?.maxConcurrency ?? 4
   };
 }
 
@@ -372,41 +374,26 @@ export function calculateProgress(processed: number, total: number): number {
  * 檢查檔案是否應該被索引（根據配置）
  */
 export function shouldIndexFile(filePath: string, config: IndexConfig): boolean {
-  // 檢查副檔名
-  const extension = filePath.substring(filePath.lastIndexOf('.'));
+  // 檢查副檔名（比照 node:path.extname 語意：以 basename 為基準取副檔名，
+  // 避免把含點號的父目錄誤判成副檔名，純隱藏檔名視為無副檔名）
+  const extension = extname(filePath);
   if (!config.includeExtensions.includes(extension)) {
     return false;
   }
 
-  // 檢查排除模式
+  // 檢查排除模式：比對基準須是相對於 workspace root 的路徑，而非原始絕對路徑，
+  // 否則 workspace root 之外的祖先目錄一旦含與排除樣式同名的完整 segment（如
+  // workspace 為 /home/dist/myproj 時，排除樣式 'dist/**' 會連祖先路徑中的
+  // /home/dist 都算進去），整個專案會被誤判為位於排除目錄之下。相對化與退回原始
+  // filePath 的判斷邏輯見 relativizeToRoot（全專案唯一權威來源，跨 workspace/掃描
+  // root 情境共用，避免各消費端各自手刻同一段 path.relative + 跳出判斷）。
+  const pathForExcludeCheck = relativizeToRoot(config.workspacePath, filePath);
+
   for (const pattern of config.excludePatterns) {
-    if (matchesPattern(filePath, pattern)) {
+    if (matchesGlobPattern(pathForExcludeCheck, pattern)) {
       return false;
     }
   }
 
   return true;
-}
-
-/**
- * 簡單的模式匹配（支援 ** 和 *）
- */
-function matchesPattern(path: string, pattern: string): boolean {
-  // 簡化的 glob 模式匹配實現
-  // 處理特殊情況：**/dirName/** 應該匹配任何層級的 dirName 目錄（但不匹配根目錄）
-  if (pattern.startsWith('**/') && pattern.endsWith('/**')) {
-    const dirName = pattern.slice(3, -3); // 移除 **/ 和 /**
-    const pathParts = path.split('/').filter(p => p.length > 0);
-    // 檢查 dirName 是否出現在路徑中，但排除第一個部分（根目錄）
-    return pathParts.slice(1).includes(dirName);
-  }
-
-  // 一般的 glob 模式處理
-  const regexPattern = pattern
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '.');
-
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(path);
 }

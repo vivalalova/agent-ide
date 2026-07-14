@@ -71,6 +71,33 @@ describe('ImpactAnalyzer', () => {
     });
   });
 
+  // FileScanner.isExcluded 直接對絕對路徑套用 excludePatterns（預設含 'dist'），
+  // 未先換算成相對於專案根目錄的路徑：若專案根目錄本身落在名為 dist/node_modules
+  // 等的祖先目錄下，祖先 segment 會被誤判成專案內部的排除目錄，整包專案的原始檔案
+  // 靜默消失於掃描結果。indexing 模組同款缺陷已修（見 shouldIndexFile 改用 workspace
+  // 相對路徑），FileScanner 目前沒有存 projectPath/root 可供換算，尚未比照修復。
+  describe('analyzeProject - 祖先目錄名撞排除樣式', () => {
+    it('Given 專案根目錄的祖先路徑含 dist 完整 segment, when analyzeProject, then 不應誤排除專案內部檔案', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/home/dist/myproj/src/a.ts': 'export const a = 1;\n',
+        '/home/dist/myproj/dist/generated.ts': 'export const g = 1;\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      const result = await analyzer.analyzeProject('/home/dist/myproj');
+
+      const filePaths = result.fileDependencies.map(file => file.filePath);
+      // 錯誤重現點：isExcluded 對絕對路徑 '/home/dist/myproj/src/a.ts' 直接比對排除樣式
+      // 'dist'（matchesPathFragment 展開為 '**/dist' 或 '**/dist/**'），workspace 根目錄
+      // 上層路徑 /home/dist 裡的 'dist' segment 與專案內部的 dist 目錄無法區分，
+      // 整個專案被誤判為位於排除目錄之下，src/a.ts 從掃描結果中靜默消失
+      expect(filePaths).toContain('/home/dist/myproj/src/a.ts');
+      // 對照組：專案內部真正的 dist 目錄仍應被排除
+      expect(filePaths).not.toContain('/home/dist/myproj/dist/generated.ts');
+    });
+  });
+
   describe('空圖查詢', () => {
     it('Given 空依賴圖, when getDependencies, then 回傳空陣列', () => {
       const analyzer = new ImpactAnalyzer(createMockFileSystem());

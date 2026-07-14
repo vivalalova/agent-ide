@@ -42,9 +42,11 @@ export class DependencyExtractor {
    * 從檔案內容中提取依賴關係
    * @param content 檔案內容
    * @param filePath 檔案路徑
+   * @param root 比對基準根目錄（如專案根目錄），供 fileScanner 相對化排除樣式比對；
+   *   未提供時（如直接對單一檔案分析、無專案掃描上下文）退回以原始路徑比對
    * @returns 依賴列表
    */
-  async extractDependencies(content: string, filePath: string): Promise<Dependency[]> {
+  async extractDependencies(content: string, filePath: string, root?: string): Promise<Dependency[]> {
     const dependencies: Dependency[] = [];
     const fileExt = path.extname(filePath);
 
@@ -53,7 +55,7 @@ export class DependencyExtractor {
     }
 
     if (!isTypeScriptSourceExtension(fileExt) && !isJavaScriptSourceExtension(fileExt)) {
-      return this.extractParserDependencies(content, filePath);
+      return this.extractParserDependencies(content, filePath, root);
     }
 
     const dependencySpecs = this.extractDependencySpecs(content, filePath);
@@ -61,7 +63,7 @@ export class DependencyExtractor {
     for (const dependencySpec of dependencySpecs) {
       const resolvedPath = await this.pathResolver.resolvePath(dependencySpec.importPath, filePath);
 
-      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath)) {
+      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)) {
         dependencies.push({
           path: resolvedPath.resolvedPath,
           type: dependencySpec.type,
@@ -75,7 +77,7 @@ export class DependencyExtractor {
     return dependencies;
   }
 
-  private async extractParserDependencies(content: string, filePath: string): Promise<Dependency[]> {
+  private async extractParserDependencies(content: string, filePath: string, root?: string): Promise<Dependency[]> {
     const parser = this.parserRegistry?.getParser(path.extname(filePath));
     if (!parser) {
       return [];
@@ -88,7 +90,7 @@ export class DependencyExtractor {
     for (const parserDependency of parserDependencies) {
       const resolvedPath = await this.pathResolver.resolvePath(parserDependency.path, filePath);
 
-      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath)) {
+      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)) {
         dependencies.push({
           ...parserDependency,
           path: resolvedPath.resolvedPath,

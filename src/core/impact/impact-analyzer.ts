@@ -81,9 +81,12 @@ export class ImpactAnalyzer {
   /**
    * 分析單個檔案的依賴關係
    * @param filePath 檔案路徑
+   * @param root 比對基準根目錄（如專案根目錄），供 fileScanner 相對化排除樣式比對；
+   *   analyzeProject 掃描專案時會帶入專案根目錄，直接對單一檔案呼叫時未提供，
+   *   退回以原始路徑比對（維持現行行為，見 dependency-extractor.extractDependencies）
    * @returns 檔案依賴資訊
    */
-  async analyzeFile(filePath: string): Promise<FileDependencies> {
+  async analyzeFile(filePath: string, root?: string): Promise<FileDependencies> {
     if (!filePath || !filePath.trim()) {
       throw new Error('檔案路徑不能為空');
     }
@@ -112,7 +115,8 @@ export class ImpactAnalyzer {
 
       const dependencies = await this.dependencyExtractor.extractDependencies(
         content,
-        normalizedPath
+        normalizedPath,
+        root
       );
 
       const result: FileDependencies = {
@@ -156,7 +160,7 @@ export class ImpactAnalyzer {
     const chunks = this.chunkArray(files, concurrency);
 
     for (const chunk of chunks) {
-      const promises = chunk.map(file => this.analyzeFile(file));
+      const promises = chunk.map(file => this.analyzeFile(file, normalizedProjectPath));
       const results = await Promise.all(promises);
       fileDependencies.push(...results);
     }

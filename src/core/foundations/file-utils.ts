@@ -3,6 +3,7 @@
  * 提供跨模組共用的檔案讀取和副檔名處理
  */
 
+import { extname } from 'node:path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
@@ -42,8 +43,10 @@ export class FileUtils {
    * @returns 副檔名（含點號），無副檔名返回空字串
    */
   static getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot >= 0 ? filePath.substring(lastDot) : '';
+    // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+    // 避免把含點號的父目錄（/project.v1/src/README）誤判成副檔名，
+    // 且純隱藏檔名（.gitignore）視為無副檔名
+    return extname(filePath);
   }
 
   /**
