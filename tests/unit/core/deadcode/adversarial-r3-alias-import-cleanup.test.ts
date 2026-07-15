@@ -15,9 +15,9 @@ describe('deadcode import cleanup path-alias (adversarial R3)', () => {
     const fs = new MemFileSystem();
     await fs.fromJSON({
       '/proj/src/utils.ts': 'export function deadHelper() { return 1; }\nexport function live() { return 2; }\n',
-      '/proj/src/consumer.ts': "import { deadHelper } from '@app/utils';\n"
+      '/proj/src/consumer.ts': 'import { deadHelper } from \'@app/utils\';\n'
     });
-    if (ParserRegistry.getInstance().isDisposed) ParserRegistry.resetInstance();
+    if (ParserRegistry.getInstance().isDisposed) {ParserRegistry.resetInstance();}
     const reg = ParserRegistry.getInstance();
     initializeDefaultParsers(reg);
 

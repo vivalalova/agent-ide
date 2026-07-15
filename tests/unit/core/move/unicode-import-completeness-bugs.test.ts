@@ -15,7 +15,7 @@ function createResolver(): ImportResolver {
 
 describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
   it('collects multiline unicode default import span', () => {
-    const lines = ["import 工具", "  from './mod';"];
+    const lines = ['import 工具', '  from \'./mod\';'];
     const span = collectMultilineImportStatement(lines, 0);
     expect(span).not.toBeNull();
     expect(span!.startLineIndex).toBe(0);
@@ -24,7 +24,7 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
 
   it('parses multiline unicode default import path', () => {
     const stmts = createResolver().parseImportStatements(
-      "import 工具\n  from './mod';\n",
+      'import 工具\n  from \'./mod\';\n',
       '/project/src/a.ts'
     );
     expect(stmts.map(s => s.path)).toEqual(['./mod']);
@@ -32,7 +32,7 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
 
   it('parses multiline unicode namespace import path', () => {
     const stmts = createResolver().parseImportStatements(
-      "import * as 工具\n  from './mod';\n",
+      'import * as 工具\n  from \'./mod\';\n',
       '/project/src/a.ts'
     );
     expect(stmts.map(s => s.path)).toEqual(['./mod']);
@@ -40,7 +40,7 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
 
   it('parses multiline $ default import path', () => {
     const stmts = createResolver().parseImportStatements(
-      "import $api\n  from './mod';\n",
+      'import $api\n  from \'./mod\';\n',
       '/project/src/a.ts'
     );
     expect(stmts.map(s => s.path)).toEqual(['./mod']);
@@ -51,9 +51,9 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
     // matches the later ASCII import and returns a span covering lines 0-2,
     // skipping require() parsing for the middle line.
     const code = [
-      "import 工具 from './mod';",
-      "const x = require('./legacy');",
-      "import foo from './other';",
+      'import 工具 from \'./mod\';',
+      'const x = require(\'./legacy\');',
+      'import foo from \'./other\';',
       ''
     ].join('\n');
 
@@ -73,9 +73,9 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
 
   it('does not let a unicode single-line import swallow a later dynamic import()', () => {
     const code = [
-      "import 工具 from './mod';",
-      "const load = () => import('./lazy');",
-      "import foo from './other';",
+      'import 工具 from \'./mod\';',
+      'const load = () => import(\'./lazy\');',
+      'import foo from \'./other\';',
       ''
     ].join('\n');
 

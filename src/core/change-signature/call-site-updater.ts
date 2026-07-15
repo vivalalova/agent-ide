@@ -446,7 +446,7 @@ export class CallSiteUpdater {
           // 呼叫點省略了此可選參數
           // 檢查這個位置是否需要填入 undefined（當後面有其他參數時）
           const param = originalSignature.parameters[originalIndex];
-          if (param && (param.optional || param.defaultValue)) {
+          if (param && (param.optional || param.defaultValue !== undefined)) {
             // 標記為需要填入 undefined（如果後面有非空參數）
             result[newIndex] = OMITTED_PARAMETER_MARKER;
           }
@@ -542,7 +542,7 @@ export class CallSiteUpdater {
       }
 
       if (isAddParameterChange(change)) {
-        const newParam = { name: change.name, originalIndex: -1, value: change.callSiteValue || change.defaultValue };
+        const newParam = { name: change.name, originalIndex: -1, value: change.callSiteValue ?? change.defaultValue };
         if (change.position < 0 || change.position >= currentParams.length) {
           currentParams.push(newParam);
         } else {

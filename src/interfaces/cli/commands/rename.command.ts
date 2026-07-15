@@ -25,6 +25,15 @@ import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 import { isImportedSymbol } from '@interfaces/cli/commands/symbol-target-resolver.js';
+import { normalizePath } from '@interfaces/cli/commands/module-file-resolver.js';
+
+/**
+ * rename --at 的檔案路徑比對：正規化後比對，避免 `./foo.ts` 與 `foo.ts` 等
+ * 等價寫法被誤判為不同檔（與 symbol-target-resolver.ts 的 symbolMatchesLocation 同基準）。
+ */
+export function renameAtPathMatches(symbolPath: string, atFilePath: string): boolean {
+  return normalizePath(symbolPath) === normalizePath(atFilePath);
+}
 
 /** Rename 命令選項 */
 interface RenameOptions {
@@ -171,8 +180,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
           const symbolLine = result.symbol.location.range.start.line;
           const symbolColumn = result.symbol.location.range.start.column;
 
-          // 檔案路徑必須匹配
-          if (symbolPath !== location.filePath) {return false;}
+          if (!renameAtPathMatches(symbolPath, location.filePath)) {return false;}
 
           // 行號匹配（如果指定）
           if (location.line !== undefined && symbolLine !== location.line) {return false;}

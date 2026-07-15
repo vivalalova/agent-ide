@@ -25,17 +25,11 @@ export function applyTextEdits(content: string, edits: readonly TextEdit[]): str
   }
 
   // 完全相同（range 與 newText 皆相同）的重複編輯屬合法冪等操作，靜默 dedupe 為一筆。
-  // dedupe 必須先於空內容快速路徑，否則空檔案 + 兩筆相同零寬插入會各自套用、產生重複內容
-  // （與非空內容路徑不一致）。
   const dedupedEdits = dedupeIdenticalEdits(edits);
 
-  // 空內容特殊處理：所有 edit 的位置都視為插入到開頭
-  // 這是因為對空內容而言，任何位置的插入都等同於從頭開始
-  if (content === '') {
-    return dedupedEdits.map(e => e.newText).join('');
-  }
-
-  // 只分割一次，用於計算 offset
+  // 只分割一次，用於計算 offset。空內容走同一套排序＋套用邏輯（不再另開快速路徑），
+  // 確保空內容與非空內容對「同起點零寬插入」的套用順序語意一致（見 calculateOffset：
+  // lines 為空陣列時任一位置皆解析為 offset 0，等同「插入到開頭」）。
   const lines = splitLines(content);
 
   // 去重後仍有範圍重疊（以原始 offset 判定）即為衝突編輯，fast-fail：
@@ -194,8 +188,19 @@ function calculateOffset(lines: string[], line: number, column: number): number 
     offset += lines[i].length;
   }
 
-  // 加上當前行的列偏移
-  offset += column - 1;
+  // 加上當前行的列偏移；column 超出該行實際長度時 clamp 到行尾（不含換行符），
+  // 避免未 clamp 時直接把偏移量加到超出行界，越界走進下一行的內容（見文件註解
+  // 「column > 行長度: 視為行尾」——此處補上原本只寫在註解、未落實的 clamp）。
+  // line 超出 lines.length（檔案末尾插入）時沒有實際行內容可 clamp，維持原樣相加。
+  const currentLine = lines[line - 1];
+  if (currentLine !== undefined) {
+    const hasTrailingNewline = currentLine.endsWith('\n');
+    const lineContentLength = hasTrailingNewline ? currentLine.length - 1 : currentLine.length;
+    const clampedColumn = Math.min(column, lineContentLength + 1);
+    offset += clampedColumn - 1;
+  } else {
+    offset += column - 1;
+  }
 
   return offset;
 }

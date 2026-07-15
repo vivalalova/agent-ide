@@ -27,7 +27,7 @@ describe('inferReceiverType nearest-decl (adversarial R2)', () => {
     expect(catRefs).not.toBeNull();
 
     // Must include g()'s a.bark() call (around line 9)
-    const lines = (catRefs ?? []).map(r => r.range.start.line);
+    const lines = (catRefs ?? []).map(r => r.location.range.start.line);
     expect(lines).toContain(9);
 
     // Must NOT include f()'s a.bark() (line 5) — that belongs to Dog
@@ -50,7 +50,7 @@ describe('inferReceiverType nearest-decl (adversarial R2)', () => {
     ].join('\n');
 
     const dogRefs = createReferenceFinder().findScopedReferences(code, 'bark', { className: 'Dog' });
-    const lines = (dogRefs ?? []).map(r => r.range.start.line);
+    const lines = (dogRefs ?? []).map(r => r.location.range.start.line);
     expect(lines).toContain(5);
     expect(lines).not.toContain(9);
   });

@@ -641,8 +641,8 @@ export class DeclarationAnalyzer {
     sourceFile: ts.SourceFile,
     functionName: string,
     targetLine?: number
-  ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null {
-    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null = null;
+  ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null {
+    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
 
     const visit = (node: ts.Node): void => {
       if (result) { return; }
@@ -665,12 +665,12 @@ export class DeclarationAnalyzer {
         }
       }
 
-      // 檢查箭頭函數（變數宣告）
+      // 檢查箭頭函數／function expression（變數宣告：`const f = (...) => {}` 或 `const f = function (...) {}`）
       if (ts.isVariableDeclaration(node)
           && ts.isIdentifier(node.name)
           && node.name.text === functionName
           && node.initializer
-          && ts.isArrowFunction(node.initializer)) {
+          && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
         if (targetLine === undefined || isLineMatch(nodeStartLine, targetLine)) {
           result = node.initializer;
           return;
@@ -691,7 +691,7 @@ export class DeclarationAnalyzer {
    * @returns 格式化參數陣列
    */
   extractParameters(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
     sourceFile: ts.SourceFile
   ): FormattedParameter[] {
     const parameters: FormattedParameter[] = [];
@@ -735,7 +735,7 @@ export class DeclarationAnalyzer {
    * @returns 回傳型別字串
    */
   extractReturnType(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
     sourceFile: ts.SourceFile
   ): string {
     if (node.type) {
@@ -750,7 +750,7 @@ export class DeclarationAnalyzer {
    * @returns 泛型參數名稱陣列
    */
   extractTypeParameters(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression
   ): string[] {
     if (!node.typeParameters) {
       return [];

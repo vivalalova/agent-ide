@@ -28,6 +28,23 @@ const IMPORT_STATEMENT_PATTERN = new RegExp(
   'gu'
 );
 
+/**
+ * findImportedSymbols 用的識別符正則，皆採 UNICODE_IDENTIFIER_CLASS
+ * （支援 Unicode 與 `$` 開頭識別符，見 adversarial R1 regression：舊版用 `\w+`
+ * 無法辨識 `工具`、`$api` 等合法識別符）。別名比對（`X as Y`）在混合 import
+ * 與具名 import 兩處共用同一份解析邏輯（見下方 parseNamedImportItems），
+ * 避免同一正則重複維護（Single Source of Truth）。
+ */
+const MIXED_IMPORT_PATTERN = new RegExp(
+  'import\\s+(' + UNICODE_IDENTIFIER_CLASS + ')\\s*,\\s*\\{([^}]+)\\}\\s+from', 'u'
+);
+const DEFAULT_IMPORT_PATTERN = new RegExp('import\\s+(' + UNICODE_IDENTIFIER_CLASS + ')\\s+from', 'u');
+const NAMED_IMPORT_BLOCK_PATTERN = /import\s+\{([^}]+)\}/;
+const NAMESPACE_IMPORT_PATTERN = new RegExp('import\\s+\\*\\s+as\\s+(' + UNICODE_IDENTIFIER_CLASS + ')', 'u');
+const NAMED_IMPORT_ALIAS_PATTERN = new RegExp(
+  '(' + UNICODE_IDENTIFIER_CLASS + ')\\s+as\\s+(' + UNICODE_IDENTIFIER_CLASS + ')', 'u'
+);
+
 export class ImportResolver {
   private readonly config: ImportResolverConfig;
   private readonly aliasKeys: string[];
@@ -517,51 +534,49 @@ export class ImportResolver {
     const symbols: string[] = [];
 
     // 處理混合 import: import React, { Component, useState } from 'react'
-    const mixedImportMatch = statement.match(/import\s+(\w+)\s*,\s*\{([^}]+)\}\s+from/);
+    const mixedImportMatch = statement.match(MIXED_IMPORT_PATTERN);
     if (mixedImportMatch) {
       symbols.push(mixedImportMatch[1]); // 預設 import
-      const namedImports = mixedImportMatch[2]
-        .split(',')
-        .map(item => {
-          const trimmed = item.trim();
-          // 處理別名: Component as Comp
-          const aliasMatch = trimmed.match(/(\w+)\s+as\s+(\w+)/);
-          return aliasMatch ? aliasMatch[2] : trimmed;
-        })
-        .filter(Boolean);
-      symbols.push(...namedImports);
+      symbols.push(...this.parseNamedImportItems(mixedImportMatch[2]));
       return symbols;
     }
 
     // 處理預設 import: import React from 'react'
-    const defaultImportMatch = statement.match(/import\s+(\w+)\s+from/);
+    const defaultImportMatch = statement.match(DEFAULT_IMPORT_PATTERN);
     if (defaultImportMatch) {
       symbols.push(defaultImportMatch[1]);
     }
 
     // 處理具名 import: import { Component, useState } from 'react'
-    const namedImportMatch = statement.match(/import\s+\{([^}]+)\}/);
+    const namedImportMatch = statement.match(NAMED_IMPORT_BLOCK_PATTERN);
     if (namedImportMatch) {
-      const namedImports = namedImportMatch[1]
-        .split(',')
-        .map(item => {
-          const trimmed = item.trim();
-          // 處理別名: Component as Comp
-          const aliasMatch = trimmed.match(/(\w+)\s+as\s+(\w+)/);
-          return aliasMatch ? aliasMatch[2] : trimmed;
-        })
-        .filter(Boolean);
-
-      symbols.push(...namedImports);
+      symbols.push(...this.parseNamedImportItems(namedImportMatch[1]));
     }
 
     // 處理 namespace import: import * as React from 'react'
-    const namespaceImportMatch = statement.match(/import\s+\*\s+as\s+(\w+)/);
+    const namespaceImportMatch = statement.match(NAMESPACE_IMPORT_PATTERN);
     if (namespaceImportMatch) {
       symbols.push(namespaceImportMatch[1]);
     }
 
     return symbols;
+  }
+
+  /**
+   * 解析具名 import 區塊內容（如 `Component, useState as State`），支援
+   * Unicode／`$` 別名。供混合 import 與具名 import 兩處共用（見上方
+   * findImportedSymbols），避免同一份別名解析邏輯重複維護。
+   */
+  private parseNamedImportItems(namedImportsText: string): string[] {
+    return namedImportsText
+      .split(',')
+      .map(item => {
+        const trimmed = item.trim();
+        // 處理別名: Component as Comp
+        const aliasMatch = trimmed.match(NAMED_IMPORT_ALIAS_PATTERN);
+        return aliasMatch ? aliasMatch[2] : trimmed;
+      })
+      .filter(Boolean);
   }
 
   /**
@@ -580,16 +595,16 @@ export class ImportResolver {
       }
     }
 
-    // 檢查是否為 baseUrl 相對路徑（如 src/utils）
-    // TypeScript 允許在設定 baseUrl 時使用非 ./ 開頭的路徑
-    if (this.config.baseUrl) {
-      // 如果路徑包含 /，且第一段是常見的專案目錄名稱，視為 baseUrl 相對路徑
-      const firstSegment = importPath.split('/')[0];
-      // 常見的專案源碼目錄
-      const projectDirs = ['src', 'lib', 'app', 'source', 'packages', 'modules'];
-      if (projectDirs.includes(firstSegment)) {
-        return false;
-      }
+    // 檢查是否為 baseUrl 相對路徑（如 src/utils、client/utils、server/api）
+    // TypeScript 允許在設定 baseUrl 時使用非 ./ 開頭的路徑。真實專案的 baseUrl
+    // 根目錄名稱不限於少數幾個常見字（如 'client'、'server'），猜測式白名單
+    // 會把任意第一段路徑誤判為 node module，導致 move 拒絕改寫合法的內部 import
+    // （見 adversarial R1 regression）。改用結構性判斷：非 scoped package
+    // （不以 '@' 開頭）且含子路徑（有 '/'）時，視為 baseUrl 相對路徑；
+    // scoped package（'@scope/pkg'）與不含 '/' 的裸 specifier（如 'lodash'）
+    // 仍視為 node module。
+    if (this.config.baseUrl && !importPath.startsWith('@') && importPath.includes('/')) {
+      return false;
     }
 
     // 其他都視為 Node 模組（包括 scoped packages）

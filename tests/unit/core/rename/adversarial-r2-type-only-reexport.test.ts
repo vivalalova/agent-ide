@@ -10,8 +10,8 @@ describe('type-only re-export exposure (adversarial R2)', () => {
     const fs = new MemFileSystem();
     await fs.fromJSON({
       '/proj/types.ts': 'export type UserId = string;\n',
-      '/proj/barrel.ts': "export type { UserId } from './types';\n",
-      '/proj/app.ts': "import type { UserId } from './barrel';\nconst x: UserId = '1';\n"
+      '/proj/barrel.ts': 'export type { UserId } from \'./types\';\n',
+      '/proj/app.ts': 'import type { UserId } from \'./barrel\';\nconst x: UserId = \'1\';\n'
     });
 
     const resolver = await createTargetExposureResolver({

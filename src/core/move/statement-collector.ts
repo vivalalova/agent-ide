@@ -147,8 +147,26 @@ export function collectMultilineImportStatement(lines: string[], startIndex: num
   return null;
 }
 
+/**
+ * 完整 import 語句判斷用 pattern：identifier 部分須用 UNICODE_IDENTIFIER_CLASS
+ * （非 `\w+`），否則 Unicode／`$` 開頭的 default／namespace import 名稱
+ * （如 `工具`、`$api`）永遠判定為「未完整」，導致：
+ *  1. 單行本已完整的 Unicode import 誤判成未完整，繼續往後累計行；
+ *  2. 累計過程中 `.test()` 未錨定於本 span 起點，會在後方任意位置命中
+ *     另一筆完全無關的 ASCII import，把中間的 require()/動態 import() 一併
+ *     吞入假 span、略過其解析（見 adversarial 多行 unicode completeness regression）。
+ * 修正 identifier class 後，單行 Unicode import 在起始行即可直接判定完整，
+ * 從根本避免上述誤吞。
+ */
+const IMPORT_STATEMENT_COMPLETE_PATTERN = new RegExp(
+  'import\\s+(?:type\\s+)?(?:(?:\\{[\\s\\S]*\\}|' + UNICODE_IDENTIFIER_CLASS + '|\\*\\s+as\\s+' + UNICODE_IDENTIFIER_CLASS + ')' +
+    '(?:\\s*,\\s*(?:\\{[\\s\\S]*\\}|' + UNICODE_IDENTIFIER_CLASS + '|\\*\\s+as\\s+' + UNICODE_IDENTIFIER_CLASS + '))*\\s+from\\s+)?' +
+    '[\'"`][^\'"`]+[\'"`]',
+  'u'
+);
+
 function isCompleteImportStatement(statement: string): boolean {
-  return /import\s+(?:type\s+)?(?:(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+)(?:\s*,\s*(?:\{[\s\S]*\}|\w+|\*\s+as\s+\w+))*\s+from\s+)?['"`][^'"`]+['"`]/.test(statement);
+  return IMPORT_STATEMENT_COMPLETE_PATTERN.test(statement);
 }
 
 /**

@@ -1,25 +1,19 @@
 /**
- * P2: rename --at compares symbolPath !== location.filePath without normalize,
- * while symbol-target-resolver uses normalizePath.
+ * P2 regression: rename --at 的檔案路徑比對必須採 normalize 後比對
+ * （renameAtPathMatches，與 symbol-target-resolver 的 symbolMatchesLocation 同基準），
+ * 不得用原始字串 !==。
  */
 import { describe, expect, it } from 'vitest';
-import * as path from 'node:path';
 import { normalizePath } from '@interfaces/cli/commands/module-file-resolver.js';
+import { renameAtPathMatches } from '@interfaces/cli/commands/rename.command.js';
 
 describe('rename --at path equality (adversarial R3)', () => {
-  it('paths that differ only by normalize must match (product rename uses raw !==)', () => {
-    // Simulate index path vs --at path form
-    const indexed = path.resolve('/proj/src/foo.ts');
-    const atForm = path.join('/proj/src', './foo.ts'); // may equal after normalize
-    // On posix resolve('./') differences:
+  it('paths that differ only by normalize must match', () => {
     const a = '/proj/src/foo.ts';
     const b = '/proj/src/./foo.ts';
-    // Product rename: a !== b is true → miss. Desired: normalizePath equal.
     expect(a === b).toBe(false); // raw differs
     expect(normalizePath(a)).toBe(normalizePath(b)); // normalize unifies
-    // Document the bug: rename filter would reject this pair
-    const renameWouldMatch = a === b; // product
-    const correctMatch = normalizePath(a) === normalizePath(b);
-    expect(renameWouldMatch).toBe(correctMatch); // fails: false !== true
+    // Pin the real product comparison used by the rename --at filter
+    expect(renameAtPathMatches(a, b)).toBe(true);
   });
 });

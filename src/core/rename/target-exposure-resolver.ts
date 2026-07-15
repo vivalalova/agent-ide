@@ -47,13 +47,18 @@ interface ReexportForward {
  * 解析檔案中的 re-export 轉發宣告：`export { name } from '<spec>'`（未 alias 改名）與
  * `export * from '<spec>'`。以別名改名對外（`export { a as b }`）不算轉發同一符號，跳過。
  * 直接以 TS AST 解析語法結構，不依賴副檔名（TS parser 亦可解析 .js 檔語法）。
+ *
+ * type-only 轉發（整句 `export type { X } from './y'` 或單一 specifier
+ * `export { type X } from './y'`）一併視為轉發：本解析器判定的是「對外曝露成源自定義檔」，
+ * 目標符號本身也可能就是 type-only（如 type alias／interface），略過 type-only 轉發
+ * 會漏掉這類 barrel，導致 consumer 端的 `import type` 引用未被同步改到。
  */
 function parseReexportForwards(filePath: string, content: string): ReexportForward[] {
   const forwards: ReexportForward[] = [];
   const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 
   for (const statement of sourceFile.statements) {
-    if (!ts.isExportDeclaration(statement) || statement.isTypeOnly) {
+    if (!ts.isExportDeclaration(statement)) {
       continue;
     }
     const moduleSpecifier = statement.moduleSpecifier;
@@ -66,7 +71,7 @@ function parseReexportForwards(filePath: string, content: string): ReexportForwa
     }
     if (ts.isNamedExports(statement.exportClause)) {
       for (const element of statement.exportClause.elements) {
-        if (!element.isTypeOnly && !element.propertyName) {
+        if (!element.propertyName) {
           forwards.push({ moduleSpecifier: moduleSpecifier.text, exportedName: element.name.text });
         }
       }

@@ -12,7 +12,7 @@ describe('bracket member access refs (adversarial R2)', () => {
       '  run() { return 1; }',
       '}',
       'const a = new Api();',
-      "a['run']();",
+      'a[\'run\']();',
       ''
     ].join('\n');
 
@@ -20,7 +20,7 @@ describe('bracket member access refs (adversarial R2)', () => {
     expect(refs).not.toBeNull();
     // declaration + bracket usage
     expect((refs ?? []).length).toBeGreaterThanOrEqual(2);
-    const lines = (refs ?? []).map(r => r.range.start.line);
+    const lines = (refs ?? []).map(r => r.location.range.start.line);
     expect(lines).toContain(5);
   });
 });

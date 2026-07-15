@@ -11,7 +11,7 @@ describe('co-move directory index import (adversarial R3)', () => {
   it('keeps ./utils when utils/index.ts moves with the importer', async () => {
     const fs = new MemFileSystem();
     await fs.fromJSON({
-      '/proj/pkg/a.ts': "import { x } from './utils';\nexport const a = x;\n",
+      '/proj/pkg/a.ts': 'import { x } from \'./utils\';\nexport const a = x;\n',
       '/proj/pkg/utils/index.ts': 'export const x = 1;\n'
     });
     const resolver = new ImportResolver({

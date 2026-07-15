@@ -2,7 +2,7 @@
  * Adversarial pin: applyFileOperations ignores columns and splices whole lines.
  * CLI apply path uses Changeset; this public API path still line-splices.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   FileOperationsHandler,
   FileOperationType,
@@ -16,7 +16,7 @@ function createMockFileSystem(files: Record<string, string>): IFileSystem & { _f
   return {
     _files: fileContents,
     readFile: vi.fn().mockImplementation(async (filePath: string) => {
-      if (filePath in fileContents) return fileContents[filePath];
+      if (filePath in fileContents) {return fileContents[filePath];}
       throw new Error(`File not found: ${filePath}`);
     }),
     writeFile: vi.fn().mockImplementation(async (filePath: string, content: string) => {

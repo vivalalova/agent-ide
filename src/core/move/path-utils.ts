@@ -175,6 +175,14 @@ export class PathUtils {
           let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
           newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
 
+          // 新檔案已離開別名根目錄（如目錄整批搬出 alias root）時，
+          // newRelativeToAlias 會是 '../xxx' 形式，繼續組出 alias + '/../xxx'
+          // 會產生 '@/../xxx' 這種語意錯誤的別名路徑（已跳出別名映射範圍，
+          // 不再是合法的別名路徑）。改用一般相對路徑（見 adversarial R2 regression）。
+          if (this.escapesRoot(newRelativeToAlias)) {
+            break;
+          }
+
           newRelativeToAlias = stripSourceFileExtension(newRelativeToAlias);
 
           // 組合新的別名路徑：alias + / + newRelativeToAlias
@@ -191,9 +199,12 @@ export class PathUtils {
         let newRelativeToBaseUrl = path.relative(baseUrl, path.normalize(newFilePath));
         newRelativeToBaseUrl = newRelativeToBaseUrl.replace(/\\/g, '/');
 
-        newRelativeToBaseUrl = stripSourceFileExtension(newRelativeToBaseUrl);
-
-        return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
+        // 同上：新檔案離開 baseUrl 根目錄時不得產生 '../xxx' 形式的 baseUrl 相對路徑，
+        // 改用一般相對路徑。
+        if (!this.escapesRoot(newRelativeToBaseUrl)) {
+          newRelativeToBaseUrl = stripSourceFileExtension(newRelativeToBaseUrl);
+          return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
+        }
       }
     }
 
@@ -202,6 +213,14 @@ export class PathUtils {
       originalImportPath,
       this.calculateNewImportPath(fromFile, newFilePath)
     );
+  }
+
+  /**
+   * 判斷一個（已轉為 '/' 分隔）相對路徑是否跳出了基準根目錄
+   * （即以 '..' 開頭），供別名／baseUrl 樣式判斷是否仍適用。
+   */
+  private escapesRoot(relativePath: string): boolean {
+    return relativePath === '..' || relativePath.startsWith('../');
   }
 
   private preserveOriginalExtension(originalImportPath: string, newImportPath: string): string {

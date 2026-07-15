@@ -113,24 +113,54 @@ export function findMethodDeclarationEnd(
 
 /**
  * 找到類型別名結尾
- * 支援多行 union/intersection 型別
+ * 支援多行 union/intersection 型別，以及多行 object type body（`{ ... }`）
+ *
+ * 逐字元累計 `{`/`(`/`[` 巢狀深度（沿用 findBlockEnd 的 mask 判定跳過字串/註解），
+ * 只在深度歸零時才把 `;` 視為別名本身的終止分號；否則物件型別 body 內成員自帶的
+ * 分號（如 `id: string;`）會被誤判成別名已結束，導致多行 object type 被截斷（見
+ * P2 bug：`type User = { id: string; name: string; };` 只截到第一個成員）。
  *
  * @param lines 程式碼行陣列
  * @param startLine 起始行索引（0-based）
  * @returns 型別別名結束行索引
  */
 export function findTypeAliasEnd(lines: string[], startLine: number): number {
-  for (let i = startLine; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.includes(';')) {
-      return i;
+  const text = lines.slice(startLine).join('\n');
+  const codeMask = computeCodeStateMask(text);
+
+  let depth = 0;
+  let lineIndex = startLine;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '\n') {
+      lineIndex++;
+      continue;
     }
-    // 非起始行且不是 union/intersection 續行
-    if (i > startLine && !line.trim().startsWith('|') && !line.trim().startsWith('&')) {
+
+    if (!codeMask[i]) {
+      continue;
+    }
+
+    if (char === '{' || char === '(' || char === '[') {
+      depth++;
+    } else if (char === '}' || char === ')' || char === ']') {
+      depth = Math.max(0, depth - 1);
+    } else if (char === ';' && depth === 0) {
+      return lineIndex;
+    }
+  }
+
+  // 沒有終止分號（如型別別名為多行 union/intersection 且無結尾 `;`）：
+  // 回退到「非起始行且非 union/intersection 續行」的行邊界判定
+  for (let i = startLine + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed.startsWith('|') && !trimmed.startsWith('&')) {
       return i;
     }
   }
-  return startLine;
+  return lines.length - 1 > startLine ? lines.length - 1 : startLine;
 }
 
 /**

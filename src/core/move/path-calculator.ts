@@ -298,11 +298,22 @@ export class PathCalculator {
 
           // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
-            // 嘗試解析到實際檔案（處理省略副檔名的情況）
-            const isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
+            // 嘗試解析到實際檔案（處理省略副檔名的情況，如 ./utils → utils.ts）
+            let isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
               const fullPath = path.normalize(normalizedResolved + ext);
               return normalizedFilesInDir.has(fullPath);
             });
+
+            // 如果不是直接匹配，檢查 index 檔案（如 ./utils → utils/index.ts）。
+            // 缺這一步時，co-move 目錄索引檔會被誤判成「未一起搬移」，導致
+            // 明明相對位置不變的 import 被錯誤改寫（見 adversarial R3 regression，
+            // 比照下方 alias/baseUrl 分支已有的 SOURCE_INDEX_FILES 檢查）。
+            if (!isTargetInMovedDir) {
+              isTargetInMovedDir = SOURCE_INDEX_FILES.some(indexFile => {
+                const fullPath = path.normalize(normalizedResolved + indexFile);
+                return normalizedFilesInDir.has(fullPath);
+              });
+            }
 
             // 如果目標檔案也在被移動的目錄內，相對位置不變，跳過更新
             if (isTargetInMovedDir) {

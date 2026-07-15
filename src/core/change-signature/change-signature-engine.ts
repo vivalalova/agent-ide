@@ -264,7 +264,7 @@ export class ChangeSignatureEngine {
       // spread 引數在原始碼中只佔一個 AST 引數位置、實際可能展開對應多個宣告參數，其真正數量
       // 與內容只能在執行期得知，無法靜態決定要搬到哪個新位置——連「只在尾端新增參數」也一樣會壞
       // （spread 涵蓋不到的後續必要參數位置會被誤判成「省略」而補 undefined，見 call-site-updater
-      // mapCallSiteArguments 對 `param.optional || param.defaultValue` 的省略判斷）。
+      // mapCallSiteArguments 對 `param.optional || param.defaultValue !== undefined` 的省略判斷）。
       // 純 rename／change-type 不需要呼叫點重寫（見 changesRequireCallSiteRewrite），不會走到此檢查。
       const spreadCallSiteError = this.findSpreadCallSiteError(callSites);
       if (spreadCallSiteError) {
@@ -1389,7 +1389,7 @@ export class ChangeSignatureEngine {
 
       result += param.name;
 
-      if (param.optional && !param.defaultValue) {
+      if (param.optional && param.defaultValue === undefined) {
         result += '?';
       }
 
@@ -1397,7 +1397,7 @@ export class ChangeSignatureEngine {
         result += `: ${param.type}`;
       }
 
-      if (param.defaultValue) {
+      if (param.defaultValue !== undefined) {
         result += ` = ${param.defaultValue}`;
       }
 

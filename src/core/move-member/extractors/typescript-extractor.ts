@@ -290,14 +290,18 @@ export function extractClassMembers(
     readonly hasBody: boolean;
   }
 
+  // 名稱後允許緊接泛型參數 `<...>`（如 `map<T>(...)`），否則泛型方法的 `<T>`
+  // 會卡在名稱與 `(` 之間，導致整條規則不匹配、方法完全抽不出來（見 P1 bug）。
+  // 名稱前允許 `get`/`set` 存取子關鍵字，否則 getter/setter 因不含 async/static/
+  // 存取修飾詞而被規則忽略，之後又被屬性規則誤判成一般屬性（見 P2 bug）。
   const methodPattern = new RegExp(
-    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})[ \\t]*\\([^)]*\\)`,
+    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(get|set)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})(?:[ \\t]*<[^>]*>)?[ \\t]*\\([^)]*\\)`,
     'gmu'
   );
   const rawMethodCandidates: RawMethodCandidate[] = [];
   while ((match = methodPattern.exec(classBody)) !== null) {
     // 跳過 constructor
-    if (match[4] === 'constructor') { continue; }
+    if (match[5] === 'constructor') { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
     const declLineIndex = relativeLineNumber - 1;
@@ -308,7 +312,7 @@ export function extractClassMembers(
 
     rawMethodCandidates.push({
       matchText: match[0],
-      name: match[4],
+      name: match[5],
       startLineIndex,
       endLineIndex: bodyEndLineIndex,
       hasBody
@@ -349,6 +353,18 @@ export function extractClassMembers(
     candidateIndex = groupEnd + 1;
   }
 
+  // 屬性掃描逐行比對，天生無法分辨「類別成員層級的屬性宣告」與「方法本體內部的
+  // 陳述句/多行參數列表」——兩者長得一樣（如 `return 1;` 的 `return`、`a: number,`
+  // 的 `a`）。故先把所有方法候選（含尚未合併 overload 群組前）覆蓋的行範圍記下，
+  // 屬性掃描命中落在任一方法範圍內的行一律跳過，避免把方法 body 陳述句或跨行參數
+  // 誤判成 Property（見 P1 bug：`run() { return 1; }` 生出假的 `return` 屬性）。
+  const methodCoveredLineRanges = rawMethodCandidates.map(c => ({
+    start: c.startLineIndex,
+    end: c.endLineIndex
+  }));
+  const isLineInsideMethod = (lineIndex: number): boolean =>
+    methodCoveredLineRanges.some(r => lineIndex >= r.start && lineIndex <= r.end);
+
   // 屬性
   const propertyPattern = new RegExp(
     `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(readonly)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})[ \\t]*[?:]?[ \\t]*[^ (]`,
@@ -361,6 +377,9 @@ export function extractClassMembers(
     )) { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
+    const declLineIndex = relativeLineNumber - 1;
+    if (isLineInsideMethod(declLineIndex)) { continue; }
+
     const lineNumber = classStartLine + bodyStartLine - 1 + relativeLineNumber - 1;
     const endLine = findStatementEnd(bodyLines, relativeLineNumber - 1);
     const sourceCode = bodyLines.slice(relativeLineNumber - 1, endLine + 1).join('\n');

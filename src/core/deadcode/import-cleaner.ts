@@ -227,9 +227,15 @@ export class ImportCleaner {
   }
 
   /**
-   * 判斷一句 import 的來源模組（相對路徑）解析後是否指向任一被刪符號的定義檔。
-   * 只解析相對路徑（`.` 開頭）；bare specifier（套件匯入）不可能指向本地被刪檔，直接回 false。
-   * 以去副檔名後的絕對路徑比對，涵蓋 `./x`（無副檔名）與 `./x.js`（ESM 指向 .ts）兩種寫法。
+   * 判斷一句 import 的來源模組解析後是否指向任一被刪符號的定義檔。
+   * 相對路徑（`.` 開頭）以去副檔名後的絕對路徑精確比對，涵蓋 `./x`（無副檔名）與
+   * `./x.js`（ESM 指向 .ts）兩種寫法。
+   *
+   * 非相對 bare specifier（如 tsconfig path-alias `@app/utils`）：ImportCleaner 本身
+   * 沒有 tsconfig pathAliases 可用於精準解析（此類設定僅存在於 rename/move 模組），
+   * 故以「specifier 最後一段」比對被刪檔案 basename 作為粗篩。誤判為 true 不影響
+   * 正確性——呼叫端仍會逐一核對符號名稱是否在 removedSymbols 中且確認已無使用引用
+   * 才會真正產生清理項，粗篩頂多多掃描一個不相關 import。
    */
   private importFromRemovalFile(
     consumerFilePath: string,
@@ -241,11 +247,21 @@ export class ImportCleaner {
       return false;
     }
     const moduleSpecifier = fromMatch[2];
-    if (!moduleSpecifier.startsWith('.')) {
+    if (moduleSpecifier.startsWith('.')) {
+      const resolved = path.resolve(path.dirname(consumerFilePath), moduleSpecifier);
+      return removalFilesNoExt.has(stripSourceFileExtension(resolved));
+    }
+
+    const lastSegment = moduleSpecifier.split('/').pop();
+    if (!lastSegment) {
       return false;
     }
-    const resolved = path.resolve(path.dirname(consumerFilePath), moduleSpecifier);
-    return removalFilesNoExt.has(stripSourceFileExtension(resolved));
+    for (const removalFileNoExt of removalFilesNoExt) {
+      if (path.basename(removalFileNoExt) === lastSegment) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

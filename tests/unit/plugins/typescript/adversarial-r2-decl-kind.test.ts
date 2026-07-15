@@ -11,7 +11,7 @@ describe('declaration kind tagging (adversarial R2)', () => {
     const code = 'function foo() {}\nfoo();\n';
     const refs = createReferenceFinder().findScopedReferences(code, 'foo');
     expect(refs).not.toBeNull();
-    const declRef = (refs ?? []).find(r => r.range.start.line === 1);
+    const declRef = (refs ?? []).find(r => r.location.range.start.line === 1);
     expect(declRef).toBeDefined();
     // Desired: Write (or future Definition enum). Bug: Read.
     expect(declRef!.kind).not.toBe(ScopedReferenceKind.Read);

@@ -566,16 +566,7 @@ export class SymbolFinder {
    * 轉換 ScopedReferenceKind 到 SymbolReferenceType
    */
   private scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
-    switch (kind) {
-      case ScopedReferenceKind.Write:
-        return SymbolReferenceType.Definition;
-      case ScopedReferenceKind.Import:
-        return SymbolReferenceType.Import;
-      case ScopedReferenceKind.Call:
-      case ScopedReferenceKind.Read:
-      default:
-        return SymbolReferenceType.Usage;
-    }
+    return scopedReferenceKindToType(kind);
   }
 
   /**
@@ -787,6 +778,23 @@ export class SymbolFinder {
       default:
         return ClassMemberType.Property;
     }
+  }
+}
+
+/**
+ * 轉換 ScopedReferenceKind 到 SymbolReferenceType。
+ * Write（賦值）是使用而非定義，映射為 Usage；宣告點的 Definition 判定由 parser 引用類型
+ * （mapParserReferenceTypeString）另行處理。
+ */
+export function scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
+  switch (kind) {
+    case ScopedReferenceKind.Import:
+      return SymbolReferenceType.Import;
+    case ScopedReferenceKind.Write:
+    case ScopedReferenceKind.Call:
+    case ScopedReferenceKind.Read:
+    default:
+      return SymbolReferenceType.Usage;
   }
 }
 

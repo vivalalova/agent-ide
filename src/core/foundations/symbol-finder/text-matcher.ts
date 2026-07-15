@@ -191,20 +191,49 @@ export class TextMatcher {
 
   /**
    * 檢查位置是否在單行註解中
+   *
+   * 單趟字元掃描同時追蹤字串狀態並尋找 `//`／`#`：舊版分別用
+   * `beforePosition.includes('//')` 與 `isInString(line, hashIndex)` 各查一次，
+   * `//` 分支完全沒排除字串內的情況，導致同行前面出現 URL 字串（如
+   * `"http://example.com"`）時，字串內的 `//` 被誤判成註解起點，把後面
+   * 真正的程式碼（如 `foo()`）當成註解內容濾掉（adversarial R2 regression）。
    */
   isInSingleLineComment(line: string, position: number): boolean {
-    const beforePosition = line.substring(0, position);
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let inTemplate = false;
 
-    // TypeScript/JavaScript 單行註解
-    if (beforePosition.includes('//')) {
-      return true;
-    }
+    for (let i = 0; i < position; i++) {
+      const char = line[i];
+      const prevChar = i > 0 ? line[i - 1] : '';
 
-    // Python/Shell 單行註解
-    if (beforePosition.includes('#')) {
-      // 排除 # 在字串中的情況
-      const hashIndex = beforePosition.indexOf('#');
-      if (!this.isInString(line, hashIndex)) {
+      if (prevChar === '\\') {
+        continue;
+      }
+
+      if (char === '\'' && !inDoubleQuote && !inTemplate) {
+        inSingleQuote = !inSingleQuote;
+        continue;
+      }
+      if (char === '"' && !inSingleQuote && !inTemplate) {
+        inDoubleQuote = !inDoubleQuote;
+        continue;
+      }
+      if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+        inTemplate = !inTemplate;
+        continue;
+      }
+
+      if (inSingleQuote || inDoubleQuote || inTemplate) {
+        continue;
+      }
+
+      // TypeScript/JavaScript 單行註解
+      if (char === '/' && line[i + 1] === '/') {
+        return true;
+      }
+      // Python/Shell 單行註解
+      if (char === '#') {
         return true;
       }
     }
