@@ -19,10 +19,11 @@ import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { createTargetExposureResolver } from './target-exposure-resolver.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /** rename 的 tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
 export interface RenameModuleResolutionConfig {
-  readonly pathAliases?: Record<string, string>;
+  readonly pathAliases?: PathAliasInput;
   readonly baseUrl?: string;
 }
 

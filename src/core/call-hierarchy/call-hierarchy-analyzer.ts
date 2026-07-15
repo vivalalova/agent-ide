@@ -4,6 +4,7 @@
  */
 
 import * as ts from 'typescript';
+import * as path from 'path';
 import * as babel from '@babel/types';
 import babelTraverse from '@babel/traverse';
 import type { Range } from '@shared/types/core.js';
@@ -13,6 +14,9 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
+import { getImportResolutionExtensions, hasRuntimeImportExtensionCandidates } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { logger } from '@infrastructure/logging/index.js';
 import type {
@@ -24,6 +28,21 @@ import type {
 
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
+interface FunctionDefinition {
+  readonly location: { filePath: string; range: Range };
+}
+
+interface ImportedBinding {
+  readonly importedName: string;
+  readonly moduleSpecifier: string;
+}
+
+interface ResolvedCalleeDefinition extends FunctionDefinition {
+  readonly functionName: string;
+}
+
+type BabelParseResult = import('@babel/parser').ParseResult<babel.File>;
+
 /**
  * Call Hierarchy Analyzer
  * 分析函數的呼叫者（incoming）和被呼叫者（outgoing）
@@ -34,7 +53,7 @@ export class CallHierarchyAnalyzer {
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
-    fileSystem: IFileSystem
+    private readonly fileSystem: IFileSystem
   ) {
     this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
@@ -116,22 +135,29 @@ export class CallHierarchyAnalyzer {
   private async findFunctionDefinition(
     functionName: string,
     projectFiles: readonly string[]
-  ): Promise<{ location: { filePath: string; range: Range } } | null> {
+  ): Promise<FunctionDefinition | null> {
+    // function 型別優先；variable/constant（arrow/function expression 賦值）僅在
+    // 全專案找不到 function 定義時才 fallback，避免同名非函數變數搶走定義
+    let fallback: FunctionDefinition | null = null;
     for (const filePath of projectFiles) {
       const definition = await this.symbolFinder.findDefinition(filePath, functionName);
-      if (definition && this.isFunctionSymbol(definition.symbol)) {
+      if (!definition || !this.isFunctionSymbol(definition.symbol)) {
+        continue;
+      }
+      if (definition.symbol.type === 'function') {
         return { location: definition.symbol.location };
       }
+      fallback ??= { location: definition.symbol.location };
     }
-    return null;
+    return fallback;
   }
 
   /**
    * 檢查是否為函數類型的符號
    */
   private isFunctionSymbol(symbol: Symbol): boolean {
-    // SymbolType.Function 涵蓋函數和方法
-    return symbol.type === 'function';
+    // CLI 端將 variable/constant 中的 arrow/function expression 也視為可呼叫符號。
+    return symbol.type === 'function' || symbol.type === 'variable' || symbol.type === 'constant';
   }
 
   /**
@@ -287,12 +313,17 @@ export class CallHierarchyAnalyzer {
       return outgoing;
     }
 
+    let typeScriptSourceFile: ts.SourceFile | undefined;
+    let babelAst: BabelParseResult | undefined;
+
     try {
       const ast = await parser.parse(content, filePath);
       const sourceFile = getTypeScriptSourceFile(ast);
+      typeScriptSourceFile = sourceFile ?? undefined;
 
       if (!sourceFile) {
         if (hasBabelAST(ast)) {
+          babelAst = ast.babelAST;
           outgoing.push(...this.findOutgoingCallsFromBabel(
             ast.babelAST,
             ast.sourceCode,
@@ -361,14 +392,20 @@ export class CallHierarchyAnalyzer {
     if (depth > 1) {
       const directCalls = [...outgoing];
       for (const call of directCalls) {
-        const calleeDefinition = await this.findFunctionDefinition(call.callee, projectFiles);
+        const calleeDefinition = await this.findCalleeDefinition(
+          call,
+          filePath,
+          projectFiles,
+          typeScriptSourceFile,
+          babelAst
+        );
         if (!calleeDefinition) {
           continue;
         }
 
         const deeperCalls = await this.findOutgoingCalls(
           calleeDefinition.location.filePath,
-          call.callee,
+          calleeDefinition.functionName,
           calleeDefinition.location.range,
           depth - 1,
           projectFiles,
@@ -380,6 +417,303 @@ export class CallHierarchyAnalyzer {
     }
 
     return outgoing;
+  }
+
+  /**
+   * 解析遞迴展開的 callee。跨檔案時只接受 caller 的 import binding；
+   * 沒有可確定的 import 或同檔宣告時直接不展開，避免全專案同名函式誤綁。
+   */
+  private async findCalleeDefinition(
+    call: OutgoingCall,
+    callerFile: string,
+    projectFiles: readonly string[],
+    sourceFile?: ts.SourceFile,
+    babelAst?: BabelParseResult
+  ): Promise<ResolvedCalleeDefinition | null> {
+    const importedBinding = sourceFile
+      ? this.findTypeScriptImportedBinding(sourceFile, call)
+      : babelAst
+        ? this.findBabelImportedBinding(babelAst, call)
+        : null;
+
+    if (importedBinding) {
+      const importedFile = await this.resolveProjectImportPath(
+        importedBinding.moduleSpecifier,
+        callerFile,
+        projectFiles
+      );
+      if (!importedFile) {
+        return null;
+      }
+
+      const definition = await this.findFunctionDefinition(importedBinding.importedName, [importedFile]);
+      return definition
+        ? { ...definition, functionName: importedBinding.importedName }
+        : null;
+    }
+
+    // 方法呼叫若不是 namespace import，缺少 receiver 型別時無法安全判定其宣告。
+    if (call.isMethodCall) {
+      return null;
+    }
+
+    const definition = await this.findFunctionDefinition(call.callee, [callerFile]);
+    return definition ? { ...definition, functionName: call.callee } : null;
+  }
+
+  private findTypeScriptImportedBinding(
+    sourceFile: ts.SourceFile,
+    call: OutgoingCall
+  ): ImportedBinding | null {
+    const bindingName = call.isMethodCall ? call.receiver : call.callee;
+    if (bindingName && this.isLexicallyShadowedAtCallSite(sourceFile, call, bindingName)) {
+      return null;
+    }
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+
+      const importClause = statement.importClause;
+      if (!importClause || importClause.isTypeOnly) {
+        continue;
+      }
+
+      if (importClause.name?.text === call.callee) {
+        return {
+          importedName: call.callee,
+          moduleSpecifier: statement.moduleSpecifier.text
+        };
+      }
+
+      const namedBindings = importClause.namedBindings;
+      if (namedBindings && ts.isNamedImports(namedBindings)) {
+        const element = namedBindings.elements.find(
+          candidate => !candidate.isTypeOnly && candidate.name.text === call.callee
+        );
+        if (element) {
+          return {
+            importedName: element.propertyName?.text ?? element.name.text,
+            moduleSpecifier: statement.moduleSpecifier.text
+          };
+        }
+      }
+
+      if (
+        call.isMethodCall
+        && namedBindings
+        && ts.isNamespaceImport(namedBindings)
+        && namedBindings.name.text === call.receiver
+      ) {
+        return {
+          importedName: call.callee,
+          moduleSpecifier: statement.moduleSpecifier.text
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private isLexicallyShadowedAtCallSite(
+    sourceFile: ts.SourceFile,
+    call: OutgoingCall,
+    bindingName: string
+  ): boolean {
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bindingName)) {
+      return false;
+    }
+
+    const { line, column } = call.location.range.start;
+    const lineStarts = sourceFile.getLineStarts();
+    if (line < 1 || line > lineStarts.length) {
+      return false;
+    }
+    const lineStart = lineStarts[line - 1];
+    const lineEnd = line < lineStarts.length ? lineStarts[line] : sourceFile.end;
+    const position = Math.min(lineStart + Math.max(0, column - 1), lineEnd);
+    const ancestors: ts.Node[] = [];
+
+    const collectAncestors = (node: ts.Node): void => {
+      if (position < node.pos || position >= node.end) {
+        return;
+      }
+      ancestors.push(node);
+      ts.forEachChild(node, collectAncestors);
+    };
+    collectAncestors(sourceFile);
+
+    for (const ancestor of ancestors) {
+      if (ts.isSourceFile(ancestor) || ts.isBlock(ancestor) || ts.isModuleBlock(ancestor)) {
+        if (ancestor.statements.some(statement => this.declarationBindsName(statement, bindingName))) {
+          return true;
+        }
+      }
+
+      if (ts.isFunctionLike(ancestor)) {
+        if (ancestor.parameters.some(parameter => this.bindingNameMatches(parameter.name, bindingName))) {
+          return true;
+        }
+        if (ancestor.name && ts.isIdentifier(ancestor.name) && ancestor.name.text === bindingName) {
+          return true;
+        }
+      }
+
+      if (ts.isCatchClause(ancestor) && ancestor.variableDeclaration
+        && this.bindingNameMatches(ancestor.variableDeclaration.name, bindingName)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private declarationBindsName(statement: ts.Statement, bindingName: string): boolean {
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.some(declaration =>
+        this.bindingNameMatches(declaration.name, bindingName)
+      );
+    }
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name) {
+      return statement.name.text === bindingName;
+    }
+    return false;
+  }
+
+  private bindingNameMatches(name: ts.BindingName, bindingName: string): boolean {
+    if (ts.isIdentifier(name)) {
+      return name.text === bindingName;
+    }
+    return name.elements.some(element =>
+      ts.isBindingElement(element) && this.bindingNameMatches(element.name, bindingName)
+    );
+  }
+
+  private findBabelImportedBinding(
+    babelAst: BabelParseResult,
+    call: OutgoingCall
+  ): ImportedBinding | null {
+    if (this.isBabelLexicallyShadowedAtCallSite(babelAst, call)) {
+      return null;
+    }
+
+    for (const statement of babelAst.program.body) {
+      if (!babel.isImportDeclaration(statement)) {
+        continue;
+      }
+
+      for (const specifier of statement.specifiers) {
+        if (babel.isImportDefaultSpecifier(specifier) && specifier.local.name === call.callee) {
+          return {
+            importedName: call.callee,
+            moduleSpecifier: statement.source.value
+          };
+        }
+
+        if (babel.isImportSpecifier(specifier) && specifier.local.name === call.callee) {
+          return {
+            importedName: babel.isIdentifier(specifier.imported)
+              ? specifier.imported.name
+              : specifier.imported.value,
+            moduleSpecifier: statement.source.value
+          };
+        }
+
+        if (
+          call.isMethodCall
+          && babel.isImportNamespaceSpecifier(specifier)
+          && specifier.local.name === call.receiver
+        ) {
+          return {
+            importedName: call.callee,
+            moduleSpecifier: statement.source.value
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private isBabelLexicallyShadowedAtCallSite(
+    babelAst: BabelParseResult,
+    call: OutgoingCall
+  ): boolean {
+    const bindingName = call.isMethodCall ? call.receiver : call.callee;
+    if (!bindingName) {
+      return false;
+    }
+
+    const { line, column } = call.location.range.start;
+    let shadowed = false;
+    traverse(babelAst, {
+      CallExpression: callPath => {
+        const loc = callPath.node.loc;
+        if (!loc || loc.start.line !== line || loc.start.column + 1 !== column) {
+          return;
+        }
+
+        const binding = callPath.scope.getBinding(bindingName);
+        if (binding) {
+          shadowed = !binding.path.isImportDefaultSpecifier()
+            && !binding.path.isImportNamespaceSpecifier()
+            && !binding.path.isImportSpecifier();
+        }
+        callPath.stop();
+      }
+    });
+
+    return shadowed;
+  }
+
+  private async resolveProjectImportPath(
+    moduleSpecifier: string,
+    fromFile: string,
+    projectFiles: readonly string[]
+  ): Promise<string | null> {
+    let basePath: string;
+    if (path.isAbsolute(moduleSpecifier)) {
+      basePath = path.resolve(moduleSpecifier);
+    } else if (moduleSpecifier.startsWith('.')) {
+      basePath = path.resolve(path.dirname(fromFile), moduleSpecifier);
+    } else {
+      const tsconfig = await loadTsconfigPathConfig(path.dirname(fromFile), this.fileSystem);
+      const aliasPath = await resolveBarePathAliasAsync(
+        moduleSpecifier,
+        tsconfig.pathAliases,
+        async candidate => await this.fileSystem.exists(candidate)
+          && await this.fileSystem.isFile(candidate)
+      );
+      if (aliasPath) {
+        basePath = aliasPath;
+      } else if (tsconfig.baseUrl) {
+        basePath = path.resolve(tsconfig.baseUrl, moduleSpecifier);
+      } else {
+        return null;
+      }
+    }
+    const importExtension = path.extname(basePath);
+    const normalizedBasePath = hasRuntimeImportExtensionCandidates(importExtension)
+      ? basePath.slice(0, -importExtension.length)
+      : basePath;
+    const extensions = getImportResolutionExtensions(importExtension);
+    const candidates = new Set<string>([basePath, normalizedBasePath]);
+
+    for (const extension of extensions) {
+      candidates.add(normalizedBasePath + extension);
+      candidates.add(path.join(normalizedBasePath, `index${extension}`));
+    }
+
+    const projectFilesByPath = new Map(projectFiles.map(file => [path.resolve(file), file]));
+    for (const candidate of candidates) {
+      const projectFile = projectFilesByPath.get(path.resolve(candidate));
+      if (projectFile) {
+        return projectFile;
+      }
+    }
+
+    return null;
   }
 
   /**

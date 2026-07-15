@@ -6,6 +6,7 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { PathResolutionResult, ExtendedDependencyAnalysisOptions } from './types.js';
+import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
 import {
   getImportResolutionExtensions,
   hasRuntimeImportExtensionCandidates
@@ -36,9 +37,26 @@ export class PathResolver {
     const isRelative = importPath.startsWith('.') || importPath.startsWith('/');
 
     // 檢查是否為路徑別名
-    const aliasResult = this.resolvePathAlias(importPath);
+    const aliasResult = await resolveBarePathAliasAsync(
+      importPath,
+      this.options.pathAliases ?? {},
+      async candidate => await this.fileSystem.exists(candidate) && await this.fileSystem.isFile(candidate),
+      this.options.sourceFileExtensions
+    );
     if (aliasResult) {
       return this.resolveWithExtensions(aliasResult, false);
+    }
+
+    // TypeScript 的 baseUrl 允許不以 `./` 開頭的專案內 bare import；先嘗試
+    // 專案路徑，找不到時才依既有 includeNodeModules 規則處理外部套件。
+    if (!isRelative && this.options.baseUrl) {
+      const baseUrlResult = await this.resolveWithExtensions(
+        path.resolve(this.options.baseUrl, importPath),
+        false
+      );
+      if (baseUrlResult.exists) {
+        return baseUrlResult;
+      }
     }
 
     if (!isRelative && !this.options.includeNodeModules) {
@@ -58,43 +76,6 @@ export class PathResolver {
         extension: ''
       };
     }
-  }
-
-  /**
-   * 解析路徑別名
-   * @param importPath 匯入路徑
-   * @returns 解析後的絕對路徑，若非路徑別名則回傳 null
-   */
-  private resolvePathAlias(importPath: string): string | null {
-    const pathAliases = this.options.pathAliases;
-    if (!pathAliases || Object.keys(pathAliases).length === 0) {
-      return null;
-    }
-
-    // 按別名長度降序排列，優先匹配較長的別名
-    const sortedAliases = Object.keys(pathAliases).sort((a, b) => b.length - a.length);
-
-    for (const alias of sortedAliases) {
-      // 精確匹配別名（如 @/utils）
-      if (importPath === alias) {
-        return pathAliases[alias];
-      }
-
-      // 匹配別名前綴（如 @/utils/helper 匹配 @/）
-      const aliasPrefix = alias.endsWith('/') ? alias : alias + '/';
-      if (importPath.startsWith(aliasPrefix)) {
-        const relativePart = importPath.slice(aliasPrefix.length);
-        return path.join(pathAliases[alias], relativePart);
-      }
-
-      // 匹配別名前綴（如 @/utils 匹配 @）
-      if (importPath.startsWith(alias + '/')) {
-        const relativePart = importPath.slice(alias.length + 1);
-        return path.join(pathAliases[alias], relativePart);
-      }
-    }
-
-    return null;
   }
 
   /**

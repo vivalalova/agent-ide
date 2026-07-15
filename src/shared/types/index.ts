@@ -20,6 +20,7 @@ export {
   TYPESCRIPT_PARSER_EXTENSIONS,
   JAVASCRIPT_SOURCE_EXTENSIONS,
   SOURCE_FILE_EXTENSIONS,
+  SOURCE_INDEX_FILES,
   isTypeScriptSourceExtension,
   isJavaScriptSourceExtension,
   isSourceFileExtension,

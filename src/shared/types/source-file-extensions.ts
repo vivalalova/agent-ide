@@ -9,6 +9,7 @@ export const SOURCE_FILE_EXTENSIONS = [
   ...TYPESCRIPT_SOURCE_EXTENSIONS,
   ...JAVASCRIPT_SOURCE_EXTENSIONS
 ] as const;
+export const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
 
 const RUNTIME_IMPORT_EXTENSION_CANDIDATES: Record<string, readonly string[]> = {
   '.js': ['.ts', '.tsx', '.js', '.jsx'],

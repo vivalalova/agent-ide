@@ -13,6 +13,7 @@ import {
   type RemovalSummary
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
@@ -163,13 +164,19 @@ async function handleDeadCodeCommand(
       !p.includes('/') && !p.includes('*') && !p.includes('?') && !p.startsWith('.')
     );
 
+    // 讀取 tsconfig.json path-alias 設定（會向上查找 tsconfig.json），供 import 清理
+    // 精準判定非相對 specifier 是否真的指向被刪檔案（見 import-cleaner.ts 的 alias 解析契約）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(projectPath, context.fileSystem);
+
     const remover = createDeadCodeRemover(
       context.fileSystem,
       parserRegistry,
       {
         excludeFiles,
         excludeSymbols,
-        cleanupImports: true
+        cleanupImports: true,
+        pathAliases: tsconfigPathConfig.pathAliases,
+        baseUrl: tsconfigPathConfig.baseUrl
       }
     );
 

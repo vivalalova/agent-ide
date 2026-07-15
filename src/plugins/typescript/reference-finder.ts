@@ -16,6 +16,7 @@ import {
 import { tsNodeToRange } from './types.js';
 import { logger } from '@infrastructure/logging/index.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
+import { findNearestLexicalDeclarationName } from './lexical-scope-binding.js';
 
 /**
  * 標識符引用分析結果
@@ -84,8 +85,11 @@ export class ReferenceFinder {
 
         // Bracket 成員存取：obj['foo']（ElementAccessExpression 的 key 是字串字面值，
         // 不是 Identifier，原本的 isIdentifier 檢查完全掃不到，導致 a['run']() 這類
-        // 方法呼叫對 deadcode/refs 隱形）
-        const isBracketKeyMatch = ts.isStringLiteral(node) && node.text === symbolName
+        // 方法呼叫對 deadcode/refs 隱形）。無插值的樣板字面值鍵（`` a[`foo`] ``）是另一種
+        // AST node kind（NoSubstitutionTemplateLiteral，非 StringLiteral），語意上同樣是
+        // 靜態字串鍵，一併納入，否則 `` a[`run`]() `` 仍對 deadcode/refs 隱形（見 R2 finding 3）。
+        const isBracketKeyMatch = (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+          && node.text === symbolName
           && !!parent && ts.isElementAccessExpression(parent) && parent.argumentExpression === node;
 
         if (isPlainIdentifierMatch || isBracketKeyMatch) {
@@ -94,7 +98,7 @@ export class ReferenceFinder {
 
           if (refInfo) {
             // 如果指定了 className，過濾不屬於該類別的引用
-            if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName)) {
+            if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, node)) {
               return;
             }
 
@@ -141,12 +145,26 @@ export class ReferenceFinder {
    *   例外：targetClassName === symbolName（呼叫端傳入的「容器名」其實就是符號本身，
    *   如巢狀函式以自身作為 scope 名稱的慣例）時，不代表存在別的同名符號互相排擠，
    *   此裸識別符本來就是目標符號的直接引用，不應被容器名不相符擋掉。
+   *   但此例外仍須排除「其他 scope 內同名 local 綁定」造成的誤判（見 P2-5 bug：
+   *   `const process = () => 2; process();` 這類與目標無關的區域變數重名，會被
+   *   無條件保留誤算成目標引用）——只在該裸識別符所在的區塊鏈上，能找到一個
+   *   同名的 FunctionDeclaration（巢狀函式慣例的宣告形式，具 hoisting 語意、
+   *   於整個外層區塊皆可見）時才視為目標的直接引用；找不到則代表這只是另一個
+   *   無關 scope 的同名綁定，交由一般裸識別符規則排除。
    */
   private shouldExcludeByClassName(
     refInfo: IdentifierReferenceInfo,
     targetClassName: string,
-    symbolName: string
+    symbolName: string,
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral
   ): boolean {
+    // 巢狀函式以自身名稱作為 targetClassName 時，先做最近綁定判定；否則
+    // containerName === targetClassName 的一般保留規則會在 scope 過濾前提前放行
+    // 內層 const process 與其呼叫點。
+    if (targetClassName === symbolName && !refInfo.isPropertyAccess) {
+      return !this.hasEnclosingTargetFunction(node, symbolName);
+    }
+
     // 目標類別內部的引用一律保留（方法定義本身、類別內 this-less 引用等）
     if (refInfo.containerName === targetClassName) {
       return false;
@@ -167,13 +185,25 @@ export class ReferenceFinder {
       return true;
     }
 
-    // targetClassName 即符號自身名稱：無其他同名符號可混淆，裸識別符直接保留
-    if (targetClassName === symbolName) {
-      return false;
-    }
-
     // 裸識別符形且在目標類別外部：綁定到別的符號，排除
     return true;
+  }
+
+  /**
+   * 由近到遠沿區塊鏈（Block/SourceFile）往外查找，該節點是否位於某個含同名
+   * `function name() {}` 宣告的區塊之內（含該區塊自身）。函式宣告具 hoisting
+   * 語意、於整個外層區塊皆可見，故只需檢查各層區塊的直接陳述句，不需比對
+   * 宣告與使用點的先後順序。只沿祖先鏈往外走，不會誤觸及無關的手足子樹。
+   */
+  private hasEnclosingTargetFunction(
+    node: ts.Node,
+    name: string
+  ): boolean {
+    if (!ts.isIdentifier(node)) {
+      return false;
+    }
+    const nearest = findNearestLexicalDeclarationName(node.getSourceFile(), node, name);
+    return nearest !== undefined && ts.isFunctionDeclaration(nearest.parent);
   }
 
   /**
@@ -184,7 +214,7 @@ export class ReferenceFinder {
    * @returns 引用分析結果，如果無法分析則返回 null
    */
   private analyzeIdentifierReference(
-    node: ts.Identifier | ts.StringLiteral,
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
     sourceFile: ts.SourceFile
   ): IdentifierReferenceInfo | null {
     const parent = node.parent;

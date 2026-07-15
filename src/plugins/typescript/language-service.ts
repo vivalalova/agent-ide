@@ -483,6 +483,22 @@ export class LanguageServiceManager implements ILanguageServiceManager {
             end: node.name.getEnd()
           });
         }
+        if (
+          ts.isElementAccessExpression(node)
+          && ts.isIdentifier(node.expression)
+          && namespaceLocalNames.includes(node.expression.text)
+          && (ts.isStringLiteral(node.argumentExpression)
+            || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression))
+          && node.argumentExpression.text === memberName
+          && !identifierShadowedByLocalDeclaration(node.expression, sourceFile)
+        ) {
+          spans.push({
+            // StringLiteral / NoSubstitutionTemplateLiteral 的 AST 範圍含引號；只回傳
+            // key 文字本身，rename 替換後才能保留 `"..."` / `` `...` `` 語法。
+            start: node.argumentExpression.getStart(sourceFile) + 1,
+            end: node.argumentExpression.getEnd() - 1
+          });
+        }
         ts.forEachChild(node, visit);
       };
       visit(sourceFile);
@@ -492,7 +508,18 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   }
 
   /**
-   * 收集目前檔案中、來源模組確實解析到 `definitionFilePath` 的 namespace import 本地名稱。
+   * 收集目前檔案中、行為上等同「namespace import 綁定」的本地名稱：
+   *
+   * 1. `import * as ns from spec`（NamespaceImport 語法），spec 確實解析到
+   *    `definitionFilePath`（直接或經 barrel 轉發）。
+   * 2. `import { ns } from spec`（無別名的具名 import），spec 對應檔案把 `ns` 這個具名匯出
+   *    本身宣告為 `export * as ns from '<inner>'`（namespace re-export），且 `<inner>`
+   *    （遞迴）曝露 `definitionFilePath`。此時 `ns` 在語意上綁定的就是一個轉發自定義檔的
+   *    namespace 物件，`ns.member` 與 case 1 的 `ns.member` 引用語意相同（見 R2 finding 1：
+   *    barrel `export * as ns from './def'`、consumer `import { ns } from './barrel'` 再
+   *    `ns.X()`，若不辨識這種具名匯入形式，rename 會漏改 `ns.X()`）。
+   *    只有 moduleResolver 有能力回答這個問題（見其 namedImportLocalName 參數），無
+   *    moduleResolver 時此 case 略過、不影響既有行為。
    */
   private collectVerifiedNamespaceLocalNames(
     sourceFile: ts.SourceFile,
@@ -507,17 +534,25 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       if (!ts.isStringLiteral(statement.moduleSpecifier)) {
         continue;
       }
-      if (!this.specifierMatchesTarget(
-        sourceFile.fileName,
-        statement.moduleSpecifier.text,
-        definitionFilePath,
-        moduleResolver
-      )) {
+      const moduleSpecifier = statement.moduleSpecifier.text;
+      const named = statement.importClause.namedBindings;
+
+      if (named && ts.isNamespaceImport(named)) {
+        if (this.specifierMatchesTarget(sourceFile.fileName, moduleSpecifier, definitionFilePath, moduleResolver)) {
+          names.push(named.name.text);
+        }
         continue;
       }
-      const named = statement.importClause.namedBindings;
-      if (named && ts.isNamespaceImport(named)) {
-        names.push(named.name.text);
+
+      if (named && ts.isNamedImports(named) && moduleResolver) {
+        for (const element of named.elements) {
+          // resolver 的第三個參數是來源模組的 exported name；有別名時必須傳
+          // propertyName（`ns`），但收集到 namespace local names 的是本地 alias（`local`）。
+          const exportedName = element.propertyName?.text ?? element.name.text;
+          if (moduleResolver(sourceFile.fileName, moduleSpecifier, exportedName)) {
+            names.push(element.name.text);
+          }
+        }
       }
     }
     return names;

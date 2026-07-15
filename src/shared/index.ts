@@ -62,6 +62,26 @@ export {
 } from './path-pattern.js';
 
 export {
+  // tsconfig path-alias 解析
+  createPathAliasMap,
+  createStructuredPathAliasMap,
+  findPathAliasMatch,
+  getPathAliasEntries,
+  mergePathAliasMaps,
+  resolveBarePathAlias,
+  resolveBarePathAliasAsync,
+  withLegacyPathAliasWildcards
+} from './path-alias-resolver.js';
+
+export type {
+  PathAliasEntry,
+  PathAliasInput,
+  PathAliasMap,
+  PathAliasMatch,
+  PathAliasExists
+} from './path-alias-resolver.js';
+
+export {
   // 錯誤處理
   BaseError,
   ParserError,

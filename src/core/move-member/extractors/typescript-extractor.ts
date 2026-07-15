@@ -11,6 +11,7 @@ import {
   findStatementEnd
 } from '../utils/range-finder.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from '../utils/identifier-pattern.js';
+import { computeCodeStateMask } from '@core/foundations/index.js';
 
 /**
  * 識別符字元類（去除 UNICODE_IDENTIFIER_PATTERN 的 `^`/`$` anchor），供內嵌
@@ -290,18 +291,28 @@ export function extractClassMembers(
     readonly hasBody: boolean;
   }
 
-  // 名稱後允許緊接泛型參數 `<...>`（如 `map<T>(...)`），否則泛型方法的 `<T>`
-  // 會卡在名稱與 `(` 之間，導致整條規則不匹配、方法完全抽不出來（見 P1 bug）。
   // 名稱前允許 `get`/`set` 存取子關鍵字，否則 getter/setter 因不含 async/static/
   // 存取修飾詞而被規則忽略，之後又被屬性規則誤判成一般屬性（見 P2 bug）。
+  // 泛型參數段與參數列不放進本 regex：名稱後緊接的 `<...>` 改由
+  // skipGenericParams() 深度計數掃描（而非 `[^>]*`），因巢狀泛型（如
+  // `map<T extends Array<number>>(...)`）會讓 `[^>]*` 在第一個 `>` 就截斷，
+  // 導致殘留的 `>` 卡在泛型段與 `(` 之間，使整條規則完全比對失敗、方法
+  // 整個抽不出來（見 P1-1 bug）。
   const methodPattern = new RegExp(
-    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(get|set)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})(?:[ \\t]*<[^>]*>)?[ \\t]*\\([^)]*\\)`,
+    `^[ \\t]*(public|private|protected)?[ \\t]*(static)?[ \\t]*(async)?[ \\t]*(get|set)?[ \\t]*(${UNICODE_IDENTIFIER_PATTERN_SOURCE})`,
     'gmu'
   );
+  // skipGenericParams 需要遮罩排除字串/模板/註解內容中的 `<`/`>`（見其註解），
+  // classBody 固定不變、一次計算供所有候選共用，避免每個候選各自重算整份遮罩。
+  const classBodyCodeMask = computeCodeStateMask(classBody);
   const rawMethodCandidates: RawMethodCandidate[] = [];
   while ((match = methodPattern.exec(classBody)) !== null) {
     // 跳過 constructor
     if (match[5] === 'constructor') { continue; }
+
+    // 名稱後（跳過可能存在的泛型段與空白）若非緊接 `(`，代表這是屬性宣告行
+    // （如 `id: string;`）而非方法，交給下方 propertyPattern 掃描。
+    if (!skipGenericParams(classBody, match.index + match[0].length, classBodyCodeMask).isMethod) { continue; }
 
     const relativeLineNumber = classBody.substring(0, match.index).split('\n').length;
     const declLineIndex = relativeLineNumber - 1;
@@ -432,6 +443,42 @@ function createMember(
     documentation,
     dependencies
   };
+}
+
+/**
+ * 從識別符結束位置開始，跳過可能存在的泛型參數段 `<...>`（以深度計數逐字元
+ * 掃描 `<`/`>`，非 `[^>]*`，故能正確處理巢狀泛型如 `<T extends Array<number>>`），
+ * 回傳其後（略過空白）是否緊接 `(`，藉此判定該識別符是否為方法宣告。
+ *
+ * `codeMask` 用 computeCodeStateMask(text) 排除字串/模板字面值/註解內容，避免
+ * 泛型約束的字串字面值中恰巧出現的 `>`（如 `<T extends "a>b">`）被誤判成泛型
+ * 收尾，導致深度提前歸零、留下一個未配對的 `>` 卡在泛型段與 `(` 之間，使整條
+ * 判定失敗、方法整個被誤判成屬性（見 P2 bug）。
+ *
+ * @param text 掃描的原始文字（classBody）
+ * @param startIndex 識別符結束後的位置
+ * @param codeMask 與 text 等長的程式碼狀態遮罩（見 computeCodeStateMask）
+ * @returns isMethod：跳過泛型與空白後是否緊接 `(`
+ */
+function skipGenericParams(text: string, startIndex: number, codeMask: boolean[]): { isMethod: boolean } {
+  let i = startIndex;
+  while (i < text.length && /\s/.test(text[i])) { i++; }
+
+  if (text[i] === '<' && codeMask[i]) {
+    let depth = 1;
+    i++;
+    while (i < text.length && depth > 0) {
+      if (codeMask[i]) {
+        if (text[i] === '<') { depth++; }
+        // `=>`（function type 回傳箭頭）的 `>` 不是泛型收尾，不計入深度。
+        else if (text[i] === '>' && text[i - 1] !== '=') { depth--; }
+      }
+      i++;
+    }
+    while (i < text.length && /\s/.test(text[i])) { i++; }
+  }
+
+  return { isMethod: text[i] === '(' };
 }
 
 /**

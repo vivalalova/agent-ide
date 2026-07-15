@@ -10,7 +10,7 @@ import { QueryCommand, type ImpactResult } from '@infrastructure/formatters/inde
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, outputErrorWithDetails, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
-import { loadPathAliases } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /** Impact 命令選項 */
@@ -91,11 +91,14 @@ async function handleImpactCommand(
   }
 
   try {
-    // 讀取 tsconfig.json 路徑別名（會向上查找 tsconfig.json）
-    const pathAliases = await loadPathAliases(analyzePath, context.fileSystem);
+    // 讀取 tsconfig 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
+    const tsconfigPathConfig = await loadTsconfigPathConfig(analyzePath, context.fileSystem);
 
-    // 初始化影響分析器（傳入路徑別名）
-    const impactAnalyzer = new ImpactAnalyzer(context.fileSystem, { pathAliases });
+    // 初始化影響分析器（傳入 paths + baseUrl）
+    const impactAnalyzer = new ImpactAnalyzer(context.fileSystem, {
+      pathAliases: tsconfigPathConfig.pathAliases,
+      baseUrl: tsconfigPathConfig.baseUrl
+    });
 
     // 分析專案依賴
     await impactAnalyzer.analyzeProject(analyzePath);
@@ -104,7 +107,7 @@ async function handleImpactCommand(
     const stats = impactAnalyzer.getStats();
 
     // 取得影響分析資訊
-    const dependents = impactAnalyzer.getDependents(targetFile);
+    const dependents = impactAnalyzer.getImpactedFiles(targetFile);
     const dependencies = impactAnalyzer.getDependencies(targetFile);
 
     const result: ImpactResult = {

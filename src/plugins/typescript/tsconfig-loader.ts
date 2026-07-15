@@ -7,11 +7,17 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import {
+  createStructuredPathAliasMap,
+  getPathAliasEntries,
+  mergePathAliasMaps,
+  type PathAliasMap
+} from '@shared/path-alias-resolver.js';
 
 /** tsconfig 路徑設定 */
 export interface TsconfigPathConfig {
-  /** path aliases 映射（alias -> 絕對路徑） */
-  pathAliases: Record<string, string>;
+  /** 結構化 path aliases；entries 保留 wildcard 與所有候選路徑。 */
+  pathAliases: PathAliasMap;
   /** baseUrl 絕對路徑 */
   baseUrl?: string;
   /** tsconfig.json 所在目錄 */
@@ -177,20 +183,29 @@ async function resolveExtendsPath(
 function resolvePathAliases(
   paths: Record<string, unknown>,
   basePath: string
-): Record<string, string> {
-  const aliases: Record<string, string> = {};
+): PathAliasMap {
+  const aliases = [];
 
   for (const [alias, mappedPaths] of Object.entries(paths)) {
-    if (Array.isArray(mappedPaths) && mappedPaths.length > 0) {
-      // 移除 /* 後綴
-      const cleanAlias = alias.replace(/\/\*$/, '');
-      const cleanPath = (mappedPaths[0] as string).replace(/\/\*$/, '');
-      // 轉換為絕對路徑
-      aliases[cleanAlias] = path.resolve(basePath, cleanPath);
+    if (!Array.isArray(mappedPaths)) {
+      continue;
     }
+
+    const candidates = mappedPaths
+      .filter((mappedPath): mappedPath is string => typeof mappedPath === 'string')
+      .map(mappedPath => mappedPath.replace(/\/\*$/, ''));
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    aliases.push({
+      alias: alias.replace(/\/\*$/, ''),
+      wildcard: alias.endsWith('/*'),
+      candidates: candidates.map(candidate => path.resolve(basePath, candidate))
+    });
   }
 
-  return aliases;
+  return createStructuredPathAliasMap(aliases);
 }
 
 async function loadResolvedTsconfigPathConfig(
@@ -207,7 +222,7 @@ async function loadResolvedTsconfigPathConfig(
   const tsconfigDir = path.dirname(resolvedTsconfigPath);
   const tsconfigContent = await fileSystem.readFile(resolvedTsconfigPath, 'utf-8') as string;
   const tsconfig = parseTsconfig(resolvedTsconfigPath, tsconfigContent);
-  const config: TsconfigPathConfig = { pathAliases: {}, tsconfigDir };
+  const config: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]), tsconfigDir };
   const extendedConfigs = Array.isArray(tsconfig.extends)
     ? tsconfig.extends
     : tsconfig.extends ? [tsconfig.extends] : [];
@@ -220,7 +235,7 @@ async function loadResolvedTsconfigPathConfig(
     }
 
     const inheritedConfig = await loadResolvedTsconfigPathConfig(resolvedExtends, fileSystem, new Set(visited));
-    config.pathAliases = { ...config.pathAliases, ...inheritedConfig.pathAliases };
+    config.pathAliases = mergePathAliasMaps(config.pathAliases, inheritedConfig.pathAliases);
     if (inheritedConfig.baseUrl) {
       config.baseUrl = inheritedConfig.baseUrl;
     }
@@ -285,7 +300,7 @@ export async function loadTsconfigPathConfig(
   projectRoot: string,
   fileSystem: IFileSystem
 ): Promise<TsconfigPathConfig> {
-  const config: TsconfigPathConfig = { pathAliases: {} };
+  const config: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]) };
 
   try {
     // 向上查找 tsconfig.json
@@ -294,7 +309,16 @@ export async function loadTsconfigPathConfig(
       return config;
     }
 
-    return await loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
+    const cache = getTsconfigCache(fileSystem);
+    const cacheKey = path.resolve(found.tsconfigPath);
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return await cached;
+    }
+
+    const loading = loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
+    cache.set(cacheKey, loading);
+    return await loading;
   } catch (error) {
     // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
     logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
@@ -315,5 +339,44 @@ export async function loadPathAliases(
   fileSystem: IFileSystem
 ): Promise<Record<string, string>> {
   const config = await loadTsconfigPathConfig(projectRoot, fileSystem);
-  return config.pathAliases;
+  return toLegacyPathAliases(config.pathAliases);
+}
+
+const tsconfigCache = new WeakMap<object, Map<string, Promise<TsconfigPathConfig>>>();
+
+function getTsconfigCache(fileSystem: IFileSystem): Map<string, Promise<TsconfigPathConfig>> {
+  const existing = tsconfigCache.get(fileSystem as object);
+  if (existing) {
+    return existing;
+  }
+
+  const cache = new Map<string, Promise<TsconfigPathConfig>>();
+  tsconfigCache.set(fileSystem as object, cache);
+  return cache;
+}
+
+/**
+ * Compatibility view for the old `loadPathAliases` helper.  The structured
+ * loader never chooses a candidate; this view only preserves the old one-path
+ * return shape for callers that have not migrated yet.
+ */
+function toLegacyPathAliases(pathAliases: PathAliasMap): Record<string, string> {
+  const legacy: Record<string, string> = {};
+  const entries = getPathAliasEntries(pathAliases);
+
+  for (const entry of entries) {
+    const candidate = entry.candidates[entry.candidates.length - 1];
+    if (candidate === undefined) {
+      continue;
+    }
+
+    if (!entry.wildcard || !Object.prototype.hasOwnProperty.call(legacy, entry.alias)) {
+      legacy[entry.alias] = candidate;
+    }
+    if (entry.wildcard) {
+      legacy[`${entry.alias}/*`] = candidate;
+    }
+  }
+
+  return legacy;
 }

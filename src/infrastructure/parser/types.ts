@@ -13,8 +13,18 @@ import type { AST } from '@shared/types/index.js';
  * 由 rename 引擎層（有 IFileSystem、專案檔清單、tsconfig 設定）建構後注入 parser.findReferences，
  * 供錨定層（language-service）判定跨 tsconfig path alias 與多層 barrel re-export 的引用；
  * 不提供時錨定層退回內建「相對 specifier 直接解析到定義檔」的保守比對。
+ *
+ * @param namedImportLocalName 選用：查詢範圍收斂成「moduleSpecifier 檔案內這一個具名匯出」
+ *   而非整份檔案的任意曝露方式。用於 `import { name } from spec` 這種具名匯入：判定
+ *   `name` 是否恰為來源檔案的 `export * as name from '<inner>'` namespace 轉發、且該轉發
+ *   （遞迴）曝露目標符號——語意等同 namespace import（`import * as name from ...`）對
+ *   `name.member` 的引用。省略時維持原本「整份檔案任意曝露方式」的判定。
  */
-export type ModuleSpecifierResolver = (importingFileName: string, moduleSpecifier: string) => boolean;
+export type ModuleSpecifierResolver = (
+  importingFileName: string,
+  moduleSpecifier: string,
+  namedImportLocalName?: string
+) => boolean;
 
 /**
  * 程式碼編輯操作

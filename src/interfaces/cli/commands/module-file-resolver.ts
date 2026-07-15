@@ -17,6 +17,7 @@ import {
   SOURCE_FILE_EXTENSIONS,
   stripSourceFileExtension
 } from '@shared/types/index.js';
+import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
 import type { SymbolReferenceFilterContext } from './symbol-reference-filter-types.js';
 
 export async function readTextFile(filePath: string, fileSystem: IFileSystem): Promise<string> {
@@ -83,7 +84,7 @@ export async function resolveModuleFile(
   fromFile: string,
   filterContext: SymbolReferenceFilterContext
 ): Promise<string | null> {
-  const candidates = getModuleFileCandidates(importPath, fromFile, filterContext);
+  const candidates = await getModuleFileCandidates(importPath, fromFile, filterContext);
 
   for (const candidate of candidates) {
     if (pathMatchesTarget(candidate, filterContext.targetFile)) {
@@ -100,16 +101,21 @@ export async function resolveModuleFile(
   return null;
 }
 
-function resolveImportPath(
+async function resolveImportPath(
   importPath: string,
   fromFile: string,
   filterContext: SymbolReferenceFilterContext
-): string {
+): Promise<string> {
   if (importPath.startsWith('.')) {
     return path.resolve(path.dirname(fromFile), importPath);
   }
 
-  const aliasResolvedPath = resolvePathAlias(importPath, filterContext.moduleResolution.pathAliases);
+  const aliasResolvedPath = await resolveBarePathAliasAsync(
+    importPath,
+    filterContext.moduleResolution.pathAliases,
+    async candidate => await filterContext.fileSystem.exists(candidate)
+      && await filterContext.fileSystem.isFile(candidate)
+  );
   if (aliasResolvedPath) {
     return aliasResolvedPath;
   }
@@ -125,26 +131,12 @@ function resolveImportPath(
   return importPath;
 }
 
-function resolvePathAlias(importPath: string, pathAliases: Record<string, string>): string | null {
-  const aliasEntries = Object.entries(pathAliases)
-    .sort(([left], [right]) => right.length - left.length);
-
-  for (const [alias, resolvedAliasPath] of aliasEntries) {
-    if (importPath === alias || importPath.startsWith(`${alias}/`)) {
-      const remainingPath = importPath.slice(alias.length).replace(/^\//, '');
-      return path.join(resolvedAliasPath, remainingPath);
-    }
-  }
-
-  return null;
-}
-
-function getModuleFileCandidates(
+async function getModuleFileCandidates(
   importPath: string,
   fromFile: string,
   filterContext: SymbolReferenceFilterContext
-): string[] {
-  const resolvedPath = resolveImportPath(importPath, fromFile, filterContext);
+): Promise<string[]> {
+  const resolvedPath = await resolveImportPath(importPath, fromFile, filterContext);
   if (!path.isAbsolute(resolvedPath)) {
     return [resolvedPath];
   }

@@ -12,13 +12,14 @@ import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 import { isInsideStringOrComment } from './utils/source-text.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /**
  * Reference Updater 的路徑解析設定（tsconfig paths + baseUrl）
  * pathAliases 期望已解析為絕對路徑（見 tsconfig-loader）
  */
 export interface ReferenceUpdaterPathConfig {
-  readonly pathAliases?: Record<string, string>;
+  readonly pathAliases?: PathAliasInput;
   readonly baseUrl?: string;
 }
 

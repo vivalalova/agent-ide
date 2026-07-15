@@ -5,7 +5,14 @@
 
 import * as path from 'node:path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import { stripSourceFileExtension } from '@shared/types/index.js';
+import { SOURCE_INDEX_FILES, stripSourceFileExtension } from '@shared/types/index.js';
+import {
+  resolveBarePathAlias,
+  resolveBarePathAliasAsync,
+  withLegacyPathAliasWildcards,
+  type PathAliasInput
+} from '@shared/path-alias-resolver.js';
+import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
@@ -27,11 +34,16 @@ export class ImportCleaner {
   constructor(
     private readonly fileSystem: IFileSystem,
     parserRegistry: ParserRegistry,
-    private readonly cacheService: DeadCodeCacheService
+    private readonly cacheService: DeadCodeCacheService,
+    pathAliases: PathAliasInput = {},
+    private readonly baseUrl?: string
   ) {
+    this.pathAliases = withLegacyPathAliasWildcards(pathAliases);
     this.importParser = new ImportParser(parserRegistry);
     this.symbolFinder = createSymbolFinder(parserRegistry, fileSystem);
   }
+
+  private readonly pathAliases: PathAliasInput;
 
   /**
    * 分析需要清理的 import
@@ -61,6 +73,14 @@ export class ImportCleaner {
     const filesToScan = projectFiles && projectFiles.length > 0
       ? new Set<string>([...removalFiles, ...projectFiles])
       : new Set<string>(removalFiles);
+    const configProbePath = removalFiles[0] ?? projectFiles?.[0];
+    const discoveredConfig = configProbePath
+      ? await loadTsconfigPathConfig(path.dirname(configProbePath), this.fileSystem)
+      : { pathAliases: {}, baseUrl: undefined };
+    const pathAliases = Object.keys(this.pathAliases).length > 0
+      ? this.pathAliases
+      : discoveredConfig.pathAliases;
+    const baseUrl = this.baseUrl ?? discoveredConfig.baseUrl;
 
     for (const filePath of filesToScan) {
       const content = await this.readFile(filePath);
@@ -78,7 +98,13 @@ export class ImportCleaner {
       const isConsumerOnly = !removalFilesSet.has(filePath);
 
       for (const stmt of importStatements) {
-        if (isConsumerOnly && !this.importFromRemovalFile(filePath, stmt.statement, removalFilesNoExt)) {
+        if (isConsumerOnly && !await this.importFromRemovalFileAsync(
+          filePath,
+          stmt.statement,
+          removalFilesNoExt,
+          pathAliases,
+          baseUrl
+        )) {
           continue;
         }
         // 找出此 import 中需要清理的符號
@@ -231,16 +257,19 @@ export class ImportCleaner {
    * 相對路徑（`.` 開頭）以去副檔名後的絕對路徑精確比對，涵蓋 `./x`（無副檔名）與
    * `./x.js`（ESM 指向 .ts）兩種寫法。
    *
-   * 非相對 bare specifier（如 tsconfig path-alias `@app/utils`）：ImportCleaner 本身
-   * 沒有 tsconfig pathAliases 可用於精準解析（此類設定僅存在於 rename/move 模組），
-   * 故以「specifier 最後一段」比對被刪檔案 basename 作為粗篩。誤判為 true 不影響
-   * 正確性——呼叫端仍會逐一核對符號名稱是否在 removedSymbols 中且確認已無使用引用
-   * 才會真正產生清理項，粗篩頂多多掃描一個不相關 import。
+   * 非相對 bare specifier（如 tsconfig path-alias `@app/utils`）：用建構子傳入的真實
+   * tsconfig pathAliases 解析出絕對路徑後才比對。無 alias 可解析時一律回傳 false（寧漏
+   * 勿誤刪）——舊版曾以「specifier 最後一段」比對被刪檔案 basename 作粗篩，會把
+   * `@other/utils` 這種與被刪檔完全無關、只是恰好同 basename＋同符號名的第三方套件
+   * import 誤判為指向被刪檔，進而清掉一個仍在使用的 import（見 adversarial R4
+   * regression：誤刪比漏刪後果更嚴重，直接讓 consumer 編譯壞掉）。
    */
   private importFromRemovalFile(
     consumerFilePath: string,
     statement: string,
-    removalFilesNoExt: ReadonlySet<string>
+    removalFilesNoExt: ReadonlySet<string>,
+    pathAliases: PathAliasInput = this.pathAliases,
+    baseUrl: string | undefined = this.baseUrl
   ): boolean {
     const fromMatch = statement.match(/from\s+(['"])(.+?)\1/);
     if (!fromMatch) {
@@ -249,19 +278,58 @@ export class ImportCleaner {
     const moduleSpecifier = fromMatch[2];
     if (moduleSpecifier.startsWith('.')) {
       const resolved = path.resolve(path.dirname(consumerFilePath), moduleSpecifier);
-      return removalFilesNoExt.has(stripSourceFileExtension(resolved));
+      return this.matchesRemovalFile(resolved, removalFilesNoExt);
     }
 
-    const lastSegment = moduleSpecifier.split('/').pop();
-    if (!lastSegment) {
+    const resolved = resolveBarePathAlias(moduleSpecifier, pathAliases)
+      ?? (baseUrl ? path.resolve(baseUrl, moduleSpecifier) : null);
+    if (!resolved) {
       return false;
     }
-    for (const removalFileNoExt of removalFilesNoExt) {
-      if (path.basename(removalFileNoExt) === lastSegment) {
-        return true;
-      }
+    return this.matchesRemovalFile(resolved, removalFilesNoExt);
+  }
+
+  private async importFromRemovalFileAsync(
+    consumerFilePath: string,
+    statement: string,
+    removalFilesNoExt: ReadonlySet<string>,
+    pathAliases: PathAliasInput = this.pathAliases,
+    baseUrl: string | undefined = this.baseUrl
+  ): Promise<boolean> {
+    const fromMatch = statement.match(/from\s+(['"])(.+?)\1/);
+    if (!fromMatch) {
+      return false;
     }
-    return false;
+
+    const moduleSpecifier = fromMatch[2];
+    if (moduleSpecifier.startsWith('.')) {
+      return this.importFromRemovalFile(
+        consumerFilePath,
+        statement,
+        removalFilesNoExt,
+        pathAliases,
+        baseUrl
+      );
+    }
+
+    const resolved = await resolveBarePathAliasAsync(
+      moduleSpecifier,
+      pathAliases,
+      async candidate => await this.fileSystem.exists(candidate)
+        && await this.fileSystem.isFile(candidate)
+    ) ?? (baseUrl ? path.resolve(baseUrl, moduleSpecifier) : null);
+    return resolved ? this.matchesRemovalFile(resolved, removalFilesNoExt) : false;
+  }
+
+  private matchesRemovalFile(
+    resolvedPath: string,
+    removalFilesNoExt: ReadonlySet<string>
+  ): boolean {
+    const normalizedPath = stripSourceFileExtension(path.normalize(resolvedPath));
+    return removalFilesNoExt.has(normalizedPath)
+      || SOURCE_INDEX_FILES.some(indexFile => removalFilesNoExt.has(
+        stripSourceFileExtension(`${normalizedPath}${indexFile}`)
+      ));
   }
 
   /**
@@ -372,7 +440,9 @@ export class ImportCleaner {
 export function createImportCleaner(
   fileSystem: IFileSystem,
   parserRegistry: ParserRegistry,
-  cacheService: DeadCodeCacheService
+  cacheService: DeadCodeCacheService,
+  pathAliases?: PathAliasInput,
+  baseUrl?: string
 ): ImportCleaner {
-  return new ImportCleaner(fileSystem, parserRegistry, cacheService);
+  return new ImportCleaner(fileSystem, parserRegistry, cacheService, pathAliases, baseUrl);
 }

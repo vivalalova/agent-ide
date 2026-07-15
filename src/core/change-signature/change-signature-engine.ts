@@ -33,6 +33,7 @@ import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/inde
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /**
  * 中介檔（barrel）的單層 re-export 轉發資訊
@@ -62,7 +63,7 @@ interface TargetFileBindings {
 
 /** tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
 export interface ChangeSignaturePathConfig {
-  readonly pathAliases?: Record<string, string>;
+  readonly pathAliases?: PathAliasInput;
   readonly baseUrl?: string;
 }
 

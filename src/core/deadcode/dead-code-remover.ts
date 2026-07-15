@@ -19,7 +19,8 @@ import type {
   RemovalOperation,
   ImportCleanupOperation,
   RemovalSummary,
-  UpdatedFile
+  UpdatedFile,
+  ResolvedDeadCodeRemovalOptions
 } from './types.js';
 import { DEFAULT_REMOVAL_OPTIONS } from './types.js';
 import { RangeExpander } from './range-expander.js';
@@ -31,7 +32,7 @@ import { DeadCodeCacheService, createDeadCodeCacheService } from './shared-cache
  * Dead Code 刪除器
  */
 export class DeadCodeRemover {
-  private readonly options: Required<DeadCodeRemovalOptions>;
+  private readonly options: ResolvedDeadCodeRemovalOptions;
   private readonly rangeExpander: RangeExpander;
   private readonly importCleaner: ImportCleaner;
   private readonly fileOperations: FileOperationsHandler;
@@ -46,7 +47,13 @@ export class DeadCodeRemover {
     this.options = { ...DEFAULT_REMOVAL_OPTIONS, ...options };
     this.cacheService = cacheService ?? createDeadCodeCacheService();
     this.rangeExpander = new RangeExpander(parserRegistry);
-    this.importCleaner = new ImportCleaner(fileSystem, parserRegistry, this.cacheService);
+    this.importCleaner = new ImportCleaner(
+      fileSystem,
+      parserRegistry,
+      this.cacheService,
+      this.options.pathAliases,
+      this.options.baseUrl
+    );
     this.fileOperations = new FileOperationsHandler(fileSystem, this.cacheService);
   }
 

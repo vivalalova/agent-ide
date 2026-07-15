@@ -9,6 +9,7 @@ import type {
   SignatureChange,
   ChangeSignatureValidationError
 } from './types.js';
+import * as ts from 'typescript';
 import {
   ChangeSignatureErrorCode,
   isAddParameterChange,
@@ -47,13 +48,19 @@ export class SignatureValidator {
         }
 
         // 驗證新增參數必須有 function default；呼叫點值不能替代簽名預設值。
-        // 用 === undefined 判斷「未提供」，避免空字串（合法的預設值文字）被誤判為缺漏
+        // 用 === undefined 判斷「未提供」，避免空字串（若為合法運算式文字則是合法
+        // 預設值）被誤判為缺漏
         if (change.defaultValue === undefined) {
           errors.push({
             code: ChangeSignatureErrorCode.MissingDefaultValue,
             message: `參數 ${change.name} 缺少 function default，請使用 --add name:type=default 指定`,
             parameterName: change.name
           });
+        } else {
+          const invalidDefaultValueError = this.validateDefaultValueText(change.defaultValue, change.name);
+          if (invalidDefaultValueError) {
+            errors.push(invalidDefaultValueError);
+          }
         }
       }
 
@@ -105,6 +112,13 @@ export class SignatureValidator {
             message: `找不到參數: ${change.parameterNameOrIndex}`,
             parameterName: String(change.parameterNameOrIndex)
           });
+        } else if (isChangeDefaultValueChange(change) && change.newDefaultValue !== undefined) {
+          // newDefaultValue === undefined 代表移除預設值（合法操作），非「未提供」；
+          // 有提供文字時比照新增參數，套用同一份空白/空字串驗證（Single Source of Truth）
+          const invalidDefaultValueError = this.validateDefaultValueText(change.newDefaultValue, targetName);
+          if (invalidDefaultValueError) {
+            errors.push(invalidDefaultValueError);
+          }
         }
       }
 
@@ -120,6 +134,38 @@ export class SignatureValidator {
     }
 
     return errors;
+  }
+
+  /**
+   * 驗證預設值文字本身是否為合法運算式文字。
+   *
+   * 把文字放進函式參數 default 的語法位置後交給 TypeScript parser，避免手刻
+   * expression grammar 漏掉括號、箭頭、物件等合法形狀，也能在 codegen 前攔截
+   * `foo +` 這類 parse diagnostics。與「未提供預設值」（MissingDefaultValue，用
+   * `=== undefined` 判斷）是不同語意，需獨立回報為 InvalidDefaultValue。
+   */
+  private validateDefaultValueText(
+    defaultValue: string,
+    parameterName: string
+  ): ChangeSignatureValidationError | null {
+    const sourceFile = ts.createSourceFile(
+      'change-signature-default-value.ts',
+      `function __validateDefaultValue(__value = ${defaultValue}) {}`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS
+    );
+    // parseDiagnostics 是 TS 編譯器內部屬性，未收錄於公開型別定義，需斷言存取
+    const diagnostic = (sourceFile as ts.SourceFile & { parseDiagnostics: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics[0];
+    if (diagnostic) {
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
+      return {
+        code: ChangeSignatureErrorCode.InvalidDefaultValue,
+        message: `參數 ${parameterName} 的預設值不是合法 TypeScript 運算式: ${message}`,
+        parameterName
+      };
+    }
+    return null;
   }
 
   /**

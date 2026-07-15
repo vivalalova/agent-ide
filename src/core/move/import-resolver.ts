@@ -4,8 +4,14 @@
  */
 
 import * as path from 'path';
+import { builtinModules } from 'node:module';
 import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
+import {
+  resolveBarePathAlias,
+  withLegacyPathAliasWildcards,
+  type PathAliasInput
+} from '@shared/path-alias-resolver.js';
 import { maskStringsAndComments } from './source-masking.js';
 import {
   collectMultilineImportStatement,
@@ -50,15 +56,18 @@ export class ImportResolver {
   private readonly aliasKeys: string[];
 
   constructor(config: ImportResolverConfig) {
-    this.config = config;
-    this.aliasKeys = Object.keys(config.pathAliases);
+    this.config = {
+      ...config,
+      pathAliases: withLegacyPathAliasWildcards(config.pathAliases)
+    };
+    this.aliasKeys = Object.keys(this.config.pathAliases);
   }
 
   /**
    * 取得路徑別名映射
    * @returns 別名與實際路徑的映射物件
    */
-  getPathAliases(): Record<string, string> {
+  getPathAliases(): PathAliasInput {
     return this.config.pathAliases;
   }
 
@@ -486,22 +495,7 @@ export class ImportResolver {
    * 返回絕對路徑（如果 pathAliases 中的值是絕對路徑）
    */
   resolvePathAlias(aliasPath: string): string {
-    const { pathAliases } = this.config;
-
-    for (const [alias, realPath] of Object.entries(pathAliases)) {
-      // 精確匹配：alias 本身或 alias/ 開頭
-      if (aliasPath === alias || aliasPath.startsWith(alias + '/')) {
-        // 移除前導的 / 以避免 path.join 的問題
-        const remainingPath = aliasPath.slice(alias.length).replace(/^\//, '');
-        // 使用 path.join 拼接，保持 realPath 的格式（絕對或相對）
-        const resolved = path.join(realPath, remainingPath);
-
-        // 統一使用正斜線（跨平台）
-        return resolved.replace(/\\/g, '/');
-      }
-    }
-
-    return aliasPath;
+    return resolveBarePathAlias(aliasPath, this.config.pathAliases) ?? aliasPath;
   }
 
   /**
@@ -580,6 +574,16 @@ export class ImportResolver {
   }
 
   /**
+   * 是否為 Node 內建模組（含子路徑，如 `fs/promises`、`node:fs/promises`）。
+   * `builtinModules` 為 Node 自身權威清單（Single Source of Truth），非猜測式白名單。
+   * 抽成獨立方法供 isNodeModuleImport 與 resolveImportPath 共用同一判定（見 R2-6b）。
+   */
+  isBuiltinModule(importPath: string): boolean {
+    const withoutNodePrefix = importPath.startsWith('node:') ? importPath.slice(5) : importPath;
+    return builtinModules.includes(importPath) || builtinModules.includes(withoutNodePrefix);
+  }
+
+  /**
    * 檢查是否為 Node 模組 import
    */
   isNodeModuleImport(importPath: string): boolean {
@@ -595,20 +599,36 @@ export class ImportResolver {
       }
     }
 
+    // Node 內建模組一律視為 node module：即使 baseUrl 已設定，也不應被下方
+    // 「含 '/' 即視為 baseUrl 相對路徑」的結構性判斷誤判成專案內路徑
+    // （見 P2-2 bug：`fs/promises` 被誤判為 baseUrl 相對路徑）。
+    if (this.isBuiltinModule(importPath)) {
+      return true;
+    }
+
     // 檢查是否為 baseUrl 相對路徑（如 src/utils、client/utils、server/api）
     // TypeScript 允許在設定 baseUrl 時使用非 ./ 開頭的路徑。真實專案的 baseUrl
     // 根目錄名稱不限於少數幾個常見字（如 'client'、'server'），猜測式白名單
     // 會把任意第一段路徑誤判為 node module，導致 move 拒絕改寫合法的內部 import
-    // （見 adversarial R1 regression）。改用結構性判斷：非 scoped package
-    // （不以 '@' 開頭）且含子路徑（有 '/'）時，視為 baseUrl 相對路徑；
-    // scoped package（'@scope/pkg'）與不含 '/' 的裸 specifier（如 'lodash'）
-    // 仍視為 node module。
+    // （見 adversarial R1 regression）。改用結構性判斷：非 scoped package 且含子路徑
+    // （有 '/'）時，視為 baseUrl 相對路徑；scoped package 保留 node module 判定，
+    // 由具備目標路徑上下文的 move scanner/calculator 另行驗證 baseUrl 候選。
     if (this.config.baseUrl && !importPath.startsWith('@') && importPath.includes('/')) {
       return false;
     }
 
-    // 其他都視為 Node 模組（包括 scoped packages）
+    // 其他都視為 Node 模組
     return true;
+  }
+
+  /** Scoped bare imports may be project-internal under baseUrl; callers must verify the target file. */
+  isScopedBaseUrlImport(importPath: string): boolean {
+    return Boolean(
+      this.config.baseUrl
+      && importPath.startsWith('@')
+      && importPath.includes('/')
+      && !this.isBuiltinModule(importPath)
+    );
   }
 
   /**

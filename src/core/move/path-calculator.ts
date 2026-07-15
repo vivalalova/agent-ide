@@ -10,10 +10,9 @@ import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES } from '@shared/types/index.js';
 
 const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
-const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
 
 /**
  * 路徑計算器類別
@@ -185,7 +184,10 @@ export class PathCalculator {
 
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 
@@ -285,7 +287,10 @@ export class PathCalculator {
 
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 

@@ -183,7 +183,10 @@ export class FileScanner {
       const imports = this.importResolver.parseImportStatements(content, file);
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 
@@ -229,7 +232,10 @@ export class FileScanner {
 
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 

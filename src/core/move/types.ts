@@ -3,6 +3,7 @@
  */
 
 import { Position, Range } from '@shared/types/core.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /**
  * 移動操作的型別
@@ -303,7 +304,7 @@ export interface PathCalculation {
  */
 export interface ImportResolverConfig {
   readonly supportedExtensions: readonly string[];
-  readonly pathAliases: Record<string, string>;
+  readonly pathAliases: PathAliasInput;
   readonly baseUrl?: string;
   readonly includeNodeModules?: boolean;
 }

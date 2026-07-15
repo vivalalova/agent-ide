@@ -22,6 +22,8 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import { resolveBarePathAlias } from '@shared/path-alias-resolver.js';
 
 export interface TargetExposureConfig {
   readonly fileSystem: IFileSystem;
@@ -32,26 +34,43 @@ export interface TargetExposureConfig {
   /** 目標符號名稱 */
   readonly symbolName: string;
   /** tsconfig path aliases（已解析為絕對路徑，見 tsconfig-loader） */
-  readonly pathAliases?: Record<string, string>;
+  readonly pathAliases?: PathAliasInput;
   /** tsconfig baseUrl（絕對路徑） */
   readonly baseUrl?: string;
 }
 
-/** 單層 re-export 轉發：`export { name } from '<spec>'`（name 省略代表 `export * from`） */
+/**
+ * 單層 re-export 轉發：`export { name } from '<spec>'`（name 省略代表 `export * from`）。
+ * `isNamespaceExport` 標記 `export * as name from '<spec>'`：與具名轉發不同，這種轉發
+ * 不是把來源模組的 `name` 匯出原樣轉發（來源模組通常根本沒有叫 `name` 的匯出），而是把
+ * 整個來源模組包成一個新的具名匯出 `name`（namespace 物件），需另一套查詢語意
+ * （見 isNamespaceLocalNameExposed）。
+ */
 interface ReexportForward {
   readonly moduleSpecifier: string;
+  readonly importedName?: string;
   readonly exportedName?: string;
+  readonly isNamespaceExport?: boolean;
 }
 
 /**
- * 解析檔案中的 re-export 轉發宣告：`export { name } from '<spec>'`（未 alias 改名）與
- * `export * from '<spec>'`。以別名改名對外（`export { a as b }`）不算轉發同一符號，跳過。
- * 直接以 TS AST 解析語法結構，不依賴副檔名（TS parser 亦可解析 .js 檔語法）。
+ * 解析檔案中的 re-export 轉發宣告：`export { name } from '<spec>'`（未 alias 改名）、
+ * `export * from '<spec>'`，以及 `export * as ns from '<spec>'`（NamespaceExport）。
+ * 具名轉發保留來源名稱與對外名稱，讓 namespace binding 的 alias chain 可以遞迴追蹤。直接
+ * 以 TS AST 解析語法結構，不依賴副檔名（TS parser 亦可解析 .js 檔語法）。
  *
  * type-only 轉發（整句 `export type { X } from './y'` 或單一 specifier
  * `export { type X } from './y'`）一併視為轉發：本解析器判定的是「對外曝露成源自定義檔」，
  * 目標符號本身也可能就是 type-only（如 type alias／interface），略過 type-only 轉發
  * 會漏掉這類 barrel，導致 consumer 端的 `import type` 引用未被同步改到。
+ *
+ * `export * as ns from '<spec>'` 把來源模組整個包成單一具名匯出 `ns`（namespace 物件），
+ * 目標符號透過 `ns.member` 間接曝露，而非直接以自己的名稱曝露成 barrel 的頂層匯出——與
+ * 一般具名轉發（`export { X } from`）不同，consumer 端不能 `import { X } from './barrel'`，
+ * 只能 `import { ns } from './barrel'` 再 `ns.X`。故記錄精確的具名（`ns` 本身，而非目標
+ * 符號名）並標記 `isNamespaceExport`，供 isNamespaceLocalNameExposed 另外查詢（見 R2 finding
+ * 1：漏掉此轉發會讓 barrel 內 `export * as ns from './def'` 對外曝露 def.ts 的符號完全無法
+ * 被 rename 引擎判定為「來源於定義檔」，consumer 端 `ns.X()` 因此漏改）。
  */
 function parseReexportForwards(filePath: string, content: string): ReexportForward[] {
   const forwards: ReexportForward[] = [];
@@ -69,11 +88,22 @@ function parseReexportForwards(filePath: string, content: string): ReexportForwa
       forwards.push({ moduleSpecifier: moduleSpecifier.text }); // `export * from`
       continue;
     }
+    if (ts.isNamespaceExport(statement.exportClause)) {
+      // `export * as ns from '<spec>'`：具名為 ns 本身，非目標符號名
+      forwards.push({
+        moduleSpecifier: moduleSpecifier.text,
+        exportedName: statement.exportClause.name.text,
+        isNamespaceExport: true
+      });
+      continue;
+    }
     if (ts.isNamedExports(statement.exportClause)) {
       for (const element of statement.exportClause.elements) {
-        if (!element.propertyName) {
-          forwards.push({ moduleSpecifier: moduleSpecifier.text, exportedName: element.name.text });
-        }
+        forwards.push({
+          moduleSpecifier: moduleSpecifier.text,
+          importedName: element.propertyName?.text ?? element.name.text,
+          exportedName: element.name.text
+        });
       }
     }
   }
@@ -120,7 +150,12 @@ export async function createTargetExposureResolver(
 
   /** 將 specifier 從 importingFile 解析後，找出對應的專案檔絕對路徑（含省略副檔名/index 慣例） */
   const resolveToProjectFile = (importingFile: string, specifier: string): string | null => {
-    const resolved = pathUtils.resolveImportPath(specifier, importingFile);
+    const aliasResolved = resolveBarePathAlias(
+      specifier,
+      config.pathAliases ?? {},
+      candidate => projectAbsolute.some(fileAbs => pathUtils.pathsMatch(candidate, fileAbs))
+    );
+    const resolved = aliasResolved ?? pathUtils.resolveImportPath(specifier, importingFile);
     if (pathUtils.pathsMatch(resolved, definitionAbsolute)) {
       return definitionAbsolute;
     }
@@ -147,6 +182,11 @@ export async function createTargetExposureResolver(
 
     let result = false;
     for (const forward of forwardsByFile.get(fileAbs) ?? []) {
+      // namespace-export 轉發（`export * as ns from`）不是直接以目標符號名曝露 barrel
+      // 頂層匯出，須走 isNamespaceLocalNameExposed 另外查詢，此處（任意具名/直接曝露）排除
+      if (forward.isNamespaceExport) {
+        continue;
+      }
       // 具名轉發須為目標符號名；`export *` 轉發全部匯出（exportedName 省略）一律納入
       if (forward.exportedName !== undefined && forward.exportedName !== config.symbolName) {
         continue;
@@ -165,10 +205,72 @@ export async function createTargetExposureResolver(
     return result;
   };
 
-  return (importingFileName: string, moduleSpecifier: string): boolean => {
+  /**
+   * file 內名為 `localName` 的具名匯出，是否為 `export * as localName from '<spec>'`
+   * 轉發、且該轉發（遞迴）曝露目標符號。用於判定 consumer 端 `import { localName } from
+   * '<file 的 specifier>'` 綁定的實際是「來源於定義檔的 namespace 物件」，等同 namespace
+   * import（`import * as localName from ...`）對 `localName.member` 的引用語意（見 R2
+   * finding 1）。與 exposesTarget 分屬不同查詢：後者問「file 是否曝露目標符號」，此處問
+   * 「file 的『這一個』具名匯出是否為指向目標符號的 namespace 轉發」。
+   */
+  const namespaceExposingMemo = new Set<string>();
+  const isNamespaceLocalNameExposed = (
+    fileAbs: string,
+    localName: string,
+    visited: Set<string> = new Set<string>()
+  ): boolean => {
+    const visitKey = `${fileAbs}:${localName}`;
+    if (namespaceExposingMemo.has(visitKey)) {
+      return true;
+    }
+    if (visited.has(visitKey)) {
+      return false;
+    }
+    visited.add(visitKey);
+
+    for (const forward of forwardsByFile.get(fileAbs) ?? []) {
+      const forwardTarget = resolveToProjectFile(fileAbs, forward.moduleSpecifier);
+      if (!forwardTarget) {
+        continue;
+      }
+
+      if (forward.isNamespaceExport && forward.exportedName === localName) {
+        if (exposesTarget(forwardTarget, new Set<string>())) {
+          namespaceExposingMemo.add(visitKey);
+          visited.delete(visitKey);
+          return true;
+        }
+        continue;
+      }
+
+      // `export * from './barrel1'`（或 `export { ns as api } from ...`）把 namespace
+      // binding 一起轉發；沿來源名稱往內追蹤，不能只看目前這一層。
+      if (
+        !forward.isNamespaceExport
+        && (forward.exportedName === undefined || forward.exportedName === localName)
+        && isNamespaceLocalNameExposed(
+          forwardTarget,
+          forward.importedName ?? localName,
+          visited
+        )
+      ) {
+        namespaceExposingMemo.add(visitKey);
+        visited.delete(visitKey);
+        return true;
+      }
+    }
+
+    visited.delete(visitKey);
+    return false;
+  };
+
+  return (importingFileName: string, moduleSpecifier: string, namedImportLocalName?: string): boolean => {
     const target = resolveToProjectFile(importingFileName, moduleSpecifier);
     if (!target) {
       return false;
+    }
+    if (namedImportLocalName !== undefined) {
+      return isNamespaceLocalNameExposed(target, namedImportLocalName);
     }
     return exposesTarget(target, new Set<string>());
   };

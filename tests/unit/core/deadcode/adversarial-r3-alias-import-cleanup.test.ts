@@ -21,7 +21,11 @@ describe('deadcode import cleanup path-alias (adversarial R3)', () => {
     const reg = ParserRegistry.getInstance();
     initializeDefaultParsers(reg);
 
-    const cleaner = new ImportCleaner(fs, reg, createDeadCodeCacheService());
+    // 真實 tsconfig 設定 `"@app/*": ["src/*"]` 會解析成 '@app' -> '/proj/src'（絕對路徑，
+    // 與 tsconfig-loader.ts 的 resolvePathAliases 輸出格式一致）；ImportCleaner 現在必須
+    // 靠這份設定才能把 '@app/utils' 精準解析回被刪符號的定義檔（見 import-cleaner.ts
+    // importFromRemovalFile 的 alias 解析契約：無 alias 設定的非相對 specifier 一律不清）。
+    const cleaner = new ImportCleaner(fs, reg, createDeadCodeCacheService(), { '@app': '/proj/src' });
     const removals: RemovalOperation[] = [{
       filePath: '/proj/src/utils.ts',
       range: { start: { line: 1, column: 1 }, end: { line: 1, column: 40 } },
@@ -31,8 +35,6 @@ describe('deadcode import cleanup path-alias (adversarial R3)', () => {
     }];
 
     // importFromRemovalFile is private — exercise via analyzeImportCleanups
-    // Note: without wiring pathAliases into ImportCleaner, this may still fail
-    // at resolve; the bug is specifically rejecting non-relative before resolve.
     const { cleanups } = await cleaner.analyzeImportCleanups(removals, [
       '/proj/src/utils.ts',
       '/proj/src/consumer.ts'

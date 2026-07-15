@@ -6,14 +6,36 @@
 import { SymbolReferenceType, type SymbolReference } from './types.js';
 import { createIdentifierBoundaryRegex } from './identifier-matcher.js';
 
+type Quote = '\'' | '"';
+
+interface TemplateContext {
+  mode: 'raw' | 'expression';
+  braceDepth: number;
+}
+
+interface ScannerState {
+  quote: Quote | null;
+  escaped: boolean;
+  templateContexts: TemplateContext[];
+  inRegex: boolean;
+  inRegexClass: boolean;
+  inRegexFlags: boolean;
+  inBlockComment: boolean;
+  inSingleLineComment: boolean;
+}
+
+interface CharacterState {
+  inString: boolean;
+  inBlockComment: boolean;
+  inSingleLineComment: boolean;
+}
+
 /**
  * 文字匹配器
  * 提供基於正則表達式的符號查找能力
  */
 export class TextMatcher {
-  /**
-   * 使用文字匹配查找引用（降級方法）
-   */
+  /** 使用文字匹配查找引用（降級方法） */
   findReferencesByText(filePath: string, content: string, symbolName: string): SymbolReference[] {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
@@ -25,7 +47,6 @@ export class TextMatcher {
 
       while ((match = regex.exec(line)) !== null) {
         const startColumn = match.index + 1;
-
         references.push({
           symbolName,
           location: {
@@ -36,7 +57,6 @@ export class TextMatcher {
             }
           },
           type: SymbolReferenceType.Usage,
-          // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
           context: line
         });
       }
@@ -46,83 +66,48 @@ export class TextMatcher {
   }
 
   /**
-   * 使用文字匹配查找引用（過濾字串和註解版本）
-   *
-   * 此方法會過濾掉：
-   * 1. 字串字面值中的符號（單引號、雙引號、模板字串）
-   * 2. 單行註解中的符號（// 和 #）
-   * 3. 多行註解中的符號
+   * 使用文字匹配查找引用（過濾字串和註解版本）。所有字串、template、regex 與註解
+   * 狀態由同一個 scanSource() 掃描器計算，確保跨行狀態不在各個判斷入口分叉。
    */
   findReferencesByTextFiltered(filePath: string, content: string, symbolName: string): SymbolReference[] {
     const references: SymbolReference[] = [];
     const lines = content.split('\n');
     const regex = createIdentifierBoundaryRegex(symbolName, 'g');
-    let inBlockComment = false;
+    const scan = this.scanSource(content);
+    let lineStartOffset = 0;
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       let match;
 
-      // 追蹤多行註解狀態
-      if (inBlockComment) {
-        const closeCommentIndex = line.indexOf('*/');
-        if (closeCommentIndex >= 0) {
-          inBlockComment = false;
-        } else {
-          continue; // 整行在多行註解中，跳過
-        }
-      }
-
       while ((match = regex.exec(line)) !== null) {
         const position = match.index;
-
-        // 檢查是否在字串中
-        if (this.isInString(line, position)) {
+        const state = scan.characters[lineStartOffset + position];
+        if (state?.inString || state?.inBlockComment || state?.inSingleLineComment) {
           continue;
         }
-
-        // 檢查是否在單行註解中
-        if (this.isInSingleLineComment(line, position)) {
-          continue;
-        }
-
-        // 檢查是否在多行註解開始後
-        const openCommentIndex = line.lastIndexOf('/*', position);
-        if (openCommentIndex >= 0) {
-          const closeCommentIndex = line.indexOf('*/', openCommentIndex);
-          if (closeCommentIndex < 0 || closeCommentIndex > position) {
-            // 在未關閉的多行註解中
-            if (closeCommentIndex < 0) {
-              inBlockComment = true;
-            }
-            continue;
-          }
-        }
-
-        const startColumn = position + 1;
 
         references.push({
           symbolName,
           location: {
             filePath,
             range: {
-              start: { line: lineIndex + 1, column: startColumn },
-              end: { line: lineIndex + 1, column: startColumn + symbolName.length }
+              start: { line: lineIndex + 1, column: position + 1 },
+              end: { line: lineIndex + 1, column: position + 1 + symbolName.length }
             }
           },
           type: SymbolReferenceType.Usage,
-          // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
           context: line
         });
       }
+
+      lineStartOffset += line.length + (lineIndex < lines.length - 1 ? 1 : 0);
     }
 
     return references;
   }
 
-  /**
-   * 批次文字匹配查找（降級方法）
-   */
+  /** 批次文字匹配查找（降級方法） */
   findReferencesMultipleByText(
     filePath: string,
     content: string,
@@ -160,98 +145,255 @@ export class TextMatcher {
     }
   }
 
-  /**
-   * 檢查位置是否在字串字面值中
-   */
+  /** 檢查位置是否在字串、template raw 或 regex literal 中。 */
   isInString(line: string, position: number): boolean {
-    let inSingleQuote = false;
-    let inDoubleQuote = false;
-    let inTemplate = false;
-
-    for (let i = 0; i < position; i++) {
-      const char = line[i];
-      const prevChar = i > 0 ? line[i - 1] : '';
-
-      // 跳過轉義字元
-      if (prevChar === '\\') {
-        continue;
-      }
-
-      if (char === '\'' && !inDoubleQuote && !inTemplate) {
-        inSingleQuote = !inSingleQuote;
-      } else if (char === '"' && !inSingleQuote && !inTemplate) {
-        inDoubleQuote = !inDoubleQuote;
-      } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
-        inTemplate = !inTemplate;
-      }
-    }
-
-    return inSingleQuote || inDoubleQuote || inTemplate;
+    const scan = this.scanSource(line);
+    return scan.characters[position]?.inString ?? (
+      scan.endState.quote !== null
+      || scan.endState.inRegex
+      || scan.endState.inRegexFlags
+      || scan.endState.templateContexts.at(-1)?.mode === 'raw'
+    );
   }
 
   /**
-   * 檢查位置是否在單行註解中
-   *
-   * 單趟字元掃描同時追蹤字串狀態並尋找 `//`／`#`：舊版分別用
-   * `beforePosition.includes('//')` 與 `isInString(line, hashIndex)` 各查一次，
-   * `//` 分支完全沒排除字串內的情況，導致同行前面出現 URL 字串（如
-   * `"http://example.com"`）時，字串內的 `//` 被誤判成註解起點，把後面
-   * 真正的程式碼（如 `foo()`）當成註解內容濾掉（adversarial R2 regression）。
+   * regex 字面值可能出現在其前的字元：運算子、逗號、左括號等「不可能是除法」的
+   * 情境（含掃描起點）。
    */
+  private static readonly REGEX_PRECEDING_CHARS = new Set([
+    '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '^', '~', '<', '>'
+  ]);
+
+  private static readonly REGEX_PRECEDING_KEYWORDS = new Set([
+    'return', 'typeof', 'in', 'of', 'case', 'do', 'else', 'void', 'delete',
+    'instanceof', 'new', 'throw', 'yield', 'await'
+  ]);
+
+  private static readonly REGEX_CONTROL_KEYWORDS = new Set(['if', 'for', 'while']);
+
+  /** 由 position 往前找最近一個非空白字元。 */
+  private lastMeaningfulChar(line: string, position: number): string | undefined {
+    for (let i = position - 1; i >= 0; i--) {
+      if (!/\s/.test(line[i])) {
+        return line[i];
+      }
+    }
+    return undefined;
+  }
+
+  /** 由 position 往前找最近一個完整識別字。 */
+  private lastMeaningfulWord(line: string, position: number): string | undefined {
+    let i = position - 1;
+    while (i >= 0 && /\s/.test(line[i])) {
+      i--;
+    }
+    if (i < 0 || !/[A-Za-z0-9_$]/.test(line[i])) {
+      return undefined;
+    }
+    const end = i + 1;
+    while (i >= 0 && /[A-Za-z0-9_$]/.test(line[i])) {
+      i--;
+    }
+    return line.slice(i + 1, end);
+  }
+
+  /** 檢查位置是否在單行註解中。 */
   isInSingleLineComment(line: string, position: number): boolean {
-    let inSingleQuote = false;
-    let inDoubleQuote = false;
-    let inTemplate = false;
+    const scan = this.scanSource(line);
+    return scan.characters[position]?.inSingleLineComment ?? scan.endState.inSingleLineComment;
+  }
 
-    for (let i = 0; i < position; i++) {
-      const char = line[i];
-      const prevChar = i > 0 ? line[i - 1] : '';
+  /**
+   * 唯一的來源文字掃描器。它同時追蹤 block comment、template literal（含 `${}` 表達式）
+   * 與 regex literal，並回傳每個字元的過濾狀態，供所有文字判斷入口共用。
+   */
+  private scanSource(text: string): { characters: CharacterState[]; endState: ScannerState } {
+    const characters: CharacterState[] = [];
+    const state: ScannerState = {
+      quote: null,
+      escaped: false,
+      templateContexts: [],
+      inRegex: false,
+      inRegexClass: false,
+      inRegexFlags: false,
+      inBlockComment: false,
+      inSingleLineComment: false
+    };
 
-      if (prevChar === '\\') {
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const template = state.templateContexts.at(-1);
+      characters.push({
+        inString: state.quote !== null
+          || state.inRegex
+          || state.inRegexFlags
+          || template?.mode === 'raw',
+        inBlockComment: state.inBlockComment,
+        inSingleLineComment: state.inSingleLineComment
+      });
+
+      if (state.inSingleLineComment) {
+        if (char === '\n') {
+          state.inSingleLineComment = false;
+        }
         continue;
       }
 
-      if (char === '\'' && !inDoubleQuote && !inTemplate) {
-        inSingleQuote = !inSingleQuote;
-        continue;
-      }
-      if (char === '"' && !inSingleQuote && !inTemplate) {
-        inDoubleQuote = !inDoubleQuote;
-        continue;
-      }
-      if (char === '`' && !inSingleQuote && !inDoubleQuote) {
-        inTemplate = !inTemplate;
-        continue;
-      }
-
-      if (inSingleQuote || inDoubleQuote || inTemplate) {
+      if (state.inBlockComment) {
+        if (char === '*' && text[i + 1] === '/') {
+          state.inBlockComment = false;
+          characters.push({
+            inString: false,
+            inBlockComment: true,
+            inSingleLineComment: false
+          });
+          i++;
+        }
         continue;
       }
 
-      // TypeScript/JavaScript 單行註解
-      if (char === '/' && line[i + 1] === '/') {
-        return true;
+      if (state.quote !== null) {
+        if (state.escaped) {
+          state.escaped = false;
+        } else if (char === '\\') {
+          state.escaped = true;
+        } else if (char === state.quote) {
+          state.quote = null;
+        }
+        continue;
       }
-      // Python/Shell 單行註解
+
+      if (state.inRegex) {
+        if (state.escaped) {
+          state.escaped = false;
+        } else if (char === '\\') {
+          state.escaped = true;
+        } else if (char === '[') {
+          state.inRegexClass = true;
+        } else if (char === ']') {
+          state.inRegexClass = false;
+        } else if (char === '/' && !state.inRegexClass) {
+          state.inRegex = false;
+          state.inRegexFlags = true;
+        }
+        continue;
+      }
+
+      if (state.inRegexFlags) {
+        if (/[A-Za-z]/.test(char)) {
+          continue;
+        }
+        state.inRegexFlags = false;
+      }
+
+      if (template?.mode === 'raw') {
+        if (state.escaped) {
+          state.escaped = false;
+        } else if (char === '\\') {
+          state.escaped = true;
+        } else if (char === '`') {
+          state.templateContexts.pop();
+        } else if (char === '$' && text[i + 1] === '{') {
+          template.mode = 'expression';
+          template.braceDepth = 1;
+          characters.push({
+            inString: false,
+            inBlockComment: false,
+            inSingleLineComment: false
+          });
+          i++;
+        }
+        continue;
+      }
+
+      if (char === '/' && text[i + 1] === '/') {
+        state.inSingleLineComment = true;
+        continue;
+      }
+      if (char === '/' && text[i + 1] === '*') {
+        state.inBlockComment = true;
+        continue;
+      }
       if (char === '#') {
-        return true;
+        state.inSingleLineComment = true;
+        continue;
+      }
+      if (char === '\'' || char === '"') {
+        state.quote = char;
+        continue;
+      }
+      if (char === '`') {
+        state.templateContexts.push({ mode: 'raw', braceDepth: 0 });
+        continue;
+      }
+      if (char === '/' && this.isRegexStart(text, i)) {
+        state.inRegex = true;
+        state.inRegexClass = false;
+        continue;
+      }
+
+      if (template?.mode === 'expression') {
+        if (char === '{') {
+          template.braceDepth++;
+        } else if (char === '}') {
+          template.braceDepth--;
+          if (template.braceDepth === 0) {
+            template.mode = 'raw';
+          }
+        }
       }
     }
 
+    return { characters, endState: state };
+  }
+
+  private isRegexStart(text: string, position: number): boolean {
+    if (text[position + 1] === '/') {
+      return false;
+    }
+
+    const previous = this.lastMeaningfulChar(text, position);
+    if (previous === undefined || TextMatcher.REGEX_PRECEDING_CHARS.has(previous)) {
+      return true;
+    }
+    if (previous === ')') {
+      let previousIndex = position - 1;
+      while (previousIndex >= 0 && /\s/.test(text[previousIndex])) { previousIndex--; }
+      return this.isControlFlowParenClose(text, previousIndex);
+    }
+    if (/[A-Za-z0-9_$]/.test(previous)) {
+      const word = this.lastMeaningfulWord(text, position);
+      return word !== undefined && TextMatcher.REGEX_PRECEDING_KEYWORDS.has(word);
+    }
     return false;
   }
 
-  /**
-   * 跳脫正則表達式特殊字元（供 CallSiteParser 組合呼叫點樣式使用）
-   */
+  private isControlFlowParenClose(text: string, closePosition: number): boolean {
+    let depth = 1;
+    for (let i = closePosition - 1; i >= 0; i--) {
+      if (text[i] === ')') {
+        depth++;
+      } else if (text[i] === '(') {
+        depth--;
+        if (depth === 0) {
+          let end = i - 1;
+          while (end >= 0 && /\s/.test(text[end])) { end--; }
+          let start = end;
+          while (start >= 0 && /[A-Za-z0-9_$]/.test(text[start])) { start--; }
+          return TextMatcher.REGEX_CONTROL_KEYWORDS.has(text.slice(start + 1, end + 1));
+        }
+      }
+    }
+    return false;
+  }
+
+  /** 跳脫正則表達式特殊字元（供 CallSiteParser 組合呼叫點樣式使用）。 */
   escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 
-/**
- * 建立 TextMatcher 實例
- */
+/** 建立 TextMatcher 實例 */
 export function createTextMatcher(): TextMatcher {
   return new TextMatcher();
 }
