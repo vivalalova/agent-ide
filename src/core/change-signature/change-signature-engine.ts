@@ -97,7 +97,8 @@ export class ChangeSignatureEngine {
         pathAliases: pathConfig?.pathAliases ?? {},
         baseUrl: pathConfig?.baseUrl,
         supportedExtensions: ALLOWED_EXTENSIONS
-      })
+      }),
+      fileSystem
     );
   }
 
@@ -1581,7 +1582,7 @@ export class ChangeSignatureEngine {
     targetHasDefaultExport: boolean,
     requestedExportName: string
   ): Promise<boolean> {
-    if (this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, targetAbsolute)) {
+    if (await this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, targetAbsolute)) {
       return requestedExportName !== 'default' || targetHasDefaultExport;
     }
     return this.resolvesToTargetViaReexport(
@@ -1614,9 +1615,17 @@ export class ChangeSignatureEngine {
     requestedExportName: string,
     visited: Set<string>
   ): Promise<boolean> {
-    const intermediateFile = allFiles.find(candidate =>
-      this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, path.resolve(candidate))
-    );
+    let intermediateFile: string | undefined;
+    for (const candidate of allFiles) {
+      if (await this.importSpecifierResolvesToTarget(
+        consumerFilePath,
+        moduleSpecifier,
+        path.resolve(candidate)
+      )) {
+        intermediateFile = candidate;
+        break;
+      }
+    }
     if (!intermediateFile) {
       return false;
     }
@@ -1637,7 +1646,7 @@ export class ChangeSignatureEngine {
         continue;
       }
       if (
-        this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)
+        await this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)
         && (requestedExportName !== 'default' || targetHasDefaultExport)
       ) {
         return true;
@@ -1775,12 +1784,12 @@ export class ChangeSignatureEngine {
    * pathsMatch 處理省略副檔名與 index 檔慣例；node_modules 套件 specifier
    * 的解析結果不會命中專案內目標檔、自然排除（界線見 resolveTargetBindings）。
    */
-  private importSpecifierResolvesToTarget(
+  private async importSpecifierResolvesToTarget(
     importerFilePath: string,
     moduleSpecifier: string,
     targetAbsolute: string
-  ): boolean {
-    const resolved = this.pathUtils.resolveImportPath(moduleSpecifier, importerFilePath);
+  ): Promise<boolean> {
+    const resolved = await this.pathUtils.resolveImportPathAsync(moduleSpecifier, importerFilePath);
     return this.pathUtils.pathsMatch(resolved, targetAbsolute);
   }
 

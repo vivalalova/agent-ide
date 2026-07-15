@@ -63,7 +63,8 @@ export class ReferenceUpdater {
         pathAliases: pathConfig?.pathAliases ?? {},
         baseUrl: pathConfig?.baseUrl,
         supportedExtensions: ALLOWED_EXTENSIONS
-      })
+      }),
+      fileSystem
     );
   }
 
@@ -117,7 +118,7 @@ export class ReferenceUpdater {
         if (!importPathMatch) {continue;}
 
         // 解析 import 路徑為絕對路徑並比較（PathUtils 支援任意 tsconfig 別名 / baseUrl）
-        const resolvedImportPath = this.pathUtils.resolveImportPath(importPathMatch, filePath);
+        const resolvedImportPath = await this.pathUtils.resolveImportPathAsync(importPathMatch, filePath);
 
         // 比較路徑（考慮副檔名與 index 目錄解析）
         if (!this.pathUtils.pathsMatch(resolvedImportPath, options.sourceFile)) {continue;}
@@ -212,7 +213,7 @@ export class ReferenceUpdater {
         // 嘗試把 moved 併入同檔已存在、指向目標檔的 named import（P-E）
         const existingTargetImport = filePath === options.target.filePath
           ? null
-          : this.findExistingTargetImport(lines, options, filePath, statement);
+          : await this.findExistingTargetImport(lines, options, filePath, statement);
 
         const sourceLocation = this.createStatementLocation(filePath, statement, lines);
 
@@ -412,19 +413,19 @@ export class ReferenceUpdater {
    * 在同一檔案中尋找已指向目標檔的 named import（P-E）
    * 找到時回傳該語句資訊，供把 moved 併入既有 import 而非新增重複 import
    */
-  private findExistingTargetImport(
+  private async findExistingTargetImport(
     lines: readonly string[],
     options: MoveMemberOptions,
     fromFile: string,
     excludeStatement: ImportExportStatement
-  ): {
+  ): Promise<{
     statement: ImportExportStatement;
     statementKind: ImportExportStatementKind;
     members: ParsedImportMember[];
     importPath: string;
     quoteChar: string;
     defaultPrefix: string | null;
-  } | null {
+  } | null> {
     for (let i = 0; i < lines.length; i++) {
       const statement = this.collectImportExportStatement(lines, i);
       if (!statement) {continue;}
@@ -439,7 +440,7 @@ export class ReferenceUpdater {
       // star re-export 不是可併入的 named import
       if (this.isStarReExport(statement.text)) {continue;}
 
-      const resolved = this.pathUtils.resolveImportPath(importPath, fromFile);
+      const resolved = await this.pathUtils.resolveImportPathAsync(importPath, fromFile);
       if (!this.pathUtils.pathsMatch(resolved, options.target.filePath)) {continue;}
 
       // 只有純值 import（非 import type、非 export/export-from）才產生本地值綁定，

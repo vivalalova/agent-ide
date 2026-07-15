@@ -21,7 +21,7 @@ export class FileScanner {
     private readonly fileSystem: IFileSystem,
     private readonly importResolver: ImportResolver
   ) {
-    this.pathUtils = new PathUtils(importResolver);
+    this.pathUtils = new PathUtils(importResolver, fileSystem);
   }
 
   /**
@@ -191,7 +191,7 @@ export class FileScanner {
         }
 
         // 解析 import 路徑並檢查是否指向目標檔案
-        const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, file);
+        const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, file);
         for (const movedPath of normalizedMovedPaths) {
           if (this.pathUtils.pathsMatch(resolvedPath, movedPath)) {
             affectedFilesByMovedPath.get(movedPath)?.add(file);
@@ -240,7 +240,7 @@ export class FileScanner {
         }
 
         // 解析 import 路徑並檢查是否指向目標檔案
-        const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, filePath);
+        const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, filePath);
         if (this.pathUtils.pathsMatch(resolvedPath, targetPath)) {
           return true;
         }

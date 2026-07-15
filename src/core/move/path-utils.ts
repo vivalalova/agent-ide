@@ -4,6 +4,7 @@
  */
 
 import * as path from 'path';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { isSourceFileExtension, SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
 import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
@@ -23,7 +24,10 @@ export const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.b
  * 處理 import 路徑的解析、比對和轉換
  */
 export class PathUtils {
-  constructor(private readonly importResolver: ImportResolver) {}
+  constructor(
+    private readonly importResolver: ImportResolver,
+    private readonly fileSystem?: IFileSystem
+  ) {}
 
   /**
    * 解析 import 路徑為絕對路徑
@@ -43,6 +47,30 @@ export class PathUtils {
 
     // 嘗試解析別名（如 @/ 開頭的路徑映射）
     const resolved = this.importResolver.resolvePathAlias(importPath);
+    return this.resolveImportPathAfterAlias(importPath, fromFile, resolved);
+  }
+
+  /**
+   * 以檔案系統存在性解析 path alias，再套用共用的 baseUrl / node module 規則。
+   */
+  async resolveImportPathAsync(importPath: string, fromFile: string): Promise<string> {
+    if (importPath.startsWith('.')) {
+      return this.resolveImportPath(importPath, fromFile);
+    }
+
+    if (!this.fileSystem) {
+      return this.resolveImportPath(importPath, fromFile);
+    }
+
+    const resolved = await this.importResolver.resolvePathAliasAsync(importPath, this.fileSystem);
+    return this.resolveImportPathAfterAlias(importPath, fromFile, resolved);
+  }
+
+  private resolveImportPathAfterAlias(
+    importPath: string,
+    fromFile: string,
+    resolved: string
+  ): string {
     if (resolved !== importPath) {
       // 如果解析成功（與原始路徑不同）
       if (path.isAbsolute(resolved)) {

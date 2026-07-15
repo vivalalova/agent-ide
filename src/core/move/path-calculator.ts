@@ -27,7 +27,7 @@ export class PathCalculator {
     private readonly fileSystem: IFileSystem,
     private readonly importResolver: ImportResolver
   ) {
-    this.pathUtils = new PathUtils(importResolver);
+    this.pathUtils = new PathUtils(importResolver, fileSystem);
     this.fileScanner = new FileScanner(fileSystem, importResolver);
   }
 
@@ -197,7 +197,7 @@ export class PathCalculator {
           : path.normalize(path.resolve(oldPath));
 
         // 計算 import 指向的絕對路徑
-        const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, filePath);
+        const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, filePath);
 
         // 使用 pathsMatch 檢查是否指向被移動的檔案
         if (this.pathUtils.pathsMatch(resolvedPath, normalizedOldPath)) {
@@ -410,7 +410,7 @@ export class PathCalculator {
         // 處理 alias 和 baseUrl 相對路徑（如 @/modules/db/...）
         else {
           // 解析 alias 到實際檔案路徑
-          const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, source);
+          const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, source);
 
           // 如果解析結果與原始路徑相同，表示無法解析，跳過
           if (resolvedPath === importStatement.path) {

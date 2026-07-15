@@ -317,8 +317,14 @@ export async function loadTsconfigPathConfig(
     }
 
     const loading = loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
-    cache.set(cacheKey, loading);
-    return await loading;
+    const cachedLoading = loading.catch(error => {
+      if (cache.get(cacheKey) === cachedLoading) {
+        cache.delete(cacheKey);
+      }
+      throw error;
+    });
+    cache.set(cacheKey, cachedLoading);
+    return await cachedLoading;
   } catch (error) {
     // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
     logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);

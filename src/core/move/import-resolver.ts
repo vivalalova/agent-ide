@@ -5,10 +5,13 @@
 
 import * as path from 'path';
 import { builtinModules } from 'node:module';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
 import {
   resolveBarePathAlias,
+  resolveBarePathAliasAsync,
+  findPathAliasMatch,
   withLegacyPathAliasWildcards,
   type PathAliasInput
 } from '@shared/path-alias-resolver.js';
@@ -495,7 +498,27 @@ export class ImportResolver {
    * 返回絕對路徑（如果 pathAliases 中的值是絕對路徑）
    */
   resolvePathAlias(aliasPath: string): string {
-    return resolveBarePathAlias(aliasPath, this.config.pathAliases) ?? aliasPath;
+    const resolved = resolveBarePathAlias(aliasPath, this.config.pathAliases);
+    if (resolved === null) {
+      return aliasPath;
+    }
+
+    // 同步 API 沒有檔案系統可用，只能維持 loader 相容 view 的單一路徑投影；
+    // move 的實際解析一律由下方 async 版本依具體 target 存在性選擇候選。
+    const match = findPathAliasMatch(aliasPath, this.config.pathAliases);
+    return match?.candidates.at(-1) ?? resolved;
+  }
+
+  /**
+   * 解析路徑別名，依實際檔案存在性選擇候選路徑。
+   */
+  async resolvePathAliasAsync(aliasPath: string, fileSystem: IFileSystem): Promise<string> {
+    return await resolveBarePathAliasAsync(
+      aliasPath,
+      this.config.pathAliases,
+      async candidate => await fileSystem.exists(candidate) && await fileSystem.isFile(candidate),
+      this.config.supportedExtensions
+    ) ?? aliasPath;
   }
 
   /**
