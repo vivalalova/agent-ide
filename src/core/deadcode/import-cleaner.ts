@@ -20,9 +20,15 @@ import {
 } from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportCleanupOperation, RemovalOperation } from './types.js';
-import { ImportParser, type ImportStatementInfo } from './import-parser.js';
+import { ImportParser, UNICODE_IDENTIFIER_CLASS, type ImportStatementInfo } from './import-parser.js';
 import type { DeadCodeCacheService } from './shared-cache.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+
+/** type Foo as Bar 別名原名擷取（Unicode 識別符） */
+const TYPE_SPECIFIER_AS_ALIAS = new RegExp(
+  '^(' + UNICODE_IDENTIFIER_CLASS + ')\\s+as\\s+' + UNICODE_IDENTIFIER_CLASS + '$',
+  'u'
+);
 
 /**
  * Import 清理器
@@ -244,7 +250,7 @@ export class ImportCleaner {
         continue;
       }
       const rest = part.slice('type '.length).trim();
-      const asMatch = rest.match(/^(\w+)\s+as\s+\w+$/);
+      const asMatch = rest.match(TYPE_SPECIFIER_AS_ALIAS);
       const originalName = asMatch ? asMatch[1] : rest;
       if (originalName) {
         typeOnlyNames.add(originalName);

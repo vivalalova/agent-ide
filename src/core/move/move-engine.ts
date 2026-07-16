@@ -114,8 +114,9 @@ export class MoveEngine {
       await this.performMove(source, target);
       fileMoved = true;
 
-      // 5. 更新 import 路徑
+      // 5. 更新 import 路徑（先備份會改寫的檔案內容，失敗時一併還原 import）
       if (updateImports && pathUpdates.length > 0) {
+        const importContentBackups = await this.backupImportTargetContents(pathUpdates);
         try {
           await this.applyPathUpdates(pathUpdates);
           transactionLog.push(`IMPORT_UPDATES: ${JSON.stringify(
@@ -132,6 +133,17 @@ export class MoveEngine {
 
           // 記錄錯誤到事務日誌
           transactionLog.push(`IMPORT_UPDATE_FAILED: ${errorMessage}`);
+
+          // 先還原已寫入的 import 變更（即使檔案 move 回滾也須先還原，避免半套 import）
+          try {
+            await this.restoreImportTargetContents(importContentBackups);
+            transactionLog.push('IMPORT_CONTENT_ROLLBACK_SUCCESS');
+          } catch (importRollbackError) {
+            const importRollbackMsg = importRollbackError instanceof Error
+              ? importRollbackError.message
+              : 'Unknown error';
+            transactionLog.push(`IMPORT_CONTENT_ROLLBACK_FAILED: ${importRollbackMsg}`);
+          }
 
           // 嘗試回滾檔案移動
           try {
@@ -418,7 +430,8 @@ export class MoveEngine {
   }
 
   /**
-   * 遞迴移動目錄
+   * 遞迴移動目錄。
+   * 中途失敗時反向回滾本層已成功的子檔／子目錄 move，避免半套目錄殘留。
    */
   private async moveDirectory(source: string, target: string): Promise<void> {
     // 建立目標目錄（recursive: true 確保父目錄也被建立）
@@ -426,25 +439,55 @@ export class MoveEngine {
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
+    /** 本層已成功移到 target 的子路徑，供失敗時 reverse */
+    const completed: Array<{ sourcePath: string; targetPath: string; isDirectory: boolean }> = [];
 
-    for (const entry of entries) {
-      const sourcePath = entry.path;
-      const relativePath = path.relative(source, sourcePath);
-      const targetPath = path.join(target, relativePath);
+    try {
+      for (const entry of entries) {
+        const sourcePath = entry.path;
+        const relativePath = path.relative(source, sourcePath);
+        const targetPath = path.join(target, relativePath);
 
-      if (entry.isDirectory) {
-        // 遞迴處理子目錄
-        await this.moveDirectory(sourcePath, targetPath);
-      } else if (entry.isFile) {
-        // 複製檔案
-        const content = await this.fileSystem.readFile(sourcePath, 'utf-8');
-        await this.fileSystem.writeFile(targetPath, content as string);
-        await this.fileSystem.deleteFile(sourcePath);
+        if (entry.isDirectory) {
+          await this.moveDirectory(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: true });
+        } else if (entry.isFile) {
+          // 複製檔案後刪來源（與既有語意一致）
+          const content = await this.fileSystem.readFile(sourcePath, 'utf-8');
+          await this.fileSystem.writeFile(targetPath, content as string);
+          await this.fileSystem.deleteFile(sourcePath);
+          completed.push({ sourcePath, targetPath, isDirectory: false });
+        }
       }
-    }
 
-    // 刪除原目錄
-    await this.fileSystem.deleteDirectory(source);
+      // 刪除原目錄
+      await this.fileSystem.deleteDirectory(source);
+    } catch (error) {
+      // 反向回滾已成功的子 move（後完成者先 reverse）
+      for (let i = completed.length - 1; i >= 0; i--) {
+        const item = completed[i];
+        try {
+          if (item.isDirectory) {
+            await this.moveDirectory(item.targetPath, item.sourcePath);
+          } else {
+            const content = await this.fileSystem.readFile(item.targetPath, 'utf-8');
+            await this.fileSystem.writeFile(item.sourcePath, content as string);
+            await this.fileSystem.deleteFile(item.targetPath);
+          }
+        } catch {
+          // 個別 reverse 失敗不掩蓋原錯誤
+        }
+      }
+      try {
+        const remaining = await this.fileSystem.readDirectory(target);
+        if (remaining.length === 0) {
+          await this.fileSystem.deleteDirectory(target);
+        }
+      } catch {
+        // ignore
+      }
+      throw error;
+    }
   }
 
   /**
@@ -467,6 +510,44 @@ export class MoveEngine {
     // 逐檔案應用更新
     for (const [filePath, fileUpdateList] of fileUpdates) {
       await this.applyFileUpdates(filePath, fileUpdateList);
+    }
+  }
+
+  /**
+   * 備份 pathUpdates 會改寫的檔案原始內容（每檔一份，供 import 更新失敗時還原）
+   */
+  private async backupImportTargetContents(
+    updates: PathUpdate[]
+  ): Promise<Map<string, string>> {
+    const backups = new Map<string, string>();
+    for (const update of updates) {
+      if (backups.has(update.filePath)) {
+        continue;
+      }
+      const content = await this.fileSystem.readFile(update.filePath, 'utf-8') as string;
+      backups.set(update.filePath, content);
+    }
+    return backups;
+  }
+
+  /**
+   * 還原 import 目標檔案內容（失敗時 reverse 已寫入的 import 變更）
+   */
+  private async restoreImportTargetContents(
+    backups: Map<string, string>
+  ): Promise<void> {
+    const errors: string[] = [];
+    for (const [filePath, content] of backups) {
+      try {
+        await this.fileSystem.writeFile(filePath, content);
+      } catch (error) {
+        errors.push(
+          `${filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }
+    if (errors.length > 0) {
+      throw new Error(`還原 import 檔案內容失敗: ${errors.join('; ')}`);
     }
   }
 

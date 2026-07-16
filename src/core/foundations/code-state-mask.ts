@@ -44,9 +44,11 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
   let mode: LeafMode = 'code';
   let quote = '';
   let regexInClass = false;
+  /** character class 剛開啟（`[` 或 `[^` 之後、尚未讀入任何 ClassAtom） */
+  let regexClassAtStart = false;
 
   // regex 字面值消歧義（除法 vs regex 開始）：用「前一個非空白有效字元」啟發式。
-  // 前導為運算子/開括號/逗號/冒號/等號/行首/特定關鍵字（return 等）→ regex 開始；
+  // 前導為運算子/開括號/逗號/冒號/等號/行首/特定關鍵字（return/await 等）→ regex 開始；
   // 前導為識別符/數字/`)`/`]` 結尾 → 除法。此為 heuristic，非完整 parser，
   // 在 mask 的用途（括號配對、非精確 parse）下已足夠，已知侷限見函式註解。
   const isRegexContext = (i: number): boolean => {
@@ -66,7 +68,7 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
       const word = text.slice(start + 1, j + 1);
       const regexPrecedingKeywords = new Set([
         'return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void',
-        'throw', 'yield', 'instanceof', 'do', 'else',
+        'throw', 'yield', 'instanceof', 'do', 'else', 'await',
       ]);
       return regexPrecedingKeywords.has(word);
     }
@@ -76,6 +78,11 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
     // 運算子、開括號、逗號、冒號、等號等 → regex 開始
     return true;
   };
+
+  /** JS regex flags（含較新的 d/v） */
+  const isRegexFlagChar = (c: string): boolean =>
+    c === 'd' || c === 'g' || c === 'i' || c === 'm' ||
+    c === 's' || c === 'u' || c === 'v' || c === 'y';
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
@@ -141,19 +148,45 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
       kinds[i] = 'regex';
       if (char === '\\' && i + 1 < text.length) {
         kinds[i + 1] = 'regex';
+        // 跳脫字元算 ClassAtom，class 不再處於「剛開啟」
+        if (regexInClass) {
+          regexClassAtStart = false;
+        }
         i++;
         continue;
       }
-      if (char === '[') {
+      if (char === '[' && !regexInClass) {
         regexInClass = true;
+        regexClassAtStart = true;
         continue;
       }
-      if (char === ']') {
+      if (char === ']' && regexInClass) {
+        // class 首字 `]`（含 `[^]` 的 `]`）可為 literal；其後的 `]` 才結束 class
+        if (regexClassAtStart) {
+          regexClassAtStart = false;
+          continue;
+        }
         regexInClass = false;
+        regexClassAtStart = false;
         continue;
       }
-      if (char === '/' && !regexInClass) {
+      if (regexInClass) {
+        // `[^` 的 `^` 仍維持 at-start，讓後續 `]` 可當 literal（`[^]]`）
+        if (!(regexClassAtStart && char === '^')) {
+          regexClassAtStart = false;
+        }
+        // class 內 `/` 不結束 regex
+        continue;
+      }
+      if (char === '/') {
+        // 收尾 `/` 後吃 flags（gimsuy 等），flags 亦屬 regex 字面值
+        while (i + 1 < text.length && isRegexFlagChar(text[i + 1])) {
+          i++;
+          kinds[i] = 'regex';
+        }
         mode = 'code';
+        regexInClass = false;
+        regexClassAtStart = false;
       }
       continue;
     }
@@ -188,6 +221,7 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
       kinds[i] = 'regex';
       mode = 'regex';
       regexInClass = false;
+      regexClassAtStart = false;
       continue;
     }
     if (topFrame !== undefined && topFrame.kind === 'substitution') {

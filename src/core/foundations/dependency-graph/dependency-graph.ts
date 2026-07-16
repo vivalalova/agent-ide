@@ -226,8 +226,8 @@ export class DependencyGraph {
     }
 
     if (maxDepth === undefined) {
-      // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
-      this.setCacheWithEviction(this.transitiveDepCache, filePath, result);
+      // 快取存獨立拷貝，與回傳陣列脫鉤；hit 路徑亦 return 拷貝，呼叫端 mutate 不污染 cache
+      this.setCacheWithEviction(this.transitiveDepCache, filePath, [...result]);
     }
 
     return result;
@@ -263,8 +263,8 @@ export class DependencyGraph {
 
     dfs(filePath);
 
-    // 寫入快取（LRU 策略：超過上限時清除最舊的項目）
-    this.setCacheWithEviction(this.transitiveDeptsCache, filePath, result);
+    // 快取存獨立拷貝，與回傳陣列脫鉤；hit 路徑亦 return 拷貝，呼叫端 mutate 不污染 cache
+    this.setCacheWithEviction(this.transitiveDeptsCache, filePath, [...result]);
 
     return result;
   }

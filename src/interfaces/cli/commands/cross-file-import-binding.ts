@@ -89,11 +89,19 @@ async function addImportBindings(
   filterContext: SymbolReferenceFilterContext,
   bindings: SelectedSymbolBindings
 ): Promise<void> {
-  const moduleFile = await resolveProvidingModuleFile(node.moduleSpecifier, fromFile, filterContext);
+  // 先解析模組路徑（不要求該檔以「頂層具名／export *」曝露選定符號）。
+  // `export * as ns from './def'` 的 barrel 不把 def 的成員掛在頂層，但仍可能把
+  // `ns` 這個具名匯出綁成「包住 def 的 namespace 物件」——具名 import 那條路徑
+  // 必須在 providesSelected 為 false 時仍能判定（對齊 rename 側 isNamespaceLocalNameExposed）。
+  if (!node.moduleSpecifier || !ts.isStringLiteral(node.moduleSpecifier)) {
+    return;
+  }
+  const moduleFile = await resolveModuleFile(node.moduleSpecifier.text, fromFile, filterContext);
   if (moduleFile === null) {
     return;
   }
 
+  const providesSelected = await moduleFileProvidesSelectedSymbol(moduleFile, filterContext);
   const symbolName = filterContext.selectedSymbol.name;
   const ownerName = filterContext.selectedOwnerName;
   const importClause = node.importClause;
@@ -101,7 +109,7 @@ async function addImportBindings(
     return;
   }
 
-  if (importClause.name) {
+  if (importClause.name && providesSelected) {
     // default import 綁定的是模組的 default export 本身，不是任意同名具名 export；
     // 必須先解析目標檔 default export 底層實際宣告的名稱，比對相符才算真綁定
     // （對 owner 亦同：default export 宣告的是誰，才決定 import 本地名稱算不算 owner）
@@ -120,17 +128,32 @@ async function addImportBindings(
   }
 
   if (ts.isNamespaceImport(namedBindings)) {
-    bindings.namespaceNames.add(namedBindings.name.text);
+    // `import * as ns from spec`：僅當 spec 以頂層（具名／export *）曝露選定符號時，
+    // `ns.member` 才是對該符號的引用。純 `export * as api from './def'` 的 barrel
+    // 頂層只有 `api`，`ns.member` 不成立（正確路徑是 `import { api }` 再 `api.member`）。
+    if (providesSelected) {
+      bindings.namespaceNames.add(namedBindings.name.text);
+    }
     return;
   }
 
   for (const element of namedBindings.elements) {
     const importedName = element.propertyName?.text ?? element.name.text;
-    if (importedName === symbolName) {
-      bindings.directNames.add(element.name.text);
+    if (providesSelected) {
+      if (importedName === symbolName) {
+        bindings.directNames.add(element.name.text);
+      }
+      if (ownerName && importedName === ownerName) {
+        bindings.ownerNames.add(element.name.text);
+      }
     }
-    if (ownerName && importedName === ownerName) {
-      bindings.ownerNames.add(element.name.text);
+
+    // `import { api } from './barrel'` / `import { api as local } from './barrel'`：
+    // 當 barrel 把 `api` 宣告為 `export * as api from '<inner>'`（或經 export *／
+    // 具名 re-export 轉發該 namespace 綁定），且 inner 提供選定符號時，本地名稱語意
+    // 等同 namespace import，`local.selectedSymbol` 應視為引用。
+    if (await moduleFileExportsNamespaceForSelectedSymbol(moduleFile, importedName, filterContext)) {
+      bindings.namespaceNames.add(element.name.text);
     }
   }
 }
@@ -149,7 +172,9 @@ async function addExportBindings(
       && await moduleSpecifierProvidesSelectedSymbol(node.moduleSpecifier, fromFile, filterContext)
     ) {
       if (node.exportClause) {
-        // 具名 / namespace re-export：clause 內有真正指向目標符號的 token，屬引用，供裸名比對
+        // 具名 re-export（`export { X }` / `export { X as Y }`）：clause 內有真正指向
+        // 目標符號的 token，屬引用，供裸名比對。`export * as ns` 不會進此支（見
+        // exportClauseExposesSymbol），其 namespace 綁定不在 exportedNames 語意內。
         bindings.exportedNames.add(symbolName);
       } else {
         // `export *`：檔內沒有符號 token，僅記錄模組圖轉出資訊，
@@ -179,11 +204,15 @@ function exportClauseExposesSymbol(
   symbolName: string
 ): boolean {
   if (!exportClause) {
+    // `export * from`：來源模組的全部頂層匯出一併轉出
     return true;
   }
 
+  // `export * as ns from`：只曝露名為 ns 的 namespace 物件，不把來源成員掛到頂層。
+  // 頂層 provides 判定必須回 false；namespace 綁定另由
+  // moduleFileExportsNamespaceForSelectedSymbol 處理。
   if (ts.isNamespaceExport(exportClause)) {
-    return exportClause.name.text === symbolName;
+    return false;
   }
 
   return exportClause.elements.some(element =>
@@ -318,6 +347,102 @@ async function moduleFileProvidesSelectedSymbol(
     return providesSymbol;
   } finally {
     filterContext.visitingModuleFiles.delete(normalizedFilePath);
+  }
+}
+
+/**
+ * 檔案內名為 `localName` 的具名匯出，是否為「指向提供選定符號之模組的 namespace 轉發」。
+ *
+ * 對齊 rename 側 `isNamespaceLocalNameExposed`：
+ * - `export * as localName from '<spec>'`，且 spec 以頂層（具名／export *／定義檔本身）提供選定符號
+ * - `export * from '<spec>'` 把上游的同名 namespace 綁定一併轉出
+ * - `export { localName }` / `export { src as localName } from '<spec>'` 沿來源名稱往內追
+ *
+ * 與 `moduleFileProvidesSelectedSymbol` 分屬不同查詢：後者問「file 是否把選定符號
+ * 掛在頂層匯出」（consumer 可 `import { symbol }`）；此處問「file 的『這一個』具名
+ * 匯出是否為包住選定符號來源的 namespace 物件」（consumer 只能 `import { ns }` 再 `ns.symbol`）。
+ * 故 `export * as ns from './def'` 的 barrel 對 def 成員回 false 於 provides、回 true 於此
+ * （對 `ns` 這個 localName）。
+ */
+async function moduleFileExportsNamespaceForSelectedSymbol(
+  filePath: string,
+  localName: string,
+  filterContext: SymbolReferenceFilterContext,
+  visiting: Set<string> = new Set()
+): Promise<boolean> {
+  const normalizedFilePath = normalizePath(filePath);
+  const visitKey = `${normalizedFilePath}::${localName}`;
+  if (visiting.has(visitKey)) {
+    return false;
+  }
+
+  if (
+    !await filterContext.fileSystem.exists(normalizedFilePath)
+    || !await filterContext.fileSystem.isFile(normalizedFilePath)
+  ) {
+    return false;
+  }
+
+  const sourceFile = await tryGetSourceFile(normalizedFilePath, filterContext);
+  if (!sourceFile) {
+    return false;
+  }
+
+  visiting.add(visitKey);
+  try {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier) {
+        continue;
+      }
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+
+      const resolved = await resolveModuleFile(
+        statement.moduleSpecifier.text,
+        normalizedFilePath,
+        filterContext
+      );
+      if (resolved === null) {
+        continue;
+      }
+
+      // `export * as localName from '<spec>'`：namespace 物件綁定
+      if (statement.exportClause && ts.isNamespaceExport(statement.exportClause)) {
+        if (
+          statement.exportClause.name.text === localName
+          && await moduleFileProvidesSelectedSymbol(resolved, filterContext)
+        ) {
+          return true;
+        }
+        continue;
+      }
+
+      // `export * from '<spec>'`：把上游具名（含 namespace 轉發綁定）一併轉出
+      if (!statement.exportClause) {
+        if (await moduleFileExportsNamespaceForSelectedSymbol(resolved, localName, filterContext, visiting)) {
+          return true;
+        }
+        continue;
+      }
+
+      // `export { localName }` / `export { src as localName } from '<spec>'`
+      if (ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          if (element.name.text !== localName) {
+            continue;
+          }
+          const sourceName = element.propertyName?.text ?? element.name.text;
+          if (await moduleFileExportsNamespaceForSelectedSymbol(resolved, sourceName, filterContext, visiting)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  } finally {
+    visiting.delete(visitKey);
   }
 }
 

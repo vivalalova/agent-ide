@@ -91,9 +91,12 @@ export interface ILanguageServiceManager extends Disposable {
 export class LanguageServiceManager implements ILanguageServiceManager {
   /**
    * 共享的 DocumentRegistry（靜態單例）
-   * 所有 LanguageServiceManager 實例共享，減少記憶體佔用
+   * 所有仍存活的 LanguageServiceManager 實例共享，減少記憶體佔用。
+   * 最後一個持有 LS 的實例 dispose 時重置為 null，避免跨 session 殘留 SourceFile 快取。
    */
   private static documentRegistry: ts.DocumentRegistry | null = null;
+  /** 目前仍持有已建立 LanguageService 的 manager 實例數（用於決定何時重置 registry） */
+  private static activeLanguageServiceCount = 0;
 
   /**
    * 取得或建立共享的 DocumentRegistry
@@ -108,6 +111,8 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   private _languageService: ts.LanguageService | null = null;
   private _languageServiceHost: ts.LanguageServiceHost | null = null;
   private _files: Map<string, FileInfo> = new Map();
+  /** 此實例是否已建立並計入 activeLanguageServiceCount */
+  private _ownsLanguageService = false;
   private compilerOptions: ts.CompilerOptions;
   /**
    * Language Service 模組解析基準目錄。
@@ -156,6 +161,8 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       this._languageServiceHost,
       LanguageServiceManager.getDocumentRegistry()
     );
+    this._ownsLanguageService = true;
+    LanguageServiceManager.activeLanguageServiceCount += 1;
   }
 
   /**
@@ -767,6 +774,19 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     if (this._languageService) {
       this._languageService.dispose();
       this._languageService = null;
+    }
+
+    // 最後一個持有 LS 的實例離開時重置共享 DocumentRegistry，
+    // 讓下次建立走全新 registry（靜態共享在多 manager 並存時仍必要，故不改 instance 級）。
+    if (this._ownsLanguageService) {
+      this._ownsLanguageService = false;
+      LanguageServiceManager.activeLanguageServiceCount = Math.max(
+        0,
+        LanguageServiceManager.activeLanguageServiceCount - 1
+      );
+      if (LanguageServiceManager.activeLanguageServiceCount === 0) {
+        LanguageServiceManager.documentRegistry = null;
+      }
     }
 
     // 清理 Language Service Host

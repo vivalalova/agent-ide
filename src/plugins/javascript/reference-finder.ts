@@ -158,7 +158,10 @@ export class ReferenceFinder {
 
         if (refInfo) {
           // 如果指定了 className，過濾不屬於該類別的引用
-          if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName)) {
+          if (
+            targetClassName
+            && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, path)
+          ) {
             return;
           }
 
@@ -194,7 +197,10 @@ export class ReferenceFinder {
           return;
         }
 
-        if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName)) {
+        if (
+          targetClassName
+          && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, path)
+        ) {
           return;
         }
 
@@ -274,11 +280,22 @@ export class ReferenceFinder {
    *   - receiver 型別等於所在類別（子類 this.method() 呼叫繼承自父類的方法）→ 保留。
    *   - receiver 型別確定為其他類別 → 排除。
    * - 裸識別符形（standalone，非屬性存取）：在目標類別外部即詞法綁定到別的符號 → 排除。
+   *   例外：targetClassName === symbolName（巢狀函式以自身名稱作為 scope）時，
+   *   僅在最近綁定為同名 FunctionDeclaration 時保留（對齊 TS hasEnclosingTargetFunction）。
    */
   private shouldExcludeByClassName(
     refInfo: ReferenceAnalysis,
-    targetClassName: string
+    targetClassName: string,
+    symbolName: string,
+    path: NodePath
   ): boolean {
+    // 巢狀函式以自身名稱作為 targetClassName 時，先做最近綁定判定；否則
+    // containerName === targetClassName 的一般保留規則會在 scope 過濾前提前放行
+    // 內層 const process 與其呼叫點。
+    if (targetClassName === symbolName && !refInfo.isPropertyAccess) {
+      return !this.hasEnclosingTargetFunction(path, symbolName);
+    }
+
     // 目標類別內部的引用一律保留（方法定義本身、類別內 this-less 引用等）
     if (refInfo.containerName === targetClassName) {
       return false;
@@ -301,6 +318,29 @@ export class ReferenceFinder {
 
     // 裸識別符形且在目標類別外部：綁定到別的符號，排除
     return true;
+  }
+
+  /**
+   * 判斷節點最近的同名詞法綁定是否為 FunctionDeclaration（巢狀函式慣例的宣告形式）。
+   * 對齊 TS hasEnclosingTargetFunction：function 宣告具 hoisting，於整個外層區塊可見；
+   * 若最近綁定是 const/let 等同名 shadow，則不視為目標函式的直接引用。
+   */
+  private hasEnclosingTargetFunction(path: NodePath, name: string): boolean {
+    // 宣告名本身：function name() {} 的 id
+    if (
+      path.isIdentifier()
+      && babel.isFunctionDeclaration(path.parent)
+      && path.parent.id === path.node
+      && path.parent.id.name === name
+    ) {
+      return true;
+    }
+
+    const binding = path.scope.getBinding(name);
+    if (!binding) {
+      return false;
+    }
+    return binding.path.isFunctionDeclaration();
   }
 
   /**
@@ -352,14 +392,27 @@ export class ReferenceFinder {
       }
     }
 
-    // 檢查是否為寫入（賦值左側）
+    // 檢查是否為寫入（賦值左側）——賦值是使用，不是定義
     if (babel.isAssignmentExpression(parent) && parent.left === path.node) {
       kind = ScopedReferenceKind.Write;
     }
 
-    // 檢查是否為宣告
+    // 檢查是否為宣告點（變數／函式／類別／方法等 binding 處）
     if (babel.isVariableDeclarator(parent) && parent.id === path.node) {
-      kind = ScopedReferenceKind.Write;
+      kind = ScopedReferenceKind.Definition;
+    } else if (babel.isFunctionDeclaration(parent) && parent.id === path.node) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (babel.isClassDeclaration(parent) && parent.id === path.node) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (
+      (babel.isClassMethod(parent) || babel.isClassProperty(parent) || babel.isObjectMethod(parent))
+      && parent.key === path.node
+      && !parent.computed
+    ) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (path.listKey === 'params') {
+      // 參數綁定宣告點（含函式／方法／箭頭函式 params）
+      kind = ScopedReferenceKind.Definition;
     }
 
     // 取得所屬容器名稱

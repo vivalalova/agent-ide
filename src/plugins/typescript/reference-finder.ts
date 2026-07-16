@@ -287,23 +287,34 @@ export class ReferenceFinder {
       }
     }
 
-    // 檢查是否為寫入（賦值左側）
+    // 檢查是否為寫入（賦值左側）——賦值是使用，不是定義
     if (parent && ts.isBinaryExpression(parent)) {
       if (parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
         kind = ScopedReferenceKind.Write;
       }
     }
 
-    // 檢查是否為宣告（變數宣告、參數、函式宣告等）
+    // 檢查是否為宣告點（變數／參數／屬性／函式／類別／方法／解構綁定等 binding 處）
     if (
       parent
-      && (ts.isVariableDeclaration(parent)
+      && (
+        ts.isVariableDeclaration(parent)
         || ts.isParameter(parent)
         || ts.isPropertyDeclaration(parent)
-        || ts.isFunctionDeclaration(parent))
+        || ts.isFunctionDeclaration(parent)
+        || ts.isClassDeclaration(parent)
+        || ts.isMethodDeclaration(parent)
+        || ts.isGetAccessor(parent)
+        || ts.isSetAccessor(parent)
+        || ts.isInterfaceDeclaration(parent)
+        || ts.isTypeAliasDeclaration(parent)
+        || ts.isEnumDeclaration(parent)
+        || ts.isEnumMember(parent)
+        || ts.isBindingElement(parent)
+      )
       && (parent as { name?: ts.Node }).name === node
     ) {
-      kind = ScopedReferenceKind.Write;
+      kind = ScopedReferenceKind.Definition;
     }
 
     // 取得所屬容器名稱（類別、函式等）

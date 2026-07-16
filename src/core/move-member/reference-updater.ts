@@ -8,7 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions, type FileChange } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
-import { maskNonCode } from '@core/foundations/code-state-mask.js';
+import { createIdentifierBoundaryRegex, maskNonCode } from '@core/foundations/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils, withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
@@ -327,8 +327,10 @@ export class ReferenceUpdater {
     // 只在真實程式碼中比對是否仍有殘留引用，排除字串常量與註解裡「提到」成員名稱
     // 的情況（見 C9 bug）。SSOT：maskNonCode（code-state-mask）保留 template
     // substitution 內的真實引用（F10：`${moved()}` 不得被整段抹掉）。
+    // 識別符邊界用 createIdentifierBoundaryRegex：JS `\b` 以 ASCII `\w` 定義，
+    // 純 Unicode 名稱（如 `工具`）前後皆非 `\w` 時 `\b` 不成立、會漏補 import（M1）。
     const codeOnly = maskNonCode(sourceFileChange.newCode);
-    const referencePattern = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
+    const referencePattern = createIdentifierBoundaryRegex(member.name);
     if (!referencePattern.test(codeOnly)) {
       return null;
     }
@@ -389,10 +391,11 @@ export class ReferenceUpdater {
         continue;
       }
 
-      // 呼叫所在列若未提到成員名稱，多半是載入其他 export 或 side-effect，不改路徑
+      // 呼叫所在列若未提到成員名稱，多半是載入其他 export 或 side-effect，不改路徑。
+      // 同上用 Unicode 識別符邊界，避免純 Unicode 成員名被 `\b` 漏判（M2）。
       const { lineNumber, columnIndex } = this.offsetToLineColumn(content, matchIndex);
       const lineText = lines[lineNumber - 1] ?? '';
-      const memberRef = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
+      const memberRef = createIdentifierBoundaryRegex(member.name);
       if (!memberRef.test(lineText)) {
         continue;
       }

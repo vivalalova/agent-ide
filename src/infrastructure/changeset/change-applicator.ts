@@ -218,15 +218,31 @@ export class ChangeApplicator {
   }
 
   /**
-   * Dry-run 模式：計算會修改的檔案，不實際執行
+   * Dry-run 模式：計算會修改的檔案，不實際寫入；
+   * 並在記憶體上驗證 text edits 可套用（重疊／座標非法等），失敗時 success=false。
    * @param changeset 變更集
    * @returns 預覽結果
    */
-  private dryRunApply(changeset: Changeset): ApplyResult {
+  private async dryRunApply(changeset: Changeset): Promise<ApplyResult> {
     const modifiedFiles = changeset.textChanges.map(tc => tc.filePath);
     const createdFiles: string[] = [];
     const deletedFiles: string[] = [];
     const movedFiles: Array<{ from: string; to: string }> = [];
+    const errors: string[] = [];
+
+    // 驗證每組 text edits 可在目前內容上套用（與實寫路徑共用 applyTextEdits）
+    for (const textChange of changeset.textChanges) {
+      try {
+        const exists = await this.fileSystem.exists(textChange.filePath);
+        const content = exists
+          ? (await this.fileSystem.readFile(textChange.filePath, 'utf-8')) as string
+          : '';
+        applyTextEdits(content, textChange.edits);
+      } catch (error) {
+        const message = getErrorMessage(error);
+        errors.push(`文字變更預檢失敗 [${textChange.filePath}]: ${message}`);
+      }
+    }
 
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
@@ -250,11 +266,12 @@ export class ChangeApplicator {
     }
 
     return {
-      success: true,
+      success: errors.length === 0,
       modifiedFiles,
       createdFiles,
       deletedFiles,
-      movedFiles
+      movedFiles,
+      errors: errors.length > 0 ? errors : undefined
     };
   }
 
@@ -411,7 +428,8 @@ export class ChangeApplicator {
   }
 
   /**
-   * 遞迴移動目錄
+   * 遞迴移動目錄。
+   * 中途失敗時反向回滾本層已成功的子檔／子目錄 move，避免半套目錄殘留。
    * @param source 來源目錄
    * @param target 目標目錄
    */
@@ -421,24 +439,52 @@ export class ChangeApplicator {
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
+    /** 本層已成功移到 target 的子路徑（sourcePath, targetPath, isDirectory），供失敗時 reverse */
+    const completed: Array<{ sourcePath: string; targetPath: string; isDirectory: boolean }> = [];
 
-    for (const entry of entries) {
-      const sourcePath = entry.path;
-      // 使用 path 模組計算相對路徑
-      const relativePath = sourcePath.slice(source.length);
-      const targetPath = target + relativePath;
+    try {
+      for (const entry of entries) {
+        const sourcePath = entry.path;
+        // 使用 path 模組計算相對路徑
+        const relativePath = sourcePath.slice(source.length);
+        const targetPath = target + relativePath;
 
-      if (entry.isDirectory) {
-        // 遞迴處理子目錄
-        await this.moveDirectory(sourcePath, targetPath);
-      } else if (entry.isFile) {
-        // 移動檔案
-        await this.fileSystem.moveFile(sourcePath, targetPath);
+        if (entry.isDirectory) {
+          await this.moveDirectory(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: true });
+        } else if (entry.isFile) {
+          await this.fileSystem.moveFile(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: false });
+        }
       }
-    }
 
-    // 刪除原目錄
-    await this.fileSystem.deleteDirectory(source);
+      // 刪除原目錄
+      await this.fileSystem.deleteDirectory(source);
+    } catch (error) {
+      // 反向回滾已成功的子 move（後完成者先 reverse）
+      for (let i = completed.length - 1; i >= 0; i--) {
+        const item = completed[i];
+        try {
+          if (item.isDirectory) {
+            await this.moveDirectory(item.targetPath, item.sourcePath);
+          } else {
+            await this.fileSystem.moveFile(item.targetPath, item.sourcePath);
+          }
+        } catch {
+          // 回滾個別失敗不掩蓋原錯誤；繼續嘗試其餘
+        }
+      }
+      // 若目標目錄已空則嘗試清掉；失敗忽略
+      try {
+        const remaining = await this.fileSystem.readDirectory(target);
+        if (remaining.length === 0) {
+          await this.fileSystem.deleteDirectory(target);
+        }
+      } catch {
+        // ignore
+      }
+      throw error;
+    }
   }
 
   /**

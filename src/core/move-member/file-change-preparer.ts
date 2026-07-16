@@ -12,7 +12,13 @@ import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { isFileNotFoundError } from '@shared/errors/index.js';
 import { stripSourceFileExtension } from '@shared/types/index.js';
-import { FileUtils, findMatchingBodyBraceEnd, escapeRegex, maskNonCode, computeCodeStateMask } from '@core/foundations/index.js';
+import {
+  FileUtils,
+  findMatchingBodyBraceEnd,
+  createIdentifierBoundaryRegex,
+  maskNonCode,
+  computeCodeStateMask
+} from '@core/foundations/index.js';
 import { withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 
@@ -169,7 +175,8 @@ export class FileChangePreparer {
     let insertLine = target.insertPosition ?? -1;
 
     if (target.type === MoveTargetType.ExistingClass && target.className) {
-      // 插入到類別內（位置已在 content 座標系上計算）
+      // 插入到類別內（位置已在 content 座標系上計算；找不到類別時 throw，
+      // 不得 silent 落到檔尾 class 外——見 M3）
       insertLine = await this.findClassInsertPosition(content, target.className);
     } else if (sameFileOverride && insertLine >= 0) {
       // 同檔：CLI/呼叫端的 insertPosition 是磁碟原文座標（1-based 行號；
@@ -575,25 +582,30 @@ export class FileChangePreparer {
    * 收尾大括號改委派共用的 findMatchingBodyBraceEnd（見 code-state-mask.ts），
    * 以 mask 排除字串/註解內容中恰巧出現的大括號干擾（見缺陷：
    * `class Target { method(){ const text = "}"; } }` 字串內的 `}` 被逐字元計數
-   * 誤認為類別收尾，導致插入位置算錯）。className 亦逸出正則特殊字元後才內嵌
-   * 進 `new RegExp(...)`（見缺陷：類別名稱含 `$` 等特殊字元如 `$Target` 時，
-   * 未跳脫的樣式完全比對不到）。
+   * 誤認為類別收尾，導致插入位置算錯）。
+   * className 以 createIdentifierBoundaryRegex 逸出並加 Unicode 識別符邊界
+   * （`\b` 對純 Unicode 名稱失效；含 `$` 等特殊字元亦一併安全內嵌）。
+   *
+   * @returns 類別 body 收尾 `}` 所在行的 0-based 插入索引
+   * @throws 找不到目標類別，或類別 body 大括號無法配對時
    */
   private async findClassInsertPosition(content: string, className: string): Promise<number> {
-    // 嚴格匹配類別定義：可選的 export/abstract，後接 class 關鍵字和類別名稱
+    // 嚴格匹配類別定義：可選的 export/abstract，後接 class 關鍵字和類別名稱。
+    // 名稱邊界用 createIdentifierBoundaryRegex（SSOT）：JS `\b` 對純 Unicode
+    // 類別名（如 `服務`）失效，會回 -1 並被誤插到 class 外（M3）。
     const classPattern = new RegExp(
-      `^[ \\t]*(export\\s+)?(abstract\\s+)?class\\s+${escapeRegex(className)}\\b`,
-      'm'
+      `^[ \\t]*(export\\s+)?(abstract\\s+)?class\\s+${createIdentifierBoundaryRegex(className).source}`,
+      'mu'
     );
 
     const match = classPattern.exec(content);
     if (!match || match.index === undefined) {
-      return -1;
+      throw new Error(`找不到目標類別: ${className}`);
     }
 
     const braceEndIndex = findMatchingBodyBraceEnd(content, match.index);
     if (braceEndIndex === -1) {
-      return -1;
+      throw new Error(`目標類別 body 無法解析（大括號不配對）: ${className}`);
     }
 
     return content.slice(0, braceEndIndex).split('\n').length - 1;

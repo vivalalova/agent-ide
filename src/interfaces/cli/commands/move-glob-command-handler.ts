@@ -2,8 +2,13 @@ import * as path from 'path';
 import { createGlobMovePlan, resolveGlobPattern, type GlobMovedFile } from '@core/move/glob-move-planner.js';
 import { MoveEngine } from '@core/move/move-engine.js';
 import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
-import { ChangeApplicator, ChangesetBuilder, convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
-import { FileOperationType } from '@infrastructure/changeset/index.js';
+import {
+  ChangeApplicator,
+  ChangesetBuilder,
+  ChangesetCommand,
+  convertChangesetToPreviewInput,
+  FileOperationType
+} from '@infrastructure/changeset/index.js';
 import {
   ensureDirectoryPath,
   outputErrorWithDetails,
@@ -123,8 +128,8 @@ export async function handleGlobMoveCommand(
       targetIsDirectory
     });
 
-    // 為每個檔案生成 changeset 並合併
-    const builder = new ChangesetBuilder();
+    // 為每個檔案生成 changeset 並合併；必須標記 Move，禁落成預設 Rename（E2）
+    const builder = new ChangesetBuilder().forCommand(ChangesetCommand.Move);
 
     for (const { from: sourceFile, to: targetFile } of movePlan.movedFiles) {
       const moveOperation = {
@@ -176,6 +181,19 @@ export async function handleGlobMoveCommand(
 
     // 轉換為 PreviewInput
     const previewInput = await convertChangesetToPreviewInput(mergedChangeset, context.fileSystem);
+
+    // 轉換失敗時 dry-run / apply 皆不得當成功（對齊 executeMutationCommand / 單檔 move）
+    if (!previewInput.success) {
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        previewInput.errors?.join(', ') ?? '生成預覽失敗',
+        { pathContext: createGlobPathContext(source, target, projectRoot, resolvedTarget) },
+        'move'
+      );
+      process.exitCode = 1;
+      return;
+    }
 
     // Dry-run 模式只輸出預覽
     if (options.dryRun) {

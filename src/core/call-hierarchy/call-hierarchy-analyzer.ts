@@ -16,6 +16,7 @@ import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/ind
 import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
+import { findNearestLexicalDeclarationName, identifierShadowedByLocalDeclaration } from '@plugins/typescript/lexical-scope-binding.js';
 import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
 import { getImportResolutionExtensions, hasRuntimeImportExtensionCandidates } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
@@ -29,14 +30,26 @@ import type {
 
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
+/** 匿名 default export 在展開 outgoing 時使用的合成名稱（檔內無識別符可對） */
+const ANONYMOUS_DEFAULT_EXPORT_NAME = '<default>';
+
 interface FunctionDefinition {
   readonly location: { filePath: string; range: Range };
 }
 
 interface ImportedBinding {
+  /**
+   * 具名 import：遠端 export 名；default import：固定為 `'default'`（不得用 local 別名當 export 名）。
+   */
   readonly importedName: string;
   readonly moduleSpecifier: string;
+  /** default import（`import x from '…'`）時為 true */
+  readonly isDefaultImport?: boolean;
 }
+
+type BabelParseResult = import('@babel/parser').ParseResult<babel.File>;
+
+type FileAstCache = Map<string, { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null>;
 
 interface ResolvedCalleeDefinition extends FunctionDefinition {
   readonly functionName: string;
@@ -53,8 +66,6 @@ interface CallBindingQuery {
   readonly isMethodCall: boolean;
   readonly receiver?: string;
 }
-
-type BabelParseResult = import('@babel/parser').ParseResult<babel.File>;
 
 /**
  * Call Hierarchy Analyzer
@@ -115,6 +126,7 @@ export class CallHierarchyAnalyzer {
         functionName,
         projectFiles,
         definitionFile,
+        definitionRange,
         options.depth,
         options.targetCallSiteFilter
       );
@@ -219,17 +231,17 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
-   * 判斷跨檔案的 incoming callSite 是否真的指向 targetDefinitionFile 這個具體定義。
-   * 與 outgoing 遞迴展開共用同一套 import binding 解析（findTypeScriptImportedBinding /
-   * findBabelImportedBinding + resolveProjectImportPath），positive 驗證 callSite 的識別符
-   * 實際 import 自哪個檔案，而非只憑名稱文字相符就採信（同名但無關的另一個定義會被排除）。
+   * 判斷 incoming callSite 是否真的指向 targetDefinition 這個具體定義。
+   * - 同檔：以詞法綁定（lexical-scope-binding）／方法呼叫語意錨定，禁止 short-circuit 全收
+   * - 跨檔：與 outgoing 遞迴展開共用 import binding 解析，positive 驗證識別符實際 import 自哪個檔案
    */
   private async isCallSiteAnchoredToDefinition(
     callSite: CallSite,
     targetName: string,
     targetDefinitionFile: string,
+    targetDefinitionRange: Range,
     projectFiles: readonly string[],
-    fileAstCache: Map<string, { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null>
+    fileAstCache: FileAstCache
   ): Promise<boolean> {
     const callSiteFile = callSite.location.filePath;
 
@@ -237,6 +249,16 @@ export class CallHierarchyAnalyzer {
     if (parsed === undefined) {
       parsed = await this.parseFileForBindingResolution(callSiteFile);
       fileAstCache.set(callSiteFile, parsed);
+    }
+
+    // 同檔：必須對每個 callSite 做 binding/shadow／method 錨定
+    if (callSiteFile === targetDefinitionFile) {
+      return this.isSameFileCallSiteAnchoredToDefinition(
+        callSite,
+        targetName,
+        targetDefinitionRange,
+        parsed
+      );
     }
 
     if (parsed) {
@@ -279,6 +301,342 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
+   * 同檔 callSite 是否綁定到指定定義（range 為符號識別符位置）。
+   * 方法呼叫不會綁到 free function；free 呼叫以 nearest lexical declaration 比對定義。
+   */
+  private isSameFileCallSiteAnchoredToDefinition(
+    callSite: CallSite,
+    targetName: string,
+    targetDefinitionRange: Range,
+    parsed: { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null
+  ): boolean {
+    if (!parsed) {
+      // 無法解析時僅排除明顯的 method call 誤收；free call 維持舊行為以免誤刪
+      return !callSite.isMethodCall;
+    }
+
+    if (parsed.sourceFile) {
+      return this.isTypeScriptSameFileCallSiteAnchored(
+        parsed.sourceFile,
+        callSite,
+        targetName,
+        targetDefinitionRange
+      );
+    }
+
+    if (parsed.babelAst) {
+      return this.isBabelSameFileCallSiteAnchored(
+        parsed.babelAst,
+        callSite,
+        targetName,
+        targetDefinitionRange
+      );
+    }
+
+    return !callSite.isMethodCall;
+  }
+
+  private isTypeScriptSameFileCallSiteAnchored(
+    sourceFile: ts.SourceFile,
+    callSite: CallSite,
+    targetName: string,
+    targetDefinitionRange: Range
+  ): boolean {
+    const definitionIsMethod = this.isTypeScriptDefinitionAMethod(
+      sourceFile,
+      targetName,
+      targetDefinitionRange
+    );
+
+    if (callSite.isMethodCall) {
+      // 無 receiver 型別時，僅接受 this.method 且定義落在同一 enclosing class 的 method
+      if (!definitionIsMethod) {
+        return false;
+      }
+      return this.isTypeScriptThisMethodCallInDefiningClass(
+        sourceFile,
+        callSite,
+        targetName,
+        targetDefinitionRange
+      );
+    }
+
+    if (definitionIsMethod) {
+      // free call 不綁 class method 定義
+      return false;
+    }
+
+    const calleeIdentifier = this.findTypeScriptCallSiteCalleeIdentifier(
+      sourceFile,
+      callSite,
+      targetName
+    );
+    if (!calleeIdentifier) {
+      return false;
+    }
+
+    const nearest = findNearestLexicalDeclarationName(sourceFile, calleeIdentifier, targetName);
+    if (!nearest) {
+      return false;
+    }
+
+    return this.identifierStartsAtRange(nearest, sourceFile, targetDefinitionRange);
+  }
+
+  private isBabelSameFileCallSiteAnchored(
+    babelAst: BabelParseResult,
+    callSite: CallSite,
+    targetName: string,
+    targetDefinitionRange: Range
+  ): boolean {
+    const { line, column } = callSite.location.range.start;
+    let anchored = false;
+
+    traverse(babelAst, {
+      CallExpression: callPath => {
+        const loc = callPath.node.loc;
+        if (!loc || loc.start.line !== line || loc.start.column + 1 !== column) {
+          return;
+        }
+
+        const callee = callPath.node.callee;
+        if (callSite.isMethodCall) {
+          if (!babel.isMemberExpression(callee) || callee.computed || !babel.isIdentifier(callee.property)) {
+            callPath.stop();
+            return;
+          }
+          if (callee.property.name !== targetName) {
+            callPath.stop();
+            return;
+          }
+          // free function 定義不收 method call；method 定義僅接受 this.method 且宣告在同一 class
+          if (!babel.isThisExpression(callee.object)) {
+            callPath.stop();
+            return;
+          }
+          const classPath = callPath.findParent(parent => parent.isClassDeclaration() || parent.isClassExpression());
+          if (!classPath || !classPath.isClass()) {
+            callPath.stop();
+            return;
+          }
+          const classBody = classPath.node.body;
+          if (!babel.isClassBody(classBody)) {
+            callPath.stop();
+            return;
+          }
+          anchored = classBody.body.some(member => {
+            if (!babel.isClassMethod(member) || member.kind !== 'method') {
+              return false;
+            }
+            const key = member.key;
+            if (!babel.isIdentifier(key) || key.name !== targetName || !key.loc) {
+              return false;
+            }
+            return key.loc.start.line === targetDefinitionRange.start.line
+              && key.loc.start.column + 1 === targetDefinitionRange.start.column;
+          });
+          callPath.stop();
+          return;
+        }
+
+        if (!babel.isIdentifier(callee) || callee.name !== targetName) {
+          callPath.stop();
+          return;
+        }
+
+        const binding = callPath.scope.getBinding(targetName);
+        if (!binding) {
+          callPath.stop();
+          return;
+        }
+
+        // class method 綁定不應被 free call 命中
+        if (binding.path.isClassMethod()) {
+          callPath.stop();
+          return;
+        }
+
+        const declNameLoc = this.getBabelBindingDeclarationNameLoc(binding.path, targetName);
+        if (declNameLoc) {
+          anchored = declNameLoc.line === targetDefinitionRange.start.line
+            && declNameLoc.column + 1 === targetDefinitionRange.start.column;
+        }
+        callPath.stop();
+      }
+    });
+
+    return anchored;
+  }
+
+  private getBabelBindingDeclarationNameLoc(
+    bindingPath: import('@babel/traverse').NodePath,
+    targetName: string
+  ): { line: number; column: number } | null {
+    const node = bindingPath.node;
+    if (babel.isFunctionDeclaration(node) && node.id?.name === targetName && node.id.loc) {
+      return node.id.loc.start;
+    }
+    if (babel.isVariableDeclarator(node) && babel.isIdentifier(node.id) && node.id.name === targetName && node.id.loc) {
+      return node.id.loc.start;
+    }
+    if (babel.isClassMethod(node) && babel.isIdentifier(node.key) && node.key.name === targetName && node.key.loc) {
+      return node.key.loc.start;
+    }
+    // function / class 自身名稱（binding.path 可能指向 Identifier）
+    if (babel.isIdentifier(node) && node.name === targetName && node.loc) {
+      return node.loc.start;
+    }
+    return null;
+  }
+
+  private isTypeScriptDefinitionAMethod(
+    sourceFile: ts.SourceFile,
+    targetName: string,
+    definitionRange: Range
+  ): boolean {
+    const nameNode = this.findTypeScriptIdentifierAtRange(sourceFile, targetName, definitionRange);
+    return !!nameNode && ts.isMethodDeclaration(nameNode.parent) && nameNode.parent.name === nameNode;
+  }
+
+  private isTypeScriptThisMethodCallInDefiningClass(
+    sourceFile: ts.SourceFile,
+    callSite: CallSite,
+    targetName: string,
+    definitionRange: Range
+  ): boolean {
+    if (callSite.receiver !== 'this') {
+      return false;
+    }
+
+    const definitionName = this.findTypeScriptIdentifierAtRange(sourceFile, targetName, definitionRange);
+    if (!definitionName || !ts.isMethodDeclaration(definitionName.parent)) {
+      return false;
+    }
+
+    // 從 MethodDeclaration 本身往上找 enclosing class（parent 即可能是 ClassDeclaration）
+    let definitionClass: ts.ClassLikeDeclaration | undefined;
+    let current: ts.Node | undefined = definitionName.parent;
+    while (current) {
+      if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+        definitionClass = current;
+        break;
+      }
+      current = current.parent;
+    }
+    if (!definitionClass) {
+      return false;
+    }
+
+    const callPosition = this.getPositionFromLocation(sourceFile, callSite.location.range.start);
+    if (callPosition === null) {
+      return false;
+    }
+
+    // call 必須落在同一 class 本體內
+    return callPosition >= definitionClass.getStart(sourceFile) && callPosition < definitionClass.end;
+  }
+
+  private findTypeScriptCallSiteCalleeIdentifier(
+    sourceFile: ts.SourceFile,
+    callSite: CallSite,
+    targetName: string
+  ): ts.Identifier | undefined {
+    const callExpression = this.findTypeScriptCallOrNewAtLocation(sourceFile, callSite.location);
+    if (!callExpression) {
+      return undefined;
+    }
+
+    const expr = callExpression.expression;
+    if (ts.isIdentifier(expr) && expr.text === targetName) {
+      return expr;
+    }
+    return undefined;
+  }
+
+  private findTypeScriptCallOrNewAtLocation(
+    sourceFile: ts.SourceFile,
+    location: Location
+  ): ts.CallExpression | ts.NewExpression | undefined {
+    const position = this.getPositionFromLocation(sourceFile, location.range.start);
+    if (position === null) {
+      return undefined;
+    }
+
+    let match: ts.CallExpression | ts.NewExpression | undefined;
+    const visit = (node: ts.Node): void => {
+      if (match) {
+        return;
+      }
+      if (
+        (ts.isCallExpression(node) || ts.isNewExpression(node))
+        && node.getStart(sourceFile) === position
+      ) {
+        match = node;
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return match;
+  }
+
+  private findTypeScriptIdentifierAtRange(
+    sourceFile: ts.SourceFile,
+    name: string,
+    range: Range
+  ): ts.Identifier | undefined {
+    const position = this.getPositionFromLocation(sourceFile, range.start);
+    if (position === null) {
+      return undefined;
+    }
+
+    let match: ts.Identifier | undefined;
+    const visit = (node: ts.Node): void => {
+      if (match) {
+        return;
+      }
+      if (ts.isIdentifier(node) && node.text === name && node.getStart(sourceFile) === position) {
+        match = node;
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return match;
+  }
+
+  private getPositionFromLocation(
+    sourceFile: ts.SourceFile,
+    position: { line: number; column: number }
+  ): number | null {
+    // mock / 不完整 AST 可能只有空物件，沒有真實 SourceFile 方法
+    if (
+      typeof sourceFile.getLineStarts !== 'function' ||
+      typeof sourceFile.getPositionOfLineAndCharacter !== 'function'
+    ) {
+      return null;
+    }
+    const lineStarts = sourceFile.getLineStarts();
+    if (position.line < 1 || position.line > lineStarts.length) {
+      return null;
+    }
+    try {
+      return sourceFile.getPositionOfLineAndCharacter(position.line - 1, Math.max(0, position.column - 1));
+    } catch {
+      return null;
+    }
+  }
+
+  private identifierStartsAtRange(
+    identifier: ts.Identifier,
+    sourceFile: ts.SourceFile,
+    range: Range
+  ): boolean {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(identifier.getStart(sourceFile));
+    return line + 1 === range.start.line && character + 1 === range.start.column;
+  }
+
+  /**
    * 找出 incoming 呼叫（誰呼叫了目標函數）
    * 使用批次處理優化：按檔案分組，避免重複讀取/解析同一檔案
    */
@@ -286,20 +644,23 @@ export class CallHierarchyAnalyzer {
     functionName: string,
     projectFiles: readonly string[],
     definitionFile: string,
+    definitionRange: Range,
     depth: number,
     targetCallSiteFilter?: (callSite: CallSite) => Promise<boolean>
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
     const visited = new Set<string>();
     const anchorDecisionCache = new Map<string, boolean>();
-    const fileAstCache = new Map<string, { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null>();
+    const fileAstCache: FileAstCache = new Map();
 
     const findCallsRecursive = async (
       targetName: string,
       currentDepth: number,
-      targetDefinitionFile: string
+      targetDefinitionFile: string,
+      targetDefinitionRange: Range
     ): Promise<void> => {
-      const targetKey = `${targetDefinitionFile}:${targetName}`;
+      // 以定義位置錨定 visited，避免同檔同名不同綁定互相污染；更深層同樣用 range 區分
+      const targetKey = `${targetDefinitionFile}:${targetName}:${targetDefinitionRange.start.line}:${targetDefinitionRange.start.column}`;
       if (currentDepth > depth || visited.has(targetKey)) {
         return;
       }
@@ -308,29 +669,30 @@ export class CallHierarchyAnalyzer {
       let callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
 
       // depth 1 且帶有 `--at` 衍生的 targetCallSiteFilter 時，呼叫端已透過該 filter
-      // 精確判定 callSite 是否指向本次鎖定的定義，不需再套用下方以檔案為單位的錨定捷徑。
-      // 其餘情況（depth 1 無 `--at`，或任何遞迴層）都必須以 targetDefinitionFile 錨定，
-      // 否則會把「另一檔案裡同名但無關的本地定義」誤判為本次目標的 caller。
+      // 精確判定 callSite 是否指向本次鎖定的定義。更深層無該 filter，必須以
+      // targetDefinitionFile + range 做 binding/shadow 錨定（同檔不可 short-circuit 全收）。
       if (currentDepth === 1 && targetCallSiteFilter) {
         callSites = await this.filterCallSites(callSites, targetCallSiteFilter);
       } else {
         const anchoredCallSites: CallSite[] = [];
         for (const callSite of callSites) {
-          const callSiteFile = callSite.location.filePath;
-          if (callSiteFile === targetDefinitionFile) {
-            anchoredCallSites.push(callSite);
-            continue;
-          }
-
-          // 跨檔案呼叫點：positive 驗證其 import binding 是否實際解析到 targetDefinitionFile
-          // （見 isCallSiteAnchoredToDefinition），而非只憑名稱文字相符就採信。
-          const cacheKey = `${callSiteFile}:${targetName}:${targetDefinitionFile}`;
+          // cache 必須含 callSite 位置：同檔同名不同綁定／跨檔 shadow 後結果可能不同
+          const cacheKey = [
+            callSite.location.filePath,
+            callSite.location.range.start.line,
+            callSite.location.range.start.column,
+            targetName,
+            targetDefinitionFile,
+            targetDefinitionRange.start.line,
+            targetDefinitionRange.start.column
+          ].join(':');
           let isAnchored = anchorDecisionCache.get(cacheKey);
           if (isAnchored === undefined) {
             isAnchored = await this.isCallSiteAnchoredToDefinition(
               callSite,
               targetName,
               targetDefinitionFile,
+              targetDefinitionRange,
               projectFiles,
               fileAstCache
             );
@@ -387,13 +749,22 @@ export class CallHierarchyAnalyzer {
         }
       }
 
-      // 遞迴查找（如果深度允許）
+      // 遞迴查找：解析 caller 定義 range，更深層同樣做 binding 錨定（Q7）
       for (const caller of callersToRecurse.values()) {
-        await findCallsRecursive(caller.name, currentDepth + 1, caller.file);
+        const callerDefinition = await this.findFunctionDefinition(caller.name, [caller.file]);
+        if (!callerDefinition) {
+          continue;
+        }
+        await findCallsRecursive(
+          caller.name,
+          currentDepth + 1,
+          caller.file,
+          callerDefinition.location.range
+        );
       }
     };
 
-    await findCallsRecursive(functionName, 1, definitionFile);
+    await findCallsRecursive(functionName, 1, definitionFile, definitionRange);
     return incoming;
   }
 
@@ -562,6 +933,7 @@ export class CallHierarchyAnalyzer {
   /**
    * 解析遞迴展開的 callee。跨檔案時只接受 caller 的 import binding；
    * 沒有可確定的 import 或同檔宣告時直接不展開，避免全專案同名函式誤綁。
+   * default import 必須解析遠端 default export 本體，不得用 local 別名當 export 名查找。
    */
   private async findCalleeDefinition(
     call: OutgoingCall,
@@ -586,6 +958,10 @@ export class CallHierarchyAnalyzer {
         return null;
       }
 
+      if (importedBinding.isDefaultImport) {
+        return this.findDefaultExportFunctionDefinition(importedFile);
+      }
+
       const definition = await this.findFunctionDefinition(importedBinding.importedName, [importedFile]);
       return definition
         ? { ...definition, functionName: importedBinding.importedName }
@@ -599,6 +975,247 @@ export class CallHierarchyAnalyzer {
 
     const definition = await this.findFunctionDefinition(call.callee, [callerFile]);
     return definition ? { ...definition, functionName: call.callee } : null;
+  }
+
+  /**
+   * 解析模組檔的 default export 函式定義（具名或匿名），供 default import 的 outgoing 遞迴展開。
+   * 支援：`export default function name` / `export default function` /
+   * `export default () =>` / `export default name` / `export { name as default }`。
+   */
+  private async findDefaultExportFunctionDefinition(
+    filePath: string
+  ): Promise<ResolvedCalleeDefinition | null> {
+    const parsed = await this.parseFileForBindingResolution(filePath);
+    if (!parsed) {
+      return null;
+    }
+
+    if (parsed.sourceFile) {
+      return this.findTypeScriptDefaultExportFunctionDefinition(parsed.sourceFile, filePath);
+    }
+    if (parsed.babelAst) {
+      return this.findBabelDefaultExportFunctionDefinition(parsed.babelAst, filePath);
+    }
+    return null;
+  }
+
+  private findTypeScriptDefaultExportFunctionDefinition(
+    sourceFile: ts.SourceFile,
+    filePath: string
+  ): ResolvedCalleeDefinition | null {
+    for (const statement of sourceFile.statements) {
+      if (
+        (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
+        && this.hasDefaultModifier(statement)
+      ) {
+        // class default export 不是可展開的函式本體
+        if (ts.isClassDeclaration(statement)) {
+          return null;
+        }
+        if (!statement.body) {
+          return null;
+        }
+        if (statement.name) {
+          return this.toResolvedDefinition(filePath, statement.name.text, statement.name, sourceFile);
+        }
+        // 匿名 `export default function() {}`：以函式節點起點為 range，合成名稱供 findFunctionNode 對位
+        return this.toResolvedDefinition(filePath, ANONYMOUS_DEFAULT_EXPORT_NAME, statement, sourceFile);
+      }
+
+      if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+        const expr = statement.expression;
+        if (ts.isIdentifier(expr)) {
+          const definition = this.findLocalFunctionDefinitionByName(sourceFile, filePath, expr.text);
+          if (definition) {
+            return definition;
+          }
+          return null;
+        }
+        if (ts.isFunctionExpression(expr) || ts.isArrowFunction(expr)) {
+          if (ts.isFunctionExpression(expr) && expr.name) {
+            return this.toResolvedDefinition(filePath, expr.name.text, expr.name, sourceFile);
+          }
+          return this.toResolvedDefinition(filePath, ANONYMOUS_DEFAULT_EXPORT_NAME, expr, sourceFile);
+        }
+        return null;
+      }
+
+      if (
+        ts.isExportDeclaration(statement)
+        && !statement.moduleSpecifier
+        && statement.exportClause
+        && !ts.isNamespaceExport(statement.exportClause)
+      ) {
+        const defaultElement = statement.exportClause.elements.find(element => element.name.text === 'default');
+        if (defaultElement?.propertyName && ts.isIdentifier(defaultElement.propertyName)) {
+          return this.findLocalFunctionDefinitionByName(
+            sourceFile,
+            filePath,
+            defaultElement.propertyName.text
+          );
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private findBabelDefaultExportFunctionDefinition(
+    babelAst: BabelParseResult,
+    filePath: string
+  ): ResolvedCalleeDefinition | null {
+    for (const statement of babelAst.program.body) {
+      if (!babel.isExportDefaultDeclaration(statement)) {
+        continue;
+      }
+
+      const decl = statement.declaration;
+      if (babel.isFunctionDeclaration(decl) || babel.isFunctionExpression(decl)) {
+        if (decl.id?.loc) {
+          return {
+            functionName: decl.id.name,
+            location: {
+              filePath,
+              range: {
+                start: { line: decl.id.loc.start.line, column: decl.id.loc.start.column + 1 },
+                end: { line: decl.id.loc.end.line, column: decl.id.loc.end.column + 1 }
+              }
+            }
+          };
+        }
+        if (!decl.loc) {
+          return null;
+        }
+        return {
+          functionName: ANONYMOUS_DEFAULT_EXPORT_NAME,
+          location: {
+            filePath,
+            range: {
+              start: { line: decl.loc.start.line, column: decl.loc.start.column + 1 },
+              end: { line: decl.loc.end.line, column: decl.loc.end.column + 1 }
+            }
+          }
+        };
+      }
+
+      if (babel.isArrowFunctionExpression(decl)) {
+        if (!decl.loc) {
+          return null;
+        }
+        return {
+          functionName: ANONYMOUS_DEFAULT_EXPORT_NAME,
+          location: {
+            filePath,
+            range: {
+              start: { line: decl.loc.start.line, column: decl.loc.start.column + 1 },
+              end: { line: decl.loc.end.line, column: decl.loc.end.column + 1 }
+            }
+          }
+        };
+      }
+
+      if (babel.isIdentifier(decl) && decl.loc) {
+        // export default name — 在同檔找對應函式宣告
+        let found: ResolvedCalleeDefinition | null = null;
+        traverse(babelAst, {
+          FunctionDeclaration: path => {
+            if (path.node.id?.name === decl.name && path.node.id.loc) {
+              found = {
+                functionName: decl.name,
+                location: {
+                  filePath,
+                  range: {
+                    start: { line: path.node.id.loc.start.line, column: path.node.id.loc.start.column + 1 },
+                    end: { line: path.node.id.loc.end.line, column: path.node.id.loc.end.column + 1 }
+                  }
+                }
+              };
+              path.stop();
+            }
+          },
+          VariableDeclarator: path => {
+            if (
+              babel.isIdentifier(path.node.id)
+              && path.node.id.name === decl.name
+              && path.node.id.loc
+              && (babel.isArrowFunctionExpression(path.node.init) || babel.isFunctionExpression(path.node.init))
+            ) {
+              found = {
+                functionName: decl.name,
+                location: {
+                  filePath,
+                  range: {
+                    start: { line: path.node.id.loc.start.line, column: path.node.id.loc.start.column + 1 },
+                    end: { line: path.node.id.loc.end.line, column: path.node.id.loc.end.column + 1 }
+                  }
+                }
+              };
+              path.stop();
+            }
+          }
+        });
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  private findLocalFunctionDefinitionByName(
+    sourceFile: ts.SourceFile,
+    filePath: string,
+    name: string
+  ): ResolvedCalleeDefinition | null {
+    let result: ResolvedCalleeDefinition | null = null;
+    const visit = (node: ts.Node): void => {
+      if (result) {
+        return;
+      }
+      if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
+        result = this.toResolvedDefinition(filePath, name, node.name, sourceFile);
+        return;
+      }
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.name.text === name
+        && node.initializer
+        && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+      ) {
+        result = this.toResolvedDefinition(filePath, name, node.name, sourceFile);
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return result;
+  }
+
+  private toResolvedDefinition(
+    filePath: string,
+    functionName: string,
+    rangeNode: ts.Node,
+    sourceFile: ts.SourceFile
+  ): ResolvedCalleeDefinition {
+    const start = sourceFile.getLineAndCharacterOfPosition(rangeNode.getStart(sourceFile));
+    const end = sourceFile.getLineAndCharacterOfPosition(rangeNode.getEnd());
+    return {
+      functionName,
+      location: {
+        filePath,
+        range: {
+          start: { line: start.line + 1, column: start.character + 1 },
+          end: { line: end.line + 1, column: end.character + 1 }
+        }
+      }
+    };
+  }
+
+  private hasDefaultModifier(node: ts.Node): boolean {
+    if (!ts.canHaveModifiers(node)) {
+      return false;
+    }
+    return !!ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword);
   }
 
   private findTypeScriptImportedBinding(
@@ -620,10 +1237,12 @@ export class CallHierarchyAnalyzer {
         continue;
       }
 
-      if (importClause.name?.text === call.callee) {
+      // default import：綁定的是模組 default export，importedName 不得用 local 別名
+      if (!call.isMethodCall && importClause.name?.text === call.callee) {
         return {
-          importedName: call.callee,
-          moduleSpecifier: statement.moduleSpecifier.text
+          importedName: 'default',
+          moduleSpecifier: statement.moduleSpecifier.text,
+          isDefaultImport: true
         };
       }
 
@@ -656,6 +1275,10 @@ export class CallHierarchyAnalyzer {
     return null;
   }
 
+  /**
+   * 呼叫點上的識別符是否被更近的非 import 詞法宣告遮蔽。
+   * 委派 lexical-scope-binding（含 for/for-of/for-in initializer、catch、case block 等）。
+   */
   private isLexicallyShadowedAtCallSite(
     sourceFile: ts.SourceFile,
     call: CallBindingQuery,
@@ -665,69 +1288,37 @@ export class CallHierarchyAnalyzer {
       return false;
     }
 
-    const { line, column } = call.location.range.start;
-    const lineStarts = sourceFile.getLineStarts();
-    if (line < 1 || line > lineStarts.length) {
+    const identifier = this.findTypeScriptBindingIdentifierAtCallSite(sourceFile, call, bindingName);
+    if (!identifier) {
       return false;
     }
-    const lineStart = lineStarts[line - 1];
-    const lineEnd = line < lineStarts.length ? lineStarts[line] : sourceFile.end;
-    const position = Math.min(lineStart + Math.max(0, column - 1), lineEnd);
-    const ancestors: ts.Node[] = [];
 
-    const collectAncestors = (node: ts.Node): void => {
-      if (position < node.pos || position >= node.end) {
-        return;
-      }
-      ancestors.push(node);
-      ts.forEachChild(node, collectAncestors);
-    };
-    collectAncestors(sourceFile);
-
-    for (const ancestor of ancestors) {
-      if (ts.isSourceFile(ancestor) || ts.isBlock(ancestor) || ts.isModuleBlock(ancestor)) {
-        if (ancestor.statements.some(statement => this.declarationBindsName(statement, bindingName))) {
-          return true;
-        }
-      }
-
-      if (ts.isFunctionLike(ancestor)) {
-        if (ancestor.parameters.some(parameter => this.bindingNameMatches(parameter.name, bindingName))) {
-          return true;
-        }
-        if (ancestor.name && ts.isIdentifier(ancestor.name) && ancestor.name.text === bindingName) {
-          return true;
-        }
-      }
-
-      if (ts.isCatchClause(ancestor) && ancestor.variableDeclaration
-        && this.bindingNameMatches(ancestor.variableDeclaration.name, bindingName)) {
-        return true;
-      }
-    }
-
-    return false;
+    return identifierShadowedByLocalDeclaration(identifier, sourceFile);
   }
 
-  private declarationBindsName(statement: ts.Statement, bindingName: string): boolean {
-    if (ts.isVariableStatement(statement)) {
-      return statement.declarationList.declarations.some(declaration =>
-        this.bindingNameMatches(declaration.name, bindingName)
-      );
+  /**
+   * 在 call 位置找到要做 shadow 檢查的識別符：
+   * free call → callee；method call → receiver（namespace import 的 ns）。
+   */
+  private findTypeScriptBindingIdentifierAtCallSite(
+    sourceFile: ts.SourceFile,
+    call: CallBindingQuery,
+    bindingName: string
+  ): ts.Identifier | undefined {
+    const callExpression = this.findTypeScriptCallOrNewAtLocation(sourceFile, call.location);
+    if (!callExpression) {
+      return undefined;
     }
-    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name) {
-      return statement.name.text === bindingName;
-    }
-    return false;
-  }
 
-  private bindingNameMatches(name: ts.BindingName, bindingName: string): boolean {
-    if (ts.isIdentifier(name)) {
-      return name.text === bindingName;
+    const expr = callExpression.expression;
+    if (!call.isMethodCall) {
+      return ts.isIdentifier(expr) && expr.text === bindingName ? expr : undefined;
     }
-    return name.elements.some(element =>
-      ts.isBindingElement(element) && this.bindingNameMatches(element.name, bindingName)
-    );
+
+    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression) && expr.expression.text === bindingName) {
+      return expr.expression;
+    }
+    return undefined;
   }
 
   private findBabelImportedBinding(
@@ -744,10 +1335,11 @@ export class CallHierarchyAnalyzer {
       }
 
       for (const specifier of statement.specifiers) {
-        if (babel.isImportDefaultSpecifier(specifier) && specifier.local.name === call.callee) {
+        if (!call.isMethodCall && babel.isImportDefaultSpecifier(specifier) && specifier.local.name === call.callee) {
           return {
-            importedName: call.callee,
-            moduleSpecifier: statement.source.value
+            importedName: 'default',
+            moduleSpecifier: statement.source.value,
+            isDefaultImport: true
           };
         }
 
@@ -885,22 +1477,46 @@ export class CallHierarchyAnalyzer {
       }
     };
 
+    const isAnonymousDefaultTarget = functionName === ANONYMOUS_DEFAULT_EXPORT_NAME;
+
     traverse(babelAst, {
       FunctionDeclaration(path) {
         if (path.node.id?.name === functionName) {
           recordCandidate(path, path.node.id);
+          return;
+        }
+        // 匿名 `export default function() {}`
+        if (
+          isAnonymousDefaultTarget
+          && !path.node.id
+          && babel.isExportDefaultDeclaration(path.parent)
+        ) {
+          recordCandidate(path, path.node);
         }
       },
       ArrowFunctionExpression(path) {
         const parent = path.parent;
         if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
           recordCandidate(path, parent.id);
+          return;
+        }
+        if (isAnonymousDefaultTarget && babel.isExportDefaultDeclaration(parent)) {
+          recordCandidate(path, path.node);
         }
       },
       FunctionExpression(path) {
         const parent = path.parent;
         if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id) && parent.id.name === functionName) {
           recordCandidate(path, parent.id);
+          return;
+        }
+        if (
+          isAnonymousDefaultTarget
+          && (babel.isExportDefaultDeclaration(parent) || !path.node.id)
+        ) {
+          if (babel.isExportDefaultDeclaration(parent)) {
+            recordCandidate(path, path.node);
+          }
         }
       },
       ObjectMethod(path) {
@@ -1021,10 +1637,10 @@ export class CallHierarchyAnalyzer {
 
     const recordCandidate = (
       functionNode: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
-      declarationNode: ts.Node
+      rangeNode: ts.Node
     ): void => {
       fallback ??= functionNode;
-      if (this.nodeNameMatchesRange(declarationNode, sourceFile, range)) {
+      if (this.nodeStartsAtRange(rangeNode, sourceFile, range)) {
         exactMatch = functionNode;
       }
     };
@@ -1032,15 +1648,25 @@ export class CallHierarchyAnalyzer {
     const visit = (node: ts.Node): void => {
       if (exactMatch) {return;}
 
-      // FunctionDeclaration
-      if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-        recordCandidate(node, node);
-        return;
+      // FunctionDeclaration（具名，或匿名 default export 以 range 對位）
+      if (ts.isFunctionDeclaration(node) && node.body) {
+        if (node.name?.text === functionName) {
+          recordCandidate(node, this.getComparableNameNode(node));
+          return;
+        }
+        if (
+          functionName === ANONYMOUS_DEFAULT_EXPORT_NAME
+          && !node.name
+          && this.hasDefaultModifier(node)
+        ) {
+          recordCandidate(node, node);
+          return;
+        }
       }
 
       // MethodDeclaration
       if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === functionName) {
-        recordCandidate(node, node);
+        recordCandidate(node, this.getComparableNameNode(node));
         return;
       }
 
@@ -1048,11 +1674,27 @@ export class CallHierarchyAnalyzer {
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         if (node.name.text === functionName && node.initializer) {
           if (ts.isArrowFunction(node.initializer)) {
-            recordCandidate(node.initializer, node);
+            recordCandidate(node.initializer, node.name);
             return;
           }
           if (ts.isFunctionExpression(node.initializer)) {
-            recordCandidate(node.initializer, node);
+            recordCandidate(node.initializer, node.name);
+            return;
+          }
+        }
+      }
+
+      // `export default function() {}` / `export default () => {}` / `export default function name()`
+      if (ts.isExportAssignment(node) && !node.isExportEquals) {
+        const expr = node.expression;
+        if (ts.isFunctionExpression(expr) || ts.isArrowFunction(expr)) {
+          const rangeNode = ts.isFunctionExpression(expr) && expr.name ? expr.name : expr;
+          if (
+            functionName === ANONYMOUS_DEFAULT_EXPORT_NAME
+            || (ts.isFunctionExpression(expr) && expr.name?.text === functionName)
+            || this.nodeStartsAtRange(rangeNode, sourceFile, range)
+          ) {
+            recordCandidate(expr, rangeNode);
             return;
           }
         }
@@ -1065,10 +1707,8 @@ export class CallHierarchyAnalyzer {
     return exactMatch ?? fallback;
   }
 
-  private nodeNameMatchesRange(node: ts.Node, sourceFile: ts.SourceFile, range: Range): boolean {
-    const nameNode = this.getComparableNameNode(node);
-    const { line, character } = sourceFile.getLineAndCharacterOfPosition(nameNode.getStart(sourceFile));
-
+  private nodeStartsAtRange(node: ts.Node, sourceFile: ts.SourceFile, range: Range): boolean {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
     return line + 1 === range.start.line && character + 1 === range.start.column;
   }
 
@@ -1152,6 +1792,17 @@ export class CallHierarchyAnalyzer {
       const sourceFile = getTypeScriptSourceFile(ast);
 
       if (!sourceFile) {
+        if (hasBabelAST(ast)) {
+          return this.findEnclosingFunctionsFromBabel(ast.babelAST, ast.sourceCode, lines, filePath);
+        }
+        return results;
+      }
+
+      // mock / 不完整 AST 可能沒有真實 SourceFile 方法
+      if (
+        typeof sourceFile.getLineStarts !== 'function' ||
+        typeof sourceFile.getPositionOfLineAndCharacter !== 'function'
+      ) {
         if (hasBabelAST(ast)) {
           return this.findEnclosingFunctionsFromBabel(ast.babelAST, ast.sourceCode, lines, filePath);
         }

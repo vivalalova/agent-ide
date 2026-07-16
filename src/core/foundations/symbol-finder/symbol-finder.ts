@@ -783,11 +783,15 @@ export class SymbolFinder {
 
 /**
  * 轉換 ScopedReferenceKind 到 SymbolReferenceType。
- * Write（賦值）是使用而非定義，映射為 Usage；宣告點的 Definition 判定由 parser 引用類型
- * （mapParserReferenceTypeString）另行處理。
+ * - Definition（宣告點）→ Definition
+ * - Write（賦值）是使用而非定義 → Usage
+ * - Import → Import
+ * - Call / Read → Usage
  */
 export function scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
   switch (kind) {
+    case ScopedReferenceKind.Definition:
+      return SymbolReferenceType.Definition;
     case ScopedReferenceKind.Import:
       return SymbolReferenceType.Import;
     case ScopedReferenceKind.Write:

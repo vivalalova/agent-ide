@@ -376,18 +376,21 @@ export function parseChangeSignatureChanges(options: ChangeSignatureParseOptions
     });
   }
 
-  // 解析 --rename 參數
+  // 解析 --rename 參數（無效段 fast-fail，對齊 --change-type）
   if (options.rename) {
     const mappings = options.rename.split(',');
     for (const mapping of mappings) {
-      const [oldName, newName] = mapping.split(':').map(s => s.trim());
-      if (oldName && newName) {
-        changes.push({
-          type: SignatureChangeType.RenameParameter,
-          parameterNameOrIndex: oldName,
-          newName
-        });
+      const parts = mapping.split(':').map(s => s.trim());
+      const oldName = parts[0];
+      const newName = parts[1];
+      if (!oldName || !newName || parts.length !== 2) {
+        throw new Error(`無效的 --rename 語法: ${mapping}。格式: oldName:newName`);
       }
+      changes.push({
+        type: SignatureChangeType.RenameParameter,
+        parameterNameOrIndex: oldName,
+        newName
+      });
     }
   }
 

@@ -317,22 +317,26 @@ export class IndexEngine {
 
   /**
    * 清除已不存在的檔案索引
-   * 使用 Promise.all 批次處理，避免 N+1 問題
+   * 使用 Promise.all 批次處理，避免 N+1 問題。
+   * 每條 stale 移除走 path 寫入鎖，避免與並行 indexFile/batch 寫入交錯。
    */
   private async cleanupStaleIndexEntries(currentFiles: string[]): Promise<void> {
     // 取得所有已索引的檔案
     const allIndexedFiles = this.fileIndex.getAllFiles();
-    const currentFilesSet = new Set(currentFiles);
+    // 與 index key 同一 canonicalize（absolute + normalize），避免相對/絕對混用被誤判 stale
+    const currentFilesSet = new Set(currentFiles.map(f => this.resolvePath(f)));
 
     // 找出已索引但不在當前檔案列表中的檔案
     const staleFiles = allIndexedFiles
       .map(fileInfo => fileInfo.filePath)
       .filter(filePath => !currentFilesSet.has(filePath));
 
-    // 批次移除過期檔案（使用已優化的 removeFileSymbols）
+    // 批次移除過期檔案（經 path 寫入鎖）
     await Promise.all(staleFiles.map(async stalePath => {
-      await this.symbolIndex.removeFileSymbols(stalePath);
-      await this.fileIndex.removeFile(stalePath);
+      await this.runPathWriteExclusive(stalePath, async () => {
+        await this.symbolIndex.removeFileSymbols(stalePath);
+        await this.fileIndex.removeFile(stalePath);
+      });
     }));
   }
 
@@ -341,6 +345,10 @@ export class IndexEngine {
    * 的唯一 key 形式。若無此步驟，同一檔案以絕對路徑（如 indexDirectory 內部的 glob
    * 結果）與相對路徑（如外部呼叫 updateFile('src/a.ts')）兩種形式索引，會在底層 Map
    * 產生兩筆各自獨立的條目，remove/update 只命中其中一筆，留下另一筆 stale 資料。
+   *
+   * 不做 realpath：macOS 上 /var → /private/var 會讓 index key 與其他仍用 /var
+   * 或相對路徑的呼叫字串比對失敗，造成 rename 等命令靜默 0 changes。
+   * symlink 雙 key 列為已知限制。
    */
   private resolvePath(filePath: string): string {
     return path.isAbsolute(filePath)
@@ -354,6 +362,10 @@ export class IndexEngine {
    * 避免較慢的舊操作在較新操作之後才完成而覆蓋新結果（見 indexFileQueue 註解）。
    */
   async indexFile(filePathInput: string): Promise<void> {
+    if (this._disposed) {
+      throw new Error('索引引擎已被釋放');
+    }
+
     const filePath = this.resolvePath(filePathInput);
     const previous = this.indexFileQueue.get(filePath) ?? Promise.resolve();
     const run = previous.then(
@@ -366,7 +378,15 @@ export class IndexEngine {
     return run;
   }
 
+  private assertNotDisposed(): void {
+    if (this._disposed) {
+      throw new Error('索引引擎已被釋放');
+    }
+  }
+
   private async indexFileSerialized(filePath: string): Promise<void> {
+    this.assertNotDisposed();
+
     // 推進 generation：與 batch 路徑共用，後到的寫入可讓先前 batch 結果過期丟棄
     const generation = this.beginIndexGeneration(filePath);
     // 讀檔／parse 成功並進入寫入臨界區前為 false；僅在 false 時的失敗需清 stale
@@ -375,14 +395,17 @@ export class IndexEngine {
 
     try {
       await this.initializeConfiguredParserModules();
+      this.assertNotDisposed();
 
       const stat = await this.fileSystem.getStats(filePath);
+      this.assertNotDisposed();
 
       // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
         // 靜默跳過大檔案；若先前已有索引須清除 stale。經寫入鎖 + gen 檢查，
         // 避免與並行 batch/indexFile 交錯抹掉較新結果。
         await this.runPathWriteExclusive(filePath, async () => {
+          this.assertNotDisposed();
           if (!this.isCurrentIndexGeneration(filePath, generation)) {
             return;
           }
@@ -395,6 +418,7 @@ export class IndexEngine {
       }
 
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+      this.assertNotDisposed();
 
       // 讀檔成功後、昂貴 parse 前可先丟棄過期（優化；真正的安全閘在寫入鎖內）
       if (!this.isCurrentIndexGeneration(filePath, generation)) {
@@ -418,14 +442,22 @@ export class IndexEngine {
         }
 
         const ast = await parser.parse(content, filePath);
+        this.assertNotDisposed();
         symbols = await parser.extractSymbols(ast);
+        this.assertNotDisposed();
         dependencies = await parser.extractDependencies(ast);
+        this.assertNotDisposed();
       } catch (parseError) {
+        // dispose 中斷須原樣拋出，不得降格成 parse 錯誤後再 silent 寫回
+        if (this._disposed || (parseError instanceof Error && parseError.message === '索引引擎已被釋放')) {
+          throw new Error('索引引擎已被釋放');
+        }
         parseErrorMessage = parseError instanceof Error ? parseError.message : '未知解析錯誤';
       }
 
-      // 寫入臨界區：check gen → remove → set；過期則整段不碰索引
+      // 寫入臨界區：check disposed + gen → remove → set；已釋放或過期則整段不碰索引
       await this.runPathWriteExclusive(filePath, async () => {
+        this.assertNotDisposed();
         if (!this.isCurrentIndexGeneration(filePath, generation)) {
           return;
         }
@@ -450,11 +482,16 @@ export class IndexEngine {
       }
 
     } catch (error) {
+      // 已釋放：不得再寫入／清 stale（索引可能已 clear），直接拒絕
+      if (this._disposed || (error instanceof Error && error.message === '索引引擎已被釋放')) {
+        throw new Error('索引引擎已被釋放');
+      }
+
       // 讀檔／stat 失敗（尚未開始覆寫索引）時清除 stale：EACCES 等不得 silently
       // 保留舊符號當「索引仍有效」，否則呼叫端吞錯會把 stale 當成功。
       // 經寫入鎖 + gen 檢查，避免與並行較新 gen 交錯抹掉較新索引。
       await this.runPathWriteExclusive(filePath, async () => {
-        if (!this.isCurrentIndexGeneration(filePath, generation)) {
+        if (this._disposed || !this.isCurrentIndexGeneration(filePath, generation)) {
           return;
         }
         if (!indexWriteStarted && this.fileIndex.hasFile(filePath)) {
@@ -490,16 +527,15 @@ export class IndexEngine {
   }
 
   /**
-   * 移除檔案索引
+   * 移除檔案索引（經 path 寫入鎖，避免與並行 indexFile/batch 寫入交錯）
    */
   async removeFile(filePathInput: string): Promise<void> {
     const filePath = this.resolvePath(filePathInput);
 
-    // 從符號索引中移除
-    await this.symbolIndex.removeFileSymbols(filePath);
-
-    // 從檔案索引中移除
-    await this.fileIndex.removeFile(filePath);
+    await this.runPathWriteExclusive(filePath, async () => {
+      await this.symbolIndex.removeFileSymbols(filePath);
+      await this.fileIndex.removeFile(filePath);
+    });
   }
 
   /**
@@ -691,7 +727,9 @@ export class IndexEngine {
   }
 
   /**
-   * 釋放資源
+   * 釋放資源（同步入口）。
+   * 正規路徑請用 disposeAsync：sync dispose 僅 fire-and-forget 啟動釋放，
+   * 仍會立刻將引擎標為 disposed，後續 indexFile 會拒絕，但 clear/pool 清理是非同步的。
    */
   dispose(): void {
     this.disposeAsync().catch(() => {
@@ -699,18 +737,37 @@ export class IndexEngine {
     });
   }
 
+  /**
+   * 釋放資源（正規路徑）。
+   * 先標 disposed 擋新寫入與 in-flight 寫回；只排空 path 寫入臨界區（短），
+   * 不 await 仍在 parse 的 indexFile（避免被長操作卡住；in-flight 恢復後會 fail-fast）。
+   */
   async disposeAsync(): Promise<void> {
-    if (!this._disposed) {
-      this._disposed = true;
-      await this.clear();
-
-      await Promise.all([
-        this.parserPool
-          ? this.parserPool.destroy().catch(() => undefined)
-          : Promise.resolve(),
-        this.disposeParserModules().catch(() => undefined)
-      ]);
+    if (this._disposed) {
+      return;
     }
+    // 先標誌釋放：後續 indexFile 入口與寫入臨界區立即拒絕，in-flight 不得 silent 寫回
+    this._disposed = true;
+
+    // 排空既有 path 寫入臨界區（僅包 check gen → remove → set，應快速結束）。
+    // 不 await indexFileQueue：parse 可能仍在飛行，await 會讓 dispose 被長操作卡住；
+    // 那些 in-flight 在恢復後會於 assertNotDisposed / 寫入閘拒絕並 reject。
+    const pendingWrites = [...this.pathWriteQueue.values()];
+    await Promise.all(
+      pendingWrites.map((p) => p.then(() => undefined, () => undefined))
+    );
+    this.pathWriteQueue.clear();
+    this.indexFileQueue.clear();
+    this.indexGeneration.clear();
+
+    await this.clear();
+
+    await Promise.all([
+      this.parserPool
+        ? this.parserPool.destroy().catch(() => undefined)
+        : Promise.resolve(),
+      this.disposeParserModules().catch(() => undefined)
+    ]);
   }
 
   private async disposeParserModules(): Promise<void> {

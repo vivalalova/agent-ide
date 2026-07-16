@@ -258,6 +258,19 @@ async function handleMoveCommand(
     // 轉換為 PreviewInput
     const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
 
+    // 轉換失敗（如重疊 edits）時 dry-run / apply 皆不得當成功（對齊 executeMutationCommand）
+    if (!previewInput.success) {
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        previewInput.errors?.join(', ') ?? '生成預覽失敗',
+        { pathContext },
+        'move'
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     // 收集 rename 與 import 更新摘要，給輸出層
     const renames = changeset.fileOperations
       .filter(op => op.type === FileOperationType.Move)
