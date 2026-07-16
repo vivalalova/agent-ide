@@ -10,7 +10,7 @@ import { QueryCommand, type ImpactResult } from '@infrastructure/formatters/inde
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, outputErrorWithDetails, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /** Impact 命令選項 */
@@ -111,7 +111,7 @@ async function handleImpactCommand(
 
   try {
     // 讀取 tsconfig 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
-    const tsconfigPathConfig = await loadTsconfigPathConfig(analyzePath, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(analyzePath, context.fileSystem);
 
     // 初始化影響分析器（傳入 paths + baseUrl）
     const impactAnalyzer = new ImpactAnalyzer(context.fileSystem, {

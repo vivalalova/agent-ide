@@ -21,7 +21,7 @@ import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
 import { isImportedSymbol } from '@shared/types/symbol.js';
 import { normalizePath } from '@interfaces/cli/commands/module-file-resolver.js';
@@ -248,7 +248,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找），與 move / impact /
     // change-signature 同一把尺，供跨 path alias（缺陷 C3）與多層 barrel re-export（缺陷 C4）的
     // consumer 錨定使用。無 tsconfig 時為空設定、不影響相對路徑行為。
-    const tsconfigPathConfig = await loadTsconfigPathConfig(workspacePath, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(workspacePath, context.fileSystem);
 
     // 無條件注入 ParserRegistry：讓所有符號（含非 function-local 的頂層 const/function/class）
     // 的引用查找都走 AST 感知路徑（SymbolFinder → Language Service），而非降級為 `\bname\b`

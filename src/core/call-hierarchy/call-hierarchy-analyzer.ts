@@ -15,7 +15,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
 import { createFileUtils, FileUtils } from '@core/foundations/index.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
 import { getImportResolutionExtensions, hasRuntimeImportExtensionCandidates } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
@@ -818,7 +818,7 @@ export class CallHierarchyAnalyzer {
     } else if (moduleSpecifier.startsWith('.')) {
       basePath = path.resolve(path.dirname(fromFile), moduleSpecifier);
     } else {
-      const tsconfig = await loadTsconfigPathConfig(path.dirname(fromFile), this.fileSystem);
+      const tsconfig = await loadTsconfigPathConfigOrWarn(path.dirname(fromFile), this.fileSystem);
       const aliasPath = await resolveBarePathAliasAsync(
         moduleSpecifier,
         tsconfig.pathAliases,

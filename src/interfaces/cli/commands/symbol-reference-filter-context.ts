@@ -5,7 +5,7 @@
 
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol } from '@shared/types/symbol.js';
 import type {
   SymbolLocationTarget,
@@ -20,7 +20,7 @@ export async function createSymbolReferenceFilterContext(
   fileSystem: IFileSystem
 ): Promise<SymbolReferenceFilterContext> {
   const selectedOwnerName = await getSelectedOwnerName(selectedSymbol, fileSystem);
-  const moduleResolution = await loadTsconfigPathConfig(projectPath, fileSystem);
+  const moduleResolution = await loadTsconfigPathConfigOrWarn(projectPath, fileSystem);
   return {
     selectedSymbol,
     ...(selectedOwnerName ? { selectedOwnerName } : {}),

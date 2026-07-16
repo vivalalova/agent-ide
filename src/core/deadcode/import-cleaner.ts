@@ -12,7 +12,7 @@ import {
   withLegacyPathAliasWildcards,
   type PathAliasInput
 } from '@shared/path-alias-resolver.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import {
   createSymbolFinder,
   SymbolReferenceType,
@@ -75,7 +75,7 @@ export class ImportCleaner {
       : new Set<string>(removalFiles);
     const configProbePath = removalFiles[0] ?? projectFiles?.[0];
     const discoveredConfig = configProbePath
-      ? await loadTsconfigPathConfig(path.dirname(configProbePath), this.fileSystem)
+      ? await loadTsconfigPathConfigOrWarn(path.dirname(configProbePath), this.fileSystem)
       : { pathAliases: {}, baseUrl: undefined };
     const pathAliases = Object.keys(this.pathAliases).length > 0
       ? this.pathAliases

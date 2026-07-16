@@ -30,7 +30,7 @@ import {
   ParserCapabilityName,
   getUnsupportedParserCapabilityMessage
 } from '@interfaces/cli/parser-capability-guard.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 
 /** Change Signature 命令選項 */
 interface ChangeSignatureOptions {
@@ -159,7 +159,7 @@ async function handleChangeSignatureCommand(
     }
 
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 讓引擎解析任意別名 import
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立引擎
     const changeSignatureEngine = new ChangeSignatureEngine(

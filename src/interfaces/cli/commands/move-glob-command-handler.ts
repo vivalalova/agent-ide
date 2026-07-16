@@ -16,7 +16,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
@@ -105,7 +105,7 @@ export async function handleGlobMoveCommand(
     }
 
     // 讀取 tsconfig 設定
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立移動服務
     const moveService = new MoveEngine(context.fileSystem, {

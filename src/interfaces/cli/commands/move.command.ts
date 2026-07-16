@@ -33,7 +33,7 @@ import {
 import { handleGlobMoveCommand } from '@interfaces/cli/commands/move-glob-command-handler.js';
 import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import {
   ParserCapabilityName,
@@ -204,7 +204,7 @@ async function handleMoveCommand(
     }
 
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立移動服務
     const moveService = new MoveEngine(context.fileSystem, {
@@ -509,7 +509,7 @@ async function handleMoveMemberCommand(
     }
 
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 解析任意別名
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立引擎
     const moveMemberEngine = new MoveMemberEngine(

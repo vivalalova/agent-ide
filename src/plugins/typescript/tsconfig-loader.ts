@@ -363,7 +363,11 @@ export async function loadTsconfigPathConfig(
     if (isMissingTsconfigFileError(error)) {
       return empty;
     }
-    // 檔案存在但內容非法或 extends 循環：必須可觀測（throw），不得 silent empty 與「無 tsconfig」不可區分
+    // 檔案存在但內容非法（JSON 語法錯誤／結構損壞）或 extends 循環：必須可觀測
+    // （throw），不得 silent empty 與「無 tsconfig」不可區分（見 F26 regression：
+    // rename/impact 等命令會誤判為零 alias，漏掉所有透過該 alias 匯入的消費端）。
+    // 呼叫端若要在「壞掉但存在」時優雅降級繼續執行，改呼叫本檔匯出的
+    // loadTsconfigPathConfigOrWarn，不得在此處吞掉——確保這裡永遠可觀測。
     if (error instanceof CircularTsconfigExtendsError || error instanceof InvalidTsconfigError) {
       throw error;
     }
@@ -382,6 +386,37 @@ function isMissingTsconfigFileError(error: unknown): boolean {
   }
   // FileNotFoundError / 常見 mock 訊息：`File not found: <path>`
   return /^File not found:/i.test(error.message);
+}
+
+/**
+ * loadTsconfigPathConfig 的優雅降級版本，供唯讀／變更類 CLI 命令使用
+ * （move/impact/rename/cycles/change-signature/deadcode 皆直接呼叫、無自己的
+ * try/catch）：tsconfig.json 存在但 JSON 語法錯誤／結構損壞時，僅 warn 並回空
+ * pathAliases 繼續執行，不中斷整條 CLI 指令（見既有 regression：
+ * cli-move-tsconfig-lookup.e2e.test.ts／cli-impact-tsconfig-lookup.e2e.test.ts
+ * 的「tsconfig.json 解析錯誤時應該優雅降級」）。
+ *
+ * extends 循環（CircularTsconfigExtendsError）刻意不在此吞掉、原樣拋出：
+ * 循環代表設定本身邏輯矛盾，非「壞掉但仍可忽略」的單純解析錯誤。
+ *
+ * loadTsconfigPathConfig 本身維持 fast-fail（見 F26 regression：raw loader
+ * 必須可觀測，禁止 silent empty 與「無 tsconfig」不可區分）；本函式是唯一
+ * 允許在 InvalidTsconfigError 上優雅降級的地方，呼叫端一律引用此處、禁止
+ * 各自重複 try/catch（Single Source of Truth）。
+ */
+export async function loadTsconfigPathConfigOrWarn(
+  projectRoot: string,
+  fileSystem: IFileSystem
+): Promise<TsconfigPathConfig> {
+  try {
+    return await loadTsconfigPathConfig(projectRoot, fileSystem);
+  } catch (error) {
+    if (error instanceof InvalidTsconfigError) {
+      logger.warn('tsconfig-loader', `Ignoring invalid tsconfig.json path aliases: ${error.message}`);
+      return { pathAliases: createStructuredPathAliasMap([]) };
+    }
+    throw error;
+  }
 }
 
 /**

@@ -37,8 +37,14 @@ export function computeMaskedLines(content: string): string[] {
       continue;
     }
 
-    // 引號／反引號分隔符一律保留，供路徑偵測正則命中
-    if (ch === '\'' || ch === '"' || ch === '`') {
+    // 引號／反引號分隔符保留，供路徑偵測正則命中——僅限真正字串字面值的界定符。
+    // 註解（kind === 'comment'）內文字長得像引號的字元（如行尾假呼叫註解
+    // `// require('./fake.js')`）不得比照辦理：若一併保留，這些假引號會在
+    // import-resolver 的 callPattern 正則裡被誤認成真正字串的開/收界定符，
+    // 卡住正則往後方真正 specifier 的匹配（見 P2-1 regression：多行 require()/
+    // 動態 import() 呼叫的起始行行尾若有含假呼叫的註解，真正 specifier 完全
+    // 沒被更新，因為遮罩後的假引號讓 isCompleteCallStatement 永遠對不上）。
+    if (kind === 'string' && (ch === '\'' || ch === '"' || ch === '`')) {
       masked += ch;
       continue;
     }
