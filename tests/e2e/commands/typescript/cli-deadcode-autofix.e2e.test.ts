@@ -210,7 +210,9 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.files?.length ?? 0).toBe(0);
       expect(output.previewOnly).toBe(false);
-      expect(output.applied).toBe(true);
+      // M9（audit-fix-m9-deadcode-apply-zero）：零 removals 時 applied 不得綁死 willApply，
+      // 實際未寫入任何變更 → applied 應為 false；mode 仍保留 'apply' 表示這是 apply 模式的執行
+      expect(output.applied).toBe(false);
       expect(output.mode).toBe('apply');
     });
   });
@@ -283,7 +285,8 @@ describe('CLI deadcode - 基於 deadcode-autofix fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.files?.length ?? 0).toBe(0);
       expect(output.previewOnly).toBe(false);
-      expect(output.applied).toBe(true);
+      // M9（audit-fix-m9-deadcode-apply-zero）：同上，零 removals 時 applied 應為 false
+      expect(output.applied).toBe(false);
       expect(output.mode).toBe('apply');
     });
   });

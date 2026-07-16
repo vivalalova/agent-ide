@@ -4,7 +4,7 @@
  */
 
 import type { Symbol } from '@shared/types/symbol.js';
-import { SymbolType } from '@shared/types/symbol.js';
+import { SymbolType, isImportedSymbol } from '@shared/types/symbol.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index.js';
 import {
@@ -310,6 +310,18 @@ export class DeadCodeDetector {
   private shouldExclude(symbol: Symbol): boolean {
     // 排除建構子
     if (symbol.name === 'constructor') {
+      return true;
+    }
+
+    // 排除 import specifier 的 local binding（named/default/namespace 皆同）：
+    // 這類符號是否「有使用」屬於 ImportCleaner 的職責（它會協調跨 consumer 檔案的
+    // 清理、避免重複刪除）。若讓本檢測器把它當獨立的 Variable 也一併判定為 dead，
+    // 會與 ImportCleaner 對同一段 import 陳述式各自產生一次刪除 TextEdit，兩者範圍
+    // 不同（一個含結尾換行、一個不含）而互相重疊、apply 階段 fast-fail。named/default
+    // import 因 local 名稱恰與來源檔的 export 宣告同名，尋找引用時會意外命中該宣告
+    // 位置而被判定「有使用」，僥倖沒觸發此重疊；namespace import 的 local 別名
+    // （`* as ns`）不會與任何宣告同名，因此才會在此暴露（J1c regression）。
+    if (isImportedSymbol(symbol)) {
       return true;
     }
 

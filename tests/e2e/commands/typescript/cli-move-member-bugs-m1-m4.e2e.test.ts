@@ -142,6 +142,8 @@ export function bar() {
     const sourceContent = await fixture.memfs.readFile(fixture.getFilePath('src/a.ts'), 'utf-8') as string;
     // bar 仍呼叫 foo，來源檔應有從 b 匯入 foo 的 import，讓 bar 能解析 foo
     expect(sourceContent).toContain('bar');
-    expect(sourceContent).toMatch(/import\s*\{[^}]*foo[^}]*\}\s*from\s*['"].*b['"]/);
+    // import specifier 是相對路徑且保留副檔名（如 './b.js'），regex 需容許 './b' 之後
+    // 接副檔名，而非要求 'b' 緊貼結尾引號（否則永遠比對不到含副檔名的合法輸出）
+    expect(sourceContent).toMatch(/import\s*\{[^}]*foo[^}]*\}\s*from\s*['"]\.\/b(?:\.\w+)?['"]/);
   });
 });

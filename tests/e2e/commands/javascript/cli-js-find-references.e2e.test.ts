@@ -124,7 +124,7 @@ describe('CLI find-references - JavaScript 專案', () => {
       expect(referenceFiles.some((file: string) => file.includes('js-use-right.js'))).toBe(false);
     });
 
-    it('同名 JS 定義沒有 --at 時應回傳所有候選 identity', async () => {
+    it('同名 JS 定義沒有 --at 時應 fail-fast，不得 silently merge（F6，與 TS 對齊）', async () => {
       await fixture.writeFile('src/js-identity-a.js', 'export const duplicateJsIdentity = "a";');
       await fixture.writeFile('src/js-identity-b.js', 'export const duplicateJsIdentity = "b";');
       await fixture.writeFile(
@@ -137,17 +137,11 @@ describe('CLI find-references - JavaScript 專案', () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.symbols).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'duplicateJsIdentity', file: expect.stringContaining('js-identity-a.js') }),
-          expect.objectContaining({ name: 'duplicateJsIdentity', file: expect.stringContaining('js-identity-b.js') })
-        ])
-      );
-      expect(
-        output.symbols.some((symbol: { file: string }) => symbol.file.includes('js-identity-use.js'))
-      ).toBe(false);
+      // F6：與 TS 側（cli-find-references.e2e.test.ts）及 rename / call-hierarchy 對齊，
+      // 多定義無 --at → fail-fast，不得 exit 0 silently 合併回傳全部 identity
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
     });
 
     it('應該用 --at 鎖定同名 JS 類別方法的引用', async () => {

@@ -330,27 +330,31 @@ export function getPair(): StringPair {
 
   describe('--at 過濾器不應丟棄前向引用（非提升宣告的真引用）regression', () => {
     it('const 定義在後：--at 鎖定 const 定義時，定義前的真實引用不應被丟棄', async () => {
+      // 符號名故意取 fixture 全域唯一名稱（非 'config'）：sample-project 本身在
+      // src/index.ts、src/quality-test/type-safety-issues.ts 已各自宣告一個
+      // 同名 const config，撞名會觸發 F6 fail-fast（找到多個同名符號），baseline
+      // 步驟根本跑不到本測試真正要驗的前向引用邏輯。
       await fixture.writeFile('src/forward-ref-const.ts', [
         'export function useLater() {',
-        '  return config.value;',
+        '  return forwardRefConfig.value;',
         '}',
-        'export const config = { value: 42 };'
+        'export const forwardRefConfig = { value: 42 };'
       ].join('\n'));
 
-      // 不帶 --at：驗證 baseline 應含 line 2（config.value 的使用）與 line 4（定義）
+      // 不帶 --at：驗證 baseline 應含 line 2（forwardRefConfig.value 的使用）與 line 4（定義）
       const baseline = await executeCLI(
-        ['find-references', 'config', '--path', fixture.rootPath, '--format', 'json'],
+        ['find-references', 'forwardRefConfig', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
       const baselineOutput: any = JSON.parse(baseline.stdout);
       expect(baselineOutput.references.some((r: any) => r.line === 2)).toBe(true);
       expect(baselineOutput.references.some((r: any) => r.line === 4)).toBe(true);
 
-      // 帶 --at 鎖定 config 的定義位置（line 4, column 14，取自 baseline 的 definition）
+      // 帶 --at 鎖定 forwardRefConfig 的定義位置（line 4, column 14，取自 baseline 的 definition）
       const result = await executeCLI(
         [
           'find-references',
-          'config',
+          'forwardRefConfig',
           '--path',
           fixture.rootPath,
           '--at',

@@ -190,7 +190,7 @@ describe('CLI call-hierarchy - JavaScript 專案', () => {
       expect(callers).not.toContain('jsRightRunCaller');
     });
 
-    it('同名 JS 函數沒有 --at 時應回傳所有候選 identity', async () => {
+    it('同名 JS 函數沒有 --at 時應 fail-fast，不得 silently merge（F6，與 TS 對齊）', async () => {
       await fixture.writeFile('src/js-symbol-a.js', 'export function duplicateJsSymbol() {}');
       await fixture.writeFile('src/js-symbol-b.js', 'export function duplicateJsSymbol() {}');
 
@@ -199,14 +199,11 @@ describe('CLI call-hierarchy - JavaScript 專案', () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.symbols).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'duplicateJsSymbol', file: expect.stringContaining('js-symbol-a.js') }),
-          expect.objectContaining({ name: 'duplicateJsSymbol', file: expect.stringContaining('js-symbol-b.js') })
-        ])
-      );
+      // F6：與 TS 側（cli-call-hierarchy.e2e.test.ts）及 rename / find-references 對齊，
+      // 多定義無 --at → fail-fast，不得 exit 0 silently 合併回傳全部 identity
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
     });
 
     it('應該用 --at 鎖定同名 JS 函數的 incoming 呼叫者', async () => {
