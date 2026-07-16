@@ -112,7 +112,19 @@ export class IndexBatchParser {
       const batch = resolvedFiles.slice(i, i + batchSize);
 
       // 1. 準備解析任務（主執行緒讀取檔案；同時取得 generation）
-      const taskMap = await this.prepareParseTasks(batch, config);
+      // 讀檔失敗進 prepareErrors，與單執行緒路徑一樣會進 batch errors[] → ANALYSIS_DEGRADED
+      const { taskMap, prepareErrors } = await this.prepareParseTasks(batch, config);
+      for (const { filePath, message } of prepareErrors) {
+        errors.push(`${filePath}: ${message}`);
+        processedFiles++;
+        progressCallback({
+          totalFiles,
+          processedFiles,
+          currentFile: filePath,
+          percentage: calculateProgress(processedFiles, totalFiles),
+          errors: [...errors]
+        });
+      }
 
       // 2. Worker Pool 並行解析（CPU 密集操作在 worker 執行緒）
       const tasks = Array.from(taskMap.values()).map(t => t.task);
@@ -133,6 +145,11 @@ export class IndexBatchParser {
             prepared.content,
             prepared.generation
           );
+          // parse 失敗已寫入 fileIndex.parseErrors；仍須上報 errors[] 觸發 ANALYSIS_DEGRADED
+          // （與單執行緒 indexFile 拋錯後被 catch 推進 errors 對齊）
+          if (result.errors.length > 0) {
+            errors.push(`${result.filePath}: ${result.errors.join('; ')}`);
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '未知錯誤';
           errors.push(`${result.filePath}: ${errorMessage}`);
@@ -157,20 +174,25 @@ export class IndexBatchParser {
   /**
    * 準備解析任務
    * 在主執行緒讀取檔案內容和 stat，傳給 worker 解析
-   * 回傳 Map 以 filePath 為 key，確保與 parseResults 正確對應
+   * 回傳 Map 以 filePath 為 key，確保與 parseResults 正確對應；
+   * 讀檔失敗另收集於 prepareErrors，供 batch errors[] / ANALYSIS_DEGRADED 使用
    */
-  private async prepareParseTasks(files: string[], config: IndexConfig): Promise<Map<string, {
-    task: ParseTask;
-    fileInfo: FileInfo;
-    content: string;
-    generation: number;
-  }>> {
+  private async prepareParseTasks(files: string[], config: IndexConfig): Promise<{
+    taskMap: Map<string, {
+      task: ParseTask;
+      fileInfo: FileInfo;
+      content: string;
+      generation: number;
+    }>;
+    prepareErrors: Array<{ filePath: string; message: string }>;
+  }> {
     const taskMap = new Map<string, {
       task: ParseTask;
       fileInfo: FileInfo;
       content: string;
       generation: number;
     }>();
+    const prepareErrors: Array<{ filePath: string; message: string }> = [];
 
     await Promise.all(files.map(async (filePath) => {
       // 在讀取前推進 generation，讓並行 indexFile 能讓本次 batch 結果過期
@@ -225,11 +247,14 @@ export class IndexBatchParser {
       } catch (error) {
         // 讀檔失敗（EACCES 等）：若先前已有索引，清除 stale，不得 silently 保留舊符號
         await clearStaleIfCurrent();
-        diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${errorMessage}`, filePath);
+        // 與單執行緒路徑對齊：讀檔失敗進 errors[]，讓 ANALYSIS_DEGRADED 能觸發
+        prepareErrors.push({ filePath, message: errorMessage });
       }
     }));
 
-    return taskMap;
+    return { taskMap, prepareErrors };
   }
 
   /**

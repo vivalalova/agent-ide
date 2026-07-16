@@ -84,6 +84,13 @@ export async function createAndIndexWithCache(
     const hydrated = diskCache.hydrateEngine(indexEngine, cached);
     if (hydrated) {
       logger.verbose('cache', 'Cache HIT — hydrating index');
+      // 失敗狀態不得當永久 hit 阻重試：hydrate 後對 parseErrors 且未成功索引的檔重 parse
+      const reparsed = await reparseFailedHydratedFiles(indexEngine);
+      if (reparsed > 0) {
+        // 重 parse 有推進（成功或仍失敗都會更新 entry）；以同一 key 回寫避免 sticky 舊 snapshot
+        await diskCache.save(indexEngine, currentKey);
+        logger.verbose('cache', `Re-parsed ${reparsed} previously-failed file(s) after cache hit`);
+      }
       return indexEngine;
     }
     // hydrate 失敗 → fallthrough 重新 index
@@ -111,4 +118,29 @@ export async function createAndIndexWithCache(
   logger.verbose('cache', 'Cache saved');
 
   return indexEngine;
+}
+
+/**
+ * cache hit hydrate 後，對「有 parseErrors 且 isIndexed false」的檔重新 indexFile。
+ * 避免把完全未成功索引的失敗狀態當永久成功 hit，阻塞之後的重試。
+ * @returns 嘗試重 parse 的檔案數
+ */
+async function reparseFailedHydratedFiles(indexEngine: IndexEngine): Promise<number> {
+  const { fileEntries } = indexEngine.snapshot();
+  const failedPaths: string[] = [];
+  for (const [filePath, entry] of fileEntries) {
+    if (!entry.isIndexed && entry.parseErrors.length > 0) {
+      failedPaths.push(filePath);
+    }
+  }
+
+  for (const filePath of failedPaths) {
+    try {
+      await indexEngine.indexFile(filePath);
+    } catch {
+      // 仍失敗則保留失敗狀態，下次 hit 會再試；不得讓單檔阻斷其餘
+    }
+  }
+
+  return failedPaths.length;
 }

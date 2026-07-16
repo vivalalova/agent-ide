@@ -77,15 +77,7 @@ export class FileChangePreparer {
     }
 
     const lines = content.split('\n');
-    const startLine = member.location.range.start.line - 1;
-    const endLine = member.location.range.end.line - 1;
-
-    // 移除成員（包含前面的文件註解）
-    let removeStartLine = startLine;
-    if (member.documentation) {
-      const docLines = member.documentation.split('\n').length;
-      removeStartLine = Math.max(0, startLine - docLines);
-    }
+    const { start: removeStartLine, end: endLine } = this.getMemberRemovalLineRange(member);
 
     // 處理 re-export
     let reexportStatement = '';
@@ -177,8 +169,14 @@ export class FileChangePreparer {
     let insertLine = target.insertPosition ?? -1;
 
     if (target.type === MoveTargetType.ExistingClass && target.className) {
-      // 插入到類別內
+      // 插入到類別內（位置已在 content 座標系上計算）
       insertLine = await this.findClassInsertPosition(content, target.className);
+    } else if (sameFileOverride && insertLine >= 0) {
+      // 同檔：CLI/呼叫端的 insertPosition 是磁碟原文座標（1-based 行號；
+      // 0 = 檔案開頭），但 content 已是 post-removal。必須 remap 到
+      // post-removal 的 0-based slice 索引，否則會插到錯位（M1）。
+      const removal = this.getMemberRemovalLineRange(member);
+      insertLine = this.remapSameFileInsertLine(insertLine, removal.start, removal.end);
     }
 
     if (insertLine < 0) {
@@ -214,12 +212,60 @@ export class FileChangePreparer {
       finalCode = this.ensureTrailingNewline(newLines.join('\n'));
     }
 
+    // originalCode 必須是磁碟原文：buildChangeset 用它算整檔 range，
+    // applyTextEdits 對磁碟全文算 offset。同檔時 content 是 post-removal，
+    // 若當 originalCode 會使 range 短於磁碟、尾段殘留（C1）。
+    // newCode 仍是 post-removal + insert 的完整結果。
     return {
       filePath: target.filePath,
-      originalCode: content,
+      originalCode: diskContent ?? content,
       newCode: finalCode,
       isNewFile: false
     };
+  }
+
+  /**
+   * 成員在來源檔中要移除的行區間（0-based inclusive），含前方 documentation。
+   * prepareSourceFileChange 與同檔 insertPosition remap 共用，避免兩處算法漂移。
+   */
+  private getMemberRemovalLineRange(member: MemberDefinition): { start: number; end: number } {
+    const startLine = member.location.range.start.line - 1;
+    const endLine = member.location.range.end.line - 1;
+    let removeStartLine = startLine;
+    if (member.documentation) {
+      const docLines = member.documentation.split('\n').length;
+      removeStartLine = Math.max(0, startLine - docLines);
+    }
+    return { start: removeStartLine, end: endLine };
+  }
+
+  /**
+   * 同檔 move：把 insertPosition（磁碟座標）轉成 post-removal 上的 0-based slice 索引。
+   *
+   * 座標慣例（與 types.MoveTarget.insertPosition / CLI path:line 對齊）：
+   * - 0 = 檔案開頭
+   * - 正整數 = 1-based 磁碟行號（插在該行之前）
+   * - 內部 slice 使用 0-based 索引
+   *
+   * 相對刪除區間：
+   * - 刪除區之前：不變
+   * - 刪除區之內：夾到刪除起點
+   * - 刪除區之後：減去刪除行數
+   */
+  private remapSameFileInsertLine(
+    insertPosition: number,
+    removeStart0: number,
+    removeEnd0: number
+  ): number {
+    const diskIndex0 = insertPosition === 0 ? 0 : insertPosition - 1;
+
+    if (diskIndex0 <= removeStart0) {
+      return diskIndex0;
+    }
+    if (diskIndex0 <= removeEnd0) {
+      return removeStart0;
+    }
+    return diskIndex0 - (removeEnd0 - removeStart0 + 1);
   }
 
   /**

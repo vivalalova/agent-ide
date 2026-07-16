@@ -276,7 +276,6 @@ describe('F18：batch vs indexFile 佇列 / generation', () => {
     const symbolIndex = new SymbolIndex();
     const registry = ParserRegistry.getInstance();
 
-    let generation = 0;
     const gens = new Map<string, number>();
     const pathWriteQueue = new Map<string, Promise<unknown>>();
 
@@ -285,7 +284,6 @@ describe('F18：batch vs indexFile 佇列 / generation', () => {
       beginGeneration: (p) => {
         const next = (gens.get(p) ?? 0) + 1;
         gens.set(p, next);
-        generation = next;
         return next;
       },
       isCurrentGeneration: (p, gen) => gens.get(p) === gen,
@@ -440,7 +438,9 @@ describe('F18：batch vs indexFile 佇列 / generation', () => {
       createLocation(filePath, freshRange)
     );
     await priv.runPathWriteExclusive(filePath, async () => {
-      if (!priv.isCurrentIndexGeneration(filePath, freshGen)) return;
+      if (!priv.isCurrentIndexGeneration(filePath, freshGen)) {
+        return;
+      }
       await priv.fileIndex.addFile(freshInfo);
       await priv.symbolIndex.removeFileSymbols(filePath);
       await priv.fileIndex.setFileSymbols(filePath, [freshSymbol]);

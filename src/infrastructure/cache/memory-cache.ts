@@ -128,14 +128,15 @@ export class MemoryCache<K, V> {
     const expiresAt = ttl > 0 ? now + ttl : undefined;
     const size = this.calculateSize(value);
 
+    // 單筆大小已超過 maxMemory 預算：拒絕儲存（fail-fast，不截斷不降級）
+    // 必須在刪舊 key 之前檢查，否則拒寫時會把仍可用的舊值一併清掉
+    if (size > this.options.maxMemory) {
+      return;
+    }
+
     // 如果已存在，先刪除（這樣可以更新 LRU 順序，同時釋放其佔用的記憶體額度）
     if (this.cache.has(key)) {
       this.delete(key);
-    }
-
-    // 單筆大小已超過 maxMemory 預算：拒絕儲存（fail-fast，不截斷不降級）
-    if (size > this.options.maxMemory) {
-      return;
     }
 
     // 檢查是否需要因筆數超限而淘汰

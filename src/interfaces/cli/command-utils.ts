@@ -249,9 +249,10 @@ export function outputMutationWithLegacyFields(
  * 流程：
  * 1. 檢查 changeset.success
  * 2. 轉換為 PreviewInput
- * 3. dry-run 時僅輸出預覽
- * 4. 實際執行時應用變更（atomic + rollbackOnError）
- * 5. 輸出結果
+ * 3. 檢查 previewInput.success（轉換失敗不得當成功）
+ * 4. dry-run 時僅輸出預覽
+ * 5. 實際執行時應用變更（atomic + rollbackOnError）
+ * 6. 輸出結果
  *
  * @param changeset - 生成的 Changeset
  * @param options - 執行選項
@@ -295,20 +296,32 @@ export async function executeMutationCommand(
   // 2. 轉換為 PreviewInput
   const previewInput = await convertChangesetToPreviewInput(changeset, fileSystem);
 
-  // 3. Dry-run 模式只輸出預覽
+  // 3. 轉換失敗（如重疊 edits）時 dry-run / apply 皆不得當成功
+  if (!previewInput.success) {
+    const message = previewInput.errors?.join(', ') ?? '生成預覽失敗';
+    if (errorFields) {
+      outputErrorWithDetails(outputHandler, format, message, errorFields, commandName);
+    } else {
+      outputHandler.outputError(message, format, commandName);
+    }
+    process.exitCode = 1;
+    return { success: false, previewInput };
+  }
+
+  // 4. Dry-run 模式只輸出預覽
   if (dryRun) {
     outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
     return { success: true, previewInput };
   }
 
-  // 4. 執行變更（帶回滾）
+  // 5. 執行變更（帶回滾）
   const applicator = new ChangeApplicator(fileSystem);
   const result = await applicator.apply(changeset, {
     atomic: true,
     rollbackOnError: true
   });
 
-  // 5. 輸出結果
+  // 6. 輸出結果
   if (result.success) {
     outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
     onSuccess?.(previewInput);

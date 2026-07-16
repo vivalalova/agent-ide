@@ -3,7 +3,8 @@
  *
  * 索引與 SymbolFinder 都以「名稱」比對引用，因此當模組的 default export 宣告名稱
  * 與 consumer 的 default import 本地名稱不同時，import 與後續使用點會漏抓。本模組
- * 僅在 find-references 的 --at 錨定查詢層補上這類引用，不放寬 rename 共用 binding 判斷。
+ * 由 find-references 在能解析 default export 宣告名時補上這類引用（含無 --at），
+ * 不放寬 rename 共用 binding 判斷。
  */
 
 import * as ts from 'typescript';

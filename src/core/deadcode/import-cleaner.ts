@@ -113,8 +113,10 @@ export class ImportCleaner {
 
         for (const symbol of stmt.symbols) {
           // 符號是否在被刪除的列表中，且刪除後不再使用
+          // usage 必須用 local binding（alias ?? name）查：`import { foo as bar }` 檔內只會出現 bar
           if (removedSymbols.has(symbol.name)) {
-            const stillUsed = await this.isImportStillUsed(filePath, symbol.name, fileRemovals);
+            const localBinding = symbol.alias ?? symbol.name;
+            const stillUsed = await this.isImportStillUsed(filePath, localBinding, fileRemovals);
             if (!stillUsed) {
               unusedSymbols.push(symbol.name);
             } else {
@@ -335,14 +337,15 @@ export class ImportCleaner {
   /**
    * 檢查 import 是否仍被使用
    * 使用快取的引用結果進行語義分析，避免重複查詢
+   * @param localBindingName 檔內實際 binding 名（alias ?? 匯出名），不可只用匯出名
    */
   private async isImportStillUsed(
     filePath: string,
-    symbolName: string,
+    localBindingName: string,
     removalsInFile: readonly RemovalOperation[]
   ): Promise<boolean> {
     // 使用快取查詢引用，避免 N+1 問題
-    const references = await this.findReferencesWithCache(filePath, symbolName);
+    const references = await this.findReferencesWithCache(filePath, localBindingName);
 
     // 過濾掉 import 類型的引用（import 語句本身）
     const usageRefs = references.filter(ref => ref.type === SymbolReferenceType.Usage);
@@ -359,20 +362,26 @@ export class ImportCleaner {
   }
 
   /**
-   * 使用共用快取查詢符號引用
-   * 確保每個 (filePath, symbolName) 組合只查詢一次
+   * 使用共用快取查詢符號引用（local binding 名）
+   * 走作用域感知查找：以名稱比對檔內 import binding / 使用點，才能看到
+   * `import { foo as bar }` 的 local alias；純 findReferencesInFile 用虛擬 symbol
+   * 錨定 LS，別名使用點常得空。
+   * 確保每個 (filePath, localBindingName) 組合只查詢一次
    */
   private async findReferencesWithCache(
     filePath: string,
-    symbolName: string
+    localBindingName: string
   ): Promise<import('@core/foundations/symbol-finder/index.js').SymbolReference[]> {
-    const cached = this.cacheService.getReferences(filePath, symbolName);
+    const cached = this.cacheService.getReferences(filePath, localBindingName);
     if (cached) {
       return cached;
     }
 
-    const references = await this.symbolFinder.findReferencesInFile(filePath, symbolName);
-    this.cacheService.setReferences(filePath, symbolName, references);
+    const references = await this.symbolFinder.findScopedReferencesInFile(
+      filePath,
+      localBindingName
+    );
+    this.cacheService.setReferences(filePath, localBindingName, references);
     return references;
   }
 

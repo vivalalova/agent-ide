@@ -100,7 +100,6 @@ async function handleDeadCodeCommand(
 
   const isJsonFormat = format === OutputFormat.Json;
   const willApply = options.apply === true && options.dryRun !== true;
-  const deadCodeExecutionFields = createDeadCodeExecutionFields(willApply);
 
   if (!isJsonFormat) {
     process.stderr.write(willApply ? '   檢測並刪除 Dead Code...\n' : '   檢測 Dead Code（預覽模式）...\n');
@@ -142,13 +141,14 @@ async function handleDeadCodeCommand(
       if (!isJsonFormat) {
         console.log('   沒有檢測到 dead code');
       } else {
+        // 零結果：即使帶 --apply 也未實際寫入 → applied: false
         outputMutationWithLegacyFields(
           outputHandler,
           createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '沒有檢測到 dead code'),
           format,
           {
             message: '沒有檢測到 dead code',
-            ...deadCodeExecutionFields,
+            ...createDeadCodeExecutionFields(willApply, false),
             removals: []
           }
         );
@@ -201,13 +201,14 @@ async function handleDeadCodeCommand(
           }
         }
       } else {
+        // 零 removals：即使帶 --apply 也未實際寫入 → applied: false
         outputMutationWithLegacyFields(
           outputHandler,
           createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '符合條件的 dead code 已被過濾'),
           format,
           {
             message: '符合條件的 dead code 已被過濾',
-            ...deadCodeExecutionFields,
+            ...createDeadCodeExecutionFields(willApply, false),
             warnings: changeset.warnings,
             removals: []
           }
@@ -221,13 +222,14 @@ async function handleDeadCodeCommand(
       process.stderr.write('   執行刪除...\n');
     }
 
+    // applied 僅在實際有變更且會寫入時為 true（preview / 零結果皆 false）
     const result = await executeMutationCommand(changeset, {
       fileSystem: context.fileSystem,
       format,
       dryRun: !willApply,
       outputHandler,
       commandName: 'deadcode',
-      legacyFields: deadCodeExecutionFields,
+      legacyFields: createDeadCodeExecutionFields(willApply, willApply),
       onSuccess: () => {
         if (!isJsonFormat) {
           // 權威來源：DeadCodeRemover.generateChangeset() 附加的 RemovalSummary（避免對 description/edits 字串反推）
@@ -257,10 +259,17 @@ async function handleDeadCodeCommand(
   }
 }
 
-function createDeadCodeExecutionFields(willApply: boolean): Record<string, unknown> {
+/**
+ * deadcode 執行狀態欄位。
+ * `applied` = 實際有套用變更，不得只因 CLI 帶了 --apply 就標 true。
+ */
+function createDeadCodeExecutionFields(
+  willApply: boolean,
+  applied: boolean
+): Record<string, unknown> {
   return {
     mode: willApply ? 'apply' : 'preview',
     previewOnly: !willApply,
-    applied: willApply
+    applied
   };
 }

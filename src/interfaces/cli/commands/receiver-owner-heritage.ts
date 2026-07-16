@@ -62,8 +62,8 @@ function classifyReceiverOwner(
     return classifyReceiverOwner(receiver.expression, ownerMatches, sourceFile);
   }
 
-  if (receiver.kind === ts.SyntaxKind.ThisKeyword) {
-    // 子類 this.method() 呼叫繼承自 owner 的成員：沿 enclosing class 的 heritage 鏈判斷
+  // this.method() / super.method()：沿 enclosing class 的 heritage 鏈判斷是否指向 owner 成員
+  if (receiver.kind === ts.SyntaxKind.ThisKeyword || receiver.kind === ts.SyntaxKind.SuperKeyword) {
     const enclosingClass = findAncestor(receiver, ts.isClassDeclaration);
     if (enclosingClass && ts.isClassDeclaration(enclosingClass)) {
       return classChainTargetsOwner(enclosingClass, ownerMatches, sourceFile) ? 'owner' : 'other';
@@ -87,10 +87,11 @@ function classifyReceiverOwner(
  * identifier receiver 對 owner 的三態歸屬：以檔內「最近可見詞法宣告」為準，
  * 不做全檔任意同名宣告掃描（後者會讓被區域宣告遮蔽的 receiver 誤綁外層宣告）。
  *
- * - 綁定到 import 或檔內 class 宣告 → receiver 名稱即型別名稱，名稱比對定 owner/other。
- * - 綁定到變數宣告 → 交由 {@link classifyVariableDeclarationReceiverOwner} 判三態。
- * - 綁定到其餘形式（參數、解構等無型別資訊）→ 沿用既有保守策略視為 other。
- * - 檔內無宣告（default import 綁定、全域）→ 名稱比對。
+ * - 綁定到 import（具名／default／namespace）或檔內 class 宣告 → receiver 名稱即型別名稱，
+ *   名稱比對定 owner/other。
+ * - 綁定到變數／參數宣告 → 依型別註記與初始化式判三態。
+ * - 綁定到解構 BindingElement → 回溯到含型別的 VariableDeclaration／Parameter 再判。
+ * - 檔內無宣告（全域）→ 名稱比對。
  */
 function classifyIdentifierReceiverOwner(
   receiver: ts.Identifier,
@@ -103,56 +104,98 @@ function classifyIdentifierReceiverOwner(
   }
 
   const declaration = nearest.parent;
-  if (ts.isImportSpecifier(declaration) || ts.isClassDeclaration(declaration)) {
+  // 具名 import / default import（ImportClause.name）/ namespace import / class：本地名即型別名
+  if (
+    ts.isImportSpecifier(declaration)
+    || ts.isImportClause(declaration)
+    || ts.isNamespaceImport(declaration)
+    || ts.isClassDeclaration(declaration)
+  ) {
     return ownerMatches(receiver.text) ? 'owner' : 'other';
   }
 
   if (ts.isVariableDeclaration(declaration)) {
-    return classifyVariableDeclarationReceiverOwner(declaration, ownerMatches);
+    return classifyTypedValueDeclarationReceiverOwner(declaration.type, declaration.initializer, ownerMatches);
+  }
+
+  if (ts.isParameter(declaration)) {
+    return classifyTypedValueDeclarationReceiverOwner(declaration.type, declaration.initializer, ownerMatches);
+  }
+
+  if (ts.isBindingElement(declaration)) {
+    return classifyBindingElementReceiverOwner(declaration, ownerMatches);
   }
 
   return 'other';
 }
 
 /**
- * 變數宣告 receiver 對 owner 的三態歸屬：
- * - `new Owner()` 或型別註記 `const svc: Owner = ...` → 確立為 owner。
- * - `new NotOwner()`、物件／陣列／字面量／函式初始化，或非 owner 型別註記 → 確定為 other。
- * - 其餘（工廠呼叫回傳、await、無初始化等，型別語法層推不出）→ unknown（保留，寧可誤報不漏報）。
+ * 解構綁定 receiver：回溯到承載型別／初始化的 VariableDeclaration 或 Parameter，
+ * 再以同一套型別／初始化規則判三態（無綁定根時無法推型別 → unknown）。
  */
-function classifyVariableDeclarationReceiverOwner(
-  node: ts.VariableDeclaration,
+function classifyBindingElementReceiverOwner(
+  node: ts.BindingElement,
+  ownerMatches: (ownerName: string) => boolean
+): ReceiverOwnerVerdict {
+  const bindingRoot = findAncestor(
+    node,
+    ancestor => ts.isVariableDeclaration(ancestor) || ts.isParameter(ancestor)
+  );
+  if (!bindingRoot) {
+    return 'unknown';
+  }
+
+  if (ts.isVariableDeclaration(bindingRoot) || ts.isParameter(bindingRoot)) {
+    return classifyTypedValueDeclarationReceiverOwner(
+      bindingRoot.type,
+      bindingRoot.initializer,
+      ownerMatches
+    );
+  }
+
+  return 'unknown';
+}
+
+/**
+ * 帶可選型別註記與初始化式的值宣告（VariableDeclaration / Parameter）receiver 三態：
+ * - `new Owner()` 或型別註記 `const svc: Owner = ...`／`(d: Owner)` → 確立為 owner。
+ * - `new NotOwner()`、物件／陣列／字面量／函式初始化，或非 owner 型別註記 → 確定為 other。
+ * - 其餘（工廠呼叫回傳、await、無型別註記的參數／變數等）→ unknown（保留，寧可誤報不漏報）。
+ */
+function classifyTypedValueDeclarationReceiverOwner(
+  type: ts.TypeNode | undefined,
+  initializer: ts.Expression | undefined,
   ownerMatches: (ownerName: string) => boolean
 ): ReceiverOwnerVerdict {
   // new Owner() 初始化，或型別註記 const svc: Owner = makeOwner()（工廠／DI 常見形狀）
   if (
-    node.initializer
-    && ts.isNewExpression(node.initializer)
-    && ts.isIdentifier(node.initializer.expression)
-    && ownerMatches(node.initializer.expression.text)
+    initializer
+    && ts.isNewExpression(initializer)
+    && ts.isIdentifier(initializer.expression)
+    && ownerMatches(initializer.expression.text)
   ) {
     return 'owner';
   }
   if (
-    node.type
-    && ts.isTypeReferenceNode(node.type)
-    && ts.isIdentifier(node.type.typeName)
-    && ownerMatches(node.type.typeName.text)
+    type
+    && ts.isTypeReferenceNode(type)
+    && ts.isIdentifier(type.typeName)
+    && ownerMatches(type.typeName.text)
   ) {
     return 'owner';
   }
 
   // 初始化式形狀可確定「非 owner 實例」（含 new 其他類別、物件字面量等）
-  if (node.initializer && isDeterministicNonOwnerInitializer(node.initializer)) {
+  if (initializer && isDeterministicNonOwnerInitializer(initializer)) {
     return 'other';
   }
 
   // 有型別註記但非 owner（且非上述）→ 確定非 owner
-  if (node.type && ts.isTypeReferenceNode(node.type) && ts.isIdentifier(node.type.typeName)) {
+  if (type && ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
     return 'other';
   }
 
-  // 工廠呼叫回傳、await、無初始化等：型別無法在語法層確定
+  // 工廠呼叫回傳、await、無型別／無初始化等：型別無法在語法層確定
   return 'unknown';
 }
 

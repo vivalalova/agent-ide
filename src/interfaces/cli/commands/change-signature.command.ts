@@ -182,6 +182,14 @@ async function handleChangeSignatureCommand(
     // No-op 偵測：success=true 但套用後 previewInput 為空（typical reorder 同序）
     if (changeset.success) {
       const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+      // 轉換失敗（如重疊 edits）不得當 noop 成功；空 fileChanges 且 success 才是真 noop
+      if (!previewInput.success) {
+        const message = previewInput.errors?.join(', ') ?? '生成預覽失敗';
+        outputHandler.outputError(message, format, 'change-signature');
+        process.exitCode = 1;
+        return;
+      }
+
       if (previewInput.fileChanges.length === 0) {
         const message = `無實質變更：函式 ${resolvedFunctionName} 在套用變更後與原狀相同`;
         if (isJsonFormat) {

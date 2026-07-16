@@ -161,6 +161,7 @@ async function handleFindReferencesCommand(
 
       // 補上單層 re-export 別名引用：索引與 SymbolFinder 都以名稱比對，
       // 故 `export { X as Y }` 改名 re-export 後、下游 `import { Y }; Y()` 的引用會漏抓。
+      // 無 --at 時對所有候選定義補抓；有 --at 時只對鎖定的那一個（與 default import 別名策略對齊）。
       const aliasSourceSymbols = (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0])
         ? [selectedSymbolResults[0].symbol]
         : symbols;
@@ -175,11 +176,12 @@ async function handleFindReferencesCommand(
         refs.push(...aliasRefs);
       }
 
-      if (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0]) {
-        // 補上 default import 別名引用：錨定到模組 default export 時，本地名稱可能不同，
-        // 名稱搜尋會漏掉 import binding 與其使用點；結果沿用命令末端的統一 dedupe。
+      // 補上 default import 別名引用：default export 宣告名與 consumer local 名不同時，
+      // 名稱搜尋會漏掉 import binding 與其使用點。只要能解析 default export 宣告名即補抓
+      // （findDefaultImportAliasReferences 內會自行比對宣告名）；不限 --at。
+      for (const symbol of aliasSourceSymbols) {
         const defaultImportAliasRefs = await findDefaultImportAliasReferences(
-          selectedSymbolResults[0].symbol,
+          symbol,
           projectPath,
           context.fileSystem,
           filePaths,

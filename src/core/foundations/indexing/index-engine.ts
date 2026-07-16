@@ -454,7 +454,9 @@ export class IndexEngine {
       // 保留舊符號當「索引仍有效」，否則呼叫端吞錯會把 stale 當成功。
       // 經寫入鎖 + gen 檢查，避免與並行較新 gen 交錯抹掉較新索引。
       await this.runPathWriteExclusive(filePath, async () => {
-        if (!this.isCurrentIndexGeneration(filePath, generation)) return;
+        if (!this.isCurrentIndexGeneration(filePath, generation)) {
+          return;
+        }
         if (!indexWriteStarted && this.fileIndex.hasFile(filePath)) {
           await this.symbolIndex.removeFileSymbols(filePath);
           await this.fileIndex.removeFile(filePath);
