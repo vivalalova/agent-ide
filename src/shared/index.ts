@@ -53,6 +53,11 @@ export {
 } from './types/ast.js';
 
 export {
+  // 內容雜湊
+  computeContentHash
+} from './content-hash.js';
+
+export {
   // 路徑樣式比對
   matchesGlobPattern,
   matchesAnyGlobPattern,

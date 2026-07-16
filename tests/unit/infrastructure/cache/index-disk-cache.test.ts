@@ -104,7 +104,8 @@ describe('IndexDiskCache', () => {
       expect(key1.length).toBeGreaterThan(0);
     });
 
-    // 受控 fake fs：精確控制每個檔案的 mtime / size，computeCacheKey 只用 glob + getStats
+    // 受控 fake fs：精確控制每個檔案的 mtime / size，computeCacheKey 用 glob + getStats + readFile。
+    // content 由 size 推導（同 size 給同 content），維持既有測試只關注 size/mtime 維度的意圖。
     function makeFakeFs(files: ReadonlyArray<{ path: string; mtimeMs: number; size: number }>): IFileSystem {
       return {
         async glob() { return files.map(f => f.path); },
@@ -112,9 +113,49 @@ describe('IndexDiskCache', () => {
           const f = files.find(x => x.path === filePath);
           if (!f) { throw new Error(`no stat: ${filePath}`); }
           return { size: f.size, modifiedTime: new Date(f.mtimeMs) };
+        },
+        async readFile(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no content: ${filePath}`); }
+          return `content-of-size-${f.size}`;
         }
       } as unknown as IFileSystem;
     }
+
+    // 受控 fake fs：額外帶 content，模擬 computeCacheKey 讀檔算 checksum 的路徑
+    function makeFakeFsWithContent(
+      files: ReadonlyArray<{ path: string; mtimeMs: number; size: number; content: string }>
+    ): IFileSystem {
+      return {
+        async glob() { return files.map(f => f.path); },
+        async getStats(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no stat: ${filePath}`); }
+          return { size: f.size, modifiedTime: new Date(f.mtimeMs) };
+        },
+        async readFile(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no content: ${filePath}`); }
+          return f.content;
+        }
+      } as unknown as IFileSystem;
+    }
+
+    it('同 size + 同 mtime(毫秒) 但內容不同時須產生不同 key (P2: 防 false cache hit)', async () => {
+      // 重現手法：快速檔案系統或 CI 中，替換檔案內容剛好落在同一 size 且同一 mtime 毫秒內，
+      // 若 cache key 只看 size+mtime 會誤判為未變更，回傳 stale 的舊符號/依賴資料。
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const same = { path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 5 };
+      const before = makeFakeFsWithContent([{ ...same, content: 'aaaaa' }]);
+      const after = makeFakeFsWithContent([{ ...same, content: 'bbbbb' }]);
+
+      const keyBefore = await cache.computeCacheKey('/proj', before);
+      const keyAfter = await cache.computeCacheKey('/proj', after);
+
+      expect(keyBefore).not.toBeNull();
+      expect(keyAfter).not.toBeNull();
+      expect(keyBefore).not.toBe(keyAfter);
+    });
 
     it('內容變更但 mtime 不變(size 改變)須產生不同 key (P-B: 防 stale cache)', async () => {
       const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
@@ -234,6 +275,24 @@ describe('IndexDiskCache', () => {
       // 실제 파일 존재
       const raw = await readFile(cache.getCachePath(), 'utf-8');
       expect(() => JSON.parse(raw)).not.toThrow();
+    });
+
+    it('rename 失敗（如目標路徑是目錄）時不得留下孤兒 tmp 檔 (P3 regression)', async () => {
+      // 重現手法：讓最終路徑 index.json 預先建成一個目錄，rename(tmp, index.json)
+      // 會因 EISDIR 失敗；此時已寫入的 tmp 檔案若無 cleanup 會永久殘留在快取目錄。
+      const mockEngine = {
+        snapshot: () => ({ fileEntries: new Map() })
+      };
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const cachePath = cache.getCachePath();
+      const { mkdir, readdir } = await import('fs/promises');
+      await mkdir(cachePath, { recursive: true }); // index.json 預先是目錄，rename 必失敗
+
+      await cache.save(mockEngine as never, 'orphan-key'); // 靜默降級，不應拋錯
+
+      const cacheDir = dirname(cachePath);
+      const files = await readdir(cacheDir);
+      expect(files.filter(f => f.includes('.tmp'))).toHaveLength(0);
     });
   });
 

@@ -86,6 +86,25 @@ async function handleImpactCommand(
     return;
   }
 
+  // 目標存在但為目錄時拒絕（--file 必須是檔案）
+  const targetIsDirectory = await context.fileSystem.isDirectory(targetFile);
+  if (targetIsDirectory) {
+    outputErrorWithDetails(
+      outputHandler,
+      format,
+      `路徑不是檔案: ${targetFile}`,
+      {
+        pathContext: {
+          role: 'targetFile',
+          ...pathContext
+        }
+      },
+      'impact'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   if (format !== OutputFormat.Json) {
     process.stderr.write('💥 影響分析...\n');
   }

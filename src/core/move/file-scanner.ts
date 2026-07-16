@@ -8,6 +8,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathUtils, ALLOWED_EXTENSIONS, EXCLUDE_PATTERNS } from './path-utils.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
 import { matchesPathSegment } from '@shared/path-pattern.js';
 
 /**
@@ -167,9 +168,17 @@ export class FileScanner {
           const content = await this.fileSystem.readFile(file, 'utf-8') as string;
           return { file, content };
         } catch (error) {
-          // graceful-degradation: 無法讀取的檔案跳過引用檢查
-          diagnostics.warn('move/file-scanner', 'FILE_READ_ERROR', `Cannot read file for reference check: ${error instanceof Error ? error.message : String(error)}`);
-          return { file, content: null };
+          if (isFileNotFoundError(error)) {
+            // 合理的空結果：候選檔案在列出目錄與實際讀取之間已被刪除／搬移，
+            // 本來就沒有內容可比對，視為「沒有引用」繼續掃描其他檔案。
+            diagnostics.warn('move/file-scanner', 'FILE_MISSING_DURING_SCAN', `File no longer exists, treating as no references: ${getErrorMessage(error)}`, file);
+            return { file, content: null };
+          }
+          // fast-fail：非「檔案不存在」的讀取失敗（如權限不足）若被吞掉，
+          // 這個檔案對被移動檔案的 import 引用就完全不會被掃描到，move 會
+          // 靜默漏改它、卻仍對外回報成功，造成資料不一致（見 P2 regression）。
+          // 必須讓錯誤往外傳播中止整個 move，而非假裝「這個檔案沒有引用」。
+          throw new Error(`Failed to read file while scanning for import references: ${file}: ${getErrorMessage(error)}`);
         }
       })
     );
@@ -248,8 +257,14 @@ export class FileScanner {
 
       return false;
     } catch (error) {
-      diagnostics.warn('move/file-scanner', 'FILE_READ_ERROR', `Cannot read file for reference check: ${error instanceof Error ? error.message : String(error)}`);
-      return false;
+      if (isFileNotFoundError(error)) {
+        // 合理的空結果：檔案已不存在，自然沒有引用可言。
+        diagnostics.warn('move/file-scanner', 'FILE_MISSING_DURING_SCAN', `File no longer exists, treating as no references: ${getErrorMessage(error)}`, filePath);
+        return false;
+      }
+      // fast-fail：與 findAffectedFilesForPaths 一致，非「檔案不存在」的讀取
+      // 失敗不得靜默回報「沒有引用」，必須讓呼叫端知道掃描本身失敗了。
+      throw new Error(`Failed to read file while checking reference: ${filePath}: ${getErrorMessage(error)}`);
     }
   }
 }

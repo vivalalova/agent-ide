@@ -14,7 +14,7 @@ import { Symbol, isFunctionLocalSymbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
-import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils, createIdentifierBoundaryRegex } from '@core/foundations/index.js';
+import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils, createIdentifierBoundaryRegex, computeCodeStateMask } from '@core/foundations/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
@@ -182,11 +182,17 @@ export class ReferenceUpdater {
     // 用 `\b` 會比對不到（缺陷 G6）。
     const regex = createIdentifierBoundaryRegex(symbolName, 'g');
 
+    // 對整份 content 一次計算跨行狀態感知的程式碼遮罩（見 code-state-mask.ts），
+    // 取代原本逐行、僅認得單/雙引號字串與同行註解的 findStringRanges/
+    // findCommentStart：後者完全不辨識樣板字面值（`` ` ``），導致 rename 的
+    // 降級文字匹配路徑會把 `` `oldName` `` 樣板字面值內容當成真實引用一併改掉、
+    // 破壞字面文字（見缺陷：rename 樣板字面值內容未排除）；同時原本的逐行方式
+    // 也無法辨識跨行區塊註解的延續行，一併修正。
+    const codeMask = computeCodeStateMask(content);
+    let lineStartOffset = 0;
+
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
-      // 預先標記字串和註解區間
-      const stringRanges = this.findStringRanges(line);
-      const commentStart = this.findCommentStart(line);
 
       // 重置 lastIndex 以便在每行重新匹配
       regex.lastIndex = 0;
@@ -195,8 +201,8 @@ export class ReferenceUpdater {
       while ((match = regex.exec(line)) !== null) {
         const matchPos = match.index;
 
-        // O(1) 檢查是否在字串或註解內
-        if (this.isPositionInRanges(matchPos, stringRanges) || (commentStart !== -1 && matchPos >= commentStart)) {
+        // 不在真實程式碼狀態（字串/樣板/註解/regex 字面值內容）中的比對一律跳過
+        if (!codeMask[lineStartOffset + matchPos]) {
           continue;
         }
 
@@ -208,17 +214,16 @@ export class ReferenceUpdater {
           end: { line: lineIndex + 1, column: endColumn }
         };
 
-        // 簡化的型別判定：檢查是否在註解中
-        const type = (commentStart !== -1 && matchPos >= commentStart) ? 'comment' : 'usage';
-
         references.push({
           symbolName,
           range,
-          type: type as 'definition' | 'usage' | 'comment',
+          type: 'usage',
           // 保留原始行內容（不 trim），讓 diff 輸出保持正確的縮排
           context: line
         });
       }
+
+      lineStartOffset += line.length + 1;
     }
 
     return references;
@@ -408,51 +413,6 @@ export class ReferenceUpdater {
       diagnostics.warn('rename/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
       return null;
     }
-  }
-
-  /**
-   * 查找行中註解的起始位置
-   * @returns 註解起始位置，若無註解返回 -1
-   */
-  private findCommentStart(line: string): number {
-    // 檢查單行註解（// 或 #）
-    const slashCommentPos = line.indexOf('//');
-    const hashCommentPos = line.indexOf('#');
-
-    // 檢查多行註解起始
-    const blockCommentPos = line.indexOf('/*');
-
-    // 返回最早出現的註解位置
-    const positions = [slashCommentPos, hashCommentPos, blockCommentPos].filter(p => p !== -1);
-    return positions.length > 0 ? Math.min(...positions) : -1;
-  }
-
-  /**
-   * 查找行中所有字串的區間
-   * 使用正則一次性找出所有字串區間，避免逐字元遍歷
-   * @returns 字串區間陣列 [start, end]
-   */
-  private findStringRanges(line: string): Array<[number, number]> {
-    const ranges: Array<[number, number]> = [];
-    // 匹配單引號或雙引號字串（支援轉義）
-    const stringPattern = /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g;
-
-    let match;
-    while ((match = stringPattern.exec(line)) !== null) {
-      ranges.push([match.index, match.index + match[0].length - 1]);
-    }
-
-    return ranges;
-  }
-
-  /**
-   * 檢查位置是否在指定區間內
-   * @param position 位置
-   * @param ranges 區間陣列
-   * @returns 是否在區間內
-   */
-  private isPositionInRanges(position: number, ranges: Array<[number, number]>): boolean {
-    return ranges.some(([start, end]) => position > start && position < end);
   }
 
   /**

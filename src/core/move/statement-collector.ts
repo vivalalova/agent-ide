@@ -5,7 +5,11 @@
  * 真正的模組路徑
  */
 
-import { maskStringsAndComments } from './source-masking.js';
+// 遮罩改由呼叫端（import-resolver.ts）以 computeMaskedLines 對整份檔案內容
+// 一次計算（跨行狀態感知，見 source-masking.ts），本模組不再各自呼叫
+// maskStringsAndComments 逐行重算——避免多處各自維護「這裡是不是字串/註解」
+// 判定、且逐行重算天生無法得知自己是否身處前面幾行才開始、尚未結束的
+// 樣板字面值/區塊註解內部（見缺陷：跨行樣板字面值中間行誤判為真正 import）。
 
 /**
  * Unicode 識別符字元類別（不含頭尾錨點），語意對應
@@ -113,7 +117,11 @@ export interface ExportStatementSpan {
  * 未遮罩文字（供呼叫端切出真正的路徑內容），且與遮罩版本一律以 '\n' 逐行
  * 拼接、不 trim，確保兩者逐字元對齊、可用同一組 index 互相切換。
  */
-export function collectMultilineImportStatement(lines: string[], startIndex: number): MultilineStatementSpan | null {
+export function collectMultilineImportStatement(
+  lines: string[],
+  startIndex: number,
+  maskedLines: readonly string[]
+): MultilineStatementSpan | null {
   const startLine = lines[startIndex];
   // 進場檢查一律用遮罩後文字：字串字面值／行內註解中的 'import' 字樣（如
   // `const msg = 'cannot import x';` 或 `const a = 1; // import note`）遮罩後即
@@ -121,8 +129,9 @@ export function collectMultilineImportStatement(lines: string[], startIndex: num
   // span——那正是 P2-B 錯誤鏈得以成立的第一環（span 起始行落在假陽性行，
   // 下游行、列定位隨之全錯）。動態 import()（`import(`）交由
   // collectMultilineCallStatement 處理，此處排除；改用遮罩後文字判斷，避免
-  // 字串內的 `import(` 字樣造成誤判。
-  const maskedStartLine = maskStringsAndComments(startLine);
+  // 字串內的 `import(` 字樣造成誤判。maskedLines 由呼叫端對整份檔案內容一次
+  // 計算（跨行狀態感知），非本函式各自逐行重算。
+  const maskedStartLine = maskedLines[startIndex];
   if (!maskedStartLine.includes('import') || /\bimport\s*\(/.test(maskedStartLine)) {
     return null;
   }
@@ -135,7 +144,7 @@ export function collectMultilineImportStatement(lines: string[], startIndex: num
   let maskedFullStatement = maskedStartLine;
   for (let i = startIndex + 1; i < lines.length; i++) {
     fullStatement += '\n' + lines[i];
-    maskedFullStatement += '\n' + maskStringsAndComments(lines[i]);
+    maskedFullStatement += '\n' + maskedLines[i];
     if (isCompleteImportStatement(maskedFullStatement)) {
       return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
     }
@@ -178,8 +187,12 @@ function isCompleteImportStatement(statement: string): boolean {
  * 文字（如 "... from './x'" 或 // } from './decoy.js'）遮罩後即消失，不應被誤判
  * 成真正的 export ... from（見 C5、export 分支實驗形狀 A/B/C regression）。
  */
-export function collectMultilineExportStatement(lines: string[], startIndex: number): ExportStatementSpan | null {
-  const maskedStartLine = maskStringsAndComments(lines[startIndex]);
+export function collectMultilineExportStatement(
+  lines: string[],
+  startIndex: number,
+  maskedLines: readonly string[]
+): ExportStatementSpan | null {
+  const maskedStartLine = maskedLines[startIndex];
 
   // 進場守門「看形狀白名單」（非看大括號深度）：只有 re-export 候選形狀
   // （export 之後可選 type，緊接 `{` 或 `*`）才可能是 export ... from。
@@ -214,7 +227,7 @@ export function collectMultilineExportStatement(lines: string[], startIndex: num
   // 成本可忽略。
   let maskedFull = maskedStartLine;
   for (let i = startIndex + 1; i < lines.length; i++) {
-    maskedFull += '\n' + maskStringsAndComments(lines[i]);
+    maskedFull += '\n' + maskedLines[i];
     if (candidateOffsets.some(offset => isCompleteExportFromAt(maskedFull, offset))) {
       return { endLineIndex: i, startLineIndex: startIndex };
     }
@@ -236,10 +249,11 @@ export function collectMultilineExportStatement(lines: string[], startIndex: num
 export function collectMultilineCallStatement(
   lines: string[],
   startIndex: number,
-  keyword: 'require' | 'import'
+  keyword: 'require' | 'import',
+  maskedLines: readonly string[]
 ): MultilineStatementSpan | null {
   const startLine = lines[startIndex];
-  const maskedStartLine = maskStringsAndComments(startLine);
+  const maskedStartLine = maskedLines[startIndex];
   const openPattern = new RegExp(`\\b${keyword}\\s*\\(`);
   if (!openPattern.test(maskedStartLine)) {
     return null;
@@ -253,7 +267,7 @@ export function collectMultilineCallStatement(
   let maskedFullStatement = maskedStartLine;
   for (let i = startIndex + 1; i < lines.length; i++) {
     fullStatement += '\n' + lines[i];
-    maskedFullStatement += '\n' + maskStringsAndComments(lines[i]);
+    maskedFullStatement += '\n' + maskedLines[i];
     if (isCompleteCallStatement(maskedFullStatement, keyword)) {
       return { statement: fullStatement, endLineIndex: i, startLineIndex: startIndex };
     }

@@ -52,6 +52,9 @@ export class ImpactAnalyzer {
   private fileScanner: FileScanner;
   private dependencyExtractor: DependencyExtractor;
   private readonly parserRegistry: ParserRegistry;
+  /** 上一次 analyzeProject 掃描到的第一層專案檔案集合（不含依賴目標節點），
+   * 供下一次呼叫比對出已從磁碟消失的檔案並清除其圖節點與快取，避免幽靈節點殘留 */
+  private previousProjectFiles: Set<string> | null = null;
 
   constructor(fileSystem: IFileSystem, options?: Partial<ExtendedDependencyAnalysisOptions>) {
     this.graph = new DependencyGraph();
@@ -152,6 +155,20 @@ export class ImpactAnalyzer {
   async analyzeProject(projectPath: string): Promise<ProjectDependencies> {
     const normalizedProjectPath = path.resolve(projectPath);
     const files = await this.fileScanner.findSourceFiles(normalizedProjectPath);
+    const currentProjectFiles = new Set(files.map(file => path.resolve(file)));
+
+    // 清除上一次掃描到、但這次已不在專案檔案清單中的節點（例如檔案被刪除或排除）。
+    // 只比對「上一輪第一層專案檔案集合」而非目前圖上所有節點，避免誤刪依賴目標節點
+    // （如 addDependency 建立的匯入路徑節點，本就不屬於被掃描的專案檔案）。
+    if (this.previousProjectFiles) {
+      for (const staleFile of this.previousProjectFiles) {
+        if (!currentProjectFiles.has(staleFile)) {
+          this.graph.removeNode(staleFile);
+          this.runtimeGraph.removeNode(staleFile);
+          this.cache.delete(staleFile);
+        }
+      }
+    }
 
     const fileDependencies: FileDependencies[] = [];
 
@@ -164,6 +181,8 @@ export class ImpactAnalyzer {
       const results = await Promise.all(promises);
       fileDependencies.push(...results);
     }
+
+    this.previousProjectFiles = currentProjectFiles;
 
     const result: ProjectDependencies = {
       projectPath: normalizedProjectPath,
@@ -289,7 +308,8 @@ export class ImpactAnalyzer {
     }
 
     const averageDependencies = totalFiles > 0 ? totalDependencies / totalFiles : 0;
-    const cycles = this.cycleDetector.detectCycles(this.graph);
+    // 循環偵測用 runtimeGraph（排除 type-only imports），避免 type-only 循環誤報為循環依賴
+    const cycles = this.cycleDetector.detectCycles(this.runtimeGraph);
     const orphanedNodes = this.graph.getOrphanedNodes();
 
     return {

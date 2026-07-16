@@ -252,10 +252,14 @@ export class CallSiteUpdater {
       return openParenIndex >= 0 ? beforeFirstArg.substring(0, openParenIndex + 1) : beforeFirstArg;
     }
 
-    // 無引數：整個呼叫運算式文字尾端必為右括號，找到與其對應的左括號
+    // 無引數：整個呼叫運算式文字尾端通常為右括號，找到與其對應的左括號。
+    // 例外：parentheseless `new Foo`（無括號建構子呼叫，等同 `new Foo()`）文字裡完全沒有括號
+    // （matchIndex 為 -1）；此時直接在原始文字尾端補上開括號即可——fullText 已完整保留
+    // `new`、命名空間、泛型型別引數等原始語法，不得改用 callSite.functionName 重建
+    // （functionName 只是 callee 簡名，會丟失 `new`／命名空間前綴）
     const fullText = this.extractCallExpression(callSite, lines);
     const matchIndex = this.findMatchingOpenParenFromEnd(fullText);
-    return matchIndex >= 0 ? fullText.substring(0, matchIndex + 1) : `${callSite.functionName}(`;
+    return matchIndex >= 0 ? fullText.substring(0, matchIndex + 1) : `${fullText}(`;
   }
 
   /**
@@ -486,9 +490,18 @@ export class CallSiteUpdater {
     // 參數映射把 rest 參數視為單一位置，只消費了它對應的第一個引數，
     // 其餘 arguments[declaredParameterCount..] 需依原順序接在輸出尾端，避免被靜默丟棄。
     // 被 remove 的參數位於 [0, declaredParameterCount)，其引數已由映射階段處理（丟棄），不受此影響。
-    const declaredParameterCount = originalSignature.parameters.length;
-    for (let i = declaredParameterCount; i < callSite.arguments.length; i++) {
-      processedResult.push(argumentOverrides?.get(i) ?? callSite.arguments[i].value);
+    //
+    // 例外：若原始簽名的 rest 參數本身正是這次被 remove 的目標，parameterMapping
+    // 不會有它的原始索引項目（已從 currentParams 移除）——此時「尾端多餘引數」整批
+    // 對應被移除的 rest，不應保留任何一個，否則會留下一個不屬於任何剩餘參數的孤兒引數。
+    const restParameterOriginalIndex = originalSignature.parameters.findIndex(p => p.rest);
+    const restParameterRemoved = restParameterOriginalIndex >= 0 && !parameterMapping.has(restParameterOriginalIndex);
+
+    if (!restParameterRemoved) {
+      const declaredParameterCount = originalSignature.parameters.length;
+      for (let i = declaredParameterCount; i < callSite.arguments.length; i++) {
+        processedResult.push(argumentOverrides?.get(i) ?? callSite.arguments[i].value);
+      }
     }
 
     return processedResult;

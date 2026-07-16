@@ -307,6 +307,18 @@ export function isFunctionLocalSymbol(symbol: Symbol): boolean {
 }
 
 /**
+ * 判斷是否為 parser 產生的 import-only binding 候選（例如 JS 檔案的 import specifier
+ * 也會產生 type: variable 的 Symbol，但它並非真正的本地宣告）。
+ *
+ * 單一權威定義（SSOT）：呼叫端（symbol-target-resolver、rename.command、
+ * call-hierarchy-analyzer 等）判斷候選是否為單純 import binding 時一律引用此定義，
+ * 禁自行重寫判定邏輯。
+ */
+export function isImportedSymbol(symbol: Symbol): boolean {
+  return (symbol as { readonly isImported?: boolean }).isImported === true;
+}
+
+/**
  * 檢查兩個 Symbol 是否在同一 Scope
  */
 export function isSameScope(symbol1: Symbol, symbol2: Symbol): boolean {

@@ -34,6 +34,8 @@ import type { CallSite } from '@core/foundations/symbol-finder/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import type { Range } from '@shared/types/core.js';
+import { isPositionInRange } from '@shared/types/core.js';
 
 /**
  * 中介檔（barrel）的單層 re-export 轉發資訊
@@ -41,8 +43,19 @@ import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 interface ReexportForward {
   /** re-export 的來源模組路徑（`from '<spec>'`） */
   readonly moduleSpecifier: string;
-  /** 具名轉發的原始符號名稱；undefined 表示 `export * from` 轉發全部具名匯出（不含 default） */
+  /**
+   * 這個中介檔對外暴露的名稱；undefined 表示 `export * from` 轉發全部具名匯出
+   * （不含 default）。具名轉發若有改名（`export { fn as alias }`），這裡是外部
+   * 可見的別名 `alias`，向來源模組請求時須改用 {@link sourceName}（原始名稱）。
+   */
   readonly exportedName?: string;
+  /**
+   * 向來源模組請求的原始名稱；只有具名轉發且被改名時才與 exportedName 不同
+   * （`export { fn as alias }` → sourceName = 'fn'）。未改名或 star 轉發時
+   * 省略，呼叫端 fallback 回 exportedName（未改名）或延用當下 requestedExportName
+   * （star，見 resolvesToTargetViaReexport）。
+   */
+  readonly sourceName?: string;
 }
 
 /**
@@ -827,6 +840,11 @@ export class ChangeSignatureEngine {
     if (this.isFunctionLikeDeclaration(node)) {
       return this.collectFunctionLevelShadowedNames(node as ts.FunctionLikeDeclaration);
     }
+    if (ts.isClassExpression(node) && node.name) {
+      // 具名 class expression 的自身名稱只在其內部（含自身識別字節點與所有成員）
+      // 可見，屬於獨立於外層的自我遞迴繫結，視同該節點整個子樹遮蔽此名稱。
+      return new Set([node.name.text]);
+    }
     return this.collectBlockLevelDeclaredNames(node);
   }
 
@@ -837,6 +855,13 @@ export class ChangeSignatureEngine {
    */
   private collectFunctionLevelShadowedNames(func: ts.FunctionLikeDeclaration): Set<string> {
     const declared = new Set<string>();
+
+    // 具名 function expression 的自身名稱（`const fn = function value() {}` 的
+    // `value`）只在其內部可見，是與外層完全獨立的自我遞迴繫結，即使與外層參數
+    // 同名也只是遮蔽、非同一個繫結的引用，故視同函式層遮蔽整個子樹。
+    if (ts.isFunctionExpression(func) && func.name) {
+      declared.add(func.name.text);
+    }
 
     for (const parameter of func.parameters) {
       this.collectBindingNames(parameter.name, declared);
@@ -1462,16 +1487,16 @@ export class ChangeSignatureEngine {
           continue; // type-only import 不會產生 runtime 呼叫點
         }
 
-        // 具名 import：以「匯出名 === 目標名」判定是否指向目標，本地繫結名為 alias ?? name
-        // （`import { combine as merge }` → 匯出名 combine、本地名 merge）
+        // 具名 import：consumer 直接 import 目標時 spec.name 必為目標的真實名稱
+        // （name），但經過會改名的 barrel 轉發（`export { fn as alias } from
+        // './source'`）時 spec.name 是外部可見的別名 alias，不等於 name——故不能
+        // 用「spec.name === name」預先篩掉，一律交給 moduleExposesTargetFunction
+        // 沿 re-export 鏈追查 spec.name 最終是否對應回目標（本地繫結名為 alias ?? name）
         for (const spec of declaration.namedImports) {
           if (spec.isTypeOnly) {
             continue;
           }
-          if (spec.name !== name && spec.name !== 'default') {
-            continue;
-          }
-          const requestedExportName = spec.name === 'default' ? 'default' : name;
+          const requestedExportName = spec.name === 'default' ? 'default' : spec.name;
           const moduleExposesTarget = await this.moduleExposesTargetFunction(
             file,
             declaration.moduleSpecifier,
@@ -1547,7 +1572,8 @@ export class ChangeSignatureEngine {
     for (const [file, binding] of bindings) {
       for (const localName of binding.localNames) {
         const sites = await this.symbolFinder.findCallSitesInFile(file, localName);
-        for (const site of sites) {
+        const unshadowedSites = await this.excludeLocallyShadowedCallSites(file, localName, sites);
+        for (const site of unshadowedSites) {
           if (!site.isMethodCall && site.isNewExpression !== true) {
             add(site);
           }
@@ -1569,6 +1595,63 @@ export class ChangeSignatureEngine {
   }
 
   /**
+   * 排除被檔案內區域繫結（函式參數／區塊變數／巢狀宣告）遮蔽的同名呼叫點。
+   *
+   * import 的本地名稱若被內層作用域重新宣告（如同名函式參數），該作用域內以此
+   * 名稱呼叫的其實是區域繫結、不是匯入的目標符號，不應被當成目標呼叫點改寫。
+   * 與參數引用遮蔽掃描（visitNodeForReferences／collectScopeShadowedNames）共用
+   * 同一套作用域判定邏輯（Single Source of Truth），只是應用對象從「函式 body
+   * 內的識別字引用」換成「整份檔案內某名稱的呼叫點位置」。
+   */
+  private async excludeLocallyShadowedCallSites(
+    file: string,
+    localName: string,
+    sites: readonly CallSite[]
+  ): Promise<CallSite[]> {
+    if (sites.length === 0) {
+      return [];
+    }
+
+    const content = await this.fileUtils.readFile(file);
+    if (!content) {
+      return [...sites];
+    }
+
+    const sourceFile = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, this.getScriptKind(file));
+    const shadowedRanges = this.collectShadowedRangesForName(sourceFile, content, localName);
+    if (shadowedRanges.length === 0) {
+      return [...sites];
+    }
+
+    return sites.filter(site => !shadowedRanges.some(range => isPositionInRange(site.location.range.start, range)));
+  }
+
+  /**
+   * 走訪整份原始碼，收集指定名稱被區域宣告遮蔽的範圍（函式參數、區塊內
+   * let/const/function/class 宣告、具名 function/class expression 自身名稱等）。
+   * 一旦某節點自身即遮蔽該名稱就記錄其整體範圍並停止往下遞迴——該子樹內此名稱
+   * 皆已遮蔽，不需再找更深層對同名稱的（多餘的）遮蔽範圍。
+   */
+  private collectShadowedRangesForName(sourceFile: ts.SourceFile, content: string, name: string): Range[] {
+    const ranges: Range[] = [];
+
+    const visit = (node: ts.Node): void => {
+      const shadowed = this.collectScopeShadowedNames(node);
+      if (shadowed.has(name)) {
+        ranges.push({
+          start: this.offsetToPosition(content, node.getStart(sourceFile)),
+          end: this.offsetToPosition(content, node.getEnd())
+        });
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(sourceFile);
+    return ranges;
+  }
+
+  /**
    * 判斷某個 import specifier 是否讓 consumer 取得「源自目標檔」的 name 匯出：
    * specifier 直接解析到目標檔，或透過（遞迴）barrel re-export 轉發 name 回目標檔。
    */
@@ -1583,7 +1666,14 @@ export class ChangeSignatureEngine {
     requestedExportName: string
   ): Promise<boolean> {
     if (await this.importSpecifierResolvesToTarget(consumerFilePath, moduleSpecifier, targetAbsolute)) {
-      return requestedExportName !== 'default' || targetHasDefaultExport;
+      // 直接解析到目標檔（無 barrel）：目標檔匯出的具名符號一定是它自身宣告的
+      // 名稱 name，不可能被改名，故 requestedExportName 必須與 name 完全相符才算
+      // 命中——不能像先前那樣無條件視為命中（舊假設只在呼叫端保證
+      // requestedExportName === name 時成立，barrel 別名場景已不再保證這點）。
+      if (requestedExportName === 'default') {
+        return targetHasDefaultExport;
+      }
+      return requestedExportName === name;
     }
     return this.resolvesToTargetViaReexport(
       consumerFilePath,
@@ -1638,16 +1728,28 @@ export class ChangeSignatureEngine {
 
     const forwards = await this.getReexportForwards(intermediateFile, reexportCache);
     for (const forward of forwards) {
-      // `export *` 不轉發 default；其餘具名轉發必須對上實際 import 的匯出名。
+      // `export *` 不轉發 default；其餘具名轉發必須對上實際 import 的匯出名
+      // （這裡比對的是這一層對外可見的 exportedName，即消費端／上一層看到的名稱）。
       if (forward.exportedName === undefined && requestedExportName === 'default') {
         continue;
       }
       if (forward.exportedName !== undefined && forward.exportedName !== requestedExportName) {
         continue;
       }
+
+      // 往下一層（來源模組）請求的名稱：star 轉發原樣保留名稱（`export *` 不能
+      // 改名）；具名轉發若有 sourceName（barrel 對外改名，如 `export { fn as
+      // alias }`）則改請求來源模組內的原始名稱 fn，未改名時 sourceName 等於
+      // exportedName，等效於沿用原邏輯。
+      const nextRequestedExportName = forward.exportedName === undefined
+        ? requestedExportName
+        : (forward.sourceName ?? forward.exportedName);
+
       if (
         await this.importSpecifierResolvesToTarget(intermediateFile, forward.moduleSpecifier, targetAbsolute)
-        && (requestedExportName !== 'default' || targetHasDefaultExport)
+        && (nextRequestedExportName === 'default'
+          ? targetHasDefaultExport
+          : nextRequestedExportName === name)
       ) {
         return true;
       }
@@ -1659,7 +1761,7 @@ export class ChangeSignatureEngine {
         allFiles,
         reexportCache,
         targetHasDefaultExport,
-        requestedExportName,
+        nextRequestedExportName,
         visited
       )) {
         return true;
@@ -1719,10 +1821,18 @@ export class ChangeSignatureEngine {
 
       if (ts.isNamedExports(statement.exportClause)) {
         for (const element of statement.exportClause.elements) {
-          // 只收未被 alias 改名者：`export { f as g }` 不算轉發同一符號
-          if (!element.isTypeOnly && !element.propertyName) {
-            forwards.push({ moduleSpecifier: moduleSpecifier.text, exportedName: element.name.text });
+          if (element.isTypeOnly) {
+            continue;
           }
+          // element.propertyName 存在時代表 barrel 對外改名（`export { f as g }`）：
+          // 仍是同一符號的轉發，只是外部可見名稱換了——exportedName 記外部看到的
+          // 名稱 g，sourceName 記來源模組內的原始名稱 f，供下一層請求時還原。
+          // 未改名時 propertyName 不存在，sourceName 省略（等於 exportedName）。
+          forwards.push({
+            moduleSpecifier: moduleSpecifier.text,
+            exportedName: element.name.text,
+            sourceName: element.propertyName?.text
+          });
         }
       }
       // `export * as ns from '<spec>'`（NamespaceExport）不在單層轉發判定範圍內：

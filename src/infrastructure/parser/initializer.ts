@@ -53,18 +53,12 @@ function registerParserIfMissing(
 ): string | null {
   const unclaimedExtensions = parser.supportedExtensions.filter(extension => !registry.getParser(extension));
   if (unclaimedExtensions.length === parser.supportedExtensions.length) {
-    registerParserOrDispose(registry, parser, disposeIfUnregistered);
+    registerParserOrDispose(registry, parser);
     return parser.name;
   }
 
   if (unclaimedExtensions.length > 0) {
-    registerParserOrDispose(
-      registry,
-      createParserForExtensions(parser, unclaimedExtensions),
-      disposeIfUnregistered
-        ? parser
-        : null
-    );
+    registerParserOrDispose(registry, createParserForExtensions(parser, unclaimedExtensions), parser);
     return parser.name;
   }
 
@@ -74,19 +68,26 @@ function registerParserIfMissing(
   return null;
 }
 
+/**
+ * 註冊 parser，失敗（例如重名撞上既有 parser）一律 dispose 掉建構出的實例並重拋。
+ *
+ * 這裡的「失敗即 dispose」與 `disposeIfUnregistered`/`disposeOnUnregister` 的語意是
+ * 兩件不同的事，不可混用同一個旗標：後者管的是「成功註冊過的 parser，之後被刻意
+ * unregister/release 時要不要 dispose」（例如 persistent module 的單例需要跨 task
+ * 存活，不能被中途 dispose）；而這裡的失敗代表 parser 從未成功進入 registry，
+ * 沒有任何地方把它當「持久實例」在追蹤，不 dispose 就是孤兒——不論呼叫端傳入的
+ * disposeIfUnregistered 是 true 或 false 都必須清理，否則就是本檔案曾經修過的
+ * 資源洩漏缺陷同款重演。
+ */
 function registerParserOrDispose(
   registry: ParserRegistry,
   parserToRegister: ParserPlugin,
-  parserToDisposeOnFailure: ParserPlugin | boolean | null
+  underlyingParserForDisposal: ParserPlugin | null = null
 ): void {
   try {
     registry.register(parserToRegister);
   } catch (error) {
-    if (parserToDisposeOnFailure) {
-      disposeUnregisteredParser(
-        parserToDisposeOnFailure === true ? parserToRegister : parserToDisposeOnFailure
-      );
-    }
+    disposeUnregisteredParser(underlyingParserForDisposal ?? parserToRegister);
     throw error;
   }
 }
@@ -154,8 +155,7 @@ export function resetDefaultParserFactoriesForTesting(): void {
   persistentParserModules.clear();
   persistentParserModuleGenerations.clear();
   persistentParserModuleInitializations.clear();
-  isolatedModuleClassifications.clear();
-  isolatedFactoryModuleCache.clear();
+  isolatedModuleCache.clear();
 }
 
 /**
@@ -401,7 +401,15 @@ function createParserFromModule(
 
   return {
     parser,
-    disposeOnUnregister: createdFromFactory || (options.isolateModuleInstances ?? false),
+    // isolate 語意的本體是「每 task 全新 parser 實例」而非「每 task 全新模組副本」：
+    // factory 模組每次呼叫 factory() 就已經是全新物件，dispose 它不影響下次 factory() 的結果，
+    // 可放心每 task dispose。直接 export 單例的模組不然——dispose 會讓模組頂層那個唯一物件
+    // 永久不可用，若每 task 都 dispose 它，下個 task 勢必得重新 import 才能拿到未 disposed 的
+    // 實例，而 Node ESM loader 對每個不同 query string 的 import 永不 GC，就是 worker 記憶體隨
+    // task 數線性增長的根因。因此非 factory 模組在 isolate 模式下不隨 task dispose，讓
+    // loadIsolatedParserModule 快取的單一模組實例整個 worker 生命週期內重複使用；
+    // registry 的 register/unregister 仍然逐 task 進行，不影響「不污染後續任務」的語意。
+    disposeOnUnregister: createdFromFactory,
     reloadAfterDispose: !createdFromFactory,
     ...(!options.isolateModuleInstances
       ? { persistentModuleKey: toBaseImportSpecifier(modulePath) }
@@ -412,49 +420,24 @@ function createParserFromModule(
 let isolatedModuleCounter = 0;
 
 /**
- * moduleKey → 是否為 factory 模組（export 一個每次呼叫都產生新 ParserPlugin 的函式）。
- * 只有第一個 task 需要實際重載模組來判斷；判斷結果快取後，同一 moduleKey 後續 task
- * 不再需要「isolate 語意」本體其實是「每 task 全新 parser 實例」而非「每 task 全新模組副本」——
- * 對 factory 模組而言，重複呼叫 factory() 本身就滿足這個語意，不必每次都重新 import 破 ESM 快取
- * （那正是 worker 記憶體隨 task 數線性增長的根因：Node ESM loader 對每個不同 query string 的
- * import 都會保留獨立模組實例，永不 GC）。
+ * moduleKey → 已快取的模組命名空間（in-flight promise，天然對併發 import 單飛去重）。
+ * isolate 模式下每個 moduleKey 只用唯一 query string 實際 import 一次：
+ * factory 模組靠呼叫端每 task 重新呼叫 factory() 取得新 parser 實例；
+ * 直接 export 單例的模組則靠 createParserFromModule 不再逐 task dispose 它來維持可重用。
+ * 兩種情況下模組實例數都有界於「相異模組路徑數」，不隨 task 數無界增長
+ * （見 `direct-disposable-toy-parser.mjs` 契約與其 regression test）。
  */
-const isolatedModuleClassifications = new Map<string, boolean>();
-/**
- * moduleKey → 已快取的 factory 模組命名空間（僅 factory 模組才會進這裡）。
- * 每個 factory moduleKey 只在整個 worker 生命週期保留這一份，數量隨「相異模組路徑數」有界，
- * 非隨「task 數」無界增長。
- */
-const isolatedFactoryModuleCache = new Map<string, unknown>();
+const isolatedModuleCache = new Map<string, Promise<unknown>>();
 
-/**
- * isolate 模式下載入 parser 模組。
- *
- * - 尚未分類的 moduleKey：用唯一 query string 重載一次以取得可分類的模組實例（僅此一次，
- *   之後同 moduleKey 依分類結果決定是否重載）。
- * - 已知是 factory 模組：直接回傳快取的模組命名空間，呼叫端會再呼叫 factory() 取得新 parser 實例。
- * - 已知模組頂層有狀態、export 的是單例 ParserPlugin（非 factory）：重載模組是取得新實例的唯一
- *   手段（見 `direct-disposable-toy-parser.mjs` 契約與其 regression test），維持每 task 唯一
- *   query string 重載，此路徑的模組實例累積問題本次未修（見回報）。
- */
 async function loadIsolatedParserModule(modulePath: string, moduleKey: string): Promise<unknown> {
-  const cachedFactoryModule = isolatedFactoryModuleCache.get(moduleKey);
-  if (cachedFactoryModule) {
-    return cachedFactoryModule;
+  const cachedModule = isolatedModuleCache.get(moduleKey);
+  if (cachedModule) {
+    return cachedModule;
   }
 
-  const isKnownFactory = isolatedModuleClassifications.get(moduleKey);
-  if (isKnownFactory === false) {
-    return import(toImportSpecifier(modulePath, true));
-  }
-
-  const parserModule = await import(toImportSpecifier(modulePath, true));
-  const isFactory = typeof resolveParserCandidate(parserModule) === 'function';
-  isolatedModuleClassifications.set(moduleKey, isFactory);
-  if (isFactory) {
-    isolatedFactoryModuleCache.set(moduleKey, parserModule);
-  }
-  return parserModule;
+  const modulePromise = import(toImportSpecifier(modulePath, true));
+  isolatedModuleCache.set(moduleKey, modulePromise);
+  return modulePromise;
 }
 
 function toImportSpecifier(modulePath: string, isolateModuleInstance: boolean): string {

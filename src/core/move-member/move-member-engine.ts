@@ -87,7 +87,18 @@ export class MoveMemberEngine {
     const sourceFileChange = await this.fileChangePreparer.prepareSourceFileChange(options, member);
 
     // 4. 準備目標檔案變更
-    const targetFileChange = await this.fileChangePreparer.prepareTargetFileChange(options, member);
+    // 同檔案內移動（來源檔 === 目標檔）時，插入位置必須算在「成員已從舊位置
+    // 移除後」的內容上：若各自基於獨立讀取的原始磁碟內容運算（移除看不到
+    // 插入、插入看不到移除），合併後成員會重複出現，且兩筆整檔替換 range
+    // 相同、newText 不同，會被 ChangesetBuilder 判定為衝突而直接拋錯。
+    const isSameFileMove = options.sourceFile === options.target.filePath;
+    const targetFileChange = await this.fileChangePreparer.prepareTargetFileChange(
+      options,
+      member,
+      isSameFileMove
+        ? { originalCode: sourceFileChange.originalCode, content: sourceFileChange.newCode }
+        : undefined
+    );
 
     // 5. 查找並準備引用更新
     const referenceUpdates = options.updateReferences !== false
@@ -183,16 +194,27 @@ export class MoveMemberEngine {
       ? this.applyTargetReferenceUpdates(targetFileChange, targetReferenceUpdates)
       : targetFileChange;
 
-    // 轉換 sourceFileChange（整檔替換）
-    const sourceOriginalLines = sourceFileChange.originalCode.split('\n');
-    builder.addTextChange(sourceFileChange.filePath, [{
-      range: {
-        start: { line: 1, column: 1, offset: 0 },
-        end: { line: sourceOriginalLines.length + 1, column: 1, offset: sourceFileChange.originalCode.length }
-      },
-      newText: sourceFileChange.newCode,
-      description: 'Remove member from source file'
-    }], TextEditOperationType.Modify);
+    // 來源檔與目標檔是同一個檔案（同檔案內移動成員）時，targetFileChange.newCode
+    // 已經是「移除舊位置成員 + 插入新位置成員」合併後的最終內容（見
+    // MoveMemberEngine.moveMember 呼叫 prepareTargetFileChange 時傳入的
+    // sameFileOverride），不能再額外對同一個檔案發出第二筆涵蓋整份檔案的
+    // sourceFileChange 編輯 —— 兩筆整檔替換 range 相同但 newText 不同，會被
+    // ChangesetBuilder 判定為衝突而拋錯（且即使沒拋錯，套用其中任一筆都會遺失
+    // 另一筆變更）。同檔案時只靠下面的 targetFileChange 分支輸出單一整檔編輯。
+    const isSameFile = sourceFileChange.filePath === targetFileChange.filePath;
+
+    if (!isSameFile) {
+      // 轉換 sourceFileChange（整檔替換）
+      const sourceOriginalLines = sourceFileChange.originalCode.split('\n');
+      builder.addTextChange(sourceFileChange.filePath, [{
+        range: {
+          start: { line: 1, column: 1, offset: 0 },
+          end: { line: sourceOriginalLines.length + 1, column: 1, offset: sourceFileChange.originalCode.length }
+        },
+        newText: sourceFileChange.newCode,
+        description: 'Remove member from source file'
+      }], TextEditOperationType.Modify);
+    }
 
     // 轉換 targetFileChange
     if (targetChange.isNewFile) {
@@ -206,7 +228,7 @@ export class MoveMemberEngine {
           end: { line: targetOriginalLines.length + 1, column: 1, offset: targetOriginal.length }
         },
         newText: targetChange.newCode,
-        description: 'Add member to target file'
+        description: isSameFile ? 'Move member within file' : 'Add member to target file'
       }], TextEditOperationType.Modify);
     }
 
@@ -320,7 +342,12 @@ export class MoveMemberEngine {
         target.className
       );
 
-      if (existingMember) {
+      // 同檔案內移動成員時，target.filePath === options.sourceFile，這裡找到的
+      // existingMember 幾乎必然就是「即將被移動的成員自己」（尚未真的移除，
+      // 磁碟上仍在原位置）——不是真正佔用目標位置的另一個同名成員，須用位置
+      // 排除自身，否則同檔案內移動一律被誤判為 DuplicateMemberInTarget，
+      // 連驗證都過不了、根本走不到 buildChangeset 那層。
+      if (existingMember && !MoveMemberEngine.isSameMemberLocation(existingMember, member)) {
         return {
           code: MoveMemberErrorCode.DuplicateMemberInTarget,
           message: `目標位置已存在同名成員: ${member.name}`
@@ -329,6 +356,18 @@ export class MoveMemberEngine {
     }
 
     return null;
+  }
+
+  /**
+   * 判斷兩個 MemberDefinition 是否指向檔案中同一個位置（同一個成員本體）
+   * 用於區分「目標位置已有的是被移動成員自己」與「目標位置有另一個真正的同名成員」
+   */
+  private static isSameMemberLocation(a: MemberDefinition, b: MemberDefinition): boolean {
+    return a.location.filePath === b.location.filePath &&
+      a.location.range.start.line === b.location.range.start.line &&
+      a.location.range.start.column === b.location.range.start.column &&
+      a.location.range.end.line === b.location.range.end.line &&
+      a.location.range.end.column === b.location.range.end.column;
   }
 
   /**

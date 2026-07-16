@@ -738,6 +738,44 @@ describe('LFUStrategy', () => {
     strategy.onSet('key1', { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 });
     strategy.onDelete('key1');
   });
+
+  it('key 0（falsy 但合法）須能被選為淘汰候選，不因 truthy 檢查被跳過', () => {
+    // 重現手法：若 selectEvictionKey 內部用 `if (!minKey)` 判斷「尚未找到候選」，
+    // 數字 key `0` 會被誤判成「還沒找到」而永遠選不到它，即使它才是真正最小 accessCount。
+    const numericStrategy = new LFUStrategy<number, any>();
+    const items = new Map<number, CacheItem<any>>();
+
+    items.set(0, { value: 'a', createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 1 });
+    items.set(1, { value: 'b', createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 5 });
+
+    numericStrategy.onSet(0, items.get(0)!);
+    numericStrategy.onSet(1, items.get(1)!);
+
+    // key 0 的 accessCount 最小，應被選為淘汰候選
+    expect(numericStrategy.selectEvictionKey(items)).toBe(0);
+  });
+});
+
+describe('MemoryCache LFU eviction 不得因 key 0 falsy 而跳過 (P2 regression)', () => {
+  it('maxSize=2，key 0 存取次數最少時應被淘汰，而非誤淘汰存取次數較高的 key 1', () => {
+    const cache = new MemoryCache<number, string>({
+      maxSize: 2,
+      evictionStrategy: EvictionStrategy.LFU
+    });
+
+    cache.set(0, 'value0');
+    cache.set(1, 'value1');
+    cache.get(1); // 提高 key 1 的存取頻率
+
+    // 觸發淘汰：真正最少存取的是 key 0（accessCount 0），應該被淘汰
+    cache.set(2, 'value2');
+
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+    expect(cache.has(2)).toBe(true);
+
+    cache.dispose();
+  });
 });
 
 describe('FIFOStrategy', () => {

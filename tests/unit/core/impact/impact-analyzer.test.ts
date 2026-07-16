@@ -8,6 +8,21 @@ import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
 import { createMockFileSystem, createMockFileStats } from '../_helpers/mock-factories.js';
 
 describe('ImpactAnalyzer', () => {
+  describe('getStats - circularDependencies', () => {
+    it('Given 僅 type-only 的循環 import, when getStats, then circularDependencies 不計入該循環', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/project/a.ts': 'import type { B } from \'./b.js\';\nexport type A = { b?: B };\n',
+        '/project/b.ts': 'import type { A } from \'./a.js\';\nexport type B = { a?: A };\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      await analyzer.analyzeProject('/project');
+
+      expect(analyzer.getStats().circularDependencies).toBe(0);
+    });
+  });
+
   describe('analyzeFile - 輸入驗證', () => {
     it('Given 空路徑, when analyzeFile, then 拋錯「檔案路徑不能為空」', async () => {
       const analyzer = new ImpactAnalyzer(createMockFileSystem());
@@ -51,6 +66,19 @@ describe('ImpactAnalyzer', () => {
       const result = await analyzer.analyzeFile('/src/entry.ts');
 
       expect(result.dependencies.map(dependency => dependency.path)).toEqual(['/src/foo.ts']);
+    });
+
+    it('Given import 目標檔案不存在於磁碟, when analyzeFile, then 不應把該路徑列為依賴', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/src/entry.ts': 'import \'./missing.js\';\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      const result = await analyzer.analyzeFile('/src/entry.ts');
+
+      expect(result.dependencies.map(dependency => dependency.path)).not.toContain('/src/missing');
+      expect(result.dependencies).toEqual([]);
     });
   });
 
@@ -130,6 +158,29 @@ describe('ImpactAnalyzer', () => {
       const stats = analyzer.getStats();
       expect(stats.totalFiles).toBe(0);
       expect(stats.totalDependencies).toBe(0);
+    });
+  });
+
+  describe('analyzeProject - 重複分析時清除已刪除檔案的殘留節點', () => {
+    it('Given a.ts import b.ts 後刪除 b.ts, when 對同一 analyzer 實例重跑 analyzeProject, then 依賴圖不應保留 b.ts 的幽靈節點', async () => {
+      const fileSystem = new MemFileSystem();
+      await fileSystem.fromJSON({
+        '/project/a.ts': 'import \'./b\';\n',
+        '/project/b.ts': 'export const b = 1;\n'
+      });
+
+      const analyzer = new ImpactAnalyzer(fileSystem);
+      await analyzer.analyzeProject('/project');
+
+      expect(analyzer.getStats().totalFiles).toBe(2);
+
+      await fileSystem.deleteFile('/project/b.ts');
+      await analyzer.analyzeProject('/project');
+
+      // b.ts 已從檔案系統刪除，重新分析後不應再被計入依賴圖節點
+      expect(analyzer.getStats().totalFiles).toBe(1);
+      // a.ts 的依賴列表也不應再包含已刪除的 b.ts
+      expect(analyzer.getDependencies('/project/a.ts')).not.toContain('/project/b.ts');
     });
   });
 

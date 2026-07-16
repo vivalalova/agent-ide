@@ -407,6 +407,18 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       expect(output.success).toBe(false);
       expect(output.error).toContain('檔案不存在');
     });
+
+    it('應該拒絕將目錄路徑當成 --file 目標檔案', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('不是檔案');
+    });
   });
 
   describe('JSON 輸出結構驗證', () => {

@@ -10,6 +10,8 @@
  * range-finder 有相同需求而下沉至此作為共用基礎設施（Single Source of Truth）。
  */
 
+import { isIdentifierContinueChar } from './symbol-finder/identifier-matcher.js';
+
 /**
  * @param text 待掃描文字
  * @returns 與 text 等長的布林陣列，true 表示該位置字元屬於程式碼狀態
@@ -43,9 +45,9 @@ export function computeCodeStateMask(text: string): boolean[] {
       return true;
     }
     const prev = text[j];
-    if (/[A-Za-z0-9_$]/.test(prev)) {
+    if (isIdentifierContinueChar(prev)) {
       let start = j;
-      while (start >= 0 && /[A-Za-z0-9_$]/.test(text[start])) {
+      while (start >= 0 && isIdentifierContinueChar(text[start])) {
         start--;
       }
       const word = text.slice(start + 1, j + 1);
@@ -196,4 +198,81 @@ export function computeCodeStateMask(text: string): boolean[] {
   }
 
   return mask;
+}
+
+/**
+ * 將 text 中非 code 狀態（字串/樣板/註解/regex 字面值內容，含分隔符號本身，
+ * 如引號、`//`、`/* *\/`）置換為空白，保留長度與換行位置不變、code 內容原樣保留。
+ *
+ * 供既有以正則掃描原始碼找宣告/依賴/識別符的呼叫端套用：對 maskNonCode(text) 執行
+ * 原本的正則，字串/註解內容恰巧長得像宣告或識別符的干擾即消失，且比對到的 code
+ * 內容（如識別符名稱）字元位置與原文完全對齊，capture group 擷取到的文字不受影響
+ * （只有落在非 code 區間的內容被清空）。
+ *
+ * 只適用於「文字形狀判斷」用途；若需要保留原始逐字內容（如搬移成員的原始碼），
+ * 一律從未遮罩的原文對應位置切出，不可用本函式的輸出當作真正內容。
+ */
+export function maskNonCode(text: string, mask: readonly boolean[] = computeCodeStateMask(text)): string {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    result += mask[i] || text[i] === '\n' ? text[i] : ' ';
+  }
+  return result;
+}
+
+/**
+ * 從 startIndex（通常是 class/enum/interface 等宣告關鍵字所在位置）掃描，找到
+ * 宣告本體（第一個非泛型子句內的 `{`）對應的收尾 `}` 字元位移。
+ *
+ * 用 computeCodeStateMask 排除字串/樣板/註解/regex 字面值內容中恰巧出現的括號
+ * 干擾；同時在尚未找到本體開括號前以 angle-bracket 深度跳過泛型子句
+ * （如 `class Box<T extends { value: string }>` 的 `<...>`）中的巢狀大括號，
+ * 避免其被誤判為本體開括號（見 move-member 缺陷：泛型約束物件型別的 `{`/`}`
+ * 提前配對歸零，導致 class 主體被截斷成只剩宣告行）。
+ *
+ * `>` 前一個字元為 `=`（即 `=>` 箭頭，函式型別回傳）時不計入 angle-bracket 收尾，
+ * 與 move-member/extractors/typescript-extractor.ts 的 skipGenericParams 判定
+ * 一致，避免泛型約束內的函式型別（如 `<T extends { fn: () => void }>`）誤讓
+ * angle 深度提前歸零。
+ *
+ * @param text 掃描的完整文字
+ * @param startIndex 開始掃描的字元位移（宣告關鍵字或更早的位置皆可）
+ * @param mask 與 text 等長的程式碼狀態遮罩，預設重新計算；呼叫端已有現成 mask
+ *   時可傳入避免重複計算
+ * @returns 對應收尾 `}` 的字元位移；找不到（未閉合）則回傳 -1
+ */
+export function findMatchingBodyBraceEnd(
+  text: string,
+  startIndex: number,
+  mask: readonly boolean[] = computeCodeStateMask(text)
+): number {
+  let parenDepth = 0;
+  let angleDepth = 0;
+  let depth = 0;
+  let foundStart = false;
+
+  for (let i = startIndex; i < text.length; i++) {
+    if (!mask[i]) { continue; }
+    const char = text[i];
+
+    if (char === '(') {
+      parenDepth++;
+    } else if (char === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (!foundStart && parenDepth === 0 && char === '<') {
+      angleDepth++;
+    } else if (!foundStart && parenDepth === 0 && char === '>' && angleDepth > 0 && text[i - 1] !== '=') {
+      angleDepth--;
+    } else if (char === '{' && parenDepth === 0 && angleDepth === 0) {
+      depth++;
+      foundStart = true;
+    } else if (char === '}' && parenDepth === 0 && angleDepth === 0) {
+      depth--;
+      if (foundStart && depth === 0) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
 }

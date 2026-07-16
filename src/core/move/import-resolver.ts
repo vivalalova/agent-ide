@@ -15,7 +15,7 @@ import {
   withLegacyPathAliasWildcards,
   type PathAliasInput
 } from '@shared/path-alias-resolver.js';
-import { maskStringsAndComments } from './source-masking.js';
+import { computeMaskedLines } from './source-masking.js';
 import {
   collectMultilineImportStatement,
   collectMultilineExportStatement,
@@ -95,6 +95,13 @@ export class ImportResolver {
   parseImportStatements(code: string, _filePath: string): ImportStatement[] {
     const statements: ImportStatement[] = [];
     const lines = code.split('\n');
+    // 對整份檔案內容一次計算跨行狀態感知的遮罩行（見 source-masking.ts 的
+    // computeMaskedLines）：取代原本每處各自呼叫 maskStringsAndComments 逐行
+    // 重算、彼此無記憶的做法，讓身處前面幾行才開始、尚未結束的樣板字面值/
+    // 區塊註解內部的行，能正確得知自己並非真正的頂層程式碼（見缺陷：跨行
+    // 樣板字面值中間行含 `import { x } from './old';` 這種文字，逐行獨立遮罩
+    // 因不知道自己身處樣板字面值內部，被誤判為真正的 import 並誤改寫）。
+    const maskedLines = computeMaskedLines(code);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -106,7 +113,7 @@ export class ImportResolver {
       }
 
       // 解析 ES6 import（包含 import type 語法）
-      const importStatement = collectMultilineImportStatement(lines, i);
+      const importStatement = collectMultilineImportStatement(lines, i, maskedLines);
       // 只有真正跨行的 import 語句（一個區塊只會有一筆 import）才用整段多行文字；
       // 單行內可能有多個 import 指向不同（或相同）模組，各自的 rawStatement 必須
       // 以「該 import 在行內的實際出現位置」（match[0]）切出，避免同行多筆 import
@@ -120,12 +127,10 @@ export class ImportResolver {
       // 含 `// } from './decoy.js'` 這種假收尾形狀，若不遮罩會被誤判成真正的
       // import 或誤判成真正的收尾（見 C5、P3-1 regression）。跨行情境下用
       // 各行遮罩後以 '\n' 拼接的版本，與 searchText（未遮罩、同樣以 '\n' 拼接）
-      // 逐字元對齊，可用同一組 index 切換。
+      // 逐字元對齊，可用同一組 index 切換；遮罩改直接取用預先計算好的 maskedLines。
       const maskedSearchText = multilineSpan
-        ? lines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1)
-          .map(l => maskStringsAndComments(l))
-          .join('\n')
-        : maskStringsAndComments(searchText);
+        ? maskedLines.slice(multilineSpan.startLineIndex, multilineSpan.endLineIndex + 1).join('\n')
+        : maskedLines[i];
       // searchText / maskedSearchText 皆自「起始行」起算（單行時即該行，多行時為
       // 整段 span）；baseLineIndex 為該起始行的 0-based 行索引，供下方由 matchIndex
       // 反推 import 真實行號時作基準。
@@ -185,10 +190,10 @@ export class ImportResolver {
       // 字面值／行內註解中的 'export' 字樣（如 `const note = "export ... from ..."`）
       // 遮罩後即消失，不應觸發 export 收集（C5 的 export 版類比，見 export 分支
       // 實驗形狀 A/B）。
-      const maskedLineForExport = maskStringsAndComments(line);
+      const maskedLineForExport = maskedLines[i];
       if (maskedLineForExport.includes('export')) {
         // 收集多行 export 語句
-        const exportStatement = collectMultilineExportStatement(lines, i);
+        const exportStatement = collectMultilineExportStatement(lines, i, maskedLines);
         if (exportStatement) {
           const { endLineIndex, startLineIndex } = exportStatement;
           const exportSpanLines = lines.slice(startLineIndex, endLineIndex + 1);
@@ -196,9 +201,7 @@ export class ImportResolver {
           // from '...' 與 export 定位一律在「遮罩後、逐字元對齊」的 span 文字上進行
           // （字串字面值／行內註解中長得像 re-export 的假 from 已被遮罩消除），真正的
           // 模組路徑再從未遮罩原文的同一 offset 切出（見形狀 B/C）。
-          const maskedSpanText = exportSpanLines
-            .map(l => maskStringsAndComments(l))
-            .join('\n');
+          const maskedSpanText = maskedLines.slice(startLineIndex, endLineIndex + 1).join('\n');
           // 對整個 span 的遮罩文字 matchAll，逐筆列舉真正的 export-from、各自建
           // ImportStatement，rawStatement/column per-match。單行 span 可能含同行多筆
           // （`export { a } from './x'; export { b } from './y';`，P3-DUAL-EXPORT-LINE）；
@@ -228,22 +231,31 @@ export class ImportResolver {
       // 解析 CommonJS require：module specifier 可能跨行書寫（如
       // `require(\n  './x'\n)`），先嘗試收集完整的多行呼叫語句（見 C10
       // regression）；非跨行時才視為單行呼叫（同行可能有多筆）。
-      const requireCall = collectMultilineCallStatement(lines, i, 'require');
+      //
+      // 多行呼叫結束後跳到 endLineIndex - 1（而非 endLineIndex），讓外層迴圈的
+      // `i++` 剛好落在收尾行本身、對它重新走一次完整流程：收尾行（如
+      // `);`）除了結束多行呼叫，同一物理行可能還接著第二個獨立的 require()/
+      // import() 呼叫（如 `); require('./old2');`），原本直接跳過整個收尾行會
+      // 讓這第二筆呼叫完全沒被掃描到、既不會被收集也不會被改寫（見缺陷：
+      // 多行 require() 收尾行上的第二個呼叫消失）。收尾行本身的內容（單純的
+      // `)`/`;`）不含 require/import 關鍵字，重新掃描它不會誤重複收集已處理過
+      // 的多行呼叫本體。
+      const requireCall = collectMultilineCallStatement(lines, i, 'require', maskedLines);
       if (requireCall && requireCall.endLineIndex > requireCall.startLineIndex) {
-        this.pushMultilineCallStatement(statements, lines, requireCall, ImportStatementType.REQUIRE, 'require');
-        i = requireCall.endLineIndex;
+        this.pushMultilineCallStatement(statements, lines, maskedLines, requireCall, ImportStatementType.REQUIRE, 'require');
+        i = requireCall.endLineIndex - 1;
         continue;
       }
-      this.pushSingleLineCallStatements(statements, line, lineNumber, ImportStatementType.REQUIRE, 'require');
+      this.pushSingleLineCallStatements(statements, line, maskedLines[i], lineNumber, ImportStatementType.REQUIRE, 'require');
 
-      // 解析動態 import，處理方式與 require 相同（見上）
-      const dynamicImportCall = collectMultilineCallStatement(lines, i, 'import');
+      // 解析動態 import，處理方式與 require 相同（見上，含收尾行重新掃描的理由）
+      const dynamicImportCall = collectMultilineCallStatement(lines, i, 'import', maskedLines);
       if (dynamicImportCall && dynamicImportCall.endLineIndex > dynamicImportCall.startLineIndex) {
-        this.pushMultilineCallStatement(statements, lines, dynamicImportCall, ImportStatementType.DYNAMIC_IMPORT, 'import');
-        i = dynamicImportCall.endLineIndex;
+        this.pushMultilineCallStatement(statements, lines, maskedLines, dynamicImportCall, ImportStatementType.DYNAMIC_IMPORT, 'import');
+        i = dynamicImportCall.endLineIndex - 1;
         continue;
       }
-      this.pushSingleLineCallStatements(statements, line, lineNumber, ImportStatementType.DYNAMIC_IMPORT, 'import');
+      this.pushSingleLineCallStatements(statements, line, maskedLines[i], lineNumber, ImportStatementType.DYNAMIC_IMPORT, 'import');
     }
 
     return statements;
@@ -335,20 +347,21 @@ export class ImportResolver {
    * 完整形狀的假呼叫（如 `require( // legacy: require('./fake.js')`），對
    * 未遮罩原文取第一個 regex 命中會抓到註解裡的假呼叫，導致真正呼叫的
    * specifier 完全沒被解析（見 P2-1 regression）。遮罩後文字逐行拼接時保留
-   * 每行原始長度（maskStringsAndComments 只把內容置換成等長空白），與未遮罩
+   * 每行原始長度（computeMaskedLines 只把內容置換成等長空白），與未遮罩
    * 版本以 '\n' join 的結果字元位置一一對應，可直接用同一組 index/length 切出
    * 未遮罩原文對應片段。
    */
   private pushMultilineCallStatement(
     statements: ImportStatement[],
     lines: string[],
+    maskedLines: readonly string[],
     call: MultilineStatementSpan,
     type: ImportStatementType,
     keyword: 'require' | 'import'
   ): void {
     const callLines = lines.slice(call.startLineIndex, call.endLineIndex + 1);
     const rawStatementText = callLines.join('\n');
-    const maskedStatementText = callLines.map(l => maskStringsAndComments(l)).join('\n');
+    const maskedStatementText = maskedLines.slice(call.startLineIndex, call.endLineIndex + 1).join('\n');
     const callPattern = new RegExp(`\\b${keyword}\\s*\\(\\s*['"\`][^'"\`]+['"\`]\\s*\\)`);
     const maskedMatch = maskedStatementText.match(callPattern);
     if (!maskedMatch || maskedMatch.index === undefined) {
@@ -402,11 +415,11 @@ export class ImportResolver {
   private pushSingleLineCallStatements(
     statements: ImportStatement[],
     line: string,
+    maskedLine: string,
     lineNumber: number,
     type: ImportStatementType,
     keyword: 'require' | 'import'
   ): void {
-    const maskedLine = maskStringsAndComments(line);
     const pattern = new RegExp(`\\b${keyword}\\s*\\(\\s*['"\`][^'"\`]+['"\`]\\s*\\)`, 'g');
     const matches = maskedLine.matchAll(pattern);
     for (const match of matches) {

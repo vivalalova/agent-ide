@@ -21,30 +21,39 @@ import {
   isToggleOptionalChange
 } from './types.js';
 import { resolveParameterIndex } from './utils.js';
+import { SignatureTransformer } from './signature-transformer.js';
 
 /**
  * Signature Validator
  * 驗證簽名變更的合法性
  */
 export class SignatureValidator {
+  private readonly transformer = new SignatureTransformer();
+
   /**
    * 驗證變更
+   *
+   * 每個 change 依對照「此 change 之前所有 change 依序套用後」的當下參數列表驗證，
+   * 非固定對照最初的原始簽名——例如 `[remove c, reorder b,a]` 套用到 `(a,b,c)`：
+   * reorder 應對照移除 c 後的 `(a,b)` 驗證（合法），而非原始三參數列表（會誤判為
+   * 「未包含全部參數」）。與 transformer 產生最終簽名共用同一套 splice 邏輯
+   * （Single Source of Truth），只套用到第 i 步為止。
    */
   validateChanges(signature: FunctionSignature, changes: readonly SignatureChange[]): ChangeSignatureValidationError[] {
     const errors: ChangeSignatureValidationError[] = [];
-    const parameterNames = new Set(signature.parameters.map(p => p.name));
-    const newParameterNames = new Set(parameterNames);
 
-    for (const change of changes) {
+    for (let i = 0; i < changes.length; i++) {
+      const change = changes[i];
+      const currentSignature = this.transformer.applyChangesToSignature(signature, changes.slice(0, i));
+      const currentParameterNames = new Set(currentSignature.parameters.map(p => p.name));
+
       if (isAddParameterChange(change)) {
-        if (newParameterNames.has(change.name)) {
+        if (currentParameterNames.has(change.name)) {
           errors.push({
             code: ChangeSignatureErrorCode.DuplicateParameterName,
             message: `參數名稱重複: ${change.name}`,
             parameterName: change.name
           });
-        } else {
-          newParameterNames.add(change.name);
         }
 
         // 驗證新增參數必須有 function default；呼叫點值不能替代簽名預設值。
@@ -65,22 +74,20 @@ export class SignatureValidator {
       }
 
       if (isRemoveParameterChange(change)) {
-        const targetName = this.resolveParameterName(signature, change.parameterNameOrIndex);
-        if (!targetName || !parameterNames.has(targetName)) {
+        const targetName = this.resolveParameterName(currentSignature, change.parameterNameOrIndex);
+        if (!targetName || !currentParameterNames.has(targetName)) {
           errors.push({
             code: ChangeSignatureErrorCode.ParameterNotFound,
             message: `找不到參數: ${change.parameterNameOrIndex}`,
             parameterName: String(change.parameterNameOrIndex)
           });
-        } else {
-          newParameterNames.delete(targetName);
         }
       }
 
       if (isReorderParametersChange(change)) {
         for (const nameOrIndex of change.newOrder) {
-          const targetName = this.resolveParameterName(signature, nameOrIndex);
-          if (!targetName || !parameterNames.has(targetName)) {
+          const targetName = this.resolveParameterName(currentSignature, nameOrIndex);
+          if (!targetName || !currentParameterNames.has(targetName)) {
             errors.push({
               code: ChangeSignatureErrorCode.ParameterNotFound,
               message: `找不到參數: ${nameOrIndex}`,
@@ -89,7 +96,15 @@ export class SignatureValidator {
           }
         }
 
-        if (change.newOrder.length !== signature.parameters.length) {
+        // 應涵蓋的參數數 = 原始簽名參數數 - 目前為止已套用的 remove 數，非
+        // currentSignature.parameters.length：後者若先前有 --add，會多算進新增
+        // 參數，但 newOrder 本就不必（也不該）列出新增參數名稱——
+        // signature-transformer.ts 的實際套用邏輯早已容忍此情況（明確保留未被
+        // newOrder 指名的參數，見其註解「例如先前 --add 新增的」），驗證邏輯
+        // 應與之一致，否則 --add 與 --reorder 併用會被誤判為「未包含全部參數」
+        const removedSoFar = changes.slice(0, i).filter(isRemoveParameterChange).length;
+        const requiredCount = signature.parameters.length - removedSoFar;
+        if (change.newOrder.length !== requiredCount) {
           errors.push({
             code: ChangeSignatureErrorCode.InvalidParameterOrder,
             message: '重新排序必須包含所有參數'
@@ -97,7 +112,7 @@ export class SignatureValidator {
         }
 
         // 驗證可選參數順序：可選參數必須在必選參數之後
-        const optionalOrderError = this.validateOptionalParameterOrder(signature, change.newOrder);
+        const optionalOrderError = this.validateOptionalParameterOrder(currentSignature, change.newOrder);
         if (optionalOrderError) {
           errors.push(optionalOrderError);
         }
@@ -105,8 +120,8 @@ export class SignatureValidator {
 
       if (isChangeParameterTypeChange(change) || isRenameParameterChange(change) ||
           isChangeDefaultValueChange(change) || isToggleOptionalChange(change)) {
-        const targetName = this.resolveParameterName(signature, change.parameterNameOrIndex);
-        if (!targetName || !parameterNames.has(targetName)) {
+        const targetName = this.resolveParameterName(currentSignature, change.parameterNameOrIndex);
+        if (!targetName || !currentParameterNames.has(targetName)) {
           errors.push({
             code: ChangeSignatureErrorCode.ParameterNotFound,
             message: `找不到參數: ${change.parameterNameOrIndex}`,
@@ -123,7 +138,8 @@ export class SignatureValidator {
       }
 
       if (isRenameParameterChange(change)) {
-        if (newParameterNames.has(change.newName) && change.newName !== this.resolveParameterName(signature, change.parameterNameOrIndex)) {
+        const currentTargetName = this.resolveParameterName(currentSignature, change.parameterNameOrIndex);
+        if (currentParameterNames.has(change.newName) && change.newName !== currentTargetName) {
           errors.push({
             code: ChangeSignatureErrorCode.DuplicateParameterName,
             message: `參數名稱重複: ${change.newName}`,

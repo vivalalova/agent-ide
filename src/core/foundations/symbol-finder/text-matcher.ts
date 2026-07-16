@@ -314,10 +314,6 @@ export class TextMatcher {
         state.inBlockComment = true;
         continue;
       }
-      if (char === '#') {
-        state.inSingleLineComment = true;
-        continue;
-      }
       if (char === '\'' || char === '"') {
         state.quote = char;
         continue;

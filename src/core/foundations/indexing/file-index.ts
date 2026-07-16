@@ -298,8 +298,17 @@ export class FileIndex {
 
   /**
    * 檢查檔案是否需要重新索引
+   *
+   * @param currentChecksum 目前檔案內容的 checksum（可選）；提供時作為權威判斷依據——
+   * size/mtime 皆可能在內容變更時被保留（如 touch -m 還原時間戳、或同長度替換內容），
+   * 兩者都無法偵測出 stale。checksum 不一致必為需要重新索引，即使 size/mtime 相同。
    */
-  needsReindexing(filePath: string, currentModified: Date, currentSize?: number): boolean {
+  needsReindexing(
+    filePath: string,
+    currentModified: Date,
+    currentSize?: number,
+    currentChecksum?: string
+  ): boolean {
     const entry = this.fileEntries.get(filePath);
     if (!entry) {
       return true; // 檔案不在索引中，需要索引
@@ -307,6 +316,11 @@ export class FileIndex {
 
     if (!entry.isIndexed) {
       return true; // 尚未被索引
+    }
+
+    // checksum 不一致：內容確實變更，無論 size/mtime 是否看似未變，權威判定為需要重新索引
+    if (currentChecksum !== undefined && currentChecksum !== entry.fileInfo.checksum) {
+      return true;
     }
 
     // 檔案大小變更即使修改時間未變，也代表內容可能已變更

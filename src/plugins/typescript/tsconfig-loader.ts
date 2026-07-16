@@ -48,6 +48,21 @@ interface PackageExtendsSpec {
   configPath?: string;
 }
 
+/**
+ * tsconfig extends 循環偵測到的錯誤
+ *
+ * 與「tsconfig.json 不存在」或「JSON 格式錯誤」等可優雅降級的情況不同，
+ * extends 循環代表設定本身邏輯矛盾（fast-fail 原則）：呼叫端必須明確得知
+ * 此錯誤，不可被靜默吞掉後退化成「專案沒有任何 path alias」的空設定，
+ * 否則 rename/impact 等命令會誤判為零 alias，漏掉所有透過該 alias 匯入的消費端。
+ */
+export class CircularTsconfigExtendsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CircularTsconfigExtendsError';
+  }
+}
+
 function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
   const parsed = ts.parseConfigFileTextToJson(tsconfigPath, content);
   if (parsed.error) {
@@ -215,7 +230,7 @@ async function loadResolvedTsconfigPathConfig(
 ): Promise<TsconfigPathConfig> {
   const resolvedTsconfigPath = path.resolve(tsconfigPath);
   if (visited.has(resolvedTsconfigPath)) {
-    throw new Error(`Circular tsconfig extends detected: ${resolvedTsconfigPath}`);
+    throw new CircularTsconfigExtendsError(`Circular tsconfig extends detected: ${resolvedTsconfigPath}`);
   }
   visited.add(resolvedTsconfigPath);
 
@@ -326,6 +341,12 @@ export async function loadTsconfigPathConfig(
     cache.set(cacheKey, cachedLoading);
     return await cachedLoading;
   } catch (error) {
+    // fast-fail：extends 循環是設定本身邏輯矛盾，必須讓呼叫端知道，
+    // 不可與「tsconfig.json 不存在/格式錯誤」一併靜默退化成空設定。
+    if (error instanceof CircularTsconfigExtendsError) {
+      throw error;
+    }
+
     // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
     logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
   }

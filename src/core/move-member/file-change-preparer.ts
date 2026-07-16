@@ -10,8 +10,9 @@ import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
 import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange } from './types.js';
 import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { isFileNotFoundError } from '@shared/errors/index.js';
 import { getImportResolutionExtensions, stripSourceFileExtension } from '@shared/types/index.js';
-import { FileUtils } from '@core/foundations/index.js';
+import { FileUtils, findMatchingBodyBraceEnd, escapeRegex, maskNonCode, computeCodeStateMask } from '@core/foundations/index.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 
 /**
@@ -40,8 +41,12 @@ interface ImportSymbolInfo {
  * 來源檔案的符號資訊
  */
 interface SourceSymbolInfo {
-  /** 本地定義的 export 符號 */
-  localExports: Set<string>;
+  /**
+   * 本地定義的 export 符號：key 為程式碼中實際引用的 local binding 名稱，
+   * value 為該符號實際對外可見的 export 名稱 —— 一般與 local 名稱相同，
+   * 但 `export { local as alias }` 這種別名寫法時 value 是 alias、非 local 名稱。
+   */
+  localExports: Map<string, string>;
   /** 本地定義的 default export 符號 */
   defaultExports: Set<string>;
   /** import 的符號對應的來源，key 為程式碼中實際引用的 local binding 名稱 */
@@ -106,10 +111,19 @@ export class FileChangePreparer {
   /**
    * 準備目標檔案變更
    * 自動判斷目標檔案是否存在：存在則插入，不存在則創建新檔案
+   *
+   * @param sameFileOverride 同檔案內移動成員時使用：來源檔與目標檔是同一個檔案，
+   *   插入位置必須算在「成員已從舊位置移除後」的內容上，而非磁碟上仍含舊成員的
+   *   原始內容 —— 否則會產生「成員重複出現」的錯誤結果（移除與插入各自基於獨立
+   *   讀取的原始磁碟內容，互不知道對方的變更）。呼叫端（MoveMemberEngine）在偵測到
+   *   sourceFile === target.filePath 時傳入 { originalCode: 真實磁碟原始內容,
+   *   content: 已移除成員後的內容 }；originalCode 仍用於整檔替換 range 的行數計算
+   *   （範圍必須對應磁碟上實際存在的內容），content 才是插入運算的基底。
    */
   async prepareTargetFileChange(
     options: MoveMemberOptions,
-    member: MemberDefinition
+    member: MemberDefinition,
+    sameFileOverride?: { originalCode: string; content: string }
   ): Promise<TargetFileChange> {
     const { target } = options;
 
@@ -124,8 +138,13 @@ export class FileChangePreparer {
       memberCode = 'export ' + memberCode;
     }
 
-    // 自動判斷檔案是否存在
-    const content = await this.readFile(target.filePath);
+    // 自動判斷檔案是否存在；同檔案移動時直接沿用呼叫端已讀好的內容，不重複讀磁碟
+    const diskContent = sameFileOverride ? sameFileOverride.originalCode : await this.readFile(target.filePath);
+    // 插入運算的基底：同檔案移動時用「已移除成員」後的內容，避免插入位置仍看得到
+    // 舊位置的成員（否則插入與移除各自基於原始磁碟內容獨立運算，合併後成員重複）
+    const content = sameFileOverride ? sameFileOverride.content : diskContent;
+    // 判斷依據直接看 content（而非 diskContent）：sameFileOverride.content 型別保證非 null，
+    // 讓 TS 能在下方 isNewFile 為 false 的分支正確窄化 content 為 string
     const isNewFile = content === null;
 
     // 分析成員依賴並生成需要的 import（需先知道目標檔既有 import 才能判重，避免重複插入）
@@ -169,7 +188,7 @@ export class FileChangePreparer {
     // 現有檔案：將 import 插入到檔案開頭（在現有 import 之後）
     let finalCode: string;
     if (dependencyImports) {
-      const importInsertLine = this.findImportInsertPosition(lines);
+      const importInsertLine = this.findImportInsertPosition(content);
       // 成員插入點不得落在 import 區內：若指定位置早於 import 區結尾，
       // clamp 到 import 區之後，避免 [memberInsertLine, importInsertLine) 這段
       // import 行同時被 slice(importInsertLine, memberInsertLine) 略過、又被
@@ -204,20 +223,62 @@ export class FileChangePreparer {
 
   /**
    * 找到 import 插入位置（在最後一個 import 之後）
+   *
+   * 以大括號深度追蹤多行具名 import（如 `import {\n  Existing\n} from './dep';`）：
+   * 原本逐行判斷「這行是不是 import 開頭」，多行具名 import 的延續行（如
+   * `  Existing`）既不以 `import` 開頭也非註解/空行，會被誤判為「遇到非 import
+   * 內容」而提前停止搜尋，導致插入位置落在該多行語句中間、產生無效語法
+   * （見缺陷：新 import 被插入到既有多行具名 import 的具名區塊內部）。深度歸零
+   * 前的延續行一律視為同一語句的一部分，不影響搜尋是否該停止。大括號計數用
+   * computeCodeStateMask 排除字串/註解內容中恰巧出現的大括號干擾（如具名 import
+   * 區塊內的行內註解含 `}` 字樣）。
    */
-  private findImportInsertPosition(lines: string[]): number {
+  private findImportInsertPosition(content: string): number {
+    const lines = content.split('\n');
+    const mask = computeCodeStateMask(content);
     let lastImportLine = 0;
+    let bracketDepth = 0;
+    let offset = 0;
+
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith('import ') || line.startsWith('import{')) {
+      const rawLine = lines[i];
+      const line = rawLine.trim();
+
+      if (bracketDepth > 0) {
+        // 身處未閉合的多行具名 import 區塊內部，此行是其延續行，非新語句起點
+        bracketDepth = Math.max(0, bracketDepth + this.netBraceDepth(rawLine, offset, mask));
         lastImportLine = i + 1;
-      }
-      // 遇到非 import、非空行、非註解，停止搜尋
-      if (line && !line.startsWith('import') && !line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*')) {
+      } else if (line.startsWith('import ') || line.startsWith('import{')) {
+        lastImportLine = i + 1;
+        bracketDepth = Math.max(0, this.netBraceDepth(rawLine, offset, mask));
+      } else if (line && !line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*')) {
+        // 遇到非 import、非空行、非註解、且非多行 import 延續行，停止搜尋
         break;
       }
+
+      offset += rawLine.length + 1;
     }
+
     return lastImportLine;
+  }
+
+  /**
+   * 計算單一行內大括號的淨深度變化（`{` 數量減 `}` 數量），排除 mask 標記為
+   * 非 code（字串/樣板/註解/regex 字面值）內容中的大括號干擾。供
+   * findImportInsertPosition 追蹤多行具名 import 是否仍未閉合。
+   *
+   * @param line 該行原始文字
+   * @param lineStartOffset 該行第一個字元在完整檔案內容中的字元位移
+   * @param mask 完整檔案內容的程式碼狀態遮罩（見 computeCodeStateMask）
+   */
+  private netBraceDepth(line: string, lineStartOffset: number, mask: readonly boolean[]): number {
+    let delta = 0;
+    for (let j = 0; j < line.length; j++) {
+      if (!mask[lineStartOffset + j]) { continue; }
+      if (line[j] === '{') { delta++; }
+      else if (line[j] === '}') { delta--; }
+    }
+    return delta;
   }
 
   /**
@@ -255,10 +316,14 @@ export class FileChangePreparer {
       if (dep === member.name) { continue; }
 
       if (symbolInfo.localExports.has(dep)) {
-        // 依賴來自來源檔案的本地 export，依 export 類型決定 import 形式
+        // 依賴來自來源檔案的本地 export，依 export 類型決定 import 形式。
+        // exportedName 可能因 `export { local as alias }` 與 local 名稱（dep）不同，
+        // import 語句必須用實際 export 名稱，並用 as 別名映射回成員程式碼引用的 local 名稱，
+        // 否則會生成指向不存在匯出的無效 import（見缺陷：aliased export 遺失映射）。
         const relativePath = this.calculateRelativePath(targetFile, sourceFile);
         const importType = symbolInfo.defaultExports.has(dep) ? ImportType.Default : ImportType.Named;
-        addNeeded(relativePath, importType, false, dep, dep);
+        const exportedName = symbolInfo.localExports.get(dep) ?? dep;
+        addNeeded(relativePath, importType, false, dep, exportedName);
       } else if (symbolInfo.importedSymbols.has(dep)) {
         // 依賴來自外部模組，保持原本的 import 類型、別名與 type 修飾
         const importInfo = symbolInfo.importedSymbols.get(dep);
@@ -302,18 +367,21 @@ export class FileChangePreparer {
   }
 
   /**
-   * 解析符號列表（處理 as 別名）
-   * "A, B as C, D" → ["A", "B", "D"]
+   * 解析 `export { A, B as C }` 的符號列表，保留 local 名稱與實際 export 名稱的映射
+   * （處理 as 別名）："A, B as C" → [["A", "A"], ["B", "C"]]
+   * 無別名時 local 與 export 名稱相同；有別名時該符號實際對外可見的名稱是 as 之後的別名，
+   * 非 as 之前的 local 名稱（見 localExports 型別說明）。
    */
-  private parseSymbolList(symbolListStr: string): string[] {
+  private parseExportSymbolPairs(symbolListStr: string): Array<[localName: string, exportedName: string]> {
     return symbolListStr
       .split(',')
-      .map(s => {
-        const trimmed = s.trim();
+      .map(s => s.trim())
+      .filter(s => s.length > 0)
+      .map((trimmed): [string, string] => {
         const asIndex = trimmed.indexOf(' as ');
-        return asIndex !== -1 ? trimmed.slice(0, asIndex).trim() : trimmed;
-      })
-      .filter(s => s.length > 0);
+        if (asIndex === -1) { return [trimmed, trimmed]; }
+        return [trimmed.slice(0, asIndex).trim(), trimmed.slice(asIndex + 4).trim()];
+      });
   }
 
   /**
@@ -389,11 +457,18 @@ export class FileChangePreparer {
 
   /**
    * 分析來源檔案的符號（本地 export 和 import）
-   * import 分析改用 Parser AST（見 indexImportedSymbols）；本地 export 偵測使用正則
+   * import 分析改用 Parser AST（見 indexImportedSymbols）；本地 export 偵測使用正則。
+   *
+   * export 偵測正則一律對 maskNonCode(content) 執行：字串/註解內容中恰巧長得像
+   * export 宣告的文字（如 `/* export const Fake = 1; *\/`）遮罩後即消失，不會被
+   * 誤判為真實 export（見缺陷：搬移成員引用同名但實際未 export 的 `Fake` 時，
+   * 誤判導致目標檔生成一筆指向不存在導出的假 import）。indexImportedSymbols 走
+   * Parser AST 解析，一律仍傳未遮罩的原始 content。
    */
   private analyzeSourceSymbols(content: string, filePath: string): SourceSymbolInfo {
-    const localExports = new Set<string>();
+    const localExports = new Map<string, string>();
     const defaultExports = new Set<string>();
+    const maskedContent = maskNonCode(content);
 
     // export default [async] function NAME / export default class NAME
     // 僅匹配具名宣告；匿名 default export 維持不辨識
@@ -404,10 +479,10 @@ export class FileChangePreparer {
     );
 
     let match;
-    while ((match = defaultExportPattern.exec(content)) !== null) {
+    while ((match = defaultExportPattern.exec(maskedContent)) !== null) {
       const name = match[1] ?? match[2];
       if (name !== undefined) {
-        localExports.add(name);
+        localExports.set(name, name);
         defaultExports.add(name);
       }
     }
@@ -431,15 +506,15 @@ export class FileChangePreparer {
       'gu'
     );
 
-    while ((match = exportPattern.exec(content)) !== null) {
+    while ((match = exportPattern.exec(maskedContent)) !== null) {
       if (match[7] !== undefined) {
-        // export { A, B }
-        for (const symbol of this.parseSymbolList(match[7])) {
-          localExports.add(symbol);
+        // export { A, B as C }：local 名稱 B 實際對外可見的是別名 C，須分開記錄
+        for (const [localName, exportedName] of this.parseExportSymbolPairs(match[7])) {
+          localExports.set(localName, exportedName);
         }
       } else {
         const name = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? match[6];
-        if (name !== undefined) { localExports.add(name); }
+        if (name !== undefined) { localExports.set(name, name); }
       }
     }
 
@@ -449,40 +524,32 @@ export class FileChangePreparer {
   /**
    * 找到類別內的插入位置
    * 使用正則表達式嚴格匹配類別定義，避免匹配註解中的類別名稱
+   *
+   * 收尾大括號改委派共用的 findMatchingBodyBraceEnd（見 code-state-mask.ts），
+   * 以 mask 排除字串/註解內容中恰巧出現的大括號干擾（見缺陷：
+   * `class Target { method(){ const text = "}"; } }` 字串內的 `}` 被逐字元計數
+   * 誤認為類別收尾，導致插入位置算錯）。className 亦逸出正則特殊字元後才內嵌
+   * 進 `new RegExp(...)`（見缺陷：類別名稱含 `$` 等特殊字元如 `$Target` 時，
+   * 未跳脫的樣式完全比對不到）。
    */
   private async findClassInsertPosition(content: string, className: string): Promise<number> {
-    const lines = content.split('\n');
-    let inClass = false;
-    let depth = 0;
-
     // 嚴格匹配類別定義：可選的 export/abstract，後接 class 關鍵字和類別名稱
     const classPattern = new RegExp(
-      `^\\s*(export\\s+)?(abstract\\s+)?class\\s+${className}\\b`
+      `^[ \\t]*(export\\s+)?(abstract\\s+)?class\\s+${escapeRegex(className)}\\b`,
+      'm'
     );
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 使用正則表達式匹配，避免匹配註解
-      if (!inClass && classPattern.test(line)) {
-        inClass = true;
-      }
-
-      if (inClass) {
-        for (const char of line) {
-          if (char === '{') {depth++;}
-          else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-              // 找到類別結尾，在結尾括號前插入
-              return i;
-            }
-          }
-        }
-      }
+    const match = classPattern.exec(content);
+    if (!match || match.index === undefined) {
+      return -1;
     }
 
-    return -1;
+    const braceEndIndex = findMatchingBodyBraceEnd(content, match.index);
+    if (braceEndIndex === -1) {
+      return -1;
+    }
+
+    return content.slice(0, braceEndIndex).split('\n').length - 1;
   }
 
   /**
@@ -563,15 +630,20 @@ export class FileChangePreparer {
   }
 
   /**
-   * 讀取檔案內容
+   * 讀取檔案內容；回傳 null 僅代表「檔案不存在」（呼叫端以此判斷是否為新檔案），
+   * 其餘讀取失敗（如權限不足）一律往外拋，避免被誤判成「檔案不存在」而靜默
+   * 當成新檔案處理、覆蓋寫入或漏掉既有內容（與 move/path-calculator.ts 同型缺陷）。
    */
   private async readFile(filePath: string): Promise<string | null> {
     try {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
+      if (isFileNotFoundError(error)) {
+        return null;
+      }
       diagnostics.warn('move-member/file-change-preparer', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
-      return null;
+      throw error;
     }
   }
 }

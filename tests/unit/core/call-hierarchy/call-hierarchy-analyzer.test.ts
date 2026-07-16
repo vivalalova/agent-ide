@@ -363,4 +363,48 @@ export function jsCaller() {
       expect(callers).not.toContain('topB');
     });
   });
+
+  describe('對抗式審查缺陷重現（regression）', () => {
+    // Bug A: outgoing 未把「賦值給變數的 arrow function」視為巢狀函數邊界，
+    // 導致從未被呼叫的 inner closure 內部呼叫被誤歸屬到外層函數。
+    it('Given arrow function 賦值給變數且從未被呼叫, when analyze outer 的 outgoing, then 不應包含只存在於該 arrow 內部的呼叫', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested-arrow-var.ts': `
+function outer() {
+  const inner = () => callee();
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer', ['/src/nested-arrow-var.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).not.toContain('callee');
+    });
+
+    // Bug B: incoming 在 depth 1（無 --at）時以函數名稱在「整個專案」找呼叫點，
+    // 未綁定到本次選定的具體定義，導致其他檔案裡「同名但無關」的函數之呼叫者被誤列。
+    it('Given a.ts 的 target 與 b.ts 另一個無關的同名 target, when analyze a.ts target 的 incoming（無 --at）, then 不應包含只呼叫 b.ts 那個 target 的 caller', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/a.ts': [
+          'export function target() {',
+          '  return 1;',
+          '}'
+        ].join('\n'),
+        '/src/b.ts': [
+          'function target() {',
+          '  return 2;',
+          '}',
+          'export function caller() {',
+          '  return target();',
+          '}'
+        ].join('\n')
+      });
+
+      const result = await analyzer.analyze('target', ['/src/a.ts', '/src/b.ts'], { direction: 'incoming', depth: 1 });
+      const callerNames = result?.incoming.map(call => call.caller) ?? [];
+
+      expect(callerNames).not.toContain('caller');
+    });
+  });
 });

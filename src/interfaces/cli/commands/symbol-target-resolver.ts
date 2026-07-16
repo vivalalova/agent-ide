@@ -6,6 +6,7 @@ import * as path from 'path';
 import type { SymbolSearchResult } from '@core/foundations/indexing/index.js';
 import type { SymbolIdentity } from '@infrastructure/formatters/index.js';
 import { hasPositionInfo, parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
+import { isImportedSymbol } from '@shared/types/symbol.js';
 import type { Symbol } from '@shared/types/symbol.js';
 
 export interface SymbolTargetResolution {
@@ -119,11 +120,6 @@ function dedupeSymbolIdentities(symbols: readonly SymbolIdentity[]): SymbolIdent
   }
 
   return uniqueSymbols;
-}
-
-/** 判斷是否為 parser 產生的 import-only binding 候選。 */
-export function isImportedSymbol(symbol: Symbol): boolean {
-  return (symbol as { readonly isImported?: boolean }).isImported === true;
 }
 
 function normalizePath(filePath: string): string {

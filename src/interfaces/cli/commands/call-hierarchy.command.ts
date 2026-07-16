@@ -25,7 +25,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
@@ -86,8 +86,8 @@ async function handleCallHierarchyCommand(
   }
 
   // 驗證 depth 參數
-  const depth = parseInt(options.depth, 10);
-  if (isNaN(depth) || depth < 1 || depth > 10) {
+  const depth = parseStrictInt(options.depth);
+  if (depth === null || depth < 1 || depth > 10) {
     outputHandler.outputError('depth 必須在 1-10 之間', format);
     process.exitCode = 1;
     return;

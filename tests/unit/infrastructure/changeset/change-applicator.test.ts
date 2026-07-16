@@ -352,8 +352,9 @@ describe('ChangeApplicator', () => {
       const result = await sut.apply(changeset, { rollbackOnError: true });
 
       expect(result.success).toBe(false);
-      // 應該嘗試回滾 file1.ts
-      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/file1.ts', 'backup content');
+      // 應該嘗試回滾 file1.ts；回滾寫入須沿用與 forward apply 相同的原子寫入
+      // 原語（Bug A 修復：{ fsync: atomic }），避免非原子寫入中途失敗留下損毀內容
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/file1.ts', 'backup content', { fsync: true });
     });
 
     it('rollbackOnError=false 時不應回滾', async () => {
@@ -445,7 +446,8 @@ describe('ChangeApplicator', () => {
       expect(result.success).toBe(false);
       expect(mockFileSystem.moveFile).toHaveBeenCalledWith('/old.ts', '/new.ts');
       expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/new.ts');
-      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/old.ts', 'old content');
+      // 回滾寫入須沿用與 forward apply 相同的原子寫入原語（Bug A 修復）
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/old.ts', 'old content', { fsync: true });
       expect(result.movedFiles).toEqual([]);
     });
 
@@ -496,13 +498,16 @@ describe('ChangeApplicator', () => {
         { fsync: true }
       );
       expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/new.ts');
+      // 回滾寫入須沿用與 forward apply 相同的原子寫入原語（Bug A 修復）
       expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
         '/old.ts',
-        'export const value = 1;\n'
+        'export const value = 1;\n',
+        { fsync: true }
       );
       expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
         '/consumer.ts',
-        'import { value } from \'./old\';\n'
+        'import { value } from \'./old\';\n',
+        { fsync: true }
       );
       expect(result.modifiedFiles).toEqual([]);
       expect(result.movedFiles).toEqual([]);

@@ -60,6 +60,16 @@ export function tryParseOutputFormat(
 }
 
 /**
+ * 嚴格解析 CLI 選項為整數：僅接受全為數字的字串，拒絕如 "10abc" 的尾隨非數字字元
+ * （`parseInt` 對此類輸入會靜默截斷而非回傳 NaN，導致無效輸入被誤判為合法）
+ * @param value 原始選項字串
+ * @returns 解析成功回傳整數，字串含非數字字元則回傳 null
+ */
+export function parseStrictInt(value: string): number | null {
+  return /^\d+$/.test(value) ? parseInt(value, 10) : null;
+}
+
+/**
  * 驗證 CLI 輸入路徑存在，失敗時輸出統一錯誤並設定 exitCode。
  */
 export async function ensurePathExists(

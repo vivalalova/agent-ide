@@ -172,35 +172,40 @@ describe('Worker Pool E2E - 多執行緒 AST 解析', () => {
       }
     });
 
-    it('直接 export 的 ParserPlugin 模組不應在任務清理時被 dispose 後重用', async () => {
+    it('直接 export 的 ParserPlugin 模組在 worker isolate 模式下應於多個 task 間重用同一模組實例（不隨 task 數重新 import）', async () => {
       const tempDir = fs.mkdtempSync(path.join(tmpdir(), 'agent-ide-worker-direct-dispose-'));
       const disposeLog = path.join(tempDir, 'dispose.log');
+      const loadLog = path.join(tempDir, 'load.log');
       process.env.AGENT_IDE_DIRECT_DISPOSE_LOG = disposeLog;
+      process.env.AGENT_IDE_DIRECT_LOAD_LOG = loadLog;
       const tempPool = createParserWorkerPool({ maxThreads: 1, minThreads: 1 });
       const filePath = path.join(TOY_PROJECT, 'main.toy');
       const content = fs.readFileSync(filePath, 'utf-8');
 
       try {
-        const first = await tempPool.parseFile({
-          filePath,
-          content,
-          parserModulePaths: [DIRECT_DISPOSABLE_TOY_PARSER_MODULE]
-        });
-        expect(first.errors).toHaveLength(0);
-
-        const second = await tempPool.parseFile({
-          filePath,
-          content,
-          parserModulePaths: [DIRECT_DISPOSABLE_TOY_PARSER_MODULE]
-        });
-        expect(second.errors).toHaveLength(0);
+        for (let taskIndex = 0; taskIndex < 3; taskIndex++) {
+          const result = await tempPool.parseFile({
+            filePath,
+            content,
+            parserModulePaths: [DIRECT_DISPOSABLE_TOY_PARSER_MODULE]
+          });
+          expect(result.errors).toHaveLength(0);
+        }
       } finally {
         await tempPool.destroy();
         delete process.env.AGENT_IDE_DIRECT_DISPOSE_LOG;
+        delete process.env.AGENT_IDE_DIRECT_LOAD_LOG;
       }
 
       try {
-        expect(fs.readFileSync(disposeLog, 'utf-8')).toContain('direct disposed');
+        // 根因回歸：module 只應在 worker 生命週期內被 Node ESM loader 實際 evaluate 一次，
+        // 不隨 task 數線性增長（修復前每個 task 都會用全新 query string 重新 import，
+        // 這裡會是 3 行，代表 3 個永遠不會被回收的模組實例，即記憶體洩漏根因）。
+        const loadLines = fs.readFileSync(loadLog, 'utf-8').trim().split('\n').filter(Boolean);
+        expect(loadLines).toHaveLength(1);
+        // 模組實例在多個 task 間重用、不再逐 task dispose，dispose 因此不會被觸發，
+        // 直到目前 worker 架構仍缺乏可靠的 teardown hook（見 initializer.ts 註解）。
+        expect(fs.existsSync(disposeLog)).toBe(false);
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }

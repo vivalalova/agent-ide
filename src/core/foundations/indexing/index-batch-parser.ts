@@ -141,8 +141,13 @@ export class IndexBatchParser {
       try {
         const stat = await this.fileSystem.getStats(filePath);
 
-        // 跳過大檔案
+        // 跳過大檔案：若該路徑先前已有索引項目（檔案在兩次索引之間變大），
+        // 必須連同清除舊條目，否則 stale 符號會繼續被查到（同型缺陷見 index-engine.ts 單檔索引路徑）
         if (stat.size > config.maxFileSize) {
+          if (this.fileIndex.hasFile(filePath)) {
+            await this.symbolIndex.removeFileSymbols(filePath);
+            await this.fileIndex.removeFile(filePath);
+          }
           return;
         }
 
@@ -197,35 +202,17 @@ export class IndexBatchParser {
 
   /**
    * 從內容建立 FileInfo（避免重複讀取檔案）
+   * public：單執行緒索引路徑（index-engine.ts indexFile）與批次路徑共用同一份已讀取的
+   * content 計算 checksum，避免對同一檔案獨立讀取兩次造成 TOCTOU（parse 用的內容版本
+   * 與 checksum 對應的內容版本不一致，corrupting 以 checksum 判斷 staleness 的機制）
    */
-  private async createFileInfoFromContent(
+  async createFileInfoFromContent(
     filePath: string,
     stat: FileStats,
     content: string
   ): Promise<FileInfo> {
     const extension = path.extname(filePath);
     const language = this.getLanguageFromExtension(extension);
-    const checksum = createHash('sha256').update(content).digest('hex');
-
-    return createFileInfo(
-      filePath,
-      stat.modifiedTime,
-      stat.size,
-      extension,
-      language,
-      checksum
-    );
-  }
-
-  /**
-   * 從檔案統計資訊建立 FileInfo
-   */
-  async createFileInfoFromStat(filePath: string, stat: FileStats): Promise<FileInfo> {
-    const extension = path.extname(filePath);
-    const language = this.getLanguageFromExtension(extension);
-
-    // 計算檔案 checksum
-    const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
     const checksum = createHash('sha256').update(content).digest('hex');
 
     return createFileInfo(

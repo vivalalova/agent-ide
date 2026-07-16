@@ -120,6 +120,7 @@ export const SYMBOL_TYPE_MAP: Partial<Record<ts.SyntaxKind, SymbolType>> = {
   [ts.SyntaxKind.FunctionDeclaration]: SymbolType.Function,
   [ts.SyntaxKind.MethodDeclaration]: SymbolType.Function,
   [ts.SyntaxKind.VariableDeclaration]: SymbolType.Variable,
+  [ts.SyntaxKind.BindingElement]: SymbolType.Variable,
   [ts.SyntaxKind.PropertyDeclaration]: SymbolType.Variable,
   [ts.SyntaxKind.TypeAliasDeclaration]: SymbolType.Type,
   [ts.SyntaxKind.EnumDeclaration]: SymbolType.Enum,
@@ -271,6 +272,7 @@ export function isSymbolDeclaration(node: ts.Node): boolean {
     ts.isInterfaceDeclaration(node) ||
     ts.isFunctionDeclaration(node) ||
     ts.isVariableDeclaration(node) ||
+    ts.isBindingElement(node) ||
     ts.isMethodDeclaration(node) ||
     ts.isPropertyDeclaration(node) ||
     ts.isPropertySignature(node) ||
@@ -399,15 +401,16 @@ export function createTypeScriptASTNode(
   });
 
   // 對於某些節點，還需要檢查語法結構，特別是 export 語句
+  // 注意：VariableStatement 不需要額外處理——forEachChild 已經會遍歷
+  // declarationList（VariableDeclarationList），而該節點自身的 forEachChild
+  // 又會遍歷其 declarations，因此每個 VariableDeclaration 已經會出現在樹中
+  // （巢狀於 VariableDeclarationList 之下）。過去在此額外把 declarations 直接
+  // push 成 VariableStatement 的子節點，會讓同一個 VariableDeclaration 節點
+  // 被建立兩次，導致 symbol-extractor 對同一宣告重複提取符號。
   if (ts.isExportDeclaration(tsNode) && tsNode.exportClause && ts.isNamedExports(tsNode.exportClause)) {
     // Export 可能包含額外的符號
     for (const element of tsNode.exportClause.elements) {
       children.push(createTypeScriptASTNode(element, sourceFile));
-    }
-  } else if (ts.isVariableStatement(tsNode)) {
-    // VariableStatement 中的聲明
-    for (const declaration of tsNode.declarationList.declarations) {
-      children.push(createTypeScriptASTNode(declaration, sourceFile));
     }
   }
 

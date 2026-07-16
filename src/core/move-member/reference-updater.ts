@@ -12,6 +12,11 @@ import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 import { isInsideStringOrComment } from './utils/source-text.js';
+import {
+  collectImportExportStatement,
+  createStatementLocation,
+  type ImportExportStatement
+} from './utils/import-export-statement.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /**
@@ -36,12 +41,6 @@ interface ParsedImportMember {
 }
 
 type ImportExportStatementKind = 'import' | 'import type' | 'export' | 'export type';
-
-interface ImportExportStatement {
-  readonly text: string;
-  readonly startLineIndex: number;
-  readonly endLineIndex: number;
-}
 
 type NamespaceMemberUsage = 'none' | 'moved-only' | 'mixed';
 
@@ -98,19 +97,40 @@ export class ReferenceUpdater {
 
       const lines = content.split('\n');
 
-      // 掃描每一行找 import 語句
-      for (let i = 0; i < lines.length; i++) {
-        const statement = this.collectImportExportStatement(lines, i);
-        if (!statement) {continue;}
-
-        const statementOffset = lines
-          .slice(0, statement.startLineIndex)
-          .reduce((offset, sourceLine) => offset + sourceLine.length + 1, 0);
-        if (isInsideStringOrComment(content, statementOffset)) {
+      // 掃描每一行找 import 語句；resumeColumn 記錄同一物理行上一筆語句結束後的
+      // 欄位，供同行有第二筆 import/export 時（如 `import { a } from './x';
+      // import { b } from './y';`）從該欄位重新掃描同一行，而非整行跳過導致
+      // 第二筆語句連同其存在一併被忽略（見缺陷：同行第二個 import 消失）。
+      let i = 0;
+      let resumeColumn = 0;
+      while (i < lines.length) {
+        const statement = collectImportExportStatement(lines, i, resumeColumn);
+        if (!statement) {
+          i++;
+          resumeColumn = 0;
           continue;
         }
 
-        i = statement.endLineIndex;
+        const statementOffset = lines
+          .slice(0, statement.startLineIndex)
+          .reduce((offset, sourceLine) => offset + sourceLine.length + 1, 0)
+          + statement.startColumnIndex;
+        if (isInsideStringOrComment(content, statementOffset)) {
+          i++;
+          resumeColumn = 0;
+          continue;
+        }
+
+        // 先算好下一輪的掃描起點：語句結束行若還有殘餘內容（同行下一筆語句），
+        // 停在原地、從結束欄位續掃；否則移到下一行從行首開始。之後所有 continue
+        // 皆沿用這裡算好的 i/resumeColumn，等同原本 for 迴圈的自動遞增。
+        if (statement.endColumnIndex < lines[statement.endLineIndex].length) {
+          i = statement.endLineIndex;
+          resumeColumn = statement.endColumnIndex;
+        } else {
+          i = statement.endLineIndex + 1;
+          resumeColumn = 0;
+        }
         const line = statement.text;
 
         // 檢查是否是 import 語句且包含成員名稱和來源路徑
@@ -146,16 +166,7 @@ export class ReferenceUpdater {
             filePath,
             originalImport: line,
             newImport,
-            location: {
-              filePath,
-              range: {
-                start: { line: statement.startLineIndex + 1, column: 1 },
-                end: {
-                  line: statement.endLineIndex + 1,
-                  column: lines[statement.endLineIndex].length + 1
-                }
-              }
-            }
+            location: createStatementLocation(filePath, statement)
           });
           continue;
         }
@@ -185,7 +196,7 @@ export class ReferenceUpdater {
               filePath,
               originalImport: line,
               newImport,
-              location: this.createStatementLocation(filePath, statement, lines)
+              location: createStatementLocation(filePath, statement)
             });
           }
           continue;
@@ -215,7 +226,7 @@ export class ReferenceUpdater {
           ? null
           : await this.findExistingTargetImport(lines, options, filePath, statement);
 
-        const sourceLocation = this.createStatementLocation(filePath, statement, lines);
+        const sourceLocation = createStatementLocation(filePath, statement);
 
         if (existingTargetImport) {
           // 來源語句改為僅保留 remaining（default + 其餘 named），moved 併入既有目標 import
@@ -238,7 +249,7 @@ export class ReferenceUpdater {
             filePath,
             originalImport: existingTargetImport.statement.text,
             newImport: mergedImport,
-            location: this.createStatementLocation(filePath, existingTargetImport.statement, lines)
+            location: createStatementLocation(filePath, existingTargetImport.statement)
           });
           continue;
         }
@@ -426,13 +437,29 @@ export class ReferenceUpdater {
     quoteChar: string;
     defaultPrefix: string | null;
   } | null> {
-    for (let i = 0; i < lines.length; i++) {
-      const statement = this.collectImportExportStatement(lines, i);
-      if (!statement) {continue;}
-      i = statement.endLineIndex;
+    // 比照 prepareReferenceUpdates 主掃描迴圈：resumeColumn 記錄同一物理行上一筆
+    // 語句結束後的欄位，避免同行第二筆 import（如既有目標 import 恰與其他 import
+    // 共用一行）被整行跳過而找不到可合併的既有 import。
+    let i = 0;
+    let resumeColumn = 0;
+    while (i < lines.length) {
+      const statement = collectImportExportStatement(lines, i, resumeColumn);
+      if (!statement) {
+        i++;
+        resumeColumn = 0;
+        continue;
+      }
+      if (statement.endColumnIndex < lines[statement.endLineIndex].length) {
+        i = statement.endLineIndex;
+        resumeColumn = statement.endColumnIndex;
+      } else {
+        i = statement.endLineIndex + 1;
+        resumeColumn = 0;
+      }
 
       // 跳過正在處理的來源語句本身
-      if (statement.startLineIndex === excludeStatement.startLineIndex) {continue;}
+      if (statement.startLineIndex === excludeStatement.startLineIndex
+        && statement.startColumnIndex === excludeStatement.startColumnIndex) {continue;}
 
       const importPath = this.extractImportPath(statement.text);
       if (!importPath) {continue;}
@@ -460,63 +487,6 @@ export class ReferenceUpdater {
         quoteChar: this.detectQuoteChar(statement.text),
         defaultPrefix: this.extractDefaultPrefix(statement.text)
       };
-    }
-
-    return null;
-  }
-
-  /**
-   * 由 import/export 語句建立 ReferenceUpdate 的 location 範圍
-   */
-  private createStatementLocation(
-    filePath: string,
-    statement: ImportExportStatement,
-    lines: readonly string[]
-  ): ReferenceUpdate['location'] {
-    return {
-      filePath,
-      range: {
-        start: { line: statement.startLineIndex + 1, column: 1 },
-        end: {
-          line: statement.endLineIndex + 1,
-          column: lines[statement.endLineIndex].length + 1
-        }
-      }
-    };
-  }
-
-  private collectImportExportStatement(
-    lines: readonly string[],
-    startLineIndex: number
-  ): ImportExportStatement | null {
-    const startLine = lines[startLineIndex];
-    const trimmedStart = startLine.trim();
-    if (!trimmedStart.startsWith('import ') && !trimmedStart.startsWith('export ')) {
-      return null;
-    }
-
-    let text = startLine;
-    if (this.extractImportPath(text)) {
-      return { text, startLineIndex, endLineIndex: startLineIndex };
-    }
-
-    // 起始行本身已是完整語句（含 ';'）卻取不到路徑 → 這是與 import/export-from
-    // 無關的完整語句（如無 from 的 `export { x };`），不得繼續吸收下一行造成跨語句融合
-    if (text.includes(';')) {
-      return null;
-    }
-
-    for (let endLineIndex = startLineIndex + 1; endLineIndex < lines.length; endLineIndex++) {
-      text += `\n${lines[endLineIndex]}`;
-      if (this.extractImportPath(text)) {
-        return { text, startLineIndex, endLineIndex };
-      }
-
-      // 累積文字已終止（含 ';'）仍未取得路徑 → 語句已結束但不是我們要處理的
-      // import/export-from，終止延續，禁止再吸收下一條無關語句
-      if (text.includes(';')) {
-        return null;
-      }
     }
 
     return null;
@@ -620,8 +590,24 @@ export class ReferenceUpdater {
     return match ? match[1].trim() : null;
   }
 
+  /**
+   * 判斷是否為星號 re-export（`export * from '...'`），含具名 namespace 別名形式
+   * （`export * as ns from '...'`）。原本只認得無別名形式，`export * as ns from`
+   * 完全落不進任何分支（parseImportedMembers 需要 `{}` 具名區塊而不比對、
+   * extractNamespaceImport 只認 `import` 不認 `export`），導致整條語句被略過、
+   * 從未被視為需要處理的 barrel re-export，讓 `ns.movedMember` 的消費者在
+   * 成員搬出 source 後失去引用（見缺陷：namespace re-export 完全未被辨識）。
+   * 兩種形式命中後走同一分支，在星號 re-export 上方插入針對搬移成員的具名
+   * `export { member } from '<target>'`，讓直接具名存取（`import { member }
+   * from './barrel'`）維持可用；`ns.movedMember` 這種屬性存取形式跨檔案追蹤
+   * namespace 綁定鏈屬於更大範圍的功能（rename 模組已有的 forward-chain
+   * 解析），非本次修復範圍。
+   */
   private isStarReExport(line: string): boolean {
-    return /^\s*export\s+\*\s+from\s+['"`]/.test(line);
+    return new RegExp(
+      `^\\s*export\\s+\\*(?:\\s+as\\s+${UNICODE_IDENTIFIER_PATTERN_SOURCE})?\\s+from\\s+['"\`]`,
+      'u'
+    ).test(line);
   }
 
   private createMemberReExport(member: MemberDefinition, importPath: string, quoteChar: string): string {

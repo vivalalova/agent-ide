@@ -10,6 +10,7 @@ import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
 import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES } from '@shared/types/index.js';
 
 const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
@@ -229,7 +230,17 @@ export class PathCalculator {
         }
       }
     } catch (error) {
-      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理檔案: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      if (isFileNotFoundError(error)) {
+        // 合理的空結果：此候選檔案在被判定為 affected 之後、實際重讀計算
+        // 更新內容之前已經消失（如已被刪除），自然沒有更新可產生。
+        diagnostics.warn('move/path-calculator', 'FILE_MISSING_DURING_SCAN', `File no longer exists, skipping: ${getErrorMessage(error)}`, filePath);
+        return updates;
+      }
+      // fast-fail：非「檔案不存在」的讀取/解析失敗（如權限不足）若被吞掉，
+      // 這個已知會引用被移動檔案的檔案就完全不會產生更新，move 會靜默漏改
+      // 它的 import 卻仍回報成功，造成資料不一致（見 P2 regression）。必須讓
+      // 錯誤往外傳播中止整個 move。
+      throw new Error(`Failed to compute path updates for file: ${filePath}: ${getErrorMessage(error)}`);
     }
 
     return updates;
@@ -268,22 +279,6 @@ export class PathCalculator {
       const normalizedFilesInDir = filesInMovedDir
         ? new Set(filesInMovedDir.map(f => path.normalize(f)))
         : null;
-
-      // 如果是批次移動（glob 模式），建立 Set 以快速查找
-      // 將所有被移動檔案的 source 路徑規範化，同時加入不帶副檔名的版本
-      let normalizedBatchSources: Set<string> | null = null;
-      if (batchMoveInfo) {
-        normalizedBatchSources = new Set<string>();
-        for (const filePath of batchMoveInfo.allMovedFiles.keys()) {
-          const normalized = path.normalize(filePath);
-          normalizedBatchSources.add(normalized);
-          // 同時加入不帶副檔名的版本（用於比較省略副檔名的 import）
-          const ext = path.extname(normalized);
-          if (ext) {
-            normalizedBatchSources.add(normalized.slice(0, -ext.length));
-          }
-        }
-      }
 
       for (const importStatement of imports) {
         // 跳過 node_modules
@@ -484,10 +479,60 @@ export class PathCalculator {
               }
             }
           }
+
+          // 如果是批次移動（glob 模式），檢查被引用的檔案是否也在被移動列表中。
+          // 缺這一段時，批次移動只會改寫相對路徑 import（上面 if 分支對應的
+          // 相對路徑處理已有 batchMoveInfo 感知），alias/baseUrl import 完全
+          // 沒有對應的批次感知邏輯，導致同批一起搬移的 alias 目標在搬移後
+          // 仍指向舊路徑（見 P2 batch-alias regression）。
+          if (batchMoveInfo) {
+            let matchedNewPath: string | undefined;
+            for (const [batchSource, batchTarget] of batchMoveInfo.allMovedFiles.entries()) {
+              if (this.pathUtils.pathsMatch(normalizedResolved, batchSource)) {
+                matchedNewPath = batchTarget;
+                break;
+              }
+            }
+
+            if (matchedNewPath) {
+              // 使用 calculateNewImportPathPreservingStyle 計算新的 alias 路徑，
+              // 保留原本的別名／baseUrl 樣式（若新位置已離開別名根目錄，
+              // 該方法會自動退回一般相對路徑）
+              const newImportPath = this.pathUtils.calculateNewImportPathPreservingStyle(
+                importStatement.path,
+                target,
+                normalizedResolved,
+                matchedNewPath
+              );
+
+              if (newImportPath !== importStatement.path) {
+                const newImport = this.replaceModuleSpecifier(
+                  importStatement.rawStatement,
+                  importStatement.path,
+                  newImportPath,
+                  importStatement.specifierOffset
+                );
+                if (newImport !== importStatement.rawStatement) {
+                  updates.push({
+                    filePath: target,
+                    line: importStatement.position.line,
+                    column: importStatement.position.column,
+                    oldImport: importStatement.rawStatement,
+                    newImport
+                  });
+                }
+              }
+            }
+          }
         }
       }
     } catch (error) {
-      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理被移動檔案的內部 import ${source}: ${error instanceof Error ? error.message : String(error)}`);
+      // source 在此處必為移動前的原始檔案（呼叫端在實際搬移發生前計算內部 import
+      // 更新，見上方呼叫處註解「在移動前處理」），不存在合理的「檔案已消失」情境；
+      // 吞掉真正的讀取/解析失敗（如權限不足）會讓被移動檔案自己的 import 完全不
+      // 被改寫，move 卻仍回報成功，造成資料不一致（與 calculatePathUpdates 同型
+      // 缺陷）。必須讓錯誤往外傳播中止整個 move。
+      throw new Error(`Failed to compute internal import updates for moved file: ${source}: ${getErrorMessage(error)}`);
     }
 
     return updates;

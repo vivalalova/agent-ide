@@ -671,6 +671,39 @@ fn(1, 2, 3);
     });
   });
 
+  describe('缺陷15: --change-type 格式錯誤的 mapping 被靜默忽略', () => {
+    it('缺冒號的 --change-type mapping 應報錯，不應靜默忽略只套用 --add', async () => {
+      const testFile = `${fixture.rootPath}/regression-defect15-change-type-malformed.ts`;
+      const originalContent = `
+function f(): void {}
+
+f();
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature', testFile, 'f',
+          '-p', fixture.rootPath,
+          '--add', 'x:number=0',
+          '--change-type', 'malformed',
+          '--dry-run', '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      // 正確行為：`malformed` 不符合文件記載的 `name:newType` 格式（缺冒號），
+      // 應報錯並拒絕整個命令；
+      // 目前的壞行為是 splitParameterNameAndType 對缺冒號的輸入回傳 `{ name: 'malformed', type: '' }`，
+      // `if (name && newType)` 判斷 newType 為空字串而靜默跳過此筆 mapping，
+      // 命令仍以 exitCode 0 成功執行，只套用 --add、無任何提示 --change-type 的錯誤輸入被丟棄
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toMatch(/change-type|malformed/i);
+    });
+  });
+
   describe('R2-2: --rename 誤改型別位置的同名識別符', () => {
     it('參數改名不應波及其他參數預設值 as 型別斷言中的同名型別識別符', async () => {
       const testFile = `${fixture.rootPath}/regression-r2-2-rename-type-position.ts`;

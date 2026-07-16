@@ -138,15 +138,20 @@ export class LFUStrategy<K, V> implements CacheStrategy<K, V> {
   }
 
   selectEvictionKey(items: Map<K, CacheItem<V>>): K | undefined {
-    // 使用 reduce 一次遍歷找出最小 accessCount 的 key
-    return Array.from(items.entries()).reduce<K | undefined>(
-      (minKey, [key, item]) => {
-        if (!minKey) {return key;}
-        const minItem = items.get(minKey);
-        return minItem && item.accessCount < minItem.accessCount ? key : minKey;
-      },
-      undefined
-    );
+    // 一次遍歷找出最小 accessCount 的 key；用 `minKey === undefined` 嚴格判斷
+    // 「尚未找到候選」，避免合法但 falsy 的 key（如數字 0）被誤判成「還沒找到」
+    // 而永遠選不到它（原本用 `if (!minKey)` 的 truthy 檢查會漏掉這個情況）
+    let minKey: K | undefined;
+    let minAccessCount = Infinity;
+
+    for (const [key, item] of items.entries()) {
+      if (minKey === undefined || item.accessCount < minAccessCount) {
+        minKey = key;
+        minAccessCount = item.accessCount;
+      }
+    }
+
+    return minKey;
   }
 
   clear(): void {

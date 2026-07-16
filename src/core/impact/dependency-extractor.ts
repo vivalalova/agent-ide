@@ -63,7 +63,11 @@ export class DependencyExtractor {
     for (const dependencySpec of dependencySpecs) {
       const resolvedPath = await this.pathResolver.resolvePath(dependencySpec.importPath, filePath);
 
-      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)) {
+      if (
+        resolvedPath &&
+        resolvedPath.exists &&
+        this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)
+      ) {
         dependencies.push({
           path: resolvedPath.resolvedPath,
           type: dependencySpec.type,
@@ -90,7 +94,11 @@ export class DependencyExtractor {
     for (const parserDependency of parserDependencies) {
       const resolvedPath = await this.pathResolver.resolvePath(parserDependency.path, filePath);
 
-      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)) {
+      if (
+        resolvedPath &&
+        resolvedPath.exists &&
+        this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)
+      ) {
         dependencies.push({
           ...parserDependency,
           path: resolvedPath.resolvedPath,

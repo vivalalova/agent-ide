@@ -37,23 +37,34 @@ export function applyTextEdits(content: string, edits: readonly TextEdit[]): str
   assertNoOverlappingEdits(dedupedEdits, lines);
 
   // 按位置從後往前排序（避免位置偏移）
-  const sortedEdits = [...dedupedEdits].sort((a, b) => {
+  const indexedEdits = dedupedEdits.map((edit, index) => ({ edit, index }));
+  indexedEdits.sort((a, b) => {
     // 先比較起始行號
-    if (a.range.start.line !== b.range.start.line) {
-      return b.range.start.line - a.range.start.line; // 從後往前
+    if (a.edit.range.start.line !== b.edit.range.start.line) {
+      return b.edit.range.start.line - a.edit.range.start.line; // 從後往前
     }
     // 同起始行則比較起始列號
-    if (a.range.start.column !== b.range.start.column) {
-      return b.range.start.column - a.range.start.column; // 從後往前
+    if (a.edit.range.start.column !== b.edit.range.start.column) {
+      return b.edit.range.start.column - a.edit.range.start.column; // 從後往前
     }
     // 起點完全相同時的 tiebreak：結束位置較大者先套用（降冪）。
     // 「從後往前套用」時先套用的會被後套用的疊在前面；讓零寬插入（end === start，
     // 結束位置最小）最後套用，就能保留在整段替換的結果之前，不被替換吃掉。
-    if (a.range.end.line !== b.range.end.line) {
-      return b.range.end.line - a.range.end.line;
+    if (a.edit.range.end.line !== b.edit.range.end.line) {
+      return b.edit.range.end.line - a.edit.range.end.line;
     }
-    return b.range.end.column - a.range.end.column;
+    if (a.edit.range.end.column !== b.edit.range.end.column) {
+      return b.edit.range.end.column - a.edit.range.end.column;
+    }
+    // range 完全相同（僅可能是同一位置的多筆零寬插入，非零寬的完全同 range 會被上面的
+    // assertNoOverlappingEdits 判為重疊而拋錯）：此處排序決定的是「套用順序」，而套用迴圈
+    // 對同一 offset 重複插入時，後套用者會疊在先套用者之前（見上方主迴圈），故套用順序
+    // 與最終視覺順序恰好相反。要讓最終結果保留輸入順序（先列出的插入排在前面，
+    // 與 changeset-converter.ts 的 mergeAdjacentEdits 對同位置零寬插入的合併語意一致），
+    // 套用順序須是輸入順序的反轉：index 較大者（輸入中較晚出現）先套用。
+    return b.index - a.index;
   });
+  const sortedEdits = indexedEdits.map(({ edit }) => edit);
 
   let result = content;
 

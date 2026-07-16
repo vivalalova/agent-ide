@@ -15,8 +15,29 @@
 /** 識別符後續字元類（UAX #31 ID_Continue + `$`），與 plugins/shared 的 UNICODE_IDENTIFIER_PATTERN 對齊 */
 const IDENTIFIER_CONTINUE_CLASS = '[\\p{ID_Continue}$]';
 
-/** 逸出正則表達式特殊字元 */
-function escapeRegex(text: string): string {
+/** 預編譯的單一字元判定：`char` 是否屬於識別符後續字元（含 ASCII 字母/數字/底線與 Unicode 識別符字元） */
+const IDENTIFIER_CONTINUE_REGEX = new RegExp(`^${IDENTIFIER_CONTINUE_CLASS}$`, 'u');
+
+/**
+ * 判斷單一字元是否為識別符後續字元（UAX #31 ID_Continue + `$`）。
+ * ID_Continue 已涵蓋 ASCII 字母、數字（Nd）與底線（Pc），故此判定對 ASCII 與
+ * Unicode 識別符字元（如 `使用者`、`数量`）皆正確，可取代僅認得 ASCII 的
+ * `/[A-Za-z0-9_$]/` 寫法。
+ *
+ * @param char 單一字元；空字串或 undefined 回傳 false
+ */
+export function isIdentifierContinueChar(char: string | undefined): boolean {
+  return char !== undefined && char.length > 0 && IDENTIFIER_CONTINUE_REGEX.test(char);
+}
+
+/**
+ * 逸出正則表達式特殊字元
+ * export 供任何需要把任意字面文字（如類別名稱、識別符）安全內嵌進
+ * `new RegExp(...)` 的呼叫端重用，避免各自另寫一份同款跳脫邏輯
+ * （見 file-change-preparer.ts 的 findClassInsertPosition：類別名稱含
+ * 正則特殊字元如 `$Target` 時，未跳脫的 `new RegExp` 會比對失敗）。
+ */
+export function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -27,6 +48,10 @@ function escapeRegex(text: string): string {
  * @param flags 額外的 regex flags（`u` 會自動補上）
  */
 export function createIdentifierBoundaryRegex(symbolName: string, flags = ''): RegExp {
+  if (symbolName.length === 0) {
+    throw new Error('symbolName 不能為空字串：空字串會產生零寬度比對，在全域旗標下以 exec() 手動迴圈比對會導致無窮迴圈');
+  }
+
   const escaped = escapeRegex(symbolName);
   const withUnicode = flags.includes('u') ? flags : `${flags}u`;
   return new RegExp(

@@ -51,4 +51,28 @@ describe('computeCodeStateMask - 回歸缺陷', () => {
     expect(mask[openIdx]).toBe(false);
     expect(mask[closeIdx]).toBe(false);
   });
+
+  it('regex 消歧義應辨識 Unicode 識別符後的 `/` 為除法，非 regex 開始', () => {
+    // 「使用者」是合法的 Unicode 識別符字元，其後的 `/` 應被視為除法運算子，
+    // 而非 regex 字面值開始。目前的壞行為：isRegexContext 的前導字元檢查
+    // 僅認得 ASCII（/[A-Za-z0-9_$]/），Unicode 識別符字元落到「非識別符」分支，
+    // 被誤判為 regex 開始，導致其後所有內容（含 function f 的大括號）都被
+    // 誤標為 regex 內容（非 code）。
+    const text = 'const 使用者 = 1; const value = 使用者 / 2; function f() { return 1; }';
+    const divIdx = text.indexOf('使用者 / 2') + '使用者 '.length;
+    expect(text[divIdx]).toBe('/');
+
+    const braceOpenIdx = text.indexOf('{');
+    const braceCloseIdx = text.lastIndexOf('}');
+    expect(braceOpenIdx).toBeGreaterThan(divIdx);
+    expect(braceCloseIdx).toBeGreaterThan(braceOpenIdx);
+
+    const mask = computeCodeStateMask(text);
+
+    // `/` 本身應為除法運算子（code 狀態）
+    expect(mask[divIdx]).toBe(true);
+    // function f 的大括號應為正常 code，而非被誤判的 regex 內容
+    expect(mask[braceOpenIdx]).toBe(true);
+    expect(mask[braceCloseIdx]).toBe(true);
+  });
 });

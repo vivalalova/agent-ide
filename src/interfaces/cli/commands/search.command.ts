@@ -15,7 +15,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { SymbolType } from '@shared/types/index.js';
@@ -74,8 +74,8 @@ async function handleSearchCommand(
     return;
   }
 
-  const parsedMax = parseInt(String(options.maxResults), 10);
-  if (isNaN(parsedMax) || parsedMax <= 0) {
+  const parsedMax = parseStrictInt(String(options.maxResults));
+  if (parsedMax === null || parsedMax <= 0) {
     outputHandler.outputError(`--max-results 須為正整數，收到: ${options.maxResults}`, format);
     process.exitCode = 1;
     return;

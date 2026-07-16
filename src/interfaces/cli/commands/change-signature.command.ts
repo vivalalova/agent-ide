@@ -19,7 +19,8 @@ import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unifie
 import {
   tryParseOutputFormat,
   executeMutationCommand,
-  outputMutationWithLegacyFields
+  outputMutationWithLegacyFields,
+  outputErrorWithDetails
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -109,7 +110,20 @@ async function handleChangeSignatureCommand(
 
     // 檔案存在性前置檢查（與 engine 「找不到函式」分流）
     if (!(await context.fileSystem.exists(filePath))) {
-      outputHandler.outputError(`檔案不存在: ${filePath}`, format, 'change-signature');
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `檔案不存在: ${filePath}`,
+        {
+          pathContext: {
+            role: 'targetFile',
+            requestedFile: resolvedFile,
+            resolvedFile: filePath,
+            projectRoot
+          }
+        },
+        'change-signature'
+      );
       process.exitCode = 1;
       return;
     }
@@ -376,14 +390,15 @@ export function parseChangeSignatureChanges(options: ChangeSignatureParseOptions
     const mappings = splitTopLevelParameterList(options.changeType);
     for (const mapping of mappings) {
       const { name, type: newType } = splitParameterNameAndType(mapping);
-      if (name && newType) {
-        validateParameterType(name, newType, syntaxMode);
-        changes.push({
-          type: SignatureChangeType.ChangeParameterType,
-          parameterNameOrIndex: name,
-          newType
-        });
+      if (!name || !newType) {
+        throw new Error(`無效的 --change-type 語法: ${mapping}。格式: name:newType`);
       }
+      validateParameterType(name, newType, syntaxMode);
+      changes.push({
+        type: SignatureChangeType.ChangeParameterType,
+        parameterNameOrIndex: name,
+        newType
+      });
     }
   }
 

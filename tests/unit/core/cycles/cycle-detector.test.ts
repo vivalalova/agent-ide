@@ -197,6 +197,21 @@ describe('CycleDetector', () => {
 
       expect(largeSCCs).toHaveLength(0);
     });
+
+    it('應該處理極深的線性依賴鏈而不 stack overflow', () => {
+      const nodeCount = 50000;
+      for (let i = 0; i < nodeCount - 1; i++) {
+        graph.addDependency(`/src/f${i}.ts`, `/src/f${i + 1}.ts`);
+      }
+
+      expect(() => detector.findStronglyConnectedComponents(graph)).not.toThrow();
+
+      const sccs = detector.findStronglyConnectedComponents(graph);
+      const largeSCCs = sccs.filter(scc => scc.size > 1);
+
+      expect(sccs).toHaveLength(nodeCount);
+      expect(largeSCCs).toHaveLength(0);
+    });
   });
 
   describe('hasCycles', () => {

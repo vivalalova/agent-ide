@@ -66,7 +66,8 @@ import {
   isValidIdentifier,
   isRelativePath,
   getImportedSymbols,
-  getPluginsForFile
+  getPluginsForFile,
+  mergeBabelPlugins
 } from './types.js';
 import {
   JAVASCRIPT_EXCLUDE_PATTERNS,
@@ -128,7 +129,14 @@ export class JavaScriptParser implements ParserPlugin {
   private readonly astCache: MemoryCache<string, ASTCacheItem> = createLRUCache(100);
 
   constructor(parseOptions?: Partial<JavaScriptParseOptions>) {
-    this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions };
+    // 使用者透過 constructor 傳入的 plugins 與預設插件清單合併（去重），
+    // 而非讓其中一方整組取代另一方，避免 `new JavaScriptParser({ plugins: ['flow'] })`
+    // 這類設定丟失預設插件（或反過來被預設插件完全蓋過）
+    const mergedPlugins = mergeBabelPlugins(
+      DEFAULT_PARSE_OPTIONS.plugins ?? [],
+      parseOptions?.plugins ?? []
+    );
+    this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions, plugins: mergedPlugins };
     this.patternAnalyzer = new PatternAnalyzer();
     this.referenceFinder = new ReferenceFinder();
     this.declarationAnalyzer = new DeclarationAnalyzer();
@@ -223,7 +231,7 @@ export class JavaScriptParser implements ParserPlugin {
       },
 
       ClassMethod: (path: NodePath<babel.ClassMethod>) => {
-        this.extractMethodSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractMethodSymbol(path, symbols, typedAst.sourceFile);
         this.extractParameterSymbols(
           path.node.params,
           babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
@@ -265,6 +273,13 @@ export class JavaScriptParser implements ParserPlugin {
       },
 
       ObjectProperty: (path: NodePath<babel.ObjectProperty>) => {
+        // 解構模式（ObjectPattern）內的 property 是變數/參數綁定，不是物件字面量的
+        // key:value 屬性宣告；已由 extractVariableSymbol／extractParameterSymbols
+        // 的 collectBindingIdentifiers 處理，此處略過以免產生型別錯誤（Property）
+        // 且與 babelNode 綁定不一致的重複符號。
+        if (babel.isObjectPattern(path.parent)) {
+          return;
+        }
         this.extractObjectPropertySymbol(path.node, symbols, typedAst.sourceFile);
       }
     });
@@ -301,6 +316,13 @@ export class JavaScriptParser implements ParserPlugin {
       JSXIdentifier: (path: NodePath<babel.JSXIdentifier>) => {
         // 處理 JSX 中的識別符
         if (path.node.name === typedSymbol.name) {
+          // 🚨 過濾：跳過 JSX 屬性 key（例如 <div id="x" /> 的 `id`）。
+          // JSXAttribute.name 只是屬性名稱字面文字，並非對應同名變數/符號的
+          // 綁定使用，不應被當成引用（否則重命名變數會誤改到無關的 JSX 屬性）。
+          if (babel.isJSXAttribute(path.parent) && path.parent.name === path.node) {
+            return;
+          }
+
           const location = {
             filePath: typedAst.sourceFile,
             range: this.getNodeRange(path.node)
@@ -465,7 +487,9 @@ export class JavaScriptParser implements ParserPlugin {
 
   private getParseOptionsForFile(filePath: string): JavaScriptParseOptions {
     const options = { ...this.parseOptions };
-    options.plugins = getPluginsForFile(filePath);
+    // 以建構子已合併使用者設定後的 this.parseOptions.plugins 為基底，
+    // 只在此基礎上依副檔名補上 jsx/typescript；不可略過使用者設定改用模組預設值
+    options.plugins = getPluginsForFile(filePath, this.parseOptions.plugins);
 
     // 根據副檔名調整 sourceType（比照 node:path.extname 語意：以 basename 為基準取副檔名，
     // 避免把含點號的父目錄誤判成副檔名）
@@ -556,7 +580,69 @@ export class JavaScriptParser implements ParserPlugin {
         node.id
       );
       symbols.push(symbol);
+      return;
     }
+
+    // 解構綁定（ObjectPattern／ArrayPattern，例如 `const { value } = source;`）：
+    // 逐一為每個實際綁定的識別符建立符號，使解構出的每個名稱都可被 search/rename 定位。
+    // babelNode 直接採用綁定識別符本身（而非外層 VariableDeclarator），
+    // 與 extractParameterSymbols 的簡單參數一致，getBindingIdentifier 對
+    // Identifier 節點已原生支援、無需額外特判。
+    const modifiers = this.getExportModifiers(path.parentPath?.parentPath);
+    const scope = functionScopeName ? createScope('function', functionScopeName) : undefined;
+    for (const identifier of this.collectBindingIdentifiers(node.id)) {
+      const location = { filePath: sourceFile, range: this.getNodeRange(identifier) };
+      const baseSymbol = createSymbol(identifier.name, SymbolType.Variable, location, scope, modifiers);
+      symbols.push({ ...baseSymbol, babelNode: identifier });
+    }
+  }
+
+  /**
+   * 遞迴收集綁定模式（Identifier／ObjectPattern／ArrayPattern／AssignmentPattern／
+   * RestElement）中實際綁定的識別符節點。
+   *
+   * 供 extractVariableSymbol（解構變數）與 extractParameterSymbols（解構參數、
+   * 預設值參數、rest 參數）共用同一套遍歷邏輯（Single Source of Truth），
+   * 避免變數/參數各自重寫一份、走不同的解構深度。
+   */
+  private collectBindingIdentifiers(pattern: babel.Node | null | undefined): babel.Identifier[] {
+    if (!pattern) {
+      return [];
+    }
+
+    if (babel.isIdentifier(pattern)) {
+      return [pattern];
+    }
+
+    if (babel.isAssignmentPattern(pattern)) {
+      return this.collectBindingIdentifiers(pattern.left);
+    }
+
+    if (babel.isRestElement(pattern)) {
+      return this.collectBindingIdentifiers(pattern.argument);
+    }
+
+    if (babel.isObjectPattern(pattern)) {
+      const result: babel.Identifier[] = [];
+      for (const prop of pattern.properties) {
+        if (babel.isObjectProperty(prop)) {
+          result.push(...this.collectBindingIdentifiers(prop.value));
+        } else if (babel.isRestElement(prop)) {
+          result.push(...this.collectBindingIdentifiers(prop.argument));
+        }
+      }
+      return result;
+    }
+
+    if (babel.isArrayPattern(pattern)) {
+      const result: babel.Identifier[] = [];
+      for (const element of pattern.elements) {
+        result.push(...this.collectBindingIdentifiers(element));
+      }
+      return result;
+    }
+
+    return [];
   }
 
   /**
@@ -586,27 +672,29 @@ export class JavaScriptParser implements ParserPlugin {
     symbols: JavaScriptSymbol[],
     sourceFile: string
   ): void {
+    const scope = createScope('function', functionScopeName);
     for (const param of params) {
-      if (!babel.isIdentifier(param)) {
-        continue;
+      // 涵蓋一般識別符參數，也涵蓋解構參數（ObjectPattern／ArrayPattern）、
+      // 預設值參數（AssignmentPattern）、rest 參數（RestElement）——
+      // 逐一收集實際綁定的識別符節點，使每個綁定名稱都能被 search/rename 定位。
+      for (const identifier of this.collectBindingIdentifiers(param)) {
+        const location = {
+          filePath: sourceFile,
+          range: this.getNodeRange(identifier)
+        };
+        const baseSymbol = createSymbol(
+          identifier.name,
+          SymbolType.Variable,
+          location,
+          scope,
+          []
+        );
+
+        symbols.push({
+          ...baseSymbol,
+          babelNode: identifier
+        });
       }
-
-      const location = {
-        filePath: sourceFile,
-        range: this.getNodeRange(param)
-      };
-      const baseSymbol = createSymbol(
-        param.name,
-        SymbolType.Variable,
-        location,
-        createScope('function', functionScopeName),
-        []
-      );
-
-      symbols.push({
-        ...baseSymbol,
-        babelNode: param
-      });
     }
   }
 
@@ -632,21 +720,30 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   private extractMethodSymbol(
-    node: babel.ClassMethod,
+    path: NodePath<babel.ClassMethod>,
     symbols: JavaScriptSymbol[],
     sourceFile: string
   ): void {
+    const node = path.node;
     if (babel.isIdentifier(node.key)) {
+      // 方法所屬的 class 節點身分：用來在 isReferenceToSymbol 比對
+      // `this.method()` 之類無 Babel binding 可查的成員存取時，區分
+      // 「同一個 class 內的自我呼叫」與「另一個同名方法的無關 class」
+      // （見 bug repro：不同類別同名方法互相誤判為同一符號）。
+      const classPath = path.findParent(
+        p => p.isClassDeclaration() || p.isClassExpression()
+      ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
+
       const symbol = this.createSymbolFromNode(
         node,
         node.key.name,
         SymbolType.Function,
         sourceFile,
         {},
-        undefined,
+        classPath ? createScope('class', classPath.node.id?.name) : undefined,
         node.key
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
     }
   }
 
@@ -879,6 +976,23 @@ export class JavaScriptParser implements ParserPlugin {
       if (binding && binding.kind !== 'module') {
         return this.isSameBabelBinding(path, symbol);
       }
+    }
+
+    // Class method 的成員存取（`this.method()` / `obj.method()`）：Babel 不會為
+    // method 名稱建立變數 binding，上面的 binding 查詢一律拿到 undefined，
+    // 若不特別處理就會落入下方寬鬆候選集、讓不同 class 裡的同名方法互相誤判為
+    // 同一符號的引用。改以 class 節點身分比對：只有存取發生在同一個
+    // enclosingClassNode 內才視為此符號的引用。
+    if (
+      symbol.enclosingClassNode
+      && babel.isMemberExpression(parent)
+      && parent.property === node
+      && !parent.computed
+    ) {
+      const enclosingClass = path.findParent(
+        p => p.isClassDeclaration() || p.isClassExpression()
+      );
+      return enclosingClass?.node === symbol.enclosingClassNode;
     }
 
     // 無 binding（如 namespace 成員存取，交由上層查詢過濾）或為 import/module

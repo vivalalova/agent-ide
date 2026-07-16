@@ -4,6 +4,7 @@
  */
 
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import {
   ParserWorkerPool,
@@ -11,7 +12,6 @@ import {
 } from '@infrastructure/worker-pool/index.js';
 
 import type { Symbol, SymbolType } from '@shared/types/index.js';
-import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -47,6 +47,13 @@ export class IndexEngine {
   private readonly batchParser: IndexBatchParser;
   private _disposed = false;
   private _indexed = false;
+  /**
+   * 按（已 canonicalize 的）檔案路徑序列化單檔索引操作。
+   * 同一路徑的多個 indexFile 呼叫若不序列化，較慢的舊操作可能在較新操作之後才完成，
+   * 以「完成順序」而非「發起順序」覆蓋索引條目，讓較新的結果被舊結果蓋掉。
+   * 用鏈式 Promise 讓同一路徑的操作依發起順序排隊執行，保證最後完成的必是最後發起的。
+   */
+  private readonly indexFileQueue = new Map<string, Promise<unknown>>();
 
   constructor(config: IndexConfig, fileSystem: IFileSystem) {
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
@@ -187,15 +194,13 @@ export class IndexEngine {
     const parserPatterns: string[] = [];
 
     for (const parserInfo of registeredParsers) {
-      try {
-        // 檢查 parser 是否支援 getDefaultExcludePatterns 方法
-        if (parserInfo.plugin.getDefaultExcludePatterns) {
-          const patterns = parserInfo.plugin.getDefaultExcludePatterns();
-          parserPatterns.push(...patterns);
-        }
-      } catch {
-        // 如果 parser 不支援此方法，忽略錯誤
-        diagnostics.warn('index-engine', 'ANALYSIS_DEGRADED', `Parser ${parserInfo.name} does not support getDefaultExcludePatterns`);
+      // 檢查 parser 是否支援 getDefaultExcludePatterns 方法；
+      // 方法存在但執行時拋錯（非「不支援」，是真的執行失敗）不得吞下——
+      // 吞下會讓 indexDirectory 在缺少該 parser 排除規則的情況下靜默繼續，
+      // 索引到本該被排除的檔案（如 generated/**），依 fast-fail 原則直接讓例外往上拋
+      if (parserInfo.plugin.getDefaultExcludePatterns) {
+        const patterns = parserInfo.plugin.getDefaultExcludePatterns();
+        parserPatterns.push(...patterns);
       }
     }
 
@@ -281,9 +286,36 @@ export class IndexEngine {
   }
 
   /**
-   * 索引單一檔案
+   * 將任意輸入路徑 canonicalize 成絕對、正規化後的路徑，作為 FileIndex/SymbolIndex
+   * 的唯一 key 形式。若無此步驟，同一檔案以絕對路徑（如 indexDirectory 內部的 glob
+   * 結果）與相對路徑（如外部呼叫 updateFile('src/a.ts')）兩種形式索引，會在底層 Map
+   * 產生兩筆各自獨立的條目，remove/update 只命中其中一筆，留下另一筆 stale 資料。
    */
-  async indexFile(filePath: string): Promise<void> {
+  private resolvePath(filePath: string): string {
+    return path.isAbsolute(filePath)
+      ? path.normalize(filePath)
+      : path.resolve(this.config.workspacePath, filePath);
+  }
+
+  /**
+   * 索引單一檔案
+   * 依（canonicalize 後的）檔案路徑序列化：同一路徑的並行呼叫依發起順序排隊執行，
+   * 避免較慢的舊操作在較新操作之後才完成而覆蓋新結果（見 indexFileQueue 註解）。
+   */
+  async indexFile(filePathInput: string): Promise<void> {
+    const filePath = this.resolvePath(filePathInput);
+    const previous = this.indexFileQueue.get(filePath) ?? Promise.resolve();
+    const run = previous.then(
+      () => this.indexFileSerialized(filePath),
+      () => this.indexFileSerialized(filePath)
+    );
+    // 佇列本身不得因單次操作失敗而卡死後續排隊者，故另存一份「必為 resolved」的鏈；
+    // 呼叫端拿到的仍是 run，失敗會如常拋出。
+    this.indexFileQueue.set(filePath, run.catch(() => undefined));
+    return run;
+  }
+
+  private async indexFileSerialized(filePath: string): Promise<void> {
     try {
       await this.initializeConfiguredParserModules();
 
@@ -291,13 +323,22 @@ export class IndexEngine {
 
       // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
-        // 靜默跳過大檔案，不報錯
+        // 靜默跳過大檔案，不報錯；但若此路徑先前已有索引條目（檔案在兩次索引之間
+        // 變大導致本次被跳過），該條目已不代表目前檔案內容，須一併清除，
+        // 否則 findSymbol 等查詢仍會回傳這個已過期的舊符號
+        if (this.fileIndex.hasFile(filePath)) {
+          await this.symbolIndex.removeFileSymbols(filePath);
+          await this.fileIndex.removeFile(filePath);
+        }
         return;
       }
 
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
 
-      const fileInfo = await this.batchParser.createFileInfoFromStat(filePath, stat);
+      // checksum 必須從同一份已讀取的 content 計算，不得另外獨立讀取一次檔案——
+      // 否則兩次讀取之間檔案若被改寫，symbols 會來自版本 A、checksum 卻標記版本 B，
+      // 讓依賴 checksum 判斷 staleness 的機制失真
+      const fileInfo = await this.batchParser.createFileInfoFromContent(filePath, stat, content);
 
       // 新增到檔案索引
       await this.fileIndex.addFile(fileInfo);
@@ -344,8 +385,10 @@ export class IndexEngine {
   /**
    * 更新檔案索引
    */
-  async updateFile(filePath: string): Promise<void> {
+  async updateFile(filePathInput: string): Promise<void> {
     try {
+      const filePath = this.resolvePath(filePathInput);
+
       // 檢查檔案是否存在
       const exists = await this.fileSystem.exists(filePath);
       if (!exists) {
@@ -357,14 +400,16 @@ export class IndexEngine {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知錯誤';
-      throw new Error(`更新檔案索引失敗 ${filePath}: ${errorMessage}`);
+      throw new Error(`更新檔案索引失敗 ${filePathInput}: ${errorMessage}`);
     }
   }
 
   /**
    * 移除檔案索引
    */
-  async removeFile(filePath: string): Promise<void> {
+  async removeFile(filePathInput: string): Promise<void> {
+    const filePath = this.resolvePath(filePathInput);
+
     // 從符號索引中移除
     await this.symbolIndex.removeFileSymbols(filePath);
 
@@ -434,7 +479,7 @@ export class IndexEngine {
    * 檢查檔案是否已被索引
    */
   isIndexed(filePath: string): boolean {
-    return this.fileIndex.isFileIndexed(filePath);
+    return this.fileIndex.isFileIndexed(this.resolvePath(filePath));
   }
 
   /**
@@ -489,11 +534,17 @@ export class IndexEngine {
 
   /**
    * 檢查檔案是否需要重新索引
+   * 除 size/mtime 外另帶目前內容的 checksum 一併判斷：檔案若被替換成不同內容但
+   * size 剛好相同、mtime 也剛好被保留（如 touch -m 還原時間戳），單靠 size/mtime
+   * 無法偵測出內容已變，checksum 不一致時視為權威證據，強制判定需要重新索引。
    */
-  async needsReindexing(filePath: string): Promise<boolean> {
+  async needsReindexing(filePathInput: string): Promise<boolean> {
+    const filePath = this.resolvePath(filePathInput);
     try {
       const stat = await this.fileSystem.getStats(filePath);
-      return this.fileIndex.needsReindexing(filePath, stat.modifiedTime, stat.size);
+      const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+      const checksum = createHash('sha256').update(content).digest('hex');
+      return this.fileIndex.needsReindexing(filePath, stat.modifiedTime, stat.size, checksum);
     } catch {
       // graceful-degradation: 檔案已被刪除時仍需標記重新索引以清理索引條目
       return this.fileIndex.hasFile(filePath);
@@ -504,14 +555,14 @@ export class IndexEngine {
    * 取得檔案的解析錯誤
    */
   getFileParseErrors(filePath: string): readonly string[] {
-    return this.fileIndex.getFileParseErrors(filePath);
+    return this.fileIndex.getFileParseErrors(this.resolvePath(filePath));
   }
 
   /**
    * 檢查檔案是否有解析錯誤
    */
   hasFileParseErrors(filePath: string): boolean {
-    return this.fileIndex.hasFileParseErrors(filePath);
+    return this.fileIndex.hasFileParseErrors(this.resolvePath(filePath));
   }
 
   /**
@@ -532,7 +583,7 @@ export class IndexEngine {
    * 取得檔案的所有符號
    */
   async getFileSymbols(filePath: string): Promise<readonly Symbol[]> {
-    return await this.symbolIndex.getFileSymbols(filePath);
+    return await this.symbolIndex.getFileSymbols(this.resolvePath(filePath));
   }
 
   /**

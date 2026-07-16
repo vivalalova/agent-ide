@@ -20,11 +20,10 @@ import {
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
-import { matchesPathSegment } from '@shared/path-pattern.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
-import { isImportedSymbol } from '@interfaces/cli/commands/symbol-target-resolver.js';
+import { isImportedSymbol } from '@shared/types/symbol.js';
 import { normalizePath } from '@interfaces/cli/commands/module-file-resolver.js';
 
 /**
@@ -341,53 +340,44 @@ async function resolveParserBackedSymbol(
  * 取得所有專案檔案
  */
 async function getAllProjectFiles(projectPath: string, context: CommandContext): Promise<string[]> {
-  const files: string[] = [];
   // 從 ParserRegistry 獲取所有支援的副檔名
   const registry = ParserRegistry.getInstance();
   const allowedExtensions = registry.getSupportedExtensions();
-  const excludePatterns = ['node_modules', 'dist', '.git', 'coverage'];
+  // 目錄名稱精確匹配（避免子字串誤判如 dist 誤傷 distance），轉為 glob ignore
+  // pattern 時以 '**/<name>/**' 表示「任一層級的該名稱目錄」。
+  const excludeDirNames = ['node_modules', 'dist', '.git', 'coverage'];
+  const ignorePatterns = excludeDirNames.map(name => `**/${name}/**`);
 
   // 檢查路徑是檔案還是目錄
-  try {
-    const isFile = await context.fileSystem.isFile(projectPath);
+  // fail-fast：isFile 拋錯（如專案根目錄權限不足）不可靜默吞掉並回傳空清單，
+  // 那會讓 rename 以空的候選檔案清單繼續執行、仍回報 success，但實際上完全
+  // 沒掃到任何引用（與下方 glob 掃描失敗同一種靜默失敗）。錯誤往外拋，交由
+  // 呼叫端（handleRenameCommand 最外層 try/catch）轉為明確的 CLI 錯誤輸出。
+  const isFile = await context.fileSystem.isFile(projectPath);
 
-    if (isFile) {
-      // 如果是單一檔案，直接返回
-      if (allowedExtensions.some(ext => projectPath.endsWith(ext))) {
-        return [projectPath];
-      }
-      return [];
+  if (isFile) {
+    // 如果是單一檔案，直接返回
+    if (allowedExtensions.some(ext => projectPath.endsWith(ext))) {
+      return [projectPath];
     }
-  } catch {
-    // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
     return [];
   }
 
-  async function walkDir(dir: string): Promise<void> {
-    try {
-      const entries = await context.fileSystem.readDirectory(dir);
+  // 以 fileSystem.glob 取代手動 readDirectory 遞迴走訪：IndexEngine.indexDirectory
+  // 本就走 glob 建立索引（見 index-engine.ts），glob 對單一子目錄的存取錯誤具備
+  // 容錯（不像逐層 readDirectory 一旦某層拋錯就整個子樹消失、造成該子樹內引用
+  // 被靜默排除在 rename 掃描範圍外——見 rename-directory-walk-error-swallowed-bugs.test.ts）。
+  // 此處與索引 SSOT 對齊使用同一種列舉方式，僅排除清單維持 rename 自己的既有範圍
+  // （不同於索引為效能排除 test 檔，rename 需要掃到 test 檔內的引用）。
+  const filesByExtension = await Promise.all(
+    allowedExtensions.map(ext =>
+      context.fileSystem.glob(`**/*${ext}`, {
+        cwd: projectPath,
+        ignore: ignorePatterns,
+        absolute: true
+      })
+    )
+  );
 
-      for (const entry of entries) {
-        const fullPath = entry.path;
-
-        if (entry.isDirectory) {
-          // 跳過排除的目錄（名稱精確匹配，禁止子字串誤判如 dist 誤傷 distance）
-          if (matchesPathSegment(entry.name, excludePatterns)) {
-            continue;
-          }
-          await walkDir(fullPath);
-        } else if (entry.isFile) {
-          // 只包含支援的副檔名
-          if (allowedExtensions.some(ext => entry.name.endsWith(ext))) {
-            files.push(fullPath);
-          }
-        }
-      }
-    } catch {
-      // graceful-degradation: tab completion 路徑/目錄不可用時靜默跳過
-    }
-  }
-
-  await walkDir(projectPath);
-  return files;
+  return [...new Set(filesByExtension.flat())];
 }

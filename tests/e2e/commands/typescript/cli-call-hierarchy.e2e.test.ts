@@ -1343,5 +1343,18 @@ export const broken = ( => { sharedUtil(); };
       expect(output.success).toBe(false);
       expect(output.error).toContain('depth');
     });
+
+    it('應該拒絕含尾隨非數字字元的 depth（如 2xyz）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'unique', '--path', fixture.rootPath, '--depth', '2xyz', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('');
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('depth');
+    });
   });
 });

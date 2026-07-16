@@ -7,8 +7,9 @@ import * as ts from 'typescript';
 import * as path from 'path';
 import * as babel from '@babel/types';
 import babelTraverse from '@babel/traverse';
-import type { Range } from '@shared/types/core.js';
+import type { Location, Range } from '@shared/types/core.js';
 import type { Symbol } from '@shared/types/symbol.js';
+import { isImportedSymbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
@@ -39,6 +40,18 @@ interface ImportedBinding {
 
 interface ResolvedCalleeDefinition extends FunctionDefinition {
   readonly functionName: string;
+}
+
+/**
+ * findTypeScriptImportedBinding / findBabelImportedBinding 與其 shadow 檢查共用的最小輸入
+ * 形狀：outgoing 分析的 OutgoingCall、incoming 錨定用的 CallSite 皆可結構相容傳入，
+ * 避免為 incoming 另建一份重複的 import 解析邏輯（Single Source of Truth）。
+ */
+interface CallBindingQuery {
+  readonly callee: string;
+  readonly location: Location;
+  readonly isMethodCall: boolean;
+  readonly receiver?: string;
 }
 
 type BabelParseResult = import('@babel/parser').ParseResult<babel.File>;
@@ -161,6 +174,111 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
+   * 檢查某檔案是否有目標名稱的「真正本地宣告」（非單純 import binding）。
+   * 用於 incoming 錨定：JS parser 對 import specifier 也會產生 type: variable 的 Symbol
+   * （見 isImportedSymbol 註解），若不排除會誤把「只是 import 了同名符號」的檔案當成
+   * 有自己的本地定義，進而誤排除真正指向本次目標定義的呼叫者。
+   */
+  private async hasGenuineLocalDefinition(filePath: string, name: string): Promise<boolean> {
+    const definition = await this.symbolFinder.findDefinition(filePath, name);
+    return definition !== null
+      && this.isFunctionSymbol(definition.symbol)
+      && !isImportedSymbol(definition.symbol);
+  }
+
+  /**
+   * 解析檔案的 AST（TypeScript SourceFile 或 Babel AST），供 import binding 解析共用。
+   */
+  private async parseFileForBindingResolution(
+    filePath: string
+  ): Promise<{ sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null> {
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content) {
+      return null;
+    }
+
+    const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
+    if (!parser) {
+      return null;
+    }
+
+    try {
+      const ast = await parser.parse(content, filePath);
+      const sourceFile = getTypeScriptSourceFile(ast);
+      if (sourceFile) {
+        return { sourceFile };
+      }
+      if (hasBabelAST(ast)) {
+        return { babelAst: ast.babelAST };
+      }
+      return null;
+    } catch (error) {
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
+  /**
+   * 判斷跨檔案的 incoming callSite 是否真的指向 targetDefinitionFile 這個具體定義。
+   * 與 outgoing 遞迴展開共用同一套 import binding 解析（findTypeScriptImportedBinding /
+   * findBabelImportedBinding + resolveProjectImportPath），positive 驗證 callSite 的識別符
+   * 實際 import 自哪個檔案，而非只憑名稱文字相符就採信（同名但無關的另一個定義會被排除）。
+   */
+  private async isCallSiteAnchoredToDefinition(
+    callSite: CallSite,
+    targetName: string,
+    targetDefinitionFile: string,
+    projectFiles: readonly string[],
+    fileAstCache: Map<string, { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null>
+  ): Promise<boolean> {
+    const callSiteFile = callSite.location.filePath;
+
+    let parsed = fileAstCache.get(callSiteFile);
+    if (parsed === undefined) {
+      parsed = await this.parseFileForBindingResolution(callSiteFile);
+      fileAstCache.set(callSiteFile, parsed);
+    }
+
+    if (parsed) {
+      const query: CallBindingQuery = {
+        callee: targetName,
+        location: callSite.location,
+        isMethodCall: callSite.isMethodCall,
+        receiver: callSite.receiver
+      };
+
+      try {
+        const importedBinding = parsed.sourceFile
+          ? this.findTypeScriptImportedBinding(parsed.sourceFile, query)
+          : parsed.babelAst
+            ? this.findBabelImportedBinding(parsed.babelAst, query)
+            : null;
+
+        if (importedBinding) {
+          // 有明確的 import binding：唯有解析到本次目標定義檔才算真正 caller；
+          // 解析到別的檔案或完全解析不到（如外部套件、無法解析的 alias）都代表這個
+          // 識別符另有所指，非本次目標定義，直接排除，不落回下方的本地宣告 fallback。
+          const resolvedFile = await this.resolveProjectImportPath(
+            importedBinding.moduleSpecifier,
+            callSiteFile,
+            projectFiles
+          );
+          return resolvedFile === targetDefinitionFile;
+        }
+      } catch (error) {
+        // AST 節點形狀不符（如測試替身回傳的假 AST）時退回下方的本地宣告 fallback，
+        // 與檔案同層其他 AST 解析錯誤處理一致，不讓單一異常 AST 中斷整體 incoming 分析。
+        diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `Import binding resolution failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // 無可判定的 import binding（無 import 宣告，或被同名區域宣告在該呼叫點遮蔽）：
+    // fallback 為「該檔案是否有自己的真正本地宣告」——有代表呼叫自己的版本（排除），
+    // 沒有則保守視為可能指向本次目標（維持既有行為，避免誤刪未覆蓋到的合法情境）。
+    return !(await this.hasGenuineLocalDefinition(callSiteFile, targetName));
+  }
+
+  /**
    * 找出 incoming 呼叫（誰呼叫了目標函數）
    * 使用批次處理優化：按檔案分組，避免重複讀取/解析同一檔案
    */
@@ -173,7 +291,8 @@ export class CallHierarchyAnalyzer {
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
     const visited = new Set<string>();
-    const localDefinitionCache = new Map<string, boolean>();
+    const anchorDecisionCache = new Map<string, boolean>();
+    const fileAstCache = new Map<string, { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null>();
 
     const findCallsRecursive = async (
       targetName: string,
@@ -187,12 +306,14 @@ export class CallHierarchyAnalyzer {
       visited.add(targetKey);
 
       let callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
+
+      // depth 1 且帶有 `--at` 衍生的 targetCallSiteFilter 時，呼叫端已透過該 filter
+      // 精確判定 callSite 是否指向本次鎖定的定義，不需再套用下方以檔案為單位的錨定捷徑。
+      // 其餘情況（depth 1 無 `--at`，或任何遞迴層）都必須以 targetDefinitionFile 錨定，
+      // 否則會把「另一檔案裡同名但無關的本地定義」誤判為本次目標的 caller。
       if (currentDepth === 1 && targetCallSiteFilter) {
         callSites = await this.filterCallSites(callSites, targetCallSiteFilter);
-      }
-
-      // 只有遞迴層需要以 caller 定義檔錨定；depth 1 維持既有的全專案查找行為。
-      if (currentDepth > 1) {
+      } else {
         const anchoredCallSites: CallSite[] = [];
         for (const callSite of callSites) {
           const callSiteFile = callSite.location.filePath;
@@ -201,14 +322,22 @@ export class CallHierarchyAnalyzer {
             continue;
           }
 
-          const cacheKey = `${callSiteFile}:${targetName}`;
-          let hasLocalDefinition = localDefinitionCache.get(cacheKey);
-          if (hasLocalDefinition === undefined) {
-            hasLocalDefinition = (await this.findFunctionDefinition(targetName, [callSiteFile])) !== null;
-            localDefinitionCache.set(cacheKey, hasLocalDefinition);
+          // 跨檔案呼叫點：positive 驗證其 import binding 是否實際解析到 targetDefinitionFile
+          // （見 isCallSiteAnchoredToDefinition），而非只憑名稱文字相符就採信。
+          const cacheKey = `${callSiteFile}:${targetName}:${targetDefinitionFile}`;
+          let isAnchored = anchorDecisionCache.get(cacheKey);
+          if (isAnchored === undefined) {
+            isAnchored = await this.isCallSiteAnchoredToDefinition(
+              callSite,
+              targetName,
+              targetDefinitionFile,
+              projectFiles,
+              fileAstCache
+            );
+            anchorDecisionCache.set(cacheKey, isAnchored);
           }
 
-          if (!hasLocalDefinition) {
+          if (isAnchored) {
             anchoredCallSites.push(callSite);
           }
         }
@@ -340,10 +469,21 @@ export class CallHierarchyAnalyzer {
           return outgoing;
         }
 
-        // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
+        // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去。
+        // 賦值給變數的 arrow function / function expression 視同具名函數（可被單獨定址、
+        // 遞迴展開時會走 findFunctionDefinition 另行解析），故也是邊界；但直接內嵌於呼叫
+        // 參數位置的匿名 callback（未賦值給變數，如 IIFE 或 `arr.map(x => ...)`）維持非邊界，
+        // 讓其內部呼叫仍歸屬外層函數（外層本體確實同步執行/傳遞了該 callback）。
+        const isVariableAssignedFunctionLike = (node: ts.Node): boolean =>
+          (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+          node.parent !== undefined &&
+          ts.isVariableDeclaration(node.parent) &&
+          node.parent.initializer === node;
+
         const isNestedDefinitionBoundary = (node: ts.Node): boolean =>
           ts.isFunctionDeclaration(node) ||
           (ts.isFunctionExpression(node) && node.name !== undefined) ||
+          isVariableAssignedFunctionLike(node) ||
           ts.isMethodDeclaration(node) ||
           ts.isGetAccessor(node) ||
           ts.isSetAccessor(node) ||
@@ -463,7 +603,7 @@ export class CallHierarchyAnalyzer {
 
   private findTypeScriptImportedBinding(
     sourceFile: ts.SourceFile,
-    call: OutgoingCall
+    call: CallBindingQuery
   ): ImportedBinding | null {
     const bindingName = call.isMethodCall ? call.receiver : call.callee;
     if (bindingName && this.isLexicallyShadowedAtCallSite(sourceFile, call, bindingName)) {
@@ -518,7 +658,7 @@ export class CallHierarchyAnalyzer {
 
   private isLexicallyShadowedAtCallSite(
     sourceFile: ts.SourceFile,
-    call: OutgoingCall,
+    call: CallBindingQuery,
     bindingName: string
   ): boolean {
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bindingName)) {
@@ -592,7 +732,7 @@ export class CallHierarchyAnalyzer {
 
   private findBabelImportedBinding(
     babelAst: BabelParseResult,
-    call: OutgoingCall
+    call: CallBindingQuery
   ): ImportedBinding | null {
     if (this.isBabelLexicallyShadowedAtCallSite(babelAst, call)) {
       return null;
@@ -638,7 +778,7 @@ export class CallHierarchyAnalyzer {
 
   private isBabelLexicallyShadowedAtCallSite(
     babelAst: BabelParseResult,
-    call: OutgoingCall
+    call: CallBindingQuery
   ): boolean {
     const bindingName = call.isMethodCall ? call.receiver : call.callee;
     if (!bindingName) {
@@ -781,13 +921,20 @@ export class CallHierarchyAnalyzer {
     }
 
     // 在目標函式內找所有 CallExpression
-    // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去
+    // 巢狀的可獨立定址函數/類別節點是邊界，其內部呼叫歸屬該節點自身，不遞迴進去。
+    // 賦值給變數的 arrow function / function expression 視同具名函數，亦是邊界；
+    // 未賦值給變數的匿名 callback（IIFE、`arr.map(x => ...)`）維持非邊界。
     (targetFunctionPath as import('@babel/traverse').NodePath).traverse({
       FunctionDeclaration(path) {
         path.skip();
       },
       FunctionExpression(path) {
-        if (path.node.id) {
+        if (path.node.id || babel.isVariableDeclarator(path.parent)) {
+          path.skip();
+        }
+      },
+      ArrowFunctionExpression(path) {
+        if (babel.isVariableDeclarator(path.parent)) {
           path.skip();
         }
       },

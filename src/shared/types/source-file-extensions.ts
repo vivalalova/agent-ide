@@ -3,8 +3,17 @@
  */
 
 export const TYPESCRIPT_SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'] as const;
-export const TYPESCRIPT_PARSER_EXTENSIONS = ['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.d.mts', '.d.cts'] as const;
+export const DECLARATION_FILE_EXTENSIONS = ['.d.ts', '.d.mts', '.d.cts'] as const;
+export const TYPESCRIPT_PARSER_EXTENSIONS = [
+  ...TYPESCRIPT_SOURCE_EXTENSIONS,
+  ...DECLARATION_FILE_EXTENSIONS
+] as const;
 export const JAVASCRIPT_SOURCE_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'] as const;
+const DECLARATION_EXTENSION_BY_SOURCE_EXTENSION: Record<string, string> = {
+  '.ts': '.d.ts',
+  '.mts': '.d.mts',
+  '.cts': '.d.cts'
+};
 export const SOURCE_FILE_EXTENSIONS = [
   ...TYPESCRIPT_SOURCE_EXTENSIONS,
   ...JAVASCRIPT_SOURCE_EXTENSIONS
@@ -37,6 +46,13 @@ export function stripSourceFileExtension(
   filePath: string,
   sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
 ): string {
+  for (const sourceExtension of sourceExtensions) {
+    const declarationExtension = DECLARATION_EXTENSION_BY_SOURCE_EXTENSION[sourceExtension];
+    if (declarationExtension && filePath.endsWith(declarationExtension)) {
+      return filePath.slice(0, -declarationExtension.length);
+    }
+  }
+
   const extension = sourceExtensions.find(sourceExtension => filePath.endsWith(sourceExtension));
   return extension ? filePath.slice(0, -extension.length) : filePath;
 }

@@ -7,12 +7,13 @@
 import { homedir } from 'os';
 import { createHash } from 'crypto';
 import { join, dirname } from 'path';
-import { readFile, writeFile, mkdir, rename as fsRename, access } from 'fs/promises';
+import { readFile, writeFile, mkdir, rename as fsRename, access, unlink } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { createUniqueTempPath, type IFileSystem } from '@infrastructure/storage/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/types.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { computeContentHash } from '@shared/content-hash.js';
 import {
   IndexCacheSerializer,
   CACHE_VERSION,
@@ -43,7 +44,11 @@ export class IndexDiskCache {
 
   /**
    * 計算目前專案的 cache key
-   * sha256(sorted paths + sorted mtimes + sizes)
+   * sha256(sorted paths + sorted mtimes + sizes + content hash)
+   *
+   * 含每個檔案的內容 checksum（非僅 size+mtime）：mtime 只有毫秒精度，
+   * 快檔案系統或 CI 環境下，同一毫秒內把檔案換成「同 size 不同內容」的新版本
+   * 時有可能發生，若只看 size+mtime 會誤判成未變更、回傳 stale 的舊符號/依賴資料。
    *
    * @returns 成功時回傳 hash；無法可靠計算 key（如 glob 拋錯）時回傳 null，
    *   代表「不要信任快取」——caller 應跳過讀寫快取，避免 false cache hit。
@@ -71,12 +76,18 @@ export class IndexDiskCache {
       // 排序並去重
       const uniqueFiles = [...new Set(allFiles)].sort();
 
-      // 取得每個檔案的 mtime 與 size（size 變幾乎必抓到內容變更，
-      // 防 mtime 保留型操作如 git checkout / cp -p 造成 stale cache）
+      // 取得每個檔案的 mtime、size 與內容 checksum：
+      // size 變幾乎必抓到內容變更（防 mtime 保留型操作如 git checkout / cp -p 造成 stale cache），
+      // 但 mtime 只有毫秒精度、size 相同時仍可能漏抓「同毫秒內容被換成同大小的新版本」，
+      // 因此另加內容 checksum 堵住這個漏洞
       const fileStats = await Promise.all(
         uniqueFiles.map(async (filePath) => {
           const stat = await projectFileSystem.getStats(filePath);
-          return { path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size };
+          const content = await projectFileSystem.readFile(filePath, 'utf-8');
+          const contentHash = computeContentHash(
+            typeof content === 'string' ? content : content.toString('utf-8')
+          );
+          return { path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size, contentHash };
         })
       );
 
@@ -85,7 +96,7 @@ export class IndexDiskCache {
 
       // 計算 hash
       const hashInput = fileStats
-        .map(p => `${p.path}:${p.mtime}:${p.size}`)
+        .map(p => `${p.path}:${p.mtime}:${p.size}:${p.contentHash}`)
         .join('\n');
 
       return createHash('sha256').update(hashInput).digest('hex');
@@ -150,7 +161,14 @@ export class IndexDiskCache {
 
       // Atomic write: write to tmp, then rename
       await writeFile(tmpPath, json, 'utf-8');
-      await fsRename(tmpPath, cachePath);
+      try {
+        await fsRename(tmpPath, cachePath);
+      } catch (renameError) {
+        // rename 失敗（如 index.json 目前是目錄，或被鎖）：tmp 已寫入但改名失敗，
+        // 清掉孤兒 tmp 檔避免快取目錄無限累積 .tmp；清理本身失敗也不掩蓋原始錯誤
+        await unlink(tmpPath).catch(() => {});
+        throw renameError;
+      }
     } catch (error) {
       // 靜默降級：快取儲存失敗不影響命令執行
       process.stderr.write(`[agent-ide] cache save warning: ${error instanceof Error ? error.message : String(error)}\n`);

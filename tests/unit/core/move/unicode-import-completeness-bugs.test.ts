@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { collectMultilineImportStatement } from '@core/move/statement-collector.js';
+import { computeMaskedLines } from '@core/move/source-masking.js';
 import { ImportStatementType } from '@core/move/types.js';
 
 function createResolver(): ImportResolver {
@@ -16,7 +17,7 @@ function createResolver(): ImportResolver {
 describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
   it('collects multiline unicode default import span', () => {
     const lines = ['import 工具', '  from \'./mod\';'];
-    const span = collectMultilineImportStatement(lines, 0);
+    const span = collectMultilineImportStatement(lines, 0, computeMaskedLines(lines.join('\n')));
     expect(span).not.toBeNull();
     expect(span!.startLineIndex).toBe(0);
     expect(span!.endLineIndex).toBe(1);
@@ -58,7 +59,7 @@ describe('isCompleteImportStatement unicode / $ completeness (P2)', () => {
     ].join('\n');
 
     const lines = code.split('\n');
-    const span = collectMultilineImportStatement(lines, 0);
+    const span = collectMultilineImportStatement(lines, 0, computeMaskedLines(code));
     // Correct: single-line unicode import is already complete → span ends at line 0
     // (or null, with per-line parsing). Must NOT span through require to the next import.
     if (span !== null) {

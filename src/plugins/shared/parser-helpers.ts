@@ -3,9 +3,9 @@
  * TypeScript 和 JavaScript Parser 共享的邏輯
  */
 
-import { createHash } from 'node:crypto';
 import type { Range, Position } from '@shared/types/core.js';
 import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
+export { computeContentHash } from '@shared/content-hash.js';
 import type {
   Documentation,
   DocumentationTag,
@@ -17,18 +17,6 @@ import {
   NON_FACTORY_RETURN_TYPES,
   FACTORY_NAME_PREFIXES
 } from './constants.js';
-
-/**
- * 計算程式碼內容的雜湊值（SHA256，全內容）
- * 用於 AST/符號索引快取驗證與快取 key；全內容雜湊避免「同長度+同前綴」
- * 的弱雜湊（如僅取長度+前 N 字元）造成不同內容碰撞、靜默拿到錯誤快取結果
- *
- * @param content 原始程式碼內容
- * @returns SHA256 十六進位雜湊字串
- */
-export function computeContentHash(content: string): string {
-  return createHash('sha256').update(content).digest('hex');
-}
 
 /**
  * 檢查節點行號是否匹配目標行號
@@ -243,6 +231,11 @@ export function isRelativePath(path: string): boolean {
  * 符合 UAX #31 標準：
  * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
  * - 後續字元：Unicode 類別 ID_Continue 或 $
+ *
+ * 註：ECMAScript IdentifierPart 額外允許 <ZWNJ>（U+200C）／<ZWJ>（U+200D）出現在
+ * 識別符中間；經查證（V8 \p{ID_Continue} 與 @babel/helper-validator-identifier 的
+ * isIdentifierChar 兩個獨立來源皆回傳 true），這兩個字元已被 Unicode 的
+ * ID_Continue 衍生屬性涵蓋，本正則表達式無需另外列舉即已正確接受。
  */
 export const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
 

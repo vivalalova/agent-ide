@@ -203,6 +203,15 @@ describe('CLI search - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.truncated).toBe(true);
     });
+
+    it('應拒絕含尾隨非數字字元的值（如 10abc）', async () => {
+      const result = await executeCLI(
+        ['search', 'xqzItem', '--max-results', '10abc', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+    });
   });
 
   describe('Edge cases', () => {

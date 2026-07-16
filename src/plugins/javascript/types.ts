@@ -43,6 +43,13 @@ export interface JavaScriptSymbol extends Symbol {
   readonly babelNode: babel.Node;
   readonly isExported?: boolean;
   readonly isImported?: boolean;
+  /**
+   * 方法所屬的 class 節點（ClassDeclaration／ClassExpression）身分參照。
+   * 僅 class method 符號會設定；用於在缺乏 Babel binding 可查的成員存取
+   * （如 `this.method()`）情境下，以節點身分比對「同一 class」，
+   * 避免不同 class 內同名方法互相誤判為同一符號。
+   */
+  readonly enclosingClassNode?: babel.ClassDeclaration | babel.ClassExpression;
 }
 
 /**
@@ -384,7 +391,7 @@ export function createJavaScriptASTNode(
  */
 const JAVASCRIPT_RESERVED_WORDS = new Set([
   'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
+  'delete', 'do', 'else', 'enum', 'export', 'extends', 'finally', 'for', 'function',
   'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
   'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
   // ES6+
@@ -443,28 +450,69 @@ export function createParseError(
 }
 
 /**
- * 獲取檔案的預設 Babel 插件
+ * 取得 Babel plugin 的名稱（plugin 可能是純字串，或 `[name, options]` tuple）
  */
-export function getPluginsForFile(filePath: string): BabelPlugin[] {
+function getBabelPluginName(plugin: BabelPlugin): string {
+  return Array.isArray(plugin) ? plugin[0] : plugin;
+}
+
+/**
+ * 合併兩組 Babel plugin 清單並去重（以 plugin 名稱比對，忽略 tuple 的 options）
+ * base 中已存在的 plugin 名稱優先保留，extra 只補上 base 沒有的
+ *
+ * 供建構子合併「預設插件」與「使用者透過 constructor 傳入的插件」使用，
+ * 避免使用者指定的 plugins 被預設清單整組取代（見 bug repro：flow plugin 被忽略）
+ */
+export function mergeBabelPlugins(
+  base: readonly BabelPlugin[],
+  extra: readonly BabelPlugin[]
+): BabelPlugin[] {
+  const merged = [...base];
+  const existingNames = new Set(merged.map(getBabelPluginName));
+
+  for (const plugin of extra) {
+    const name = getBabelPluginName(plugin);
+    if (!existingNames.has(name)) {
+      merged.push(plugin);
+      existingNames.add(name);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * 獲取檔案的 Babel 插件清單
+ *
+ * @param filePath 檔案路徑，用於根據副檔名調整插件（.jsx/.tsx 加 jsx、.ts/.tsx 加 typescript）
+ * @param basePlugins 基底插件清單；預設為模組內建的預設插件，呼叫端（JavaScriptParser）
+ *   應傳入「已合併使用者 constructor 設定」後的清單，而非略過使用者設定
+ */
+export function getPluginsForFile(
+  filePath: string,
+  basePlugins: readonly BabelPlugin[] = DEFAULT_PARSE_OPTIONS.plugins ?? []
+): BabelPlugin[] {
   // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
   // 避免把含點號的父目錄誤判成副檔名
   const ext = extname(filePath);
-  const basePlugins = [...(DEFAULT_PARSE_OPTIONS.plugins ?? [])];
+  const plugins = [...basePlugins];
+  const pluginNames = new Set(plugins.map(getBabelPluginName));
 
   // 根據副檔名調整插件
-  if (ext === '.jsx' || ext === '.tsx') {
-    if (!basePlugins.includes('jsx')) {
-      basePlugins.push('jsx');
-    }
+  if ((ext === '.jsx' || ext === '.tsx') && !pluginNames.has('jsx')) {
+    plugins.push('jsx');
+    pluginNames.add('jsx');
   }
 
-  if (ext === '.ts' || ext === '.tsx') {
-    if (!basePlugins.includes('typescript')) {
-      basePlugins.push('typescript');
-    }
+  // Babel parser 的 'typescript' 與 'flow' plugin 互斥（會拋出
+  // "Cannot combine typescript and flow plugins" 解析錯誤），若使用者已透過
+  // constructor 指定 'flow'，副檔名比對就不再額外加上 'typescript'
+  if ((ext === '.ts' || ext === '.tsx') && !pluginNames.has('typescript') && !pluginNames.has('flow')) {
+    plugins.push('typescript');
+    pluginNames.add('typescript');
   }
 
-  return basePlugins;
+  return plugins;
 }
 
 /**
