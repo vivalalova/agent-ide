@@ -278,7 +278,7 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(contexts.some((context: string) => context.trim() === 'return sameFileTarget();')).toBe(false);
     });
 
-    it('同名定義沒有 --at 時應回傳所有候選 identity', async () => {
+    it('同名定義沒有 --at 時應 fail-fast 要求指定位置（F6，與 rename 對齊）', async () => {
       await fixture.writeFile('src/identity-a.ts', 'export const duplicateIdentity = "a";');
       await fixture.writeFile('src/identity-b.ts', 'export const duplicateIdentity = "b";');
 
@@ -287,15 +287,11 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.symbols).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'duplicateIdentity', file: expect.stringContaining('identity-a.ts') }),
-          expect.objectContaining({ name: 'duplicateIdentity', file: expect.stringContaining('identity-b.ts') })
-        ])
-      );
-      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+      // 正確：多定義無 --at → 不合併、不成功回傳混合引用
+      // 舊行為（錯誤 pin）：exit 0 + 回傳全部 identity；F6 改為 fail-fast
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
     });
 
     it('應該用 --at 鎖定同名類別方法的引用', async () => {

@@ -49,6 +49,14 @@ describe('RenameEngine', () => {
       expect(result.conflicts[0].type).toBe(ConflictType.ReservedKeyword);
     });
 
+    // F29：core RenameEngine.reservedKeywords 漏 async（context keyword / 不可當識別符）
+    it('Given 保留字 async, when validateRename, then isValid: false + ReservedKeyword 衝突（F29）', async () => {
+      const engine = new RenameEngine();
+      const result = await engine.validateRename(makeOptions('async'));
+      expect(result.isValid).toBe(false);
+      expect(result.conflicts.some(c => c.type === ConflictType.ReservedKeyword)).toBe(true);
+    });
+
     it('Given 無效識別符（數字開頭）, when validateRename, then isValid: false + InvalidIdentifier 衝突', async () => {
       const engine = new RenameEngine();
       const result = await engine.validateRename(makeOptions('123abc'));

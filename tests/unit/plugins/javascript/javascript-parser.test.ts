@@ -611,13 +611,13 @@ describe('JavaScriptParser', () => {
     });
   });
 
-  // MARK: - Class method 跨類別誤判為同一符號（bug repro）
-  // extractMethodSymbol 建立方法符號時未帶 class scope／babel binding，
-  // isReferenceToSymbol 對非 function-local 符號僅退回寬鬆比對（無 binding 時一律視為候選），
-  // 導致不同類別但同名的方法互相被視為同一符號的引用。
+  // MARK: - Class method 引用完整性（F3）
+  // isReferenceToSymbol 濾掉 ClassMethod key（定義名）且 enclosingClass 僅認 class 內
+  // this.m，導致 rename/find-ref 漏定義與外部 instance.m()。
+  // 跨類別同名方法仍不得互混。
 
-  describe('Class method 跨類別誤判為同一符號', () => {
-    it('A.run 的引用不應該包含 B.run 的 this.run() 呼叫', async () => {
+  describe('Class method 引用完整性（F3）', () => {
+    it('A.run 應含定義 + this.run，且不應混入 B.run 的 this.run()', async () => {
       const code = `
         class A {
           run() {}
@@ -638,11 +638,37 @@ describe('JavaScriptParser', () => {
       const [firstRun] = runMethods;
       const references = await parser.findReferences(ast, firstRun);
 
-      // A.run 應該只被 A.call 內的 this.run() 引用到（1 筆），不該混入 B 的 this.run()
-      expect(references).toHaveLength(1);
-      const line = references[0]!.location.range.start.line;
-      // 應落在 class A 區塊內（第 2~4 行），不應是 class B 區塊（第 6~8 行）的 this.run()
-      expect(line).toBeLessThanOrEqual(4);
+      // 正確：定義名 run + A.call 內 this.run() → 至少 2 筆，且全在 class A 區塊
+      // 目前壞行為：ClassMethod key 被濾掉，只剩 this.run（1 筆）
+      expect(references.length).toBeGreaterThanOrEqual(2);
+      for (const ref of references) {
+        expect(ref.location.range.start.line).toBeLessThanOrEqual(4);
+      }
+    });
+
+    it('外部 instance.m() 應被視為 class method 的引用（F3）', async () => {
+      const code = `
+        class Greeter {
+          greet() { return 1; }
+          call() { return this.greet(); }
+        }
+        const g = new Greeter();
+        g.greet();
+      `;
+
+      const ast = await parser.parse(code, '/test/class-method-external.js');
+      const symbols = await parser.extractSymbols(ast);
+      const greet = symbols.find(s => s.name === 'greet' && s.type === SymbolType.Function);
+      expect(greet).toBeDefined();
+
+      const references = await parser.findReferences(ast, greet!);
+      const lines = references.map(r => r.location.range.start.line);
+
+      // 定義 + this.greet + g.greet → 至少 3 筆
+      // 目前壞行為：enclosingClass 只認 class 內 this.m，外部 g.greet 漏掉；
+      // ClassMethod key 也漏掉定義
+      expect(references.length).toBeGreaterThanOrEqual(3);
+      expect(lines.some(line => line >= 6)).toBe(true);
     });
   });
 
