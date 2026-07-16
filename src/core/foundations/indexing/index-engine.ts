@@ -11,7 +11,7 @@ import {
   createParserWorkerPool
 } from '@infrastructure/worker-pool/index.js';
 
-import type { Symbol, SymbolType } from '@shared/types/index.js';
+import type { Dependency, Symbol, SymbolType } from '@shared/types/index.js';
 import type {
   IndexConfig,
   IndexStats,
@@ -54,6 +54,17 @@ export class IndexEngine {
    * 用鏈式 Promise 讓同一路徑的操作依發起順序排隊執行，保證最後完成的必是最後發起的。
    */
   private readonly indexFileQueue = new Map<string, Promise<unknown>>();
+  /**
+   * 每路徑索引寫入互斥（batch 與 indexFile 共用）。
+   * 僅包住「check gen → remove → set」臨界區，避免 remove 後被並行寫入半套／空索引。
+   */
+  private readonly pathWriteQueue = new Map<string, Promise<unknown>>();
+  /**
+   * 每路徑索引 generation：batch 與 indexFile 共用。
+   * 寫入前若 generation 已前進，代表有更新的索引操作發起 → 丟棄過期結果，
+   * 避免 worker batch 慢結果覆蓋較新的 indexFile 結果。
+   */
+  private readonly indexGeneration = new Map<string, number>();
 
   constructor(config: IndexConfig, fileSystem: IFileSystem) {
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
@@ -91,8 +102,48 @@ export class IndexEngine {
       this.parserPool,
       this.fileIndex,
       this.symbolIndex,
-      (filePath: string) => this.indexFile(filePath)
+      (filePath: string) => this.indexFile(filePath),
+      {
+        resolvePath: (filePath: string) => this.resolvePath(filePath),
+        beginGeneration: (filePath: string) => this.beginIndexGeneration(filePath),
+        isCurrentGeneration: (filePath: string, generation: number) =>
+          this.isCurrentIndexGeneration(filePath, generation),
+        runExclusiveWrite: <T>(filePath: string, fn: () => Promise<T>) =>
+          this.runPathWriteExclusive(filePath, fn)
+      }
     );
+  }
+
+  /**
+   * 為路徑推進 generation，回傳新 generation 編號。
+   * 路徑須已 canonicalize（或由此方法內 resolve）。
+   */
+  private beginIndexGeneration(filePath: string): number {
+    const resolved = this.resolvePath(filePath);
+    const next = (this.indexGeneration.get(resolved) ?? 0) + 1;
+    this.indexGeneration.set(resolved, next);
+    return next;
+  }
+
+  /**
+   * 檢查 generation 是否仍為該路徑最新（未過期）
+   */
+  private isCurrentIndexGeneration(filePath: string, generation: number): boolean {
+    const resolved = this.resolvePath(filePath);
+    return this.indexGeneration.get(resolved) === generation;
+  }
+
+  /**
+   * 同一 path 的索引寫入互斥（Promise 鏈）。
+   * batch updateIndexFromParseResult 與 indexFile 的 remove/set 臨界區共用此鎖。
+   */
+  private runPathWriteExclusive<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+    const resolved = this.resolvePath(filePath);
+    const previous = this.pathWriteQueue.get(resolved) ?? Promise.resolve();
+    const run = previous.then(fn, fn);
+    // 佇列本身不得因單次寫入失敗而卡死後續者
+    this.pathWriteQueue.set(resolved, run.then(() => undefined, () => undefined));
+    return run;
   }
 
   private mergeRegisteredParserExtensions(config: IndexConfig): IndexConfig {
@@ -316,6 +367,12 @@ export class IndexEngine {
   }
 
   private async indexFileSerialized(filePath: string): Promise<void> {
+    // 推進 generation：與 batch 路徑共用，後到的寫入可讓先前 batch 結果過期丟棄
+    const generation = this.beginIndexGeneration(filePath);
+    // 讀檔／parse 成功並進入寫入臨界區前為 false；僅在 false 時的失敗需清 stale
+    // （parse 失敗路徑在臨界區內已 removeFileSymbols + setFileParseErrors，不得再整筆刪除）
+    let indexWriteStarted = false;
+
     try {
       await this.initializeConfiguredParserModules();
 
@@ -323,60 +380,86 @@ export class IndexEngine {
 
       // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
-        // 靜默跳過大檔案，不報錯；但若此路徑先前已有索引條目（檔案在兩次索引之間
-        // 變大導致本次被跳過），該條目已不代表目前檔案內容，須一併清除，
-        // 否則 findSymbol 等查詢仍會回傳這個已過期的舊符號
-        if (this.fileIndex.hasFile(filePath)) {
-          await this.symbolIndex.removeFileSymbols(filePath);
-          await this.fileIndex.removeFile(filePath);
-        }
+        // 靜默跳過大檔案；若先前已有索引須清除 stale。經寫入鎖 + gen 檢查，
+        // 避免與並行 batch/indexFile 交錯抹掉較新結果。
+        await this.runPathWriteExclusive(filePath, async () => {
+          if (!this.isCurrentIndexGeneration(filePath, generation)) {
+            return;
+          }
+          if (this.fileIndex.hasFile(filePath)) {
+            await this.symbolIndex.removeFileSymbols(filePath);
+            await this.fileIndex.removeFile(filePath);
+          }
+        });
         return;
       }
 
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+
+      // 讀檔成功後、昂貴 parse 前可先丟棄過期（優化；真正的安全閘在寫入鎖內）
+      if (!this.isCurrentIndexGeneration(filePath, generation)) {
+        return;
+      }
 
       // checksum 必須從同一份已讀取的 content 計算，不得另外獨立讀取一次檔案——
       // 否則兩次讀取之間檔案若被改寫，symbols 會來自版本 A、checksum 卻標記版本 B，
       // 讓依賴 checksum 判斷 staleness 的機制失真
       const fileInfo = await this.batchParser.createFileInfoFromContent(filePath, stat, content);
 
-      // 新增到檔案索引
-      await this.fileIndex.addFile(fileInfo);
-
-      // 重新索引前先清除該檔案的舊符號，避免內容變更後留下 stale entry
-      await this.symbolIndex.removeFileSymbols(filePath);
-
-      // 標記索引已建立（即使只索引了一個檔案）
-      this._indexed = true;
+      // 解析在寫入鎖外執行，縮短臨界區；結果僅在鎖內 check gen 後一次寫入
+      let parseErrorMessage: string | undefined;
+      let symbols: Symbol[] = [];
+      let dependencies: Dependency[] = [];
 
       try {
-        // 解析檔案並提取符號
         const parser = this.parserRegistry.getParser(path.extname(filePath));
         if (!parser) {
           throw new Error(`找不到適合的解析器: ${filePath}`);
         }
 
         const ast = await parser.parse(content, filePath);
-        const symbols = await parser.extractSymbols(ast);
-        const dependencies = await parser.extractDependencies(ast);
+        symbols = await parser.extractSymbols(ast);
+        dependencies = await parser.extractDependencies(ast);
+      } catch (parseError) {
+        parseErrorMessage = parseError instanceof Error ? parseError.message : '未知解析錯誤';
+      }
 
-        // 更新檔案索引的符號和依賴
+      // 寫入臨界區：check gen → remove → set；過期則整段不碰索引
+      await this.runPathWriteExclusive(filePath, async () => {
+        if (!this.isCurrentIndexGeneration(filePath, generation)) {
+          return;
+        }
+
+        await this.fileIndex.addFile(fileInfo);
+        await this.symbolIndex.removeFileSymbols(filePath);
+        indexWriteStarted = true;
+        this._indexed = true;
+
+        if (parseErrorMessage !== undefined) {
+          await this.fileIndex.setFileParseErrors(filePath, [parseErrorMessage]);
+          return;
+        }
+
         await this.fileIndex.setFileSymbols(filePath, symbols);
         await this.fileIndex.setFileDependencies(filePath, dependencies);
-
-        // 新增符號到符號索引
         await this.symbolIndex.addSymbols(symbols, fileInfo);
+      });
 
-      } catch (parseError) {
-        // 記錄解析錯誤
-        const errorMessage = parseError instanceof Error ? parseError.message : '未知解析錯誤';
-        await this.fileIndex.setFileParseErrors(filePath, [errorMessage]);
-
-        // 重新拋出解析錯誤
-        throw new Error(`解析檔案失敗 ${filePath}: ${errorMessage}`);
+      if (parseErrorMessage !== undefined && indexWriteStarted) {
+        throw new Error(`解析檔案失敗 ${filePath}: ${parseErrorMessage}`);
       }
 
     } catch (error) {
+      // 讀檔／stat 失敗（尚未開始覆寫索引）時清除 stale：EACCES 等不得 silently
+      // 保留舊符號當「索引仍有效」，否則呼叫端吞錯會把 stale 當成功。
+      // 經寫入鎖 + gen 檢查，避免與並行較新 gen 交錯抹掉較新索引。
+      await this.runPathWriteExclusive(filePath, async () => {
+        if (!this.isCurrentIndexGeneration(filePath, generation)) return;
+        if (!indexWriteStarted && this.fileIndex.hasFile(filePath)) {
+          await this.symbolIndex.removeFileSymbols(filePath);
+          await this.fileIndex.removeFile(filePath);
+        }
+      });
       const errorMessage = error instanceof Error ? error.message : '未知錯誤';
       throw new Error(`索引檔案失敗 ${filePath}: ${errorMessage}`);
     }

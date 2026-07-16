@@ -4,6 +4,7 @@
  */
 
 import type { Command } from 'commander';
+import * as path from 'path';
 import { IndexEngine, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
@@ -105,7 +106,8 @@ async function handleDeadCodeCommand(
     process.stderr.write(willApply ? '   檢測並刪除 Dead Code...\n' : '   檢測 Dead Code（預覽模式）...\n');
   }
 
-  const projectPath = options.path || process.cwd();
+  // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
+  const projectPath = path.resolve(options.path || process.cwd());
 
   const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
   if (!pathIsDirectory) {
@@ -155,11 +157,13 @@ async function handleDeadCodeCommand(
     }
 
     // 2. 建立 DeadCodeRemover
-    // 區分 --exclude 參數中的檔案模式和符號名稱
+    // --exclude 分流：
+    // - path（excludeFiles）：全部 pattern 都進 path 排除——含 glob、路徑片段，以及
+    //   裸名 pure-name 慣例（如 `artifacts` → 排除路徑上的 artifacts/ 目錄，見 path-pattern）
+    // - symbol（excludeSymbols）：僅裸名（無 /、*、?、不以 . 開頭）另作精確符號名排除
+    //   （如 `unusedFunction`）；裸目錄名因此同時可擋 path + 同名符號
     const excludePatterns = options.exclude || [];
-    const excludeFiles = excludePatterns.filter(p =>
-      p.includes('/') || p.includes('*') || p.includes('?') || p.startsWith('.')
-    );
+    const excludeFiles = excludePatterns;
     const excludeSymbols = excludePatterns.filter(p =>
       !p.includes('/') && !p.includes('*') && !p.includes('?') && !p.startsWith('.')
     );

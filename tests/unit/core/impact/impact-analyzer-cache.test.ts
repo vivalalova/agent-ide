@@ -36,7 +36,7 @@ describe('ImpactAnalyzer - 快取失效判準 (G4)', () => {
     expect(mockFs.readFile).toHaveBeenCalledTimes(2);
   });
 
-  it('Given 同 mtime 且同 size, when analyzeFile 第二次呼叫, then 命中快取不重新讀檔', async () => {
+  it('Given 同 mtime 且同 size, when analyzeFile 第二次呼叫, then 命中快取（仍可讀檔驗 contentHash）', async () => {
     const mockFs = createMockFileSystem({ '/src/foo.ts': 'const x = 1;' });
     const fixedStat = createMockFileStats({
       modifiedTime: new Date('2024-01-01T00:00:00Z'),
@@ -46,13 +46,14 @@ describe('ImpactAnalyzer - 快取失效判準 (G4)', () => {
 
     const analyzer = new ImpactAnalyzer(mockFs);
 
-    await analyzer.analyzeFile('/src/foo.ts');
+    const first = await analyzer.analyzeFile('/src/foo.ts');
     expect(mockFs.readFile).toHaveBeenCalledTimes(1);
 
     const result = await analyzer.analyzeFile('/src/foo.ts');
 
-    // mtime、size 均相同 → 命中快取 → 不應重新讀檔
-    expect(mockFs.readFile).toHaveBeenCalledTimes(1);
+    // mtime、size 相同後仍可能讀一次做 contentHash 驗證，但結果來自快取（依賴不變）
+    expect(mockFs.readFile).toHaveBeenCalledTimes(2);
     expect(result.filePath).toContain('foo.ts');
+    expect(result.dependencies).toEqual(first.dependencies);
   });
 });

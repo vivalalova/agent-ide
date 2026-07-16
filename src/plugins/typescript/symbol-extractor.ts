@@ -124,6 +124,13 @@ export class TypeScriptSymbolExtractor {
       const scope = createScope('interface', name, this.getCurrentScope());
       this.scopeStack.push(scope);
       needsRestore = true;
+    } else if (ts.isTypeAliasDeclaration(node)) {
+      // type alias 的物件型別成員（PropertySignature 等）與 interface 成員同屬型別定義的一部分，
+      // 使用 'interface' scope 類型讓 deadcode 等下游以同一條件排除（isInterfaceOrTypeProperty）
+      const name = getNodeName(node);
+      const scope = createScope('interface', name, this.getCurrentScope());
+      this.scopeStack.push(scope);
+      needsRestore = true;
     } else if (
       ts.isFunctionDeclaration(node)
       || ts.isMethodDeclaration(node)

@@ -19,18 +19,19 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
 
   describe('基本功能', () => {
     it('應該成功查找函數引用並輸出 JSON 格式', async () => {
-      await fixture.writeFile('utils.ts', 'export function processData(input: string) { return input; }');
-      await fixture.writeFile('main.ts', 'import { processData } from "./utils.js";\nconst result = processData("test");');
+      // 唯一名：sample-project 已有 processData（quality-test），撞名會觸發 F6 fail-fast
+      await fixture.writeFile('utils.ts', 'export function processDataFindRefE2e(input: string) { return input; }');
+      await fixture.writeFile('main.ts', 'import { processDataFindRefE2e } from "./utils.js";\nconst result = processDataFindRefE2e("test");');
 
       const result = await executeCLI(
-        ['find-references', 'processData', '--path', fixture.rootPath, '--format', 'json'],
+        ['find-references', 'processDataFindRefE2e', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.command).toBe('find-references');
-      expect(output.symbol).toBe('processData');
+      expect(output.symbol).toBe('processDataFindRefE2e');
       expect(output.success).toBe(true);
     });
 
@@ -47,12 +48,13 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
     });
 
     it('應該包含引用統計', async () => {
-      await fixture.writeFile('lib.ts', 'export const value = 1;');
-      await fixture.writeFile('a.ts', 'import { value } from "./lib.js";\nexport const a = value;');
-      await fixture.writeFile('b.ts', 'import { value } from "./lib.js";\nexport const b = value;');
+      // 唯一名：fixture 內大量 property 叫 value，會被當多定義觸發 F6
+      await fixture.writeFile('lib.ts', 'export const valueFindRefE2e = 1;');
+      await fixture.writeFile('a.ts', 'import { valueFindRefE2e } from "./lib.js";\nexport const a = valueFindRefE2e;');
+      await fixture.writeFile('b.ts', 'import { valueFindRefE2e } from "./lib.js";\nexport const b = valueFindRefE2e;');
 
       const result = await executeCLI(
-        ['find-references', 'value', '--path', fixture.rootPath, '--format', 'json'],
+        ['find-references', 'valueFindRefE2e', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -674,21 +676,21 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
     });
 
-    it('應該處理同名不同檔案的符號', async () => {
-      await fixture.writeFile('moduleA.ts', 'export const name = "A";');
-      await fixture.writeFile('moduleB.ts', 'export const name = "B";');
+    it('同名不同檔案無 --at 時應 fail-fast（F6）', async () => {
+      await fixture.writeFile('moduleA.ts', 'export const nameFindRefE2e = "A";');
+      await fixture.writeFile('moduleB.ts', 'export const nameFindRefE2e = "B";');
 
       const result = await executeCLI(
-        ['find-references', 'name', '--path', fixture.rootPath, '--format', 'json'],
+        ['find-references', 'nameFindRefE2e', '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
-      const output = JSON.parse(result.stdout);
-      expect(output.success).toBe(true);
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
     });
 
-    it('多個同名定義不應輸出重複引用', async () => {
+    it('多個同名定義無 --at 時應 fail-fast，不得 silently merge（F6）', async () => {
       await fixture.writeFile('src/ref-a.ts', 'export class DuplicateRef {}');
       await fixture.writeFile('src/ref-b.ts', 'export class DuplicateRef {}');
 
@@ -697,10 +699,37 @@ describe('CLI find-references - 基於 sample-project fixture', () => {
         { memfs: fixture.memfs }
       );
 
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
+    });
+
+    it('用 --at 鎖定後同名定義引用不應重複', async () => {
+      await fixture.writeFile('src/ref-pin-a.ts', 'export class DuplicateRefPin {}');
+      await fixture.writeFile('src/ref-pin-b.ts', 'export class DuplicateRefPin {}');
+      await fixture.writeFile(
+        'src/use-ref-pin-a.ts',
+        'import { DuplicateRefPin } from "./ref-pin-a.js";\nexport const x = DuplicateRefPin;'
+      );
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'DuplicateRefPin',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/ref-pin-a.ts:1',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
-      expect(output.summary.definitionCount).toBeGreaterThanOrEqual(2);
+      expect(output.summary.definitionCount).toBe(1);
 
       const referenceKeys = output.references.map(
         (ref: { file: string; line: number; column?: number; type: string }) =>

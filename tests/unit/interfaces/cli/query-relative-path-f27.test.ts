@@ -2,8 +2,9 @@
  * F27 P2 — CLI query 類命令 --path 未 resolve（reproduction，先紅後綠）
  *
  * search / deadcode / find-references / call-hierarchy 直接採用 options.path 原始字串，
- * 未經 path.resolve。相對 --path 時索引路徑形式與絕對 path 行為可能不一致
- * （符號 0 命中、references 空、或輸出 path 格式不同）。
+ * 未經 path.resolve。相對 --path 時：
+ * 1. 索引/查詢行為可能與絕對 path 不一致
+ * 2. IndexDiskCache 以 projectPath 原字串 hash 當 cache 目錄，相對與絕對變成兩套快取
  *
  * 本檔用真實 FileSystem + 真實暫存目錄（同 rename-relative-workspace-path-bugs），
  * 對比「相對 path」與「絕對 path」的成功語意必須一致。
@@ -11,11 +12,12 @@
 
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, relative } from 'path';
+import { join, relative, resolve } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AgentIdeCLI } from '@interfaces/cli/cli.js';
 import { Logger } from '@infrastructure/logging/index.js';
+import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
 
 async function runCLIOnRealFs(args: string[]): Promise<{ exitCode: number; stdout: string }> {
   const cli = new AgentIdeCLI();
@@ -71,7 +73,9 @@ describe('F27：query 類 CLI --path 相對 vs 絕對行為一致', () => {
         '  return fetchLocalF27();',
         '}',
         '',
-        'const deadOnlyF27 = 1;',
+        'function deadOnlyF27(): number {',
+        '  return 1;',
+        '}',
         ''
       ].join('\n'),
       'utf-8'
@@ -174,5 +178,19 @@ describe('F27：query 類 CLI --path 相對 vs 絕對行為一致', () => {
 
     expect(JSON.stringify(absOut)).toMatch(/deadOnlyF27/);
     expect(JSON.stringify(relOut)).toMatch(/deadOnlyF27/);
+  });
+
+  it('IndexDiskCache：同一專案相對 path 與絕對 path 應共用同一 cache 路徑', () => {
+    const absPath = resolve('/tmp/agent-ide-f27-cache-proj');
+    const relPath = relative(process.cwd(), absPath);
+    // 前提：字串形式不同（否則測不到 canonicalize 缺口）
+    expect(relPath).not.toBe(absPath);
+
+    const base = join(tmpdir(), 'agent-ide-f27-cache-base');
+    const absCache = new IndexDiskCache(absPath, 'default', base).getCachePath();
+    const relCache = new IndexDiskCache(relPath, 'default', base).getCachePath();
+
+    // Bug：hashProjectPath 吃原字串 → 相對/絕對變成兩套 cache 目錄
+    expect(relCache).toBe(absCache);
   });
 });

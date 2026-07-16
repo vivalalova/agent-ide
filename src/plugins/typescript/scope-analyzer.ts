@@ -10,6 +10,7 @@
 import * as ts from 'typescript';
 import { ReferenceType } from '@shared/types/index.js';
 import type { TypeScriptSymbol } from './types.js';
+import { findNearestLexicalDeclarationName } from './lexical-scope-binding.js';
 
 /**
  * 作用域分析器
@@ -32,6 +33,11 @@ export class ScopeAnalyzer {
 
     // 對於變數宣告，標識符在 name 屬性中
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      return node.name;
+    }
+
+    // 解構 BindingElement（`const { dead, live } = x`）：本地綁定名在 name
+    if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
       return node.name;
     }
 
@@ -320,50 +326,34 @@ export class ScopeAnalyzer {
 
   /**
    * 檢查符號是否被遮蔽
+   *
+   * 委派 lexical-scope-binding 的詞法綁定模型（涵蓋參數、for-of/for-in/for、
+   * catch、解構 BindingElement、case block、TDZ 可見性等），避免此處手寫
+   * 子集與引用過濾家族的遮蔽判定分叉。
    */
   public isShadowed(node: ts.Node, originalIdentifier: ts.Identifier): boolean {
-    const name = originalIdentifier.text;
-    let current = node.parent;
-
-    // 從 node 向上遍歷到 originalIdentifier 的作用域
-    while (current && current !== originalIdentifier.parent) {
-      // 檢查當前作用域是否有同名的宣告
-      if (
-        ts.isFunctionDeclaration(current)
-        || ts.isFunctionExpression(current)
-        || ts.isArrowFunction(current)
-        || ts.isMethodDeclaration(current)
-      ) {
-        // 檢查參數
-        if (current.parameters) {
-          for (const param of current.parameters) {
-            if (ts.isIdentifier(param.name) && param.name.text === name) {
-              return true; // 被參數遮蔽
-            }
-          }
-        }
-      }
-
-      // 檢查區塊作用域中的宣告
-      if (ts.isBlock(current)) {
-        for (const statement of current.statements) {
-          if (ts.isVariableStatement(statement)) {
-            for (const decl of statement.declarationList.declarations) {
-              if (ts.isIdentifier(decl.name) && decl.name.text === name) {
-                // 確認這個宣告在 node 之前
-                if (decl.pos < node.pos) {
-                  return true; // 被區域變數遮蔽
-                }
-              }
-            }
-          }
-        }
-      }
-
-      current = current.parent;
+    if (!ts.isIdentifier(node) || node.text !== originalIdentifier.text) {
+      return false;
     }
 
-    return false;
+    const sourceFile = node.getSourceFile();
+    const nearest = findNearestLexicalDeclarationName(sourceFile, node, originalIdentifier.text);
+    if (!nearest) {
+      return false;
+    }
+
+    // 最近可見綁定就是原始定義本身 → 未被遮蔽
+    if (nearest === originalIdentifier) {
+      return false;
+    }
+
+    // 同一識別符位置（跨 AST 實例仍可比 offset）→ 同一綁定
+    if (nearest.getStart(sourceFile) === originalIdentifier.getStart(sourceFile)) {
+      return false;
+    }
+
+    // 最近綁定是更內層／更近的另一個同名宣告 → 遮蔽
+    return true;
   }
 }
 

@@ -174,10 +174,92 @@ export class ReferenceFinder {
             containerName: refInfo.containerName
           });
         }
+      },
+      // Bracket 成員存取：obj['method'] / obj[`method`]
+      // 鍵是字串／無插值樣板字面值，不是 Identifier；Identifier visitor 掃不到，
+      // 會讓 a['run']() 這類方法呼叫對 deadcode/refs 隱形（對齊 TS ElementAccess）。
+      MemberExpression: (path: NodePath<babel.MemberExpression>) => {
+        if (!path.node.computed) {
+          return;
+        }
+
+        const keyNode = path.node.property;
+        const keyName = this.getStaticComputedMemberKey(keyNode);
+        if (keyName !== symbolName) {
+          return;
+        }
+
+        const refInfo = this.analyzeComputedMemberReference(path, variableTypes);
+        if (!refInfo) {
+          return;
+        }
+
+        if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName)) {
+          return;
+        }
+
+        references.push({
+          location: {
+            filePath,
+            range: this.getNodeRange(keyNode)
+          },
+          kind: refInfo.kind,
+          isExactMatch: true,
+          containerName: refInfo.containerName
+        });
       }
     });
 
     return references;
+  }
+
+  /**
+   * 取得 computed 成員存取的靜態字串鍵名。
+   * 支援 StringLiteral（obj['foo']）與無插值 TemplateLiteral（obj[`foo`]）。
+   */
+  private getStaticComputedMemberKey(
+    property: babel.Expression | babel.PrivateName
+  ): string | undefined {
+    if (babel.isStringLiteral(property)) {
+      return property.value;
+    }
+
+    // 無插值樣板：`method` → quasis 單一片段且 expressions 為空
+    if (
+      babel.isTemplateLiteral(property)
+      && property.expressions.length === 0
+      && property.quasis.length === 1
+    ) {
+      return property.quasis[0]?.value.cooked ?? undefined;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 分析 computed 成員存取（obj['method'] / obj[`method`]）的引用詳情
+   */
+  private analyzeComputedMemberReference(
+    path: NodePath<babel.MemberExpression>,
+    variableTypes: VariableTypeMap
+  ): ReferenceAnalysis | null {
+    const member = path.node;
+    let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
+    let isMethodCall = false;
+
+    const grandParent = path.parent;
+    if (babel.isCallExpression(grandParent) && grandParent.callee === member) {
+      kind = ScopedReferenceKind.Call;
+      isMethodCall = true;
+    }
+
+    return {
+      kind,
+      containerName: this.findContainerName(path),
+      isMethodCall,
+      isPropertyAccess: true,
+      receiverType: this.inferReceiverType(member.object, variableTypes)
+    };
   }
 
   /**
@@ -323,11 +405,11 @@ export class ReferenceFinder {
   }
 
   /**
-   * 查找 JavaScript 標識符所屬的容器名稱
-   * @param path Babel 標識符節點路徑
+   * 查找節點所屬的容器名稱
+   * @param path Babel 節點路徑（Identifier 或 MemberExpression 等）
    * @returns 容器名稱（類別或函式），如果無法找到則返回 undefined
    */
-  private findContainerName(path: NodePath<babel.Identifier>): string | undefined {
+  private findContainerName(path: NodePath): string | undefined {
     let current: NodePath | null = path.parentPath;
 
     while (current) {

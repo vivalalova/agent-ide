@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { isFileNotFoundError } from '@shared/errors/index.js';
 import {
   createStructuredPathAliasMap,
   getPathAliasEntries,
@@ -51,10 +52,10 @@ interface PackageExtendsSpec {
 /**
  * tsconfig extends 循環偵測到的錯誤
  *
- * 與「tsconfig.json 不存在」或「JSON 格式錯誤」等可優雅降級的情況不同，
- * extends 循環代表設定本身邏輯矛盾（fast-fail 原則）：呼叫端必須明確得知
- * 此錯誤，不可被靜默吞掉後退化成「專案沒有任何 path alias」的空設定，
- * 否則 rename/impact 等命令會誤判為零 alias，漏掉所有透過該 alias 匯入的消費端。
+ * 與「tsconfig.json 不存在」可優雅回空不同，extends 循環代表設定本身邏輯矛盾
+ * （fast-fail 原則）：呼叫端必須明確得知此錯誤，不可被靜默吞掉後退化成
+ * 「專案沒有任何 path alias」的空設定，否則 rename/impact 等命令會誤判為零 alias，
+ * 漏掉所有透過該 alias 匯入的消費端。
  */
 export class CircularTsconfigExtendsError extends Error {
   constructor(message: string) {
@@ -63,10 +64,25 @@ export class CircularTsconfigExtendsError extends Error {
   }
 }
 
+/**
+ * tsconfig 檔案存在但無法解析（JSON 語法錯誤、結構損壞等）的錯誤。
+ *
+ * 與「專案沒有 tsconfig」不同：無檔可回空 pathAliases；壞檔必須可觀測，
+ * 不得 silent empty 與無檔不可區分，否則 path-alias 消費端會被漏改卻報 success。
+ */
+export class InvalidTsconfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidTsconfigError';
+  }
+}
+
 function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
   const parsed = ts.parseConfigFileTextToJson(tsconfigPath, content);
   if (parsed.error) {
-    throw new Error(ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n'));
+    throw new InvalidTsconfigError(
+      `Invalid tsconfig.json at ${tsconfigPath}: ${ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n')}`
+    );
   }
 
   return parsed.config as TsconfigFile;
@@ -315,43 +331,57 @@ export async function loadTsconfigPathConfig(
   projectRoot: string,
   fileSystem: IFileSystem
 ): Promise<TsconfigPathConfig> {
-  const config: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]) };
+  const empty: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]) };
 
-  try {
-    // 向上查找 tsconfig.json
-    const found = await findTsconfigUp(projectRoot, fileSystem);
-    if (!found) {
-      return config;
-    }
-
-    const cache = getTsconfigCache(fileSystem);
-    const cacheKey = path.resolve(found.tsconfigPath);
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return await cached;
-    }
-
-    const loading = loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
-    const cachedLoading = loading.catch(error => {
-      if (cache.get(cacheKey) === cachedLoading) {
-        cache.delete(cacheKey);
-      }
-      throw error;
-    });
-    cache.set(cacheKey, cachedLoading);
-    return await cachedLoading;
-  } catch (error) {
-    // fast-fail：extends 循環是設定本身邏輯矛盾，必須讓呼叫端知道，
-    // 不可與「tsconfig.json 不存在/格式錯誤」一併靜默退化成空設定。
-    if (error instanceof CircularTsconfigExtendsError) {
-      throw error;
-    }
-
-    // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
-    logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
+  // 向上查找 tsconfig.json；無檔 → 空設定合法
+  const found = await findTsconfigUp(projectRoot, fileSystem);
+  if (!found) {
+    return empty;
   }
 
-  return config;
+  const cache = getTsconfigCache(fileSystem);
+  const cacheKey = path.resolve(found.tsconfigPath);
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return await cached;
+  }
+
+  const loading = loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
+  const cachedLoading = loading.catch(error => {
+    if (cache.get(cacheKey) === cachedLoading) {
+      cache.delete(cacheKey);
+    }
+    throw error;
+  });
+  cache.set(cacheKey, cachedLoading);
+
+  try {
+    return await cachedLoading;
+  } catch (error) {
+    // 無檔／競態刪除／exists 與 read 不一致 → 空 alias 合法（與「沒找到 tsconfig」同語意）
+    // 含正式 FileNotFoundError、ENOENT，以及 mock FS 的 plain Error("File not found: …")
+    if (isMissingTsconfigFileError(error)) {
+      return empty;
+    }
+    // 檔案存在但內容非法或 extends 循環：必須可觀測（throw），不得 silent empty 與「無 tsconfig」不可區分
+    if (error instanceof CircularTsconfigExtendsError || error instanceof InvalidTsconfigError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new InvalidTsconfigError(`Failed to load tsconfig.json at ${found.tsconfigPath}: ${message}`);
+  }
+}
+
+/** 載入 tsconfig 時視為「檔案不存在」→ 可回空 alias 的錯誤 */
+function isMissingTsconfigFileError(error: unknown): boolean {
+  if (isFileNotFoundError(error)) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  // FileNotFoundError / 常見 mock 訊息：`File not found: <path>`
+  return /^File not found:/i.test(error.message);
 }
 
 /**

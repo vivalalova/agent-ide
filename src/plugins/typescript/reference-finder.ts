@@ -231,6 +231,20 @@ export class ReferenceFinder {
       };
     }
 
+    // 物件字面量的非計算屬性 key（`{ deadF25: 1 }` 的 deadF25）：
+    // 是屬性名稱字面，不是對同名變數／解構綁定的引用。
+    // 若不排除，`const { deadF25 } = { deadF25: 1 }` 會把屬性 key 誤算成 usage，
+    // 導致未使用的解構綁定永遠判不了 dead（F25）。
+    // Shorthand `{ deadF25 }` 是 ShorthandPropertyAssignment，不走此分支，語意上是引用、保留。
+    if (
+      parent
+      && ts.isPropertyAssignment(parent)
+      && parent.name === node
+      && ts.isIdentifier(node)
+    ) {
+      return null;
+    }
+
     // 判斷引用類型
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;

@@ -8,15 +8,28 @@
  *
  * 原為 change-signature/call-site-updater.ts 的私有方法，因 move-member 的
  * range-finder 有相同需求而下沉至此作為共用基礎設施（Single Source of Truth）。
+ *
+ * 樣板字面值的 `${...}` substitution 內部重新進入 code 狀態，因此
+ * `` `x${require('./old')}` `` 中的 require 仍視為真實程式碼（見 move source-masking F9）。
  */
 
 import { isIdentifierContinueChar } from './symbol-finder/identifier-matcher.js';
 
 /**
- * @param text 待掃描文字
- * @returns 與 text 等長的布林陣列，true 表示該位置字元屬於程式碼狀態
+ * 逐字元語意分類（比 boolean mask 更細）：
+ * - code：一般程式碼（含樣板 substitution `${...}` 內部）
+ * - comment：行/區塊註解（含分隔符）
+ * - string：單/雙引號字串（含引號）
+ * - template：樣板字面值的文字內容與分隔符（不含 substitution 內部）
+ * - regex：regex 字面值（含 `/` 分隔符）
  */
-export function computeCodeStateMask(text: string): boolean[] {
+export type CodeCharKind = 'code' | 'comment' | 'string' | 'template' | 'regex';
+
+/**
+ * @param text 待掃描文字
+ * @returns 與 text 等長的分類陣列
+ */
+export function computeCodeCharKinds(text: string): CodeCharKind[] {
   type LeafMode = 'code' | 'lineComment' | 'blockComment' | 'string' | 'regex';
 
   // 樣板字面值（`...`）與其內部 `${...}` substitution 可任意巢狀，用堆疊表達：
@@ -26,7 +39,7 @@ export function computeCodeStateMask(text: string): boolean[] {
   //   讓 substitution 內的物件字面值/區塊不會被誤判為 substitution 提前結束
   type Frame = { readonly kind: 'template' } | { kind: 'substitution'; braceDepth: number };
 
-  const mask: boolean[] = new Array(text.length).fill(true);
+  const kinds: CodeCharKind[] = new Array(text.length).fill('code');
   const stack: Frame[] = [];
   let mode: LeafMode = 'code';
   let quote = '';
@@ -70,10 +83,10 @@ export function computeCodeStateMask(text: string): boolean[] {
     const topFrame = stack.length > 0 ? stack[stack.length - 1] : undefined;
 
     if (topFrame !== undefined && topFrame.kind === 'template') {
-      mask[i] = false;
+      kinds[i] = 'template';
       if (char === '\\' && i + 1 < text.length) {
         // 跳脫字元：連同下一個字元一併視為樣板內容
-        mask[i + 1] = false;
+        kinds[i + 1] = 'template';
         i++;
         continue;
       }
@@ -84,7 +97,7 @@ export function computeCodeStateMask(text: string): boolean[] {
       }
       if (char === '$' && next === '{') {
         // 進入 substitution：`${` 本身是樣板語法分隔符（非 code），內容才是 code
-        mask[i + 1] = false;
+        kinds[i + 1] = 'template';
         stack.push({ kind: 'substitution', braceDepth: 0 });
         i++;
         continue;
@@ -93,7 +106,7 @@ export function computeCodeStateMask(text: string): boolean[] {
     }
 
     if (mode === 'lineComment') {
-      mask[i] = false;
+      kinds[i] = 'comment';
       if (char === '\n') {
         mode = 'code';
       }
@@ -101,9 +114,9 @@ export function computeCodeStateMask(text: string): boolean[] {
     }
 
     if (mode === 'blockComment') {
-      mask[i] = false;
+      kinds[i] = 'comment';
       if (char === '*' && next === '/') {
-        mask[i + 1] = false;
+        kinds[i + 1] = 'comment';
         mode = 'code';
         i++;
       }
@@ -111,10 +124,10 @@ export function computeCodeStateMask(text: string): boolean[] {
     }
 
     if (mode === 'string') {
-      mask[i] = false;
+      kinds[i] = 'string';
       if (char === '\\' && i + 1 < text.length) {
         // 跳脫字元：連同下一個字元一併視為字串內容，避免跳脫的引號被誤判為結尾
-        mask[i + 1] = false;
+        kinds[i + 1] = 'string';
         i++;
         continue;
       }
@@ -125,9 +138,9 @@ export function computeCodeStateMask(text: string): boolean[] {
     }
 
     if (mode === 'regex') {
-      mask[i] = false;
+      kinds[i] = 'regex';
       if (char === '\\' && i + 1 < text.length) {
-        mask[i + 1] = false;
+        kinds[i + 1] = 'regex';
         i++;
         continue;
       }
@@ -147,32 +160,32 @@ export function computeCodeStateMask(text: string): boolean[] {
 
     // mode === 'code'
     if (char === '/' && next === '/') {
-      mask[i] = false;
-      mask[i + 1] = false;
+      kinds[i] = 'comment';
+      kinds[i + 1] = 'comment';
       mode = 'lineComment';
       i++;
       continue;
     }
     if (char === '/' && next === '*') {
-      mask[i] = false;
-      mask[i + 1] = false;
+      kinds[i] = 'comment';
+      kinds[i + 1] = 'comment';
       mode = 'blockComment';
       i++;
       continue;
     }
     if (char === '"' || char === '\'') {
-      mask[i] = false;
+      kinds[i] = 'string';
       mode = 'string';
       quote = char;
       continue;
     }
     if (char === '`') {
-      mask[i] = false;
+      kinds[i] = 'template';
       stack.push({ kind: 'template' });
       continue;
     }
     if (char === '/' && isRegexContext(i)) {
-      mask[i] = false;
+      kinds[i] = 'regex';
       mode = 'regex';
       regexInClass = false;
       continue;
@@ -189,14 +202,27 @@ export function computeCodeStateMask(text: string): boolean[] {
           continue;
         }
         // 深度歸零：此 `}` 是 substitution 的收尾分隔符，回到外層樣板文字狀態
-        mask[i] = false;
+        kinds[i] = 'template';
         stack.pop();
         continue;
       }
     }
-    // 其餘為一般程式碼字元，維持 mask[i] = true
+    // 其餘為一般程式碼字元，維持 kinds[i] = 'code'
   }
 
+  return kinds;
+}
+
+/**
+ * @param text 待掃描文字
+ * @returns 與 text 等長的布林陣列，true 表示該位置字元屬於程式碼狀態
+ */
+export function computeCodeStateMask(text: string): boolean[] {
+  const kinds = computeCodeCharKinds(text);
+  const mask: boolean[] = new Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    mask[i] = kinds[i] === 'code';
+  }
   return mask;
 }
 

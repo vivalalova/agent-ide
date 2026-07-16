@@ -12,6 +12,8 @@ import type {
 } from '@infrastructure/formatters/types.js';
 import { PreviewCommand } from '@infrastructure/formatters/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { applyTextEdits } from './apply-text-edits.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
  * 建立修改行的 LineChange
@@ -492,9 +494,12 @@ async function convertFileOperation(
   switch (operation.type) {
     case FileOperationType.Create: {
       const content = operation.content ?? '';
+      const filePath = operation.targetPath ?? operation.sourcePath;
+      // 目標已存在時讀真實原文，讓 dry-run 能顯示將被覆蓋的內容（非空字串假裝新建）
+      const originalContent = await readOriginalContent(filePath, fileSystem);
       return {
-        filePath: operation.targetPath ?? operation.sourcePath,
-        originalContent: '',
+        filePath,
+        originalContent,
         changes: convertCreateToLineChanges(content)
       };
     }
@@ -560,6 +565,33 @@ export async function convertChangesetToPreviewInput(
   changeset: Changeset,
   fileSystem: IFileSystem
 ): Promise<PreviewInput> {
+  // 先以 apply 同源規則驗證 TextEdit（含跨行 overlap）：
+  // applyTextEdits 會 throw，preview 必須同樣 fail，禁止 silent success 產出殘缺 diff
+  try {
+    for (const textChange of changeset.textChanges) {
+      if (textChange.edits.length === 0) {
+        continue;
+      }
+      const originalContent = await readOriginalContent(textChange.filePath, fileSystem);
+      applyTextEdits(originalContent, textChange.edits);
+    }
+  } catch (error) {
+    const message = getErrorMessage(error);
+    const empty: FileChangeInput[] = [];
+    return {
+      command: mapCommandType(changeset.command),
+      success: false,
+      fileChanges: empty,
+      files: empty,
+      operationDescription: changeset.description,
+      conflicts: convertWarningsToConflicts(changeset.warnings),
+      errors: [
+        ...(changeset.errors ? [...changeset.errors] : []),
+        message
+      ]
+    };
+  }
+
   // 批次處理文字變更
   const textChangePromises = changeset.textChanges.map(tc =>
     convertFileTextChange(tc, fileSystem)
@@ -597,6 +629,8 @@ export async function convertChangesetToPreviewInput(
     command: mapCommandType(changeset.command),
     success: changeset.success,
     fileChanges,
+    // files 與 fileChanges 同內容：相容以 PreviewResult 形狀讀 .files 的呼叫端
+    files: fileChanges,
     operationDescription: changeset.description,
     conflicts,
     errors: changeset.errors ? [...changeset.errors] : undefined

@@ -61,9 +61,7 @@ describe('F21：lexical 應認 default / namespace import 為 import binding', (
     // 最近綁定必須是 default import 的 name（ImportClause），非其他東西
     expect(ts.isImportClause(nearestImportUse!.parent)).toBe(true);
 
-    // line 3 的 return Foo：被參數 Foo 遮蔽
-    const shadowedUse = findIdentifierAtLine(sourceFile, 'Foo', 3);
-    // 參數 Foo 與 return Foo 同列；找 return 後的那個
+    // line 3 的 return Foo：被參數 Foo 遮蔽（參數與 return 同列，找 return 後的那個）
     let returnFoo: ts.Identifier | undefined;
     const visit = (node: ts.Node): void => {
       if (returnFoo) {

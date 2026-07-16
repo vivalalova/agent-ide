@@ -90,6 +90,11 @@ export class DeclarationAnalyzer {
         return this.computeDeclaratorRemovalRange(sourceFile, targetNode);
       }
 
+      // 解構綁定（如 `const { dead, live } = x`）：回傳精確 BindingElement 含逗號手術（F25）
+      if (ts.isBindingElement(targetNode)) {
+        return this.computeBindingElementRemovalRange(sourceFile, targetNode);
+      }
+
       // 取得完整範圍（包含前導註解）
       return this.computeFullNodeRange(sourceFile, targetNode);
     } catch (error) {
@@ -174,22 +179,123 @@ export class DeclarationAnalyzer {
    * 對多宣告子的 VariableStatement（如 `let a, b;`），偵測粒度是單一宣告子
    * （每個變數各自獨立判定是否為 dead code），刪除粒度必須與之一致，
    * 故回傳精確的目標 VariableDeclaration 節點，而非整個語句。
-   * 單一宣告子時維持回傳整個語句節點（含前導註解等既有行為不變）。
+   *
+   * 對解構綁定（如 `const { dead, live } = x`），偵測粒度是單一 BindingElement，
+   * 回傳該 BindingElement 以便 getFullDeclarationRange 做逗號手術（F25）；
+   * 若 pattern 只剩一個 element，改回傳整個語句以整句刪除。
+   *
+   * 單一識別符宣告子時維持回傳整個語句節點（含前導註解等既有行為不變）。
    */
   private resolveMatchedDeclarationNode(node: ts.Node, symbolName: string, symbolType: string): ts.Node {
     if (
       (symbolType === 'variable' || symbolType === 'constant')
       && ts.isVariableStatement(node)
-      && node.declarationList.declarations.length > 1
     ) {
-      const target = node.declarationList.declarations.find(
-        decl => ts.isIdentifier(decl.name) && decl.name.text === symbolName
-      );
-      if (target) {
-        return target;
+      if (node.declarationList.declarations.length > 1) {
+        const target = node.declarationList.declarations.find(
+          decl => ts.isIdentifier(decl.name) && decl.name.text === symbolName
+        );
+        if (target) {
+          return target;
+        }
+      }
+
+      // 解構：Object/Array BindingPattern 內的 BindingElement
+      for (const decl of node.declarationList.declarations) {
+        if (!ts.isObjectBindingPattern(decl.name) && !ts.isArrayBindingPattern(decl.name)) {
+          continue;
+        }
+        const element = this.findBindingElementByName(decl.name, symbolName);
+        if (!element) {
+          continue;
+        }
+        // 單一 binding element：整句刪除（與單一 VariableDeclaration 語意對齊）
+        if (decl.name.elements.length === 1) {
+          return node;
+        }
+        return element;
       }
     }
     return node;
+  }
+
+  /**
+   * 在 Object/Array BindingPattern（可巢狀）中尋找名稱相符的 BindingElement
+   */
+  private findBindingElementByName(
+    pattern: ts.BindingPattern,
+    symbolName: string
+  ): ts.BindingElement | null {
+    for (const element of pattern.elements) {
+      if (ts.isOmittedExpression(element)) {
+        continue;
+      }
+      if (ts.isIdentifier(element.name) && element.name.text === symbolName) {
+        return element;
+      }
+      if (ts.isObjectBindingPattern(element.name) || ts.isArrayBindingPattern(element.name)) {
+        const nested = this.findBindingElementByName(element.name, symbolName);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 計算 BindingElement 的精確刪除範圍（含前後逗號手術），對齊多宣告子 VariableDeclaration
+   * 的文字手術語意，避免 `const { dead, live } = x` 刪 dead 時連 live 一併吃掉（F25）。
+   */
+  private computeBindingElementRemovalRange(
+    sourceFile: ts.SourceFile,
+    element: ts.BindingElement
+  ): Range {
+    const parent = element.parent;
+    if (!ts.isObjectBindingPattern(parent) && !ts.isArrayBindingPattern(parent)) {
+      return this.computeFullNodeRange(sourceFile, element);
+    }
+
+    const elements = parent.elements.filter(
+      (el): el is ts.BindingElement => !ts.isOmittedExpression(el)
+    );
+    const index = elements.indexOf(element);
+    if (index < 0 || elements.length <= 1) {
+      return this.computeFullNodeRange(sourceFile, element);
+    }
+
+    const isLast = index === elements.length - 1;
+    let startPos: number;
+    let endPos: number;
+
+    if (isLast) {
+      // 末位：連同其前的逗號（從前一個 element 結尾開始刪）
+      const prev = elements[index - 1];
+      const prevEnd = prev.getEnd();
+      const commentsBeforeComma = this.scanCommentRangesInGap(
+        sourceFile, prevEnd, element.getStart(sourceFile)
+      );
+      startPos = commentsBeforeComma.length > 0
+        ? commentsBeforeComma[commentsBeforeComma.length - 1].end
+        : prevEnd;
+      endPos = element.getEnd();
+    } else {
+      // 首位／中間：連同其後的逗號（刪到下一個 element 起始）
+      startPos = element.getStart(sourceFile);
+      const next = elements[index + 1];
+      const nextStart = next.getStart(sourceFile);
+      const commaStart = this.findSeparatorCommaStart(sourceFile, element.getEnd(), nextStart);
+      const commentsAfterComma = this.scanCommentRangesInGap(sourceFile, commaStart + 1, nextStart);
+      endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
+    }
+
+    const startLC = sourceFile.getLineAndCharacterOfPosition(startPos);
+    const endLC = sourceFile.getLineAndCharacterOfPosition(endPos);
+
+    return {
+      start: { line: startLC.line + 1, column: startLC.character + 1, offset: startPos },
+      end: { line: endLC.line + 1, column: endLC.character + 1, offset: endPos }
+    };
   }
 
   /**
@@ -229,29 +335,42 @@ export class DeclarationAnalyzer {
     startIndex: number,
     endIndex: number
   ): Range {
-    const isLastRun = endIndex === declarations.length - 1;
+    return this.computeNodeListRemovalRange(sourceFile, declarations, startIndex, endIndex);
+  }
+
+  /**
+   * 對「逗號分隔的節點列表」計算一段連續 run 的刪除範圍
+   * （VariableDeclaration 多宣告子與 BindingElement 解構共用）
+   */
+  private computeNodeListRemovalRange(
+    sourceFile: ts.SourceFile,
+    nodes: readonly ts.Node[],
+    startIndex: number,
+    endIndex: number
+  ): Range {
+    const isLastRun = endIndex === nodes.length - 1;
 
     let startPos: number;
     if (isLastRun && startIndex > 0) {
-      const prevEnd = declarations[startIndex - 1].getEnd();
-      // 逗號前若夾著屬於前一個（存活）宣告子的註解，保留註解，只從註解結尾之後開始刪
+      const prevEnd = nodes[startIndex - 1].getEnd();
+      // 逗號前若夾著屬於前一個（存活）節點的註解，保留註解，只從註解結尾之後開始刪
       const commentsBeforeComma = this.scanCommentRangesInGap(
-        sourceFile, prevEnd, declarations[startIndex].getStart(sourceFile)
+        sourceFile, prevEnd, nodes[startIndex].getStart(sourceFile)
       );
       startPos = commentsBeforeComma.length > 0
         ? commentsBeforeComma[commentsBeforeComma.length - 1].end
         : prevEnd;
     } else {
-      startPos = declarations[startIndex].getStart(sourceFile);
+      startPos = nodes[startIndex].getStart(sourceFile);
     }
 
     let endPos: number;
     if (isLastRun) {
-      endPos = declarations[endIndex].getEnd();
+      endPos = nodes[endIndex].getEnd();
     } else {
-      const nextStart = declarations[endIndex + 1].getStart(sourceFile);
-      const commaStart = this.findSeparatorCommaStart(sourceFile, declarations[endIndex].getEnd(), nextStart);
-      // 逗號後若夾著屬於下一個（存活）宣告子的前導註解，保留註解，只刪到註解開始之前
+      const nextStart = nodes[endIndex + 1].getStart(sourceFile);
+      const commaStart = this.findSeparatorCommaStart(sourceFile, nodes[endIndex].getEnd(), nextStart);
+      // 逗號後若夾著屬於下一個（存活）節點的前導註解，保留註解，只刪到註解開始之前
       const commentsAfterComma = this.scanCommentRangesInGap(sourceFile, commaStart + 1, nextStart);
       endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
     }
@@ -447,6 +566,13 @@ export class DeclarationAnalyzer {
         if (ts.isVariableStatement(node)) {
           for (const decl of node.declarationList.declarations) {
             if (ts.isIdentifier(decl.name) && decl.name.text === symbolName) {
+              return true;
+            }
+            // 解構綁定：Object/Array BindingPattern 內的 BindingElement（F25）
+            if (
+              (ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name))
+              && this.findBindingElementByName(decl.name, symbolName)
+            ) {
               return true;
             }
           }

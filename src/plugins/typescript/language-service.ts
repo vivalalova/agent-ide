@@ -109,6 +109,12 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   private _languageServiceHost: ts.LanguageServiceHost | null = null;
   private _files: Map<string, FileInfo> = new Map();
   private compilerOptions: ts.CompilerOptions;
+  /**
+   * Language Service 模組解析基準目錄。
+   * 以初始化來源檔推得的專案根為準，不得固定 process.cwd()
+   * （CLI --path 常指向非 cwd 的專案根）。
+   */
+  private _currentDirectory: string | null = null;
 
   constructor(compilerOptions: ts.CompilerOptions) {
     this.compilerOptions = compilerOptions;
@@ -139,6 +145,9 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     // 添加當前檔案到檔案列表
     this.updateFile(sourceFile.fileName, sourceFile.text);
 
+    // 以初始化來源檔推得專案根，供 host.getCurrentDirectory 使用
+    this._currentDirectory = this.resolveProjectDirectory(sourceFile);
+
     // 建立 Language Service Host
     this._languageServiceHost = this.createLanguageServiceHost(sourceFile);
 
@@ -147,6 +156,39 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       this._languageServiceHost,
       LanguageServiceManager.getDocumentRegistry()
     );
+  }
+
+  /**
+   * 從來源檔路徑推得專案根目錄。
+   * 向上尋找 package.json / tsconfig.json；找不到時退回來源檔所在目錄
+   * （仍不得使用 process.cwd()，以免 CLI --path 與 cwd 分叉時模組解析錯位）。
+   */
+  private resolveProjectDirectory(sourceFile: ts.SourceFile): string {
+    const filePath = path.resolve(sourceFile.fileName);
+    let currentDir = path.dirname(filePath);
+    const root = path.parse(currentDir).root;
+    const fileExists = ts.sys.fileExists?.bind(ts.sys);
+
+    while (true) {
+      if (fileExists) {
+        if (
+          fileExists(path.join(currentDir, 'package.json'))
+          || fileExists(path.join(currentDir, 'tsconfig.json'))
+        ) {
+          return currentDir;
+        }
+      }
+      if (currentDir === root) {
+        break;
+      }
+      const parent = path.dirname(currentDir);
+      if (parent === currentDir) {
+        break;
+      }
+      currentDir = parent;
+    }
+
+    return path.dirname(filePath);
   }
 
   /**
@@ -182,7 +224,7 @@ export class LanguageServiceManager implements ILanguageServiceManager {
         }
         return undefined;
       },
-      getCurrentDirectory: () => process.cwd(),
+      getCurrentDirectory: () => this._currentDirectory ?? path.dirname(path.resolve(sourceFile.fileName)),
       getCompilationSettings: () => ({
         ...this.compilerOptions,
         // 確保啟用必要的選項
@@ -316,14 +358,18 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   }
 
   /**
-   * 在目前檔案的頂層 import 宣告中，尋找匯入指定符號名稱的 binding 位置。
+   * 在目前檔案的頂層 import / CJS require 宣告中，尋找匯入指定符號名稱的 binding 位置。
    *
    * 錨定前先驗證 import 語句的 module specifier 解析後確實指向目標符號的定義檔
    * （`definitionFilePath`）——否則「同名但不同來源模組」的 import 會被誤錨定而誤改（缺陷 F2a）。
    *
    * 具名 import 有別名時 anchor 於被匯入名稱（propertyName），使改名只動被匯入名稱、保留本地別名。
    * namespace import（`import * as ns`）底下的 `ns.member` 引用不在此處理——見
-   * {@link getNamespaceMemberReferenceSpans}（改走 AST 直接收集，不依賴 LS 跨模組解析）。
+   * {@link getAstDirectReferenceSpans}（改走 AST 直接收集，不依賴 LS 跨模組解析）。
+   *
+   * 另涵蓋 CJS：
+   * - `const { foo } = require('./mod')` 解構綁定
+   * - `import x = require('./mod')`（ImportEqualsDeclaration）
    */
   private findImportBindingPosition(
     sourceFile: ts.SourceFile,
@@ -366,6 +412,119 @@ export class LanguageServiceManager implements ILanguageServiceManager {
           }
         }
       }
+    }
+
+    // CJS require 解構：`const { foo } = require('./mod')` / `const { foo: bar } = require(...)`
+    const requireBinding = this.findRequireDestructuringBindingPosition(
+      sourceFile,
+      symbolName,
+      definitionFilePath,
+      moduleResolver
+    );
+    if (requireBinding !== undefined) {
+      return requireBinding;
+    }
+
+    // `import x = require('./mod')`
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportEqualsDeclaration(statement)) {
+        continue;
+      }
+      if (!ts.isExternalModuleReference(statement.moduleReference)) {
+        continue;
+      }
+      const expr = statement.moduleReference.expression;
+      if (!ts.isStringLiteral(expr)) {
+        continue;
+      }
+      if (!this.specifierMatchesTarget(
+        sourceFile.fileName,
+        expr.text,
+        definitionFilePath,
+        moduleResolver
+      )) {
+        continue;
+      }
+      if (statement.name.text === symbolName) {
+        return statement.name.getStart(sourceFile);
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 在 `const { name } = require(spec)` / `const { name: alias } = require(spec)` 中
+   * 尋找被匯入名稱等於 symbolName 的 binding 錨定位置。
+   * 有別名時 anchor 於 propertyName（被匯入名），與 ESM 具名 import 一致。
+   */
+  private findRequireDestructuringBindingPosition(
+    sourceFile: ts.SourceFile,
+    symbolName: string,
+    definitionFilePath: string,
+    moduleResolver?: ModuleSpecifierResolver
+  ): number | undefined {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isVariableStatement(statement)) {
+        continue;
+      }
+      for (const decl of statement.declarationList.declarations) {
+        if (!decl.initializer || !this.isRequireCall(decl.initializer)) {
+          continue;
+        }
+        const moduleSpecifier = this.getRequireModuleSpecifier(decl.initializer);
+        if (moduleSpecifier === undefined) {
+          continue;
+        }
+        if (!this.specifierMatchesTarget(
+          sourceFile.fileName,
+          moduleSpecifier,
+          definitionFilePath,
+          moduleResolver
+        )) {
+          continue;
+        }
+        if (!ts.isObjectBindingPattern(decl.name)) {
+          continue;
+        }
+        for (const element of decl.name.elements) {
+          if (!ts.isBindingElement(element)) {
+            continue;
+          }
+          // 被匯入名稱：有別名時 propertyName（`{ foo: bar }` 的 foo），否則為 name
+          const propertyName = element.propertyName;
+          const importedName = propertyName && ts.isIdentifier(propertyName)
+            ? propertyName.text
+            : ts.isIdentifier(element.name)
+              ? element.name.text
+              : undefined;
+          if (importedName !== symbolName) {
+            continue;
+          }
+          const anchorNode = propertyName && ts.isIdentifier(propertyName)
+            ? propertyName
+            : element.name;
+          if (ts.isIdentifier(anchorNode)) {
+            return anchorNode.getStart(sourceFile);
+          }
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /** `require('...')` 呼叫（callee 為識別符 require） */
+  private isRequireCall(node: ts.Expression): node is ts.CallExpression {
+    return ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === 'require'
+      && node.arguments.length >= 1;
+  }
+
+  private getRequireModuleSpecifier(call: ts.CallExpression): string | undefined {
+    const arg = call.arguments[0];
+    if (arg && ts.isStringLiteral(arg)) {
+      return arg.text;
     }
     return undefined;
   }
@@ -612,6 +771,7 @@ export class LanguageServiceManager implements ILanguageServiceManager {
 
     // 清理 Language Service Host
     this._languageServiceHost = null;
+    this._currentDirectory = null;
 
     // 清理檔案快取
     this._files.clear();

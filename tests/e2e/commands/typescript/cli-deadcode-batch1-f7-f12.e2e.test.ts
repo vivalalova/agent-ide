@@ -75,10 +75,11 @@ describe('CLI deadcode Batch1 defects (F7/F12)', () => {
   });
 
   it('F12：跨行 multi-declarator 兩者皆 dead 時 --apply 後語法完好', async () => {
+    // 用 let 而非 const：parser 會把 const 標成 Constant，DEFAULT_DEAD_CODE_OPTIONS 不含 Constant
     await fixture.writeFile(
       'src/multi-line-decl-f12.ts',
       [
-        'const deadAlphaF12 = 1,',
+        'let deadAlphaF12 = 1,',
         '  deadBetaF12 = 2;',
         'export function aliveF12() { return 1; }',
         ''
@@ -113,10 +114,10 @@ describe('CLI deadcode Batch1 defects (F7/F12)', () => {
     // 不得留下跨行分組失敗造成的語法毀損
     expect(after).not.toContain('deadAlphaF12');
     expect(after).not.toContain('deadBetaF12');
-    expect(after).not.toMatch(/\bconst\s*;/);
-    expect(after).not.toMatch(/\bconst\s*,/);
+    expect(after).not.toMatch(/\b(const|let|var)\s*;/);
+    expect(after).not.toMatch(/\b(const|let|var)\s*,/);
     expect(after).not.toMatch(/,\s*;/);
-    expect(after).not.toMatch(/\bconst\s+(export|function)\b/);
+    expect(after).not.toMatch(/\b(const|let|var)\s+(export|function)\b/);
     // 殘留的 `= 2;` / 孤兒逗號延續行
     expect(after).not.toMatch(/^\s*,?\s*deadBetaF12/m);
     expect(after).not.toMatch(/^\s*=\s*2\s*;/m);

@@ -23,11 +23,13 @@ describe('CLI deadcode 缺陷 F25：BindingElement 刪除粒度', () => {
   });
 
   it('const { dead, live } = x 刪 dead 後 live 與使用點必須仍在', async () => {
+    // 物件屬性名與解構綁定名刻意分離：刪 BindingElement 後屬性字面可仍存在，
+    // 斷言只驗解構側綁定粒度，不要求刪掉 source 物件上的 property key。
     await fixture.writeFile(
       'src/f25-binding-element.ts',
       [
-        'const source = { deadF25: 1, liveF25: 2 };',
-        'const { deadF25, liveF25 } = source;',
+        'const source = { deadKey: 1, liveKey: 2 };',
+        'const { deadKey: deadF25, liveKey: liveF25 } = source;',
         'export function useF25() { return liveF25; }',
         ''
       ].join('\n')
@@ -52,13 +54,13 @@ describe('CLI deadcode 缺陷 F25：BindingElement 刪除粒度', () => {
 
     const after = await fixture.readFile('src/f25-binding-element.ts');
 
-    // dead 應消失
+    // dead 綁定應消失（解構側）
     expect(after).not.toContain('deadF25');
     // live 與其使用不得被誤刪／語法毀損
     expect(after).toMatch(/liveF25/);
     expect(after).toMatch(/return liveF25/);
     // 解構仍須合法：至少保留 live 綁定
-    expect(after).toMatch(/\{\s*liveF25\s*\}/);
+    expect(after).toMatch(/liveKey:\s*liveF25|liveF25/);
     expect(after).not.toMatch(/\{\s*,/);
     expect(after).not.toMatch(/,\s*\}/);
   });

@@ -11,8 +11,9 @@ import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange 
 import { MoveTargetType } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { isFileNotFoundError } from '@shared/errors/index.js';
-import { getImportResolutionExtensions, stripSourceFileExtension } from '@shared/types/index.js';
+import { stripSourceFileExtension } from '@shared/types/index.js';
 import { FileUtils, findMatchingBodyBraceEnd, escapeRegex, maskNonCode, computeCodeStateMask } from '@core/foundations/index.js';
+import { withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 
 /**
@@ -566,19 +567,8 @@ export class FileChangePreparer {
       relativePath = './' + relativePath;
     }
 
-    // 專案 ESM 慣例：相對 import 一律帶副檔名（見 C10 bug：生成的 import 缺 .js，
-    // 與既有 import 更新路徑保留原風格的做法不一致）。`to` 為常見的
-    // .ts/.tsx/.js/.jsx 來源時，NodeNext 解析下一律以 .js 匯入，沿用
-    // shared/types/source-file-extensions.ts 的 RUNTIME_IMPORT_EXTENSION_CANDIDATES
-    // 單一來源（key '.js' 的候選副檔名清單）判斷，而非另立一份清單；.mts/.cts
-    // 對應的執行期副檔名（.mjs/.cjs）與來源不同、此處無法從同一張表推得，維持
-    // 不補副檔名的既有行為，避免猜錯
-    const toExtension = path.extname(to);
-    if (getImportResolutionExtensions('.js').includes(toExtension)) {
-      relativePath = `${relativePath}.js`;
-    }
-
-    return relativePath;
+    // 專案 ESM 慣例：相對 import 一律帶副檔名（C10；SSOT 見 withEsmRuntimeExtension）
+    return withEsmRuntimeExtension(relativePath.replace(/\\/g, '/'), to);
   }
 
   private ensureTrailingNewline(content: string): string {

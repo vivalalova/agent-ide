@@ -84,28 +84,7 @@ describe('F22：isShadowed 應涵蓋 for-of / catch / 解構', () => {
     const sourceFile = parse(code);
     const outerDef = findDefinitionName(sourceFile, 'item');
 
-    // for-of body 內 return item → 應被 for-of 的 item 遮蔽
-    let bodyReturn: ts.Identifier | undefined;
-    let outerReturn: ts.Identifier | undefined;
-    const visit = (node: ts.Node): void => {
-      if (ts.isForOfStatement(node)) {
-        const body = node.statement;
-        const findIn = (n: ts.Node): void => {
-          if (bodyReturn) {
-            return;
-          }
-          if (ts.isReturnStatement(n) && n.expression && ts.isIdentifier(n.expression) && n.expression.text === 'item') {
-            bodyReturn = n.expression;
-            return;
-          }
-          ts.forEachChild(n, findIn);
-        };
-        findIn(body);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sourceFile);
-    // 第二個 return item（迴圈外）
+    // 第一個 return item 在 for-of body；第二個在迴圈外
     const returns: ts.Identifier[] = [];
     const collect = (node: ts.Node): void => {
       if (ts.isReturnStatement(node) && node.expression && ts.isIdentifier(node.expression) && node.expression.text === 'item') {
@@ -115,12 +94,12 @@ describe('F22：isShadowed 應涵蓋 for-of / catch / 解構', () => {
     };
     collect(sourceFile);
     expect(returns.length).toBeGreaterThanOrEqual(2);
-    bodyReturn = returns[0];
-    outerReturn = returns[1];
+    const bodyReturn = returns[0];
+    const outerReturn = returns[1];
 
-    expect(analyzer.isShadowed(bodyReturn!, outerDef)).toBe(true);
+    expect(analyzer.isShadowed(bodyReturn, outerDef)).toBe(true);
     // 迴圈外的 return item 仍綁外層 const item，不應被判遮蔽
-    expect(analyzer.isShadowed(outerReturn!, outerDef)).toBe(false);
+    expect(analyzer.isShadowed(outerReturn, outerDef)).toBe(false);
   });
 
   it('catch 綁定遮蔽外層同名時，catch body 內引用應判 isShadowed', () => {

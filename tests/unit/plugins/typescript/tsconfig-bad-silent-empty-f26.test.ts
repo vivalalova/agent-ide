@@ -38,33 +38,35 @@ describe('F26：壞 tsconfig 不得 silent empty 與「無 tsconfig」不可區�
       thrown = error;
     }
 
-    // 對照：循環 extends 必須 throw（既有契約）
-    expect(CircularTsconfigExtendsError).toBeDefined();
+    try {
+      // 對照：循環 extends 必須 throw（既有契約）
+      expect(CircularTsconfigExtendsError).toBeDefined();
 
-    // 正確：要嘛 throw，要嘛回傳結構上可觀測失敗（含 error/diagnostics 欄位），
-    // 不得僅回 { pathAliases: {} } 且無任何失敗標記（與「無 tsconfig」相同形狀）
-    if (threw) {
-      expect(thrown).toBeInstanceOf(Error);
-      return;
+      // 正確：要嘛 throw，要嘛回傳結構上可觀測失敗（含 error/diagnostics 欄位），
+      // 不得僅回 { pathAliases: {} } 且無任何失敗標記（與「無 tsconfig」相同形狀）
+      if (threw) {
+        expect(thrown).toBeInstanceOf(Error);
+        return;
+      }
+
+      expect(config).toBeDefined();
+      const asRecord = config as Record<string, unknown>;
+      const hasObservableFailure =
+        asRecord.error !== undefined
+        || asRecord.diagnostics !== undefined
+        || asRecord.loadError !== undefined
+        || asRecord.failed === true
+        || (Array.isArray(asRecord.warnings) && asRecord.warnings.length > 0);
+
+      // 若仍走 warn 降級，至少 logger.warn 必須被呼叫（可觀測）——但僅 warn 仍不夠
+      // 區分「無 tsconfig」，故主斷言要求回傳結構可觀測失敗或 throw
+      // Bug：目前 silent empty + warn，config 無失敗標記
+      expect(hasObservableFailure || warnSpy.mock.calls.length > 0).toBe(true);
+      // 嚴格：空 alias alone 不算可觀測失敗標記（與「無 tsconfig」同形）
+      expect(hasObservableFailure).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
     }
-
-    expect(config).toBeDefined();
-    const asRecord = config as Record<string, unknown>;
-    const hasObservableFailure =
-      asRecord.error !== undefined
-      || asRecord.diagnostics !== undefined
-      || asRecord.loadError !== undefined
-      || asRecord.failed === true
-      || (Array.isArray(asRecord.warnings) && asRecord.warnings.length > 0);
-
-    // 若仍走 warn 降級，至少 logger.warn 必須被呼叫（可觀測）——但僅 warn 仍不夠
-    // 區分「無 tsconfig」，故主斷言要求回傳結構可觀測失敗或 throw
-    // Bug：目前 silent empty + warn，config 無失敗標記
-    expect(hasObservableFailure || warnSpy.mock.calls.length > 0).toBe(true);
-    // 嚴格：空 alias  alone 不算可觀測失敗標記
-    expect(hasObservableFailure).toBe(true);
-
-    warnSpy.mockRestore();
   });
 
   it('無 tsconfig 時回空設定仍合法（對照組，應綠）', async () => {

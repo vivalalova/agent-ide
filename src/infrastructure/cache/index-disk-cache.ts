@@ -6,7 +6,7 @@
 
 import { homedir } from 'os';
 import { createHash } from 'crypto';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { readFile, writeFile, mkdir, rename as fsRename, access, unlink } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { createUniqueTempPath, type IFileSystem } from '@infrastructure/storage/index.js';
@@ -23,9 +23,10 @@ import { packageVersion } from '@infrastructure/package-info.js';
 
 /**
  * 計算 projectPath hash（用於快取目錄名稱）
+ * 一律 path.resolve 後再 hash，讓相對／絕對 path 指向同一專案時共用同一 cache 目錄（F27）
  */
 function hashProjectPath(projectPath: string): string {
-  return createHash('sha256').update(projectPath).digest('hex').slice(0, 16);
+  return createHash('sha256').update(resolve(projectPath)).digest('hex').slice(0, 16);
 }
 
 /**
@@ -136,8 +137,39 @@ export class IndexDiskCache {
   }
 
   /**
+   * 由 snapshot 條目導出 cache key（與 computeCacheKey 同一格式：
+   * sha256 of sorted `path:mtime:size:contentHash` 行）。
+   * 讓 save 寫入的 key 永遠對齊 body，禁止 pre-index key 綁 post-index snapshot。
+   */
+  private deriveCacheKeyFromSnapshot(
+    fileEntries: Map<string, { fileInfo: { filePath: string; lastModified: Date; size: number; checksum: string } }>
+  ): string | null {
+    if (fileEntries.size === 0) {
+      return null;
+    }
+
+    const fileStats = [...fileEntries.values()]
+      .map(entry => ({
+        path: entry.fileInfo.filePath,
+        mtime: entry.fileInfo.lastModified.getTime(),
+        size: entry.fileInfo.size,
+        contentHash: entry.fileInfo.checksum
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    const hashInput = fileStats
+      .map(p => `${p.path}:${p.mtime}:${p.size}:${p.contentHash}`)
+      .join('\n');
+
+    return createHash('sha256').update(hashInput).digest('hex');
+  }
+
+  /**
    * 儲存快取（使用原生 fs，atomic write via temp+rename）
    * 失敗時靜默 warn（不 throw）
+   *
+   * cacheKey 優先由 snapshot checksum 導出，確保 key 與 body 一致（TOCTOU 防護）。
+   * 呼叫端傳入的 cacheKey 僅在 snapshot 為空、無法導出時作為 fallback。
    */
   async save(engine: IndexEngine, cacheKey: string): Promise<void> {
     try {
@@ -150,9 +182,13 @@ export class IndexDiskCache {
       const { fileEntries } = engine.snapshot();
       const partial = this.serializer.serialize(fileEntries);
 
+      // key 必須對齊 snapshot body：由 checksum 導出，拒絕 pre-index key 綁 post-index body
+      const snapshotKey = this.deriveCacheKeyFromSnapshot(fileEntries);
+      const effectiveKey = snapshotKey ?? cacheKey;
+
       const data: SerializedIndexData = {
         ...partial,
-        cacheKey
+        cacheKey: effectiveKey
       };
 
       const json = JSON.stringify(data);

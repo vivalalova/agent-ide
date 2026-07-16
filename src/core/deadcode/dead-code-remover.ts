@@ -4,6 +4,7 @@
  */
 
 import { minimatch } from 'minimatch';
+import * as ts from 'typescript';
 import { matchesPathFragment } from '@shared/path-pattern.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
@@ -11,6 +12,7 @@ import type { Changeset } from '@infrastructure/changeset/index.js';
 import { SymbolType } from '@shared/types/symbol.js';
 import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { isLineMatch } from '@plugins/shared/index.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -247,11 +249,12 @@ export class DeadCodeRemover {
   /**
    * 產生刪除操作
    *
-   * 同一 VariableStatement 中若有多個 dead 宣告子（如 `let a, b;` 兩者皆 dead），
-   * 逐項獨立呼叫 expandRangeToFullDeclaration 各自算出的手術範圍會互相重疊，--apply 後
-   * 造成語法毀損（D5）。先把可能同屬一語句的 variable/constant dead 項目分組（同檔案、
-   * 同行），交給 RangeExpander.expandDeclaratorGroupRanges 一次協調出彼此不重疊的範圍，
-   * 而非逐一獨立計算；非多宣告子語句或其他符號類型維持既有逐項處理路徑不變。
+   * 同一 VariableStatement 中若有多個 dead 宣告子（如 `let a, b;` 或跨行
+   * `const a = 1,\n  b = 2;` 兩者皆 dead），逐項獨立呼叫 expandRangeToFullDeclaration
+   * 各自算出的手術範圍會互相重疊，--apply 後造成語法毀損（D5/F12）。
+   * 先以 statement 身分（非 start.line）把同語句 variable/constant 分組，交給
+   * RangeExpander.expandDeclaratorGroupRanges 一次協調出彼此不重疊的範圍；
+   * 非多宣告子語句或其他符號類型維持既有逐項處理路徑不變。
    */
   private async generateRemovalOperations(
     items: readonly DeadCodeItem[]
@@ -259,47 +262,70 @@ export class DeadCodeRemover {
     const operations: RemovalOperation[] = [];
     const warnings: string[] = [];
 
-    const { groups, singles } = this.partitionMultiDeclaratorGroups(items);
+    // 先依檔案彙整 variable/constant 候選，讀檔後再以 AST statement 身分分組
+    const varConstByFile = new Map<string, DeadCodeItem[]>();
+    const otherSingles: DeadCodeItem[] = [];
 
-    for (const group of groups) {
-      const content = await this.readFile(group.filePath);
+    for (const item of items) {
+      if (item.type !== SymbolType.Variable && item.type !== SymbolType.Constant) {
+        otherSingles.push(item);
+        continue;
+      }
+      const filePath = item.location.filePath;
+      const bucket = varConstByFile.get(filePath);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        varConstByFile.set(filePath, [item]);
+      }
+    }
+
+    for (const [filePath, fileItems] of varConstByFile) {
+      const content = await this.readFile(filePath);
       if (!content) {
-        warnings.push(`跳過 ${group.items.map(i => i.name).join(', ')}：無法讀取檔案 ${group.filePath}`);
+        warnings.push(`跳過 ${fileItems.map(i => i.name).join(', ')}：無法讀取檔案 ${filePath}`);
         continue;
       }
 
-      const anchor = group.items[0];
-      const deadNames = new Set(group.items.map(i => i.name));
-      const coordinatedRanges = this.rangeExpander.expandDeclaratorGroupRanges(
-        content,
-        anchor.location.range.start.line,
-        anchor.name,
-        deadNames,
-        anchor.type,
-        group.filePath
-      );
+      const { groups, singles } = this.partitionMultiDeclaratorGroupsInFile(fileItems, content);
 
-      if (coordinatedRanges) {
-        // Parser 確認為同一多宣告子語句：改用協調後、彼此不重疊的範圍產生操作
-        for (const range of coordinatedRanges) {
-          operations.push({
-            filePath: group.filePath,
-            range,
-            originalCode: this.fileOperations.extractCode(content, range),
-            symbolName: group.items.map(i => i.name).join(', '),
-            symbolType: anchor.type
-          });
+      for (const group of groups) {
+        const anchor = group[0];
+        const deadNames = new Set(group.map(i => i.name));
+        const coordinatedRanges = this.rangeExpander.expandDeclaratorGroupRanges(
+          content,
+          anchor.location.range.start.line,
+          anchor.name,
+          deadNames,
+          anchor.type,
+          filePath
+        );
+
+        if (coordinatedRanges) {
+          for (const range of coordinatedRanges) {
+            operations.push({
+              filePath,
+              range,
+              originalCode: this.fileOperations.extractCode(content, range),
+              symbolName: group.map(i => i.name).join(', '),
+              symbolType: anchor.type
+            });
+          }
+          continue;
         }
-        continue;
+
+        // Parser 不支援跨宣告子協調：fallback 至既有逐項獨立處理
+        for (const item of group) {
+          operations.push(this.buildIndividualRemovalOperation(item, content));
+        }
       }
 
-      // Parser 不支援跨宣告子協調，或非多宣告子語句：fallback 至既有逐項獨立處理
-      for (const item of group.items) {
+      for (const item of singles) {
         operations.push(this.buildIndividualRemovalOperation(item, content));
       }
     }
 
-    for (const item of singles) {
+    for (const item of otherSingles) {
       const content = await this.readFile(item.location.filePath);
       if (!content) {
         warnings.push(`跳過 ${item.name}：無法讀取檔案 ${item.location.filePath}`);
@@ -335,42 +361,93 @@ export class DeadCodeRemover {
   }
 
   /**
-   * 把可能同屬一個多宣告子 VariableStatement 的 dead 項目分組：
-   * 同檔案、同行、且皆為 variable/constant 類型的多個 dead 項目視為候選群組
-   * （單一多宣告子語句的多個宣告子在原始碼中必然同行）；其餘（含只有單一候選的行）
-   * 維持逐項獨立處理，交由呼叫端走既有路徑。
+   * 以 VariableStatement 身分（statement 起始 offset）把同一檔案內的
+   * variable/constant dead 項目分組。跨行多宣告子必須落在同組，故禁用 start.line
+   * 當唯一 key（F12）。
+   *
+   * 僅「多宣告子語句」且桶內 ≥2 個 dead 項目才形成協調群組；其餘走 singles。
    */
-  private partitionMultiDeclaratorGroups(
-    items: readonly DeadCodeItem[]
-  ): { groups: Array<{ filePath: string; items: DeadCodeItem[] }>; singles: DeadCodeItem[] } {
-    const candidateGroups = new Map<string, DeadCodeItem[]>();
+  private partitionMultiDeclaratorGroupsInFile(
+    items: readonly DeadCodeItem[],
+    content: string
+  ): { groups: DeadCodeItem[][]; singles: DeadCodeItem[] } {
+    const sourceFile = ts.createSourceFile(
+      'temp.ts',
+      content,
+      ts.ScriptTarget.ES2020,
+      true
+    );
+
+    // statementStartOffset → items belonging to that multi-declarator statement
+    const statementBuckets = new Map<number, DeadCodeItem[]>();
     const singles: DeadCodeItem[] = [];
 
     for (const item of items) {
-      if (item.type !== SymbolType.Variable && item.type !== SymbolType.Constant) {
+      const statementStart = this.findMultiDeclaratorStatementStart(
+        sourceFile,
+        item.name,
+        item.location.range.start.line
+      );
+      if (statementStart === null) {
         singles.push(item);
         continue;
       }
-
-      const key = `${item.location.filePath}:${item.location.range.start.line}`;
-      const bucket = candidateGroups.get(key);
+      const bucket = statementBuckets.get(statementStart);
       if (bucket) {
         bucket.push(item);
       } else {
-        candidateGroups.set(key, [item]);
+        statementBuckets.set(statementStart, [item]);
       }
     }
 
-    const groups: Array<{ filePath: string; items: DeadCodeItem[] }> = [];
-    for (const bucket of candidateGroups.values()) {
+    const groups: DeadCodeItem[][] = [];
+    for (const bucket of statementBuckets.values()) {
       if (bucket.length > 1) {
-        groups.push({ filePath: bucket[0].location.filePath, items: bucket });
+        groups.push(bucket);
       } else {
         singles.push(bucket[0]);
       }
     }
 
     return { groups, singles };
+  }
+
+  /**
+   * 在 AST 中找到包含指定名稱、且靠近 targetLine 的多宣告子 VariableStatement，
+   * 回傳 statement 起始 offset 作為分組身分；找不到或不屬多宣告子則回 null。
+   */
+  private findMultiDeclaratorStatementStart(
+    sourceFile: ts.SourceFile,
+    symbolName: string,
+    targetLine: number
+  ): number | null {
+    let found: number | null = null;
+
+    const visit = (node: ts.Node): void => {
+      if (found !== null) {
+        return;
+      }
+
+      if (ts.isVariableStatement(node) && node.declarationList.declarations.length > 1) {
+        for (const decl of node.declarationList.declarations) {
+          if (!ts.isIdentifier(decl.name) || decl.name.text !== symbolName) {
+            continue;
+          }
+          const declLine = sourceFile.getLineAndCharacterOfPosition(
+            decl.getStart(sourceFile)
+          ).line + 1;
+          if (isLineMatch(declLine, targetLine)) {
+            found = node.getStart(sourceFile);
+            return;
+          }
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return found;
   }
 
   /**

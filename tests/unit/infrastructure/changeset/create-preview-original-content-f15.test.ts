@@ -53,7 +53,7 @@ describe('F15：Create 預覽在目標已存在時應帶原文', () => {
     };
 
     const preview = await convertChangesetToPreviewInput(changeset, mockFileSystem);
-    const file = preview.files.find(f => f.filePath.includes('target-f15'));
+    const file = preview.fileChanges.find(f => f.filePath.includes('target-f15'));
     expect(file).toBeDefined();
 
     // Bug：目前 Create 固定 originalContent: ''，已存在檔的原文被抹成空白

@@ -6,13 +6,37 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
-import { isSourceFileExtension, SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
+import {
+  getImportResolutionExtensions,
+  isSourceFileExtension,
+  SOURCE_FILE_EXTENSIONS,
+  stripSourceFileExtension
+} from '@shared/types/index.js';
 import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
 
 /**
  * 支援的檔案副檔名
  */
 export const ALLOWED_EXTENSIONS = [...SOURCE_FILE_EXTENSIONS, '.vue'] as const;
+
+/**
+ * 專案 ESM 慣例：相對 import 在目標為常見 .ts/.tsx/.js/.jsx 來源時補 `.js`
+ * （NodeNext 執行期副檔名；見 file-change-preparer C10、move-member self-ref F8）。
+ *
+ * `relativePath` 應已 strip 來源副檔名且以 `./` 或 `../` 開頭。
+ * 沿用 shared getImportResolutionExtensions('.js') 單一來源判斷候選副檔名，
+ * 不另立清單；.mts/.cts 對應 .mjs/.cjs 無法從同表推得，維持不補。
+ */
+export function withEsmRuntimeExtension(relativePath: string, targetFilePath: string): string {
+  if (path.extname(relativePath)) {
+    return relativePath;
+  }
+  const toExtension = path.extname(targetFilePath);
+  if (getImportResolutionExtensions('.js').includes(toExtension)) {
+    return `${relativePath}.js`;
+  }
+  return relativePath;
+}
 
 /**
  * 排除的目錄模式

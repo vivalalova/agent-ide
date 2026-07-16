@@ -81,9 +81,17 @@ export function identifierShadowedByLocalDeclaration(node: ts.Identifier, source
   return nearest !== undefined && !isImportBindingName(nearest);
 }
 
-/** 詞法宣告名稱節點是否來自 import binding（具名 import specifier 的 local 名） */
+/**
+ * 詞法宣告名稱節點是否來自 import binding：
+ * - 具名 import specifier 的 local 名（`import { a as b }` 的 b）
+ * - default import（`import Foo from '...'` → ImportClause.name）
+ * - namespace import（`import * as ns from '...'` → NamespaceImport.name）
+ */
 function isImportBindingName(name: ts.Identifier): boolean {
-  return ts.isImportSpecifier(name.parent);
+  const parent = name.parent;
+  return ts.isImportSpecifier(parent)
+    || (ts.isImportClause(parent) && parent.name === name)
+    || (ts.isNamespaceImport(parent) && parent.name === name);
 }
 
 function getLexicalDeclarationName(node: ts.Node): ts.Identifier | undefined {
@@ -110,6 +118,16 @@ function getLexicalDeclarationName(node: ts.Node): ts.Identifier | undefined {
   }
 
   if (ts.isImportSpecifier(node) && ts.isIdentifier(node.name)) {
+    return node.name;
+  }
+
+  // default import：`import Foo from '...'` — ImportClause.name
+  if (ts.isImportClause(node) && node.name && ts.isIdentifier(node.name)) {
+    return node.name;
+  }
+
+  // namespace import：`import * as ns from '...'` — NamespaceImport.name
+  if (ts.isNamespaceImport(node) && ts.isIdentifier(node.name)) {
     return node.name;
   }
 

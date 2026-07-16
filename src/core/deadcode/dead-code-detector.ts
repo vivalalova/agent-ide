@@ -145,8 +145,8 @@ export class DeadCodeDetector {
         symbolUsageMap.set(symbol, { usageRefs, hasExport });
       }
 
-      // 第二輪：檢測每個符號是否為 dead code
-      const deadItems: DeadCodeItem[] = [];
+      // 第二輪：檢測每個符號是否為 dead code（先收集候選，再剔除已被父 class 涵蓋的成員）
+      const candidateDead: Array<{ symbol: Symbol; item: DeadCodeItem }> = [];
 
       for (const symbol of symbolsToCheck) {
         const usageInfo = symbolUsageMap.get(symbol);
@@ -184,14 +184,37 @@ export class DeadCodeDetector {
 
           const deadSymbolKey = serializeSymbolKey(symbolToKey(symbol));
           const references = allReferences.get(deadSymbolKey) ?? [];
-          deadItems.push({
-            name: symbol.name,
-            type: symbol.type,
-            location: symbol.location,
-            reason: this.generateReason(symbol, hasExport, references.length)
+          candidateDead.push({
+            symbol,
+            item: {
+              name: symbol.name,
+              type: symbol.type,
+              location: symbol.location,
+              reason: this.generateReason(symbol, hasExport, references.length)
+            }
           });
         }
       }
+
+      // 父 class 整顆 dead 時，刪 class 已涵蓋成員；若再對成員各產一次 TextEdit 會重疊 fail
+      // （--include-public-members 會把 public 成員一併納入，最易觸發）
+      const deadClassKeys = new Set(
+        candidateDead
+          .filter(({ symbol }) => symbol.type === SymbolType.Class)
+          .map(({ symbol }) => `${symbol.location.filePath}:${symbol.name}`)
+      );
+      const deadItems: DeadCodeItem[] = candidateDead
+        .filter(({ symbol }) => {
+          const parentClassName = this.getParentClassName(symbol);
+          if (
+            parentClassName &&
+            deadClassKeys.has(`${symbol.location.filePath}:${parentClassName}`)
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .map(({ item }) => item);
 
       // 計算統計
       const stats = this.calculateStats(targetSymbols.length, deadItems, startTime, skippedFiles);

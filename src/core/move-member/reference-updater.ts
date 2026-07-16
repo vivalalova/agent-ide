@@ -8,8 +8,9 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions, type FileChange } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { maskNonCode } from '@core/foundations/code-state-mask.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
-import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import { ALLOWED_EXTENSIONS, PathUtils, withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
 import { isInsideStringOrComment } from './utils/source-text.js';
 import {
@@ -279,6 +280,11 @@ export class ReferenceUpdater {
           });
         }
       }
+
+      // require() / 動態 import() 路徑更新（F30）：ESM import/export 掃完後，
+      // 再掃 CommonJS require 與 dynamic import()，對齊 move/import-resolver。
+      const callUpdates = await this.prepareCallPathUpdates(content, filePath, options, member);
+      updates.push(...callUpdates);
     }
 
     return updates;
@@ -319,14 +325,19 @@ export class ReferenceUpdater {
     }
 
     // 只在真實程式碼中比對是否仍有殘留引用，排除字串常量與註解裡「提到」成員名稱
-    // 的情況（見 C9 bug：整檔 raw word regex 誤把字串內容當成真實引用）
-    const codeOnly = this.stripStringsAndComments(sourceFileChange.newCode);
+    // 的情況（見 C9 bug）。SSOT：maskNonCode（code-state-mask）保留 template
+    // substitution 內的真實引用（F10：`${moved()}` 不得被整段抹掉）。
+    const codeOnly = maskNonCode(sourceFileChange.newCode);
     const referencePattern = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
     if (!referencePattern.test(codeOnly)) {
       return null;
     }
 
-    const relativePath = this.pathUtils.calculateNewImportPath(options.sourceFile, options.target.filePath);
+    // 新建 self-import 無「原始路徑樣式」可保留，依 C10/F8 ESM 慣例補 .js
+    const relativePath = withEsmRuntimeExtension(
+      this.pathUtils.calculateNewImportPath(options.sourceFile, options.target.filePath),
+      options.target.filePath
+    );
     const importKeyword = this.isTypeOnlyMember(member) ? 'import type' : 'import';
     const importStatement = `${importKeyword} { ${member.name} } from '${relativePath}';`;
 
@@ -345,16 +356,87 @@ export class ReferenceUpdater {
   }
 
   /**
-   * 移除字串常量與註解內容，只留下可能構成真實引用的程式碼本體
-   * 供 buildSourceSelfReferenceImport 判斷殘留引用時排除「字串/註解裡提到成員名稱」
-   * 的誤判（見 C9 bug）。regex-based 近似（非完整 tokenizer），與本檔其餘以正則
-   * 掃描 import/export 語句的既有作法一致
+   * 掃描 require() / 動態 import() 並在路徑指向來源檔時改寫為目標檔（F30）。
+   * 僅在呼叫附近確實使用到被搬成員名稱時才更新，避免誤改只載入其他 export 的 require。
    */
-  private stripStringsAndComments(code: string): string {
-    return code
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*$/gm, '')
-      .replace(/`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '');
+  private async prepareCallPathUpdates(
+    content: string,
+    filePath: string,
+    options: MoveMemberOptions,
+    member: MemberDefinition
+  ): Promise<ReferenceUpdate[]> {
+    const updates: ReferenceUpdate[] = [];
+    const lines = content.split('\n');
+    // 在原文上找呼叫形狀，再以 code-state mask 排除字串/註解內假 require
+    // （maskNonCode 會抹掉引號，無法直接在遮罩文字上跑路徑正則）
+    const callPattern = /\b(require|import)\s*\(\s*['"`][^'"`]+['"`]\s*\)/g;
+
+    for (const match of content.matchAll(callPattern)) {
+      const matchIndex = match.index ?? 0;
+      if (isInsideStringOrComment(content, matchIndex)) {
+        continue;
+      }
+
+      const originalCall = match[0];
+      const pathMatch = originalCall.match(/['"`]([^'"`]+)['"`]/);
+      if (!pathMatch) {
+        continue;
+      }
+      const importPath = pathMatch[1];
+
+      const resolvedImportPath = await this.pathUtils.resolveImportPathAsync(importPath, filePath);
+      if (!this.pathUtils.pathsMatch(resolvedImportPath, options.sourceFile)) {
+        continue;
+      }
+
+      // 呼叫所在列若未提到成員名稱，多半是載入其他 export 或 side-effect，不改路徑
+      const { lineNumber, columnIndex } = this.offsetToLineColumn(content, matchIndex);
+      const lineText = lines[lineNumber - 1] ?? '';
+      const memberRef = new RegExp(`\\b${this.pathUtils.escapeRegex(member.name)}\\b`);
+      if (!memberRef.test(lineText)) {
+        continue;
+      }
+
+      const newRelativePath = this.pathUtils.calculateNewImportPathPreservingStyle(
+        importPath,
+        filePath,
+        options.sourceFile,
+        options.target.filePath
+      );
+      const newCall = originalCall.replace(
+        new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importPath)}\\1`),
+        `$1${newRelativePath}$1`
+      );
+      if (newCall === originalCall) {
+        continue;
+      }
+
+      updates.push({
+        filePath,
+        originalImport: originalCall,
+        newImport: newCall,
+        location: {
+          filePath,
+          range: {
+            start: { line: lineNumber, column: columnIndex + 1 },
+            end: {
+              line: lineNumber,
+              column: columnIndex + originalCall.length + 1
+            }
+          }
+        }
+      });
+    }
+
+    return updates;
+  }
+
+  /** 0-based offset → 1-based line + 0-based column */
+  private offsetToLineColumn(content: string, offset: number): { lineNumber: number; columnIndex: number } {
+    const preceding = content.slice(0, offset);
+    const lineOffset = preceding.split('\n').length - 1;
+    const columnIndex = offset - (preceding.lastIndexOf('\n') + 1);
+    return { lineNumber: lineOffset + 1, columnIndex };
   }
 
   /**
@@ -558,7 +640,7 @@ export class ReferenceUpdater {
       .slice(0, statement.startLineIndex)
       .concat(lines.slice(statement.endLineIndex + 1))
       .join('\n');
-    const code = this.stripStringsAndComments(codeWithoutImport);
+    const code = maskNonCode(codeWithoutImport);
     const escapedNamespace = this.pathUtils.escapeRegex(namespaceName);
     const propertyPattern = new RegExp(
       `(?<![.\\p{ID_Continue}$])${escapedNamespace}\\s*\\.\\s*([\\p{ID_Start}_$][\\p{ID_Continue}$]*)`,

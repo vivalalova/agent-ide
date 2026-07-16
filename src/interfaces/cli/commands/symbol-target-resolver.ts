@@ -29,11 +29,28 @@ export function resolveSymbolTarget(
   const targetCandidates = definitionCandidates.length > 0 ? definitionCandidates : candidates;
 
   if (!at) {
+    // 與 rename 對齊：多個不同定義且無 --at → fail-fast，避免 silently merge 異符號引用（F6）
+    const symbols = dedupeSymbolIdentities(
+      targetCandidates.map(candidate => toSymbolIdentity(candidate.symbol))
+    );
+    if (symbols.length > 1) {
+      const lines = symbols.map((symbol, index) => {
+        const relPath = path.relative(projectPath, symbol.file) || symbol.file;
+        return `   ${index + 1}. ${relPath}:${symbol.line}:${symbol.column}  (${symbol.type})`;
+      });
+      return {
+        success: false,
+        error:
+          `找到 ${symbols.length} 個同名符號 "${symbolName}"，請用 --at 指定位置：\n\n` +
+          `${lines.join('\n')}\n\n` +
+          `用法: --at <file:line:column>`
+      };
+    }
     return {
       success: true,
       resolution: {
         selectedResults: [...targetCandidates],
-        symbols: targetCandidates.map(candidate => toSymbolIdentity(candidate.symbol))
+        symbols
       }
     };
   }

@@ -24,6 +24,9 @@ import { FileSystem } from '@infrastructure/storage/index.js';
 import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+// SSOT：TypeScript/JavaScript 保留字（含 async/await/yield/null/true/false/this/super/new/typeof…，
+// 以及 TS 關鍵字 type/from/as）；禁在 core 再維護短 Set（F29）
+import { isTypeScriptReservedWord } from '@plugins/typescript/types.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -33,13 +36,6 @@ const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
  * 使用 Parser 的 AST 分析進行精確的符號重命名
  */
 export class RenameEngine {
-  private readonly reservedKeywords = new Set([
-    'function', 'var', 'let', 'const', 'if', 'else', 'for', 'while',
-    'do', 'switch', 'case', 'break', 'continue', 'return', 'try',
-    'catch', 'finally', 'throw', 'class', 'interface', 'enum',
-    'import', 'export', 'default', 'from', 'as', 'type'
-  ]);
-
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileSystem: IFileSystem;
 
@@ -109,8 +105,8 @@ export class RenameEngine {
 
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查是否為保留字
-    if (this.reservedKeywords.has(options.newName)) {
+    // 檢查是否為保留字（TYPESCRIPT_RESERVED_WORDS SSOT）
+    if (isTypeScriptReservedWord(options.newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${options.newName}' 是保留字，不能用作識別符`,
@@ -275,8 +271,8 @@ export class RenameEngine {
   ): ConflictInfo[] {
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查保留字
-    if (this.reservedKeywords.has(newName)) {
+    // 檢查保留字（TYPESCRIPT_RESERVED_WORDS SSOT）
+    if (isTypeScriptReservedWord(newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${newName}' 是保留字`,

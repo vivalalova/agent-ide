@@ -13,6 +13,7 @@ import {
   getRegisteredSourceFileExtensions,
   initializeDefaultParsers
 } from '@infrastructure/parser/index.js';
+import { computeContentHash } from '@shared/content-hash.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -35,6 +36,11 @@ interface CacheEntry {
    * 防 mtime 保留型操作（cp -p、git checkout、粗粒度 FS）造成 stale cache，
    * 判準對齊 index-disk-cache.ts 的 mtime+size 快取 key 設計 */
   size: number;
+  /**
+   * 內容雜湊：mtime+size 相同仍可能內容已變（等長原地改寫、粗粒度 FS 保留 mtime），
+   * 命中前須比對 contentHash，否則會回傳舊依賴
+   */
+  contentHash: string;
 }
 
 /**
@@ -96,15 +102,20 @@ export class ImpactAnalyzer {
 
     const normalizedPath = path.resolve(filePath);
 
-    // 檢查快取
+    // 檢查快取：mtime+size 相同時尚須比對 contentHash（防等長內容替換誤命中）
     const cacheEntry = this.cache.get(normalizedPath);
     if (cacheEntry) {
       try {
         const stat = await this.fileSystem.getStats(normalizedPath);
-        // mtime 未變新且 size 相同才視為快取有效：mtime 單獨比對在 mtime 保留型操作下會誤判命中
         if (stat.modifiedTime <= cacheEntry.lastModified && stat.size === cacheEntry.size) {
-          // MemoryCache 自動更新 lastAccessedAt
-          return cacheEntry.data;
+          const cachedContent = await this.fileSystem.readFile(normalizedPath, 'utf-8') as string;
+          const cachedHash = computeContentHash(cachedContent);
+          if (cachedHash === cacheEntry.contentHash) {
+            // MemoryCache 自動更新 lastAccessedAt
+            return cacheEntry.data;
+          }
+          // mtime+size 同、內容已變：用已讀內容繼續分析，避免再讀一次
+          return this.analyzeFileWithContent(normalizedPath, cachedContent, stat, root, cachedHash);
         }
       } catch {
         // graceful-degradation: 檔案已被刪除時清除快取條目
@@ -115,36 +126,48 @@ export class ImpactAnalyzer {
     try {
       const content = await this.fileSystem.readFile(normalizedPath, 'utf-8') as string;
       const stat = await this.fileSystem.getStats(normalizedPath);
-
-      const dependencies = await this.dependencyExtractor.extractDependencies(
-        content,
-        normalizedPath,
-        root
-      );
-
-      const result: FileDependencies = {
-        filePath: normalizedPath,
-        dependencies,
-        lastModified: stat.modifiedTime
-      };
-
-      // 更新快取（MemoryCache 自動處理 LRU 淘汰）
-      this.cache.set(normalizedPath, {
-        data: result,
-        lastModified: stat.modifiedTime,
-        size: stat.size
-      });
-
-      // 更新依賴圖
-      this.updateDependencyGraph(result);
-
-      return result;
+      const contentHash = computeContentHash(content);
+      return this.analyzeFileWithContent(normalizedPath, content, stat, root, contentHash);
     } catch (error) {
       if (error instanceof Error) {
         throw error;
       }
       throw new Error(`無法分析檔案 ${filePath}: ${String(error)}`);
     }
+  }
+
+  /**
+   * 以已讀取的內容完成依賴分析並更新快取／圖
+   */
+  private async analyzeFileWithContent(
+    normalizedPath: string,
+    content: string,
+    stat: { modifiedTime: Date; size: number },
+    root: string | undefined,
+    contentHash: string
+  ): Promise<FileDependencies> {
+    const dependencies = await this.dependencyExtractor.extractDependencies(
+      content,
+      normalizedPath,
+      root
+    );
+
+    const result: FileDependencies = {
+      filePath: normalizedPath,
+      dependencies,
+      lastModified: stat.modifiedTime
+    };
+
+    this.cache.set(normalizedPath, {
+      data: result,
+      lastModified: stat.modifiedTime,
+      size: stat.size,
+      contentHash
+    });
+
+    this.updateDependencyGraph(result);
+
+    return result;
   }
 
   /**

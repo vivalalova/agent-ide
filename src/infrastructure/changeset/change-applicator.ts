@@ -3,6 +3,7 @@
  * 負責將變更集應用到檔案系統，支援 dry-run、備份、回滾
  */
 
+import { resolve as pathResolve } from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   FileOperationType,
@@ -28,26 +29,37 @@ import { getErrorMessage } from '@shared/errors/index.js';
  * 僅作為 in-process 互斥用，防止同 process 內併發 apply() 互踩（Bug B：
  * 兩個併發呼叫都讀到同一份原始內容、各自算出不同結果、最後寫入者靜默蓋掉前者）；
  * 不處理跨 process／跨機器的併發（scope 外）。
+ *
+ * 路徑一律以 path.resolve 正規化後再入 Set，避免 `./a.ts` 與絕對路徑被當成不同檔。
  */
 const filesInFlight = new Set<string>();
 
 /**
+ * 將路徑 canonicalize 為絕對、正規化形式，供 filesInFlight 互斥 key 使用。
+ * 語意同一檔、字串不同（如 `/a/../a/b.ts` 與 `/a/b.ts`）必須對到同一 key。
+ */
+function canonicalizePath(filePath: string): string {
+  return pathResolve(filePath);
+}
+
+/**
  * 收集一個 changeset 會實際觸及（讀取備份／寫入）的所有檔案路徑，供併發鎖使用。
  * 涵蓋文字變更的 filePath，以及檔案操作的 sourcePath 與 targetPath（Create/Move 皆可能有）。
+ * 回傳前一律 canonicalize，確保語意同檔字串不同時仍互斥。
  * @param changeset 變更集
- * @returns 去重後的檔案路徑列表
+ * @returns 去重且 canonicalize 後的檔案路徑列表
  */
 function collectTouchedPaths(changeset: Changeset): string[] {
   const paths = new Set<string>();
 
   for (const textChange of changeset.textChanges) {
-    paths.add(textChange.filePath);
+    paths.add(canonicalizePath(textChange.filePath));
   }
 
   for (const operation of changeset.fileOperations) {
-    paths.add(operation.sourcePath);
+    paths.add(canonicalizePath(operation.sourcePath));
     if (operation.targetPath) {
-      paths.add(operation.targetPath);
+      paths.add(canonicalizePath(operation.targetPath));
     }
   }
 

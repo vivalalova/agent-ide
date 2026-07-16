@@ -4,6 +4,7 @@
  */
 
 import type { Command } from 'commander';
+import * as path from 'path';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
@@ -97,7 +98,8 @@ async function handleCallHierarchyCommand(
     console.log(`📞 分析呼叫層次: ${functionName}...`);
   }
 
-  const projectPath = options.path || process.cwd();
+  // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
+  const projectPath = path.resolve(options.path || process.cwd());
   const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
   if (!pathIsDirectory) {
     return;

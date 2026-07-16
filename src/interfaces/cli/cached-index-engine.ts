@@ -94,7 +94,20 @@ export async function createAndIndexWithCache(
 
   // cache miss 或 hydrate 失敗 → 完整索引 + 儲存快取
   await indexEngine.indexProject(projectPath);
-  await diskCache.save(indexEngine, currentKey);
+
+  // index 後重算 key：禁止 pre-index key 綁 post-index body（TOCTOU）
+  // 若 index 期間檔案內容變更，舊 key 會讓之後以新內容重算 key 時誤命中舊 snapshot
+  const keyAfterIndex = await diskCache.computeCacheKey(
+    projectPath,
+    fileSystem,
+    engineConfig.includeExtensions,
+    indexEngine.getEffectiveExcludePatterns()
+  );
+  if (keyAfterIndex === null) {
+    logger.verbose('cache', 'Cache key unavailable after index — skip save');
+    return indexEngine;
+  }
+  await diskCache.save(indexEngine, keyAfterIndex);
   logger.verbose('cache', 'Cache saved');
 
   return indexEngine;
