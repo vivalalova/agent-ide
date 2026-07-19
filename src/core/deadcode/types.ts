@@ -18,6 +18,13 @@ export interface DeadCodeItem {
   readonly location: Location;
   /** 原因說明 */
   readonly reason: string;
+  /**
+   * 是否為「檔內未使用的 import binding」（ESM named/default/namespace）。
+   * 為 true 時 DeadCodeRemover 不對此項產生獨立的 RemovalOperation（RangeExpander
+   * 不理解 import 陳述式語法，硬砍會產生語法錯誤或與 ImportCleaner 的編輯重疊），
+   * 一律改由 ImportCleaner 統一處理該 import 陳述式的刪除/部分清理（單一編輯來源）。
+   */
+  readonly isImportBinding?: boolean;
 }
 
 /**

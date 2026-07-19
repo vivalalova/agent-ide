@@ -19,8 +19,9 @@ import {
   type SymbolFinder
 } from '@core/foundations/symbol-finder/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
-import type { ImportCleanupOperation, RemovalOperation } from './types.js';
+import type { DeadCodeItem, ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, UNICODE_IDENTIFIER_CLASS, type ImportStatementInfo } from './import-parser.js';
+import { makeImportBindingKey } from './import-binding-key.js';
 import type { DeadCodeCacheService } from './shared-cache.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -60,10 +61,16 @@ export class ImportCleaner {
    * @param projectFiles 專案全部檔案路徑（可選）。提供時除了有刪除項的檔案，也一併掃描這些
    *   consumer 檔案——被刪 export 符號在其他檔案的 import specifier 必須一起清掉，否則 apply
    *   後殘留指向已不存在符號的 import，編譯必壞（N3）。未提供時只掃有刪除項的檔案（向後相容）。
+   * @param unusedImportBindingItems DeadCodeDetector 已確認「檔內未使用、來源符號在別處
+   *   仍存活」的 import binding 項目（DeadCodeItem.isImportBinding）。這類項目的來源符號
+   *   沒有被刪除，不會出現在 `removedSymbols`，需要另外告知才能清掉它們所在的 import
+   *   陳述式；同時讓這些檔案即使不在 removalFilesSet 內也會被掃描（見下方 filesToScan／
+   *   isConsumerOnly 略過邏輯的例外分支）。
    */
   async analyzeImportCleanups(
     removals: readonly RemovalOperation[],
-    projectFiles?: readonly string[]
+    projectFiles?: readonly string[],
+    unusedImportBindingItems: readonly DeadCodeItem[] = []
   ): Promise<{ cleanups: ImportCleanupOperation[]; warnings: string[] }> {
     const cleanups: ImportCleanupOperation[] = [];
     const warnings: string[] = [];
@@ -77,9 +84,15 @@ export class ImportCleaner {
     // 被刪符號定義檔（去副檔名），用來把 consumer 檔的 import 精準綁回真正被刪的來源模組，
     // 避免「同名但來自其他模組」的 import 被誤清（誤清一個仍在使用的 import 會直接編譯壞掉）
     const removalFilesNoExt = new Set(removalFiles.map(f => stripSourceFileExtension(f)));
+    // 已確認的 import binding 鍵集合：單一權威鍵格式見 import-binding-key.ts，
+    // DeadCodeDetector 產生候選時用同一函式組鍵，此處僅查詢比對、禁另組字串。
+    const knownDeadImportBindingKeys = new Set(
+      unusedImportBindingItems.map(item => makeImportBindingKey(item.location.filePath, item.name))
+    );
+    const knownDeadImportBindingFiles = unusedImportBindingItems.map(item => item.location.filePath);
     const filesToScan = projectFiles && projectFiles.length > 0
-      ? new Set<string>([...removalFiles, ...projectFiles])
-      : new Set<string>(removalFiles);
+      ? new Set<string>([...removalFiles, ...projectFiles, ...knownDeadImportBindingFiles])
+      : new Set<string>([...removalFiles, ...knownDeadImportBindingFiles]);
     const configProbePath = removalFiles[0] ?? projectFiles?.[0];
     const discoveredConfig = configProbePath
       ? await loadTsconfigPathConfigOrWarn(path.dirname(configProbePath), this.fileSystem)
@@ -105,13 +118,24 @@ export class ImportCleaner {
       const isConsumerOnly = !removalFilesSet.has(filePath);
 
       for (const stmt of importStatements) {
-        if (isConsumerOnly && !await this.importFromRemovalFileAsync(
+        // 這句 import 是否含有已確認的「檔內未使用 import binding」候選：來源符號未被
+        // 刪除（不在 removedSymbols），單靠 importFromRemovalFileAsync（判斷是否指向
+        // 被刪檔案）永遠比對不到，必須另開一條不受該 module-resolution 閘門限制的通路，
+        // 否則這類項目在 isConsumerOnly 分支會被提早 continue 略過，永遠清不到。
+        const stmtHasKnownDeadBinding = stmt.symbols.some(s =>
+          knownDeadImportBindingKeys.has(makeImportBindingKey(filePath, s.alias ?? s.name))
+        );
+        // 這句 import 的模組是否確實解析到某個被刪檔案：!isConsumerOnly 時維持既有行為
+        // （有刪除項的檔案本就不做模組驗證，見下方 removedSymbols 比對），isConsumerOnly
+        // 時才需要實際解析模組來源。用短路求值避免非必要時呼叫這個 async 解析。
+        const moduleResolvesToRemovalFile = !isConsumerOnly || await this.importFromRemovalFileAsync(
           filePath,
           stmt.statement,
           removalFilesNoExt,
           pathAliases,
           baseUrl
-        )) {
+        );
+        if (!moduleResolvesToRemovalFile && !stmtHasKnownDeadBinding) {
           continue;
         }
         // 找出此 import 中需要清理的符號
@@ -119,10 +143,21 @@ export class ImportCleaner {
         const usedSymbols: string[] = [];
 
         for (const symbol of stmt.symbols) {
-          // 符號是否在被刪除的列表中，且刪除後不再使用
-          // usage 必須用 local binding（alias ?? name）查：`import { foo as bar }` 檔內只會出現 bar
-          if (removedSymbols.has(symbol.name)) {
-            const localBinding = symbol.alias ?? symbol.name;
+          const localBinding = symbol.alias ?? symbol.name;
+          const isKnownDeadBinding = knownDeadImportBindingKeys.has(makeImportBindingKey(filePath, localBinding));
+          // P3 收斂：removedSymbols 是全域名稱集合（跨檔案），沒有模組來源保證——只有
+          // 在這句 import 的模組確實解析到被刪檔案時，同名比對才有效；否則同一句裡
+          // 另一個 specifier 是已確認的 dead binding，不能讓這個不相干的同名 specifier
+          // 也跟著繞過模組驗證被誤判為候選（見 R4 regression：誤清同名但不同模組的
+          // import 會直接編譯壞掉）。isKnownDeadBinding 本身已是 per-specifier 精確
+          // 鍵值比對，不受此限制。
+          const isRemovedExportCandidate = moduleResolvesToRemovalFile && removedSymbols.has(symbol.name);
+          // 符號是否需要清理：來源符號被刪除（usage 須用 local binding 查，
+          // `import { foo as bar }` 檔內只會出現 bar）或本身就是已確認的檔內未使用
+          // import binding（來源符號在別處仍存活）。兩種候選都交由同一個
+          // isImportStillUsed 做最終存活判定（單一權威）。
+          const isCandidate = isKnownDeadBinding || isRemovedExportCandidate;
+          if (isCandidate) {
             const stillUsed = await this.isImportStillUsed(filePath, localBinding, fileRemovals);
             if (!stillUsed) {
               unusedSymbols.push(symbol.name);

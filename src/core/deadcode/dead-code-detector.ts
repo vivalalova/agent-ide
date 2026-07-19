@@ -5,6 +5,7 @@
 
 import type { Symbol } from '@shared/types/symbol.js';
 import { SymbolType, isImportedSymbol } from '@shared/types/symbol.js';
+import { findNodesByType } from '@shared/types/ast.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index.js';
 import {
@@ -23,6 +24,8 @@ import type {
   DeadCodeStats
 } from './types.js';
 import { DEFAULT_DEAD_CODE_OPTIONS } from './types.js';
+import { ImportParser } from './import-parser.js';
+import { makeImportBindingKey } from './import-binding-key.js';
 
 /**
  * SymbolType 對應的中文標籤
@@ -62,6 +65,7 @@ interface SymbolUsageInfo {
 export class DeadCodeDetector {
   private readonly options: Required<DeadCodeDetectorOptions>;
   private readonly fileUtils: FileUtils;
+  private readonly importParser: ImportParser;
 
   constructor(
     private readonly indexEngine: IndexEngine,
@@ -71,6 +75,7 @@ export class DeadCodeDetector {
   ) {
     this.options = { ...DEFAULT_DEAD_CODE_OPTIONS, ...options };
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
+    this.importParser = new ImportParser(parserRegistry);
   }
 
   /**
@@ -118,7 +123,7 @@ export class DeadCodeDetector {
         const symbolColumn = symbol.location.range.start.column;
         const symbolFile = symbol.location.filePath;
 
-        const usageRefs = references.filter(ref => {
+        const rawUsageRefs = references.filter(ref => {
           // 排除定義位置本身：symbol.location.range.start 是宣告識別符節點自身的精確位置
           // （TS 經 tsPositionToPosition、JS 經 babelLocationToPosition 轉換，line/column
           // 皆為 1-based），scoped 引用查找到的宣告識別符出現位置與其完全相同。
@@ -141,9 +146,38 @@ export class DeadCodeDetector {
           return ref.type === SymbolReferenceType.Usage || ref.type === SymbolReferenceType.Definition;
         });
 
+        // import binding 的 usage 判定必須限定在宣告所在檔案內：project-wide 搜尋以名稱
+        // 比對，named/default import 的 local 名稱恰與來源檔的 export 宣告同名時，會把
+        // 來源檔（或其他檔案同名 import）的引用誤算進來，讓本應「檔內完全未使用」的
+        // binding 被誤判為存活。File-scoped 才是這類符號唯一正確的 usage 範圍。
+        const usageRefs = isImportedSymbol(symbol)
+          ? rawUsageRefs.filter(ref => ref.location.filePath === symbolFile)
+          : rawUsageRefs;
+
         const hasExport = symbol.modifiers.includes('export');
         symbolUsageMap.set(symbol, { usageRefs, hasExport });
       }
+
+      // import binding 候選（file-scoped usage 為 0）需要兩項額外確認才收為候選：
+      // 1. 是否為可辨識的 ESM import 陳述式（confirmedEsmKeys）：CJS `require()`
+      //    解構綁定也共用 isImported 標記，但 ImportParser（見 import-parser.ts）
+      //    目前只認得 ESM `import` 語法，貿然回報會產生「有報但刪不掉」的空頭
+      //    項目——generateRemovalOperations 排除 isImportBinding 項目、ImportCleaner
+      //    也認不得 require 陳述式，兩邊都不會產生 edit。未被確認者維持舊有排除行為
+      //    （不回報），是能力邊界而非漏檢（見本檔開頭任務說明的 CJS 涵蓋範圍）。
+      // 2. 是否為 JSX classic transform 隱式依賴的 factory（jsxProtectedKeys）：檔案含
+      //    JSX 元素時，`<div>` 這類寫法會被編譯為 `factory('div', ...)` 呼叫，
+      //    factory 識別符（預設 React，可被 `/** @jsx h */` pragma 覆寫其 root
+      //    identifier）在原始碼裡沒有任何顯式 identifier 引用可供 reference-finder
+      //    找到，貿然回報並在 --apply 時砍掉會在 classic JSX runtime 下造成執行期
+      //    ReferenceError（P2 confirmed）。刪碼工具寧可漏報也不可誤刪，故被保護的
+      //    binding 一律跳過。
+      const zeroUsageImportSymbols = symbolsToCheck.filter(symbol => {
+        const info = symbolUsageMap.get(symbol);
+        return isImportedSymbol(symbol) && !!info && info.usageRefs.length === 0;
+      });
+      const { confirmedEsmKeys: confirmedImportBindingKeys, jsxProtectedKeys } =
+        await this.classifyImportBindingCandidates(zeroUsageImportSymbols);
 
       // 第二輪：檢測每個符號是否為 dead code（先收集候選，再剔除已被父 class 涵蓋的成員）
       const candidateDead: Array<{ symbol: Symbol; item: DeadCodeItem }> = [];
@@ -182,6 +216,21 @@ export class DeadCodeDetector {
             }
           }
 
+          const isImportBinding = isImportedSymbol(symbol);
+          if (isImportBinding) {
+            const key = makeImportBindingKey(symbol.location.filePath, symbol.name);
+            if (!confirmedImportBindingKeys.has(key)) {
+              // 無法確認為可辨識的 ESM import 陳述式（如 CJS require 綁定），保守跳過：
+              // 回報一個刪不掉的項目比漏報更誤導使用者。
+              continue;
+            }
+            if (jsxProtectedKeys.has(key)) {
+              // 檔案含 JSX 元素，且此 binding 正是 JSX classic transform 隱式依賴的
+              // factory 識別符：保守跳過，避免 --apply 後留下 runtime ReferenceError。
+              continue;
+            }
+          }
+
           const deadSymbolKey = serializeSymbolKey(symbolToKey(symbol));
           const references = allReferences.get(deadSymbolKey) ?? [];
           candidateDead.push({
@@ -190,7 +239,8 @@ export class DeadCodeDetector {
               name: symbol.name,
               type: symbol.type,
               location: symbol.location,
-              reason: this.generateReason(symbol, hasExport, references.length)
+              reason: this.generateReason(symbol, hasExport, references.length),
+              ...(isImportBinding ? { isImportBinding: true } : {})
             }
           });
         }
@@ -313,17 +363,15 @@ export class DeadCodeDetector {
       return true;
     }
 
-    // 排除 import specifier 的 local binding（named/default/namespace 皆同）：
-    // 這類符號是否「有使用」屬於 ImportCleaner 的職責（它會協調跨 consumer 檔案的
-    // 清理、避免重複刪除）。若讓本檢測器把它當獨立的 Variable 也一併判定為 dead，
-    // 會與 ImportCleaner 對同一段 import 陳述式各自產生一次刪除 TextEdit，兩者範圍
-    // 不同（一個含結尾換行、一個不含）而互相重疊、apply 階段 fast-fail。named/default
-    // import 因 local 名稱恰與來源檔的 export 宣告同名，尋找引用時會意外命中該宣告
-    // 位置而被判定「有使用」，僥倖沒觸發此重疊；namespace import 的 local 別名
-    // （`* as ns`）不會與任何宣告同名，因此才會在此暴露（J1c regression）。
-    if (isImportedSymbol(symbol)) {
-      return true;
-    }
+    // import specifier 的 local binding（named/default/namespace 皆同）不在此整批排除：
+    // 「檔內完全未使用的 import binding」本身就是合法的 dead code 回報目標（來源符號在
+    // 別處仍存活、僅本檔未使用）。是否列為候選改由下方 detect() 內的檔案範圍 usage
+    // 判定 + classifyImportBindingCandidates() 的 ESM 語法確認／JSX factory 保護把關；
+    // 產生的刪除 edit 一律委派
+    // ImportCleaner（見 DeadCodeRemover.generateRemovalOperations 排除 isImportBinding
+    // 項目、ImportCleaner.analyzeImportCleanups 的 knownDeadImportBindings 參數），避免
+    // 本檢測器與 ImportCleaner 對同一段 import 陳述式各自產生一次刪除 TextEdit 而重疊
+    // （J1c regression 的治本修法：單一編輯來源，非靠僥倖的誤判掩蓋）。
 
     // 排除 interface/type 的屬性
     // Interface 屬性是型別定義的一部分，不應該被獨立檢測
@@ -397,10 +445,122 @@ export class DeadCodeDetector {
   }
 
   /**
+   * 對候選 import binding 做兩項分類：
+   * 1. confirmedEsmKeys：是否對應到檔案內可辨識的 ESM import 陳述式（見下方細節）。
+   * 2. jsxProtectedKeys：是否為檔案內 JSX classic transform 隱式依賴的 factory
+   *    識別符（見下方細節），若是則即使 usage 為 0 也不得回報為 dead。
+   *
+   * 兩者共用同一次檔案內容讀取，避免對同一批候選檔案重複 I/O。
+   *
+   * @param candidates file-scoped usage 已確認為 0 的 import-bound 符號
+   */
+  private async classifyImportBindingCandidates(candidates: readonly Symbol[]): Promise<{
+    confirmedEsmKeys: Set<string>;
+    jsxProtectedKeys: Set<string>;
+  }> {
+    const confirmedEsmKeys = new Set<string>();
+    const jsxProtectedKeys = new Set<string>();
+    if (candidates.length === 0) {
+      return { confirmedEsmKeys, jsxProtectedKeys };
+    }
+
+    const filePaths = Array.from(new Set(candidates.map(s => s.location.filePath)));
+    const fileContents = await Promise.all(
+      filePaths.map(async filePath => [filePath, await this.fileUtils.readFile(filePath)] as const)
+    );
+    const contentByFile = new Map(fileContents);
+
+    // 每檔案的 JSX factory root 名稱：檔案含 JSX 元素時才有值，見 resolveJsxFactoryRoot()。
+    const jsxFactoryRootByFile = new Map<string, string>();
+    for (const [filePath, content] of contentByFile) {
+      if (!content) {
+        continue;
+      }
+      if (await this.fileContainsJsx(content, filePath)) {
+        jsxFactoryRootByFile.set(filePath, this.resolveJsxFactoryRoot(content));
+      }
+    }
+
+    for (const symbol of candidates) {
+      const filePath = symbol.location.filePath;
+      const content = contentByFile.get(filePath);
+      if (!content) {
+        continue;
+      }
+
+      // 單一來源：直接重用 ImportCleaner 也使用的同一個 ImportParser
+      // （import-parser.ts），禁止另抄一份 import 語法判斷。CJS
+      // `const { x } = require(...)` 綁定同樣帶 isImported 標記，但 ImportParser
+      // 只解析 ESM `import` 語法，對這類綁定一律回傳「未確認」，使其維持不回報
+      // （能力邊界，非誤判）。
+      const statements = this.importParser.parseImportStatements(content, filePath);
+      const isEsmImportBinding = statements.some(stmt =>
+        stmt.symbols.some(s => (s.alias ?? s.name) === symbol.name)
+      );
+      if (isEsmImportBinding) {
+        confirmedEsmKeys.add(makeImportBindingKey(filePath, symbol.name));
+      }
+
+      const jsxFactoryRoot = jsxFactoryRootByFile.get(filePath);
+      if (jsxFactoryRoot && jsxFactoryRoot === symbol.name) {
+        jsxProtectedKeys.add(makeImportBindingKey(filePath, symbol.name));
+      }
+    }
+
+    return { confirmedEsmKeys, jsxProtectedKeys };
+  }
+
+  /**
+   * 判斷檔案是否含有 JSX 元素（JSXElement／JSXFragment），或無法確認（保守視為可能有）。
+   *
+   * 重用該檔案對應 Parser 已提供的通用 `parse()` + parser-agnostic 的
+   * `findNodesByType`（`@shared/types/ast.js`），不引入 Babel/TS 專屬型別，
+   * 也不新增 Parser 能力（不觸碰各語言 plugins 下的 parser.ts）。
+   *
+   * 沒有對應 Parser（無法判斷是否為 JS/JSX 語言）時視為不含 JSX——非 JS 系語言本就
+   * 不可能有 JSX 語法。若有對應 Parser 但重新解析目前內容失敗（例如兩次讀檔之間
+   * 檔案被修改成暫時性語法錯誤），則反向保守：回傳 true（視為「可能含 JSX」），
+   * 而非放行刪除——這與本功能「寧可漏報也不可誤刪」的方向一致，不可倒反。
+   */
+  private async fileContainsJsx(content: string, filePath: string): Promise<boolean> {
+    const parser = this.fileUtils.getParser(filePath);
+    if (!parser) {
+      return false;
+    }
+    try {
+      const ast = await parser.parse(content, filePath);
+      // Babel（JSXElement/JSXFragment，自閉合同屬 JSXElement）與 TypeScript
+      // （JsxElement/JsxSelfClosingElement/JsxFragment）節點命名不同；TS 路徑
+      // 目前不產生 import-binding 候選、不會走到這裡，但本判斷是 parser-agnostic
+      // 消費端，不得臆測單一 parser 的命名慣例。
+      const jsxNodeTypes = ['JSXElement', 'JSXFragment', 'JsxElement', 'JsxSelfClosingElement', 'JsxFragment'];
+      return jsxNodeTypes.some((type) => findNodesByType(ast, type).length > 0);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * 解析檔案的 JSX factory root identifier：
+   * - 有 `@jsx <expr>` pragma comment（Babel/TS 慣例，如 `/** @jsx h *\/`）→ 取
+   *   其開頭識別符（`Foo.createElement` 取 `Foo`，正是實際 import 進來的 local
+   *   binding 名稱）。
+   * - 無 pragma → 預設 classic JSX transform 的 factory 識別符 `React`。
+   */
+  private resolveJsxFactoryRoot(content: string): string {
+    const pragmaMatch = content.match(/@jsx\s+([A-Za-z_$][\w$]*)/);
+    return pragmaMatch ? pragmaMatch[1] : 'React';
+  }
+
+  /**
    * 產生原因說明
    */
   private generateReason(symbol: Symbol, hasExport: boolean, totalRefs: number): string {
     const typeLabel = this.getTypeLabel(symbol.type);
+
+    if (isImportedSymbol(symbol)) {
+      return `已 import 的 '${symbol.name}' 在檔案內未使用`;
+    }
 
     if (totalRefs === 0) {
       return `${typeLabel} '${symbol.name}' 沒有任何引用`;

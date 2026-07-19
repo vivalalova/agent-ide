@@ -79,14 +79,22 @@ export class DeadCodeRemover {
         return this.createEmptyPreview(warnings);
       }
 
-      // 2. 產生刪除操作
+      // 2. 產生刪除操作（isImportBinding 項目排除在外，見 generateRemovalOperations 說明）
       const { operations: removals, warnings: removalWarnings } = await this.generateRemovalOperations(filteredItems);
       warnings.push(...removalWarnings);
 
       // 3. 分析並產生 import 清理操作
       let importCleanups: ImportCleanupOperation[] = [];
       if (this.options.cleanupImports) {
-        const importResult = await this.importCleaner.analyzeImportCleanups(removals, projectFiles);
+        // 「檔內未使用的 import binding」項目（isImportBinding）不在 removals 裡（見下方
+        // generateRemovalOperations 排除說明），必須另外告知 ImportCleaner 才能把它們的
+        // import 陳述式一併清掉，否則這類項目會被回報但 --apply 時刪不掉任何東西。
+        const importBindingItems = filteredItems.filter(item => item.isImportBinding);
+        const importResult = await this.importCleaner.analyzeImportCleanups(
+          removals,
+          projectFiles,
+          importBindingItems
+        );
         importCleanups = importResult.cleanups;
         warnings.push(...importResult.warnings);
       }
@@ -255,18 +263,25 @@ export class DeadCodeRemover {
    * 先以 statement 身分（非 start.line）把同語句 variable/constant 分組，交給
    * RangeExpander.expandDeclaratorGroupRanges 一次協調出彼此不重疊的範圍；
    * 非多宣告子語句或其他符號類型維持既有逐項處理路徑不變。
+   *
+   * `isImportBinding` 項目（檔內未使用的 import binding）一律排除在外：RangeExpander
+   * 不理解 import 陳述式語法（named/default/namespace 皆非其 symbolType 分支涵蓋的
+   * 宣告形狀），逐項處理會產生語法錯誤的手術範圍，且會與 ImportCleaner 對同一段
+   * import 陳述式各自產生一次刪除 edit 而重疊（J1c 的重疊 fast-fail 根因）。這類項目
+   * 統一交給 preview() 傳給 ImportCleaner.analyzeImportCleanups 處理（單一編輯來源）。
    */
   private async generateRemovalOperations(
     items: readonly DeadCodeItem[]
   ): Promise<{ operations: RemovalOperation[]; warnings: string[] }> {
     const operations: RemovalOperation[] = [];
     const warnings: string[] = [];
+    const removableItems = items.filter(item => !item.isImportBinding);
 
     // 先依檔案彙整 variable/constant 候選，讀檔後再以 AST statement 身分分組
     const varConstByFile = new Map<string, DeadCodeItem[]>();
     const otherSingles: DeadCodeItem[] = [];
 
-    for (const item of items) {
+    for (const item of removableItems) {
       if (item.type !== SymbolType.Variable && item.type !== SymbolType.Constant) {
         otherSingles.push(item);
         continue;
