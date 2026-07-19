@@ -58,6 +58,21 @@ export {
 } from './content-hash.js';
 
 export {
+  // 正則表達式跳脫
+  escapeRegex
+} from './regex-utils.js';
+
+export {
+  // 通用排除目錄
+  COMMON_EXCLUDE_DIR_NAMES
+} from './exclude-dirs.js';
+
+export {
+  // offset ↔ position 換算
+  offsetToPosition
+} from './position-utils.js';
+
+export {
   // 路徑樣式比對
   matchesGlobPattern,
   matchesAnyGlobPattern,

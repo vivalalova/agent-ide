@@ -107,7 +107,7 @@ describe('F22：isShadowed 應涵蓋 for-of / catch / 解構', () => {
       'const err = null;',
       'function run() {',
       '  try {',
-      "    throw new Error('x');",
+      '    throw new Error(\'x\');',
       '  } catch (err) {',
       '    return err;',
       '  }',

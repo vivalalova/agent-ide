@@ -102,19 +102,12 @@ export async function createAndIndexWithCache(
   // cache miss 或 hydrate 失敗 → 完整索引 + 儲存快取
   await indexEngine.indexProject(projectPath);
 
-  // index 後重算 key：禁止 pre-index key 綁 post-index body（TOCTOU）
-  // 若 index 期間檔案內容變更，舊 key 會讓之後以新內容重算 key 時誤命中舊 snapshot
-  const keyAfterIndex = await diskCache.computeCacheKey(
-    projectPath,
-    fileSystem,
-    engineConfig.includeExtensions,
-    indexEngine.getEffectiveExcludePatterns()
-  );
-  if (keyAfterIndex === null) {
-    logger.verbose('cache', 'Cache key unavailable after index — skip save');
-    return indexEngine;
-  }
-  await diskCache.save(indexEngine, keyAfterIndex);
+  // 不再對 post-index 專案重新 glob+readFile 全部檔案算 key：
+  // save() 內部一律優先以 snapshot 各檔已算好的 checksum 導出 key（deriveCacheKeyFromSnapshot），
+  // 天生對齊 index 後的實際內容（禁止 pre-index key 綁 post-index body / TOCTOU），
+  // 不需要也不應該再重讀一次全專案檔案。currentKey 僅在 snapshot 為空（無檔可索引）時
+  // 作為 fallback，此時內容集合視同未變，沿用 pre-index key 語意仍正確。
+  await diskCache.save(indexEngine, currentKey);
   logger.verbose('cache', 'Cache saved');
 
   return indexEngine;

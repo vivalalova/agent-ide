@@ -20,7 +20,7 @@ describe('F24：LanguageService getCurrentDirectory 應為 project root', () => 
     const fileName = path.posix.join(projectRoot, 'src', 'example.ts');
     const sourceFile = ts.createSourceFile(
       fileName,
-      "export const value = 1;\n",
+      'export const value = 1;\n',
       ts.ScriptTarget.Latest,
       true,
       ts.ScriptKind.TS

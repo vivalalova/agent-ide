@@ -17,6 +17,7 @@ import { FileSystem } from '@infrastructure/storage/index.js';
 import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, createFileUtils, createIdentifierBoundaryRegex, computeCodeStateMask } from '@core/foundations/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { createTargetExposureResolver } from './target-exposure-resolver.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
@@ -96,7 +97,7 @@ export class ReferenceUpdater {
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
-        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder failed, falling back to text matching: ${error instanceof Error ? error.message : String(error)}`, filePath);
+        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder failed, falling back to text matching: ${getErrorMessage(error)}`, filePath);
       }
     }
 
@@ -137,7 +138,7 @@ export class ReferenceUpdater {
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
-        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder (with symbol) failed, falling back to text matching: ${error instanceof Error ? error.message : String(error)}`, filePath);
+        diagnostics.warn('rename/reference-updater', 'ANALYSIS_DEGRADED', `SymbolFinder (with symbol) failed, falling back to text matching: ${getErrorMessage(error)}`, filePath);
       }
     }
 
@@ -410,7 +411,7 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
       return content;
     } catch (error) {
-      diagnostics.warn('rename/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('rename/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }

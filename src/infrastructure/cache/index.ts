@@ -31,7 +31,6 @@ export {
 // 型別定義（先 import 再 re-export）
 import type {
   CacheOptions,
-  CacheStats,
   CacheManagerOptions
 } from './types.js';
 import { EvictionStrategy } from './types.js';
@@ -172,43 +171,6 @@ export class CacheUtils {
   }
 
   /**
-   * 合併多個快取統計
-   */
-  static mergeStats(statsArray: CacheStats[]): CacheStats {
-    if (statsArray.length === 0) {
-      return {
-        totalRequests: 0,
-        hits: 0,
-        misses: 0,
-        hitRate: 0,
-        size: 0,
-        memoryUsage: 0,
-        evictions: 0,
-        expirations: 0,
-        averageAccessTime: 0
-      };
-    }
-
-    const merged = statsArray.reduce((acc, stats) => ({
-      totalRequests: acc.totalRequests + stats.totalRequests,
-      hits: acc.hits + stats.hits,
-      misses: acc.misses + stats.misses,
-      hitRate: 0, // 稍後計算
-      size: acc.size + stats.size,
-      memoryUsage: acc.memoryUsage + stats.memoryUsage,
-      evictions: acc.evictions + stats.evictions,
-      expirations: acc.expirations + stats.expirations,
-      averageAccessTime: acc.averageAccessTime + stats.averageAccessTime
-    }));
-
-    // 計算平均值
-    merged.hitRate = this.calculateHitRate(merged.hits, merged.misses);
-    merged.averageAccessTime = merged.averageAccessTime / statsArray.length;
-
-    return merged;
-  }
-
-  /**
    * 產生快取鍵的雜湊值
    */
   static hashKey(key: unknown): string {
@@ -248,115 +210,3 @@ export class CacheUtils {
     return warnings;
   }
 }
-
-/** 快取實例介面 */
-interface CacheInstance {
-  getStats(): CacheStats;
-}
-
-/**
- * 快取效能監控器
- */
-export class CacheMonitor {
-  private readonly caches = new Map<string, CacheInstance>();
-
-  constructor(_manager?: unknown) {
-    // manager 參數保留以備未來使用
-  }
-
-  /**
-   * 監控單一快取
-   */
-  addCache(name: string, cache: CacheInstance): void {
-    this.caches.set(name, cache);
-  }
-
-  /**
-   * 移除監控的快取
-   */
-  removeCache(name: string): void {
-    this.caches.delete(name);
-  }
-
-  /**
-   * 取得效能報告
-   */
-  getPerformanceReport(): {
-    caches: Array<{
-      name: string;
-      stats: CacheStats;
-      healthScore: number;
-    }>;
-    overall: {
-      totalCaches: number;
-      averageHitRate: number;
-      totalMemoryUsage: number;
-      healthScore: number;
-    };
-    } {
-    const cacheReports = Array.from(this.caches.entries()).map(([name, cache]) => {
-      const stats = cache.getStats();
-      const healthScore = this.calculateHealthScore(stats);
-      return { name, stats, healthScore };
-    });
-
-    const overallStats = CacheUtils.mergeStats(cacheReports.map(r => r.stats));
-    const overallHealthScore = this.calculateHealthScore(overallStats);
-
-    return {
-      caches: cacheReports,
-      overall: {
-        totalCaches: this.caches.size,
-        averageHitRate: overallStats.hitRate,
-        totalMemoryUsage: overallStats.memoryUsage,
-        healthScore: overallHealthScore
-      }
-    };
-  }
-
-  /**
-   * 計算快取健康評分（0-100）
-   */
-  private calculateHealthScore(stats: CacheStats): number {
-
-    // 命中率影響 (40%)
-    const hitRateScore = stats.hitRate * 40;
-
-    // 記憶體使用率影響 (30%)
-    const memoryScore = Math.max(0, 30 - (stats.memoryUsage / (50 * 1024 * 1024)) * 30);
-
-    // 存取時間影響 (20%)
-    const accessTimeScore = Math.max(0, 20 - Math.min(stats.averageAccessTime / 10, 20));
-
-    // 淘汰率影響 (10%)
-    const evictionRate = stats.totalRequests > 0 ? stats.evictions / stats.totalRequests : 0;
-    const evictionScore = Math.max(0, 10 - evictionRate * 100);
-
-    return Math.round(hitRateScore + memoryScore + accessTimeScore + evictionScore);
-  }
-}
-
-/**
- * 版本資訊
- */
-export const VERSION = '1.0.0';
-
-/**
- * 快取系統資訊
- */
-export const CACHE_SYSTEM_INFO = {
-  name: 'Agent IDE Cache System',
-  version: VERSION,
-  description: '高效能快取管理系統，支援多種淘汰策略和統計追蹤',
-  author: 'Agent IDE Team',
-  supportedStrategies: ['lru', 'lfu', 'fifo', 'ttl', 'random'],
-  features: [
-    '多種淘汰策略 (LRU, LFU, FIFO, TTL, Random)',
-    '記憶體管理和限制',
-    '統計追蹤和效能監控',
-    '事件系統',
-    '批次操作',
-    '快取預熱',
-    '並發安全'
-  ]
-} as const;

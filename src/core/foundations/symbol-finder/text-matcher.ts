@@ -5,6 +5,7 @@
 
 import { SymbolReferenceType, type SymbolReference } from './types.js';
 import { createIdentifierBoundaryRegex } from './identifier-matcher.js';
+import { escapeRegex } from '@shared/regex-utils.js';
 
 type Quote = '\'' | '"';
 
@@ -385,7 +386,7 @@ export class TextMatcher {
 
   /** 跳脫正則表達式特殊字元（供 CallSiteParser 組合呼叫點樣式使用）。 */
   escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escapeRegex(str);
   }
 }
 

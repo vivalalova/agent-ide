@@ -66,7 +66,7 @@ describe('F27：query 類 CLI --path 相對 vs 絕對行為一致', () => {
       join(dir, 'src', 'target.ts'),
       [
         'export function fetchLocalF27(): string {',
-        "  return 'data';",
+        '  return \'data\';',
         '}',
         '',
         'export function wrapperF27(): string {',

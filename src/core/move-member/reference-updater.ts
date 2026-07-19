@@ -3,12 +3,13 @@
  * 負責掃描和更新引用（import 語句）
  */
 
-import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions, type FileChange } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
-import { createIdentifierBoundaryRegex, maskNonCode } from '@core/foundations/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
+import { escapeRegex } from '@shared/regex-utils.js';
+import { offsetToPosition } from '@shared/position-utils.js';
+import { createIdentifierBoundaryRegex, maskNonCode, collectProjectFiles, FileUtils } from '@core/foundations/index.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils, withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
@@ -317,6 +318,14 @@ export class ReferenceUpdater {
       return null;
     }
 
+    // same-file move（來源檔與目標檔為同一檔，見 move-member-engine.ts:94
+    // isSameFileMove 同一比較方式）：成員仍在同一份檔案內，只是搬到不同位置，
+    // 補一個指向自身的 import 只會撞上檔案稍後仍存在的本地宣告
+    // （TS2440 Import declaration conflicts with local declaration）。
+    if (options.sourceFile === options.target.filePath) {
+      return null;
+    }
+
     // 成員搬到目標檔後若未被 export，目標檔本身就無法提供這個 binding，
     // 任何指向它的 import 都無效（見 C9 bug）；prepareTargetFileChange 只有
     // `member.modifiers` 含 'export' 時才會保留/補上 export，判定基準與其一致
@@ -391,12 +400,27 @@ export class ReferenceUpdater {
         continue;
       }
 
+      // callPattern 的 `\s*` 會吃換行，originalCall 可能跨越多行（如
+      // `require(\n  './x'\n)`）；end.line/end.column 必須依 originalCall 實際
+      // 換行數換算真正的結尾位置，禁把 end.line 硬設回首行——下游
+      // apply-text-edits.ts 的 calculateOffset 會把超出行長的 column clamp
+      // 回行尾，若 end 仍停在首行，clamp 後的 range 只涵蓋首行，換行後的
+      // 原始內容（舊路徑字串、收尾括號）不會被納入替換而原樣殘留。
+      const { lineNumber, columnIndex } = this.offsetToLineColumn(content, matchIndex);
+      const callLineSpan = originalCall.split('\n').length;
+      const endLineNumber = lineNumber + callLineSpan - 1;
+      const lastCallLineLength = originalCall.slice(originalCall.lastIndexOf('\n') + 1).length;
+      const endColumn = callLineSpan > 1
+        ? lastCallLineLength + 1
+        : columnIndex + originalCall.length + 1;
+
       // 呼叫所在列若未提到成員名稱，多半是載入其他 export 或 side-effect，不改路徑。
       // 同上用 Unicode 識別符邊界，避免純 Unicode 成員名被 `\b` 漏判（M2）。
-      const { lineNumber, columnIndex } = this.offsetToLineColumn(content, matchIndex);
-      const lineText = lines[lineNumber - 1] ?? '';
+      // 呼叫本身可能跨行（見上），成員名稱也可能落在呼叫涵蓋的其他行，故比對
+      // 整段呼叫涵蓋的行範圍，非只看首行。
+      const callLines = lines.slice(lineNumber - 1, endLineNumber).join('\n');
       const memberRef = createIdentifierBoundaryRegex(member.name);
-      if (!memberRef.test(lineText)) {
+      if (!memberRef.test(callLines)) {
         continue;
       }
 
@@ -423,8 +447,8 @@ export class ReferenceUpdater {
           range: {
             start: { line: lineNumber, column: columnIndex + 1 },
             end: {
-              line: lineNumber,
-              column: columnIndex + originalCall.length + 1
+              line: endLineNumber,
+              column: endColumn
             }
           }
         }
@@ -434,12 +458,10 @@ export class ReferenceUpdater {
     return updates;
   }
 
-  /** 0-based offset → 1-based line + 0-based column */
+  /** 0-based offset → 1-based line + 0-based column；核心行/欄位換算委派 @shared/position-utils 單一來源，僅本地轉換 column 的 0/1-based 慣例差異 */
   private offsetToLineColumn(content: string, offset: number): { lineNumber: number; columnIndex: number } {
-    const preceding = content.slice(0, offset);
-    const lineOffset = preceding.split('\n').length - 1;
-    const columnIndex = offset - (preceding.lastIndexOf('\n') + 1);
-    return { lineNumber: lineOffset + 1, columnIndex };
+    const { line, column } = offsetToPosition(content, offset);
+    return { lineNumber: line, columnIndex: column - 1 };
   }
 
   /**
@@ -481,7 +503,7 @@ export class ReferenceUpdater {
    * 保留語句其餘所有內容（多行格式、縮排、type-only、別名）
    */
   private replaceImportPath(line: string, oldPath: string, newPath: string): string {
-    const escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = escapeRegex(oldPath);
     return line.replace(
       new RegExp(`(['"\`])${escaped}\\1`),
       `$1${newPath}$1`
@@ -752,41 +774,11 @@ export class ReferenceUpdater {
 
   /**
    * 取得專案檔案
+   * 遞迴目錄走訪邏輯共用 @core/foundations 的 collectProjectFiles（含排除
+   * 目錄清單），不再自行複製一份 collectFiles/skipDirs。
    */
   private async getProjectFiles(projectRoot: string): Promise<string[]> {
-    const files: string[] = [];
-    await this.collectFiles(projectRoot, files);
-    return files;
-  }
-
-  /**
-   * 遞迴收集檔案
-   */
-  private async collectFiles(dirPath: string, files: string[]): Promise<void> {
-    const entries = await this.fileSystem.readDirectory(dirPath);
-
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-
-      // 跳過 node_modules、build 輸出目錄和隱藏目錄
-      const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
-      if (skipDirs.includes(entry.name) || entry.name.startsWith('.')) {
-        continue;
-      }
-
-      if (entry.isDirectory) {
-        await this.collectFiles(fullPath, files);
-      } else if (entry.isFile && this.isSupportedFile(entry.name)) {
-        files.push(fullPath);
-      }
-    }
-  }
-
-  /**
-   * 檢查是否為支援的檔案類型
-   */
-  private isSupportedFile(filename: string): boolean {
-    return SOURCE_FILE_EXTENSIONS.some(ext => filename.endsWith(ext));
+    return collectProjectFiles(this.fileSystem, projectRoot, FileUtils.isSupportedLanguage);
   }
 
   /**
@@ -797,7 +789,7 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
-      diagnostics.warn('move-member/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('move-member/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }

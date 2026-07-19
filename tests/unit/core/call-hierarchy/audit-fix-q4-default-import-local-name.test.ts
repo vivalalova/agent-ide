@@ -47,7 +47,7 @@ describe('audit-fix Q4：call-hierarchy default import 不得用 local 名找 ex
         'export default function bar() { return leaf(); }'
       ].join('\n'),
       '/src/caller.ts': [
-        "import foo from './m.js';",
+        'import foo from \'./m.js\';',
         'export function outer() { return foo(); }'
       ].join('\n')
     });
@@ -73,7 +73,7 @@ describe('audit-fix Q4：call-hierarchy default import 不得用 local 名找 ex
         'export default function() { return leafAnon(); }'
       ].join('\n'),
       '/src/use-anon.ts': [
-        "import run from './anon.js';",
+        'import run from \'./anon.js\';',
         'export function top() { return run(); }'
       ].join('\n')
     });

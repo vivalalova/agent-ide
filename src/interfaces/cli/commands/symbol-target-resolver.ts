@@ -43,7 +43,7 @@ export function resolveSymbolTarget(
         error:
           `找到 ${symbols.length} 個同名符號 "${symbolName}"，請用 --at 指定位置：\n\n` +
           `${lines.join('\n')}\n\n` +
-          `用法: --at <file:line:column>`
+          '用法: --at <file:line:column>'
       };
     }
     return {

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { maskNonCode, findMatchingBodyBraceEnd } from '@core/foundations/index.js';
+import { maskNonCode, findMatchingBodyBraceEnd, computeCodeCharKinds } from '@core/foundations/index.js';
 
 describe('maskNonCode', () => {
   it('應清空區塊註解內容，保留長度與換行位置', () => {
@@ -35,6 +35,25 @@ describe('maskNonCode', () => {
 
     expect(masked).not.toContain('import');
     expect(masked).toContain('const Real = 1;');
+  });
+
+  it('成員存取 `.delete` 後的 `/` 不應被誤判為 regex 起點（關鍵字啟發式需排除 `.` 前導）', () => {
+    const text = 'const rate = cache.delete / total;\nconsole.log(total + 1);';
+    const kinds = computeCodeCharKinds(text);
+    const slashIndex = text.indexOf('/');
+
+    expect(kinds[slashIndex]).toBe('code');
+
+    const masked = maskNonCode(text);
+    expect(masked).toContain('console.log(total + 1)');
+  });
+
+  it('`return /abc/` 的 `/` 仍應視為 regex 起點（對照組，防修過頭）', () => {
+    const text = 'return /abc/;';
+    const kinds = computeCodeCharKinds(text);
+    const slashIndex = text.indexOf('/');
+
+    expect(kinds[slashIndex]).toBe('regex');
   });
 });
 

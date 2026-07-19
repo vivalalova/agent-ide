@@ -11,9 +11,6 @@ export * from './symbol.js';
 // AST 相關型別
 export * from './ast.js';
 
-// 行號工具函數
-export { toOneBased, toZeroBased } from './line-number.js';
-
 // Source file extension helpers
 export {
   TYPESCRIPT_SOURCE_EXTENSIONS,

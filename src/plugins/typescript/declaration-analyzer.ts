@@ -16,6 +16,7 @@ import type { Range } from '@shared/types/index.js';
 import { isLineMatch, computeContentHash } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { tsPositionToPosition, tsNodeToRange } from './types.js';
 
 /**
  * 宣告分析器類別
@@ -115,29 +116,16 @@ export class DeclarationAnalyzer {
     const fullStart = node.getFullStart();
     const end = node.getEnd();
 
-    const startPos = sourceFile.getLineAndCharacterOfPosition(fullStart);
-    const endPos = sourceFile.getLineAndCharacterOfPosition(end);
+    const startPos = tsPositionToPosition(sourceFile, fullStart);
+    const endPos = tsPositionToPosition(sourceFile, end);
 
-    let adjustedStartLine = startPos.line + 1;
-    let adjustedStartColumn = startPos.character + 1;
-    if (startPos.character > 0) {
+    let start = startPos;
+    if (startPos.column > 1) {
       // trivia 不是從行首開始，調整到下一行
-      adjustedStartLine = startPos.line + 2;
-      adjustedStartColumn = 1;
+      start = { line: startPos.line + 1, column: 1, offset: fullStart };
     }
 
-    return {
-      start: {
-        line: adjustedStartLine,
-        column: adjustedStartColumn,
-        offset: fullStart
-      },
-      end: {
-        line: endPos.line + 1,
-        column: endPos.character + 1,
-        offset: end
-      }
-    };
+    return { start, end: endPos };
   }
 
   /**
@@ -159,7 +147,7 @@ export class DeclarationAnalyzer {
     const visit = (node: ts.Node): void => {
       if (result) { return; } // 已找到，停止搜尋
 
-      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      const nodeStartLine = tsPositionToPosition(sourceFile, node.getStart(sourceFile)).line;
 
       if (this.isMatchingDeclaration(node, symbolName, symbolType, nodeStartLine, startLine)) {
         result = this.resolveMatchedDeclarationNode(node, symbolName, symbolType);
@@ -289,12 +277,9 @@ export class DeclarationAnalyzer {
       endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
     }
 
-    const startLC = sourceFile.getLineAndCharacterOfPosition(startPos);
-    const endLC = sourceFile.getLineAndCharacterOfPosition(endPos);
-
     return {
-      start: { line: startLC.line + 1, column: startLC.character + 1, offset: startPos },
-      end: { line: endLC.line + 1, column: endLC.character + 1, offset: endPos }
+      start: tsPositionToPosition(sourceFile, startPos),
+      end: tsPositionToPosition(sourceFile, endPos)
     };
   }
 
@@ -375,12 +360,9 @@ export class DeclarationAnalyzer {
       endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
     }
 
-    const startLC = sourceFile.getLineAndCharacterOfPosition(startPos);
-    const endLC = sourceFile.getLineAndCharacterOfPosition(endPos);
-
     return {
-      start: { line: startLC.line + 1, column: startLC.character + 1, offset: startPos },
-      end: { line: endLC.line + 1, column: endLC.character + 1, offset: endPos }
+      start: tsPositionToPosition(sourceFile, startPos),
+      end: tsPositionToPosition(sourceFile, endPos)
     };
   }
 
@@ -656,12 +638,7 @@ export class DeclarationAnalyzer {
     const moduleSpecifier = node.moduleSpecifier.text;
 
     // 取得範圍（1-based）
-    const startPos = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-    const endPos = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-    const range = {
-      start: { line: startPos.line + 1, column: startPos.character + 1, offset: node.getStart(sourceFile) },
-      end: { line: endPos.line + 1, column: endPos.character + 1, offset: node.getEnd() }
-    };
+    const range = tsNodeToRange(node, sourceFile);
 
     // 取得原始語句文字
     const rawStatement = code.substring(node.getStart(sourceFile), node.getEnd());
@@ -741,7 +718,7 @@ export class DeclarationAnalyzer {
       const typeParameters = this.extractTypeParameters(targetNode);
 
       // 計算函數起始行號（1-based）
-      const startLine = sourceFile.getLineAndCharacterOfPosition(targetNode.getStart(sourceFile)).line + 1;
+      const startLine = tsPositionToPosition(sourceFile, targetNode.getStart(sourceFile)).line;
 
       return {
         parameters,
@@ -773,7 +750,7 @@ export class DeclarationAnalyzer {
     const visit = (node: ts.Node): void => {
       if (result) { return; }
 
-      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      const nodeStartLine = tsPositionToPosition(sourceFile, node.getStart(sourceFile)).line;
 
       // 檢查函數宣告
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {

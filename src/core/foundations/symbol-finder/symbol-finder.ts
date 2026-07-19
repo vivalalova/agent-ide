@@ -25,6 +25,7 @@ import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
 import { createFileUtils, type FileUtils } from '../file-utils.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** 批次並行讀取的檔案數量上限（避免 fd 耗盡） */
 const BATCH_SIZE = 20;
@@ -96,7 +97,7 @@ export class SymbolFinder {
         documentation
       };
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }
@@ -232,7 +233,7 @@ export class SymbolFinder {
               }
             } catch (error) {
               // Parser 失敗，降級到文字匹配
-              diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
+              diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${getErrorMessage(error)}`, filePath);
               const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
               const refs = results.get(key);
               if (refs) {refs.push(...textRefs);}
@@ -417,7 +418,7 @@ export class SymbolFinder {
       // 使用 CallSiteParser 查找呼叫點
       return this.callSiteParser.findCallSitesInFile(filePath, content, functionName, options);
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return [];
     }
   }
@@ -466,7 +467,7 @@ export class SymbolFinder {
           valueType: undefined
         }));
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return [];
     }
   }
@@ -702,7 +703,7 @@ export class SymbolFinder {
         .map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
     } catch (error) {
       // Parser 失敗，降級到文字匹配
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${getErrorMessage(error)}`, filePath);
       return useFiltered
         ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
         : this.textMatcher.findReferencesByText(filePath, content, symbolName);

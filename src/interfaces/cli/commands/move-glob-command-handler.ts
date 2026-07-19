@@ -3,16 +3,14 @@ import { createGlobMovePlan, resolveGlobPattern, type GlobMovedFile } from '@cor
 import { MoveEngine } from '@core/move/move-engine.js';
 import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import {
-  ChangeApplicator,
   ChangesetBuilder,
   ChangesetCommand,
-  convertChangesetToPreviewInput,
   FileOperationType
 } from '@infrastructure/changeset/index.js';
 import {
   ensureDirectoryPath,
+  executeMutationCommand,
   outputErrorWithDetails,
-  outputMutationWithLegacyFields,
   tryParseOutputFormat
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -178,60 +176,36 @@ export async function handleGlobMoveCommand(
     }
 
     const mergedChangeset = builder.build();
+    const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
+    const legacyFields = createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles);
 
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(mergedChangeset, context.fileSystem);
-
-    // 轉換失敗時 dry-run / apply 皆不得當成功（對齊 executeMutationCommand / 單檔 move）
-    if (!previewInput.success) {
-      outputErrorWithDetails(
-        outputHandler,
-        format,
-        previewInput.errors?.join(', ') ?? '生成預覽失敗',
-        { pathContext: createGlobPathContext(source, target, projectRoot, resolvedTarget) },
-        'move'
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      const legacyFields = createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles);
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
-      } else {
-        printGlobPreview(projectRoot, movePlan.movedFiles);
-        outputHandler.outputMutation(previewInput, format);
-      }
-      return;
-    }
-
-    // 執行移動
     if (!isJsonFormat) {
-      console.log('   執行移動...');
-    }
-
-    const applicator = new ChangeApplicator(context.fileSystem);
-    const result = await applicator.apply(mergedChangeset, {
-      atomic: true,
-      rollbackOnError: true
-    });
-
-    if (result.success) {
-      const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          ...createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles),
-          message: `成功移動 ${matchedFiles.length} 個檔案，更新了 ${totalUpdates} 個 import`
-        });
+      if (options.dryRun) {
+        printGlobPreview(projectRoot, movePlan.movedFiles);
       } else {
-        printGlobSuccess(matchedFiles.length, totalUpdates, movePlan.movedFiles);
+        console.log('   執行移動...');
       }
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
-      process.exitCode = 1;
     }
+
+    // 轉換為 PreviewInput、preview 失敗把關、dry-run 輸出、實際套用（帶回滾）與結果輸出統一走共用管線
+    await executeMutationCommand(mergedChangeset, {
+      fileSystem: context.fileSystem,
+      format,
+      dryRun: options.dryRun ?? false,
+      outputHandler,
+      commandName: 'move',
+      legacyFields,
+      successLegacyFields: {
+        ...legacyFields,
+        message: `成功移動 ${matchedFiles.length} 個檔案，更新了 ${totalUpdates} 個 import`
+      },
+      errorFields: { pathContext: createGlobPathContext(source, target, projectRoot, resolvedTarget) },
+      onSuccess: () => {
+        if (!isJsonFormat) {
+          printGlobSuccess(matchedFiles.length, totalUpdates, movePlan.movedFiles);
+        }
+      }
+    });
   } catch (error) {
     const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);

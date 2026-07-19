@@ -13,6 +13,7 @@ import { createUniqueTempPath, type IFileSystem } from '@infrastructure/storage/
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/types.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import { computeContentHash } from '@shared/content-hash.js';
 import {
   IndexCacheSerializer,
@@ -20,6 +21,12 @@ import {
   type SerializedIndexData
 } from '@core/foundations/indexing/index-cache-serializer.js';
 import { packageVersion } from '@infrastructure/package-info.js';
+
+/**
+ * computeCacheKey 讀檔批次大小上限，避免無上限 Promise.all 對數千檔同時
+ * readFile 造成 EMFILE；比照 index-batch-parser 的 batchSize 慣例。
+ */
+const CACHE_KEY_READ_BATCH_SIZE = 10;
 
 /**
  * 計算 projectPath hash（用於快取目錄名稱）
@@ -81,16 +88,24 @@ export class IndexDiskCache {
       // size 變幾乎必抓到內容變更（防 mtime 保留型操作如 git checkout / cp -p 造成 stale cache），
       // 但 mtime 只有毫秒精度、size 相同時仍可能漏抓「同毫秒內容被換成同大小的新版本」，
       // 因此另加內容 checksum 堵住這個漏洞
-      const fileStats = await Promise.all(
-        uniqueFiles.map(async (filePath) => {
-          const stat = await projectFileSystem.getStats(filePath);
-          const content = await projectFileSystem.readFile(filePath, 'utf-8');
-          const contentHash = computeContentHash(
-            typeof content === 'string' ? content : content.toString('utf-8')
-          );
-          return { path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size, contentHash };
-        })
-      );
+      //
+      // 讀檔以固定批次大小分批執行（比照 index-batch-parser 的 batchSize 慣例），
+      // 避免無上限 Promise.all 對數千檔同時 readFile 造成 EMFILE（超過檔案描述符上限）
+      const fileStats: { path: string; mtime: number; size: number; contentHash: string }[] = [];
+      for (let i = 0; i < uniqueFiles.length; i += CACHE_KEY_READ_BATCH_SIZE) {
+        const batch = uniqueFiles.slice(i, i + CACHE_KEY_READ_BATCH_SIZE);
+        const batchStats = await Promise.all(
+          batch.map(async (filePath) => {
+            const stat = await projectFileSystem.getStats(filePath);
+            const content = await projectFileSystem.readFile(filePath, 'utf-8');
+            const contentHash = computeContentHash(
+              typeof content === 'string' ? content : content.toString('utf-8')
+            );
+            return { path: filePath, mtime: stat.modifiedTime.getTime(), size: stat.size, contentHash };
+          })
+        );
+        fileStats.push(...batchStats);
+      }
 
       // 按路徑排序（已是排序狀態，但 Promise.all 不保序）
       fileStats.sort((a, b) => a.path.localeCompare(b.path));
@@ -207,7 +222,7 @@ export class IndexDiskCache {
       }
     } catch (error) {
       // 靜默降級：快取儲存失敗不影響命令執行
-      process.stderr.write(`[agent-ide] cache save warning: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(`[agent-ide] cache save warning: ${getErrorMessage(error)}\n`);
     }
   }
 

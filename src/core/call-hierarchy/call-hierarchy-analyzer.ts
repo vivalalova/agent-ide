@@ -14,12 +14,14 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
-import { createFileUtils, FileUtils } from '@core/foundations/index.js';
+import { createFileUtils, FileUtils, type ReexportForward, parseReexportForwards } from '@core/foundations/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
+import { tsPositionToPosition, tsNodeToRange } from '@plugins/typescript/types.js';
 import { findNearestLexicalDeclarationName, identifierShadowedByLocalDeclaration } from '@plugins/typescript/lexical-scope-binding.js';
 import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
 import { getImportResolutionExtensions, hasRuntimeImportExtensionCandidates } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 import type {
   CallHierarchyData,
@@ -32,6 +34,9 @@ const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }
 
 /** 匿名 default export 在展開 outgoing 時使用的合成名稱（檔內無識別符可對） */
 const ANONYMOUS_DEFAULT_EXPORT_NAME = '<default>';
+
+/** barrel re-export 鏈路防護：迴圈防護（visited set）之外的合理深度上限 */
+const MAX_REEXPORT_CHAIN_DEPTH = 20;
 
 interface FunctionDefinition {
   readonly location: { filePath: string; range: Range };
@@ -225,7 +230,7 @@ export class CallHierarchyAnalyzer {
       }
       return null;
     } catch (error) {
-      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${getErrorMessage(error)}`);
       return null;
     }
   }
@@ -277,20 +282,30 @@ export class CallHierarchyAnalyzer {
             : null;
 
         if (importedBinding) {
-          // 有明確的 import binding：唯有解析到本次目標定義檔才算真正 caller；
-          // 解析到別的檔案或完全解析不到（如外部套件、無法解析的 alias）都代表這個
-          // 識別符另有所指，非本次目標定義，直接排除，不落回下方的本地宣告 fallback。
+          // 有明確的 import binding：唯有解析到本次目標定義檔（或經 barrel re-export
+          // 鏈跟隨後抵達本次目標定義檔）才算真正 caller；解析到別的檔案或完全解析不到
+          // （如外部套件、無法解析的 alias）都代表這個識別符另有所指，非本次目標定義，
+          // 直接排除，不落回下方的本地宣告 fallback。
           const resolvedFile = await this.resolveProjectImportPath(
             importedBinding.moduleSpecifier,
             callSiteFile,
             projectFiles
           );
-          return resolvedFile === targetDefinitionFile;
+          if (!resolvedFile) {
+            return false;
+          }
+          if (resolvedFile === targetDefinitionFile) {
+            return true;
+          }
+          // resolvedFile 是 barrel 檔（純 `export { targetName } from './real.js'`）時，
+          // 單跳比對會誤排除合法 caller，需跟隨 re-export 鏈確認是否仍抵達目標定義檔。
+          const chainTargets = await this.resolveReexportChainTargets(resolvedFile, targetName, projectFiles);
+          return chainTargets.some(target => target.file === targetDefinitionFile);
         }
       } catch (error) {
         // AST 節點形狀不符（如測試替身回傳的假 AST）時退回下方的本地宣告 fallback，
         // 與檔案同層其他 AST 解析錯誤處理一致，不讓單一異常 AST 中斷整體 incoming 分析。
-        diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `Import binding resolution failed: ${error instanceof Error ? error.message : String(error)}`);
+        diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `Import binding resolution failed: ${getErrorMessage(error)}`);
       }
     }
 
@@ -632,8 +647,8 @@ export class CallHierarchyAnalyzer {
     sourceFile: ts.SourceFile,
     range: Range
   ): boolean {
-    const { line, character } = sourceFile.getLineAndCharacterOfPosition(identifier.getStart(sourceFile));
-    return line + 1 === range.start.line && character + 1 === range.start.column;
+    const pos = tsPositionToPosition(sourceFile, identifier.getStart(sourceFile));
+    return pos.line === range.start.line && pos.column === range.start.column;
   }
 
   /**
@@ -897,7 +912,7 @@ export class CallHierarchyAnalyzer {
         findCallsInNode(functionNode.body);
       }
     } catch (error) {
-      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${getErrorMessage(error)}`);
     }
 
     if (depth > 1) {
@@ -962,10 +977,20 @@ export class CallHierarchyAnalyzer {
         return this.findDefaultExportFunctionDefinition(importedFile);
       }
 
-      const definition = await this.findFunctionDefinition(importedBinding.importedName, [importedFile]);
-      return definition
-        ? { ...definition, functionName: importedBinding.importedName }
-        : null;
+      // barrel 檔（純 `export { name } from './real.js'`）本身無本地宣告，需跟隨
+      // re-export 鏈追到真正定義檔才找得到符號（見 resolveReexportChainTargets）。
+      const chainTargets = await this.resolveReexportChainTargets(
+        importedFile,
+        importedBinding.importedName,
+        projectFiles
+      );
+      for (const target of chainTargets) {
+        const definition = await this.findFunctionDefinition(target.name, [target.file]);
+        if (definition) {
+          return { ...definition, functionName: target.name };
+        }
+      }
+      return null;
     }
 
     // 方法呼叫若不是 namespace import，缺少 receiver 型別時無法安全判定其宣告。
@@ -1197,16 +1222,11 @@ export class CallHierarchyAnalyzer {
     rangeNode: ts.Node,
     sourceFile: ts.SourceFile
   ): ResolvedCalleeDefinition {
-    const start = sourceFile.getLineAndCharacterOfPosition(rangeNode.getStart(sourceFile));
-    const end = sourceFile.getLineAndCharacterOfPosition(rangeNode.getEnd());
     return {
       functionName,
       location: {
         filePath,
-        range: {
-          start: { line: start.line + 1, column: start.character + 1 },
-          end: { line: end.line + 1, column: end.character + 1 }
-        }
+        range: tsNodeToRange(rangeNode, sourceFile)
       }
     };
   }
@@ -1397,6 +1417,71 @@ export class CallHierarchyAnalyzer {
     });
 
     return shadowed;
+  }
+
+  /**
+   * 讀取檔案並解析其 re-export 轉發宣告（純 barrel `export { x } from './y'` /
+   * `export * from './y'`）。與 rename 的 target-exposure-resolver 共用同一套
+   * @core/foundations parseReexportForwards（Single Source of Truth），此處只負責
+   * 讀檔＋快篩後呼叫。
+   */
+  private async getReexportForwards(filePath: string): Promise<ReexportForward[]> {
+    const content = await this.fileUtils.readFile(filePath);
+    if (!content || !content.includes('export') || !content.includes('from')) {
+      return [];
+    }
+    return parseReexportForwards(filePath, content);
+  }
+
+  /**
+   * 跟隨 barrel re-export 鏈，找出 `fileAbs` 內 `name` 這個綁定最終追到的候選宣告位置
+   * 清單：若 fileAbs 對 name 只是純轉發（`export { name } from './real.js'` 或
+   * `export * from './real.js'`），沿轉發鏈往下追（具名轉發可能一路改名，故 name 隨鏈路
+   * 更新，如 `export { real as alias } from './real.js'`）；沒有比對到任何轉發即視為葉
+   * 節點（該處應有本地宣告，交由呼叫端以 findFunctionDefinition／等值比對驗證）。
+   *
+   * visited set 防成環，depth 上限為額外防禦；outgoing（findCalleeDefinition）與
+   * incoming（isCallSiteAnchoredToDefinition）共用此同一條解析，不各自展開一份。
+   *
+   * namespace re-export（`export * as ns from`）不在此鏈路範圍：consumer 端需經
+   * `ns.member` 存取，並非直接同名匯出，語意與具名/`export *` 轉發不同，超出本次
+   * barrel 鏈路缺陷（純具名轉發）的範圍。
+   */
+  private async resolveReexportChainTargets(
+    fileAbs: string,
+    name: string,
+    projectFiles: readonly string[],
+    visited: Set<string> = new Set(),
+    depth = 0
+  ): Promise<Array<{ file: string; name: string }>> {
+    const visitKey = `${fileAbs}:${name}`;
+    if (depth > MAX_REEXPORT_CHAIN_DEPTH || visited.has(visitKey)) {
+      return [];
+    }
+    visited.add(visitKey);
+
+    const forwards = await this.getReexportForwards(fileAbs);
+    const matchingForwards = forwards.filter(
+      forward => !forward.isNamespaceExport
+        && (forward.exportedName === undefined || forward.exportedName === name)
+    );
+
+    if (matchingForwards.length === 0) {
+      return [{ file: fileAbs, name }];
+    }
+
+    const targets: Array<{ file: string; name: string }> = [];
+    for (const forward of matchingForwards) {
+      const nextFile = await this.resolveProjectImportPath(forward.moduleSpecifier, fileAbs, projectFiles);
+      if (!nextFile) {
+        continue;
+      }
+      const nextName = forward.importedName ?? name;
+      targets.push(
+        ...await this.resolveReexportChainTargets(nextFile, nextName, projectFiles, visited, depth + 1)
+      );
+    }
+    return targets;
   }
 
   private async resolveProjectImportPath(
@@ -1708,8 +1793,8 @@ export class CallHierarchyAnalyzer {
   }
 
   private nodeStartsAtRange(node: ts.Node, sourceFile: ts.SourceFile, range: Range): boolean {
-    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-    return line + 1 === range.start.line && character + 1 === range.start.column;
+    const pos = tsPositionToPosition(sourceFile, node.getStart(sourceFile));
+    return pos.line === range.start.line && pos.column === range.start.column;
   }
 
   private getComparableNameNode(node: ts.Node): ts.Node {
@@ -1749,14 +1834,14 @@ export class CallHierarchyAnalyzer {
       return null;
     }
 
-    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const pos = tsPositionToPosition(sourceFile, node.getStart(sourceFile));
     const lines = sourceFile.text.split('\n');
-    const lineText = lines[line] || '';
+    const lineText = lines[pos.line - 1] || '';
 
     return {
       callee,
-      line: line + 1,      // 轉為 1-based
-      column: character + 1,
+      line: pos.line,
+      column: pos.column,
       context: lineText.trim(),
       isMethodCall,
       receiver
@@ -1826,7 +1911,7 @@ export class CallHierarchyAnalyzer {
         }
       }
     } catch (error) {
-      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `AST parse failed: ${getErrorMessage(error)}`);
     }
 
     return results;

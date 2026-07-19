@@ -3,14 +3,16 @@
  * 提供跨模組共用的檔案讀取和副檔名處理
  */
 
-import { extname } from 'node:path';
+import { extname, join } from 'node:path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import {
   isJavaScriptSourceExtension,
   isTypeScriptSourceExtension
 } from '@shared/types/index.js';
+import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 
 /**
  * 檔案操作工具類
@@ -32,7 +34,7 @@ export class FileUtils {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
-      diagnostics.warn('file-utils', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('file-utils', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }
@@ -81,6 +83,21 @@ export class FileUtils {
   static isSupportedLanguage(filePath: string): boolean {
     return FileUtils.isTypeScript(filePath) || FileUtils.isJavaScript(filePath);
   }
+
+  /**
+   * 遞迴收集專案內符合條件的檔案
+   * 委派給獨立匯出的 collectProjectFiles（供無 ParserRegistry 可用、
+   * 無法建立 FileUtils 實例的呼叫端直接重用同一套目錄走訪邏輯）。
+   *
+   * @param rootPath 掃描起始目錄
+   * @param isSupportedFile 判斷檔案是否納入結果的謂詞
+   */
+  async collectProjectFiles(
+    rootPath: string,
+    isSupportedFile: (filename: string) => boolean
+  ): Promise<string[]> {
+    return collectProjectFiles(this.fileSystem, rootPath, isSupportedFile);
+  }
 }
 
 /**
@@ -91,4 +108,49 @@ export function createFileUtils(
   parserRegistry: ParserRegistry
 ): FileUtils {
   return new FileUtils(fileSystem, parserRegistry);
+}
+
+/**
+ * 遞迴收集專案內符合條件的檔案
+ * 跳過 @shared/exclude-dirs 權威清單中的目錄與所有隱藏目錄，
+ * 供 change-signature、move-member 等模組共用同一套目錄走訪邏輯，
+ * 不再各自複製一份 collectFiles/skipDirs。獨立匯出（非僅 FileUtils 類別方法），
+ * 讓只有 IFileSystem、無 ParserRegistry 可建立 FileUtils 實例的呼叫端也能直接重用。
+ *
+ * @param fileSystem 檔案系統存取介面
+ * @param rootPath 掃描起始目錄
+ * @param isSupportedFile 判斷檔案是否納入結果的謂詞
+ */
+export async function collectProjectFiles(
+  fileSystem: IFileSystem,
+  rootPath: string,
+  isSupportedFile: (filename: string) => boolean
+): Promise<string[]> {
+  const files: string[] = [];
+  await collectFilesRecursive(fileSystem, rootPath, files, isSupportedFile);
+  return files;
+}
+
+async function collectFilesRecursive(
+  fileSystem: IFileSystem,
+  dirPath: string,
+  files: string[],
+  isSupportedFile: (filename: string) => boolean
+): Promise<void> {
+  const entries = await fileSystem.readDirectory(dirPath);
+
+  for (const entry of entries) {
+    const fullPath = join(dirPath, entry.name);
+
+    // 跳過 node_modules、build 輸出目錄和隱藏目錄
+    if ((COMMON_EXCLUDE_DIR_NAMES as readonly string[]).includes(entry.name) || entry.name.startsWith('.')) {
+      continue;
+    }
+
+    if (entry.isDirectory) {
+      await collectFilesRecursive(fileSystem, fullPath, files, isSupportedFile);
+    } else if (entry.isFile && isSupportedFile(entry.name)) {
+      files.push(fullPath);
+    }
+  }
 }

@@ -1,3 +1,5 @@
+import { escapeRegex } from '@shared/regex-utils.js';
+
 /**
  * 將字串的首字母大寫
  * @param str 待轉換的字串
@@ -160,7 +162,7 @@ export function stripIndent(str: string): string {
  */
 export function escapeRegExp(str: string): string {
   if (!str) {return '';}
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escapeRegex(str);
 }
 
 /**

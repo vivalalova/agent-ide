@@ -1,133 +1,65 @@
 /**
  * audit-fix E1 regression
  *
- * move 命令在 convertChangesetToPreviewInput 失敗
- * （previewInput.success === false）時應 process.exitCode = 1，
- * 不得把失敗 preview 當成功預覽輸出。
+ * move 命令在 preview 轉換失敗（previewInput.success === false）時應
+ * process.exitCode = 1，不得把失敗 preview 當成功預覽輸出。
  *
- * 對照：executeMutationCommand 已檢查 previewInput.success；
- * move 單檔／glob 路徑自行 convert，必須在呼叫點後同等檢查。
+ * 架構筆記（重構後更新）：move.command.ts 與 move-glob-command-handler.ts
+ * 已把手刻的 convertChangesetToPreviewInput / previewInput.success 檢查
+ * 管線收斂進 command-utils.ts 的 executeMutationCommand（單一來源，行為
+ * 契約不變）。本檔靜態 grounding 改為：
+ *
+ * 1. 確認 move.command.ts（單檔移動 + 成員移動路徑）與
+ *    move-glob-command-handler.ts（glob 移動路徑）皆 delegate 至
+ *    executeMutationCommand，而非各自手刻 convert + 檢查。
+ * 2. 確認 executeMutationCommand 本身（新管線位置）實作
+ *    previewInput.success 檢查並設 exitCode=1。
+ *
+ * 此契約的實際行為（呼叫 executeMutationCommand 對重疊 edits 的
+ * previewInput.success=false 回 exitCode=1）由
+ * tests/unit/interfaces/cli/audit-fix-c6-c7-execute-mutation-preview-fail.test.ts
+ * 端對端驗證，本檔僅 grounding 呼叫點確實 delegate 到該共用管線。
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  ChangesetCommand,
-  FileOperationType,
-  type Changeset
-} from '@infrastructure/changeset/types.js';
-import { convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
-import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
-function createMockFileSystem(content = 'line1\nline2\nline3\n'): IFileSystem {
-  return {
-    exists: vi.fn().mockResolvedValue(true),
-    readFile: vi.fn().mockResolvedValue(content),
-    writeFile: vi.fn().mockResolvedValue(undefined),
-    deleteFile: vi.fn().mockResolvedValue(undefined),
-    moveFile: vi.fn().mockResolvedValue(undefined),
-    isDirectory: vi.fn().mockResolvedValue(false),
-    createDirectory: vi.fn().mockResolvedValue(undefined),
-    readDirectory: vi.fn().mockResolvedValue([]),
-    deleteDirectory: vi.fn().mockResolvedValue(undefined),
-    getFilePath: vi.fn().mockImplementation((p: string) => p),
-    getRelativePath: vi.fn().mockImplementation((p: string) => p),
-    isAbsolutePath: vi.fn().mockReturnValue(true),
-    joinPath: vi.fn().mockImplementation((...paths: string[]) => paths.join('/'))
-  } as unknown as IFileSystem;
+function readProjectFile(relativePath: string): string {
+  return readFileSync(join(process.cwd(), relativePath), 'utf-8');
 }
 
-/** 重疊 edits → convert 回 success:false */
-function createOverlappingMoveChangeset(): Changeset {
-  return {
-    textChanges: [
-      {
-        filePath: '/src/file.ts',
-        edits: [
-          {
-            range: {
-              start: { line: 1, column: 1 },
-              end: { line: 1, column: 6 }
-            },
-            newText: 'AAAAA'
-          },
-          {
-            range: {
-              start: { line: 1, column: 3 },
-              end: { line: 1, column: 8 }
-            },
-            newText: 'BBBBB'
-          }
-        ]
-      }
-    ],
-    fileOperations: [
-      {
-        type: FileOperationType.Move,
-        sourcePath: '/src/a.ts',
-        targetPath: '/src/b.ts'
-      }
-    ],
-    description: 'move with overlapping import edits',
-    command: ChangesetCommand.Move,
-    success: true
-  };
-}
-
-/**
- * 從 await convertChangesetToPreviewInput(...) 呼叫點起切 slice，
- * 避免 indexOf 命中 import 導致掃不到後續 success 檢查。
- */
-function sliceAfterConvertCall(source: string, maxLen = 800): string {
-  const callRe = /await\s+convertChangesetToPreviewInput\s*\(/;
-  const m = callRe.exec(source);
-  expect(m, 'expected await convertChangesetToPreviewInput(...) call site').not.toBeNull();
-  return source.slice(m!.index, m!.index + maxLen);
-}
-
-/** 契約：呼叫 convert 後必須 if (!previewInput.success) 並設 exitCode = 1 */
-function assertPreviewFailureHandling(source: string): void {
-  const afterCall = sliceAfterConvertCall(source);
-
-  expect(/if\s*\(\s*!previewInput\.success\s*\)/.test(afterCall)
-    || /if\s*\(\s*previewInput\.success\s*===?\s*false\s*\)/.test(afterCall)).toBe(true);
-
-  const failureBlock = afterCall.match(
-    /if\s*\(\s*(?:!previewInput\.success|previewInput\.success\s*===?\s*false)\s*\)\s*\{[\s\S]*?\breturn\b/
-  );
-  expect(failureBlock, 'expected preview failure if-block with return').not.toBeNull();
-  expect(failureBlock![0]).toMatch(/process\.exitCode\s*=\s*1/);
+/** 契約：呼叫點必須 delegate 至共用 executeMutationCommand，而非自行手刻 convert + 檢查 */
+function assertDelegatesToExecuteMutationCommand(source: string, minOccurrences = 1): void {
+  const matches = source.match(/await\s+executeMutationCommand\s*\(/g);
+  expect(matches?.length ?? 0).toBeGreaterThanOrEqual(minOccurrences);
 }
 
 describe('audit-fix E1：move dry-run 在 preview 失敗時應 exit != 0', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it('move.command.ts 單檔移動與成員移動路徑皆 delegate 至 executeMutationCommand', () => {
+    const source = readProjectFile('src/interfaces/cli/commands/move.command.ts');
+    // 單檔移動（handleMoveCommand）+ 成員移動（handleMoveMemberCommand）各一次呼叫
+    assertDelegatesToExecuteMutationCommand(source, 2);
   });
 
-  it('重疊 edits 的 convert 回 success:false；move.command 呼叫點後必須檢查並 exitCode=1', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const fileSystem = createMockFileSystem();
-    const changeset = createOverlappingMoveChangeset();
-
-    const previewInput = await convertChangesetToPreviewInput(changeset, fileSystem);
-    expect(previewInput.success).toBe(false);
-
-    const moveCommandPath = join(
-      process.cwd(),
-      'src/interfaces/cli/commands/move.command.ts'
-    );
-    const moveSource = readFileSync(moveCommandPath, 'utf-8');
-    assertPreviewFailureHandling(moveSource);
+  it('glob move（move-glob-command-handler.ts）同樣 delegate 至 executeMutationCommand', () => {
+    const source = readProjectFile('src/interfaces/cli/commands/move-glob-command-handler.ts');
+    assertDelegatesToExecuteMutationCommand(source, 1);
   });
 
-  it('glob move 同樣必須在 convert 呼叫後檢查 preview 失敗並 exitCode=1', () => {
-    const globPath = join(
-      process.cwd(),
-      'src/interfaces/cli/commands/move-glob-command-handler.ts'
+  it('共用管線 executeMutationCommand（command-utils.ts）必須檢查 previewInput.success 並 exitCode=1', () => {
+    const source = readProjectFile('src/interfaces/cli/command-utils.ts');
+
+    const convertCallRe = /await\s+convertChangesetToPreviewInput\s*\(/;
+    const m = convertCallRe.exec(source);
+    expect(m, 'expected await convertChangesetToPreviewInput(...) call site in command-utils.ts').not.toBeNull();
+
+    const afterConvert = source.slice(m!.index, m!.index + 800);
+    expect(/if\s*\(\s*!previewInput\.success\s*\)/.test(afterConvert)).toBe(true);
+
+    const failureBlock = afterConvert.match(
+      /if\s*\(\s*!previewInput\.success\s*\)\s*\{[\s\S]*?\breturn\b/
     );
-    const source = readFileSync(globPath, 'utf-8');
-    assertPreviewFailureHandling(source);
+    expect(failureBlock, 'expected preview failure if-block with return').not.toBeNull();
+    expect(failureBlock![0]).toMatch(/process\.exitCode\s*=\s*1/);
   });
 });

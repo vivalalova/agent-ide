@@ -186,7 +186,7 @@ describe('CLI 整合測試', () => {
     });
 
     it('call-hierarchy - 呼叫層次分析', () => {
-      const result = runCLI(`${CLI} call-hierarchy create --path "${SAMPLE_PROJECT}" --format json`);
+      const result = runCLI(`${CLI} call-hierarchy create --path "${SAMPLE_PROJECT}" --at src/controllers/user-controller.ts:15:9 --format json`);
       expect(result.success).toBe(true);
     });
 
@@ -236,7 +236,7 @@ describe('CLI 整合測試', () => {
         expect(Array.isArray(hunk.lines)).toBe(true);
       }
 
-      // 🔥 關鍵驗證：刪除 dead code 後專案仍可編譯
+      // 🚨 關鍵驗證：刪除 dead code 後專案仍可編譯
       verifyTypecheck(DEADCODE_AUTOFIX);
     });
 

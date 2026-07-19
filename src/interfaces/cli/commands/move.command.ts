@@ -14,8 +14,6 @@ import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import {
-  ChangeApplicator,
-  convertChangesetToPreviewInput,
   FileOperationType,
   type Changeset
 } from '@infrastructure/changeset/index.js';
@@ -25,7 +23,6 @@ import {
 } from '@interfaces/cli/unified-output-handler.js';
 import {
   ensureDirectoryPath,
-  outputMutationWithLegacyFields,
   outputErrorWithDetails,
   tryParseOutputFormat,
   executeMutationCommand
@@ -224,46 +221,15 @@ async function handleMoveCommand(
       projectRoot
     };
 
-    // 使用新的 Changeset 流程
-    const applicator = new ChangeApplicator(context.fileSystem);
-
-    // 生成 Changeset
+    // 生成 Changeset（changeset.success / previewInput 轉換失敗由 executeMutationCommand 統一把關）
     const changeset = await moveService.generateChangeset(moveOperation, moveOptions);
 
-    if (!changeset.success) {
-      outputErrorWithDetails(
-        outputHandler,
-        format,
-        changeset.errors?.join(', ') ?? '生成變更失敗',
-        { pathContext },
-        'move'
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // 防禦性退場：空 changeset 不應該發生在 success=true 的情境
-    if (changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
+    // 防禦性退場：空 changeset 不應該發生在 success=true 的情境，這是 move 特有語意、非共用管線可表達
+    if (changeset.success && changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
       outputErrorWithDetails(
         outputHandler,
         format,
         '無檔案需移動，請檢查路徑',
-        { pathContext },
-        'move'
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
-
-    // 轉換失敗（如重疊 edits）時 dry-run / apply 皆不得當成功（對齊 executeMutationCommand）
-    if (!previewInput.success) {
-      outputErrorWithDetails(
-        outputHandler,
-        format,
-        previewInput.errors?.join(', ') ?? '生成預覽失敗',
         { pathContext },
         'move'
       );
@@ -279,52 +245,39 @@ async function handleMoveCommand(
         to: op.targetPath ?? op.sourcePath
       }));
     const pathUpdates = createPathUpdateSummaries(changeset);
+    const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
 
-    // Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          ...createMoveLegacyFields(pathContext),
-          renames,
-          pathUpdates
-        });
-      } else {
+    if (!isJsonFormat) {
+      if (options.dryRun) {
         printMovePathPreview(pathContext);
         for (const { from, to } of renames) {
           console.log(`Renamed: ${formatRelativePath(projectRoot, from)} → ${formatRelativePath(projectRoot, to)}`);
         }
-        outputHandler.outputMutation(previewInput, format);
-      }
-      return;
-    }
-
-    // 執行移動操作（帶回滾）
-    if (!isJsonFormat) {
-      console.log('   執行移動...');
-    }
-
-    const result = await applicator.apply(changeset, {
-      atomic: true,
-      rollbackOnError: true
-    });
-
-    if (result.success) {
-      // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
-      const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          ...createMoveLegacyFields(pathContext),
-          moved: result.movedFiles.length > 0,
-          pathUpdates,
-          message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
-        });
       } else {
-        printSuccess(totalUpdates, result.movedFiles);
+        console.log('   執行移動...');
       }
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
-      process.exitCode = 1;
     }
+
+    await executeMutationCommand(changeset, {
+      fileSystem: context.fileSystem,
+      format,
+      dryRun: options.dryRun ?? false,
+      outputHandler,
+      commandName: 'move',
+      legacyFields: { ...createMoveLegacyFields(pathContext), renames, pathUpdates },
+      successLegacyFields: {
+        ...createMoveLegacyFields(pathContext),
+        moved: renames.length > 0,
+        pathUpdates,
+        message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
+      },
+      errorFields: createMoveLegacyFields(pathContext),
+      onSuccess: () => {
+        if (!isJsonFormat) {
+          printSuccess(totalUpdates, renames);
+        }
+      }
+    });
   } catch (error) {
     const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);

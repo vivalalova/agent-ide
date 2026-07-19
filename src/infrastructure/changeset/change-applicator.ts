@@ -3,7 +3,7 @@
  * 負責將變更集應用到檔案系統，支援 dry-run、備份、回滾
  */
 
-import { resolve as pathResolve } from 'path';
+import { resolve as pathResolve, relative as pathRelative, join as pathJoin } from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   FileOperationType,
@@ -19,20 +19,40 @@ import { applyTextEdits } from './apply-text-edits.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
- * 目前 process 內正在被某個 apply() 呼叫獨佔處理的檔案路徑集合。
+ * 目前 process 內正在被某個 apply() 呼叫獨佔處理的檔案路徑集合，依 IFileSystem 實例分桶。
  *
- * 模組層級（非 instance 層級）：CLI 各命令進入點都各自 `new ChangeApplicator(...)`
- * （見 move.command.ts、move-glob-command-handler.ts、command-utils.ts、
- * move-member-engine.ts），若鎖存在 instance 上將無法防止「不同 ChangeApplicator
- * 實例、同一 process 內」併發套用同一檔案。
+ * 模組層級、以 fileSystem 實例分桶（非單一全域 Set、也非 ChangeApplicator instance 層級）：
+ * CLI 各命令進入點都各自 `new ChangeApplicator(...)`（見 move.command.ts、
+ * move-glob-command-handler.ts、command-utils.ts、move-member-engine.ts），若鎖存在
+ * ChangeApplicator instance 上將無法防止「不同 ChangeApplicator 實例、同一 process 內」
+ * 併發套用同一份底層儲存的同一檔案。
  *
- * 僅作為 in-process 互斥用，防止同 process 內併發 apply() 互踩（Bug B：
- * 兩個併發呼叫都讀到同一份原始內容、各自算出不同結果、最後寫入者靜默蓋掉前者）；
+ * 但鎖 key 若只用正規化路徑字串、不含 fileSystem 身分，會誤判：不同 fileSystem 實例
+ * （例如各自獨立的 memfs，各自的檔案系統互不相干）恰好撞到同一路徑字串時，會被當成
+ * 同一檔案的併發衝突而誤 fail。改以 `WeakMap<IFileSystem, Set<string>>` 依實例分桶，
+ * 確保「同一 fileSystem 實例內」的路徑字串才互斥，不同底層儲存互不干擾。
+ *
+ * 僅作為 in-process 互斥用，防止同 process、同一 fileSystem 實例內併發 apply() 互踩
+ * （Bug B：兩個併發呼叫都讀到同一份原始內容、各自算出不同結果、最後寫入者靜默蓋掉前者）；
  * 不處理跨 process／跨機器的併發（scope 外）。
  *
  * 路徑一律以 path.resolve 正規化後再入 Set，避免 `./a.ts` 與絕對路徑被當成不同檔。
  */
-const filesInFlight = new Set<string>();
+const filesInFlightByFileSystem = new WeakMap<IFileSystem, Set<string>>();
+
+/**
+ * 取得（或建立）指定 fileSystem 實例對應的 in-flight 路徑集合。
+ * @param fileSystem 檔案系統實例，作為鎖分桶 key
+ * @returns 該實例專屬的 in-flight 路徑 Set
+ */
+function getFilesInFlight(fileSystem: IFileSystem): Set<string> {
+  let filesInFlight = filesInFlightByFileSystem.get(fileSystem);
+  if (!filesInFlight) {
+    filesInFlight = new Set<string>();
+    filesInFlightByFileSystem.set(fileSystem, filesInFlight);
+  }
+  return filesInFlight;
+}
 
 /**
  * 將路徑 canonicalize 為絕對、正規化形式，供 filesInFlight 互斥 key 使用。
@@ -40,6 +60,24 @@ const filesInFlight = new Set<string>();
  */
 function canonicalizePath(filePath: string): string {
   return pathResolve(filePath);
+}
+
+/**
+ * 建立一個「全空陣列 + errors」的失敗 ApplyResult。
+ * apply() 內多處失敗分支（文字變更失敗、檔案操作失敗、未預期錯誤）共用同一失敗結果形狀，
+ * 差異只在 errors 內容，故抽出單一來源避免逐字複製。
+ * @param errors 錯誤訊息列表
+ * @returns 失敗的 ApplyResult
+ */
+function buildFailureResult(errors: string[]): ApplyResult {
+  return {
+    success: false,
+    modifiedFiles: [],
+    createdFiles: [],
+    deletedFiles: [],
+    movedFiles: [],
+    errors
+  };
 }
 
 /**
@@ -90,17 +128,11 @@ export class ChangeApplicator {
     // 併發鎖檢查必須是這個 async function 內第一個同步動作（在任何 await 之前）：
     // 若本次 changeset 觸及的任一檔案已被另一個尚未完成的 apply() 呼叫佔用，
     // 立即 fast-fail 回報衝突，禁止繼續執行導致兩者都回報成功、後寫者靜默覆蓋前者。
+    const filesInFlight = getFilesInFlight(this.fileSystem);
     const touchedPaths = collectTouchedPaths(changeset);
     const conflictPath = touchedPaths.find(p => filesInFlight.has(p));
     if (conflictPath) {
-      return {
-        success: false,
-        modifiedFiles: [],
-        createdFiles: [],
-        deletedFiles: [],
-        movedFiles: [],
-        errors: [`並發衝突：檔案 [${conflictPath}] 正被另一個進行中的變更套用佔用，本次套用已中止（避免靜默覆蓋對方結果）`]
-      };
+      return buildFailureResult([`並發衝突：檔案 [${conflictPath}] 正被另一個進行中的變更套用佔用，本次套用已中止（避免靜默覆蓋對方結果）`]);
     }
     for (const p of touchedPaths) {
       filesInFlight.add(p);
@@ -131,14 +163,7 @@ export class ChangeApplicator {
 
             if (rollbackOnError) {
               const rollbackErrors = await this.rollback(backups, atomic);
-              return {
-                success: false,
-                modifiedFiles: [],
-                createdFiles: [],
-                deletedFiles: [],
-                movedFiles: [],
-                errors: [...errors, ...rollbackErrors]
-              };
+              return buildFailureResult([...errors, ...rollbackErrors]);
             }
           }
         }
@@ -172,14 +197,7 @@ export class ChangeApplicator {
 
             if (rollbackOnError) {
               const rollbackErrors = await this.rollback(backups, atomic);
-              return {
-                success: false,
-                modifiedFiles: [],
-                createdFiles: [],
-                deletedFiles: [],
-                movedFiles: [],
-                errors: [...errors, ...rollbackErrors]
-              };
+              return buildFailureResult([...errors, ...rollbackErrors]);
             }
           }
         }
@@ -201,14 +219,7 @@ export class ChangeApplicator {
           errors.push(...rollbackErrors);
         }
 
-        return {
-          success: false,
-          modifiedFiles: [],
-          createdFiles: [],
-          deletedFiles: [],
-          movedFiles: [],
-          errors
-        };
+        return buildFailureResult(errors);
       }
     } finally {
       for (const p of touchedPaths) {
@@ -445,9 +456,10 @@ export class ChangeApplicator {
     try {
       for (const entry of entries) {
         const sourcePath = entry.path;
-        // 使用 path 模組計算相對路徑
-        const relativePath = sourcePath.slice(source.length);
-        const targetPath = target + relativePath;
+        // 用 path.relative/path.join 計算相對路徑並組出目標路徑，避免字串 slice
+        // 對路徑分隔符（trailing slash、`..`）等邊界寫死長度假設而算錯
+        const relativePath = pathRelative(source, sourcePath);
+        const targetPath = pathJoin(target, relativePath);
 
         if (entry.isDirectory) {
           await this.moveDirectory(sourcePath, targetPath);

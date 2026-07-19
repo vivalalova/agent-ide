@@ -23,6 +23,7 @@ import type { ImportCleanupOperation, RemovalOperation } from './types.js';
 import { ImportParser, UNICODE_IDENTIFIER_CLASS, type ImportStatementInfo } from './import-parser.js';
 import type { DeadCodeCacheService } from './shared-cache.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** type Foo as Bar 別名原名擷取（Unicode 識別符） */
 const TYPE_SPECIFIER_AS_ALIAS = new RegExp(
@@ -443,7 +444,7 @@ export class ImportCleaner {
       this.cacheService.setFile(filePath, contentStr);
       return contentStr;
     } catch (error) {
-      diagnostics.warn('deadcode/import-cleaner', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('deadcode/import-cleaner', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }

@@ -8,6 +8,8 @@ import { builtinModules } from 'node:module';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportStatement, ImportStatementType, PathType, ImportResolverConfig, ImportUpdate } from './types.js';
 import { createPosition, createRange } from '@shared/types/core.js';
+import { escapeRegex } from '@shared/regex-utils.js';
+import { stripSourceFileExtension } from '@shared/types/index.js';
 import {
   resolveBarePathAlias,
   resolveBarePathAliasAsync,
@@ -483,7 +485,7 @@ export class ImportResolver {
 
       // 更新 import 語句
       const newStatement = rawStatement.replace(
-        new RegExp(`['"\`]${this.escapeRegExp(importPath)}['"\`]`),
+        new RegExp(`['"\`]${escapeRegex(importPath)}['"\`]`),
         `'${newImportPath}'`
       );
 
@@ -542,11 +544,10 @@ export class ImportResolver {
     const fromDir = path.extname(fromPath) ? path.dirname(fromPath) : fromPath;
     let relativePath = path.relative(fromDir, toPath);
 
-    // 移除副檔名（如果目標是受支援的檔案類型）
-    const ext = path.extname(relativePath);
-    if (this.config.supportedExtensions.includes(ext)) {
-      relativePath = relativePath.slice(0, -ext.length);
-    }
+    // 移除副檔名（如果目標是受支援的檔案類型）；沿用 stripSourceFileExtension
+    // 正確處理 .d.ts/.d.mts/.d.cts 等宣告檔特殊映射，不用手刻 path.extname 版本
+    // （naive 版本對 .d.ts 只會剝掉 .ts，遺留 .d 尾綴）
+    relativePath = stripSourceFileExtension(relativePath, this.config.supportedExtensions);
 
     // 確保相對路徑以 ./ 或 ../ 開始
     if (!relativePath.startsWith('.')) {
@@ -726,13 +727,6 @@ export class ImportResolver {
     }
 
     return PathType.ABSOLUTE;
-  }
-
-  /**
-   * 跳脫正則表達式特殊字元
-   */
-  private escapeRegExp(string: string): string {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**

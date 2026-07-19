@@ -14,6 +14,7 @@ import {
   initializeDefaultParsers
 } from '@infrastructure/parser/index.js';
 import { computeContentHash } from '@shared/content-hash.js';
+import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 import type {
   FileDependencies,
   ProjectDependencies,
@@ -429,7 +430,7 @@ export class ImpactAnalyzer {
       includeNodeModules: false,
       followSymlinks: true,
       maxDepth: 100,
-      excludePatterns: ['node_modules', '.git', 'dist', 'build'],
+      excludePatterns: COMMON_EXCLUDE_DIR_NAMES,
       includePatterns: sourceFileExtensions.map(extension => `**/*${extension}`),
       concurrency: 4,
       sourceFileExtensions

@@ -17,11 +17,11 @@
  */
 
 import * as path from 'path';
-import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import { type ReexportForward, parseReexportForwards } from '@core/foundations/index.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 import { resolveBarePathAlias } from '@shared/path-alias-resolver.js';
 
@@ -37,78 +37,6 @@ export interface TargetExposureConfig {
   readonly pathAliases?: PathAliasInput;
   /** tsconfig baseUrl（絕對路徑） */
   readonly baseUrl?: string;
-}
-
-/**
- * 單層 re-export 轉發：`export { name } from '<spec>'`（name 省略代表 `export * from`）。
- * `isNamespaceExport` 標記 `export * as name from '<spec>'`：與具名轉發不同，這種轉發
- * 不是把來源模組的 `name` 匯出原樣轉發（來源模組通常根本沒有叫 `name` 的匯出），而是把
- * 整個來源模組包成一個新的具名匯出 `name`（namespace 物件），需另一套查詢語意
- * （見 isNamespaceLocalNameExposed）。
- */
-interface ReexportForward {
-  readonly moduleSpecifier: string;
-  readonly importedName?: string;
-  readonly exportedName?: string;
-  readonly isNamespaceExport?: boolean;
-}
-
-/**
- * 解析檔案中的 re-export 轉發宣告：`export { name } from '<spec>'`（未 alias 改名）、
- * `export * from '<spec>'`，以及 `export * as ns from '<spec>'`（NamespaceExport）。
- * 具名轉發保留來源名稱與對外名稱，讓 namespace binding 的 alias chain 可以遞迴追蹤。直接
- * 以 TS AST 解析語法結構，不依賴副檔名（TS parser 亦可解析 .js 檔語法）。
- *
- * type-only 轉發（整句 `export type { X } from './y'` 或單一 specifier
- * `export { type X } from './y'`）一併視為轉發：本解析器判定的是「對外曝露成源自定義檔」，
- * 目標符號本身也可能就是 type-only（如 type alias／interface），略過 type-only 轉發
- * 會漏掉這類 barrel，導致 consumer 端的 `import type` 引用未被同步改到。
- *
- * `export * as ns from '<spec>'` 把來源模組整個包成單一具名匯出 `ns`（namespace 物件），
- * 目標符號透過 `ns.member` 間接曝露，而非直接以自己的名稱曝露成 barrel 的頂層匯出——與
- * 一般具名轉發（`export { X } from`）不同，consumer 端不能 `import { X } from './barrel'`，
- * 只能 `import { ns } from './barrel'` 再 `ns.X`。故記錄精確的具名（`ns` 本身，而非目標
- * 符號名）並標記 `isNamespaceExport`，供 isNamespaceLocalNameExposed 另外查詢（見 R2 finding
- * 1：漏掉此轉發會讓 barrel 內 `export * as ns from './def'` 對外曝露 def.ts 的符號完全無法
- * 被 rename 引擎判定為「來源於定義檔」，consumer 端 `ns.X()` 因此漏改）。
- */
-function parseReexportForwards(filePath: string, content: string): ReexportForward[] {
-  const forwards: ReexportForward[] = [];
-  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
-
-  for (const statement of sourceFile.statements) {
-    if (!ts.isExportDeclaration(statement)) {
-      continue;
-    }
-    const moduleSpecifier = statement.moduleSpecifier;
-    if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) {
-      continue; // 非 re-export（純 local export，無 from 子句）
-    }
-    if (!statement.exportClause) {
-      forwards.push({ moduleSpecifier: moduleSpecifier.text }); // `export * from`
-      continue;
-    }
-    if (ts.isNamespaceExport(statement.exportClause)) {
-      // `export * as ns from '<spec>'`：具名為 ns 本身，非目標符號名
-      forwards.push({
-        moduleSpecifier: moduleSpecifier.text,
-        exportedName: statement.exportClause.name.text,
-        isNamespaceExport: true
-      });
-      continue;
-    }
-    if (ts.isNamedExports(statement.exportClause)) {
-      for (const element of statement.exportClause.elements) {
-        forwards.push({
-          moduleSpecifier: moduleSpecifier.text,
-          importedName: element.propertyName?.text ?? element.name.text,
-          exportedName: element.name.text
-        });
-      }
-    }
-  }
-
-  return forwards;
 }
 
 /**

@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { logger } from '@infrastructure/logging/index.js';
-import { isFileNotFoundError } from '@shared/errors/index.js';
+import { isFileNotFoundError, getErrorMessage } from '@shared/errors/index.js';
 import {
   createStructuredPathAliasMap,
   getPathAliasEntries,
@@ -371,7 +371,7 @@ export async function loadTsconfigPathConfig(
     if (error instanceof CircularTsconfigExtendsError || error instanceof InvalidTsconfigError) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     throw new InvalidTsconfigError(`Failed to load tsconfig.json at ${found.tsconfigPath}: ${message}`);
   }
 }

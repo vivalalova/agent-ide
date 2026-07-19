@@ -40,8 +40,6 @@ import {
   locationMatchesSelectedBinding
 } from './cross-file-import-binding.js';
 
-export { findReExportAliasReferences } from './reexport-alias-references.js';
-
 export async function filterReferencesToSelectedSymbol(
   references: readonly SymbolReference[],
   selectedSymbol: Symbol,

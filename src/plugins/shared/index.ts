@@ -26,9 +26,16 @@ export {
   isRelativePath,
   UNICODE_IDENTIFIER_PATTERN,
   isValidUnicodeIdentifier,
-  matchesAnyPattern,
-  computeContentHash
+  matchesAnyPattern
 } from './parser-helpers.js';
+
+export { computeContentHash } from '@shared/content-hash.js';
+
+// 引用 className 過濾策略（TS/JS reference-finder 共用）
+export {
+  shouldExcludeByClassName,
+  type ClassNameFilterRefInfo
+} from './reference-class-filter.js';
 
 // 驗證邏輯
 export { validateParserInput, validateRenameInput } from './validators.js';

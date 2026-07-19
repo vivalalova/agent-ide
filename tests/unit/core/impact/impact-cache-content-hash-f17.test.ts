@@ -14,8 +14,8 @@ import { createMockFileStats } from '../_helpers/mock-factories.js';
 describe('F17：ImpactAnalyzer 同 mtime+size 換內容應失效 cache', () => {
   it('Given 同 mtime 同 size 但內容不同, when 第二次 analyzeFile, then 必須重新分析非回舊 cache', async () => {
     // 兩份內容等長，確保 size 相同；import 目標不同
-    const contentA = "import { a } from './mod-aaa';\nexport const x = a;\n";
-    const contentB = "import { b } from './mod-bbb';\nexport const x = b;\n";
+    const contentA = 'import { a } from \'./mod-aaa\';\nexport const x = a;\n';
+    const contentB = 'import { b } from \'./mod-bbb\';\nexport const x = b;\n';
     expect(contentA.length).toBe(contentB.length);
 
     const fileSystem = new MemFileSystem();

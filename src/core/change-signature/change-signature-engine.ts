@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import * as ts from 'typescript';
+import { tsPositionToPosition, tsNodeToRange } from '@plugins/typescript/types.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Changeset, TextEdit } from '@infrastructure/changeset/index.js';
@@ -36,6 +37,7 @@ import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 import type { Range } from '@shared/types/core.js';
 import { isPositionInRange } from '@shared/types/core.js';
+import { offsetToPosition } from '@shared/position-utils.js';
 
 /**
  * 中介檔（barrel）的單層 re-export 轉發資訊
@@ -189,7 +191,10 @@ export class ChangeSignatureEngine {
     if (requiresCallSiteRewrite) {
       // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
       let effectiveProjectRoot = options.projectRoot;
-      if (path.isAbsolute(options.filePath) && !options.filePath.startsWith(effectiveProjectRoot)) {
+      // 邊界比對須含路徑分隔符，避免 /repo/src-gen 誤判為 /repo/src 的子路徑
+      const isFilePathWithinRoot = options.filePath === effectiveProjectRoot
+        || options.filePath.startsWith(effectiveProjectRoot + path.sep);
+      if (path.isAbsolute(options.filePath) && !isFilePathWithinRoot) {
         effectiveProjectRoot = path.dirname(options.filePath);
         // 嘗試向上找到 package.json 所在目錄
         let searchDir = effectiveProjectRoot;
@@ -678,19 +683,13 @@ export class ChangeSignatureEngine {
       if (!newName) {
         return;
       }
-      const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-      const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-
       // 物件 shorthand 屬性（如 `return { userId }`）：識別字同時是屬性鍵與值側引用。
       // 直接替換會連屬性鍵一起改掉，因此展開為 `key: newName`，保留對外屬性鍵、只更新值側引用。
       const isShorthand = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node;
       const newText = isShorthand ? `${node.text}: ${newName}` : newName;
 
       edits.push({
-        range: {
-          start: { line: start.line + 1, column: start.character + 1 },
-          end: { line: end.line + 1, column: end.character + 1 }
-        },
+        range: tsNodeToRange(node, sourceFile),
         newText,
         description: `Rename parameter reference ${node.text} -> ${newName}`
       });
@@ -1011,7 +1010,7 @@ export class ChangeSignatureEngine {
     }
 
     return siblings.map(node =>
-      sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+      tsPositionToPosition(sourceFile, node.getStart(sourceFile)).line
     );
   }
 
@@ -1027,8 +1026,8 @@ export class ChangeSignatureEngine {
       }
 
       if (this.isNamedFunctionLikeDeclaration(node, signature.name)) {
-        const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-        if (start.line + 1 === signature.location.range.start.line) {
+        const start = tsPositionToPosition(sourceFile, node.getStart(sourceFile));
+        if (start.line === signature.location.range.start.line) {
           found = node;
           return;
         }
@@ -1182,8 +1181,8 @@ export class ChangeSignatureEngine {
       location: {
         filePath,
         range: {
-          start: this.offsetToPosition(content, signatureStartOffset),
-          end: this.offsetToPosition(content, replacementEndOffset)
+          start: offsetToPosition(content, signatureStartOffset),
+          end: offsetToPosition(content, replacementEndOffset)
         }
       }
     };
@@ -1293,14 +1292,6 @@ export class ChangeSignatureEngine {
     return offset + column - 1;
   }
 
-  private offsetToPosition(content: string, offset: number): { line: number; column: number } {
-    const beforeOffset = content.slice(0, offset);
-    const line = beforeOffset.split('\n').length;
-    const lastNewline = beforeOffset.lastIndexOf('\n');
-    const column = lastNewline < 0 ? offset + 1 : offset - lastNewline;
-
-    return { line, column };
-  }
 
   private findMatchingParenInContent(content: string, openIndex: number): number {
     let depth = 1;
@@ -1639,8 +1630,8 @@ export class ChangeSignatureEngine {
       const shadowed = this.collectScopeShadowedNames(node);
       if (shadowed.has(name)) {
         ranges.push({
-          start: this.offsetToPosition(content, node.getStart(sourceFile)),
-          end: this.offsetToPosition(content, node.getEnd())
+          start: offsetToPosition(content, node.getStart(sourceFile)),
+          end: offsetToPosition(content, node.getEnd())
         });
         return;
       }
@@ -1905,41 +1896,11 @@ export class ChangeSignatureEngine {
 
   /**
    * 取得專案檔案
+   * 遞迴目錄走訪邏輯共用 FileUtils.collectProjectFiles（含排除目錄清單），
+   * 不再自行複製一份 collectFiles/skipDirs。
    */
   private async getProjectFiles(projectRoot: string): Promise<string[]> {
-    const files: string[] = [];
-    await this.collectFiles(projectRoot, files);
-    return files;
-  }
-
-  /**
-   * 遞迴收集檔案
-   */
-  private async collectFiles(dirPath: string, files: string[]): Promise<void> {
-    const entries = await this.fileSystem.readDirectory(dirPath);
-
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-
-      // 跳過 node_modules、build 輸出目錄和隱藏目錄
-      const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
-      if (skipDirs.includes(entry.name) || entry.name.startsWith('.')) {
-        continue;
-      }
-
-      if (entry.isDirectory) {
-        await this.collectFiles(fullPath, files);
-      } else if (entry.isFile && this.isSupportedFile(entry.name)) {
-        files.push(fullPath);
-      }
-    }
-  }
-
-  /**
-   * 檢查是否為支援的檔案類型
-   */
-  private isSupportedFile(filename: string): boolean {
-    return FileUtils.isSupportedLanguage(filename);
+    return this.fileUtils.collectProjectFiles(projectRoot, FileUtils.isSupportedLanguage);
   }
 
   /**

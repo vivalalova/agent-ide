@@ -54,7 +54,7 @@ export class FileScanner {
         }
       } catch (error) {
         // graceful-degradation: 權限不足的目錄跳過，繼續掃描
-        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${error instanceof Error ? error.message : String(error)}`);
+        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${getErrorMessage(error)}`);
       }
     };
 
@@ -86,7 +86,7 @@ export class FileScanner {
         }
       } catch (error) {
         // graceful-degradation: 權限不足的目錄跳過，繼續掃描
-        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${error instanceof Error ? error.message : String(error)}`);
+        diagnostics.warn('move/file-scanner', 'ANALYSIS_DEGRADED', `Skipping inaccessible directory: ${getErrorMessage(error)}`);
       }
     };
 

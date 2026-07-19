@@ -24,6 +24,7 @@ import { FileSystem } from '@infrastructure/storage/index.js';
 import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 // SSOT：TypeScript/JavaScript 保留字（含 async/await/yield/null/true/false/this/super/new/typeof…，
 // 以及 TS 關鍵字 type/from/as）；禁在 core 再維護短 Set（F29）
 import { isTypeScriptReservedWord } from '@plugins/typescript/types.js';
@@ -87,11 +88,11 @@ export class RenameEngine {
             }
           });
         } catch (error) {
-          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${error instanceof Error ? error.message : String(error)}`, filePath);
+          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${getErrorMessage(error)}`, filePath);
         }
       }
     } catch (error) {
-      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${getErrorMessage(error)}`);
     }
 
     return references;
@@ -210,7 +211,7 @@ export class RenameEngine {
         summary
       };
     } catch (error) {
-      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${getErrorMessage(error)}`);
       throw error;
     }
   }

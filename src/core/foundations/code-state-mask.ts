@@ -66,6 +66,12 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
         start--;
       }
       const word = text.slice(start + 1, j + 1);
+      // 成員存取（`.delete` / optional chaining `?.delete`）：識別符前一個
+      // 非空白字元是 `.` 時，該識別符是屬性名稱而非關鍵字，不應觸發 regex 語境
+      // （如 `cache.delete / total` 的 `delete` 是方法名，`/` 是除法非 regex 起點）。
+      if (text[start] === '.') {
+        return false;
+      }
       const regexPrecedingKeywords = new Set([
         'return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void',
         'throw', 'yield', 'instanceof', 'do', 'else', 'await',

@@ -161,6 +161,47 @@ function realFunction(a: number): number {
     });
   });
 
+  describe('projectRoot 邊界誤判（sibling 目錄前綴）', () => {
+    it('projectRoot=.../src 與檔案在 sibling 的 .../src-gen 時，呼叫點（含目標檔自身內）應仍被更新', async () => {
+      // Given: 目標檔位於與 projectRoot 同層、但目錄名以 projectRoot 為前綴的 sibling 目錄
+      // （src-gen 字面上以 "src" 開頭），reorder 需要重寫呼叫點，觸發 effectiveProjectRoot 推斷邏輯。
+      const content = `
+function add(x: number, y: number): number {
+  return x + y;
+}
+
+const result = add(1, 2);
+`.trim();
+      await fixture.writeFile('src-gen/calc.ts', content);
+
+      const absoluteTargetFile = `${fixture.rootPath}/src-gen/calc.ts`;
+      const projectRootArg = `${fixture.rootPath}/src`;
+
+      // When: 實際套用變更（非 dry-run），以便讀回檔案驗證最終副作用
+      const result = await executeCLI(
+        [
+          'change-signature',
+          absoluteTargetFile,
+          'add',
+          '-p', projectRootArg,
+          '--reorder', 'y,x',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // Then: 定義與呼叫點都必須同步更新，不得回報 success 卻漏改呼叫點
+      const updatedContent = await fixture.readFile('src-gen/calc.ts');
+      expect(updatedContent).toContain('function add(y: number, x: number): number');
+      expect(updatedContent).toContain('add(2, 1)');
+      expect(updatedContent).not.toContain('add(1, 2)');
+    });
+  });
+
   describe('dist/build 目錄排除', () => {
     it('應該排除 dist/ 目錄中的同名函式', async () => {
       // Given: 在 src/ 和 dist/ 都有同名函式

@@ -101,6 +101,28 @@ describe('DependencyGraph', () => {
       expect(graph.getTransitiveDependencies('/src/a.ts')).toEqual([]);
       expect(graph.getTransitiveDependents('/src/c.ts')).toEqual([]);
     });
+
+    it('[audit-fix regression] 移除節點後傳遞快取的反向索引不得殘留 stale 項目', () => {
+      graph.addDependency('/src/a.ts', '/src/b.ts');
+      graph.addDependency('/src/b.ts', '/src/c.ts');
+
+      // 觸發正向與反向傳遞查詢快取寫入，讓反向索引累積 entry。
+      graph.getTransitiveDependencies('/src/a.ts');
+      graph.getTransitiveDependents('/src/c.ts');
+
+      graph.removeNode('/src/b.ts');
+
+      // removeNode 使快取整體失效時，兩個反向索引（transitiveDepReverseIndex /
+      // transitiveDeptsReverseIndex）必須跟著同步清空；否則 stale 項目會在
+      // 長生命週期 graph 中無界累積，且日後同名 key 重寫時
+      // invalidateTransitiveCaches 查表會依殘留項目過度失效不相干的快取。
+      const internals = graph as unknown as {
+        transitiveDepReverseIndex: Map<string, Set<string>>;
+        transitiveDeptsReverseIndex: Map<string, Set<string>>;
+      };
+      expect(internals.transitiveDepReverseIndex.size).toBe(0);
+      expect(internals.transitiveDeptsReverseIndex.size).toBe(0);
+    });
   });
 
   describe('addDependency', () => {

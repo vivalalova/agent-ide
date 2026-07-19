@@ -9,8 +9,13 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
 import type { MemberDefinition, MoveMemberOptions, FileChange, TargetFileChange } from './types.js';
 import { MoveTargetType } from './types.js';
+import {
+  parseExportSymbolPairs,
+  hasDanglingExportReference,
+  rewriteDanglingExportStatements
+} from './utils/dangling-export.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { isFileNotFoundError } from '@shared/errors/index.js';
+import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
 import { stripSourceFileExtension } from '@shared/types/index.js';
 import {
   FileUtils,
@@ -100,10 +105,25 @@ export class FileChangePreparer {
       lines.slice(endLine + 1)
     );
 
+    // 成員宣告本體移除後，檔內若還留著獨立語句形式的 export（`export default NAME;`
+    // 或 `export { NAME };`，非成員宣告行本身帶 inline export modifier），該語句
+    // 會變成指向已不存在符號的孤兒 export（DANGLING-SOURCE-EXPORT）。改寫成指向
+    // 目標檔的 re-export，語意與既有 keepReexport 橋接手法一致。同檔案內移動不
+    // 適用：成員只是搬到同一檔案的另一位置，獨立 export 陳述式仍指向合法存在
+    // 的宣告，不是孤兒引用，也不該產生指向自己的無意義 relative path。
+    const isCrossFileMove = options.sourceFile !== options.target.filePath;
+    const mergedCode = isCrossFileMove
+      ? rewriteDanglingExportStatements(
+          newLines.join('\n'),
+          member,
+          this.calculateRelativePath(options.sourceFile, options.target.filePath)
+        )
+      : newLines.join('\n');
+
     return {
       filePath: options.sourceFile,
       originalCode: content,
-      newCode: newLines.join('\n')
+      newCode: mergedCode
     };
   }
 
@@ -132,8 +152,23 @@ export class FileChangePreparer {
       memberCode = member.documentation + '\n' + memberCode;
     }
 
-    // 確保有 export（如果原本有）
-    if (!memberCode.includes('export') && member.modifiers.includes('export')) {
+    // 需先讀來源檔內容才能判斷是否有獨立語句 export（見下方 hasDanglingExport），
+    // 也供稍後 generateDependencyImports 共用，避免重複讀取磁碟同一份檔案
+    const sourceContent = await this.readFile(options.sourceFile);
+
+    // 跨檔案搬移時，來源檔若以獨立語句（`export default NAME;` / `export { NAME };`）
+    // 匯出此成員（inline 宣告本身無 export modifier），該語句稍後會被
+    // prepareSourceFileChange 改寫成指向本檔的 re-export；本檔必須真的匯出這個
+    // binding，否則 re-export 會指向一個不存在的匯出，只是把孤兒引用從來源檔
+    // 搬到本檔（DANGLING-SOURCE-EXPORT 修復）。同檔案內移動不適用：成員只是搬到
+    // 同一檔案的另一位置，原本的獨立 export 陳述式依然合法，見
+    // rewriteDanglingExportStatements 的同檔判斷。
+    const isCrossFileMove = options.sourceFile !== target.filePath;
+    const hasDanglingExport = isCrossFileMove && !!sourceContent &&
+      hasDanglingExportReference(sourceContent, member.name);
+
+    // 確保有 export：inline export modifier，或來源檔以獨立語句匯出此成員
+    if (!memberCode.includes('export') && (member.modifiers.includes('export') || hasDanglingExport)) {
       memberCode = 'export ' + memberCode;
     }
 
@@ -147,7 +182,6 @@ export class FileChangePreparer {
     const isNewFile = content === null;
 
     // 分析成員依賴並生成需要的 import（需先知道目標檔既有 import 才能判重，避免重複插入）
-    const sourceContent = await this.readFile(options.sourceFile);
     const dependencyImports = sourceContent
       ? await this.generateDependencyImports(
           member,
@@ -170,14 +204,18 @@ export class FileChangePreparer {
       };
     }
 
-    // 現有檔案
-    const lines = content.split('\n');
+    // 現有檔案；classInsertContent 預設沿用原始 content，僅當目標類別收尾
+    // `}` 與其他程式碼同一行（含單行 class）時才會被 findClassInsertPosition
+    // 替換成「該行已拆行」版本，讓下游以行為單位的插入邏輯仍能正確運作
+    let classInsertContent = content;
     let insertLine = target.insertPosition ?? -1;
 
     if (target.type === MoveTargetType.ExistingClass && target.className) {
       // 插入到類別內（位置已在 content 座標系上計算；找不到類別時 throw，
       // 不得 silent 落到檔尾 class 外——見 M3）
-      insertLine = await this.findClassInsertPosition(content, target.className);
+      const classInsertResult = await this.findClassInsertPosition(content, target.className);
+      classInsertContent = classInsertResult.content;
+      insertLine = classInsertResult.insertLine;
     } else if (sameFileOverride && insertLine >= 0) {
       // 同檔：CLI/呼叫端的 insertPosition 是磁碟原文座標（1-based 行號；
       // 0 = 檔案開頭），但 content 已是 post-removal。必須 remap 到
@@ -185,6 +223,11 @@ export class FileChangePreparer {
       const removal = this.getMemberRemovalLineRange(member);
       insertLine = this.remapSameFileInsertLine(insertLine, removal.start, removal.end);
     }
+
+    // classInsertContent 只在 ExistingClass 分支可能被替換成「已拆行」版本，
+    // 其餘分支維持原始 content；後續行為基礎的插入/import 定位一律以此為準，
+    // 確保 insertLine 與實際用來 slice 的 lines 出自同一份座標系
+    const lines = classInsertContent.split('\n');
 
     if (insertLine < 0) {
       // 預設插入到檔案結尾
@@ -194,7 +237,7 @@ export class FileChangePreparer {
     // 現有檔案：將 import 插入到檔案開頭（在現有 import 之後）
     let finalCode: string;
     if (dependencyImports) {
-      const importInsertLine = this.findImportInsertPosition(content);
+      const importInsertLine = this.findImportInsertPosition(classInsertContent);
       // 成員插入點不得落在 import 區內：若指定位置早於 import 區結尾，
       // clamp 到 import 區之後，避免 [memberInsertLine, importInsertLine) 這段
       // import 行同時被 slice(importInsertLine, memberInsertLine) 略過、又被
@@ -421,24 +464,6 @@ export class FileChangePreparer {
   }
 
   /**
-   * 解析 `export { A, B as C }` 的符號列表，保留 local 名稱與實際 export 名稱的映射
-   * （處理 as 別名）："A, B as C" → [["A", "A"], ["B", "C"]]
-   * 無別名時 local 與 export 名稱相同；有別名時該符號實際對外可見的名稱是 as 之後的別名，
-   * 非 as 之前的 local 名稱（見 localExports 型別說明）。
-   */
-  private parseExportSymbolPairs(symbolListStr: string): Array<[localName: string, exportedName: string]> {
-    return symbolListStr
-      .split(',')
-      .map(s => s.trim())
-      .filter(s => s.length > 0)
-      .map((trimmed): [string, string] => {
-        const asIndex = trimmed.indexOf(' as ');
-        if (asIndex === -1) { return [trimmed, trimmed]; }
-        return [trimmed.slice(0, asIndex).trim(), trimmed.slice(asIndex + 4).trim()];
-      });
-  }
-
-  /**
    * 用 Parser AST 解析 import 宣告（SSOT：與 deadcode/move 模組共用同一份
    * ParserPlugin.getImportDeclarations 介面），取得每個 import 的 local binding 名稱、
    * imported 名稱、default/namespace/named 種類、per-specifier 與語句層級的 type 修飾、
@@ -563,7 +588,7 @@ export class FileChangePreparer {
     while ((match = exportPattern.exec(maskedContent)) !== null) {
       if (match[7] !== undefined) {
         // export { A, B as C }：local 名稱 B 實際對外可見的是別名 C，須分開記錄
-        for (const [localName, exportedName] of this.parseExportSymbolPairs(match[7])) {
+        for (const [localName, exportedName] of parseExportSymbolPairs(match[7])) {
           localExports.set(localName, exportedName);
         }
       } else {
@@ -586,10 +611,13 @@ export class FileChangePreparer {
    * className 以 createIdentifierBoundaryRegex 逸出並加 Unicode 識別符邊界
    * （`\b` 對純 Unicode 名稱失效；含 `$` 等特殊字元亦一併安全內嵌）。
    *
-   * @returns 類別 body 收尾 `}` 所在行的 0-based 插入索引
+   * @returns `content`（收尾 `}` 與其他程式碼同一行時已拆行）與該行的 0-based 插入索引
    * @throws 找不到目標類別，或類別 body 大括號無法配對時
    */
-  private async findClassInsertPosition(content: string, className: string): Promise<number> {
+  private async findClassInsertPosition(
+    content: string,
+    className: string
+  ): Promise<{ content: string; insertLine: number }> {
     // 嚴格匹配類別定義：可選的 export/abstract，後接 class 關鍵字和類別名稱。
     // 名稱邊界用 createIdentifierBoundaryRegex（SSOT）：JS `\b` 對純 Unicode
     // 類別名（如 `服務`）失效，會回 -1 並被誤插到 class 外（M3）。
@@ -608,7 +636,38 @@ export class FileChangePreparer {
       throw new Error(`目標類別 body 無法解析（大括號不配對）: ${className}`);
     }
 
-    return content.slice(0, braceEndIndex).split('\n').length - 1;
+    const linesBeforeBrace = content.slice(0, braceEndIndex).split('\n');
+    const targetLineIndex = linesBeforeBrace.length - 1;
+    const columnInLine = linesBeforeBrace[targetLineIndex].length;
+    const lines = content.split('\n');
+    const targetLine = lines[targetLineIndex];
+    const beforeBraceOnLine = targetLine.slice(0, columnInLine);
+
+    if (beforeBraceOnLine.trim().length === 0) {
+      // 既有正常情況：收尾 `}` 獨佔一行（前面只有縮排空白），下游以
+      // 「行」為單位插入即可正確落在大括號前，維持原本行為不變
+      return { content, insertLine: targetLineIndex };
+    }
+
+    // 收尾 `}` 與其他程式碼同一行（單行 class 是最常見的情況，如
+    // `export class Svc { existing() {} }`）：下游插入邏輯以整行為單位
+    // slice/插入，無法插入到行中間，否則會算出 insertLine=0 之類的位置，
+    // 把成員插到 class 宣告之前、跑到 class 外。這裡先把該行從大括號處
+    // 拆成兩行——大括號前內容留在原行，大括號（含其後殘餘內容）獨立成
+    // 新的一行，插入點指向這條新行，讓下游 slice(0, insertLine) 完整
+    // 保留大括號前的類別內容、slice(insertLine) 完整保留大括號起的收尾內容
+    const fromBraceLine = targetLine.slice(columnInLine);
+    const splitLines = [
+      ...lines.slice(0, targetLineIndex),
+      beforeBraceOnLine,
+      fromBraceLine,
+      ...lines.slice(targetLineIndex + 1)
+    ];
+
+    return {
+      content: splitLines.join('\n'),
+      insertLine: targetLineIndex + 1
+    };
   }
 
   /**
@@ -690,7 +749,7 @@ export class FileChangePreparer {
       if (isFileNotFoundError(error)) {
         return null;
       }
-      diagnostics.warn('move-member/file-change-preparer', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('move-member/file-change-preparer', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       throw error;
     }
   }

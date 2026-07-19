@@ -45,7 +45,7 @@ function findIdentifierAtLine(sourceFile: ts.SourceFile, name: string, line1Base
 describe('F21：lexical 應認 default / namespace import 為 import binding', () => {
   it('default import 的 binding 不是「區域遮蔽」；同名參數才是遮蔽', () => {
     const code = [
-      "import Foo from './mod';",
+      'import Foo from \'./mod\';',
       'export const ok = Foo;',
       'export function shadowed(Foo: number) { return Foo; }',
       ''
@@ -80,7 +80,7 @@ describe('F21：lexical 應認 default / namespace import 為 import binding', (
 
   it('namespace import 的 binding 不是「區域遮蔽」；同名參數才是遮蔽', () => {
     const code = [
-      "import * as ns from './mod';",
+      'import * as ns from \'./mod\';',
       'export const ok = ns.member;',
       'export function shadowed(ns: { member: number }) { return ns.member; }',
       ''

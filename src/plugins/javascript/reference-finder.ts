@@ -16,7 +16,10 @@ import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
-import { computeContentHash } from '@plugins/shared/index.js';
+import {
+  computeContentHash,
+  shouldExcludeByClassName as sharedShouldExcludeByClassName
+} from '@plugins/shared/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -270,18 +273,9 @@ export class ReferenceFinder {
 
   /**
    * 判斷某引用是否因不屬於目標類別而應被排除。
-   *
-   * 依引用的「形狀」分流，而非依賴常常推不出的 receiver 型別（與 TS 側對齊）：
-   * - 目標類別內部（containerName === 目標類別）：保留（含方法定義本身、this.method）。
-   * - 屬性存取形（obj.method / obj.method()）：
-   *   - receiver 型別推不出（undefined）→ 保留（寧可誤報不可漏報；find-references 有
-   *     --at 後置過濾、deadcode 少刪安全）。
-   *   - receiver 型別即目標類別 → 保留。
-   *   - receiver 型別等於所在類別（子類 this.method() 呼叫繼承自父類的方法）→ 保留。
-   *   - receiver 型別確定為其他類別 → 排除。
-   * - 裸識別符形（standalone，非屬性存取）：在目標類別外部即詞法綁定到別的符號 → 排除。
-   *   例外：targetClassName === symbolName（巢狀函式以自身名稱作為 scope）時，
-   *   僅在最近綁定為同名 FunctionDeclaration 時保留（對齊 TS hasEnclosingTargetFunction）。
+   * 過濾規則為 TS/JS 共用策略，唯一定義見 `@plugins/shared/reference-class-filter.js`
+   * 的 `shouldExcludeByClassName`；此處只負責提供 JS 側的
+   * hasEnclosingTargetFunction 判定（Babel scope binding）。
    */
   private shouldExcludeByClassName(
     refInfo: ReferenceAnalysis,
@@ -289,35 +283,12 @@ export class ReferenceFinder {
     symbolName: string,
     path: NodePath
   ): boolean {
-    // 巢狀函式以自身名稱作為 targetClassName 時，先做最近綁定判定；否則
-    // containerName === targetClassName 的一般保留規則會在 scope 過濾前提前放行
-    // 內層 const process 與其呼叫點。
-    if (targetClassName === symbolName && !refInfo.isPropertyAccess) {
-      return !this.hasEnclosingTargetFunction(path, symbolName);
-    }
-
-    // 目標類別內部的引用一律保留（方法定義本身、類別內 this-less 引用等）
-    if (refInfo.containerName === targetClassName) {
-      return false;
-    }
-
-    if (refInfo.isPropertyAccess) {
-      // 屬性存取形：靠 receiver 型別判定歸屬
-      if (refInfo.receiverType === undefined) {
-        return false;
-      }
-      if (refInfo.receiverType === targetClassName) {
-        return false;
-      }
-      // this.method()：receiverType 等於所在類別（子類呼叫繼承自父類的方法）
-      if (refInfo.receiverType === refInfo.containerName) {
-        return false;
-      }
-      return true;
-    }
-
-    // 裸識別符形且在目標類別外部：綁定到別的符號，排除
-    return true;
+    return sharedShouldExcludeByClassName(
+      refInfo,
+      targetClassName,
+      symbolName,
+      () => this.hasEnclosingTargetFunction(path, symbolName)
+    );
   }
 
   /**

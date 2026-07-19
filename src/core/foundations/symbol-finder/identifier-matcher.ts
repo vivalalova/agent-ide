@@ -12,6 +12,8 @@
  * 同款註解），此處本地定義同語意字元類。
  */
 
+import { escapeRegex } from '@shared/regex-utils.js';
+
 /** 識別符後續字元類（UAX #31 ID_Continue + `$`），與 plugins/shared 的 UNICODE_IDENTIFIER_PATTERN 對齊 */
 const IDENTIFIER_CONTINUE_CLASS = '[\\p{ID_Continue}$]';
 
@@ -32,14 +34,11 @@ export function isIdentifierContinueChar(char: string | undefined): boolean {
 
 /**
  * 逸出正則表達式特殊字元
- * export 供任何需要把任意字面文字（如類別名稱、識別符）安全內嵌進
- * `new RegExp(...)` 的呼叫端重用，避免各自另寫一份同款跳脫邏輯
- * （見 file-change-preparer.ts 的 findClassInsertPosition：類別名稱含
- * 正則特殊字元如 `$Target` 時，未跳脫的 `new RegExp` 會比對失敗）。
+ * 重新匯出 @shared/regex-utils 的單一權威實作，供本模組與其他 foundations
+ * 消費端沿用既有 import 路徑（如 file-change-preparer.ts 的 findClassInsertPosition：
+ * 類別名稱含正則特殊字元如 `$Target` 時，未跳脫的 `new RegExp` 會比對失敗）。
  */
-export function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+export { escapeRegex };
 
 /**
  * 建立比對「完整識別符出現位置」的正則表達式（Unicode 邊界感知）。

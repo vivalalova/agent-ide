@@ -14,6 +14,7 @@ import {
 } from '@infrastructure/worker-pool/index.js';
 import { getSourceLanguage } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/index.js';
 import type {
@@ -247,7 +248,7 @@ export class IndexBatchParser {
       } catch (error) {
         // 讀檔失敗（EACCES 等）：若先前已有索引，清除 stale，不得 silently 保留舊符號
         await clearStaleIfCurrent();
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = getErrorMessage(error);
         diagnostics.warn('index-engine', 'FILE_READ_ERROR', `Skipping unreadable file: ${errorMessage}`, filePath);
         // 與單執行緒路徑對齊：讀檔失敗進 errors[]，讓 ANALYSIS_DEGRADED 能觸發
         prepareErrors.push({ filePath, message: errorMessage });

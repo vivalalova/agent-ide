@@ -21,13 +21,21 @@ const TRANSITIVE_CACHE_MAX_SIZE = 500;
 export class DependencyGraph {
   private adjacencyList: Map<string, Set<string>> = new Map();
   private reverseAdjacencyList: Map<string, Set<string>> = new Map();
-  private nodes: Set<string> = new Set();
 
   /** 傳遞依賴快取 (getTransitiveDependencies 結果) */
   private transitiveDepCache: Map<string, string[]> = new Map();
 
   /** 傳遞依賴者快取 (getTransitiveDependents 結果) */
   private transitiveDeptsCache: Map<string, string[]> = new Map();
+
+  /**
+   * transitiveDepCache 反向索引：node -> 所有「快取結果陣列包含 node」的 cache key 集合。
+   * 邊變更時只需查表就能找出受影響的 cache key，不必對整個 cache 逐 key 做 includes() 全表掃描。
+   */
+  private transitiveDepReverseIndex: Map<string, Set<string>> = new Map();
+
+  /** transitiveDeptsCache 反向索引，語意同上 */
+  private transitiveDeptsReverseIndex: Map<string, Set<string>> = new Map();
 
   /**
    * 建立空的依賴圖
@@ -45,8 +53,7 @@ export class DependencyGraph {
       throw new Error('檔案路徑不能為空');
     }
 
-    if (!this.nodes.has(filePath)) {
-      this.nodes.add(filePath);
+    if (!this.adjacencyList.has(filePath)) {
       this.adjacencyList.set(filePath, new Set());
       this.reverseAdjacencyList.set(filePath, new Set());
     }
@@ -57,7 +64,7 @@ export class DependencyGraph {
    * @param filePath 檔案路徑
    */
   removeNode(filePath: string): void {
-    if (!this.nodes.has(filePath)) {
+    if (!this.adjacencyList.has(filePath)) {
       return;
     }
 
@@ -74,7 +81,6 @@ export class DependencyGraph {
     }
 
     // 移除節點
-    this.nodes.delete(filePath);
     this.adjacencyList.delete(filePath);
     this.reverseAdjacencyList.delete(filePath);
 
@@ -82,6 +88,8 @@ export class DependencyGraph {
     // 單一邊的 from/to 精準判定，必須整體失效，避免查詢回傳已刪除節點。
     this.transitiveDepCache.clear();
     this.transitiveDeptsCache.clear();
+    this.transitiveDepReverseIndex.clear();
+    this.transitiveDeptsReverseIndex.clear();
   }
 
   /**
@@ -125,7 +133,7 @@ export class DependencyGraph {
    * @returns 是否存在該節點
    */
   hasNode(filePath: string): boolean {
-    return this.nodes.has(filePath);
+    return this.adjacencyList.has(filePath);
   }
 
   /**
@@ -143,7 +151,7 @@ export class DependencyGraph {
    * @returns 節點總數
    */
   getNodeCount(): number {
-    return this.nodes.size;
+    return this.adjacencyList.size;
   }
 
   /**
@@ -163,7 +171,7 @@ export class DependencyGraph {
    * @returns 是否為空圖
    */
   isEmpty(): boolean {
-    return this.nodes.size === 0;
+    return this.adjacencyList.size === 0;
   }
 
   /**
@@ -227,7 +235,7 @@ export class DependencyGraph {
 
     if (maxDepth === undefined) {
       // 快取存獨立拷貝，與回傳陣列脫鉤；hit 路徑亦 return 拷貝，呼叫端 mutate 不污染 cache
-      this.setCacheWithEviction(this.transitiveDepCache, filePath, [...result]);
+      this.setCacheWithEviction(this.transitiveDepCache, this.transitiveDepReverseIndex, filePath, [...result]);
     }
 
     return result;
@@ -264,7 +272,7 @@ export class DependencyGraph {
     dfs(filePath);
 
     // 快取存獨立拷貝，與回傳陣列脫鉤；hit 路徑亦 return 拷貝，呼叫端 mutate 不污染 cache
-    this.setCacheWithEviction(this.transitiveDeptsCache, filePath, [...result]);
+    this.setCacheWithEviction(this.transitiveDeptsCache, this.transitiveDeptsReverseIndex, filePath, [...result]);
 
     return result;
   }
@@ -301,7 +309,7 @@ export class DependencyGraph {
     const result: string[] = [];
 
     // 初始化入度
-    for (const node of this.nodes) {
+    for (const node of this.adjacencyList.keys()) {
       inDegree.set(node, this.getDependents(node).length);
       if (inDegree.get(node) === 0) {
         queue.push(node);
@@ -329,12 +337,12 @@ export class DependencyGraph {
     }
 
     // 檢查是否有循環
-    const hasCycle = result.length !== this.nodes.size;
+    const hasCycle = result.length !== this.adjacencyList.size;
     let cycleFiles: string[] | undefined;
 
     if (hasCycle) {
       const resultSet = new Set(result);
-      cycleFiles = Array.from(this.nodes).filter(node => !resultSet.has(node));
+      cycleFiles = Array.from(this.adjacencyList.keys()).filter(node => !resultSet.has(node));
     }
 
     return {
@@ -349,7 +357,7 @@ export class DependencyGraph {
    * @returns 節點列表
    */
   getAllNodes(): string[] {
-    return Array.from(this.nodes);
+    return Array.from(this.adjacencyList.keys());
   }
 
   /**
@@ -378,7 +386,7 @@ export class DependencyGraph {
    * @returns 是否連通
    */
   isConnected(): boolean {
-    if (this.nodes.size === 0) {
+    if (this.adjacencyList.size === 0) {
       return true;
     }
 
@@ -386,7 +394,7 @@ export class DependencyGraph {
     const queue: string[] = [];
 
     // 從第一個節點開始 BFS
-    const startNode = this.nodes.values().next().value;
+    const startNode = this.adjacencyList.keys().next().value;
     if (!startNode) {return true;} // 空圖被認為是連通的
 
     queue.push(startNode);
@@ -412,7 +420,7 @@ export class DependencyGraph {
       }
     }
 
-    return visited.size === this.nodes.size;
+    return visited.size === this.adjacencyList.size;
   }
 
   /**
@@ -422,7 +430,7 @@ export class DependencyGraph {
   getOrphanedNodes(): string[] {
     const orphaned: string[] = [];
 
-    for (const node of this.nodes) {
+    for (const node of this.adjacencyList.keys()) {
       const inDegree = this.getDependents(node).length;
       const outDegree = this.getDependencies(node).length;
 
@@ -488,11 +496,12 @@ export class DependencyGraph {
    * 清空圖
    */
   clear(): void {
-    this.nodes.clear();
     this.adjacencyList.clear();
     this.reverseAdjacencyList.clear();
     this.transitiveDepCache.clear();
     this.transitiveDeptsCache.clear();
+    this.transitiveDepReverseIndex.clear();
+    this.transitiveDeptsReverseIndex.clear();
   }
 
   /**
@@ -501,11 +510,6 @@ export class DependencyGraph {
    */
   clone(): DependencyGraph {
     const cloned = new DependencyGraph();
-
-    // 複製所有節點
-    for (const node of this.nodes) {
-      cloned.nodes.add(node);
-    }
 
     // 複製鄰接列表（深拷貝 Set）
     for (const [from, deps] of this.adjacencyList) {
@@ -533,25 +537,67 @@ export class DependencyGraph {
    * @param to 邊的終點
    */
   private invalidateTransitiveCaches(from: string, to: string): void {
-    // 清除 from 節點的傳遞依賴快取
-    this.transitiveDepCache.delete(from);
+    // 清除 from 節點自身的傳遞依賴快取
+    this.deleteCacheEntry(this.transitiveDepCache, this.transitiveDepReverseIndex, from);
 
-    // 清除所有傳遞依賴者的快取（它們的傳遞依賴會經過 from）
-    for (const key of this.transitiveDepCache.keys()) {
-      const cached = this.transitiveDepCache.get(key);
-      if (cached?.includes(from)) {
-        this.transitiveDepCache.delete(key);
+    // 清除所有「傳遞依賴含 from」的快取（經反向索引直接查表定位受影響 key，
+    // 取代對整個 cache 逐 key includes() 的全表掃描）
+    const affectedDepKeys = this.transitiveDepReverseIndex.get(from);
+    if (affectedDepKeys) {
+      for (const key of [...affectedDepKeys]) {
+        this.deleteCacheEntry(this.transitiveDepCache, this.transitiveDepReverseIndex, key);
       }
     }
 
-    // 清除 to 節點的傳遞依賴者快取
-    this.transitiveDeptsCache.delete(to);
+    // 清除 to 節點自身的傳遞依賴者快取
+    this.deleteCacheEntry(this.transitiveDeptsCache, this.transitiveDeptsReverseIndex, to);
 
-    // 清除所有傳遞依賴的快取（它們的傳遞依賴者會經過 to）
-    for (const key of this.transitiveDeptsCache.keys()) {
-      const cached = this.transitiveDeptsCache.get(key);
-      if (cached?.includes(to)) {
-        this.transitiveDeptsCache.delete(key);
+    // 清除所有「傳遞依賴者含 to」的快取，同樣經反向索引直接定位
+    const affectedDeptsKeys = this.transitiveDeptsReverseIndex.get(to);
+    if (affectedDeptsKeys) {
+      for (const key of [...affectedDeptsKeys]) {
+        this.deleteCacheEntry(this.transitiveDeptsCache, this.transitiveDeptsReverseIndex, key);
+      }
+    }
+  }
+
+  /**
+   * 從快取與其反向索引一併刪除一筆 entry，維持兩者永遠同步
+   *
+   * @param cache 目標快取 Map
+   * @param reverseIndex 對應的反向索引（value node -> 包含該 value 的 cache key 集合）
+   * @param key 要刪除的快取鍵
+   */
+  private deleteCacheEntry(
+    cache: Map<string, string[]>,
+    reverseIndex: Map<string, Set<string>>,
+    key: string
+  ): void {
+    const value = cache.get(key);
+    if (value === undefined) {
+      return;
+    }
+    cache.delete(key);
+    this.unregisterReverseIndex(reverseIndex, key, value);
+  }
+
+  /**
+   * 將 cache key 從其快取值涵蓋的每個 node 的反向索引集合中移除；
+   * 集合清空後一併刪除該 node 的 entry，避免反向索引無限累積空集合。
+   */
+  private unregisterReverseIndex(
+    reverseIndex: Map<string, Set<string>>,
+    cacheKey: string,
+    values: readonly string[]
+  ): void {
+    for (const value of values) {
+      const keys = reverseIndex.get(value);
+      if (!keys) {
+        continue;
+      }
+      keys.delete(cacheKey);
+      if (keys.size === 0) {
+        reverseIndex.delete(value);
       }
     }
   }
@@ -559,23 +605,39 @@ export class DependencyGraph {
   /**
    * 帶有 LRU 淘汰策略的快取設定
    * 當快取超過最大容量時，刪除最舊的項目（Map 迭代順序保證 FIFO）
+   * 同時維護反向索引：新值註冊、被淘汰/覆寫的舊值取消註冊，確保 invalidateTransitiveCaches
+   * 查表結果與 cache 實際內容永遠一致
    *
    * @param cache 目標快取 Map
+   * @param reverseIndex 對應的反向索引
    * @param key 快取鍵
    * @param value 快取值
    */
   private setCacheWithEviction(
     cache: Map<string, string[]>,
+    reverseIndex: Map<string, Set<string>>,
     key: string,
     value: string[]
   ): void {
-    // 超過上限時，刪除最舊的項目
-    if (cache.size >= TRANSITIVE_CACHE_MAX_SIZE) {
+    // 覆寫既有 key：先取消舊值的反向索引註冊，避免殘留 stale 關聯
+    const existing = cache.get(key);
+    if (existing !== undefined) {
+      this.unregisterReverseIndex(reverseIndex, key, existing);
+    } else if (cache.size >= TRANSITIVE_CACHE_MAX_SIZE) {
+      // 超過上限且非覆寫既有 key 時，刪除最舊的項目（連同其反向索引）
       const oldestKey = cache.keys().next().value;
       if (oldestKey !== undefined) {
-        cache.delete(oldestKey);
+        this.deleteCacheEntry(cache, reverseIndex, oldestKey);
       }
     }
     cache.set(key, value);
+    for (const v of value) {
+      let keys = reverseIndex.get(v);
+      if (!keys) {
+        keys = new Set();
+        reverseIndex.set(v, keys);
+      }
+      keys.add(key);
+    }
   }
 }

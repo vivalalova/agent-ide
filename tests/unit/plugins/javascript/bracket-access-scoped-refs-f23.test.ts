@@ -9,13 +9,13 @@ import { describe, it, expect } from 'vitest';
 import { ReferenceFinder } from '@plugins/javascript/reference-finder.js';
 
 describe('F23：JS findScopedReferences 應計入 bracket 成員存取', () => {
-  it("counts obj['method']() as a usage of method", () => {
+  it('counts obj[\'method\']() as a usage of method', () => {
     const code = [
       'export class Api {',
       '  method() { return 1; }',
       '}',
       'const obj = new Api();',
-      "obj['method']();",
+      'obj[\'method\']();',
       ''
     ].join('\n');
 

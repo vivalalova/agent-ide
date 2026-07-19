@@ -7,6 +7,7 @@ import type { Range } from '@shared/types/core.js';
 import { SymbolType } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { FileUtils } from '@core/foundations/index.js';
+import { escapeRegex } from '@shared/regex-utils.js';
 
 /**
  * 範圍擴展器
@@ -301,7 +302,7 @@ export class RangeExpander {
   }
 
   private isDeclarationLine(line: string, symbolType: SymbolType, symbolName: string): boolean {
-    const escapedName = this.escapeRegExp(symbolName);
+    const escapedName = escapeRegex(symbolName);
     const trimmed = line.trim();
 
     switch (symbolType) {
@@ -322,10 +323,6 @@ export class RangeExpander {
       default:
         return new RegExp(`\\b${escapedName}\\b`).test(trimmed);
     }
-  }
-
-  private escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private findBlockCommentStartLine(lines: string[], endLine: number): number {

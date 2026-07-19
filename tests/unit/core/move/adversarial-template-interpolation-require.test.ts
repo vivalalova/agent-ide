@@ -17,7 +17,7 @@ function createResolver(): ImportResolver {
 
 describe('template interpolation require path (F9)', () => {
   it('parseImportStatements 應辨識 template ${require(\'./old\')} 內的路徑', () => {
-    const code = "const msg = `x${require('./old')}`;\n";
+    const code = 'const msg = `x${require(\'./old\')}`;\n';
     const stmts = createResolver().parseImportStatements(code, '/project/src/a.ts');
     const requirePaths = stmts
       .filter(s => s.type === ImportStatementType.REQUIRE)
@@ -29,7 +29,7 @@ describe('template interpolation require path (F9)', () => {
   });
 
   it('computeMaskedLines 不應把 ${require(...)} interpolation 整段抹掉成不可掃描', () => {
-    const code = "const msg = `x${require('./old')}`;\n";
+    const code = 'const msg = `x${require(\'./old\')}`;\n';
     const masked = computeMaskedLines(code).join('\n');
 
     // 正確：interpolation 內的 require('./old') 應以可被 import 偵測的形式留下

@@ -13,6 +13,8 @@ import {
   stripSourceFileExtension
 } from '@shared/types/index.js';
 import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
+import { escapeRegex } from '@shared/regex-utils.js';
+import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 
 /**
  * 支援的檔案副檔名
@@ -40,8 +42,9 @@ export function withEsmRuntimeExtension(relativePath: string, targetFilePath: st
 
 /**
  * 排除的目錄模式
+ * 沿用 @shared/exclude-dirs 的權威目錄名稱清單，不另存局部子集
  */
-export const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.build'] as const;
+export const EXCLUDE_PATTERNS = COMMON_EXCLUDE_DIR_NAMES;
 
 /**
  * 路徑工具類別
@@ -309,6 +312,6 @@ export class PathUtils {
    * @returns 跳脫後的字串
    */
   escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escapeRegex(str);
   }
 }

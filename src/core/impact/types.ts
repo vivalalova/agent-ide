@@ -4,6 +4,7 @@
 
 import { Dependency, SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 
 /**
  * 檔案依賴資訊
@@ -101,7 +102,7 @@ export function createDefaultAnalysisOptions(
     includeNodeModules: false,
     followSymlinks: true,
     maxDepth: 100,
-    excludePatterns: ['node_modules', '.git', 'dist', 'build'],
+    excludePatterns: COMMON_EXCLUDE_DIR_NAMES,
     includePatterns: sourceFileExtensions.map(extension => `**/*${extension}`)
   };
 }

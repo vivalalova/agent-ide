@@ -25,11 +25,11 @@ describe('audit-fix Q5：export * as ns barrel find-references / module provides
 
   it('經 export * as api barrel 的 api.member 引用應被 find-references 找到', async () => {
     await fixture.writeFile('src/q5-def.ts', 'export function q5Member() { return 1; }\n');
-    await fixture.writeFile('src/q5-barrel.ts', "export * as api from './q5-def';\n");
+    await fixture.writeFile('src/q5-barrel.ts', 'export * as api from \'./q5-def\';\n');
     await fixture.writeFile(
       'src/q5-app.ts',
       [
-        "import { api } from './q5-barrel';",
+        'import { api } from \'./q5-barrel\';',
         '',
         'export const q5Use = api.q5Member();'
       ].join('\n')
@@ -77,7 +77,7 @@ describe('audit-fix Q5：export * as ns barrel find-references / module provides
     await fixture.writeFile(
       'src/q5b-app.ts',
       [
-        "import * as api from './q5b-def';",
+        'import * as api from \'./q5b-def\';',
         '',
         'export const q5bUse = api.q5bMember();'
       ].join('\n')

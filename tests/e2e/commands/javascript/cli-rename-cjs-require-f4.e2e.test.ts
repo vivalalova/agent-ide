@@ -25,7 +25,7 @@ describe('CLI rename 缺陷 F4：CJS require 跨檔 destructuring', () => {
       'src/mod-f4.js',
       [
         'function foo() {',
-        "  return 'hello';",
+        '  return \'hello\';',
         '}',
         'module.exports = { foo };',
         ''
@@ -34,7 +34,7 @@ describe('CLI rename 缺陷 F4：CJS require 跨檔 destructuring', () => {
     await fixture.writeFile(
       'src/consumer-f4.js',
       [
-        "const { foo } = require('./mod-f4');",
+        'const { foo } = require(\'./mod-f4\');',
         'function use() {',
         '  return foo();',
         '}',
@@ -64,7 +64,7 @@ describe('CLI rename 缺陷 F4：CJS require 跨檔 destructuring', () => {
 
     // Bug：consumer 的 require 解構與呼叫點目前不會被更新
     const consumerContent = await fixture.readFile('src/consumer-f4.js');
-    expect(consumerContent).toContain("const { bar } = require('./mod-f4')");
+    expect(consumerContent).toContain('const { bar } = require(\'./mod-f4\')');
     expect(consumerContent).toContain('return bar()');
     expect(consumerContent).not.toContain('foo');
   });

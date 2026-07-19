@@ -31,10 +31,8 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
-import {
-  filterReferencesToSelectedSymbol,
-  findReExportAliasReferences
-} from '@interfaces/cli/commands/symbol-reference-filter.js';
+import { filterReferencesToSelectedSymbol } from '@interfaces/cli/commands/symbol-reference-filter.js';
+import { findReExportAliasReferences } from '@interfaces/cli/commands/reexport-alias-references.js';
 import { findDefaultImportAliasReferences } from '@interfaces/cli/commands/default-import-alias-references.js';
 
 /** find-references 命令選項 */

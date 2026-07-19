@@ -13,6 +13,7 @@ import {
   createChangesetBuilder
 } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { offsetToPosition } from '@shared/position-utils.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathCalculator } from './path-calculator.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from './path-utils.js';
@@ -304,8 +305,8 @@ export class MoveEngine {
     const endOffset = startOffset + update.oldImport.length;
     return {
       range: {
-        start: this.offsetToPosition(content, startOffset),
-        end: this.offsetToPosition(content, endOffset)
+        start: offsetToPosition(content, startOffset),
+        end: offsetToPosition(content, endOffset)
       },
       newText: update.newImport,
       description: `Update import: ${update.oldImport} → ${update.newImport}`
@@ -330,15 +331,6 @@ export class MoveEngine {
     }
 
     return offset + column - 1;
-  }
-
-  private offsetToPosition(content: string, offset: number): { line: number; column: number } {
-    const beforeOffset = content.slice(0, offset);
-    const line = beforeOffset.split('\n').length;
-    const lastNewline = beforeOffset.lastIndexOf('\n');
-    const column = lastNewline < 0 ? offset + 1 : offset - lastNewline;
-
-    return { line, column };
   }
 
   /**

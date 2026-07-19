@@ -8,6 +8,7 @@
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +23,7 @@ export function readPackageVersion(targetPath: string = packageJsonPath): string
   try {
     packageJson = JSON.parse(readFileSync(targetPath, 'utf-8')) as { version?: unknown };
   } catch (error) {
-    throw new Error(`Cannot read package version from ${targetPath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Cannot read package version from ${targetPath}: ${getErrorMessage(error)}`);
   }
 
   if (typeof packageJson.version !== 'string' || packageJson.version.trim().length === 0) {

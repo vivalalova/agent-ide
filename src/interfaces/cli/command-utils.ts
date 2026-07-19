@@ -7,6 +7,7 @@ import * as path from 'path';
 import { ChangeApplicator, convertChangesetToPreviewInput, type Changeset } from '@infrastructure/changeset/index.js';
 import { PreviewCommand, type PreviewInput } from '@infrastructure/formatters/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import {
   createUnifiedOutputHandler,
   parseOutputFormat,
@@ -52,7 +53,7 @@ export function tryParseOutputFormat(
     const format = parseOutputFormat(formatStr, allowDiff);
     return { success: true, format };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = getErrorMessage(error);
     handler.outputError(message, OutputFormat.Summary);
     process.exitCode = 1;
     return { success: false };
@@ -196,8 +197,10 @@ export interface MutationExecutionOptions {
   commandName?: string;
   /** 執行成功後的回調（可選，用於輸出額外資訊） */
   onSuccess?: (previewInput: PreviewInput) => void;
-  /** JSON 輸出時額外保留的命令專屬欄位 */
+  /** JSON 輸出時額外保留的命令專屬欄位（dry-run 與實際套用共用；如需套用成功後才有的欄位見 successLegacyFields） */
   legacyFields?: Record<string, unknown>;
+  /** 實際套用成功後 JSON 輸出的專屬欄位；未提供則沿用 legacyFields。用於 dry-run 預覽與套用成功的 JSON 契約有差異的命令（如 move 的 renames→moved/message 轉換） */
+  successLegacyFields?: Record<string, unknown>;
   /** 錯誤輸出時額外保留的命令專屬欄位 */
   errorFields?: Record<string, unknown>;
 }
@@ -275,7 +278,7 @@ export async function executeMutationCommand(
   changeset: Changeset,
   options: MutationExecutionOptions
 ): Promise<MutationExecutionResult> {
-  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess, legacyFields, errorFields } = options;
+  const { fileSystem, format, dryRun, outputHandler, commandName, onSuccess, legacyFields, successLegacyFields, errorFields } = options;
 
   // 1. 檢查 changeset 是否成功
   if (!changeset.success) {
@@ -323,7 +326,7 @@ export async function executeMutationCommand(
 
   // 6. 輸出結果
   if (result.success) {
-    outputMutationWithLegacyFields(outputHandler, previewInput, format, legacyFields);
+    outputMutationWithLegacyFields(outputHandler, previewInput, format, successLegacyFields ?? legacyFields);
     onSuccess?.(previewInput);
     return { success: true, previewInput };
   } else {

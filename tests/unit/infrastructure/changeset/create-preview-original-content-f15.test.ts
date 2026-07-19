@@ -15,7 +15,7 @@ describe('F15：Create 預覽在目標已存在時應帶原文', () => {
   it('目標檔已存在時 originalContent 應為現有內容，非空字串', async () => {
     const existing = [
       'export function old() {',
-      "  return 'will-be-overwritten';",
+      '  return \'will-be-overwritten\';',
       '}',
       ''
     ].join('\n');
@@ -36,7 +36,7 @@ describe('F15：Create 預覽在目標已存在時應帶原文', () => {
       joinPath: vi.fn().mockImplementation((...paths: string[]) => paths.join('/'))
     };
 
-    const newContent = "export function next() { return 1; }\n";
+    const newContent = 'export function next() { return 1; }\n';
     const changeset: Changeset = {
       textChanges: [],
       fileOperations: [

@@ -165,8 +165,8 @@ describe('move-member Batch1 defects (F8/F10/F11/F30)', () => {
       ].join('\n'),
       '/src/target.ts': 'export const placeholder = true;\n',
       '/src/consumer.ts': [
-        "const quoteLike = /'/;",
-        "import { moved } from './source';",
+        'const quoteLike = /\'/;',
+        'import { moved } from \'./source\';',
         'export const use = moved;',
         ''
       ].join('\n')
@@ -202,7 +202,7 @@ describe('move-member Batch1 defects (F8/F10/F11/F30)', () => {
       ].join('\n'),
       '/src/target.ts': 'export const placeholder = true;\n',
       '/src/consumer.js': [
-        "const { moved } = require('./source');",
+        'const { moved } = require(\'./source\');',
         'module.exports = { use: moved };',
         ''
       ].join('\n')

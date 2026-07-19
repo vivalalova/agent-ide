@@ -5,7 +5,6 @@
 
 import type { Range, Position } from '@shared/types/core.js';
 import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
-export { computeContentHash } from '@shared/content-hash.js';
 import type {
   Documentation,
   DocumentationTag,
