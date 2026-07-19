@@ -20,7 +20,8 @@ import {
   matchProjectFileFromCandidates,
   resolveProjectImportCandidates,
   type ReexportForward,
-  parseReexportForwards
+  parseReexportForwards,
+  forwardReexportsName
 } from '@core/foundations/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { tsPositionToPosition, tsNodeToRange } from '@plugins/typescript/types.js';
@@ -241,6 +242,23 @@ export class CallHierarchyAnalyzer {
   }
 
   /**
+   * 讀取＋解析檔案 AST，並依 filePath 快取（call-hierarchy 單次分析範圍內，同檔案
+   * 只需解析一次）；incoming 錨定判斷需要對 callSite 所在檔與 target 定義所在檔
+   * 分別查詢，共用同一份快取與解析邏輯，不各自重複 fetch。
+   */
+  private async getCachedParsedFile(
+    filePath: string,
+    fileAstCache: FileAstCache
+  ): Promise<{ sourceFile?: ts.SourceFile; babelAst?: BabelParseResult } | null> {
+    let parsed = fileAstCache.get(filePath);
+    if (parsed === undefined) {
+      parsed = await this.parseFileForBindingResolution(filePath);
+      fileAstCache.set(filePath, parsed);
+    }
+    return parsed;
+  }
+
+  /**
    * 判斷 incoming callSite 是否真的指向 targetDefinition 這個具體定義。
    * - 同檔：以詞法綁定（lexical-scope-binding）／方法呼叫語意錨定，禁止 short-circuit 全收
    * - 跨檔：與 outgoing 遞迴展開共用 import binding 解析，positive 驗證識別符實際 import 自哪個檔案
@@ -254,12 +272,7 @@ export class CallHierarchyAnalyzer {
     fileAstCache: FileAstCache
   ): Promise<boolean> {
     const callSiteFile = callSite.location.filePath;
-
-    let parsed = fileAstCache.get(callSiteFile);
-    if (parsed === undefined) {
-      parsed = await this.parseFileForBindingResolution(callSiteFile);
-      fileAstCache.set(callSiteFile, parsed);
-    }
+    const parsed = await this.getCachedParsedFile(callSiteFile, fileAstCache);
 
     // 同檔：必須對每個 callSite 做 binding/shadow／method 錨定
     if (callSiteFile === targetDefinitionFile) {
@@ -304,13 +317,34 @@ export class CallHierarchyAnalyzer {
           }
           // resolvedFile 是 barrel 檔（純 `export { targetName } from './real.js'`）時，
           // 單跳比對會誤排除合法 caller，需跟隨 re-export 鏈確認是否仍抵達目標定義檔。
-          const chainTargets = await this.resolveReexportChainTargets(resolvedFile, targetName, projectFiles);
+          // 鏈路查詢必須用 importedBinding.importedName（barrel 對外曝露的名字，如
+          // `export { real as api } from './real'` 的 api）而非 targetName（我們正在找的
+          // 定義本名 real）：barrel 轉發表是以曝露名索引，用 targetName 查會查無配對，
+          // 誤把合法 caller 判定為未錨定而排除。
+          const chainTargets = await this.resolveReexportChainTargets(
+            resolvedFile,
+            importedBinding.importedName,
+            projectFiles
+          );
           return chainTargets.some(target => target.file === targetDefinitionFile);
         }
       } catch (error) {
         // AST 節點形狀不符（如測試替身回傳的假 AST）時退回下方的本地宣告 fallback，
         // 與檔案同層其他 AST 解析錯誤處理一致，不讓單一異常 AST 中斷整體 incoming 分析。
         diagnostics.warn('call-hierarchy', 'AST_PARSE_FAILED', `Import binding resolution failed: ${getErrorMessage(error)}`);
+      }
+    }
+
+    // method call 語法上只可能呼叫到 class method 或 namespace-import 成員（後者已在
+    // 上方處理）；`receiver.foo()` 不可能呼叫到 top-level `function foo() {}`，故 target
+    // 定義本身不是 class method 時直接排除，避免巧合同名的 member call（如
+    // `import { foo } from './lib'` 之後某處 `window.foo()`）被下方的保守 fallback 誤收。
+    if (callSite.isMethodCall) {
+      const targetParsed = await this.getCachedParsedFile(targetDefinitionFile, fileAstCache);
+      const targetIsMethod = !!targetParsed
+        && this.isDefinitionAMethod(targetName, targetDefinitionRange, targetParsed);
+      if (!targetIsMethod) {
+        return false;
       }
     }
 
@@ -516,6 +550,49 @@ export class CallHierarchyAnalyzer {
   ): boolean {
     const nameNode = this.findTypeScriptIdentifierAtRange(sourceFile, targetName, definitionRange);
     return !!nameNode && ts.isMethodDeclaration(nameNode.parent) && nameNode.parent.name === nameNode;
+  }
+
+  /**
+   * 判斷 target 定義（跨檔，已知定義檔＋位置）是否為 class method。跨語言分派給
+   * TS／Babel 各自的 method 判定，供 incoming 的 method-call fallback 排除自由函式用
+   * （見 isCallSiteAnchoredToDefinition：method call 語法上不可能呼叫到自由函式）。
+   */
+  private isDefinitionAMethod(
+    targetName: string,
+    definitionRange: Range,
+    parsed: { sourceFile?: ts.SourceFile; babelAst?: BabelParseResult }
+  ): boolean {
+    if (parsed.sourceFile) {
+      return this.isTypeScriptDefinitionAMethod(parsed.sourceFile, targetName, definitionRange);
+    }
+    if (parsed.babelAst) {
+      return this.isBabelDefinitionAMethod(parsed.babelAst, targetName, definitionRange);
+    }
+    return false;
+  }
+
+  private isBabelDefinitionAMethod(
+    babelAst: BabelParseResult,
+    targetName: string,
+    definitionRange: Range
+  ): boolean {
+    let isMethod = false;
+    traverse(babelAst, {
+      ClassMethod: path => {
+        const key = path.node.key;
+        if (
+          babel.isIdentifier(key)
+          && key.name === targetName
+          && key.loc
+          && key.loc.start.line === definitionRange.start.line
+          && key.loc.start.column + 1 === definitionRange.start.column
+        ) {
+          isMethod = true;
+          path.stop();
+        }
+      }
+    });
+    return isMethod;
   }
 
   private isTypeScriptThisMethodCallInDefiningClass(
@@ -979,7 +1056,18 @@ export class CallHierarchyAnalyzer {
       }
 
       if (importedBinding.isDefaultImport) {
-        return this.findDefaultExportFunctionDefinition(importedFile);
+        // barrel 檔可能是純 `export { default } from './impl.js'`（本身無 default 宣告），
+        // 需跟隨同一條 re-export 鏈（name='default'）追到真正定義檔；直接 import 時
+        // importedFile 對 'default' 無轉發，鏈路回傳單一葉節點即 importedFile 本身，
+        // 行為與跟隨前一致。
+        const defaultChainTargets = await this.resolveReexportChainTargets(importedFile, 'default', projectFiles);
+        for (const target of defaultChainTargets) {
+          const definition = await this.findDefaultExportFunctionDefinition(target.file);
+          if (definition) {
+            return definition;
+          }
+        }
+        return null;
       }
 
       // barrel 檔（純 `export { name } from './real.js'`）本身無本地宣告，需跟隨
@@ -1004,7 +1092,27 @@ export class CallHierarchyAnalyzer {
     }
 
     const definition = await this.findFunctionDefinition(call.callee, [callerFile]);
-    return definition ? { ...definition, functionName: call.callee } : null;
+    if (!definition) {
+      return null;
+    }
+    // 同檔 fallback（無可判定的 import binding）必須驗證呼叫點的 callee 識別符確實綁定到
+    // 這個候選定義，而非被更近的參數/區域宣告遮蔽（如 `function outer(foo) { foo(); }`
+    // 內的 foo() 呼叫的是參數，不是同檔頂層同名函式）；重用 incoming 路徑同一套詞法
+    // 錨定判斷（isSameFileCallSiteAnchoredToDefinition），避免另開一份重複的 shadow 檢查。
+    const pseudoCallSite: CallSite = {
+      functionName: call.callee,
+      location: call.location,
+      arguments: [],
+      isMethodCall: call.isMethodCall,
+      receiver: call.receiver
+    };
+    const anchored = this.isSameFileCallSiteAnchoredToDefinition(
+      pseudoCallSite,
+      call.callee,
+      definition.location.range,
+      { sourceFile, babelAst }
+    );
+    return anchored ? { ...definition, functionName: call.callee } : null;
   }
 
   /**
@@ -1272,7 +1380,10 @@ export class CallHierarchyAnalyzer {
       }
 
       const namedBindings = importClause.namedBindings;
-      if (namedBindings && ts.isNamedImports(namedBindings)) {
+      // method call（`receiver.foo()`）的 callee 只是屬性名，與具名 import 的 local 名同名
+      // 純屬巧合（如 `window.foo()` 對到 `import { foo }`），不代表在呼叫該 import；
+      // member call 的解析交由下方 namespace-import 分支（比對 receiver 本身）。
+      if (!call.isMethodCall && namedBindings && ts.isNamedImports(namedBindings)) {
         const element = namedBindings.elements.find(
           candidate => !candidate.isTypeOnly && candidate.name.text === call.callee
         );
@@ -1368,7 +1479,10 @@ export class CallHierarchyAnalyzer {
           };
         }
 
-        if (babel.isImportSpecifier(specifier) && specifier.local.name === call.callee) {
+        // method call 的 callee 只是屬性名，與具名 import 的 local 名同名純屬巧合
+        // （見上方 TS findTypeScriptImportedBinding 同守衛），member call 交由下方
+        // namespace-import 分支處理。
+        if (!call.isMethodCall && babel.isImportSpecifier(specifier) && specifier.local.name === call.callee) {
           return {
             importedName: babel.isIdentifier(specifier.imported)
               ? specifier.imported.name
@@ -1466,10 +1580,7 @@ export class CallHierarchyAnalyzer {
     visited.add(visitKey);
 
     const forwards = await this.getReexportForwards(fileAbs);
-    const matchingForwards = forwards.filter(
-      forward => !forward.isNamespaceExport
-        && (forward.exportedName === undefined || forward.exportedName === name)
-    );
+    const matchingForwards = forwards.filter(forward => forwardReexportsName(forward, name));
 
     if (matchingForwards.length === 0) {
       return [{ file: fileAbs, name }];

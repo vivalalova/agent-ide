@@ -71,3 +71,27 @@ export function parseReexportForwards(filePath: string, content: string): Reexpo
 
   return forwards;
 }
+
+/**
+ * 判斷這筆轉發是否把來源模組的匯出轉發成 barrel 對外可見的 `name`。
+ *
+ * bare `export * from '<spec>'`（`exportedName` 省略、非 namespace export）依 ES 規格
+ * 轉發來源模組「除 default 以外」的全部具名匯出——`export *` 從不轉發 default export，
+ * 這是規格明定行為，故 `name === 'default'` 時 bare star 一律不命中；其餘 name 沿用
+ * 「exportedName 省略代表轉發全部具名匯出」語意。具名轉發（`exportedName` 有值）僅在
+ * 精確等於 name 時命中；namespace re-export（`export * as ns from`）另有 namespace
+ * 語意（見 ReexportForward doc），一律不命中此判斷。
+ *
+ * 供需要「跟隨 barrel re-export 鏈追到真正定義檔」的模組共用（call-hierarchy 的
+ * outgoing/incoming barrel 穿透使用此判斷），避免各自重新實作一份、重蹈 bare star
+ * 誤判轉發 default 的缺陷。
+ */
+export function forwardReexportsName(forward: ReexportForward, name: string): boolean {
+  if (forward.isNamespaceExport) {
+    return false;
+  }
+  if (forward.exportedName === undefined) {
+    return name !== 'default';
+  }
+  return forward.exportedName === name;
+}

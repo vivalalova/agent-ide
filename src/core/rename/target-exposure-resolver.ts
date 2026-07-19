@@ -21,7 +21,7 @@ import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { ImportResolver } from '@core/move/import-resolver.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
-import { type ReexportForward, parseReexportForwards } from '@core/foundations/index.js';
+import { type ReexportForward, parseReexportForwards, forwardReexportsName } from '@core/foundations/index.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 import { resolveBarePathAlias } from '@shared/path-alias-resolver.js';
 
@@ -115,8 +115,12 @@ export async function createTargetExposureResolver(
       if (forward.isNamespaceExport) {
         continue;
       }
-      // 具名轉發須為目標符號名；`export *` 轉發全部匯出（exportedName 省略）一律納入
-      if (forward.exportedName !== undefined && forward.exportedName !== config.symbolName) {
+      // 具名轉發須為目標符號名；`export *` 轉發全部匯出（exportedName 省略）一律納入，
+      // 但 `export *` 依 ES 規格從不轉發 default（見 forwardReexportsName）。
+      // symbolName 實務上不會是字面 'default'（索引器對具名/匿名 default export 皆以其
+      // 實際識別符或內部合成名記錄，'default' 從未作為 Symbol.name 出現），此處換用共用
+      // 判斷純為 SSOT 收斂，不改變既有行為。
+      if (!forwardReexportsName(forward, config.symbolName)) {
         continue;
       }
       const forwardTarget = resolveToProjectFile(fileAbs, forward.moduleSpecifier);
@@ -172,10 +176,13 @@ export async function createTargetExposureResolver(
       }
 
       // `export * from './barrel1'`（或 `export { ns as api } from ...`）把 namespace
-      // binding 一起轉發；沿來源名稱往內追蹤，不能只看目前這一層。
+      // binding 一起轉發；沿來源名稱往內追蹤，不能只看目前這一層。localName 可能是
+      // 'default'（consumer 寫 `import { default as X } from './barrel'`，見
+      // language-service collectVerifiedNamespaceLocalNames 的 exportedName 參數），
+      // 此時 bare `export * from` 依 ES 規格不轉發 default，須交由 forwardReexportsName
+      // 排除，否則會誤判某個混用 barrel 曝露一個實際上不存在的 default 綁定。
       if (
-        !forward.isNamespaceExport
-        && (forward.exportedName === undefined || forward.exportedName === localName)
+        forwardReexportsName(forward, localName)
         && isNamespaceLocalNameExposed(
           forwardTarget,
           forward.importedName ?? localName,

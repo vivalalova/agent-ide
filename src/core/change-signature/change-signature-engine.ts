@@ -219,10 +219,20 @@ export class ChangeSignatureEngine {
 
       if (isConstructorTarget || originalSignature.isMethod) {
         // constructor／method 目標維持既有「以目標名全域掃描 + 型別安全性拒絕」路徑：
-        // 僅取「以本地名 === 目標名」繫結的檔案（不含 alias／namespace），與舊行為對齊。
-        const relevantFiles = [...bindings.keys()].filter(
-          file => bindings.get(file)?.localNames.has(searchName)
-        );
+        // 僅取「以本地名 === 目標名」繫結的檔案；constructor 目標額外納入 namespace-receiver
+        // 繫結的檔案，讓下方限定式 new 呼叫點（`new ns.ClassName(...)`）拒絕檢查涵蓋得到——
+        // 否則該檔案從未被掃描，拒絕永遠不會觸發，呼叫點就這樣被靜默漏掉（見下方 alias 掃描
+        // 同一批修復的註解）。
+        const relevantFiles = [...bindings.keys()].filter(file => {
+          const binding = bindings.get(file);
+          if (!binding) {
+            return false;
+          }
+          if (binding.localNames.has(searchName)) {
+            return true;
+          }
+          return isConstructorTarget && binding.namespaceReceivers.size > 0;
+        });
         // constructor 目標才 opt-in 掃描 new-expression，避免變更其他消費端（如 call-hierarchy）行為。
         const allCallSites = await this.symbolFinder.findCallSites(
           searchName,
@@ -240,7 +250,32 @@ export class ChangeSignatureEngine {
               `無型別解析無法安全重寫：${this.formatCallSitePositions(qualifiedNewCallSites)}`
             );
           }
-          callSites = allCallSites.filter(cs => cs.isNewExpression === true && !cs.isMethodCall);
+          // alias import（`import { ClassName as Alias }`）的本地繫結名不是 searchName（原始類別
+          // 名），上面以 searchName 為準的掃描找不到 `new Alias(...)`；逐 binding 用實際本地名
+          // 補掃，否則會靜默漏改該呼叫點（定義改了、alias 呼叫點停在舊引數順序，success:true）。
+          // 與限定式（receiver-qualified）呼叫不同，plain identifier 呼叫點的重寫只依賴呼叫點
+          // 位置、不依賴本地名字面值，故可安全直接納入重寫，不需 fast-fail。
+          const aliasCallSites: CallSite[] = [];
+          for (const [file, binding] of bindings) {
+            for (const localName of binding.localNames) {
+              if (localName === searchName) {
+                continue; // 已由上面 searchName 掃描涵蓋
+              }
+              const sites = await this.symbolFinder.findCallSites(
+                localName,
+                [file],
+                { includeNewExpressions: true }
+              );
+              for (const site of sites) {
+                if (site.isNewExpression === true && !site.isMethodCall) {
+                  aliasCallSites.push(site);
+                }
+              }
+            }
+          }
+          callSites = allCallSites
+            .filter(cs => cs.isNewExpression === true && !cs.isMethodCall)
+            .concat(aliasCallSites);
         } else {
           // T1：目標「本身是 class 方法」時，同名的方法呼叫點（`calc.add(1, 2)`）確為對目標的引用，
           // 但重寫需 receiver 型別解析才能避免把無關類別的同名方法（各種 `.add()`）一起改壞；本工具
