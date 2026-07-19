@@ -14,12 +14,17 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { getTypeScriptSourceFile, hasBabelAST } from '@infrastructure/parser/index.js';
 import { createSymbolFinder, type CallSite, type SymbolFinder } from '@core/foundations/symbol-finder/index.js';
-import { createFileUtils, FileUtils, type ReexportForward, parseReexportForwards } from '@core/foundations/index.js';
+import {
+  createFileUtils,
+  FileUtils,
+  matchProjectFileFromCandidates,
+  resolveProjectImportCandidates,
+  type ReexportForward,
+  parseReexportForwards
+} from '@core/foundations/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { tsPositionToPosition, tsNodeToRange } from '@plugins/typescript/types.js';
 import { findNearestLexicalDeclarationName, identifierShadowedByLocalDeclaration } from '@plugins/typescript/lexical-scope-binding.js';
-import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
-import { getImportResolutionExtensions, hasRuntimeImportExtensionCandidates } from '@shared/types/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { logger } from '@infrastructure/logging/index.js';
@@ -1489,48 +1494,19 @@ export class CallHierarchyAnalyzer {
     fromFile: string,
     projectFiles: readonly string[]
   ): Promise<string | null> {
-    let basePath: string;
-    if (path.isAbsolute(moduleSpecifier)) {
-      basePath = path.resolve(moduleSpecifier);
-    } else if (moduleSpecifier.startsWith('.')) {
-      basePath = path.resolve(path.dirname(fromFile), moduleSpecifier);
-    } else {
-      const tsconfig = await loadTsconfigPathConfigOrWarn(path.dirname(fromFile), this.fileSystem);
-      const aliasPath = await resolveBarePathAliasAsync(
-        moduleSpecifier,
-        tsconfig.pathAliases,
-        async candidate => await this.fileSystem.exists(candidate)
-          && await this.fileSystem.isFile(candidate)
-      );
-      if (aliasPath) {
-        basePath = aliasPath;
-      } else if (tsconfig.baseUrl) {
-        basePath = path.resolve(tsconfig.baseUrl, moduleSpecifier);
-      } else {
-        return null;
-      }
-    }
-    const importExtension = path.extname(basePath);
-    const normalizedBasePath = hasRuntimeImportExtensionCandidates(importExtension)
-      ? basePath.slice(0, -importExtension.length)
-      : basePath;
-    const extensions = getImportResolutionExtensions(importExtension);
-    const candidates = new Set<string>([basePath, normalizedBasePath]);
+    // tsconfig 只在 bare specifier（非絕對、非相對）才需要，絕對/相對路徑的候選組裝
+    // 不依賴 alias/baseUrl，提前避開不必要的 tsconfig 載入 I/O。
+    const isBareSpecifier = !path.isAbsolute(moduleSpecifier) && !moduleSpecifier.startsWith('.');
+    const tsconfig = isBareSpecifier
+      ? await loadTsconfigPathConfigOrWarn(path.dirname(fromFile), this.fileSystem)
+      : undefined;
 
-    for (const extension of extensions) {
-      candidates.add(normalizedBasePath + extension);
-      candidates.add(path.join(normalizedBasePath, `index${extension}`));
-    }
+    const candidates = resolveProjectImportCandidates(moduleSpecifier, fromFile, {
+      pathAliases: tsconfig?.pathAliases,
+      baseUrl: tsconfig?.baseUrl
+    });
 
-    const projectFilesByPath = new Map(projectFiles.map(file => [path.resolve(file), file]));
-    for (const candidate of candidates) {
-      const projectFile = projectFilesByPath.get(path.resolve(candidate));
-      if (projectFile) {
-        return projectFile;
-      }
-    }
-
-    return null;
+    return matchProjectFileFromCandidates(candidates, projectFiles);
   }
 
   /**

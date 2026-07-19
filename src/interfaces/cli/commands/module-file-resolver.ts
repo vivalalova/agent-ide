@@ -12,12 +12,9 @@
 import * as path from 'path';
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
-import {
-  getImportResolutionExtensions,
-  SOURCE_FILE_EXTENSIONS,
-  stripSourceFileExtension
-} from '@shared/types/index.js';
+import { getImportResolutionExtensions, stripSourceFileExtension } from '@shared/types/index.js';
 import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
+import { resolveProjectImportCandidates } from '@core/foundations/index.js';
 import type { SymbolReferenceFilterContext } from './symbol-reference-filter-types.js';
 
 export async function readTextFile(filePath: string, fileSystem: IFileSystem): Promise<string> {
@@ -141,17 +138,10 @@ async function getModuleFileCandidates(
     return [resolvedPath];
   }
 
-  const extension = path.extname(resolvedPath);
-  const directCandidates = extension
-    ? getImportResolutionExtensions(extension).map(candidateExtension =>
-      `${resolvedPath.slice(0, -extension.length)}${candidateExtension}`
-    )
-    : SOURCE_FILE_EXTENSIONS.map(candidateExtension => `${resolvedPath}${candidateExtension}`);
-  const indexCandidates = SOURCE_FILE_EXTENSIONS.map(candidateExtension =>
-    path.join(resolvedPath, `index${candidateExtension}`)
-  );
-
-  return [...new Set([resolvedPath, ...directCandidates, ...indexCandidates].map(candidate => normalizePath(candidate)))];
+  // resolvedPath 已是絕對路徑（alias/baseUrl/src 前綴 fallback 皆已在 resolveImportPath
+  // 解完），交給共用候選組裝走「絕對路徑」分支做副檔名／index 展開，不再各自維護一份
+  // 展開邏輯。
+  return resolveProjectImportCandidates(resolvedPath, fromFile, {}).map(normalizePath);
 }
 
 export function pathMatchesTarget(importPath: string, targetFile: string): boolean {

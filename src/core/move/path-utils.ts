@@ -15,6 +15,7 @@ import {
 import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
 import { escapeRegex } from '@shared/regex-utils.js';
 import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
+import { resolveProjectImportCandidates } from '@core/foundations/index.js';
 
 /**
  * 支援的檔案副檔名
@@ -124,7 +125,7 @@ export class PathUtils {
       && !this.importResolver.isBuiltinModule(importPath)
       && (!importPath.includes('/') || importPath.startsWith('@'))
     ) {
-      return path.normalize(path.resolve(baseUrl, importPath));
+      return path.normalize(this.resolveBaseUrlCandidatePath(importPath, fromFile, baseUrl));
     }
 
     if (this.importResolver.isNodeModuleImport(importPath)) {
@@ -133,11 +134,20 @@ export class PathUtils {
 
     // 嘗試解析 baseUrl 相對路徑（如 src/utils）
     if (baseUrl) {
-      const absoluteResolved = path.resolve(baseUrl, importPath);
-      return path.normalize(absoluteResolved);
+      return path.normalize(this.resolveBaseUrlCandidatePath(importPath, fromFile, baseUrl));
     }
 
     return importPath;
+  }
+
+  /**
+   * 計算 bare specifier 相對 baseUrl 的候選基礎路徑（未做副檔名/index 展開、未做 fs
+   * 存在性探測）。沿用 core/foundations 共用候選組裝的 baseUrl 分支，不在本檔另存一份
+   * `path.resolve(baseUrl, importPath)`；move 只需要這個未展開的第一候選（其餘候選為
+   * 副檔名/index 展開，move 靠下方 pathsMatch 的副檔名無關比對達成同等效果，不需要）。
+   */
+  private resolveBaseUrlCandidatePath(importPath: string, fromFile: string, baseUrl: string): string {
+    return resolveProjectImportCandidates(importPath, fromFile, { baseUrl })[0];
   }
 
   /**
