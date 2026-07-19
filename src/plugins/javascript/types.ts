@@ -190,6 +190,21 @@ export function babelLocationToPosition(location: babel.SourceLocation): Range {
 }
 
 /**
+ * 取得 Babel 節點對應的 Range（無位置資訊時回傳預設空範圍）
+ */
+export function getNodeRange(node: babel.Node): Range {
+  if (node.loc) {
+    return babelLocationToPosition(node.loc);
+  }
+
+  // 如果沒有位置資訊，返回預設範圍
+  return {
+    start: { line: 0, column: 0, offset: 0 },
+    end: { line: 0, column: 0, offset: 0 }
+  };
+}
+
+/**
  * 位置轉換為 Babel 位置
  */
 export function positionToBabelLocation(position: Position): babel.SourceLocation {

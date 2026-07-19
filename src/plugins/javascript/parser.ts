@@ -3,20 +3,15 @@
  * 實作 ParserPlugin 介面
  */
 
-import { dirname, extname, resolve as pathResolve } from 'node:path';
+import { extname } from 'node:path';
 import { parse as babelParse } from '@babel/parser';
-import * as babel from '@babel/types';
-import babelTraverse, { type Binding, NodePath } from '@babel/traverse';
 
-// Handle both ESM and CJS module formats
-const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 import {
   ParserPlugin,
   CodeEdit,
   Definition,
   Usage,
   ValidationResult,
-  DefinitionKind,
   createValidationSuccess,
   createValidationFailure,
   createCodeEdit,
@@ -27,8 +22,7 @@ import {
   type Documentation,
   type PatternInfo,
   type ScopedFindReferencesOptions,
-  type ScopedReference,
-  ScopedReferenceKind
+  type ScopedReference
 } from '@infrastructure/parser/index.js';
 import type {
   AST,
@@ -36,39 +30,24 @@ import type {
   Reference,
   Dependency,
   Position,
-  Range,
-  Scope
+  Range
 } from '@shared/types/index.js';
 import {
   createAST,
   createASTMetadata,
   ReferenceType,
   SymbolType,
-  DependencyType,
   JAVASCRIPT_SOURCE_EXTENSIONS
 } from '@shared/types/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import {
-  createSymbol,
-  createScope,
-  createReference,
-  createDependency,
-  isFunctionLocalSymbol,
-  getContainingClassName
-} from '@shared/types/index.js';
-import {
   JavaScriptAST,
-  JavaScriptSymbol,
   JavaScriptParseOptions,
   DEFAULT_PARSE_OPTIONS,
   JavaScriptParseError,
   createJavaScriptASTNode,
   createParseError,
-  babelLocationToPosition,
   isValidIdentifier,
-  isRelativePath,
-  isPrivateFieldDeclaration,
-  getImportedSymbols,
   getPluginsForFile,
   mergeBabelPlugins
 } from './types.js';
@@ -77,13 +56,16 @@ import {
   matchesAnyPattern,
   validateParserInput,
   validateRenameInput,
-  computeContentHash,
-  isSameDeclaringFile
+  computeContentHash
 } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
 import { ReferenceFinder } from './reference-finder.js';
 import { DeclarationAnalyzer } from './declaration-analyzer.js';
+import { JavaScriptSymbolExtractor } from './symbol-extractor.js';
+import { JavaScriptDependencyAnalyzer } from './dependency-analyzer.js';
+import { ReferenceResolver } from './reference-resolver.js';
+import { JavaScriptNodeLocator, symbolTypeToDefinitionKind } from './node-locator.js';
 
 /**
  * AST 快取項目
@@ -93,20 +75,6 @@ interface ASTCacheItem {
   /** 已解析的 AST */
   ast: AST;
   /** 原始程式碼的雜湊值（用於驗證快取有效性） */
-  contentHash: string;
-}
-
-/**
- * 符號行索引快取
- * 用於快速查找特定位置的符號
- * 注意：LRU 淘汰由 MemoryCache 自動處理
- */
-interface SymbolIndexCache {
-  /** 符號列表 */
-  symbols: Symbol[];
-  /** 按行號索引的符號 Map */
-  lineIndex: Map<number, Symbol[]>;
-  /** 內容雜湊（用於驗證快取有效性） */
   contentHash: string;
 }
 
@@ -127,8 +95,14 @@ export class JavaScriptParser implements ParserPlugin {
   private readonly referenceFinder: ReferenceFinder;
   /** 宣告分析器 */
   private readonly declarationAnalyzer: DeclarationAnalyzer;
-  /** 符號索引快取（以檔案路徑為 key，LRU 由 MemoryCache 自動處理） */
-  private readonly symbolIndexCache: MemoryCache<string, SymbolIndexCache> = createLRUCache(100);
+  /** 符號提取器 */
+  private readonly symbolExtractor: JavaScriptSymbolExtractor;
+  /** 依賴分析器 */
+  private readonly dependencyAnalyzer: JavaScriptDependencyAnalyzer;
+  /** 符號引用解析器 */
+  private readonly referenceResolver: ReferenceResolver;
+  /** 節點位置查找器 */
+  private readonly nodeLocator: JavaScriptNodeLocator;
   /** AST 快取（以 filePath 為 key，LRU 由 MemoryCache 自動處理） */
   private readonly astCache: MemoryCache<string, ASTCacheItem> = createLRUCache(100);
 
@@ -144,6 +118,10 @@ export class JavaScriptParser implements ParserPlugin {
     this.patternAnalyzer = new PatternAnalyzer();
     this.referenceFinder = new ReferenceFinder();
     this.declarationAnalyzer = new DeclarationAnalyzer();
+    this.symbolExtractor = new JavaScriptSymbolExtractor();
+    this.dependencyAnalyzer = new JavaScriptDependencyAnalyzer();
+    this.referenceResolver = new ReferenceResolver(this.referenceFinder);
+    this.nodeLocator = new JavaScriptNodeLocator();
   }
 
   /**
@@ -201,240 +179,27 @@ export class JavaScriptParser implements ParserPlugin {
 
   /**
    * 提取符號
+   * 委託給 JavaScriptSymbolExtractor
    */
   async extractSymbols(ast: AST): Promise<Symbol[]> {
-    const typedAst = ast as JavaScriptAST;
-    const symbols: JavaScriptSymbol[] = [];
-
-    // 使用 Babel traverse 遍歷 AST
-    traverse(typedAst.babelAST, {
-      // 處理各種宣告節點
-      FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-        this.extractFunctionSymbol(path, symbols, typedAst.sourceFile);
-        this.extractParameterSymbols(path.node.params, path.node.id?.name, symbols, typedAst.sourceFile);
-      },
-
-      ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
-        this.extractClassSymbol(path, symbols, typedAst.sourceFile);
-      },
-
-      VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-        this.extractVariableSymbol(path, symbols, typedAst.sourceFile, this.getNearestFunctionName(path));
-      },
-
-      ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
-        this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
-      },
-
-      ImportSpecifier: (path: NodePath<babel.ImportSpecifier>) => {
-        this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
-      },
-
-      ImportNamespaceSpecifier: (path: NodePath<babel.ImportNamespaceSpecifier>) => {
-        this.extractImportSymbol(path.node, symbols, typedAst.sourceFile);
-      },
-
-      ClassMethod: (path: NodePath<babel.ClassMethod>) => {
-        this.extractMethodSymbol(path, symbols, typedAst.sourceFile);
-        this.extractParameterSymbols(
-          path.node.params,
-          babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
-          symbols,
-          typedAst.sourceFile
-        );
-      },
-
-      ClassProperty: (path: NodePath<babel.ClassProperty>) => {
-        this.extractPropertySymbol(path.node, symbols, typedAst.sourceFile);
-      },
-
-      // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 ClassPrivateProperty/
-      // ClassPrivateMethod（key 為 babel.PrivateName），與一般 ClassProperty/ClassMethod
-      // 是不同節點型別，未註冊獨立分支會讓 `#secret` 完全不被索引（對齊 TS 側
-      // ts.PrivateIdentifier 修復，見 plugins/typescript/symbol-extractor.ts）。
-      ClassPrivateProperty: (path: NodePath<babel.ClassPrivateProperty>) => {
-        this.extractPrivatePropertySymbol(path, symbols, typedAst.sourceFile);
-      },
-
-      ClassPrivateMethod: (path: NodePath<babel.ClassPrivateMethod>) => {
-        this.extractPrivateMethodSymbol(path, symbols, typedAst.sourceFile);
-        this.extractParameterSymbols(
-          path.node.params,
-          path.node.key.id.name,
-          symbols,
-          typedAst.sourceFile
-        );
-      },
-
-      ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
-        this.extractObjectMethodSymbol(path.node, symbols, typedAst.sourceFile);
-        this.extractParameterSymbols(
-          path.node.params,
-          babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
-          symbols,
-          typedAst.sourceFile
-        );
-      },
-
-      FunctionExpression: (path: NodePath<babel.FunctionExpression>) => {
-        this.extractParameterSymbols(
-          path.node.params,
-          this.getFunctionExpressionName(path),
-          symbols,
-          typedAst.sourceFile
-        );
-      },
-
-      ArrowFunctionExpression: (path: NodePath<babel.ArrowFunctionExpression>) => {
-        this.extractParameterSymbols(
-          path.node.params,
-          this.getFunctionExpressionName(path),
-          symbols,
-          typedAst.sourceFile
-        );
-      },
-
-      ObjectProperty: (path: NodePath<babel.ObjectProperty>) => {
-        // 解構模式（ObjectPattern）內的 property 是變數/參數綁定，不是物件字面量的
-        // key:value 屬性宣告；已由 extractVariableSymbol／extractParameterSymbols
-        // 的 collectBindingIdentifiers 處理，此處略過以免產生型別錯誤（Property）
-        // 且與 babelNode 綁定不一致的重複符號。
-        if (babel.isObjectPattern(path.parent)) {
-          return;
-        }
-        this.extractObjectPropertySymbol(path.node, symbols, typedAst.sourceFile);
-      }
-    });
-
-    return symbols as Symbol[];
+    return await this.symbolExtractor.extractSymbols(ast);
   }
 
   /**
    * 查找符號引用
+   * 委託給 ReferenceResolver
    */
   async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
-    const typedAst = ast as JavaScriptAST;
-    const typedSymbol = symbol as JavaScriptSymbol;
-
-    // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 ClassPrivateProperty/
-    // ClassPrivateMethod（key 為 PrivateName），下方以 Identifier 為主的
-    // isReferenceToSymbol 判定完全比對不到 PrivateName 節點。私有欄位天生
-    // class 作用域封閉，直接複用 ReferenceFinder.findScopedReferences 的
-    // PrivateName 感知掃描（find-references CLI 命令的同一套邏輯），對齊
-    // TS 側 findPrivateFieldReferences（見 plugins/typescript/parser.ts）。
-    if (isPrivateFieldDeclaration(typedSymbol.babelNode)) {
-      return this.findPrivateFieldReferences(typedAst, typedSymbol);
-    }
-
-    const references: Reference[] = [];
-
-    // 使用 Babel traverse 查找引用
-    traverse(typedAst.babelAST, {
-      Identifier: (path: NodePath<babel.Identifier>) => {
-        if (path.node.name === typedSymbol.name) {
-          // 檢查是否為真正的引用（帶目前檔案路徑，供 CJS require 來源比對）
-          if (this.isReferenceToSymbol(path, typedSymbol, typedAst.sourceFile)) {
-            const location = {
-              filePath: typedAst.sourceFile,
-              range: this.getNodeRange(path.node)
-            };
-
-            const referenceType = this.getReferenceType(path, typedSymbol);
-
-            // object literal shorthand（`{ foo }`）與 destructuring shorthand
-            // （`const { foo } = opts`）：此 token 同時是 key 與 value/binding，
-            // 天真替換成 newName 會把 key 一併改掉（缺陷：見
-            // tests/e2e/commands/javascript/cli-rename-shorthand-bugs.e2e.test.ts）。
-            // 標記後由 rename edit 產生端展開為 `key: newName`。
-            const shorthandKeyText = this.getShorthandKeyText(path);
-
-            references.push(createReference(symbol, location, referenceType, shorthandKeyText));
-          }
-        }
-      },
-
-      JSXIdentifier: (path: NodePath<babel.JSXIdentifier>) => {
-        // 處理 JSX 中的識別符
-        if (path.node.name === typedSymbol.name) {
-          // 🚨 過濾：跳過 JSX 屬性 key（例如 <div id="x" /> 的 `id`）。
-          // JSXAttribute.name 只是屬性名稱字面文字，並非對應同名變數/符號的
-          // 綁定使用，不應被當成引用（否則重命名變數會誤改到無關的 JSX 屬性）。
-          if (babel.isJSXAttribute(path.parent) && path.parent.name === path.node) {
-            return;
-          }
-
-          const location = {
-            filePath: typedAst.sourceFile,
-            range: this.getNodeRange(path.node)
-          };
-
-          references.push(createReference(symbol, location, ReferenceType.Usage));
-        }
-      }
-    });
-
-    return references;
-  }
-
-  /**
-   * ES2022 私有欄位/方法（`#secret`）的引用查找。對齊 TS 側
-   * findPrivateFieldReferences（plugins/typescript/parser.ts）：複用
-   * ReferenceFinder.findScopedReferences（find-references CLI 命令的同一套
-   * PrivateName 感知掃描），以 containerName 限定同一個 class，避免不同
-   * class 的同名私有欄位互相誤判為同一符號。
-   */
-  private findPrivateFieldReferences(typedAst: JavaScriptAST, typedSymbol: JavaScriptSymbol): Reference[] {
-    // 檔案身份守衛：私有欄位/方法恆宣告於單一 class、無法跨檔案引用。
-    // rename 等命令逐檔掃描全專案時，非宣告檔上同名的屬性存取（如 `cfg.secret`）
-    // 純屬字面巧合，下方 findScopedReferences 對推不出 receiver 型別的屬性存取
-    // 「寧留勿漏」，若不在此擋下會被誤判為引用（見 isSameDeclaringFile 說明與
-    // cli-private-field-symbol-defect.e2e.test.ts 的跨檔誤改 regression，對齊
-    // TS 側 findPrivateFieldReferences）。
-    if (!isSameDeclaringFile(typedAst.sourceFile, typedSymbol.location.filePath)) {
-      return [];
-    }
-
-    const containerName = getContainingClassName(typedSymbol);
-    const scopedRefs = this.referenceFinder.findScopedReferences(
-      typedAst.sourceCode,
-      typedSymbol.name,
-      { className: containerName }
-    ) ?? [];
-
-    return scopedRefs.map(ref => createReference(
-      typedSymbol,
-      { filePath: typedAst.sourceFile, range: ref.location.range },
-      ref.kind === ScopedReferenceKind.Definition ? ReferenceType.Definition : ReferenceType.Usage
-    ));
+    return this.referenceResolver.findReferences(ast, symbol);
   }
 
   /**
    * 提取依賴關係
+   * 委託給 JavaScriptDependencyAnalyzer
    */
   async extractDependencies(ast: AST): Promise<Dependency[]> {
     const typedAst = ast as JavaScriptAST;
-    const dependencies: Dependency[] = [];
-
-    traverse(typedAst.babelAST, {
-      ImportDeclaration: (path: NodePath<babel.ImportDeclaration>) => {
-        this.extractImportDependency(path.node, dependencies);
-      },
-
-      ExportNamedDeclaration: (path: NodePath<babel.ExportNamedDeclaration>) => {
-        this.extractExportDependency(path.node, dependencies);
-      },
-
-      ExportAllDeclaration: (path: NodePath<babel.ExportAllDeclaration>) => {
-        this.extractExportDependency(path.node, dependencies);
-      },
-
-      CallExpression: (path: NodePath<babel.CallExpression>) => {
-        // 處理 require() 和動態 import()
-        this.extractCallExpressionDependency(path.node, dependencies);
-      }
-    });
-
-    return dependencies;
+    return await this.dependencyAnalyzer.extractDependencies(typedAst);
   }
 
   /**
@@ -446,7 +211,7 @@ export class JavaScriptParser implements ParserPlugin {
     const typedAst = ast as JavaScriptAST;
 
     // 查找位置上的符號
-    const symbol = await this.findSymbolAtPosition(typedAst, position);
+    const symbol = await this.nodeLocator.findSymbolAtPosition(typedAst, position, this.symbolExtractor);
     if (!symbol) {
       throw new Error('在指定位置找不到符號');
     }
@@ -475,10 +240,10 @@ export class JavaScriptParser implements ParserPlugin {
    */
   async findDefinition(ast: AST, position: Position): Promise<Definition | null> {
     const typedAst = ast as JavaScriptAST;
-    const symbol = await this.findSymbolAtPosition(typedAst, position);
+    const symbol = await this.nodeLocator.findSymbolAtPosition(typedAst, position, this.symbolExtractor);
 
     if (symbol) {
-      return createDefinition(symbol.location, this.symbolTypeToDefinitionKind(symbol.type));
+      return createDefinition(symbol.location, symbolTypeToDefinitionKind(symbol.type));
     }
 
     return null;
@@ -525,7 +290,7 @@ export class JavaScriptParser implements ParserPlugin {
    * 清理資源
    */
   async dispose(): Promise<void> {
-    this.symbolIndexCache.clear();
+    this.nodeLocator.clearSymbolIndexCache();
     this.astCache.clear();
   }
 
@@ -582,1008 +347,12 @@ export class JavaScriptParser implements ParserPlugin {
     return ext === '.jsx' ? 'jsx' : 'javascript';
   }
 
-  private getNodeRange(node: babel.Node): Range {
-    if (node.loc) {
-      return babelLocationToPosition(node.loc);
-    }
-
-    // 如果沒有位置資訊，返回預設範圍
-    return {
-      start: { line: 0, column: 0, offset: 0 },
-      end: { line: 0, column: 0, offset: 0 }
-    };
-  }
-
-  private extractFunctionSymbol(
-    path: NodePath<babel.FunctionDeclaration>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const node = path.node;
-    if (node.id) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.id.name,
-        SymbolType.Function,
-        sourceFile,
-        { modifiers: this.getExportModifiers(path.parentPath) },
-        undefined,
-        node.id
-      );
-      symbols.push(symbol);
-    }
-  }
-
-  private extractClassSymbol(
-    path: NodePath<babel.ClassDeclaration>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const node = path.node;
-    if (node.id) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.id.name,
-        SymbolType.Class,
-        sourceFile,
-        { modifiers: this.getExportModifiers(path.parentPath) },
-        undefined,
-        node.id
-      );
-      symbols.push(symbol);
-    }
-  }
-
-  private extractVariableSymbol(
-    path: NodePath<babel.VariableDeclarator>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string,
-    functionScopeName?: string
-  ): void {
-    const node = path.node;
-    // CJS `const { foo } = require('./mod')` / `const mod = require('./mod')`：語意上等同
-    // ESM `import`，標記 isImported 使其對齊 extractImportSymbol 的既有標記——不與真正的
-    // 定義候選競爭（--at 唯一性判定、rename 定義候選過濾皆以 isImportedSymbol 排除 import
-    // binding，CJS require binding 若不標記會被誤當獨立定義，導致同名符號消歧誤判為歧義）。
-    const isRequireBinding = this.isRequireCallExpression(node.init);
-    if (babel.isIdentifier(node.id)) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.id.name,
-        SymbolType.Variable,
-        sourceFile,
-        {
-          modifiers: this.getExportModifiers(path.parentPath?.parentPath),
-          ...(isRequireBinding ? { isImported: true } : {})
-        },
-        functionScopeName ? createScope('function', functionScopeName) : undefined,
-        node.id
-      );
-      symbols.push(symbol);
-      return;
-    }
-
-    // 解構綁定（ObjectPattern／ArrayPattern，例如 `const { value } = source;`）：
-    // 逐一為每個實際綁定的識別符建立符號，使解構出的每個名稱都可被 search/rename 定位。
-    // babelNode 直接採用綁定識別符本身（而非外層 VariableDeclarator），
-    // 與 extractParameterSymbols 的簡單參數一致，getBindingIdentifier 對
-    // Identifier 節點已原生支援、無需額外特判。
-    const modifiers = this.getExportModifiers(path.parentPath?.parentPath);
-    const scope = functionScopeName ? createScope('function', functionScopeName) : undefined;
-    for (const identifier of this.collectBindingIdentifiers(node.id)) {
-      const location = { filePath: sourceFile, range: this.getNodeRange(identifier) };
-      const baseSymbol = createSymbol(identifier.name, SymbolType.Variable, location, scope, modifiers);
-      symbols.push({
-        ...baseSymbol,
-        babelNode: identifier,
-        ...(isRequireBinding ? { isImported: true } : {})
-      });
-    }
-  }
-
-  /**
-   * `require('...')` 呼叫（callee 為識別符 require）。原本在本檔（Babel AST）內重複
-   * 三處（依賴收集、shorthand 判定、F4 rename 綁定判定），改上手前先收斂為單一來源；
-   * 與 TS 側 `@plugins/typescript/cjs-require-ast.ts` 的 `isRequireCall` 同語意，各自
-   * 對應不同 AST（Babel vs TypeScript Compiler API），無法合併成同一份實作。
-   */
-  private isRequireCallExpression(node: babel.Node | null | undefined): node is babel.CallExpression {
-    return !!node && babel.isCallExpression(node) && babel.isIdentifier(node.callee) && node.callee.name === 'require';
-  }
-
-  /**
-   * 遞迴收集綁定模式（Identifier／ObjectPattern／ArrayPattern／AssignmentPattern／
-   * RestElement）中實際綁定的識別符節點。
-   *
-   * 供 extractVariableSymbol（解構變數）與 extractParameterSymbols（解構參數、
-   * 預設值參數、rest 參數）共用同一套遍歷邏輯（Single Source of Truth），
-   * 避免變數/參數各自重寫一份、走不同的解構深度。
-   */
-  private collectBindingIdentifiers(pattern: babel.Node | null | undefined): babel.Identifier[] {
-    if (!pattern) {
-      return [];
-    }
-
-    if (babel.isIdentifier(pattern)) {
-      return [pattern];
-    }
-
-    if (babel.isAssignmentPattern(pattern)) {
-      return this.collectBindingIdentifiers(pattern.left);
-    }
-
-    if (babel.isRestElement(pattern)) {
-      return this.collectBindingIdentifiers(pattern.argument);
-    }
-
-    if (babel.isObjectPattern(pattern)) {
-      const result: babel.Identifier[] = [];
-      for (const prop of pattern.properties) {
-        if (babel.isObjectProperty(prop)) {
-          result.push(...this.collectBindingIdentifiers(prop.value));
-        } else if (babel.isRestElement(prop)) {
-          result.push(...this.collectBindingIdentifiers(prop.argument));
-        }
-      }
-      return result;
-    }
-
-    if (babel.isArrayPattern(pattern)) {
-      const result: babel.Identifier[] = [];
-      for (const element of pattern.elements) {
-        result.push(...this.collectBindingIdentifiers(element));
-      }
-      return result;
-    }
-
-    return [];
-  }
-
-  /**
-   * 計算宣告節點的 export 相關 modifiers（對齊 TS 側 getNodeModifiers 詞彙：'export'、'default'）
-   * Babel AST 的 export 資訊不掛在宣告節點本身，而是外層的
-   * ExportNamedDeclaration / ExportDefaultDeclaration 容器節點；呼叫端負責傳入正確的容器：
-   * - FunctionDeclaration/ClassDeclaration：容器即為自身的 parentPath
-   * - VariableDeclarator：export 掛在外層 VariableDeclaration 的 parentPath（statement），
-   *   呼叫端需多跳一層傳入 `path.parentPath?.parentPath`
-   */
-  private getExportModifiers(container: NodePath | null | undefined): string[] {
-    if (!container) {
-      return [];
-    }
-    if (babel.isExportDefaultDeclaration(container.node)) {
-      return ['export', 'default'];
-    }
-    if (babel.isExportNamedDeclaration(container.node)) {
-      return ['export'];
-    }
-    return [];
-  }
-
-  private extractParameterSymbols(
-    params: babel.Function['params'],
-    functionScopeName: string | undefined,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const scope = createScope('function', functionScopeName);
-    for (const param of params) {
-      // 涵蓋一般識別符參數，也涵蓋解構參數（ObjectPattern／ArrayPattern）、
-      // 預設值參數（AssignmentPattern）、rest 參數（RestElement）——
-      // 逐一收集實際綁定的識別符節點，使每個綁定名稱都能被 search/rename 定位。
-      for (const identifier of this.collectBindingIdentifiers(param)) {
-        const location = {
-          filePath: sourceFile,
-          range: this.getNodeRange(identifier)
-        };
-        const baseSymbol = createSymbol(
-          identifier.name,
-          SymbolType.Variable,
-          location,
-          scope,
-          []
-        );
-
-        symbols.push({
-          ...baseSymbol,
-          babelNode: identifier
-        });
-      }
-    }
-  }
-
-  private extractImportSymbol(
-    node: babel.ImportDefaultSpecifier | babel.ImportSpecifier | babel.ImportNamespaceSpecifier,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    // 位置錨定於 local binding 識別符（node.local），而非整個 specifier 節點
-    // （default/named import 通常等價，但 named alias `foo as bar` 與
-    // namespace import `* as ns` 的 specifier 範圍起點會落在 exported name
-    // 或 `*`，並非實際綁定於程式碼中的 local name）
-    const symbol = this.createSymbolFromNode(
-      node,
-      node.local.name,
-      SymbolType.Variable,
-      sourceFile,
-      { isImported: true },
-      undefined,
-      node.local
-    );
-    symbols.push(symbol);
-  }
-
-  private extractMethodSymbol(
-    path: NodePath<babel.ClassMethod>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const node = path.node;
-    if (babel.isIdentifier(node.key)) {
-      // 方法所屬的 class 節點身分：用來在 isReferenceToSymbol 比對
-      // `this.method()` 之類無 Babel binding 可查的成員存取時，區分
-      // 「同一個 class 內的自我呼叫」與「另一個同名方法的無關 class」
-      // （見 bug repro：不同類別同名方法互相誤判為同一符號）。
-      const classPath = path.findParent(
-        p => p.isClassDeclaration() || p.isClassExpression()
-      ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
-
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.key.name,
-        SymbolType.Function,
-        sourceFile,
-        {},
-        classPath ? createScope('class', classPath.node.id?.name) : undefined,
-        node.key
-      );
-      symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
-    }
-  }
-
-  /**
-   * ES2022 私有方法（`#method() {}`）符號抽取。對齊 extractMethodSymbol：
-   * 名稱取自 `key.id.name`（PrivateName 裸名，Babel 原生不含 `#`），位置錨定於
-   * `key`（PrivateName 節點本身，範圍含 `#` 前綴，對齊 TS 側
-   * getSymbolIdentifierRange 對 PrivateIdentifier 的處理）。scope 記錄所屬 class，
-   * 供 findPrivateFieldReferences 取得 containerName 做同類過濾。
-   */
-  private extractPrivateMethodSymbol(
-    path: NodePath<babel.ClassPrivateMethod>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const node = path.node;
-    const classPath = path.findParent(
-      p => p.isClassDeclaration() || p.isClassExpression()
-    ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
-
-    const symbol = this.createSymbolFromNode(
-      node,
-      node.key.id.name,
-      SymbolType.Function,
-      sourceFile,
-      {},
-      classPath ? createScope('class', classPath.node.id?.name) : undefined,
-      node.key
-    );
-    symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
-  }
-
-  /**
-   * ES2022 私有欄位（`#secret = 1`）符號抽取。對齊 extractPropertySymbol：
-   * 名稱取自 `key.id.name`（PrivateName 裸名），位置錨定於 `key`（範圍含 `#`）。
-   */
-  private extractPrivatePropertySymbol(
-    path: NodePath<babel.ClassPrivateProperty>,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    const node = path.node;
-    const classPath = path.findParent(
-      p => p.isClassDeclaration() || p.isClassExpression()
-    ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
-
-    const symbol = this.createSymbolFromNode(
-      node,
-      node.key.id.name,
-      SymbolType.Variable,
-      sourceFile,
-      {},
-      classPath ? createScope('class', classPath.node.id?.name) : undefined,
-      node.key
-    );
-    symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
-  }
-
-  private extractPropertySymbol(
-    node: babel.ClassProperty,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    if (babel.isIdentifier(node.key)) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.key.name,
-        SymbolType.Variable,
-        sourceFile,
-        {},
-        undefined,
-        node.key
-      );
-      symbols.push(symbol);
-    }
-  }
-
-  private extractObjectMethodSymbol(
-    node: babel.ObjectMethod,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    if (babel.isIdentifier(node.key)) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.key.name,
-        SymbolType.Function,
-        sourceFile,
-        {},
-        undefined,
-        node.key
-      );
-      symbols.push(symbol);
-    }
-  }
-
-  private extractObjectPropertySymbol(
-    node: babel.ObjectProperty,
-    symbols: JavaScriptSymbol[],
-    sourceFile: string
-  ): void {
-    if (babel.isIdentifier(node.key)) {
-      const symbol = this.createSymbolFromNode(
-        node,
-        node.key.name,
-        SymbolType.Property,
-        sourceFile,
-        {},
-        undefined,
-        node.key
-      );
-      symbols.push(symbol);
-    }
-  }
-
-  private createSymbolFromNode(
-    node: babel.Node,
-    name: string,
-    type: SymbolType,
-    sourceFile: string,
-    options: { isImported?: boolean; isExported?: boolean; modifiers?: string[] } = {},
-    scope?: Scope,
-    identifierNode: babel.Node = node
-  ): JavaScriptSymbol {
-    // 位置錨定於名稱識別符本身（對齊 TS 側 getSymbolIdentifierRange 語意），
-    // 而非整個宣告節點的起點；未特別指定 identifierNode 的呼叫端（如 import specifier）
-    // 沿用原節點範圍
-    const range = this.getNodeRange(identifierNode);
-    const location = { filePath: sourceFile, range };
-
-    const baseSymbol = createSymbol(name, type, location, scope, options.modifiers ?? []);
-
-    return {
-      ...baseSymbol,
-      babelNode: node,
-      isImported: options.isImported,
-      isExported: options.isExported
-    };
-  }
-
-  private extractImportDependency(
-    node: babel.ImportDeclaration,
-    dependencies: Dependency[]
-  ): void {
-    const target = node.source.value;
-
-    const dependency = createDependency(
-      target,
-      DependencyType.Import,
-      isRelativePath(target),
-      getImportedSymbols(node)
-    );
-
-    dependencies.push(dependency);
-  }
-
-  private extractExportDependency(
-    node: babel.ExportNamedDeclaration | babel.ExportAllDeclaration,
-    dependencies: Dependency[]
-  ): void {
-    if (node.source) {
-      const target = node.source.value;
-
-      const dependency = createDependency(
-        target,
-        DependencyType.Import,
-        isRelativePath(target),
-        []
-      );
-
-      dependencies.push(dependency);
-    }
-  }
-
-  private extractCallExpressionDependency(
-    node: babel.CallExpression,
-    dependencies: Dependency[]
-  ): void {
-    // 處理 require() 呼叫
-    if (this.isRequireCallExpression(node)) {
-      const firstArg = node.arguments[0];
-      if (babel.isStringLiteral(firstArg)) {
-        const target = firstArg.value;
-
-        const dependency = createDependency(
-          target,
-          DependencyType.Require,
-          isRelativePath(target),
-          []
-        );
-
-        dependencies.push(dependency);
-      }
-    }
-
-    // 處理動態 import()
-    if (babel.isImport(node.callee)) {
-      const firstArg = node.arguments[0];
-      if (babel.isStringLiteral(firstArg)) {
-        const target = firstArg.value;
-
-        const dependency = createDependency(
-          target,
-          DependencyType.Import,
-          isRelativePath(target),
-          []
-        );
-
-        dependencies.push(dependency);
-      }
-    }
-  }
-
-  private isReferenceToSymbol(
-    path: NodePath<babel.Identifier>,
-    symbol: JavaScriptSymbol,
-    consumerFilePath?: string
-  ): boolean {
-    // 檢查名稱是否相同且在合理的作用域內，過濾字串和屬性名
-    const node = path.node;
-
-    if (!babel.isIdentifier(node)) {
-      return false;
-    }
-
-    if (node.name !== symbol.name) {
-      return false;
-    }
-
-    // 🚨 過濾：跳過物件「字面量」屬性名（key 位置）
-    // 例如：{ oldName: value } 中的 oldName 不應被重命名
-    // 例外：解構 pattern（ObjectPattern）內的 key 是 binding／被匯入名，
-    // 例如 `const { foo } = require('./mod')` 的 foo 必須可被跨檔 rename（F4）
-    const parent = path.parent;
-    if (
-      babel.isObjectProperty(parent)
-      && parent.key === node
-      && !parent.computed
-      && !babel.isObjectPattern(path.parentPath?.parent)
-    ) {
-      return false; // 非計算屬性的 key 不是引用
-    }
-
-    // 🚨 過濾：跳過物件方法名
-    if (babel.isObjectMethod(parent) && parent.key === node && !parent.computed) {
-      return false;
-    }
-
-    // 類別方法定義名（ClassMethod key）：僅當此節點就是目標符號自身定義時才算引用
-    // （rename/find-ref 必須包含定義位置）。其他 class 的同名方法定義一律排除。
-    if (babel.isClassMethod(parent) && parent.key === node && !parent.computed) {
-      return symbol.babelNode === parent;
-    }
-
-    // 🚨 過濾：跳過類別屬性名
-    if (babel.isClassProperty(parent) && parent.key === node && !parent.computed) {
-      return false;
-    }
-
-    // import specifier 的 imported（外部/被匯出名稱）節點
-    // 例如 `import { greet2 as g }` 中的 greet2
-    if (babel.isImportSpecifier(parent) && parent.imported === node) {
-      // 別名 import（`import { x as y }`）：本地別名 y 及其呼叫沿用別名、不動，
-      //   唯有外部（被匯出）名稱 x 需要跟著 export 一起改名 → 視此節點為引用。
-      // 非別名 import（`import { x }`）：imported 與 local 為兩個範圍相同的節點，
-      //   交由 local 節點的 visit 處理改名，此處略過以免對同一段文字重複編輯。
-      // 函式區域符號不可能被 import 的外部名稱引用。
-      const local = parent.local;
-      return !isFunctionLocalSymbol(symbol)
-        && babel.isIdentifier(local)
-        && local.name !== node.name;
-    }
-
-    if (isFunctionLocalSymbol(symbol)) {
-      if (babel.isMemberExpression(parent) && parent.property === node && !parent.computed) {
-        return false;
-      }
-
-      return this.isSameBabelBinding(path, symbol);
-    }
-
-    // 頂層（模組層）符號：做 module binding 驗證，避免誤改「其他檔案自己的
-    // 同名頂層定義」（例如另一檔各自宣告的 `function greet`）。跨檔引用只有透過
-    // import 綁定（Babel binding.kind === 'module'）建立關聯、或就在定義檔本身
-    // （binding 即符號自身宣告節點）才算目標引用。
-    //
-    // 僅在具備完整符號（帶 babelNode，如 rename/scoped find-references）時收斂；
-    // 無 babelNode 的虛擬符號（findReferencesInFile 以名稱查找，如 deadcode
-    // import-cleaner）沿用寬鬆比對。
-    if (symbol.babelNode) {
-      const binding = path.scope.getBinding(node.name);
-      // 綁定到本檔的區域宣告（function/const/let/var/class/param，kind 非 'module'）時，
-      // 僅當它就是本符號的定義節點才算引用；否則是另一個同名的獨立符號 → 排除。
-      // 例外：`const { foo } = require('./mod')` 在 Babel 是 const binding，但語意等同
-      // named import；require 來源指向定義檔時，解構綁定與使用點都是對 export 的引用（F4）。
-      if (binding && binding.kind !== 'module') {
-        if (this.isRequireDestructuringBindingOf(binding, symbol, consumerFilePath)) {
-          return true;
-        }
-        return this.isSameBabelBinding(path, symbol);
-      }
-    }
-
-    // Class method 的成員存取（`this.method()` / `obj.method()`）：Babel 不會為
-    // method 名稱建立變數 binding，上面的 binding 查詢一律拿到 undefined，
-    // 若不特別處理就會落入下方寬鬆候選集、讓不同 class 裡的同名方法互相誤判為
-    // 同一符號的引用。
-    //
-    // 判定順序：
-    // 1. 存取發生在同一個 enclosingClassNode 內（this.method / 同類內呼叫）→ 引用
-    // 2. 類別外 instance.method：以 receiver 型別（new ClassName / 變數綁定推斷）
-    //    比對 class 名稱；型別相符才算引用，避免混入其他 class 的同名方法
-    if (
-      symbol.enclosingClassNode
-      && babel.isMemberExpression(parent)
-      && parent.property === node
-      && !parent.computed
-    ) {
-      const enclosingClass = path.findParent(
-        p => p.isClassDeclaration() || p.isClassExpression()
-      );
-      if (enclosingClass?.node === symbol.enclosingClassNode) {
-        return true;
-      }
-
-      const className = symbol.enclosingClassNode.id?.name;
-      if (!className) {
-        return false;
-      }
-      return this.inferMemberReceiverType(parent.object, path) === className;
-    }
-
-    // 無 binding（如 namespace 成員存取，交由上層查詢過濾）或為 import/module
-    // binding：維持寬鬆候選集，符合 find-references「先廣收候選、再由 CLI 過濾層
-    // 依模組消歧」的既有設計。
-    return true;
-  }
-
-  /**
-   * 判定引用節點是否為 object property shorthand token（`{ foo }`，含
-   * ObjectExpression 的 value 與 ObjectPattern 的 key/value——shorthand
-   * 下兩者是不同的 Identifier 節點物件但同一位置），是則回傳原始 key 文字
-   * （供 rename 展開為 `key: newName`）。非 shorthand（含具名別名
-   * `{ foo: bar }`）回傳 undefined，維持原本天真替換行為。
-   *
-   * 例外：CJS `const { foo } = require('./mod')` 解構與 `module.exports = { foo }`
-   * 這類 shorthand，其 key 語意上就是被匯入/匯出的符號名本身（等同 ESM
-   * `import { foo }` / `export { foo }` specifier，見 isRequireDestructuringBindingOf
-   * 的既有 F4 設計），rename 時應隨新名稱整個 token 一起改（`{ bar }`），不可展開成
-   * `{ foo: bar }`——否則會破壞既有 CJS 跨檔 rename 行為（見
-   * cli-rename-cjs-require-f4、cli-rename-dry-run-cjs-multi-edit-preview 等既有 E2E）。
-   */
-  private getShorthandKeyText(path: NodePath<babel.Identifier>): string | undefined {
-    const parent = path.parent;
-    if (!babel.isObjectProperty(parent) || !parent.shorthand || !babel.isIdentifier(parent.key)) {
-      return undefined;
-    }
-    if (this.isRequireOrModuleExportsShorthand(path)) {
-      return undefined;
-    }
-    return parent.key.name;
-  }
-
-  /**
-   * 判定 shorthand ObjectProperty 是否位於 CJS require 解構
-   * （`const { foo } = require('./mod')`）或 module.exports 匯出
-   * （`module.exports = { foo }` / `exports = { foo }`）之中。
-   */
-  private isRequireOrModuleExportsShorthand(path: NodePath<babel.Identifier>): boolean {
-    const propertyPath = path.parentPath;
-    const containerPath = propertyPath?.parentPath;
-    if (!containerPath) {
-      return false;
-    }
-
-    if (containerPath.isObjectPattern()) {
-      const declaratorPath = containerPath.parentPath;
-      if (!declaratorPath?.isVariableDeclarator()) {
-        return false;
-      }
-      return this.isRequireCallExpression(declaratorPath.node.init);
-    }
-
-    if (containerPath.isObjectExpression()) {
-      const assignmentPath = containerPath.parentPath;
-      if (!assignmentPath?.isAssignmentExpression()) {
-        return false;
-      }
-      return this.isModuleExportsTarget(assignmentPath.node.left);
-    }
-
-    return false;
-  }
-
-  /** 判定表達式是否為 `module.exports` 或裸 `exports` */
-  private isModuleExportsTarget(left: babel.Node): boolean {
-    if (
-      babel.isMemberExpression(left)
-      && babel.isIdentifier(left.object)
-      && left.object.name === 'module'
-      && babel.isIdentifier(left.property)
-      && left.property.name === 'exports'
-      && !left.computed
-    ) {
-      return true;
-    }
-    return babel.isIdentifier(left) && left.name === 'exports';
-  }
-
-  /**
-   * 推斷成員存取 receiver 的類型名稱（供 class method 外部引用判定）。
-   * 支援：`(new Greeter()).m`、`const g = new Greeter(); g.m`
-   */
-  private inferMemberReceiverType(
-    object: babel.Expression | babel.Super | babel.V8IntrinsicIdentifier,
-    path: NodePath
-  ): string | undefined {
-    if (babel.isNewExpression(object) && babel.isIdentifier(object.callee)) {
-      return object.callee.name;
-    }
-
-    if (!babel.isIdentifier(object)) {
-      return undefined;
-    }
-
-    const binding = path.scope.getBinding(object.name);
-    if (!binding || !binding.path.isVariableDeclarator()) {
-      return undefined;
-    }
-
-    const init = binding.path.node.init;
-    if (init && babel.isNewExpression(init) && babel.isIdentifier(init.callee)) {
-      return init.callee.name;
-    }
-
-    return undefined;
-  }
-
-  private isSameBabelBinding(path: NodePath<babel.Identifier>, symbol: JavaScriptSymbol): boolean {
-    const targetIdentifier = this.getBindingIdentifier(symbol.babelNode);
-    if (!targetIdentifier) {
-      return false;
-    }
-
-    const binding = path.scope.getBinding(symbol.name);
-    return binding?.identifier === targetIdentifier;
-  }
-
-  /**
-   * 判定 Babel binding 是否為 `const { symbolName } = require(spec)` 解構匯入，
-   * 且 spec 解析後指向 symbol 的定義檔（F4：CJS require 跨檔 rename）。
-   *
-   * 有別名時（`const { foo: bar } = require(...)`）：
-   * - 本地 binding 名是 bar，被匯入名是 foo
-   * - 此方法在 binding.identifier 名 === symbol.name 時（無別名）回 true；
-   * - 別名本地名與 export 名不同時，binding 名是 bar，不進此分支（rename export 只動 key 側，
-   *   由 ObjectProperty key 訪點 + 模組來源比對另行處理；F4 主路徑為無別名解構）。
-   */
-  private isRequireDestructuringBindingOf(
-    binding: Binding,
-    symbol: JavaScriptSymbol,
-    consumerFilePath?: string
-  ): boolean {
-    if (!symbol.location?.filePath || binding.identifier.name !== symbol.name) {
-      return false;
-    }
-
-    const declaratorPath = binding.path;
-    if (!declaratorPath.isVariableDeclarator()) {
-      return false;
-    }
-
-    const init = declaratorPath.node.init;
-    if (
-      !this.isRequireCallExpression(init)
-      || init.arguments.length < 1
-      || !babel.isStringLiteral(init.arguments[0])
-    ) {
-      return false;
-    }
-
-    const id = declaratorPath.node.id;
-    if (!babel.isObjectPattern(id)) {
-      return false;
-    }
-
-    // 確認解構中確有被匯入名（或 shorthand 本地名）等於 symbol.name 的元素
-    let importsSymbol = false;
-    for (const prop of id.properties) {
-      if (!babel.isObjectProperty(prop) || prop.computed) {
-        continue;
-      }
-      if (!babel.isIdentifier(prop.key)) {
-        continue;
-      }
-      // 被匯入名稱 = key；shorthand 時 key 即本地名
-      if (prop.key.name === symbol.name) {
-        importsSymbol = true;
-        break;
-      }
-    }
-    if (!importsSymbol) {
-      return false;
-    }
-
-    const moduleSpecifier = init.arguments[0].value;
-    if (!moduleSpecifier.startsWith('.')) {
-      return false;
-    }
-
-    // 無消費端路徑時無法安全驗證 module specifier → 不錨定（避免跨模組同名誤改）
-    if (!consumerFilePath) {
-      return false;
-    }
-
-    return this.requireSpecifierMatchesDefinition(
-      consumerFilePath,
-      moduleSpecifier,
-      symbol.location.filePath
-    );
-  }
-
-  private requireSpecifierMatchesDefinition(
-    importingFileName: string,
-    moduleSpecifier: string,
-    definitionFilePath: string
-  ): boolean {
-    const stripExt = (filePath: string): string => filePath.replace(/\.[^/.]+$/, '');
-    const resolvedNoExt = stripExt(pathResolve(dirname(importingFileName), moduleSpecifier));
-    const definitionNoExt = stripExt(pathResolve(definitionFilePath));
-    if (resolvedNoExt === definitionNoExt) {
-      return true;
-    }
-    // 目錄 import → index.*
-    const definitionBase = definitionNoExt.split(/[/\\]/).pop();
-    if (
-      definitionBase === 'index'
-      && pathResolve(dirname(definitionNoExt)) === pathResolve(resolvedNoExt)
-    ) {
-      return true;
-    }
-    return false;
-  }
-
-  private getBindingIdentifier(node: babel.Node): babel.Identifier | null {
-    if (babel.isIdentifier(node)) {
-      return node;
-    }
-
-    if ((babel.isFunctionDeclaration(node) || babel.isClassDeclaration(node)) && node.id) {
-      return node.id;
-    }
-
-    if (babel.isVariableDeclarator(node) && babel.isIdentifier(node.id)) {
-      return node.id;
-    }
-
-    if (
-      (babel.isImportDefaultSpecifier(node)
-        || babel.isImportSpecifier(node)
-        || babel.isImportNamespaceSpecifier(node))
-    ) {
-      return node.local;
-    }
-
-    return null;
-  }
-
-  private getNearestFunctionName(path: NodePath<babel.Node>): string | undefined {
-    let current: NodePath | null = path.parentPath;
-
-    while (current) {
-      const node = current.node;
-
-      if (babel.isFunctionDeclaration(node)) {
-        return node.id?.name;
-      }
-
-      if (babel.isClassMethod(node) || babel.isObjectMethod(node)) {
-        return babel.isIdentifier(node.key) ? node.key.name : undefined;
-      }
-
-      if (babel.isFunctionExpression(node) || babel.isArrowFunctionExpression(node)) {
-        return this.getFunctionExpressionName(current as NodePath<babel.FunctionExpression | babel.ArrowFunctionExpression>);
-      }
-
-      current = current.parentPath;
-    }
-
-    return undefined;
-  }
-
-  private getFunctionExpressionName(
-    path: NodePath<babel.FunctionExpression | babel.ArrowFunctionExpression>
-  ): string | undefined {
-    const parent = path.parent;
-
-    if (babel.isVariableDeclarator(parent) && babel.isIdentifier(parent.id)) {
-      return parent.id.name;
-    }
-
-    if (babel.isAssignmentExpression(parent) && babel.isIdentifier(parent.left)) {
-      return parent.left.name;
-    }
-
-    if (babel.isObjectProperty(parent) && babel.isIdentifier(parent.key)) {
-      return parent.key.name;
-    }
-
-    return undefined;
-  }
-
-  private getReferenceType(
-    path: NodePath<babel.Identifier>,
-    symbol: JavaScriptSymbol
-  ): ReferenceType {
-    const node = path.node;
-
-    // 如果是符號的原始定義位置（ClassMethod 的 babelNode 是整段方法，
-    // 定義名錨在 key Identifier，需一併辨識）
-    if (
-      node === symbol.babelNode
-      || (babel.isClassMethod(symbol.babelNode)
-        && symbol.babelNode.key === node)
-    ) {
-      return ReferenceType.Definition;
-    }
-
-    // 檢查是否為宣告上下文
-    // 使用 Babel 的 path.isReferencedIdentifier 方法
-
-    const anyPath = path as NodePath<babel.Node>;
-    if (anyPath.isReferencedIdentifier()) {
-      return ReferenceType.Usage;
-    }
-
-    if (anyPath.isBindingIdentifier()) {
-      return ReferenceType.Declaration;
-    }
-
-    return ReferenceType.Usage;
-  }
-
-  private symbolTypeToDefinitionKind(symbolType: SymbolType): DefinitionKind {
-    switch (symbolType) {
-    case SymbolType.Class:
-      return 'class';
-    case SymbolType.Function:
-      return 'function';
-    case SymbolType.Variable:
-      return 'variable';
-    case SymbolType.Constant:
-      return 'constant';
-    case SymbolType.Type:
-      return 'type';
-    case SymbolType.Interface:
-      return 'interface';
-    case SymbolType.Enum:
-      return 'enum';
-    case SymbolType.Module:
-      return 'module';
-    case SymbolType.Namespace:
-      return 'namespace';
-    default:
-      return 'variable';
-    }
-  }
-
-  /**
-   * 建立或取得符號索引快取
-   * 使用行號索引避免 O(n) 線性搜尋
-   * 快取基於 filePath + content hash，避免內容變更後使用舊快取
-   * 注意：LRU 淘汰由 MemoryCache 自動處理
-   */
-  private async getOrCreateSymbolIndex(ast: JavaScriptAST): Promise<SymbolIndexCache> {
-    const cacheKey = ast.sourceFile;
-    const contentHash = computeContentHash(ast.sourceCode);
-    const cached = this.symbolIndexCache.get(cacheKey);
-
-    // 驗證快取：檔案存在且 hash 相同（MemoryCache.get() 自動更新 lastAccessedAt）
-    if (cached && cached.contentHash === contentHash) {
-      return cached;
-    }
-
-    const symbols = await this.extractSymbols(ast);
-    const lineIndex = new Map<number, Symbol[]>();
-
-    // 建立行號索引：每個符號可能跨越多行
-    for (const symbol of symbols) {
-      const startLine = symbol.location.range.start.line;
-      const endLine = symbol.location.range.end.line;
-
-      for (let line = startLine; line <= endLine; line++) {
-        const existing = lineIndex.get(line) ?? [];
-        existing.push(symbol);
-        lineIndex.set(line, existing);
-      }
-    }
-
-    const cache: SymbolIndexCache = { symbols, lineIndex, contentHash };
-    this.symbolIndexCache.set(cacheKey, cache); // MemoryCache 自動處理 LRU 淘汰
-
-    return cache;
-  }
-
   /**
    * 清除特定檔案的符號索引快取
+   * 委託給 JavaScriptNodeLocator
    */
   clearSymbolIndexCache(filePath?: string): void {
-    if (filePath) {
-      this.symbolIndexCache.delete(filePath);
-    } else {
-      this.symbolIndexCache.clear();
-    }
-  }
-
-  private async findSymbolAtPosition(ast: JavaScriptAST, position: Position): Promise<Symbol | null> {
-    const cache = await this.getOrCreateSymbolIndex(ast);
-
-    // 使用行號索引快速查找候選符號
-    const candidates = cache.lineIndex.get(position.line) ?? [];
-
-    // 只在候選符號中搜尋
-    for (const symbol of candidates) {
-      if (this.isPositionInRange(position, symbol.location.range)) {
-        return symbol;
-      }
-    }
-
-    return null;
-  }
-
-  private isPositionInRange(position: Position, range: Range): boolean {
-    if (position.line < range.start.line || position.line > range.end.line) {
-      return false;
-    }
-
-    if (position.line === range.start.line && position.column < range.start.column) {
-      return false;
-    }
-
-    if (position.line === range.end.line && position.column > range.end.column) {
-      return false;
-    }
-
-    return true;
+    this.nodeLocator.clearSymbolIndexCache(filePath);
   }
 
   /**
