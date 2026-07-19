@@ -111,6 +111,41 @@ function groupAdjacentChanges(changes: LineChange[], contextLines: number): Line
 }
 
 /**
+ * 修剪 old/new 行陣列的共同前綴與後綴，只留中間真正相異的區段。
+ *
+ * Bug：舊實作依相同 index 配對 old[i]/new[i]（見下方呼叫端修復前版本），
+ * 「刪 N 行＋增 M 行」（N≠M）時，行數位移導致內容完全未變的行也被
+ * 依 index 錯位配對成「刪除舊值＋新增新值」，全被誤判為變更。
+ * 改為先比對內容修剪共同前後綴，只有中段真正相異的內容才輸出 -/+，
+ * 未變的前後綴留給 createHunk 既有的 context fallback（讀 originalLines）處理。
+ */
+function trimCommonEdges(
+  oldLines: string[],
+  newLines: string[]
+): { prefixLength: number; oldMiddle: string[]; newMiddle: string[] } {
+  const maxTrim = Math.min(oldLines.length, newLines.length);
+
+  let prefixLength = 0;
+  while (prefixLength < maxTrim && oldLines[prefixLength] === newLines[prefixLength]) {
+    prefixLength++;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < maxTrim - prefixLength &&
+    oldLines[oldLines.length - 1 - suffixLength] === newLines[newLines.length - 1 - suffixLength]
+  ) {
+    suffixLength++;
+  }
+
+  return {
+    prefixLength,
+    oldMiddle: oldLines.slice(prefixLength, oldLines.length - suffixLength),
+    newMiddle: newLines.slice(prefixLength, newLines.length - suffixLength)
+  };
+}
+
+/**
  * 展開多行變更為單行變更列表
  * Bug #34 修復：處理 oldContent/newContent 包含多行的情況
  */
@@ -118,26 +153,25 @@ function expandMultilineChanges(changes: LineChange[]): LineChange[] {
   return changes.flatMap(change => {
     // oldContent 為多行：拆分為刪除行
     if (change.oldContent !== null && change.oldContent.includes('\n')) {
-      const oldLines = change.oldContent
-        .split('\n')
-        .map((content, i): LineChange => ({
-          line: change.line + i,
-          oldContent: content,
-          newContent: null
-        }));
+      const oldLines = change.oldContent.split('\n');
+      const newLines = change.newContent !== null ? change.newContent.split('\n') : [];
 
-      // 如果有 newContent，單獨處理（替換操作）
-      const newLines = change.newContent !== null
-        ? change.newContent
-            .split('\n')
-            .map((content, i): LineChange => ({
-              line: change.line + i,
-              oldContent: null,
-              newContent: content
-            }))
-        : [];
+      // 先修剪共同前後綴，只對中段真正相異內容輸出刪除/新增
+      const { prefixLength, oldMiddle, newMiddle } = trimCommonEdges(oldLines, newLines);
 
-      return [...oldLines, ...newLines];
+      const oldChanges = oldMiddle.map((content, i): LineChange => ({
+        line: change.line + prefixLength + i,
+        oldContent: content,
+        newContent: null
+      }));
+
+      const newChanges = newMiddle.map((content, i): LineChange => ({
+        line: change.line + prefixLength + i,
+        oldContent: null,
+        newContent: content
+      }));
+
+      return [...oldChanges, ...newChanges];
     }
 
     // newContent 為多行（純新增操作）
@@ -197,9 +231,14 @@ function createHunk(originalLines: string[], changes: LineChange[], contextLines
   // 元素的最小/最大 .line 計算範圍。
   // 注意：禁用 Math.min(...lineNumbers) / Math.max(...lineNumbers)，
   // spread 大量參數會超過 V8 函式參數上限並拋出 RangeError（R2-8），改單迴圈一次遍歷取兩值
-  let minLine = expandedChanges[0].line;
-  let maxLine = expandedChanges[0].line;
-  for (const c of expandedChanges) {
+  //
+  // trimCommonEdges 修剪共同前後綴後，若整組多行變更 old/new 完全相同（無實際差異），
+  // expandedChanges 可能為空陣列；此時退回用原始 changes（該 group 一定非空）算範圍，
+  // 避免 expandedChanges[0] 存取空陣列噴錯。
+  const lineNumberSource = expandedChanges.length > 0 ? expandedChanges : changes;
+  let minLine = lineNumberSource[0].line;
+  let maxLine = lineNumberSource[0].line;
+  for (const c of lineNumberSource) {
     if (c.line < minLine) { minLine = c.line; }
     if (c.line > maxLine) { maxLine = c.line; }
   }

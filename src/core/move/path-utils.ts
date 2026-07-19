@@ -14,7 +14,7 @@ import {
 } from '@shared/types/index.js';
 import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
 import { escapeRegex } from '@shared/regex-utils.js';
-import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
+import { MUTATION_SCAN_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 import { resolveProjectImportCandidates } from '@core/foundations/index.js';
 
 /**
@@ -42,10 +42,11 @@ export function withEsmRuntimeExtension(relativePath: string, targetFilePath: st
 }
 
 /**
- * 排除的目錄模式
- * 沿用 @shared/exclude-dirs 的權威目錄名稱清單，不另存局部子集
+ * 排除的目錄模式（move 的引用掃描，屬變更類命令）
+ * 沿用 @shared/exclude-dirs 的 MUTATION_SCAN_EXCLUDE_DIR_NAMES 窄清單
+ * （正確性優先，非 COMMON_EXCLUDE_DIR_NAMES 廣清單），不另存局部子集
  */
-export const EXCLUDE_PATTERNS = COMMON_EXCLUDE_DIR_NAMES;
+export const EXCLUDE_PATTERNS = MUTATION_SCAN_EXCLUDE_DIR_NAMES;
 
 /**
  * 路徑工具類別
@@ -251,6 +252,7 @@ export class PathUtils {
         originalImportPath,
         this.importResolver.getPathAliases()
       );
+      let aliasEscapedAliasRoot = false;
       if (aliasMatch) {
         const resolvedAliasPath = path.normalize(aliasMatch.entry.candidates[0]);
 
@@ -270,11 +272,17 @@ export class PathUtils {
             aliasMatch.entry.alias + separator + newRelativeToAlias
           );
         }
+
+        // 原 import 本來就是 alias 風格，新位置已逃逸 alias 根目錄：不得因專案
+        // 另設有 baseUrl 就繼續嘗試改寫成裸 bare specifier（缺 './'/'../' 前綴，
+        // ESM runtime 無法解析），直接落回函式底部的一般相對路徑 fallback。
+        aliasEscapedAliasRoot = true;
       }
 
-      // 2. 檢查是否為 baseUrl 相對路徑（如 src/utils）
+      // 2. 檢查是否為 baseUrl 相對路徑（如 src/utils）；原 import 若已判定為
+      // 逃逸 alias 根目錄的 alias 風格，不進這支改用 baseUrl-bare 樣式。
       const baseUrl = this.importResolver.getBaseUrl();
-      if (baseUrl) {
+      if (baseUrl && !aliasEscapedAliasRoot) {
         // 保留原始的 baseUrl 相對路徑格式
         let newRelativeToBaseUrl = path.relative(baseUrl, path.normalize(newFilePath));
         newRelativeToBaseUrl = newRelativeToBaseUrl.replace(/\\/g, '/');

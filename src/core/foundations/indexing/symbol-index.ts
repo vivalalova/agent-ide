@@ -462,7 +462,7 @@ export class SymbolIndex {
       range.start.column,
       range.end.line,
       range.end.column
-    ].join(' ');
+    ].join(' ');
   }
 
   /**

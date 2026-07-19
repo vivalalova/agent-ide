@@ -3,6 +3,7 @@
  * TypeScript 和 JavaScript Parser 共享的邏輯
  */
 
+import { resolve as pathResolve } from 'node:path';
 import type { Range, Position } from '@shared/types/core.js';
 import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
 import type {
@@ -264,4 +265,24 @@ export function isValidUnicodeIdentifier(name: string): boolean {
 export function matchesAnyPattern(filePath: string, patterns: readonly string[]): boolean {
   const normalizedPath = filePath.replace(/^\.?\//, '');
   return matchesAnyGlobPattern(normalizedPath, patterns);
+}
+
+/**
+ * 判斷正在掃描引用的檔案是否就是符號的宣告檔（路徑正規化後比較）。
+ *
+ * ES2022 私有欄位/方法（`#x`）恆宣告於單一 class、無法跨模組 export/import，
+ * 天生檔案作用域封閉：非宣告檔上同名的屬性存取（如 `cfg.secret`）純屬字面
+ * 巧合，不可能是同一符號的引用。TS/JS Parser 的 findPrivateFieldReferences
+ * 改走 ReferenceFinder.findScopedReferences 做 AST＋class 名字串比對，對
+ * 推不出 receiver 型別的屬性存取「寧留勿漏」；rename 等命令逐檔掃描全專案
+ * 時若不先擋下非宣告檔，會把其他檔案裡的巧合同名成員誤判為引用（見 defect
+ * regression test cli-private-field-symbol-defect.e2e.test.ts 的跨檔誤改案例）。
+ * 呼叫前提：僅適用於恆同檔案的私有欄位/方法場景，非通用的跨符號檔案比對。
+ *
+ * @param scanningFilePath 正在查找引用的檔案路徑（AST 所屬檔案）
+ * @param declarationFilePath 符號宣告所在的檔案路徑
+ * @returns 是否為同一檔案
+ */
+export function isSameDeclaringFile(scanningFilePath: string, declarationFilePath: string): boolean {
+  return pathResolve(scanningFilePath) === pathResolve(declarationFilePath);
 }

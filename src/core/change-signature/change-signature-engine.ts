@@ -166,6 +166,18 @@ export class ChangeSignatureEngine {
       );
     }
 
+    // 2a. --add 預設值若引用同函式其他參數、且呼叫點值未經 --call-site-value 明確指定，
+    // 該預設值運算式文字會逐字塞進每個呼叫點（CallSiteUpdater 對 add 的呼叫點填值即取
+    // callSiteValue ?? defaultValue），呼叫端並無同名區域繫結 → 產生的引數是懸空識別字
+    // （TS2304）。及早 fast-fail，不修改任何檔案。
+    const ambiguousDefaultValueError = this.validateAddParameterCallSiteSafety(originalSignature, options.changes);
+    if (ambiguousDefaultValueError) {
+      return this.createErrorResult(
+        ambiguousDefaultValueError.code,
+        ambiguousDefaultValueError.message
+      );
+    }
+
     // 2b. 參數 rename 時，先於 transform 前修正其他參數預設值字串中對該參數的引用
     // （AST 位置改寫，見 rewriteOtherParameterDefaultsForRename），讓後續由結構欄位
     // 重建的定義文字天然帶有正確引用，避免另外產生會與定義區塊整體重寫互相重疊的 text edit。
@@ -515,6 +527,93 @@ export class ChangeSignatureEngine {
       messages.push(`無法移除參數 ${references.inParameterDefaults.join(', ')}：仍被其他參數的預設值引用`);
     }
     return messages.join('；');
+  }
+
+  /**
+   * 偵測 --add 新參數的預設值是否引用同函式其他既有參數，且該值未經 --call-site-value
+   * 明確指定（此時 CLI 層 callSiteValue 會退回與 defaultValue 相同文字，見
+   * `change-signature.command.ts` 的 parseAddParameter：
+   * `callSiteValue: explicitCallSiteValue ?? normalizedDefaultValue`）。
+   *
+   * 命中即代表這段運算式文字會被 CallSiteUpdater 逐字塞進每個呼叫點（見
+   * call-site-updater.ts 對 add 的填值邏輯 `change.callSiteValue ?? change.defaultValue`），
+   * 但呼叫點是具體引數、並無同函式參數作用域，該識別字懸空（TS2304）。
+   *
+   * 每個 change 依「此 change 之前所有 change 依序套用後」的當下參數列表判斷（與
+   * SignatureValidator.validateChanges 同一套 splice 邏輯），排除新參數自身名稱。
+   */
+  private validateAddParameterCallSiteSafety(
+    signature: FunctionSignature,
+    changes: readonly SignatureChange[]
+  ): { code: ChangeSignatureErrorCode; message: string } | null {
+    for (let i = 0; i < changes.length; i++) {
+      const change = changes[i];
+      if (!isAddParameterChange(change) || change.defaultValue === undefined) {
+        continue;
+      }
+
+      // callSiteValue 與 defaultValue 文字不同，代表使用者已透過 --call-site-value
+      // 明確指定呼叫點值，該值是否引用其他參數是使用者自負責任的選擇，不在此攔截。
+      if (change.callSiteValue !== change.defaultValue) {
+        continue;
+      }
+
+      const currentSignature = this.transformer.applyChangesToSignature(signature, changes.slice(0, i));
+      const otherParameterNames = new Set(
+        currentSignature.parameters
+          .map(parameter => parameter.name)
+          .filter(name => name !== change.name)
+      );
+      if (otherParameterNames.size === 0) {
+        continue;
+      }
+
+      const referencedName = this.findReferencedParameterNameInExpression(change.defaultValue, otherParameterNames);
+      if (referencedName) {
+        return {
+          code: ChangeSignatureErrorCode.AmbiguousDefaultValueCallSiteReference,
+          message: `參數 ${change.name} 的預設值 "${change.defaultValue}" 引用同函式參數 ${referencedName}，` +
+            '此運算式會逐字塞入每個呼叫點、但呼叫端沒有同名繫結；' +
+            `請用 --call-site-value ${change.name}=<expression> 明確指定呼叫點使用的值`
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 把運算式文字放進參數預設值語法位置解析成 AST，透過既有識別字走訪
+   * （visitNodeForReferences，與 rename／remove 共用同一套遮蔽規則與屬性存取／
+   * 物件鍵排除規則）找出是否引用 names 內任一名稱。AST 為準，避免字串比對誤判
+   * `a1`、`obj.a` 等非真實引用的情形。
+   */
+  private findReferencedParameterNameInExpression(
+    expressionText: string,
+    names: ReadonlySet<string>
+  ): string | undefined {
+    const sourceFile = ts.createSourceFile(
+      'change-signature-add-default.ts',
+      `function __agentIdeAddDefault(__value = ${expressionText}) {}`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS
+    );
+
+    const functionDeclaration = sourceFile.statements[0];
+    if (!functionDeclaration || !ts.isFunctionDeclaration(functionDeclaration)) {
+      return undefined;
+    }
+    const initializer = functionDeclaration.parameters[0]?.initializer;
+    if (!initializer) {
+      return undefined;
+    }
+
+    let referencedName: string | undefined;
+    this.visitNodeForReferences(initializer, names, (node) => {
+      referencedName ??= node.text;
+    });
+    return referencedName;
   }
 
   /**

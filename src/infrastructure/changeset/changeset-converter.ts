@@ -80,22 +80,33 @@ async function readOriginalContent(
 
 /**
  * 應用單行的編輯操作，產生新內容
- * @param originalLine - 原始行內容
- * @param edits - 該行的編輯操作（已按列號排序）
- * @returns 編輯後的行內容
+ *
+ * 直接委派 applyTextEdits（ChangeApplicator 實寫的同一份權威套用邏輯：dedupe 重複
+ * edit → 重疊檢查 → 由後往前套用），而非自行重排 substring。原本這裡自帶一份「按
+ * column 降序後往前套」的簡化實作，遇到同一行有兩筆 range 與 newText 完全相同的
+ * edit（例如 CJS 解構 shorthand `{ helper }` 同時命中 binding 的 key 與 value 兩處
+ * AST 節點、產生座標相同的重複 edit）時，因為沒有 dedupe，會把新名稱疊加套用兩次
+ * 產生 `doubleItIt` 這類損壞文字；但 ChangeApplicator 走 applyTextEdits 有 dedupe，
+ * 實際落盤是正確的。改為直接重用同一函式，讓預覽與實寫恆等，消滅雙套用邏輯。
+ *
+ * 呼叫端保證 edits 皆屬同一行（startLine === endLine === 該行行號），此處把 range
+ * 歸一化為虛擬第 1 行、保留原始 column：對單行字串而言 column-1 即是 offset，
+ * 與 applyTextEdits 的 calculateOffset 對「第 1 行」的計算結果完全一致。
+ *
+ * @param originalLine - 原始行內容（或呼叫端傳入的前綴片段）
+ * @param edits - 該行（或該片段）的編輯操作
+ * @returns 編輯後的內容
  */
 function applyEditsToLine(originalLine: string, edits: TextEdit[]): string {
-  // 按列號降序排序，從後往前應用避免偏移問題
-  const sortedEdits = [...edits].sort((a, b) => b.range.start.column - a.range.start.column);
+  const normalizedEdits: TextEdit[] = edits.map(edit => ({
+    range: {
+      start: { line: 1, column: edit.range.start.column },
+      end: { line: 1, column: edit.range.end.column }
+    },
+    newText: edit.newText
+  }));
 
-  let result = originalLine;
-  for (const edit of sortedEdits) {
-    const startCol = edit.range.start.column - 1; // 轉為 0-based
-    const endCol = edit.range.end.column - 1;
-    result = result.substring(0, startCol) + edit.newText + result.substring(endCol);
-  }
-
-  return result;
+  return applyTextEdits(originalLine, normalizedEdits);
 }
 
 /**

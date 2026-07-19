@@ -90,6 +90,7 @@ export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
     SymbolType.Function,
     SymbolType.Class,
     SymbolType.Variable,
+    SymbolType.Constant,
     SymbolType.Interface,
     SymbolType.Type
   ],

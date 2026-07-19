@@ -134,7 +134,8 @@ export class ReferenceUpdater {
           symbolName: symbol.name,
           range: ref.location.range,
           type: this.mapReferenceType(ref.type),
-          context: ref.context // 傳遞上下文資訊
+          context: ref.context, // 傳遞上下文資訊
+          ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {})
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
@@ -311,10 +312,13 @@ export class ReferenceUpdater {
       }
 
       // 轉換為 TextChange（包含 context 資訊）
+      // shorthand token（`{ foo }`／`const { foo } = opts`）需展開為 `key: newName`，
+      // 保留原始 key（見 SymbolReference.shorthandKeyText），否則物件 key／解構來源
+      // 欄位會被天真替換一併改掉。
       const changes: TextChange[] = matchingReferences.map(ref => ({
         range: ref.range,
         oldText: symbol.name,
-        newText: newName,
+        newText: ref.shorthandKeyText !== undefined ? `${ref.shorthandKeyText}: ${newName}` : newName,
         context: ref.context
       }));
 

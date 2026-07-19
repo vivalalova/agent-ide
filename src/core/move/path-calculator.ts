@@ -11,7 +11,7 @@ import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
-import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES } from '@shared/types/index.js';
+import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES, stripSourceFileExtension } from '@shared/types/index.js';
 
 const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
 
@@ -298,9 +298,16 @@ export class PathCalculator {
 
           // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
-            // 嘗試解析到實際檔案（處理省略副檔名的情況，如 ./utils → utils.ts）
+            // 嘗試解析到實際檔案（處理省略副檔名的情況，如 ./utils → utils.ts）。
+            // import 字面若已帶顯式副檔名（如 './sub/deep.js'），normalizedResolved
+            // 已經是 'deep.js'；候選副檔名比對前須先剝除該字面副檔名，否則會疊加成
+            // 'deep.js.ts' 這種雙副檔名去比對，永遠命中不到實際的 'deep.ts'（見
+            // explicit-extension co-move regression）。沿用 stripSourceFileExtension
+            // 單一來源做剝除，不另寫一份副檔名映射表；省略副檔名時本就無字面副檔名
+            // 可剝，行為與原本相同。
+            const normalizedResolvedBase = stripSourceFileExtension(normalizedResolved);
             let isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
-              const fullPath = path.normalize(normalizedResolved + ext);
+              const fullPath = path.normalize(normalizedResolvedBase + ext);
               return normalizedFilesInDir.has(fullPath);
             });
 

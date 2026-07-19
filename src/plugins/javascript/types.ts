@@ -217,6 +217,13 @@ export function getNodeName(node: babel.Node): string | undefined {
     return node.name;
   }
 
+  // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 PrivateName，
+  // 其 `.id`（Identifier）名稱本身不含 `#` 前綴（與 TS 側 PrivateIdentifier.text
+  // 恆帶 `#` 不同，Babel 已天然回傳裸名），無需額外剝除。
+  if (babel.isPrivateName(node)) {
+    return node.id.name;
+  }
+
   if ('id' in node && node.id && babel.isIdentifier(node.id)) {
     return node.id.name;
   }
@@ -227,6 +234,9 @@ export function getNodeName(node: babel.Node): string | undefined {
     }
     if (babel.isStringLiteral(node.key)) {
       return node.key.value;
+    }
+    if (babel.isPrivateName(node.key)) {
+      return node.key.id.name;
     }
   }
 
@@ -250,10 +260,24 @@ export function isSymbolDeclaration(node: babel.Node): boolean {
     babel.isImportNamespaceSpecifier(node) ||
     babel.isClassMethod(node) ||
     babel.isClassProperty(node) ||
+    babel.isClassPrivateProperty(node) ||
+    babel.isClassPrivateMethod(node) ||
     babel.isObjectProperty(node) ||
     babel.isObjectMethod(node) ||
     babel.isArrowFunctionExpression(node)
   );
+}
+
+/**
+ * 是否為 ES2022 私有欄位/方法宣告（`key` 為 `babel.PrivateName`，如 `#secret`）。
+ * 對齊 TS 側 `isPrivateFieldDeclaration`（`src/plugins/typescript/types.ts`）：供
+ * `JavaScriptParser.findReferences` 判斷是否需改走 `ReferenceFinder.findScopedReferences`
+ * 的作用域感知掃描——一般 Identifier 為主的引用蒐集無法匹配 `PrivateName` 節點。
+ */
+export function isPrivateFieldDeclaration(
+  node: babel.Node
+): node is babel.ClassPrivateProperty | babel.ClassPrivateMethod {
+  return babel.isClassPrivateProperty(node) || babel.isClassPrivateMethod(node);
 }
 
 /**

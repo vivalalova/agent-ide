@@ -10,6 +10,7 @@ import type { Disposable } from '@plugins/shared/utils/memory-monitor.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import type { TypeScriptSymbol } from './types.js';
 import { identifierShadowedByLocalDeclaration } from './lexical-scope-binding.js';
+import { collectRequireDestructuringBindings } from './cjs-require-ast.js';
 
 /**
  * 檔案資訊
@@ -471,67 +472,19 @@ export class LanguageServiceManager implements ILanguageServiceManager {
     definitionFilePath: string,
     moduleResolver?: ModuleSpecifierResolver
   ): number | undefined {
-    for (const statement of sourceFile.statements) {
-      if (!ts.isVariableStatement(statement)) {
+    for (const binding of collectRequireDestructuringBindings(sourceFile)) {
+      if (binding.importedName !== symbolName) {
         continue;
       }
-      for (const decl of statement.declarationList.declarations) {
-        if (!decl.initializer || !this.isRequireCall(decl.initializer)) {
-          continue;
-        }
-        const moduleSpecifier = this.getRequireModuleSpecifier(decl.initializer);
-        if (moduleSpecifier === undefined) {
-          continue;
-        }
-        if (!this.specifierMatchesTarget(
-          sourceFile.fileName,
-          moduleSpecifier,
-          definitionFilePath,
-          moduleResolver
-        )) {
-          continue;
-        }
-        if (!ts.isObjectBindingPattern(decl.name)) {
-          continue;
-        }
-        for (const element of decl.name.elements) {
-          if (!ts.isBindingElement(element)) {
-            continue;
-          }
-          // 被匯入名稱：有別名時 propertyName（`{ foo: bar }` 的 foo），否則為 name
-          const propertyName = element.propertyName;
-          const importedName = propertyName && ts.isIdentifier(propertyName)
-            ? propertyName.text
-            : ts.isIdentifier(element.name)
-              ? element.name.text
-              : undefined;
-          if (importedName !== symbolName) {
-            continue;
-          }
-          const anchorNode = propertyName && ts.isIdentifier(propertyName)
-            ? propertyName
-            : element.name;
-          if (ts.isIdentifier(anchorNode)) {
-            return anchorNode.getStart(sourceFile);
-          }
-        }
+      if (!this.specifierMatchesTarget(
+        sourceFile.fileName,
+        binding.moduleSpecifier,
+        definitionFilePath,
+        moduleResolver
+      )) {
+        continue;
       }
-    }
-    return undefined;
-  }
-
-  /** `require('...')` 呼叫（callee 為識別符 require） */
-  private isRequireCall(node: ts.Expression): node is ts.CallExpression {
-    return ts.isCallExpression(node)
-      && ts.isIdentifier(node.expression)
-      && node.expression.text === 'require'
-      && node.arguments.length >= 1;
-  }
-
-  private getRequireModuleSpecifier(call: ts.CallExpression): string | undefined {
-    const arg = call.arguments[0];
-    if (arg && ts.isStringLiteral(arg)) {
-      return arg.text;
+      return binding.nameNode.getStart(sourceFile);
     }
     return undefined;
   }

@@ -21,7 +21,8 @@ import {
   type Documentation,
   type PatternInfo,
   type ScopedFindReferencesOptions,
-  type ScopedReference
+  type ScopedReference,
+  ScopedReferenceKind
 } from '@infrastructure/parser/index.js';
 import type {
   AST,
@@ -36,7 +37,8 @@ import {
   createASTMetadata,
   ReferenceType,
   SymbolType,
-  TYPESCRIPT_PARSER_EXTENSIONS
+  TYPESCRIPT_PARSER_EXTENSIONS,
+  getContainingClassName
 } from '@shared/types/index.js';
 import {
   TypeScriptAST,
@@ -48,7 +50,8 @@ import {
   tsPositionToPosition,
   positionToTsPosition,
   tsNodeToRange,
-  isValidIdentifier
+  isValidIdentifier,
+  isPrivateFieldDeclaration
 } from './types.js';
 import { TypeScriptSymbolExtractor, createSymbolExtractor } from '@plugins/typescript/symbol-extractor.js';
 import { TypeScriptDependencyAnalyzer, createDependencyAnalyzer } from '@plugins/typescript/dependency-analyzer.js';
@@ -58,7 +61,8 @@ import {
   matchesAnyPattern,
   validateParserInput,
   validateRenameInput,
-  computeContentHash
+  computeContentHash,
+  isSameDeclaringFile
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
@@ -217,6 +221,17 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const typedAst = ast as TypeScriptAST;
     const typedSymbol = symbol as TypeScriptSymbol;
 
+    // ES2022 私有欄位/方法（`#secret`）恆宣告於單一 class、無法跨模組 export/import，
+    // 天生檔案（class）作用域封閉。Language Service 的 identifier-anchor 機制
+    // （getSymbolPosition → scopeAnalyzer.getIdentifierFromSymbolNode）只認 ts.Identifier，
+    // 對 PrivateIdentifier 名稱一律回傳 null，導致 symbolPosition 恆為 undefined、
+    // LS 完全找不到引用。私有欄位不需要 LS 的跨檔案/import binding 錨定能力，直接複用
+    // referenceFinder 的作用域感知掃描（與 findScopedReferences 同一套邏輯，已原生支援
+    // PrivateIdentifier 宣告點與 `this.#x` 使用處偵測），避免重造一套 anchor 機制。
+    if (isPrivateFieldDeclaration(typedSymbol.tsNode)) {
+      return this.findPrivateFieldReferences(typedAst, typedSymbol);
+    }
+
     // 確保 Language Service 已初始化
     this.languageServiceManager.ensureInitialized(typedAst.tsSourceFile);
 
@@ -255,13 +270,21 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
             ? ReferenceType.Definition
             : ReferenceType.Usage;
 
+          // object literal shorthand（`{ foo }`）與 destructuring shorthand
+          // （`const { foo } = opts`）：此 token 同時是 key 與 value/binding，
+          // 天真替換成 newName 會把 key 一併改掉（缺陷：見
+          // tests/e2e/commands/typescript/cli-rename-shorthand-bugs.e2e.test.ts）。
+          // 標記後由 rename edit 產生端展開為 `key: newName`。
+          const shorthandKeyText = this.getShorthandKeyText(sourceFile, ref.textSpan.start);
+
           references.push({
             symbol,
             location: {
               filePath: ref.fileName,
               range
             },
-            type: refType
+            type: refType,
+            ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {})
           });
         }
       }
@@ -300,6 +323,37 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
 
     return references;
+  }
+
+  /**
+   * ES2022 私有欄位/方法（`#secret`）的引用查找：恆同檔案、恆同 class，
+   * 直接複用 referenceFinder 的作用域感知掃描（與 CLI `findScopedReferences` 同一套邏輯），
+   * 並以宣告所屬 class 名稱限定範圍，避免不同類別的同名私有成員被誤合併。
+   */
+  private findPrivateFieldReferences(typedAst: TypeScriptAST, typedSymbol: TypeScriptSymbol): Reference[] {
+    const fileName = typedAst.tsSourceFile.fileName;
+
+    // 檔案身份守衛：私有欄位/方法恆宣告於單一 class、無法跨檔案引用。
+    // rename 等命令逐檔掃描全專案時，非宣告檔上同名的屬性存取（如 `cfg.secret`）
+    // 純屬字面巧合，下方 findScopedReferences 對推不出 receiver 型別的屬性存取
+    // 「寧留勿漏」，若不在此擋下會被誤判為引用（見 isSameDeclaringFile 說明與
+    // cli-private-field-symbol-defect.e2e.test.ts 的跨檔誤改 regression）。
+    if (!isSameDeclaringFile(fileName, typedSymbol.location.filePath)) {
+      return [];
+    }
+
+    const containerName = getContainingClassName(typedSymbol);
+    const scopedRefs = this.referenceFinder.findScopedReferences(
+      typedAst.tsSourceFile.getFullText(),
+      typedSymbol.name,
+      { className: containerName }
+    ) ?? [];
+
+    return scopedRefs.map(ref => ({
+      symbol: typedSymbol,
+      location: { filePath: fileName, range: ref.location.range },
+      type: ref.kind === ScopedReferenceKind.Definition ? ReferenceType.Definition : ReferenceType.Usage
+    }));
   }
 
   /**
@@ -667,6 +721,94 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
 
     return findNode(sourceFile);
+  }
+
+  /**
+   * 判定指定位置的識別符是否為 shorthand token（同時是 key 與 value/binding），
+   * 是則回傳原始 key 文字（供 rename 展開為 `key: newName`）：
+   * - object literal shorthand `{ foo }`：`ts.ShorthandPropertyAssignment.name`
+   * - destructuring shorthand `const { foo } = opts`：`ts.BindingElement.name`
+   *   （無 `propertyName`，即無別名）
+   * 非 shorthand 時回傳 undefined，維持原本天真替換行為。
+   *
+   * 例外：CJS `const { foo } = require('./mod')` 解構與 `module.exports = { foo }`
+   * 這類 shorthand，其 key 語意上就是被匯入/匯出的符號名本身（等同 ESM
+   * `import { foo }` / `export { foo }` specifier），rename 時應隨新名稱整個
+   * token 一起改（`{ bar }`），不可展開成 `{ foo: bar }`——否則會破壞既有
+   * CJS 跨檔 rename 行為（見 cli-rename-cjs-require-f4、
+   * cli-rename-dry-run-cjs-multi-edit-preview 等既有 E2E）。
+   */
+  private getShorthandKeyText(sourceFile: ts.SourceFile, position: number): string | undefined {
+    const node = this.findNodeAtPosition(sourceFile, position);
+    if (!node || !ts.isIdentifier(node)) {
+      return undefined;
+    }
+
+    const parent = node.parent;
+    const isShorthandObjectLiteral = ts.isShorthandPropertyAssignment(parent) && parent.name === node;
+    const isShorthandBinding =
+      ts.isBindingElement(parent) &&
+      parent.name === node &&
+      !parent.propertyName &&
+      !parent.dotDotDotToken &&
+      ts.isObjectBindingPattern(parent.parent);
+    if (!isShorthandObjectLiteral && !isShorthandBinding) {
+      return undefined;
+    }
+
+    if (this.isRequireOrModuleExportsShorthand(node)) {
+      return undefined;
+    }
+
+    return node.text;
+  }
+
+  /**
+   * 判定 shorthand 識別符是否位於 CJS require 解構（`const { foo } = require('./mod')`）
+   * 或 module.exports 匯出（`module.exports = { foo }` / `exports = { foo }`）之中。
+   */
+  private isRequireOrModuleExportsShorthand(node: ts.Identifier): boolean {
+    const parent = node.parent;
+
+    if (ts.isBindingElement(parent)) {
+      const pattern = parent.parent;
+      if (ts.isObjectBindingPattern(pattern) && ts.isVariableDeclaration(pattern.parent)) {
+        const init = pattern.parent.initializer;
+        if (init && ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === 'require') {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (ts.isShorthandPropertyAssignment(parent)) {
+      const objectLiteral = parent.parent;
+      if (
+        ts.isObjectLiteralExpression(objectLiteral)
+        && ts.isBinaryExpression(objectLiteral.parent)
+        && objectLiteral.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && objectLiteral.parent.right === objectLiteral
+        && this.isModuleExportsTarget(objectLiteral.parent.left)
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  }
+
+  /** 判定表達式是否為 `module.exports` 或裸 `exports` */
+  private isModuleExportsTarget(expr: ts.Expression): boolean {
+    if (
+      ts.isPropertyAccessExpression(expr)
+      && ts.isIdentifier(expr.expression)
+      && expr.expression.text === 'module'
+      && expr.name.text === 'exports'
+    ) {
+      return true;
+    }
+    return ts.isIdentifier(expr) && expr.text === 'exports';
   }
 
   private isRenameableNode(node: ts.Node): boolean {

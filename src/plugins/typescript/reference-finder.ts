@@ -13,7 +13,8 @@ import {
   type ScopedReference,
   type ScopedFindReferencesOptions
 } from '@infrastructure/parser/index.js';
-import { tsNodeToRange } from './types.js';
+import { tsNodeToRange, tsPositionToPosition, privateIdentifierBareName } from './types.js';
+import type { Range } from '@shared/types/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { findNearestLexicalDeclarationName } from './lexical-scope-binding.js';
@@ -93,7 +94,14 @@ export class ReferenceFinder {
           && node.text === symbolName
           && !!parent && ts.isElementAccessExpression(parent) && parent.argumentExpression === node;
 
-        if (isPlainIdentifierMatch || isBracketKeyMatch) {
+        // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 PrivateIdentifier，非 Identifier，
+        // 原本的 isPlainIdentifierMatch 完全掃不到，導致 `#secret` 宣告與 `this.#secret` 使用處
+        // 對 search/find-references/rename 全部隱形。symbolName 已在 getNodeName 去除 `#` 前綴
+        // （見 types.ts），故比對時同樣需去除節點 text 的 `#` 前綴（privateIdentifierBareName）。
+        const isPrivateIdentifierMatch = ts.isPrivateIdentifier(node)
+          && privateIdentifierBareName(node) === symbolName;
+
+        if (isPlainIdentifierMatch || isBracketKeyMatch || isPrivateIdentifierMatch) {
           // 判斷引用類型和所屬容器
           const refInfo = this.analyzeIdentifierReference(node, sourceFile);
 
@@ -103,7 +111,14 @@ export class ReferenceFinder {
               return;
             }
 
-            const range = tsNodeToRange(node, sourceFile);
+            // 私有欄位的比對/替換範圍需排除 `#` 前綴本身，只涵蓋裸名（"secret"）：
+            // 下游 rename（reference-updater.ts 的 referenceTokenMatchesName）會將此範圍
+            // 對應的原文 token 與 symbol.name（裸名）比對，範圍含 `#` 會使 token 變成
+            // "#secret" 而永遠比對失敗；範圍排除 `#` 後，替換新名時 `#` 會留在範圍外、
+            // 自動保留（"#secret" → 範圍外的 "#" + 範圍內 "secret"→"hidden" = "#hidden"）。
+            const range = isPrivateIdentifierMatch
+              ? this.privateIdentifierNameRange(node, sourceFile)
+              : tsNodeToRange(node, sourceFile);
             const location = {
               filePath: sourceFile.fileName,
               range
@@ -141,7 +156,7 @@ export class ReferenceFinder {
     refInfo: IdentifierReferenceInfo,
     targetClassName: string,
     symbolName: string,
-    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.PrivateIdentifier
   ): boolean {
     return sharedShouldExcludeByClassName(
       refInfo,
@@ -149,6 +164,18 @@ export class ReferenceFinder {
       symbolName,
       () => this.hasEnclosingTargetFunction(node, symbolName)
     );
+  }
+
+  /**
+   * 取得 PrivateIdentifier 節點裸名部分（去除 `#` 前綴）的範圍。
+   * `node.getStart()` 指向 `#` 本身，裸名從其後一個字元開始、到節點結尾為止；
+   * 此範圍即 rename 實際替換的文字區間，讓 `#` 留在範圍外而被保留（見呼叫端註解）。
+   */
+  private privateIdentifierNameRange(node: ts.PrivateIdentifier, sourceFile: ts.SourceFile): Range {
+    return {
+      start: tsPositionToPosition(sourceFile, node.getStart(sourceFile) + 1),
+      end: tsPositionToPosition(sourceFile, node.getEnd())
+    };
   }
 
   /**
@@ -176,7 +203,7 @@ export class ReferenceFinder {
    * @returns 引用分析結果，如果無法分析則返回 null
    */
   private analyzeIdentifierReference(
-    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.PrivateIdentifier,
     sourceFile: ts.SourceFile
   ): IdentifierReferenceInfo | null {
     const parent = node.parent;

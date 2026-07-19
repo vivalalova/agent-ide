@@ -68,6 +68,13 @@ export interface Reference {
   readonly symbol: Symbol;
   readonly location: Location;
   readonly type: ReferenceType;
+  /**
+   * 此引用所在的 token 同時是 object literal / destructuring shorthand 的
+   * key 與 value（如 `{ foo }`、`const { foo } = opts` 的 `foo`）。
+   * rename 展開為 `key: newName` 形式時，此欄位帶原始 key 文字（未 rename 前
+   * 的名稱，即 `symbol.name`）；一般（非 shorthand）引用不帶此欄位。
+   */
+  readonly shorthandKeyText?: string;
 }
 
 /**
@@ -152,12 +159,14 @@ export function createSymbol(
 export function createReference(
   symbol: Symbol,
   location: Location,
-  type: ReferenceType
+  type: ReferenceType,
+  shorthandKeyText?: string
 ): Reference {
   return {
     symbol,
     location,
-    type
+    type,
+    ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {})
   };
 }
 
@@ -304,6 +313,25 @@ export function isFunctionLocalSymbol(symbol: Symbol): boolean {
   }
 
   return false;
+}
+
+/**
+ * 取得符號所屬的 class 容器名稱（供作用域感知的引用查找限定 class 範圍，
+ * 避免不同類別的同名成員被誤合併/誤改）。
+ *
+ * class 方法/屬性宣告本身的 `scope` 在符號提取時即為其 enclosing scope，即 class scope
+ * 本身（type 'class'）；若 symbol.scope 是 function scope 且其 parent 為 class scope
+ * （method 內部符號、或未來其他以 method scope 為直接 enclosing scope 的情境），
+ * 則取 parent 的 class 名稱。找不到 class 容器時回傳 undefined。
+ *
+ * 呼叫端（symbol-finder、TS parser 的 findReferences 私有欄位分支）一律引用此定義，
+ * 禁自行重寫判定邏輯。
+ */
+export function getContainingClassName(symbol: Symbol): string | undefined {
+  if (symbol.scope?.type === 'function' && symbol.scope?.parent?.type === 'class') {
+    return symbol.scope.parent.name;
+  }
+  return symbol.scope?.type === 'class' ? symbol.scope.name : undefined;
 }
 
 /**

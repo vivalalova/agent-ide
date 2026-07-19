@@ -29,8 +29,29 @@ import {
   tryGetSourceFile
 } from './module-file-resolver.js';
 import { isExcludedPropertyKeyIdentifier, nodeStartsAtLocation } from './ast-node-location.js';
-import { identifierShadowedByLocalDeclaration } from '@plugins/typescript/lexical-scope-binding.js';
+import {
+  identifierShadowedByLocalDeclaration,
+  type RequireBindingEquivalenceContext
+} from '@plugins/typescript/lexical-scope-binding.js';
+import {
+  collectRequireDestructuringBindings,
+  getRequireModuleSpecifier,
+  isRequireCall,
+  type RequireDestructuringBinding
+} from '@plugins/typescript/cjs-require-ast.js';
 import { receiverTargetsSelectedOwner } from './receiver-owner-heritage.js';
+
+/**
+ * 每個 sourceFile 對應「本檔任意位置（含函式內區域）require 解構 binding 的 local 名稱節點，
+ * 其 require module specifier 解析後確實提供選定符號」的集合。
+ *
+ * `identifierShadowedByLocalDeclaration` 判斷 require 解構是否 import-equivalent（非遮蔽）
+ * 需要比對來源模組，但模組解析（`resolveModuleFile` / `moduleFileProvidesSelectedSymbol`）
+ * 是 async，而遮蔽判斷發生在 `locationMatchesSelectedBinding` 的同步 AST 比對路徑；因此在
+ * `getSelectedSymbolFileAnalysis`（async，且必定先於比對執行）階段就把整檔的比對結果算好、
+ * 快取進這裡，供之後同步查詢，不需要把比對路徑整條改成 async。
+ */
+const requireBindingEquivalenceCache = new WeakMap<ts.SourceFile, ReadonlySet<ts.Identifier>>();
 
 export async function getSelectedSymbolFileAnalysis(
   filePath: string,
@@ -80,7 +101,110 @@ export async function getSelectedSymbolFileAnalysis(
     await addExportBindings(declaration, filePath, filterContext, bindings);
   }
 
+  // CJS `const { foo } = require('./mod')`：與 ESM 具名 import 同語意，走同一套
+  // 「來源模組是否提供選定符號」判定，只是 AST 形狀不同，故不掛在上面的
+  // ImportDeclaration 走訪、改在收集完成後另補一輪（對齊 rename 引擎側的 F4 CJS 支援）。
+  for (const binding of collectRequireDestructuringBindings(sourceFile)) {
+    await addRequireDestructuringBinding(binding, filePath, filterContext, bindings);
+  }
+
+  // 遮蔽判斷需要看到「任意巢狀層級」的 require 解構（不限頂層），才能判斷函式內區域
+  // require 是否來自不同模組（真遮蔽）；在此預先算好整檔結果、快取供同步比對路徑查詢。
+  await computeRequireBindingEquivalence(sourceFile, filePath, filterContext);
+
   return analysis;
+}
+
+interface RequireBindingNameNode {
+  readonly moduleSpecifier: string;
+  readonly nameNode: ts.Identifier;
+}
+
+/**
+ * 收集本檔「任意位置」（不限頂層）的 `const { foo } = require('./mod')` 解構 local 名稱節點。
+ * 與 `collectRequireDestructuringBindings` 只收頂層不同：函式內區域 require 也需要被看到，
+ * 才能判斷該區域 binding 是否來自不同模組（真遮蔽）。
+ */
+function collectAllRequireDestructuringNameNodes(sourceFile: ts.SourceFile): RequireBindingNameNode[] {
+  const results: RequireBindingNameNode[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node)
+      && node.initializer
+      && isRequireCall(node.initializer)
+      && ts.isObjectBindingPattern(node.name)
+    ) {
+      const moduleSpecifier = getRequireModuleSpecifier(node.initializer);
+      if (moduleSpecifier !== undefined) {
+        for (const element of node.name.elements) {
+          if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+            results.push({ moduleSpecifier, nameNode: element.name });
+          }
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return results;
+}
+
+/**
+ * 對本檔每一個 require 解構 local 名稱節點，比對其 require module specifier 解析後
+ * 是否確實提供選定符號（與 `moduleFileProvidesSelectedSymbol` 同一套「來源模組是否提供選定
+ * 符號」判定，reuse 既有解析——對直接 require 目標定義檔的情形等價於「解析後與目標定義檔
+ * 一致」），結果快取進 `requireBindingEquivalenceCache` 供同步的遮蔽比對路徑查詢。
+ */
+async function computeRequireBindingEquivalence(
+  sourceFile: ts.SourceFile,
+  fromFile: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<void> {
+  if (requireBindingEquivalenceCache.has(sourceFile)) {
+    return;
+  }
+
+  const equivalent = new Set<ts.Identifier>();
+  for (const { moduleSpecifier, nameNode } of collectAllRequireDestructuringNameNodes(sourceFile)) {
+    const moduleFile = await resolveModuleFile(moduleSpecifier, fromFile, filterContext);
+    if (moduleFile !== null && await moduleFileProvidesSelectedSymbol(moduleFile, filterContext)) {
+      equivalent.add(nameNode);
+    }
+  }
+
+  requireBindingEquivalenceCache.set(sourceFile, equivalent);
+}
+
+function buildRequireBindingEquivalenceContext(sourceFile: ts.SourceFile): RequireBindingEquivalenceContext {
+  const equivalent = requireBindingEquivalenceCache.get(sourceFile);
+  return {
+    isRequireBindingEquivalentToTarget: nameNode => equivalent?.has(nameNode) ?? false
+  };
+}
+
+async function addRequireDestructuringBinding(
+  binding: RequireDestructuringBinding,
+  fromFile: string,
+  filterContext: SymbolReferenceFilterContext,
+  bindings: SelectedSymbolBindings
+): Promise<void> {
+  const moduleFile = await resolveModuleFile(binding.moduleSpecifier, fromFile, filterContext);
+  if (moduleFile === null || !await moduleFileProvidesSelectedSymbol(moduleFile, filterContext)) {
+    return;
+  }
+
+  const symbolName = filterContext.selectedSymbol.name;
+  const ownerName = filterContext.selectedOwnerName;
+
+  if (binding.importedName === symbolName) {
+    bindings.directNames.add(binding.localName);
+  }
+  if (ownerName && binding.importedName === ownerName) {
+    bindings.ownerNames.add(binding.localName);
+  }
 }
 
 async function addImportBindings(
@@ -454,6 +578,7 @@ export function locationMatchesSelectedBinding(
   selectedOwnerName: string | undefined
 ): boolean {
   let matches = false;
+  const requireBindingContext = buildRequireBindingEquivalenceContext(sourceFile);
 
   const visit = (node: ts.Node): void => {
     if (matches) {
@@ -461,12 +586,16 @@ export function locationMatchesSelectedBinding(
     }
 
     if (ts.isCallExpression(node) && nodeStartsAtLocation(node, sourceFile, location)) {
-      matches = expressionTargetsSelectedBinding(node.expression, bindings, selectedSymbol, sourceFile, selectedOwnerName);
+      matches = expressionTargetsSelectedBinding(
+        node.expression, bindings, selectedSymbol, sourceFile, selectedOwnerName, requireBindingContext
+      );
       return;
     }
 
     if (ts.isIdentifier(node) && nodeStartsAtLocation(node, sourceFile, location)) {
-      matches = identifierTargetsSelectedBinding(node, bindings, selectedSymbol, sourceFile, selectedOwnerName);
+      matches = identifierTargetsSelectedBinding(
+        node, bindings, selectedSymbol, sourceFile, selectedOwnerName, requireBindingContext
+      );
       return;
     }
 
@@ -482,10 +611,12 @@ function expressionTargetsSelectedBinding(
   bindings: SelectedSymbolBindings,
   selectedSymbol: Symbol,
   sourceFile: ts.SourceFile,
-  selectedOwnerName: string | undefined
+  selectedOwnerName: string | undefined,
+  requireBindingContext: RequireBindingEquivalenceContext
 ): boolean {
   if (ts.isIdentifier(expression)) {
-    return bindings.directNames.has(expression.text) && !identifierShadowedByLocalDeclaration(expression, sourceFile);
+    return bindings.directNames.has(expression.text)
+      && !identifierShadowedByLocalDeclaration(expression, sourceFile, requireBindingContext);
   }
 
   if (
@@ -495,7 +626,7 @@ function expressionTargetsSelectedBinding(
     if (
       ts.isIdentifier(expression.expression)
       && bindings.namespaceNames.has(expression.expression.text)
-      && !identifierShadowedByLocalDeclaration(expression.expression, sourceFile)
+      && !identifierShadowedByLocalDeclaration(expression.expression, sourceFile, requireBindingContext)
     ) {
       return true;
     }
@@ -518,7 +649,8 @@ function identifierTargetsSelectedBinding(
   bindings: SelectedSymbolBindings,
   selectedSymbol: Symbol,
   sourceFile: ts.SourceFile,
-  selectedOwnerName: string | undefined
+  selectedOwnerName: string | undefined,
+  requireBindingContext: RequireBindingEquivalenceContext
 ): boolean {
   const parent = node.parent;
   if (
@@ -527,7 +659,9 @@ function identifierTargetsSelectedBinding(
     && parent.name === node
     && parent.name.text === selectedSymbol.name
   ) {
-    return expressionTargetsSelectedBinding(parent, bindings, selectedSymbol, sourceFile, selectedOwnerName);
+    return expressionTargetsSelectedBinding(
+      parent, bindings, selectedSymbol, sourceFile, selectedOwnerName, requireBindingContext
+    );
   }
 
   // interface/type literal 屬性簽名鍵與 object literal 非 shorthand 鍵：名稱字面重合，
@@ -536,7 +670,10 @@ function identifierTargetsSelectedBinding(
     return false;
   }
 
-  if (bindings.directNames.has(node.text) && !identifierShadowedByLocalDeclaration(node, sourceFile)) {
+  if (
+    bindings.directNames.has(node.text)
+    && !identifierShadowedByLocalDeclaration(node, sourceFile, requireBindingContext)
+  ) {
     return true;
   }
 

@@ -26,7 +26,8 @@ export {
   isRelativePath,
   UNICODE_IDENTIFIER_PATTERN,
   isValidUnicodeIdentifier,
-  matchesAnyPattern
+  matchesAnyPattern,
+  isSameDeclaringFile
 } from './parser-helpers.js';
 
 export { computeContentHash } from '@shared/content-hash.js';

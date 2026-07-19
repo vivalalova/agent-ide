@@ -20,6 +20,12 @@ export interface SymbolReference {
   readonly isMethodCall?: boolean;
   /** 呼叫者類型名稱（用於精確匹配方法所屬類別） */
   readonly receiverType?: string;
+  /**
+   * 此引用是 object literal / destructuring shorthand token（`{ foo }`）：
+   * 帶原始 key 文字，供 rename 展開為 `key: newName`，避免天真替換把 key
+   * 一併改掉（見 Reference.shorthandKeyText，shared/types/symbol.ts）。
+   */
+  readonly shorthandKeyText?: string;
 }
 
 /**

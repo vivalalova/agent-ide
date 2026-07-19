@@ -217,7 +217,7 @@ export class TypeScriptSymbolExtractor {
     // 嘗試取得節點的 name 屬性（識別符）
     if ('name' in node && node.name) {
       const nameNode = node.name as ts.Node;
-      if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode)) {
+      if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode) || ts.isPrivateIdentifier(nameNode)) {
         return tsNodeToRange(nameNode, this.sourceFile);
       }
     }

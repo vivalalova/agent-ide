@@ -122,12 +122,44 @@ async function handleImpactCommand(
     // 分析專案依賴
     await impactAnalyzer.analyzeProject(analyzePath);
 
+    // 解析目標檔案在依賴圖中的實際節點路徑：exists() 在大小寫不敏感 FS 上對
+    // 錯誤大小寫仍會通過前置檢查，但依賴圖節點使用 file-scanner 掃描到的磁碟
+    // 真實大小寫建立，兩者精確字串比對會落空。查找落空時退回大小寫不敏感比對，
+    // 命中唯一節點才視為同一檔案；零命中或多重命中（真的不在索引中）明確報錯，
+    // 禁止靜默回報 success:true 且 totalAffected 為 0 的假成功。
+    const graph = impactAnalyzer.getGraph();
+    let resolvedTargetFile = targetFile;
+    if (!graph.hasNode(targetFile)) {
+      const lowerTarget = targetFile.toLowerCase();
+      const caseInsensitiveMatches = graph.getAllNodes().filter(
+        node => node.toLowerCase() === lowerTarget
+      );
+      if (caseInsensitiveMatches.length === 1) {
+        resolvedTargetFile = caseInsensitiveMatches[0];
+      } else {
+        outputErrorWithDetails(
+          outputHandler,
+          format,
+          `檔案不在索引中，請確認路徑大小寫: ${targetFile}`,
+          {
+            pathContext: {
+              role: 'targetFile',
+              ...pathContext
+            }
+          },
+          'impact'
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     // 獲取統計資訊
     const stats = impactAnalyzer.getStats();
 
     // 取得影響分析資訊
-    const dependents = impactAnalyzer.getImpactedFiles(targetFile);
-    const dependencies = impactAnalyzer.getDependencies(targetFile);
+    const dependents = impactAnalyzer.getImpactedFiles(resolvedTargetFile);
+    const dependencies = impactAnalyzer.getDependencies(resolvedTargetFile);
 
     const result: ImpactResult = {
       command: QueryCommand.Impact,
@@ -138,7 +170,7 @@ async function handleImpactCommand(
         totalAffected: dependents.length
       },
       impact: {
-        targetFile,
+        targetFile: resolvedTargetFile,
         dependents,
         dependencies,
         totalAffected: dependents.length

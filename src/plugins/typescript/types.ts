@@ -244,9 +244,36 @@ interface NodeWithName extends ts.Node {
   name?: ts.Identifier | ts.StringLiteral | ts.PropertyName;
 }
 
+/**
+ * ES2022 私有欄位/方法識別符（`ts.PrivateIdentifier`，如 `#secret`）的 `.text` 恆帶 `#` 前綴。
+ * 符號名（供 search/find-references/rename 等既有的精確名稱 Map 比對使用）與
+ * `reference-finder.ts` 比對引用 token 時都需要「去除前綴的裸名」（`"secret"`），
+ * 故抽成單一來源，避免兩處各自 `.slice(1)`。`#` 前綴本身由位置範圍
+ * （`getSymbolIdentifierRange`，見 symbol-extractor.ts）與引用比對的範圍計算
+ * （`reference-finder.ts`）另行保留，重建含 `#` 的原始文字。
+ */
+export function privateIdentifierBareName(node: ts.PrivateIdentifier): string {
+  return node.text.slice(1);
+}
+
+/**
+ * 是否為 ES2022 私有欄位/方法宣告（`name` 為 `PrivateIdentifier`，如 `#secret`）。
+ * 供 findReferences 判斷是否需改走檔案作用域掃描：TypeScript Language Service 的
+ * identifier-anchor 機制（`getIdentifierFromSymbolNode`）只認 `ts.Identifier`，對
+ * `PrivateIdentifier` 名稱一律回傳 `null`，導致 LS 完全找不到引用（見 parser.ts findReferences）。
+ */
+export function isPrivateFieldDeclaration(node: ts.Node): node is ts.Node & { name: ts.PrivateIdentifier } {
+  const namedNode = node as NodeWithName;
+  return !!namedNode.name && ts.isPrivateIdentifier(namedNode.name);
+}
+
 export function getNodeName(node: ts.Node): string | undefined {
   if (ts.isIdentifier(node)) {
     return node.text;
+  }
+
+  if (ts.isPrivateIdentifier(node)) {
+    return privateIdentifierBareName(node);
   }
 
   const namedNode = node as NodeWithName;
@@ -256,6 +283,12 @@ export function getNodeName(node: ts.Node): string | undefined {
     }
     if (ts.isStringLiteral(namedNode.name)) {
       return namedNode.name.text;
+    }
+    if (ts.isPrivateIdentifier(namedNode.name)) {
+      // ES2022 私有欄位/方法（如 #secret）：符號名去除 `#` 前綴，讓既有以名稱做精確比對
+      // 的機制（Map key，如 findSymbol／rename --from）能用使用者輸入的裸名（"secret"）
+      // 命中；`#` 僅是固定語法前綴，由位置範圍與引用比對另行處理。
+      return privateIdentifierBareName(namedNode.name);
     }
   }
 

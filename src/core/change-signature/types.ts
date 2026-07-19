@@ -265,7 +265,9 @@ export enum ChangeSignatureErrorCode {
   /** 偵測到方法呼叫點（`obj.method(...)`），無型別解析無法安全重寫 */
   MethodCallSiteUnsupported = 'method-call-site-unsupported',
   /** 目標為 overload 簽章群，簽章變更語意不明確 */
-  OverloadSignatureGroup = 'overload-signature-group'
+  OverloadSignatureGroup = 'overload-signature-group',
+  /** --add 預設值引用同函式其他參數，但未明確指定 --call-site-value（會逐字塞入呼叫點） */
+  AmbiguousDefaultValueCallSiteReference = 'ambiguous-default-value-call-site-reference'
 }
 
 /**

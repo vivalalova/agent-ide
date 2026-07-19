@@ -12,7 +12,7 @@ import {
   isJavaScriptSourceExtension,
   isTypeScriptSourceExtension
 } from '@shared/types/index.js';
-import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
+import { MUTATION_SCAN_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 
 /**
  * 檔案操作工具類
@@ -142,8 +142,9 @@ async function collectFilesRecursive(
   for (const entry of entries) {
     const fullPath = join(dirPath, entry.name);
 
-    // 跳過 node_modules、build 輸出目錄和隱藏目錄
-    if ((COMMON_EXCLUDE_DIR_NAMES as readonly string[]).includes(entry.name) || entry.name.startsWith('.')) {
+    // 跳過 node_modules/dist/coverage 等變更類引用掃描安全交集目錄和隱藏目錄；
+    // 窄清單見 @shared/exclude-dirs 語意說明，禁換回廣清單（會誤跳過真實原始碼目錄）
+    if ((MUTATION_SCAN_EXCLUDE_DIR_NAMES as readonly string[]).includes(entry.name) || entry.name.startsWith('.')) {
       continue;
     }
 

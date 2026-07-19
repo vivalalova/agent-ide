@@ -317,6 +317,14 @@ export function extractClassMembers(
     readonly startLineIndex: number;
     readonly endLineIndex: number;
     readonly hasBody: boolean;
+    /**
+     * 精確的 accessor 種類（'get'/'set'），直接取自 regex 的 group(4) 捕捉結果，
+     * 非對 matchText 做子字串比對（子字串比對對名稱恰含 "get"/"set" 的一般方法
+     * ——如 `budget()`、`reset()`——會誤判，因該 group 只在真正比對到獨立的
+     * `get`/`set` 關鍵字 token 時才有值，見下方 methodPattern 與 constructor
+     * 跳過判斷同樣依賴 match[5] 精確比對的先例）
+     */
+    readonly accessorKind: 'get' | 'set' | undefined;
   }
 
   // 名稱前允許 `get`/`set` 存取子關鍵字，否則 getter/setter 因不含 async/static/
@@ -359,7 +367,8 @@ export function extractClassMembers(
       name: match[5],
       startLineIndex,
       endLineIndex: bodyEndLineIndex,
-      hasBody
+      hasBody,
+      accessorKind: match[4] === 'get' || match[4] === 'set' ? match[4] : undefined
     });
   }
 
@@ -381,6 +390,17 @@ export function extractClassMembers(
     const lineNumber = classStartLine + bodyStartLine - 1 + startLineIndex;
     const sourceCode = bodyLines.slice(startLineIndex, endLine + 1).join('\n');
 
+    // accessor 種類（get/set）附加進 modifiers：extractModifiers 只認
+    // export/async/static/public/private/protected/readonly/abstract 這幾個
+    // 固定關鍵字子字串，不含 get/set（子字串比對對 accessor 不安全，見
+    // RawMethodCandidate.accessorKind 註解），故在此用 regex 已精確判定的
+    // lastCandidate.accessorKind 補上，供上游（如 move-member 的 class-only
+    // 形狀守衛）判斷這是 accessor 而非一般方法。
+    const modifiers = extractModifiers(lastCandidate.matchText);
+    if (lastCandidate.accessorKind) {
+      modifiers.push(lastCandidate.accessorKind);
+    }
+
     members.push(createMember(
       lastCandidate.name,
       MemberType.Method,
@@ -389,7 +409,7 @@ export function extractClassMembers(
       classStartLine + bodyStartLine - 1 + endLine,
       sourceCode,
       className,
-      extractModifiers(lastCandidate.matchText),
+      modifiers,
       extractDocumentation(bodyLines, startLineIndex),
       extractDependencies(sourceCode)
     ));

@@ -27,7 +27,8 @@ import {
   type Documentation,
   type PatternInfo,
   type ScopedFindReferencesOptions,
-  type ScopedReference
+  type ScopedReference,
+  ScopedReferenceKind
 } from '@infrastructure/parser/index.js';
 import type {
   AST,
@@ -52,7 +53,8 @@ import {
   createScope,
   createReference,
   createDependency,
-  isFunctionLocalSymbol
+  isFunctionLocalSymbol,
+  getContainingClassName
 } from '@shared/types/index.js';
 import {
   JavaScriptAST,
@@ -65,6 +67,7 @@ import {
   babelLocationToPosition,
   isValidIdentifier,
   isRelativePath,
+  isPrivateFieldDeclaration,
   getImportedSymbols,
   getPluginsForFile,
   mergeBabelPlugins
@@ -74,7 +77,8 @@ import {
   matchesAnyPattern,
   validateParserInput,
   validateRenameInput,
-  computeContentHash
+  computeContentHash,
+  isSameDeclaringFile
 } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { PatternAnalyzer } from './pattern-analyzer.js';
@@ -244,6 +248,24 @@ export class JavaScriptParser implements ParserPlugin {
         this.extractPropertySymbol(path.node, symbols, typedAst.sourceFile);
       },
 
+      // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 ClassPrivateProperty/
+      // ClassPrivateMethod（key 為 babel.PrivateName），與一般 ClassProperty/ClassMethod
+      // 是不同節點型別，未註冊獨立分支會讓 `#secret` 完全不被索引（對齊 TS 側
+      // ts.PrivateIdentifier 修復，見 plugins/typescript/symbol-extractor.ts）。
+      ClassPrivateProperty: (path: NodePath<babel.ClassPrivateProperty>) => {
+        this.extractPrivatePropertySymbol(path, symbols, typedAst.sourceFile);
+      },
+
+      ClassPrivateMethod: (path: NodePath<babel.ClassPrivateMethod>) => {
+        this.extractPrivateMethodSymbol(path, symbols, typedAst.sourceFile);
+        this.extractParameterSymbols(
+          path.node.params,
+          path.node.key.id.name,
+          symbols,
+          typedAst.sourceFile
+        );
+      },
+
       ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
         this.extractObjectMethodSymbol(path.node, symbols, typedAst.sourceFile);
         this.extractParameterSymbols(
@@ -293,6 +315,17 @@ export class JavaScriptParser implements ParserPlugin {
   async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
     const typedAst = ast as JavaScriptAST;
     const typedSymbol = symbol as JavaScriptSymbol;
+
+    // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 ClassPrivateProperty/
+    // ClassPrivateMethod（key 為 PrivateName），下方以 Identifier 為主的
+    // isReferenceToSymbol 判定完全比對不到 PrivateName 節點。私有欄位天生
+    // class 作用域封閉，直接複用 ReferenceFinder.findScopedReferences 的
+    // PrivateName 感知掃描（find-references CLI 命令的同一套邏輯），對齊
+    // TS 側 findPrivateFieldReferences（見 plugins/typescript/parser.ts）。
+    if (isPrivateFieldDeclaration(typedSymbol.babelNode)) {
+      return this.findPrivateFieldReferences(typedAst, typedSymbol);
+    }
+
     const references: Reference[] = [];
 
     // 使用 Babel traverse 查找引用
@@ -308,7 +341,14 @@ export class JavaScriptParser implements ParserPlugin {
 
             const referenceType = this.getReferenceType(path, typedSymbol);
 
-            references.push(createReference(symbol, location, referenceType));
+            // object literal shorthand（`{ foo }`）與 destructuring shorthand
+            // （`const { foo } = opts`）：此 token 同時是 key 與 value/binding，
+            // 天真替換成 newName 會把 key 一併改掉（缺陷：見
+            // tests/e2e/commands/javascript/cli-rename-shorthand-bugs.e2e.test.ts）。
+            // 標記後由 rename edit 產生端展開為 `key: newName`。
+            const shorthandKeyText = this.getShorthandKeyText(path);
+
+            references.push(createReference(symbol, location, referenceType, shorthandKeyText));
           }
         }
       },
@@ -334,6 +374,38 @@ export class JavaScriptParser implements ParserPlugin {
     });
 
     return references;
+  }
+
+  /**
+   * ES2022 私有欄位/方法（`#secret`）的引用查找。對齊 TS 側
+   * findPrivateFieldReferences（plugins/typescript/parser.ts）：複用
+   * ReferenceFinder.findScopedReferences（find-references CLI 命令的同一套
+   * PrivateName 感知掃描），以 containerName 限定同一個 class，避免不同
+   * class 的同名私有欄位互相誤判為同一符號。
+   */
+  private findPrivateFieldReferences(typedAst: JavaScriptAST, typedSymbol: JavaScriptSymbol): Reference[] {
+    // 檔案身份守衛：私有欄位/方法恆宣告於單一 class、無法跨檔案引用。
+    // rename 等命令逐檔掃描全專案時，非宣告檔上同名的屬性存取（如 `cfg.secret`）
+    // 純屬字面巧合，下方 findScopedReferences 對推不出 receiver 型別的屬性存取
+    // 「寧留勿漏」，若不在此擋下會被誤判為引用（見 isSameDeclaringFile 說明與
+    // cli-private-field-symbol-defect.e2e.test.ts 的跨檔誤改 regression，對齊
+    // TS 側 findPrivateFieldReferences）。
+    if (!isSameDeclaringFile(typedAst.sourceFile, typedSymbol.location.filePath)) {
+      return [];
+    }
+
+    const containerName = getContainingClassName(typedSymbol);
+    const scopedRefs = this.referenceFinder.findScopedReferences(
+      typedAst.sourceCode,
+      typedSymbol.name,
+      { className: containerName }
+    ) ?? [];
+
+    return scopedRefs.map(ref => createReference(
+      typedSymbol,
+      { filePath: typedAst.sourceFile, range: ref.location.range },
+      ref.kind === ScopedReferenceKind.Definition ? ReferenceType.Definition : ReferenceType.Usage
+    ));
   }
 
   /**
@@ -569,13 +641,21 @@ export class JavaScriptParser implements ParserPlugin {
     functionScopeName?: string
   ): void {
     const node = path.node;
+    // CJS `const { foo } = require('./mod')` / `const mod = require('./mod')`：語意上等同
+    // ESM `import`，標記 isImported 使其對齊 extractImportSymbol 的既有標記——不與真正的
+    // 定義候選競爭（--at 唯一性判定、rename 定義候選過濾皆以 isImportedSymbol 排除 import
+    // binding，CJS require binding 若不標記會被誤當獨立定義，導致同名符號消歧誤判為歧義）。
+    const isRequireBinding = this.isRequireCallExpression(node.init);
     if (babel.isIdentifier(node.id)) {
       const symbol = this.createSymbolFromNode(
         node,
         node.id.name,
         SymbolType.Variable,
         sourceFile,
-        { modifiers: this.getExportModifiers(path.parentPath?.parentPath) },
+        {
+          modifiers: this.getExportModifiers(path.parentPath?.parentPath),
+          ...(isRequireBinding ? { isImported: true } : {})
+        },
         functionScopeName ? createScope('function', functionScopeName) : undefined,
         node.id
       );
@@ -593,8 +673,22 @@ export class JavaScriptParser implements ParserPlugin {
     for (const identifier of this.collectBindingIdentifiers(node.id)) {
       const location = { filePath: sourceFile, range: this.getNodeRange(identifier) };
       const baseSymbol = createSymbol(identifier.name, SymbolType.Variable, location, scope, modifiers);
-      symbols.push({ ...baseSymbol, babelNode: identifier });
+      symbols.push({
+        ...baseSymbol,
+        babelNode: identifier,
+        ...(isRequireBinding ? { isImported: true } : {})
+      });
     }
+  }
+
+  /**
+   * `require('...')` 呼叫（callee 為識別符 require）。原本在本檔（Babel AST）內重複
+   * 三處（依賴收集、shorthand 判定、F4 rename 綁定判定），改上手前先收斂為單一來源；
+   * 與 TS 側 `@plugins/typescript/cjs-require-ast.ts` 的 `isRequireCall` 同語意，各自
+   * 對應不同 AST（Babel vs TypeScript Compiler API），無法合併成同一份實作。
+   */
+  private isRequireCallExpression(node: babel.Node | null | undefined): node is babel.CallExpression {
+    return !!node && babel.isCallExpression(node) && babel.isIdentifier(node.callee) && node.callee.name === 'require';
   }
 
   /**
@@ -747,6 +841,61 @@ export class JavaScriptParser implements ParserPlugin {
     }
   }
 
+  /**
+   * ES2022 私有方法（`#method() {}`）符號抽取。對齊 extractMethodSymbol：
+   * 名稱取自 `key.id.name`（PrivateName 裸名，Babel 原生不含 `#`），位置錨定於
+   * `key`（PrivateName 節點本身，範圍含 `#` 前綴，對齊 TS 側
+   * getSymbolIdentifierRange 對 PrivateIdentifier 的處理）。scope 記錄所屬 class，
+   * 供 findPrivateFieldReferences 取得 containerName 做同類過濾。
+   */
+  private extractPrivateMethodSymbol(
+    path: NodePath<babel.ClassPrivateMethod>,
+    symbols: JavaScriptSymbol[],
+    sourceFile: string
+  ): void {
+    const node = path.node;
+    const classPath = path.findParent(
+      p => p.isClassDeclaration() || p.isClassExpression()
+    ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
+
+    const symbol = this.createSymbolFromNode(
+      node,
+      node.key.id.name,
+      SymbolType.Function,
+      sourceFile,
+      {},
+      classPath ? createScope('class', classPath.node.id?.name) : undefined,
+      node.key
+    );
+    symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
+  }
+
+  /**
+   * ES2022 私有欄位（`#secret = 1`）符號抽取。對齊 extractPropertySymbol：
+   * 名稱取自 `key.id.name`（PrivateName 裸名），位置錨定於 `key`（範圍含 `#`）。
+   */
+  private extractPrivatePropertySymbol(
+    path: NodePath<babel.ClassPrivateProperty>,
+    symbols: JavaScriptSymbol[],
+    sourceFile: string
+  ): void {
+    const node = path.node;
+    const classPath = path.findParent(
+      p => p.isClassDeclaration() || p.isClassExpression()
+    ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
+
+    const symbol = this.createSymbolFromNode(
+      node,
+      node.key.id.name,
+      SymbolType.Variable,
+      sourceFile,
+      {},
+      classPath ? createScope('class', classPath.node.id?.name) : undefined,
+      node.key
+    );
+    symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
+  }
+
   private extractPropertySymbol(
     node: babel.ClassProperty,
     symbols: JavaScriptSymbol[],
@@ -868,7 +1017,7 @@ export class JavaScriptParser implements ParserPlugin {
     dependencies: Dependency[]
   ): void {
     // 處理 require() 呼叫
-    if (babel.isIdentifier(node.callee) && node.callee.name === 'require') {
+    if (this.isRequireCallExpression(node)) {
       const firstArg = node.arguments[0];
       if (babel.isStringLiteral(firstArg)) {
         const target = firstArg.value;
@@ -1028,6 +1177,77 @@ export class JavaScriptParser implements ParserPlugin {
   }
 
   /**
+   * 判定引用節點是否為 object property shorthand token（`{ foo }`，含
+   * ObjectExpression 的 value 與 ObjectPattern 的 key/value——shorthand
+   * 下兩者是不同的 Identifier 節點物件但同一位置），是則回傳原始 key 文字
+   * （供 rename 展開為 `key: newName`）。非 shorthand（含具名別名
+   * `{ foo: bar }`）回傳 undefined，維持原本天真替換行為。
+   *
+   * 例外：CJS `const { foo } = require('./mod')` 解構與 `module.exports = { foo }`
+   * 這類 shorthand，其 key 語意上就是被匯入/匯出的符號名本身（等同 ESM
+   * `import { foo }` / `export { foo }` specifier，見 isRequireDestructuringBindingOf
+   * 的既有 F4 設計），rename 時應隨新名稱整個 token 一起改（`{ bar }`），不可展開成
+   * `{ foo: bar }`——否則會破壞既有 CJS 跨檔 rename 行為（見
+   * cli-rename-cjs-require-f4、cli-rename-dry-run-cjs-multi-edit-preview 等既有 E2E）。
+   */
+  private getShorthandKeyText(path: NodePath<babel.Identifier>): string | undefined {
+    const parent = path.parent;
+    if (!babel.isObjectProperty(parent) || !parent.shorthand || !babel.isIdentifier(parent.key)) {
+      return undefined;
+    }
+    if (this.isRequireOrModuleExportsShorthand(path)) {
+      return undefined;
+    }
+    return parent.key.name;
+  }
+
+  /**
+   * 判定 shorthand ObjectProperty 是否位於 CJS require 解構
+   * （`const { foo } = require('./mod')`）或 module.exports 匯出
+   * （`module.exports = { foo }` / `exports = { foo }`）之中。
+   */
+  private isRequireOrModuleExportsShorthand(path: NodePath<babel.Identifier>): boolean {
+    const propertyPath = path.parentPath;
+    const containerPath = propertyPath?.parentPath;
+    if (!containerPath) {
+      return false;
+    }
+
+    if (containerPath.isObjectPattern()) {
+      const declaratorPath = containerPath.parentPath;
+      if (!declaratorPath?.isVariableDeclarator()) {
+        return false;
+      }
+      return this.isRequireCallExpression(declaratorPath.node.init);
+    }
+
+    if (containerPath.isObjectExpression()) {
+      const assignmentPath = containerPath.parentPath;
+      if (!assignmentPath?.isAssignmentExpression()) {
+        return false;
+      }
+      return this.isModuleExportsTarget(assignmentPath.node.left);
+    }
+
+    return false;
+  }
+
+  /** 判定表達式是否為 `module.exports` 或裸 `exports` */
+  private isModuleExportsTarget(left: babel.Node): boolean {
+    if (
+      babel.isMemberExpression(left)
+      && babel.isIdentifier(left.object)
+      && left.object.name === 'module'
+      && babel.isIdentifier(left.property)
+      && left.property.name === 'exports'
+      && !left.computed
+    ) {
+      return true;
+    }
+    return babel.isIdentifier(left) && left.name === 'exports';
+  }
+
+  /**
    * 推斷成員存取 receiver 的類型名稱（供 class method 外部引用判定）。
    * 支援：`(new Greeter()).m`、`const g = new Greeter(); g.m`
    */
@@ -1092,10 +1312,7 @@ export class JavaScriptParser implements ParserPlugin {
 
     const init = declaratorPath.node.init;
     if (
-      !init
-      || !babel.isCallExpression(init)
-      || !babel.isIdentifier(init.callee)
-      || init.callee.name !== 'require'
+      !this.isRequireCallExpression(init)
       || init.arguments.length < 1
       || !babel.isStringLiteral(init.arguments[0])
     ) {

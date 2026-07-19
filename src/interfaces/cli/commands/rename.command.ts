@@ -20,7 +20,7 @@ import {
 import { parsePathLocationAbsolute } from '@interfaces/cli/path-location-parser.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
-import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
+import { MUTATION_SCAN_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import type { Symbol as CodeSymbol } from '@shared/types/symbol.js';
@@ -345,9 +345,10 @@ async function getAllProjectFiles(projectPath: string, context: CommandContext):
   const registry = ParserRegistry.getInstance();
   const allowedExtensions = registry.getSupportedExtensions();
   // 目錄名稱精確匹配（避免子字串誤判如 dist 誤傷 distance），轉為 glob ignore
-  // pattern 時以 '**/<name>/**' 表示「任一層級的該名稱目錄」。名稱清單沿用
-  // @shared/exclude-dirs 的權威清單，不另存局部子集。
-  const ignorePatterns = COMMON_EXCLUDE_DIR_NAMES.map(name => `**/${name}/**`);
+  // pattern 時以 '**/<name>/**' 表示「任一層級的該名稱目錄」。rename 屬變更類
+  // 命令的引用掃描，名稱清單沿用 @shared/exclude-dirs 的 MUTATION_SCAN_EXCLUDE_DIR_NAMES
+  // 窄清單（正確性優先），不另存局部子集、也不可換回廣清單。
+  const ignorePatterns = MUTATION_SCAN_EXCLUDE_DIR_NAMES.map(name => `**/${name}/**`);
 
   // 檢查路徑是檔案還是目錄
   // fail-fast：isFile 拋錯（如專案根目錄權限不足）不可靜默吞掉並回傳空清單，

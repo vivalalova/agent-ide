@@ -19,6 +19,7 @@ import {
   type FileChange,
   type TargetFileChange,
   type ReferenceUpdate,
+  MemberType,
   MoveTargetType,
   MoveMemberErrorCode
 } from './types.js';
@@ -312,6 +313,24 @@ export class MoveMemberEngine {
     member: MemberDefinition
   ): Promise<{ code: MoveMemberErrorCode; message: string } | null> {
     const { target } = options;
+
+    // class-only 形狀守衛：被搬移的成員是 class 內部成員（method 或 property，
+    // member.className 有值代表來自 class body，見 typescript-extractor.ts 的
+    // extractClassMembers）時，若目標不是「搬進既有類別」（ExistingClass），
+    // 原樣落地該成員原始碼會產生裸露的 class-only 語法（如 `get value() {}`、
+    // `static create() {}`、甚至無 static/accessor 修飾的一般 `normal() {}` /
+    // `count: number = 0;`），在模組層級一律是語法或語意錯誤（實測驗證：tsc
+    // 回報 TS1005/TS1434/TS2693/TS1128）——這類語法「無法以模組層級宣告獨立
+    // 存在」，必須留在某個 class 內。涵蓋 accessor（get/set）、static、與一般
+    // instance method/property，統一以 member.className 是否有值判斷（非逐一
+    // 檢查 modifiers），故無論何種 class 成員形狀皆一致擋下。
+    if (member.className !== undefined && target.type !== MoveTargetType.ExistingClass) {
+      return {
+        code: MoveMemberErrorCode.UnsupportedMemberType,
+        message: `class 成員 '${member.name}'（${this.describeClassOnlyShape(member)}）無法搬移到模組層級目標：此 class-only 語法不能以模組層級宣告獨立存在。請改用 --target-class 指定要搬進的目標類別。`
+      };
+    }
+
     const exists = await this.fileSystem.exists(target.filePath);
 
     // 檢查目標類別（必須檔案存在）
@@ -356,6 +375,18 @@ export class MoveMemberEngine {
     }
 
     return null;
+  }
+
+  /**
+   * 描述 class-only 形狀的成員種類，供錯誤訊息說明具體是哪種形狀觸發守衛。
+   * modifiers 的 accessor 種類（'get'/'set'）由 typescript-extractor.ts 精確
+   * 判定後附加（非字串猜測，見該處 RawMethodCandidate.accessorKind 註解）。
+   */
+  private describeClassOnlyShape(member: MemberDefinition): string {
+    if (member.modifiers.includes('get')) { return 'getter accessor'; }
+    if (member.modifiers.includes('set')) { return 'setter accessor'; }
+    if (member.modifiers.includes('static')) { return 'static method/property'; }
+    return member.type === MemberType.Method ? 'instance method' : 'instance property';
   }
 
   /**

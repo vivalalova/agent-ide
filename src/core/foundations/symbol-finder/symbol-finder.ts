@@ -597,7 +597,11 @@ export class SymbolFinder {
    * @returns 標準化的 SymbolReference
    */
   private convertParserRefToSymbolReference(
-    ref: { location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }; type: string },
+    ref: {
+      location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } };
+      type: string;
+      shorthandKeyText?: string;
+    },
     symbolName: string,
     _filePath: string,
     lines: string[]
@@ -611,7 +615,8 @@ export class SymbolFinder {
       symbolName,
       location: ref.location,
       type: this.mapParserReferenceTypeString(ref.type),
-      context
+      context,
+      ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {})
     };
   }
 

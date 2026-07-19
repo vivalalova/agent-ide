@@ -31,6 +31,7 @@ import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
+import { resolveUsageSiteSymbolTarget } from '@interfaces/cli/commands/usage-site-symbol-resolver.js';
 import { filterReferencesToSelectedSymbol } from '@interfaces/cli/commands/symbol-reference-filter.js';
 import { findReExportAliasReferences } from '@interfaces/cli/commands/reexport-alias-references.js';
 import { findDefaultImportAliasReferences } from '@interfaces/cli/commands/default-import-alias-references.js';
@@ -103,7 +104,22 @@ async function handleFindReferencesCommand(
 
     // 查找符號定義
     const symbolResults = await indexEngine.findSymbol(symbolName);
-    const targetResult = resolveSymbolTarget(symbolName, symbolResults, projectPath, options.at);
+    let targetResult = resolveSymbolTarget(symbolName, symbolResults, projectPath, options.at);
+    if (!targetResult.success && options.at) {
+      // --at 未命中任一符號宣告位置：可能指向使用點（如呼叫點識別符）而非宣告本身，
+      // 嘗試透過既有的 --at 引用過濾機制反向解析其綁定的符號（涵蓋 ESM import 與
+      // CJS require 解構，兩者共用同一套 binding 收集，見 usage-site-symbol-resolver）。
+      const usageResult = await resolveUsageSiteSymbolTarget(
+        symbolName,
+        symbolResults,
+        projectPath,
+        options.at,
+        context.fileSystem
+      );
+      if (usageResult) {
+        targetResult = usageResult;
+      }
+    }
     if (!targetResult.success) {
       outputHandler.outputError(targetResult.error, format);
       process.exitCode = 1;

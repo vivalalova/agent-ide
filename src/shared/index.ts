@@ -63,8 +63,10 @@ export {
 } from './regex-utils.js';
 
 export {
-  // 通用排除目錄
-  COMMON_EXCLUDE_DIR_NAMES
+  // 通用排除目錄（廣清單：唯讀/索引/效能掃描用）
+  COMMON_EXCLUDE_DIR_NAMES,
+  // 變更類命令引用掃描排除目錄（窄清單：正確性優先）
+  MUTATION_SCAN_EXCLUDE_DIR_NAMES
 } from './exclude-dirs.js';
 
 export {
