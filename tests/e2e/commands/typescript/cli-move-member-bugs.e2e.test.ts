@@ -25,7 +25,7 @@ describe('CLI move-member 缺陷 regression（C7-C10）', () => {
     fixture.cleanup();
   });
 
-  it('C7：Unicode 命名 method 按位置移動時，只應搬走該 method，class 與其他 method 留在原檔', async () => {
+  it('C7：Unicode 命名 method 按位置移動到既有目標類別時，只應搬走該 method，class 與其他 method 留在原檔', async () => {
     await fixture.writeFile('src/svc.ts', `export class Service {
   取得資料(): string {
     return 'data';
@@ -36,22 +36,32 @@ describe('CLI move-member 缺陷 regression（C7-C10）', () => {
   }
 }
 `);
-    await fixture.writeFile('src/helpers.ts', `export const placeholder = true;
+    // 目標檔需有既有 class 承接成員（--target-class），
+    // 搬到模組層級對一般 instance method 會產生非法 TS 輸出（另案處理），
+    // 這裡改用合法目標以保留 C7 原本要防的「range-finder 誤把整個 class
+    // 當成移動範圍」regression。
+    await fixture.writeFile('src/helpers.ts', `export class Helper {
+  existing(): boolean {
+    return true;
+  }
+}
 `);
 
     // 取得資料 method 在第 2 行
     const result = await executeCLI(
       ['move', `${fixture.getFilePath('src/svc.ts')}:2`, fixture.getFilePath('src/helpers.ts'),
-        '-p', fixture.rootPath, '--format', 'json'],
+        '-p', fixture.rootPath, '--target-class', 'Helper', '--format', 'json'],
       { memfs: fixture.memfs }
     );
 
     expect(result.exitCode).toBe(0);
 
     const helpersContent = await fixture.readFile('src/helpers.ts');
-    // 正確行為：只有 取得資料 method 被搬到 helpers.ts
+    // 正確行為：只有 取得資料 method 被搬到 Helper class 內
     expect(helpersContent).toContain('取得資料');
-    // 目前的壞行為：range-finder 把整個 class 都當成移動範圍，keep 也被一併搬走
+    expect(helpersContent).toContain('class Helper');
+    expect(helpersContent).toContain('existing');
+    // 目前的壞行為（若復發）：range-finder 把整個 class 都當成移動範圍，keep 也會被一併搬走
     expect(helpersContent).not.toContain('keep');
     expect(helpersContent).not.toContain('class Service');
 

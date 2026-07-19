@@ -529,6 +529,97 @@ const output = render('home');
       expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
     });
 
+    it('--add default 引用同函式其他參數且未給 --call-site-value 應 fast-fail 且不修改檔案', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-references-param-no-call-site-value.ts`;
+      const originalContent = `
+function fn(a: number, b: number): number {
+  return a + b;
+}
+
+const result = fn(1, 2);
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'fn',
+          '-p', fixture.rootPath,
+          '--add', 'extra:number=a+1',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('--call-site-value');
+      expect(await fixture.memfs.readFile(testFile, 'utf-8')).toBe(originalContent);
+    });
+
+    it('--add 純常數預設值（未引用其他參數）應照常成功', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-constant-no-call-site-value.ts`;
+      const originalContent = `
+function fn(a: number, b: number): number {
+  return a + b;
+}
+
+const result = fn(1, 2);
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'fn',
+          '-p', fixture.rootPath,
+          '--add', 'extra:number=5',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('function fn(a: number, b: number, extra: number = 5): number');
+      expect(updatedContent).toContain('const result = fn(1, 2, 5);');
+      expectValidTypeScript(updatedContent);
+    });
+
+    it('--add default 引用其他參數但有給 --call-site-value 應照常成功', async () => {
+      const testFile = `${fixture.rootPath}/test-add-default-references-param-with-call-site-value.ts`;
+      const originalContent = `
+function fn(a: number, b: number): number {
+  return a + b;
+}
+
+const result = fn(1, 2);
+`.trim();
+      await fixture.memfs.writeFile(testFile, originalContent);
+
+      const result = await executeCLI(
+        [
+          'change-signature',
+          testFile,
+          'fn',
+          '-p', fixture.rootPath,
+          '--add', 'extra:number=a+1',
+          '--call-site-value', 'extra=99',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updatedContent = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+      expect(updatedContent).toContain('function fn(a: number, b: number, extra: number = a+1): number');
+      expect(updatedContent).toContain('const result = fn(1, 2, 99);');
+      expectValidTypeScript(updatedContent);
+    });
+
     it('無效 --add 參數名稱應 fast-fail 且不修改檔案', async () => {
       const testFile = `${fixture.rootPath}/test-invalid-add-name.ts`;
       const originalContent = `

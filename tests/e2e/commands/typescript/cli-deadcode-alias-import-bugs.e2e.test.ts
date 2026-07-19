@@ -64,6 +64,10 @@ export function health(): string {
       await fixture.writeFile('src/app2.ts', `import { deadA } from './x.js';
 
 export const marker = 'app';
+
+export function main(): string {
+  return marker;
+}
 `);
 
       const result = await executeCLI(
