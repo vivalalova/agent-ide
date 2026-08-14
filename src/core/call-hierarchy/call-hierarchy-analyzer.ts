@@ -32,6 +32,8 @@ import { logger } from '@infrastructure/logging/index.js';
 import type {
   CallHierarchyData,
   CallHierarchyOptions,
+  CallHierarchyTarget,
+  CallSiteFilter,
   IncomingCall,
   OutgoingCall,
 } from './types.js';
@@ -139,7 +141,7 @@ export class CallHierarchyAnalyzer {
         definitionFile,
         definitionRange,
         options.depth,
-        options.targetCallSiteFilter
+        options.targetCallSiteFilterFactory
       );
       incoming.push(...incomingCalls);
     }
@@ -743,7 +745,7 @@ export class CallHierarchyAnalyzer {
     definitionFile: string,
     definitionRange: Range,
     depth: number,
-    targetCallSiteFilter?: (callSite: CallSite) => Promise<boolean>
+    targetCallSiteFilterFactory?: (target: CallHierarchyTarget) => Promise<CallSiteFilter | undefined>
   ): Promise<IncomingCall[]> {
     const incoming: IncomingCall[] = [];
     const visited = new Set<string>();
@@ -765,10 +767,18 @@ export class CallHierarchyAnalyzer {
 
       let callSites = await this.symbolFinder.findCallSites(targetName, projectFiles);
 
-      // depth 1 且帶有 `--at` 衍生的 targetCallSiteFilter 時，呼叫端已透過該 filter
-      // 精確判定 callSite 是否指向本次鎖定的定義。更深層無該 filter，必須以
-      // targetDefinitionFile + range 做 binding/shadow 錨定（同檔不可 short-circuit 全收）。
-      if (currentDepth === 1 && targetCallSiteFilter) {
+      // 呼叫端提供 filter factory 時，各層都先請它為「當層目標定義」建精確 filter
+      // （作用域／import 綁定／receiver 型別齊備），錨定語意只有這一套。
+      // 建不出來（目標無法還原成索引符號）才落回下方內建的 binding/shadow 錨定。
+      const targetCallSiteFilter = targetCallSiteFilterFactory
+        ? await targetCallSiteFilterFactory({
+          name: targetName,
+          definitionFile: targetDefinitionFile,
+          definitionRange: targetDefinitionRange
+        })
+        : undefined;
+
+      if (targetCallSiteFilter) {
         callSites = await this.filterCallSites(callSites, targetCallSiteFilter);
       } else {
         const anchoredCallSites: CallSite[] = [];

@@ -248,6 +248,11 @@ export interface SymbolReference {
    * @core/foundations/symbol-finder SymbolReference.shorthandKeyText）。
    */
   readonly shorthandKeyText?: string;
+  /**
+   * rename 目標符號是 property 宣告（key 側）：展開為 `newName: 原文字`
+   * （見 @shared/types Reference.shorthandTargetIsKey）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**

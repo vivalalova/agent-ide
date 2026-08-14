@@ -14,8 +14,13 @@
 
 import { escapeRegex } from '@shared/regex-utils.js';
 
-/** 識別符後續字元類（UAX #31 ID_Continue + `$`），與 plugins/shared 的 UNICODE_IDENTIFIER_PATTERN 對齊 */
-const IDENTIFIER_CONTINUE_CLASS = '[\\p{ID_Continue}$]';
+/**
+ * 識別符後續字元類（UAX #31 ID_Continue + `$`），與 plugins/shared 的 UNICODE_IDENTIFIER_PATTERN 對齊
+ *
+ * 供需要自行組合正則（無法直接用 createIdentifierBoundaryRegex，如宣告行 pattern
+ * `^(?:const|let|var)\s+<name>`）的呼叫端取代 ASCII-only 的 `\b`；使用時正則須帶 `u` flag。
+ */
+export const IDENTIFIER_CONTINUE_CLASS = '[\\p{ID_Continue}$]';
 
 /** 預編譯的單一字元判定：`char` 是否屬於識別符後續字元（含 ASCII 字母/數字/底線與 Unicode 識別符字元） */
 const IDENTIFIER_CONTINUE_REGEX = new RegExp(`^${IDENTIFIER_CONTINUE_CLASS}$`, 'u');

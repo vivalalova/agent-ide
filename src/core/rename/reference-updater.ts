@@ -135,7 +135,8 @@ export class ReferenceUpdater {
           range: ref.location.range,
           type: this.mapReferenceType(ref.type),
           context: ref.context, // 傳遞上下文資訊
-          ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {})
+          ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {}),
+          ...(ref.shorthandTargetIsKey ? { shorthandTargetIsKey: ref.shorthandTargetIsKey } : {})
         }));
       } catch (error) {
         // SymbolFinder 失敗時降級到文字匹配
@@ -312,13 +313,12 @@ export class ReferenceUpdater {
       }
 
       // 轉換為 TextChange（包含 context 資訊）
-      // shorthand token（`{ foo }`／`const { foo } = opts`）需展開為 `key: newName`，
-      // 保留原始 key（見 SymbolReference.shorthandKeyText），否則物件 key／解構來源
-      // 欄位會被天真替換一併改掉。
+      // shorthand token（`{ foo }`／`const { foo } = opts`）需展開成 `key: value` 兩側形式，
+      // 否則天真替換會把 key 與 value 一起改掉（見 expandShorthandNewText）。
       const changes: TextChange[] = matchingReferences.map(ref => ({
         range: ref.range,
         oldText: symbol.name,
-        newText: ref.shorthandKeyText !== undefined ? `${ref.shorthandKeyText}: ${newName}` : newName,
+        newText: expandShorthandNewText(ref, newName),
         context: ref.context
       }));
 
@@ -426,4 +426,22 @@ export class ReferenceUpdater {
   clearCache(): void {
     this.fileCache.clear();
   }
+}
+
+/**
+ * 展開 shorthand token（`{ foo }`／`const { foo } = opts`）的替換文字。
+ *
+ * shorthand 的單一 token 同時是 key 與 value/binding，rename 必須展開成兩側形式，
+ * 且方向取決於本次 rename 的目標符號是哪一側：
+ * - 目標是 property 宣告（interface `PropertySignature`／class `PropertyDeclaration`）：
+ *   改的是 key → `newName: 原文字`（value 仍指向原本地繫結）
+ * - 目標是變數／binding：改的是 value → `原文字: newName`（key 維持原欄位名）
+ */
+function expandShorthandNewText(ref: SymbolReference, newName: string): string {
+  if (ref.shorthandKeyText === undefined) {
+    return newName;
+  }
+  return ref.shorthandTargetIsKey
+    ? `${newName}: ${ref.shorthandKeyText}`
+    : `${ref.shorthandKeyText}: ${newName}`;
 }

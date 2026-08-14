@@ -14,6 +14,7 @@ import * as ts from 'typescript';
 import { type SymbolReference } from '@core/foundations/symbol-finder/index.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { Symbol } from '@shared/types/symbol.js';
+import type { SymbolReferenceFilterContext } from './symbol-reference-filter-types.js';
 import {
   normalizePath,
   pathMatchesTarget,
@@ -42,34 +43,9 @@ export async function findReExportAliasReferences(
   findReferencesWithSymbol: (filePath: string, symbol: Symbol) => Promise<SymbolReference[]>
 ): Promise<SymbolReference[]> {
   const filterContext = await createSymbolReferenceFilterContext(selectedSymbol, projectPath, fileSystem);
-  const symbolName = selectedSymbol.name;
 
   // 步驟 1：找出把目標符號改名匯出的單層 re-export（別名 → re-export 模組檔）
-  const aliasExports: { aliasName: string; reExportModuleFile: string }[] = [];
-  for (const file of indexedFiles) {
-    const normalizedFile = normalizePath(file);
-    if (normalizedFile === filterContext.targetFile) {
-      continue;
-    }
-    const sourceFile = await tryGetSourceFile(normalizedFile, filterContext);
-    if (!sourceFile) {
-      continue;
-    }
-
-    for (const exportDecl of collectNamedReExportDeclarations(sourceFile)) {
-      const moduleFile = await resolveModuleFile(exportDecl.moduleSpecifier.text, normalizedFile, filterContext);
-      if (moduleFile === null || !pathMatchesTarget(moduleFile, filterContext.targetFile)) {
-        continue;
-      }
-      for (const element of exportDecl.elements) {
-        const sourceName = element.propertyName?.text ?? element.name.text;
-        const exportedName = element.name.text;
-        if (sourceName === symbolName && exportedName !== symbolName) {
-          aliasExports.push({ aliasName: exportedName, reExportModuleFile: normalizedFile });
-        }
-      }
-    }
-  }
+  const aliasExports = await collectAliasExports(filterContext, indexedFiles);
 
   if (aliasExports.length === 0) {
     return [];
@@ -115,22 +91,139 @@ export async function findReExportAliasReferences(
   return collected;
 }
 
-/** 具來源模組的具名 import/re-export，萃取出模組路徑字面與 specifier 元素 */
-interface NamedModuleBinding<TElement extends ts.ImportSpecifier | ts.ExportSpecifier> {
+/** 把目標符號改名匯出的單層 re-export：別名，以及做這件事的模組檔 */
+export interface ReExportAlias {
+  readonly aliasName: string;
+  readonly reExportModuleFile: string;
+}
+
+/**
+ * 對外入口：收集「把選定符號以別名匯出」的單層 re-export。
+ *
+ * find-references 走 `findReExportAliasReferences` 直接拿到引用；call-hierarchy 需要的是
+ * 別名本身（下游呼叫點的 token 是別名，以原名搜 callSite 找不到），故共用同一份收集邏輯。
+ */
+export async function collectReExportAliases(
+  selectedSymbol: Symbol,
+  projectPath: string,
+  fileSystem: IFileSystem,
+  indexedFiles: readonly string[]
+): Promise<ReExportAlias[]> {
+  const filterContext = await createSymbolReferenceFilterContext(selectedSymbol, projectPath, fileSystem);
+  return await collectAliasExports(filterContext, indexedFiles);
+}
+
+/**
+ * 收集「把選定符號以別名匯出」的單層 re-export（別名 → re-export 模組檔）。
+ *
+ * 兩種來源形狀語意等價（下游都只看得到別名這個 token），故同一套判定：
+ *   - `export { X as Y } from './def'`：來源模組解析後即目標定義檔。
+ *   - `export { X as Y }`（無 from）：來源是本檔的本地綁定——本檔即目標定義檔（同檔宣告），
+ *     或本檔具名 import 了該綁定且其來源模組解析到目標定義檔。
+ */
+async function collectAliasExports(
+  filterContext: SymbolReferenceFilterContext,
+  indexedFiles: readonly string[]
+): Promise<ReExportAlias[]> {
+  const symbolName = filterContext.selectedSymbol.name;
+  const aliasExports: ReExportAlias[] = [];
+
+  for (const file of indexedFiles) {
+    const normalizedFile = normalizePath(file);
+    const sourceFile = await tryGetSourceFile(normalizedFile, filterContext);
+    if (!sourceFile) {
+      continue;
+    }
+
+    for (const exportDecl of collectNamedExportDeclarations(sourceFile)) {
+      for (const element of exportDecl.elements) {
+        const sourceName = element.propertyName?.text ?? element.name.text;
+        const exportedName = element.name.text;
+        // 別名與原名相同時下游仍用原名，finder 已涵蓋，不需本模組補抓
+        if (exportedName === symbolName) {
+          continue;
+        }
+
+        const sourceTargetsSymbol = exportDecl.moduleSpecifier
+          ? sourceName === symbolName
+            && pathMatchesTarget(
+              await resolveModuleFile(exportDecl.moduleSpecifier.text, normalizedFile, filterContext) ?? '',
+              filterContext.targetFile
+            )
+          : await localExportSourceTargetsSelectedSymbol(sourceName, sourceFile, normalizedFile, filterContext);
+        if (sourceTargetsSymbol) {
+          aliasExports.push({ aliasName: exportedName, reExportModuleFile: normalizedFile });
+        }
+      }
+    }
+  }
+
+  return aliasExports;
+}
+
+/**
+ * 無 from 的具名匯出（`export { local as alias }`）：本地名稱 `localName` 是否確實指向選定符號。
+ *
+ * 本檔即目標定義檔 → 名稱相符即同檔宣告本體；否則需本檔具名 import 了該名稱、
+ * 且 import 的原始名為選定符號名、來源模組解析到目標定義檔。
+ * default import 來源（`import Foo from './def'; export { Foo as Public }`）不在此列，
+ * 與有 from 分支同樣只認具名來源。
+ */
+async function localExportSourceTargetsSelectedSymbol(
+  localName: string,
+  sourceFile: ts.SourceFile,
+  normalizedFile: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<boolean> {
+  const symbolName = filterContext.selectedSymbol.name;
+  if (pathMatchesTarget(normalizedFile, filterContext.targetFile)) {
+    return localName === symbolName;
+  }
+
+  for (const importDecl of collectNamedImportDeclarations(sourceFile)) {
+    for (const element of importDecl.elements) {
+      if (element.name.text !== localName) {
+        continue;
+      }
+      if ((element.propertyName?.text ?? element.name.text) !== symbolName) {
+        continue;
+      }
+      const moduleFile = await resolveModuleFile(importDecl.moduleSpecifier.text, normalizedFile, filterContext);
+      if (moduleFile !== null && pathMatchesTarget(moduleFile, filterContext.targetFile)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/** 具來源模組的具名 import，萃取出模組路徑字面與 specifier 元素 */
+interface NamedModuleBinding<TElement extends ts.ImportSpecifier> {
   readonly moduleSpecifier: ts.StringLiteral;
   readonly elements: readonly TElement[];
 }
 
-/** 收集具來源模組、且 exportClause 為具名匯出的 re-export 宣告（`export { ... } from '...'`） */
-function collectNamedReExportDeclarations(
-  sourceFile: ts.SourceFile
-): NamedModuleBinding<ts.ExportSpecifier>[] {
-  const result: NamedModuleBinding<ts.ExportSpecifier>[] = [];
+/** 具名匯出宣告：`export { ... } from '...'`（有 moduleSpecifier）與 `export { ... }`（無）皆收 */
+interface NamedExportBinding {
+  readonly moduleSpecifier?: ts.StringLiteral;
+  readonly elements: readonly ts.ExportSpecifier[];
+}
+
+/** 收集 exportClause 為具名匯出的 export 宣告（`export * as ns` 與 `export *` 不在此列） */
+function collectNamedExportDeclarations(sourceFile: ts.SourceFile): NamedExportBinding[] {
+  const result: NamedExportBinding[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isExportDeclaration(node)) {
       const { moduleSpecifier, exportClause } = node;
-      if (moduleSpecifier && ts.isStringLiteral(moduleSpecifier) && exportClause && ts.isNamedExports(exportClause)) {
-        result.push({ moduleSpecifier, elements: exportClause.elements });
+      if (moduleSpecifier && !ts.isStringLiteral(moduleSpecifier)) {
+        return;
+      }
+      if (exportClause && ts.isNamedExports(exportClause)) {
+        result.push({
+          ...(moduleSpecifier && ts.isStringLiteral(moduleSpecifier) ? { moduleSpecifier } : {}),
+          elements: exportClause.elements
+        });
       }
       return;
     }

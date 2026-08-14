@@ -22,6 +22,7 @@ import {
 } from './types.js';
 import { resolveParameterIndex } from './utils.js';
 import { SignatureTransformer } from './signature-transformer.js';
+import { findUnresolvableIdentifierInCallSiteValue } from './call-site-value-self-containment.js';
 
 /**
  * Signature Validator
@@ -56,15 +57,21 @@ export class SignatureValidator {
           });
         }
 
-        // 驗證新增參數必須有 function default；呼叫點值不能替代簽名預設值。
+        // 新增參數必須有「呼叫點填值來源」：function default，或自足的 call-site 值。
+        // 呼叫點值引用外部識別字（如 `runtimeLabel`）時，該文字會逐字塞進每個呼叫點、
+        // 呼叫端未必有同名繫結（TS2304），故不能替代 function default；自足運算式
+        // （字面值、`() => {}` 等）則可安全省略 function default。
         // 用 === undefined 判斷「未提供」，避免空字串（若為合法運算式文字則是合法
         // 預設值）被誤判為缺漏
         if (change.defaultValue === undefined) {
-          errors.push({
-            code: ChangeSignatureErrorCode.MissingDefaultValue,
-            message: `參數 ${change.name} 缺少 function default，請使用 --add name:type=default 指定`,
-            parameterName: change.name
-          });
+          if (change.callSiteValue === undefined
+            || findUnresolvableIdentifierInCallSiteValue(change.callSiteValue) !== undefined) {
+            errors.push({
+              code: ChangeSignatureErrorCode.MissingDefaultValue,
+              message: `參數 ${change.name} 缺少 function default，請使用 --add name:type=default 指定`,
+              parameterName: change.name
+            });
+          }
         } else {
           const invalidDefaultValueError = this.validateDefaultValueText(change.defaultValue, change.name);
           if (invalidDefaultValueError) {

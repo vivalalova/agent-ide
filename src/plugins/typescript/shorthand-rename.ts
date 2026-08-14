@@ -98,3 +98,19 @@ function isModuleExportsTarget(expr: ts.Expression): boolean {
   }
   return ts.isIdentifier(expr) && expr.text === 'exports';
 }
+
+/**
+ * 判定 rename 目標符號的宣告節點是否為 property 宣告本身（shorthand 的 key 側）：
+ * interface/type literal 的 `PropertySignature` 與 class 的 `PropertyDeclaration`。
+ * 符號節點可能是宣告節點本身或其名稱 Identifier，兩者皆納入判定。
+ */
+export function isPropertyDeclarationNode(node: ts.Node | undefined): boolean {
+  if (!node) {
+    return false;
+  }
+  const declaration = ts.isPropertySignature(node) || ts.isPropertyDeclaration(node)
+    ? node
+    : node.parent;
+  return declaration !== undefined
+    && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration));
+}

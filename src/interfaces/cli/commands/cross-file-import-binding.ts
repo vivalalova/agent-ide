@@ -69,6 +69,7 @@ export async function getSelectedSymbolFileAnalysis(
     directNames: new Set<string>(),
     namespaceNames: new Set<string>(),
     exportedNames: new Set<string>(),
+    exportedAliasNames: new Set<string>(),
     starReExportedNames: new Set<string>(),
     ownerNames: new Set<string>()
   };
@@ -264,7 +265,12 @@ async function addImportBindings(
   for (const element of namedBindings.elements) {
     const importedName = element.propertyName?.text ?? element.name.text;
     if (providesSelected) {
-      if (importedName === symbolName) {
+      // 來源模組把目標符號改名匯出（`export { X as api }`，有無 from 皆同）時，
+      // `import { api }` 的本地綁定仍指向目標符號，故別名匯出名同樣算直接綁定。
+      if (
+        importedName === symbolName
+        || await moduleFileExportsSelectedSymbolAs(moduleFile, importedName, filterContext)
+      ) {
         bindings.directNames.add(element.name.text);
       }
       if (ownerName && importedName === ownerName) {
@@ -295,6 +301,9 @@ async function addExportBindings(
       exportClauseExposesSymbol(node.exportClause, symbolName)
       && await moduleSpecifierProvidesSelectedSymbol(node.moduleSpecifier, fromFile, filterContext)
     ) {
+      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+        addExportedAliasNames(node.exportClause, name => name === symbolName, symbolName, bindings);
+      }
       if (node.exportClause) {
         // 具名 re-export（`export { X }` / `export { X as Y }`）：clause 內有真正指向
         // 目標符號的 token，屬引用，供裸名比對。`export * as ns` 不會進此支（見
@@ -314,11 +323,42 @@ async function addExportBindings(
     return;
   }
 
+  // 本地具名匯出（`export { local }` / `export { local as alias }`，無 from）：clause 內指向
+  // 目標符號的 token 是 `local`（propertyName）。exportedNames 的 key 語意是「原始符號名」
+  // （對齊上方有 from 分支與 moduleFileProvidesSelectedSymbol 的查詢），故一律以 symbolName
+  // 為 key；用 element.name.text（別名）當 key 會讓 provides 查詢查不到、且讓別名 token
+  // 被誤判為引用。
+  //
+  // 本地名稱指向目標符號的兩種來源：本檔 import 進來的綁定（directNames），或本檔即定義檔
+  // 且名稱相符（同檔宣告本體）。
+  const localTargetsSymbol = (localName: string): boolean =>
+    bindings.directNames.has(localName)
+    || (pathMatchesTarget(normalizePath(fromFile), filterContext.targetFile) && localName === symbolName);
+
+  addExportedAliasNames(exportClause, localTargetsSymbol, symbolName, bindings);
+
   for (const element of exportClause.elements) {
-    const localName = element.propertyName?.text ?? element.name.text;
-    if (bindings.directNames.has(localName)) {
-      bindings.exportedNames.add(element.name.text);
-      bindings.directNames.add(localName);
+    if (localTargetsSymbol(element.propertyName?.text ?? element.name.text)) {
+      bindings.exportedNames.add(symbolName);
+    }
+  }
+}
+
+/**
+ * 收集具名匯出子句中「來源指向目標符號、但對外名稱改過」的對外名稱。
+ * 有 from 與無 from 兩支共用：差別只在「來源是否指向目標符號」的判準（由 sourceTargetsSymbol 提供）。
+ */
+function addExportedAliasNames(
+  exportClause: ts.NamedExports,
+  sourceTargetsSymbol: (sourceName: string) => boolean,
+  symbolName: string,
+  bindings: SelectedSymbolBindings
+): void {
+  for (const element of exportClause.elements) {
+    const sourceName = element.propertyName?.text ?? element.name.text;
+    const exportedName = element.name.text;
+    if (exportedName !== symbolName && sourceTargetsSymbol(sourceName)) {
+      bindings.exportedAliasNames.add(exportedName);
     }
   }
 }
@@ -432,6 +472,38 @@ function hasDefaultKeyword(node: ts.Node): boolean {
     return false;
   }
   return !!ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+}
+
+/**
+ * 模組檔是否把目標符號以 `exportedName` 這個對外名稱匯出（改名匯出）。
+ *
+ * 目標定義檔本身的具名匯出也算（`function X(){}; export { X as api }`）。判定資料由該檔的
+ * `getSelectedSymbolFileAnalysis` 產生（`exportedAliasNames`），不另寫一套 AST 掃描。
+ * 只認單跳改名：`export { api } from './barrel'` 再轉發別名的多跳鏈不在此列。
+ */
+async function moduleFileExportsSelectedSymbolAs(
+  filePath: string,
+  exportedName: string,
+  filterContext: SymbolReferenceFilterContext
+): Promise<boolean> {
+  const normalizedFilePath = normalizePath(filePath);
+  if (filterContext.visitingModuleFiles.has(normalizedFilePath)) {
+    return false;
+  }
+  if (
+    !await filterContext.fileSystem.exists(normalizedFilePath)
+    || !await filterContext.fileSystem.isFile(normalizedFilePath)
+  ) {
+    return false;
+  }
+
+  filterContext.visitingModuleFiles.add(normalizedFilePath);
+  try {
+    const analysis = await getSelectedSymbolFileAnalysis(normalizedFilePath, filterContext);
+    return analysis.bindings.exportedAliasNames.has(exportedName);
+  } finally {
+    filterContext.visitingModuleFiles.delete(normalizedFilePath);
+  }
 }
 
 async function moduleFileProvidesSelectedSymbol(

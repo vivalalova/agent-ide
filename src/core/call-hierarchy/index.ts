@@ -12,6 +12,8 @@ export { CallHierarchyAnalyzer };
 export type {
   CallHierarchyData,
   CallHierarchyOptions,
+  CallHierarchyTarget,
+  CallSiteFilter,
   IncomingCall,
   OutgoingCall,
 } from './types.js';

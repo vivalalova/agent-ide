@@ -407,12 +407,19 @@ export class FileChangePreparer {
       neededImports.set(key, entry);
     };
 
+    const isSameFileMove = path.resolve(sourceFile) === path.resolve(targetFile);
+
     // 分析成員依賴的符號（member.dependencies 內的名稱即程式碼中實際引用的 local binding）
     for (const dep of member.dependencies) {
       // 跳過成員自己的名稱
       if (dep === member.name) { continue; }
 
       if (symbolInfo.localExports.has(dep)) {
+        // same-file move：依賴的本地 export 與成員仍在同一份檔案、同一 module
+        // scope，本來就可見，補一個指向自身的 import 反而會與檔案內既存的本地
+        // 宣告衝突（TS2440）。比對前先正規化路徑，避免同一檔案不同寫法漏判。
+        if (isSameFileMove) { continue; }
+
         // 依賴來自來源檔案的本地 export，依 export 類型決定 import 形式。
         // exportedName 可能因 `export { local as alias }` 與 local 名稱（dep）不同，
         // import 語句必須用實際 export 名稱，並用 as 別名映射回成員程式碼引用的 local 名稱，

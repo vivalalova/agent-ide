@@ -75,6 +75,13 @@ export interface Reference {
    * 的名稱，即 `symbol.name`）；一般（非 shorthand）引用不帶此欄位。
    */
   readonly shorthandKeyText?: string;
+  /**
+   * 本次 rename 的目標符號是 property 宣告（interface PropertySignature／class
+   * PropertyDeclaration）本身，即 shorthand token 的「key 側」語意。
+   * 展開方向由此決定：true → `newName: 原文字`（改 key、value 仍指向原本地繫結）；
+   * 未帶（預設）→ `原文字: newName`（改 value／binding、key 維持）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**
@@ -160,13 +167,15 @@ export function createReference(
   symbol: Symbol,
   location: Location,
   type: ReferenceType,
-  shorthandKeyText?: string
+  shorthandKeyText?: string,
+  shorthandTargetIsKey?: boolean
 ): Reference {
   return {
     symbol,
     location,
     type,
-    ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {})
+    ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {}),
+    ...(shorthandTargetIsKey ? { shorthandTargetIsKey } : {})
   };
 }
 

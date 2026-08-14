@@ -22,7 +22,7 @@ import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import type { ILanguageServiceManager } from './language-service.js';
 import type { ScopeAnalyzer } from './scope-analyzer.js';
 import type { ReferenceFinder } from './reference-finder.js';
-import { getShorthandKeyText } from './shorthand-rename.js';
+import { getShorthandKeyText, isPropertyDeclarationNode } from './shorthand-rename.js';
 import { isDeclarationNode } from './node-locator.js';
 
 /**
@@ -62,6 +62,10 @@ export class ReferenceResolver {
     }
 
     const fileName = typedAst.tsSourceFile.fileName;
+
+    // rename 目標是 property 宣告時，shorthand 展開方向為 `newName: 原文字`
+    // （見 Reference.shorthandTargetIsKey）。整次查找共用同一判定。
+    const targetIsPropertyDeclaration = isPropertyDeclarationNode(typedSymbol.tsNode);
 
     const references: Reference[] = [];
 
@@ -105,7 +109,10 @@ export class ReferenceResolver {
               range
             },
             type: refType,
-            ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {})
+            ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {}),
+            ...(shorthandKeyText !== undefined && targetIsPropertyDeclaration
+              ? { shorthandTargetIsKey: true }
+              : {})
           });
         }
       }

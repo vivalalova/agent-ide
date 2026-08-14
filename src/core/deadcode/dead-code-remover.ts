@@ -331,12 +331,12 @@ export class DeadCodeRemover {
 
         // Parser 不支援跨宣告子協調：fallback 至既有逐項獨立處理
         for (const item of group) {
-          operations.push(this.buildIndividualRemovalOperation(item, content));
+          this.pushIndividualRemovalOperation(item, content, operations, warnings);
         }
       }
 
       for (const item of singles) {
-        operations.push(this.buildIndividualRemovalOperation(item, content));
+        this.pushIndividualRemovalOperation(item, content, operations, warnings);
       }
     }
 
@@ -347,16 +347,34 @@ export class DeadCodeRemover {
         continue;
       }
 
-      operations.push(this.buildIndividualRemovalOperation(item, content));
+      this.pushIndividualRemovalOperation(item, content, operations, warnings);
     }
 
     return { operations, warnings };
   }
 
   /**
+   * 將單一項目的刪除操作加入 operations；RangeExpander 判定無法安全計算刪除範圍時
+   * 跳過該項並記錄警告（見 RangeExpander.canSafelyRemoveWholeLines）
+   */
+  private pushIndividualRemovalOperation(
+    item: DeadCodeItem,
+    content: string,
+    operations: RemovalOperation[],
+    warnings: string[]
+  ): void {
+    const operation = this.buildIndividualRemovalOperation(item, content);
+    if (!operation) {
+      warnings.push(`跳過 ${item.name}：無法安全計算刪除範圍（同行有其他語句或為解構綁定成員）`);
+      return;
+    }
+    operations.push(operation);
+  }
+
+  /**
    * 產生單一 dead code 項目的刪除操作（既有逐項獨立處理路徑）
    */
-  private buildIndividualRemovalOperation(item: DeadCodeItem, content: string): RemovalOperation {
+  private buildIndividualRemovalOperation(item: DeadCodeItem, content: string): RemovalOperation | null {
     // 擴展範圍以包含完整宣告（含 JSDoc 註解）
     const expandedRange = this.rangeExpander.expandRangeToFullDeclaration(
       content,
@@ -365,6 +383,12 @@ export class DeadCodeRemover {
       item.name,
       item.location.filePath
     );
+
+    // 無法安全判定刪除範圍（如同物理行有其他語句、解構綁定成員）：跳過該項，
+    // 寧可少刪 dead code 也不誤刪活碼（N1／F6-1）
+    if (!expandedRange) {
+      return null;
+    }
 
     return {
       filePath: item.location.filePath,

@@ -8,6 +8,7 @@ import { SymbolType } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { FileUtils } from '@core/foundations/index.js';
 import { escapeRegex } from '@shared/regex-utils.js';
+import { IDENTIFIER_CONTINUE_CLASS } from '@core/foundations/symbol-finder/identifier-matcher.js';
 
 /**
  * 範圍擴展器
@@ -19,6 +20,9 @@ export class RangeExpander {
    * 擴展範圍至完整宣告（包含前導註解和空行）
    * 優先使用 Parser 的 getFullDeclarationRange 方法（AST 精確解析）
    * 若 Parser 不支援或回傳 null，fallback 到字串匹配邏輯
+   *
+   * @returns 可安全刪除的範圍；無法安全判定「整行刪除只會刪掉目標宣告」時回傳 null
+   *   （呼叫端應跳過該項並警告，見 assertWholeLineRemovalIsSafe）
    */
   expandRangeToFullDeclaration(
     content: string,
@@ -26,7 +30,7 @@ export class RangeExpander {
     symbolType: SymbolType,
     symbolName: string,
     filePath: string
-  ): Range {
+  ): Range | null {
     // 1. 優先嘗試使用 Parser 的 getFullDeclarationRange 方法
     const parser = this.parserRegistry.getParser(FileUtils.getFileExtension(filePath));
     if (parser?.getFullDeclarationRange) {
@@ -37,12 +41,51 @@ export class RangeExpander {
         range.start.line
       );
       if (parserRange) {
+        // 精確手術範圍（起點不在行首）不經行導向處理，無誤刪同行內容的風險
+        if (parserRange.start.column > 1) {
+          return parserRange;
+        }
+        if (!this.canSafelyRemoveWholeLines(content, range, symbolType, symbolName)) {
+          return null;
+        }
         return this.wrapParserRange(content, parserRange, range.start.line, symbolType, symbolName);
       }
     }
 
     // 2. Fallback：使用原有的字串匹配邏輯
+    if (!this.canSafelyRemoveWholeLines(content, range, symbolType, symbolName)) {
+      return null;
+    }
     return this.expandRangeByStringMatching(content, range, symbolType, symbolName);
+  }
+
+  /**
+   * 判斷「整行（含後續行）刪除」對此 variable/constant 是否安全
+   *
+   * 行導向的擴展（wrapParserRange 與 expandRangeByStringMatching）都假設目標宣告獨占
+   * 整行，起點一律對齊行首、終點一律吃到行尾。這個假設在兩種形狀下不成立：
+   * - 同一物理行塞了多條語句（`export const notDead = 1; const dead1 = 1;`）——整行刪除
+   *   會把同行的存活宣告一起吃掉（N1，實測整檔被清空）
+   * - 目標是解構綁定的成員（`const { dead, live } = obj;`）——Parser 無法給出精確成員
+   *   範圍時 fallback 整行刪除，會毀掉仍在使用的 live 綁定與其消費行（F6-1）
+   *
+   * 兩者的共同可偵測特徵：找不到任何一行「以該符號自身的宣告開頭」。找不到時
+   * 行導向擴展的前提已破，一律回報不安全，由呼叫端跳過該項（少刪 dead code 可接受，
+   * 誤刪活碼不可接受）。
+   *
+   * 僅約束 variable/constant：其餘符號類型（function/class/interface…）維持既有行為。
+   */
+  private canSafelyRemoveWholeLines(
+    content: string,
+    range: Range,
+    symbolType: SymbolType,
+    symbolName: string
+  ): boolean {
+    if (symbolType !== SymbolType.Variable && symbolType !== SymbolType.Constant) {
+      return true;
+    }
+    const lines = content.split('\n');
+    return this.findDeclarationLine(lines, range.start.line - 1, symbolType, symbolName) !== null;
   }
 
   /**
@@ -289,6 +332,20 @@ export class RangeExpander {
     symbolName: string
   ): number {
     const safeApproximateLine = Math.max(0, Math.min(approximateLine, lines.length - 1));
+    return this.findDeclarationLine(lines, approximateLine, symbolType, symbolName) ?? safeApproximateLine;
+  }
+
+  /**
+   * 在 approximateLine 附近搜尋「該符號自身的宣告起始行」；找不到回傳 null
+   * （findDeclarationStartLine 會退回近似行，canSafelyRemoveWholeLines 則據此判定不安全）
+   */
+  private findDeclarationLine(
+    lines: string[],
+    approximateLine: number,
+    symbolType: SymbolType,
+    symbolName: string
+  ): number | null {
+    const safeApproximateLine = Math.max(0, Math.min(approximateLine, lines.length - 1));
     const searchStart = Math.max(0, safeApproximateLine - 2);
     const searchEnd = Math.min(lines.length - 1, safeApproximateLine + 30);
 
@@ -298,30 +355,37 @@ export class RangeExpander {
       }
     }
 
-    return safeApproximateLine;
+    return null;
   }
 
+  /**
+   * 名稱結尾一律用識別符字元類的 negative lookahead 而非 `\b`：`\b` 只認 ASCII `\w`，
+   * 對純 Unicode 識別符（如 `數量`）恆不成立（見 identifier-matcher 的 G6 註解）。
+   * 邊界誤判會讓 canSafelyRemoveWholeLines 把正常的 Unicode 宣告誤判為不安全而跳過。
+   */
   private isDeclarationLine(line: string, symbolType: SymbolType, symbolName: string): boolean {
     const escapedName = escapeRegex(symbolName);
+    const nameEnd = `${escapedName}(?!${IDENTIFIER_CONTINUE_CLASS})`;
+    const build = (pattern: string): RegExp => new RegExp(pattern, 'u');
     const trimmed = line.trim();
 
     switch (symbolType) {
       case SymbolType.Function:
-        return new RegExp(`^(?:export\\s+)?(?:async\\s+)?function\\s+${escapedName}\\b`).test(trimmed)
-          || new RegExp(`^(?:export\\s+)?(?:const|let|var)\\s+${escapedName}\\b.*=>`).test(trimmed);
+        return build(`^(?:export\\s+)?(?:async\\s+)?function\\s+${nameEnd}`).test(trimmed)
+          || build(`^(?:export\\s+)?(?:const|let|var)\\s+${nameEnd}.*=>`).test(trimmed);
       case SymbolType.Class:
-        return new RegExp(`^(?:export\\s+)?(?:abstract\\s+)?class\\s+${escapedName}\\b`).test(trimmed);
+        return build(`^(?:export\\s+)?(?:abstract\\s+)?class\\s+${nameEnd}`).test(trimmed);
       case SymbolType.Interface:
-        return new RegExp(`^(?:export\\s+)?interface\\s+${escapedName}\\b`).test(trimmed);
+        return build(`^(?:export\\s+)?interface\\s+${nameEnd}`).test(trimmed);
       case SymbolType.Type:
-        return new RegExp(`^(?:export\\s+)?type\\s+${escapedName}\\b`).test(trimmed);
+        return build(`^(?:export\\s+)?type\\s+${nameEnd}`).test(trimmed);
       case SymbolType.Enum:
-        return new RegExp(`^(?:export\\s+)?enum\\s+${escapedName}\\b`).test(trimmed);
+        return build(`^(?:export\\s+)?enum\\s+${nameEnd}`).test(trimmed);
       case SymbolType.Variable:
       case SymbolType.Constant:
-        return new RegExp(`^(?:export\\s+)?(?:const|let|var)\\s+${escapedName}\\b`).test(trimmed);
+        return build(`^(?:export\\s+)?(?:const|let|var)\\s+${nameEnd}`).test(trimmed);
       default:
-        return new RegExp(`\\b${escapedName}\\b`).test(trimmed);
+        return build(`(?<!${IDENTIFIER_CONTINUE_CLASS})${nameEnd}`).test(trimmed);
     }
   }
 

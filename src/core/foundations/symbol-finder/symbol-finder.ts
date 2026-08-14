@@ -601,6 +601,7 @@ export class SymbolFinder {
       location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } };
       type: string;
       shorthandKeyText?: string;
+      shorthandTargetIsKey?: boolean;
     },
     symbolName: string,
     _filePath: string,
@@ -616,7 +617,8 @@ export class SymbolFinder {
       location: ref.location,
       type: this.mapParserReferenceTypeString(ref.type),
       context,
-      ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {})
+      ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {}),
+      ...(ref.shorthandTargetIsKey ? { shorthandTargetIsKey: ref.shorthandTargetIsKey } : {})
     };
   }
 

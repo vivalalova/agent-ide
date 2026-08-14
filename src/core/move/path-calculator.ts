@@ -16,6 +16,20 @@ import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES, stripSourceFileExtension } 
 const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
 
 /**
+ * 由 import 字面解析出的路徑，展開成磁碟上可能的實際檔案候選。
+ *
+ * import 字面可能已帶顯式副檔名（TS ESM 慣例 './b.js' 指向磁碟上的 b.ts），
+ * 直接疊加候選副檔名會得到 'b.js.ts' 這種雙副檔名、永遠命中不到真正的 'b.ts'。
+ * 因此候選一律先用 stripSourceFileExtension 剝除字面副檔名再組合；省略副檔名
+ * 的 import 本就無副檔名可剝，行為不變。相對路徑分支的 co-move 目錄判定與
+ * shadow-file 保護（來源／目標兩個 exists 迴圈）共用這一份候選展開。
+ */
+function buildResolvedFileCandidates(resolvedPath: string): string[] {
+  const base = stripSourceFileExtension(resolvedPath);
+  return SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.map(ext => path.normalize(base + ext));
+}
+
+/**
  * 路徑計算器類別
  * 負責計算檔案移動時需要更新的 import 路徑
  */
@@ -302,14 +316,10 @@ export class PathCalculator {
             // import 字面若已帶顯式副檔名（如 './sub/deep.js'），normalizedResolved
             // 已經是 'deep.js'；候選副檔名比對前須先剝除該字面副檔名，否則會疊加成
             // 'deep.js.ts' 這種雙副檔名去比對，永遠命中不到實際的 'deep.ts'（見
-            // explicit-extension co-move regression）。沿用 stripSourceFileExtension
-            // 單一來源做剝除，不另寫一份副檔名映射表；省略副檔名時本就無字面副檔名
-            // 可剝，行為與原本相同。
-            const normalizedResolvedBase = stripSourceFileExtension(normalizedResolved);
-            let isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
-              const fullPath = path.normalize(normalizedResolvedBase + ext);
-              return normalizedFilesInDir.has(fullPath);
-            });
+            // explicit-extension co-move regression）。候選展開共用
+            // buildResolvedFileCandidates 單一來源。
+            let isTargetInMovedDir = buildResolvedFileCandidates(normalizedResolved)
+              .some(candidate => normalizedFilesInDir.has(candidate));
 
             // 如果不是直接匹配，檢查 index 檔案（如 ./utils → utils/index.ts）。
             // 缺這一步時，co-move 目錄索引檔會被誤判成「未一起搬移」，導致
@@ -353,9 +363,8 @@ export class PathCalculator {
 
           // 檢查目標位置是否存在同名檔案
           let targetFileExists = false;
-          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
-            const fullPath = potentialTargetResolved + ext;
-            if (await this.fileSystem.exists(fullPath)) {
+          for (const candidate of buildResolvedFileCandidates(potentialTargetResolved)) {
+            if (await this.fileSystem.exists(candidate)) {
               targetFileExists = true;
               break;
             }
@@ -365,10 +374,12 @@ export class PathCalculator {
           // 只有「原檔已不在原位（已被搬走）」時，目標目錄的同名檔案才代表
           // 這是連帶／增量搬移的結果；原檔仍在原位時，目標目錄的同名檔案
           // 只是巧合，繼續保留相對路徑會讓 import 靜默綁到錯誤的模組。
+          // 候選展開必須剝除 import 字面副檔名（見 buildResolvedFileCandidates）：
+          // 顯式 `.js` import 疊加成 'b.js.ts' 時此判斷永遠為 false，會讓下方
+          // shadow-file 保護誤判「來源已被搬走」而跳過本該更新的 import。
           let sourceFileStillExists = false;
-          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
-            const fullPath = normalizedResolved + ext;
-            if (await this.fileSystem.exists(fullPath)) {
+          for (const candidate of buildResolvedFileCandidates(normalizedResolved)) {
+            if (await this.fileSystem.exists(candidate)) {
               sourceFileStillExists = true;
               break;
             }

@@ -6,6 +6,7 @@
 import { SymbolReferenceType, type SymbolReference } from './types.js';
 import { createIdentifierBoundaryRegex } from './identifier-matcher.js';
 import { escapeRegex } from '@shared/regex-utils.js';
+import { isRegexLiteralStart } from '../regex-literal-heuristic.js';
 
 type Quote = '\'' | '"';
 
@@ -157,47 +158,6 @@ export class TextMatcher {
     );
   }
 
-  /**
-   * regex 字面值可能出現在其前的字元：運算子、逗號、左括號等「不可能是除法」的
-   * 情境（含掃描起點）。
-   */
-  private static readonly REGEX_PRECEDING_CHARS = new Set([
-    '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '^', '~', '<', '>'
-  ]);
-
-  private static readonly REGEX_PRECEDING_KEYWORDS = new Set([
-    'return', 'typeof', 'in', 'of', 'case', 'do', 'else', 'void', 'delete',
-    'instanceof', 'new', 'throw', 'yield', 'await'
-  ]);
-
-  private static readonly REGEX_CONTROL_KEYWORDS = new Set(['if', 'for', 'while']);
-
-  /** 由 position 往前找最近一個非空白字元。 */
-  private lastMeaningfulChar(line: string, position: number): string | undefined {
-    for (let i = position - 1; i >= 0; i--) {
-      if (!/\s/.test(line[i])) {
-        return line[i];
-      }
-    }
-    return undefined;
-  }
-
-  /** 由 position 往前找最近一個完整識別字。 */
-  private lastMeaningfulWord(line: string, position: number): string | undefined {
-    let i = position - 1;
-    while (i >= 0 && /\s/.test(line[i])) {
-      i--;
-    }
-    if (i < 0 || !/[A-Za-z0-9_$]/.test(line[i])) {
-      return undefined;
-    }
-    const end = i + 1;
-    while (i >= 0 && /[A-Za-z0-9_$]/.test(line[i])) {
-      i--;
-    }
-    return line.slice(i + 1, end);
-  }
-
   /** 檢查位置是否在單行註解中。 */
   isInSingleLineComment(line: string, position: number): boolean {
     const scan = this.scanSource(line);
@@ -323,7 +283,7 @@ export class TextMatcher {
         state.templateContexts.push({ mode: 'raw', braceDepth: 0 });
         continue;
       }
-      if (char === '/' && this.isRegexStart(text, i)) {
+      if (char === '/' && isRegexLiteralStart(text, i)) {
         state.inRegex = true;
         state.inRegexClass = false;
         continue;
@@ -342,46 +302,6 @@ export class TextMatcher {
     }
 
     return { characters, endState: state };
-  }
-
-  private isRegexStart(text: string, position: number): boolean {
-    if (text[position + 1] === '/') {
-      return false;
-    }
-
-    const previous = this.lastMeaningfulChar(text, position);
-    if (previous === undefined || TextMatcher.REGEX_PRECEDING_CHARS.has(previous)) {
-      return true;
-    }
-    if (previous === ')') {
-      let previousIndex = position - 1;
-      while (previousIndex >= 0 && /\s/.test(text[previousIndex])) { previousIndex--; }
-      return this.isControlFlowParenClose(text, previousIndex);
-    }
-    if (/[A-Za-z0-9_$]/.test(previous)) {
-      const word = this.lastMeaningfulWord(text, position);
-      return word !== undefined && TextMatcher.REGEX_PRECEDING_KEYWORDS.has(word);
-    }
-    return false;
-  }
-
-  private isControlFlowParenClose(text: string, closePosition: number): boolean {
-    let depth = 1;
-    for (let i = closePosition - 1; i >= 0; i--) {
-      if (text[i] === ')') {
-        depth++;
-      } else if (text[i] === '(') {
-        depth--;
-        if (depth === 0) {
-          let end = i - 1;
-          while (end >= 0 && /\s/.test(text[end])) { end--; }
-          let start = end;
-          while (start >= 0 && /[A-Za-z0-9_$]/.test(text[start])) { start--; }
-          return TextMatcher.REGEX_CONTROL_KEYWORDS.has(text.slice(start + 1, end + 1));
-        }
-      }
-    }
-    return false;
   }
 
   /** 跳脫正則表達式特殊字元（供 CallSiteParser 組合呼叫點樣式使用）。 */

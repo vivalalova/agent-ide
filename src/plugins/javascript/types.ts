@@ -11,7 +11,7 @@ import type {
   Symbol
 } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
-import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
+import { isRelativePath, isValidUnicodeIdentifier, VALUE_SPACE_RESERVED_WORDS } from '@plugins/shared/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult, ParserPlugin as BabelParserPlugin } from '@babel/parser';
 
@@ -426,20 +426,9 @@ export function createJavaScriptASTNode(
 }
 
 /**
- * JavaScript 保留字列表
+ * JavaScript 保留字列表（值空間保留字 SSOT：@plugins/shared/reserved-words.js）
  */
-const JAVASCRIPT_RESERVED_WORDS = new Set([
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'enum', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  // ES6+
-  'let', 'static', 'async', 'await',
-  // Strict mode reserved words
-  'implements', 'interface', 'package', 'private', 'protected', 'public',
-  // Literals
-  'null', 'true', 'false'
-]);
+const JAVASCRIPT_RESERVED_WORDS = VALUE_SPACE_RESERVED_WORDS;
 
 /**
  * 驗證識別符名稱

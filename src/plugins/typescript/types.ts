@@ -10,7 +10,7 @@ import type {
   Symbol
 } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
-import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
+import { isRelativePath, isValidUnicodeIdentifier, VALUE_SPACE_RESERVED_WORDS } from '@plugins/shared/index.js';
 import * as ts from 'typescript';
 
 // Re-export 共用函數供外部使用
@@ -467,22 +467,15 @@ export function createTypeScriptASTNode(
 /**
  * TypeScript/JavaScript 保留字列表
  */
-const TYPESCRIPT_RESERVED_WORDS = new Set([
-  // JavaScript reserved words
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  // ES6+
-  'let', 'static', 'async', 'await',
-  // Strict mode reserved words
-  'implements', 'interface', 'package', 'private', 'protected', 'public',
-  // TypeScript specific
-  'enum', 'type', 'namespace', 'module', 'declare', 'abstract', 'as',
+const TYPESCRIPT_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  // 值空間保留字（SSOT：@plugins/shared/reserved-words.js）
+  ...VALUE_SPACE_RESERVED_WORDS,
+  // TypeScript specific（contextual keyword：僅型別／宣告語法位置有特殊意義）
+  'type', 'namespace', 'module', 'declare', 'abstract', 'as',
   'asserts', 'any', 'boolean', 'constructor', 'get', 'infer', 'is',
   'keyof', 'never', 'readonly', 'require', 'number', 'object', 'set',
   'string', 'symbol', 'undefined', 'unique', 'unknown', 'from', 'global',
-  'of', 'null', 'true', 'false'
+  'of'
 ]);
 
 /**

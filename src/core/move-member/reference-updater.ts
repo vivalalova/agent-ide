@@ -6,7 +6,7 @@
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { MemberType, type MemberDefinition, type ReferenceUpdate, type MoveMemberOptions, type FileChange } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { getErrorMessage } from '@shared/errors/index.js';
+import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
 import { escapeRegex } from '@shared/regex-utils.js';
 import { offsetToPosition } from '@shared/position-utils.js';
 import { createIdentifierBoundaryRegex, maskNonCode, collectProjectFiles, FileUtils } from '@core/foundations/index.js';
@@ -789,8 +789,17 @@ export class ReferenceUpdater {
       const content = await this.fileSystem.readFile(filePath, 'utf-8');
       return typeof content === 'string' ? content : content.toString('utf-8');
     } catch (error) {
-      diagnostics.warn('move-member/reference-updater', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
-      return null;
+      if (isFileNotFoundError(error)) {
+        // 合理的空結果：候選檔案在列出目錄與實際讀取之間已被刪除／搬移，
+        // 沒有內容可掃，視為「沒有引用」繼續掃描其他檔案
+        // （與 move/file-scanner.ts 同一慣例）。
+        diagnostics.warn('move-member/reference-updater', 'FILE_MISSING_DURING_SCAN', `File no longer exists, treating as no references: ${getErrorMessage(error)}`, filePath);
+        return null;
+      }
+      // fast-fail：非「檔案不存在」的讀取失敗（如權限不足）若被吞掉，該檔案對
+      // 被移動成員的 import 引用就完全不會被掃描到，move-member 會靜默漏改卻仍
+      // 回報成功，造成資料不一致。必須讓錯誤往外傳播中止整個操作。
+      throw new Error(`Failed to read file while scanning for member references: ${filePath}: ${getErrorMessage(error)}`);
     }
   }
 }

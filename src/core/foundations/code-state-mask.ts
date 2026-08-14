@@ -13,7 +13,7 @@
  * `` `x${require('./old')}` `` 中的 require 仍視為真實程式碼（見 move source-masking F9）。
  */
 
-import { isIdentifierContinueChar } from './symbol-finder/identifier-matcher.js';
+import { isRegexLiteralStart } from './regex-literal-heuristic.js';
 
 /**
  * 逐字元語意分類（比 boolean mask 更細）：
@@ -47,43 +47,8 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
   /** character class 剛開啟（`[` 或 `[^` 之後、尚未讀入任何 ClassAtom） */
   let regexClassAtStart = false;
 
-  // regex 字面值消歧義（除法 vs regex 開始）：用「前一個非空白有效字元」啟發式。
-  // 前導為運算子/開括號/逗號/冒號/等號/行首/特定關鍵字（return/await 等）→ regex 開始；
-  // 前導為識別符/數字/`)`/`]` 結尾 → 除法。此為 heuristic，非完整 parser，
-  // 在 mask 的用途（括號配對、非精確 parse）下已足夠，已知侷限見函式註解。
-  const isRegexContext = (i: number): boolean => {
-    let j = i - 1;
-    while (j >= 0 && /\s/.test(text[j])) {
-      j--;
-    }
-    if (j < 0) {
-      return true;
-    }
-    const prev = text[j];
-    if (isIdentifierContinueChar(prev)) {
-      let start = j;
-      while (start >= 0 && isIdentifierContinueChar(text[start])) {
-        start--;
-      }
-      const word = text.slice(start + 1, j + 1);
-      // 成員存取（`.delete` / optional chaining `?.delete`）：識別符前一個
-      // 非空白字元是 `.` 時，該識別符是屬性名稱而非關鍵字，不應觸發 regex 語境
-      // （如 `cache.delete / total` 的 `delete` 是方法名，`/` 是除法非 regex 起點）。
-      if (text[start] === '.') {
-        return false;
-      }
-      const regexPrecedingKeywords = new Set([
-        'return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void',
-        'throw', 'yield', 'instanceof', 'do', 'else', 'await',
-      ]);
-      return regexPrecedingKeywords.has(word);
-    }
-    if (prev === ')' || prev === ']') {
-      return false;
-    }
-    // 運算子、開括號、逗號、冒號、等號等 → regex 開始
-    return true;
-  };
+  // regex 字面值消歧義（除法 vs regex 開始）：判定收斂於 regex-literal-heuristic
+  // （唯一權威來源，與 symbol-finder 的 TextMatcher 共用同一份啟發式，見 F5-1）。
 
   /** JS regex flags（含較新的 d/v） */
   const isRegexFlagChar = (c: string): boolean =>
@@ -223,7 +188,7 @@ export function computeCodeCharKinds(text: string): CodeCharKind[] {
       stack.push({ kind: 'template' });
       continue;
     }
-    if (char === '/' && isRegexContext(i)) {
+    if (char === '/' && isRegexLiteralStart(text, i)) {
       kinds[i] = 'regex';
       mode = 'regex';
       regexInClass = false;

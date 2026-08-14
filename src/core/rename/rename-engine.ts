@@ -27,7 +27,7 @@ import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 // SSOT：TypeScript/JavaScript 保留字（含 async/await/yield/null/true/false/this/super/new/typeof…，
 // 以及 TS 關鍵字 type/from/as）；禁在 core 再維護短 Set（F29）
-import { isTypeScriptReservedWord } from '@plugins/typescript/types.js';
+import { isRenameUnsafeIdentifier } from '@plugins/shared/index.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -106,8 +106,11 @@ export class RenameEngine {
 
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查是否為保留字（TYPESCRIPT_RESERVED_WORDS SSOT）
-    if (isTypeScriptReservedWord(options.newName)) {
+    // 檢查新名稱是否為 rename 不安全的字（SSOT：@plugins/shared/reserved-words.js）：
+    // 值空間保留字，加上 import/export specifier 位置具語法意義的 as/from/type。
+    // 其餘 TS contextual keyword（get/set/string/namespace/constructor…）在值空間
+    // 合法，不得誤擋。
+    if (isRenameUnsafeIdentifier(options.newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${options.newName}' 是保留字，不能用作識別符`,
@@ -272,8 +275,8 @@ export class RenameEngine {
   ): ConflictInfo[] {
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查保留字（TYPESCRIPT_RESERVED_WORDS SSOT）
-    if (isTypeScriptReservedWord(newName)) {
+    // 檢查保留字（SSOT：@plugins/shared/reserved-words.js 的 isRenameUnsafeIdentifier）
+    if (isRenameUnsafeIdentifier(newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${newName}' 是保留字`,

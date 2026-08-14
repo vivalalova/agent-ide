@@ -26,6 +26,11 @@ export interface SymbolReference {
    * 一併改掉（見 Reference.shorthandKeyText，shared/types/symbol.ts）。
    */
   readonly shorthandKeyText?: string;
+  /**
+   * rename 目標符號是 property 宣告（key 側），展開方向為 `newName: 原文字`
+   * （見 Reference.shorthandTargetIsKey，shared/types/symbol.ts）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**
