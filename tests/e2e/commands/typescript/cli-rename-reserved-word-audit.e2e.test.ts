@@ -85,6 +85,63 @@ const resultF21Namespace = computeCandidateF21Namespace();
     expect(updated).toContain('const resultF21Namespace = namespace();');
   });
 
+  it('[audit-fix] F2-1 複核：rename --to async 應成功（async 是合法值空間識別符，可當變數名）', async () => {
+    const testFile = `${fixture.rootPath}/regression-f2-1-async.ts`;
+    await fixture.memfs.writeFile(testFile, `
+function computeCandidateF21Async(): number {
+  return 6;
+}
+
+const resultF21Async = computeCandidateF21Async();
+`.trim());
+
+    const result = await executeCLI(
+      ['rename', '--path', fixture.rootPath, '--from', 'computeCandidateF21Async', '--to', 'async', '--no-cache', '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const updated = await fixture.memfs.readFile(testFile, 'utf-8') as string;
+    expect(updated).toContain('function async(): number');
+    expect(updated).toContain('const resultF21Async = async();');
+  });
+
+  it('[audit-fix] F2-1 複核：rename --to eval 應被擋（strict mode/ESM 禁止 eval 當 binding 名）', async () => {
+    const testFile = `${fixture.rootPath}/regression-f2-1-guard-eval.ts`;
+    await fixture.memfs.writeFile(testFile, `
+function computeCandidateF21GuardEval(): number {
+  return 7;
+}
+
+const resultF21GuardEval = computeCandidateF21GuardEval();
+`.trim());
+
+    const result = await executeCLI(
+      ['rename', '--path', fixture.rootPath, '--from', 'computeCandidateF21GuardEval', '--to', 'eval', '--no-cache', '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it('[audit-fix] F2-1 複核：rename --to arguments 應被擋（strict mode/ESM 禁止 arguments 當 binding 名）', async () => {
+    const testFile = `${fixture.rootPath}/regression-f2-1-guard-arguments.ts`;
+    await fixture.memfs.writeFile(testFile, `
+function computeCandidateF21GuardArguments(): number {
+  return 8;
+}
+
+const resultF21GuardArguments = computeCandidateF21GuardArguments();
+`.trim());
+
+    const result = await executeCLI(
+      ['rename', '--path', fixture.rootPath, '--from', 'computeCandidateF21GuardArguments', '--to', 'arguments', '--no-cache', '--format', 'json'],
+      { memfs: fixture.memfs }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+  });
+
   describe('對照（保護性，現行應維持被擋）', () => {
     it('[audit-fix] F2-1：rename --to class 仍應被擋（class 是真正保留字）', async () => {
       const testFile = `${fixture.rootPath}/regression-f2-1-guard-class.ts`;

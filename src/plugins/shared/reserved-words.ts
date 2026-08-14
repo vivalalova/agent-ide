@@ -15,7 +15,7 @@ export const VALUE_SPACE_RESERVED_WORDS: ReadonlySet<string> = new Set([
   'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
   'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
   // ES6+
-  'let', 'static', 'async', 'await',
+  'let', 'static', 'await',
   // Strict mode reserved words
   'implements', 'interface', 'package', 'private', 'protected', 'public',
   // Literals
@@ -36,7 +36,18 @@ export function isValueSpaceReservedWord(name: string): boolean {
  */
 export const MODULE_SYNTAX_CONTEXTUAL_KEYWORDS: ReadonlySet<string> = new Set(['as', 'from', 'type']);
 
-/** 判定名稱是否不適合作為 rename 的新名稱（值空間保留字或 module 語法 contextual keyword） */
+/**
+ * strict mode／ESM 下禁止作為 binding 名稱的識別符。
+ *
+ * `eval`、`arguments` 在非嚴格模式下是合法識別符，故不屬 VALUE_SPACE_RESERVED_WORDS；
+ * 但 strict mode（含所有 ESM 模組，本專案 rename 目標必屬此類）明文禁止把它們
+ * 當作變數／函式／參數等 binding 名稱，屬額外情境限定，與 MODULE_SYNTAX_CONTEXTUAL_KEYWORDS 同層設計。
+ */
+export const STRICT_MODE_FORBIDDEN_BINDING_NAMES: ReadonlySet<string> = new Set(['eval', 'arguments']);
+
+/** 判定名稱是否不適合作為 rename 的新名稱（值空間保留字、module 語法 contextual keyword，或 strict mode 禁用 binding 名） */
 export function isRenameUnsafeIdentifier(name: string): boolean {
-  return isValueSpaceReservedWord(name) || MODULE_SYNTAX_CONTEXTUAL_KEYWORDS.has(name);
+  return isValueSpaceReservedWord(name)
+    || MODULE_SYNTAX_CONTEXTUAL_KEYWORDS.has(name)
+    || STRICT_MODE_FORBIDDEN_BINDING_NAMES.has(name);
 }

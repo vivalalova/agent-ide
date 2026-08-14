@@ -49,10 +49,27 @@ describe('RenameEngine', () => {
       expect(result.conflicts[0].type).toBe(ConflictType.ReservedKeyword);
     });
 
-    // F29：core RenameEngine.reservedKeywords 漏 async（context keyword / 不可當識別符）
-    it('Given 保留字 async, when validateRename, then isValid: false + ReservedKeyword 衝突（F29）', async () => {
-      const engine = new RenameEngine();
+    // F29 複核：async 是 contextual keyword，非保留字，`const async = 1` 合法（ts.transpileModule 已實證）
+    // rename --to async 現契約為放行；e2e 覆蓋見 cli-rename-reserved-word-audit.e2e.test.ts
+    it('Given 合法值空間識別符 async, when validateRename, then isValid: true + 無衝突（F29）', async () => {
+      const mockFs = createMockFileSystem({ '/src/foo.ts': 'const myFunc = () => {}' });
+      const engine = new RenameEngine(createMockParserRegistry(), mockFs);
       const result = await engine.validateRename(makeOptions('async'));
+      expect(result.isValid).toBe(true);
+      expect(result.conflicts).toHaveLength(0);
+    });
+
+    // F29：strict mode/ESM 禁止 eval/arguments 當 binding 名，非一般保留字但仍需擋
+    it('Given 保留字 eval, when validateRename, then isValid: false + ReservedKeyword 衝突（F29）', async () => {
+      const engine = new RenameEngine();
+      const result = await engine.validateRename(makeOptions('eval'));
+      expect(result.isValid).toBe(false);
+      expect(result.conflicts.some(c => c.type === ConflictType.ReservedKeyword)).toBe(true);
+    });
+
+    it('Given 保留字 arguments, when validateRename, then isValid: false + ReservedKeyword 衝突（F29）', async () => {
+      const engine = new RenameEngine();
+      const result = await engine.validateRename(makeOptions('arguments'));
       expect(result.isValid).toBe(false);
       expect(result.conflicts.some(c => c.type === ConflictType.ReservedKeyword)).toBe(true);
     });

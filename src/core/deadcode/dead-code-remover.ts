@@ -132,17 +132,22 @@ export class DeadCodeRemover {
    */
   async generateChangeset(
     deadCodeItems: readonly DeadCodeItem[],
-    projectFiles?: readonly string[]
+    projectFiles?: readonly string[],
+    mode: 'preview' | 'apply' = 'preview'
   ): Promise<Changeset> {
-    return this.buildChangeset(await this.preview(deadCodeItems, projectFiles));
+    return this.buildChangeset(await this.preview(deadCodeItems, projectFiles), mode);
   }
 
   /**
    * 把 preview 結果轉成 Changeset。
    * `generateChangeset()`（CLI 路徑）與 `execute()` 都引用這裡，
    * 確保刪除語意只有一份定義。
+   *
+   * `mode` 決定 description 措辭：'preview' 尚未寫入（CLI dry-run／未帶 --apply），
+   * 'apply' 為即將／已經真的寫入（execute() 呼叫、或 CLI 帶 --apply）。呼叫端若拿得到
+   * 實際寫入狀態務必如實傳入，避免 preview 模式誤報「已刪除」。
    */
-  private buildChangeset(preview: DeadCodeRemovalPreview): Changeset {
+  private buildChangeset(preview: DeadCodeRemovalPreview, mode: 'preview' | 'apply' = 'preview'): Changeset {
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.Deadcode);
 
@@ -175,10 +180,12 @@ export class DeadCodeRemover {
       }], cleanup.cleanupType === 'delete' ? TextEditOperationType.Delete : TextEditOperationType.Modify);
     }
 
-    // 設定描述
+    // 設定描述：preview 模式尚未真的寫入，措辭不得暗示已刪除（見上方 mode 說明）
     const { totalRemovals, importsCleanedUp } = preview.summary;
     builder.withDescription(
-      `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
+      mode === 'apply'
+        ? `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
+        : `Found ${totalRemovals} dead code items to remove and ${importsCleanedUp} imports to clean (preview)`
     );
 
     // 附上結構化統計資料（權威來源，供 CLI 層讀取，避免對 description/edits 字串反推）
@@ -208,7 +215,7 @@ export class DeadCodeRemover {
     // 與 CLI 的 --apply 走同一條寫入路徑（Changeset → ChangeApplicator），
     // 確保備份／回滾／併發鎖語意一致，不另開直接 writeFile 的第二條寫入路徑。
     const applyResult = await new ChangeApplicator(this.fileSystem).apply(
-      this.buildChangeset(preview),
+      this.buildChangeset(preview, 'apply'),
       { atomic: true, rollbackOnError: true }
     );
 

@@ -188,7 +188,11 @@ async function handleDeadCodeCommand(
     // 傳入全專案檔案，讓 import 清理能掃描 consumer 檔案：被刪 export 符號在其他檔案的
     // import specifier 必須一起清掉，否則 apply 後殘留指向已不存在符號的 import（N3）
     const projectFiles = indexEngine.getAllIndexedFiles().map(f => f.filePath);
-    const changeset = await remover.generateChangeset(detectionResult.items, projectFiles);
+    const changeset = await remover.generateChangeset(
+      detectionResult.items,
+      projectFiles,
+      willApply ? 'apply' : 'preview'
+    );
 
     // 無變更時的處理（changeset.success 但無 textChanges）
     if (changeset.success && changeset.textChanges.length === 0) {
