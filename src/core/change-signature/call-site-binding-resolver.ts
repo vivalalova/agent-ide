@@ -15,7 +15,7 @@ import type { Range } from '@shared/types/core.js';
 import { isPositionInRange } from '@shared/types/core.js';
 import { offsetToPosition } from '@shared/position-utils.js';
 import { collectScopeShadowedNames } from './scope-shadow-analyzer.js';
-import { getScriptKind } from './script-kind.js';
+import { getScriptKind } from '@shared/script-kind.js';
 
 /**
  * 中介檔（barrel）的單層 re-export 轉發資訊
@@ -335,17 +335,18 @@ export class CallSiteBindingResolver {
     requestedExportName: string,
     visited: Set<string>
   ): Promise<boolean> {
-    let intermediateFile: string | undefined;
-    for (const candidate of allFiles) {
-      if (await this.importSpecifierResolvesToTarget(
-        consumerFilePath,
-        moduleSpecifier,
-        path.resolve(candidate)
-      )) {
-        intermediateFile = candidate;
-        break;
-      }
-    }
+    // specifier 直接解析一次，再對專案檔清單比對命中（同 rename 的
+    // target-exposure-resolver 作法）：先前是逐一拿專案裡每個檔案當假想目標
+    // 重複解析同一個 specifier，等於每次呼叫都線性掃全專案並帶 I/O 探測。
+    // 仍要求命中的中介檔屬於 allFiles，避免 node_modules／被排除的檔案被當成 barrel。
+    const resolvedSpecifier = await this.pathUtils.resolveImportPathAsync(
+      moduleSpecifier,
+      consumerFilePath
+    );
+    const intermediateFile = allFiles.find(candidate => this.pathUtils.pathsMatch(
+      resolvedSpecifier,
+      path.resolve(candidate)
+    ));
     if (!intermediateFile) {
       return false;
     }

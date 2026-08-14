@@ -21,7 +21,7 @@ import { resolveParameterIndex } from './utils.js';
 import type { FileUtils } from '@core/foundations/index.js';
 import type { SignatureTransformer } from './signature-transformer.js';
 import type { FunctionDeclarationLocator } from './function-declaration-locator.js';
-import { getScriptKind } from './script-kind.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import { visitValueIdentifierReferences } from './value-identifier-references.js';
 
 export class ParameterReferenceScanner {

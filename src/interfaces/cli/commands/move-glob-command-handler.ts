@@ -21,6 +21,7 @@ import {
 } from '@interfaces/cli/unified-output-handler.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { formatRelativePath } from '@interfaces/cli/commands/move-path-display.js';
 
 /**
  * 處理 glob pattern 移動命令
@@ -266,11 +267,6 @@ function printGlobPreview(projectRoot: string, movedFiles: readonly GlobMovedFil
   if (omittedCount > 0) {
     console.log(`${omittedCount} more destination(s) omitted`);
   }
-}
-
-function formatRelativePath(projectRoot: string, filePath: string): string {
-  const relativePath = path.relative(projectRoot, filePath);
-  return relativePath.length > 0 ? relativePath : '.';
 }
 
 /**

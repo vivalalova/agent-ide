@@ -343,7 +343,8 @@ function bar() {}`;
       const result = await remover.execute(preview);
 
       expect(result.success).toBe(false);
-      expect(result.errors).toContainEqual(expect.stringContaining('處理失敗'));
+      // 寫入走統一的 ChangeApplicator 路徑，錯誤訊息由它產生並帶上失敗檔案路徑
+      expect(result.errors).toContainEqual(expect.stringContaining('/test.ts'));
     });
   });
 

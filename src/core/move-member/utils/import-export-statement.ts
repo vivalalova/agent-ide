@@ -4,6 +4,7 @@
  * ReferenceUpdater 實例狀態，純函式化的語句範圍掃描邏輯獨立成檔更易維護。
  */
 
+import { maskNonCode } from '@core/foundations/index.js';
 import type { ReferenceUpdate } from '../types.js';
 
 /**
@@ -18,28 +19,20 @@ const declarationBodyStartPattern =
   /^(?:default\b|(?:async\s+|abstract\s+|declare\s+)*(?:class|function|interface|enum|namespace|module|const|let|var)\b)/;
 
 /**
- * 計算文字中大括號的最大巢狀深度（忽略字串/樣板字面值內容中的大括號字元）。
+ * 計算已遮罩文字中大括號的最大巢狀深度。
  * 合法的 import/export 具名清單（`{ a, b }`）只會有單層深度；深度達到 2
  * 代表已經吃進宣告本體內部的巢狀結構（如 class 內的 method body），
  * 用於多行收集的累積安全網（見 collectImportExportStatement 說明）。
+ *
+ * 呼叫端必須傳入 maskNonCode 的輸出：字串/樣板/註解內容中恰巧出現的大括號
+ * 已被清空，本函式不再自行重複一份字面值狀態機（SSOT 為 code-state-mask）。
  */
-function computeMaxBraceDepth(text: string): number {
+function computeMaxBraceDepth(maskedText: string): number {
   let depth = 0;
   let maxDepth = 0;
-  let quote: string | null = null;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-
-    if (quote) {
-      if (char === '\\') { i++; continue; }
-      if (char === quote) { quote = null; }
-      continue;
-    }
-
-    if (char === '\'' || char === '"' || char === '`') {
-      quote = char;
-    } else if (char === '{') {
+  for (const char of maskedText) {
+    if (char === '{') {
       depth++;
       maxDepth = Math.max(maxDepth, depth);
     } else if (char === '}') {
@@ -160,16 +153,21 @@ export function collectImportExportStatement(
       };
     }
 
+    // 兩道終止判斷都對 maskNonCode 的輸出執行：註解／字串內容中的 `;` 與大括號
+    // 不是語句結構，直接掃原文會讓具名清單帶註解的合法多行 import 被誤判放棄
+    // 收集（呼叫端因此漏改該 import）。遮罩保留長度與換行，索引語意不變。
+    const maskedText = maskNonCode(text);
+
     // 累積文字已出現 `;` 仍未取得 from 子句 → 這是與 import/export-from 無關
     // 的完整語句（如無 from 的 `export { x };`），不得繼續吸收下一行造成跨語句融合
-    if (text.includes(';')) {
+    if (maskedText.includes(';')) {
       return null;
     }
 
     // 累積安全網：大括號巢狀深度達到 2 層，代表已經吃進宣告本體內部的巢狀
     // 結構（如 class body 內的 method body），不可能仍是合法的 import/export
     // 具名清單，終止累積避免繼續吸收到後面不相關的 from 子句
-    if (computeMaxBraceDepth(text) >= 2) {
+    if (computeMaxBraceDepth(maskedText) >= 2) {
       return null;
     }
 

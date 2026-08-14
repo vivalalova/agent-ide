@@ -58,6 +58,7 @@ import {
   computeContentHash
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
@@ -146,7 +147,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
         code,
         this.compilerOptions.target || ts.ScriptTarget.ES2020,
         true, // setParentNodes
-        this.getScriptKind(filePath)
+        getScriptKind(filePath)
       );
 
       // 檢查語法錯誤 - 使用 TypeScript Program 來檢查語法錯誤
@@ -494,14 +495,6 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   }
 
   // 私有輔助方法
-
-  private getScriptKind(filePath: string): ts.ScriptKind {
-    if (filePath.endsWith('.tsx')) {
-      return ts.ScriptKind.TSX;
-    }
-
-    return ts.ScriptKind.TS;
-  }
 
   private getLanguageFromFilePath(filePath: string): string {
     return filePath.endsWith('.tsx') ? 'tsx' : 'typescript';

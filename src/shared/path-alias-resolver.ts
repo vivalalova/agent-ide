@@ -150,9 +150,14 @@ export function getPathAliasEntries(pathAliases: PathAliasInput): readonly PathA
   }
 
   const entries = normalizeLegacyEntries(pathAliases, false);
-  // The old public `@` alias is conventionally a prefix alias.  Other plain
-  // records retain exact matching for the pre-structured API's exact-alias rule.
-  return entries.map(entry => entry.alias === '@' ? { ...entry, wildcard: true } : entry);
+  // The old public `@` alias is conventionally a prefix alias, so a plain `@`
+  // record must also match `@/sub`.  It is additionally exposed as an exact
+  // entry: coercing it to wildcard-only would swallow the literal `@` mapping,
+  // which the same record legitimately declares.  Other plain records retain
+  // exact matching for the pre-structured API's exact-alias rule.
+  return entries.flatMap(entry => entry.alias === '@' && !entry.wildcard
+    ? [entry, { ...entry, wildcard: true }]
+    : [entry]);
 }
 
 export interface PathAliasMatch {
@@ -161,33 +166,16 @@ export interface PathAliasMatch {
   readonly candidates: readonly string[];
 }
 
+/**
+ * Best match for a specifier: longest alias wins, and an exact mapping wins over
+ * a wildcard one of the same alias.  `matchingEntries` is the single source of
+ * both the matching rule and that ordering.
+ */
 export function findPathAliasMatch(
   specifier: string,
   pathAliases: PathAliasInput
 ): PathAliasMatch | null {
-  const matches = getPathAliasEntries(pathAliases)
-    .map(entry => {
-      if (entry.wildcard) {
-        const prefix = `${entry.alias}/`;
-        return specifier.startsWith(prefix) && specifier.length > prefix.length
-          ? { entry, remainder: specifier.slice(prefix.length) }
-          : null;
-      }
-      return specifier === entry.alias ? { entry, remainder: '' } : null;
-    })
-    .filter((match): match is { entry: PathAliasEntry; remainder: string } => match !== null)
-    .sort((left, right) => {
-      const aliasLength = right.entry.alias.length - left.entry.alias.length;
-      if (aliasLength !== 0) {
-        return aliasLength;
-      }
-      return Number(left.entry.wildcard) - Number(right.entry.wildcard);
-    });
-
-  const match = matches[0];
-  return match
-    ? { ...match, candidates: candidatePaths(match) }
-    : null;
+  return matchingEntries(specifier, pathAliases)[0] ?? null;
 }
 
 function matchingEntries(specifier: string, pathAliases: PathAliasInput): PathAliasMatch[] {

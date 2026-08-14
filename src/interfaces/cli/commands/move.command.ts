@@ -36,6 +36,7 @@ import {
   ParserCapabilityName,
   getUnsupportedParserCapabilityMessage
 } from '@interfaces/cli/parser-capability-guard.js';
+import { formatRelativePath } from '@interfaces/cli/commands/move-path-display.js';
 
 interface MovePathContext {
   readonly projectRoot: string;
@@ -360,11 +361,6 @@ function printMovePathPreview(context: MovePathContext): void {
   console.log(`Resolved target: ${formatRelativePath(context.projectRoot, context.resolvedTarget)}`);
   console.log(`Final target: ${formatRelativePath(context.projectRoot, context.finalTarget)}`);
   console.log(`Target interpretation: ${context.targetKind}`);
-}
-
-function formatRelativePath(projectRoot: string, filePath: string): string {
-  const relativePath = path.relative(projectRoot, filePath);
-  return relativePath.length > 0 ? relativePath : '.';
 }
 
 /**

@@ -163,6 +163,14 @@ export class ReferenceFinder {
           return;
         }
 
+        // 過濾：無別名的具名 import/export specifier（`import { x }` / `export { x }`）
+        // 在 Babel AST 中是兩個位置完全相同的 Identifier 節點（imported/local 或
+        // local/exported），visitor 會各觸發一次而產生同位置的重複引用。只保留
+        // 本地綁定那一個節點；有別名時兩節點位置不同，兩者都是真實引用，不去重。
+        if (this.isDuplicateSpecifierTwin(path)) {
+          return;
+        }
+
         // 分析引用詳情（使用快取的變數類型映射）
         const refInfo = this.analyzeIdentifierReference(path, variableTypes);
 
@@ -508,6 +516,21 @@ export class ReferenceFinder {
     }
 
     return undefined;
+  }
+
+  /**
+   * 判斷該 Identifier 是否為無別名具名 specifier 的重複孿生節點
+   * （`import { x }` 的 `imported`、`export { x }` 的 `exported`）。
+   */
+  private isDuplicateSpecifierTwin(path: NodePath<babel.Identifier>): boolean {
+    const parent = path.parent;
+    if (babel.isImportSpecifier(parent)) {
+      return parent.imported === path.node && parent.imported.start === parent.local.start;
+    }
+    if (babel.isExportSpecifier(parent)) {
+      return parent.exported === path.node && parent.exported.start === parent.local.start;
+    }
+    return false;
   }
 
   /**

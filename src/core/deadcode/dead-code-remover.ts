@@ -10,7 +10,7 @@ import type { IFileSystem } from '@infrastructure/storage/file-system.interface.
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
 import { SymbolType } from '@shared/types/symbol.js';
-import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
+import { ChangeApplicator, createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { isLineMatch } from '@plugins/shared/index.js';
 import type {
@@ -27,7 +27,7 @@ import type {
 import { DEFAULT_REMOVAL_OPTIONS } from './types.js';
 import { RangeExpander } from './range-expander.js';
 import { ImportCleaner } from './import-cleaner.js';
-import { FileOperationsHandler } from './file-operations.js';
+import { FileOperationsHandler, FileOperationType } from './file-operations.js';
 import { DeadCodeCacheService, createDeadCodeCacheService } from './shared-cache.js';
 
 /**
@@ -134,11 +134,17 @@ export class DeadCodeRemover {
     deadCodeItems: readonly DeadCodeItem[],
     projectFiles?: readonly string[]
   ): Promise<Changeset> {
+    return this.buildChangeset(await this.preview(deadCodeItems, projectFiles));
+  }
+
+  /**
+   * 把 preview 結果轉成 Changeset。
+   * `generateChangeset()`（CLI 路徑）與 `execute()` 都引用這裡，
+   * 確保刪除語意只有一份定義。
+   */
+  private buildChangeset(preview: DeadCodeRemovalPreview): Changeset {
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.Deadcode);
-
-    // 使用現有的 preview 邏輯收集變更
-    const preview = await this.preview(deadCodeItems, projectFiles);
 
     if (!preview.success) {
       return builder
@@ -199,27 +205,31 @@ export class DeadCodeRemover {
       };
     }
 
-    const errors: string[] = [];
+    // 與 CLI 的 --apply 走同一條寫入路徑（Changeset → ChangeApplicator），
+    // 確保備份／回滾／併發鎖語意一致，不另開直接 writeFile 的第二條寫入路徑。
+    const applyResult = await new ChangeApplicator(this.fileSystem).apply(
+      this.buildChangeset(preview),
+      { atomic: true, rollbackOnError: true }
+    );
+
+    const modifiedFiles = new Set(applyResult.modifiedFiles);
     const updatedFiles: UpdatedFile[] = [];
-
-    // 按檔案分組操作
-    const fileOperationsMap = this.fileOperations.groupOperationsByFile(preview);
-
-    // 逐檔案套用變更
-    for (const [filePath, operations] of fileOperationsMap) {
-      try {
-        const result = await this.fileOperations.applyFileOperations(filePath, operations);
-        updatedFiles.push(result);
-      } catch (error) {
-        errors.push(`檔案 ${filePath} 處理失敗: ${getErrorMessage(error)}`);
+    for (const [filePath, operations] of this.fileOperations.groupOperationsByFile(preview)) {
+      if (!modifiedFiles.has(filePath)) {
+        continue;
       }
+      updatedFiles.push({
+        filePath,
+        removedSymbols: operations.filter(op => op.type === FileOperationType.Removal).length,
+        cleanedImports: operations.filter(op => op.type !== FileOperationType.Removal).length
+      });
     }
 
     return {
-      success: errors.length === 0,
+      success: applyResult.success,
       updatedFiles,
       summary: preview.summary,
-      errors: errors.length > 0 ? errors : undefined
+      errors: applyResult.errors
     };
   }
 

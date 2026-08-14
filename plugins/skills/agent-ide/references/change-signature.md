@@ -16,8 +16,8 @@ Options:
   --function <name>            要修改的函式名稱
   --add <params>               新增參數 (格式:
                                name:type=default@position,name2:type2=default2，可重複)
-  --call-site-value <mapping>  新增參數在呼叫點使用的值 (格式: param=expression，可重複；--add 仍需
-                               default；未指定時使用 default)
+  --call-site-value <mapping>  新增參數在呼叫點使用的值 (格式: param=expression，可重複；未指定時使用
+                               --add 的 default)
   --remove <params>            移除參數 (參數名稱或索引，逗號分隔)
   --reorder <order>            重新排序 (參數名稱或索引，逗號分隔)
   --rename <mapping>           重命名參數 (格式: oldName:newName,oldName2:newName2)

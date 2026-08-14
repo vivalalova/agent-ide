@@ -13,6 +13,7 @@ import {
   isTypeScriptSourceExtension
 } from '@shared/types/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/index.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import type { PathResolver } from './path-resolver.js';
 import type { FileScanner } from './file-scanner.js';
 
@@ -116,7 +117,7 @@ export class DependencyExtractor {
       content,
       ts.ScriptTarget.Latest,
       true,
-      this.getScriptKind(filePath)
+      getScriptKind(filePath)
     );
     const dependencySpecs: DependencySpec[] = [];
 
@@ -268,19 +269,4 @@ export class DependencyExtractor {
       && exportClause.elements.every(element => element.isTypeOnly);
   }
 
-  private getScriptKind(filePath: string): ts.ScriptKind {
-    if (filePath.endsWith('.tsx')) {
-      return ts.ScriptKind.TSX;
-    }
-
-    if (filePath.endsWith('.jsx')) {
-      return ts.ScriptKind.JSX;
-    }
-
-    if (filePath.endsWith('.js') || filePath.endsWith('.mjs') || filePath.endsWith('.cjs')) {
-      return ts.ScriptKind.JS;
-    }
-
-    return ts.ScriptKind.TS;
-  }
 }

@@ -7,7 +7,7 @@ import * as ts from 'typescript';
 import { tsPositionToPosition } from '@plugins/typescript/types.js';
 import type { FileUtils } from '@core/foundations/index.js';
 import type { FunctionSignature } from './types.js';
-import { getScriptKind } from './script-kind.js';
+import { getScriptKind } from '@shared/script-kind.js';
 
 export class FunctionDeclarationLocator {
   constructor(private readonly fileUtils: FileUtils) {}

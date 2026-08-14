@@ -7,7 +7,7 @@ import * as ts from 'typescript';
 import type { FunctionSignature } from './types.js';
 import { FileUtils } from '@core/foundations/index.js';
 import type { FunctionDeclarationLocator } from './function-declaration-locator.js';
-import { getScriptKind } from './script-kind.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import { offsetToPosition } from '@shared/position-utils.js';
 
 export class DefinitionUpdater {

@@ -14,6 +14,7 @@ import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { getImportResolutionExtensions, stripSourceFileExtension } from '@shared/types/index.js';
 import { resolveBarePathAliasAsync } from '@shared/path-alias-resolver.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import { resolveProjectImportCandidates } from '@core/foundations/index.js';
 import type { SymbolReferenceFilterContext } from './symbol-reference-filter-types.js';
 
@@ -164,21 +165,6 @@ export function pathMatchesTarget(importPath: string, targetFile: string): boole
   return getImportResolutionExtensions(importExtension).some(extension =>
     normalizePath(`${baseImportPath}${extension}`) === normalizedTargetFile
   );
-}
-
-export function getScriptKind(filePath: string): ts.ScriptKind {
-  switch (path.extname(filePath)) {
-    case '.js':
-    case '.mjs':
-    case '.cjs':
-      return ts.ScriptKind.JS;
-    case '.jsx':
-      return ts.ScriptKind.JSX;
-    case '.tsx':
-      return ts.ScriptKind.TSX;
-    default:
-      return ts.ScriptKind.TS;
-  }
 }
 
 export function normalizePath(filePath: string): string {

@@ -6,12 +6,13 @@
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
-import type { Symbol } from '@shared/types/symbol.js';
+import { getContainingClassName, type Symbol } from '@shared/types/symbol.js';
 import type {
   SymbolLocationTarget,
   SymbolReferenceFilterContext
 } from './symbol-reference-filter-types.js';
-import { getScriptKind, normalizePath, readTextFile } from './module-file-resolver.js';
+import { getScriptKind } from '@shared/script-kind.js';
+import { normalizePath, readTextFile } from './module-file-resolver.js';
 import { nodeStartsAtLocation } from './ast-node-location.js';
 
 export async function createSymbolReferenceFilterContext(
@@ -40,7 +41,7 @@ async function getSelectedOwnerName(
   selectedSymbol: Symbol,
   fileSystem: IFileSystem
 ): Promise<string | undefined> {
-  const scopedOwnerName = getScopedOwnerName(selectedSymbol);
+  const scopedOwnerName = getContainingClassName(selectedSymbol);
   if (scopedOwnerName) {
     return scopedOwnerName;
   }
@@ -58,18 +59,6 @@ async function getSelectedOwnerName(
     line: selectedSymbol.location.range.start.line,
     column: selectedSymbol.location.range.start.column
   });
-}
-
-function getScopedOwnerName(symbol: Symbol): string | undefined {
-  if (symbol.scope?.parent?.type === 'class') {
-    return symbol.scope.parent.name;
-  }
-
-  if (symbol.scope?.type === 'class') {
-    return symbol.scope.name;
-  }
-
-  return undefined;
 }
 
 function findOwnerClassNameAtLocation(
