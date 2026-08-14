@@ -26,6 +26,7 @@ import {
 } from '@core/foundations/index.js';
 import { withEsmRuntimeExtension } from '@core/move/path-utils.js';
 import { UNICODE_IDENTIFIER_PATTERN_SOURCE } from './utils/identifier-pattern.js';
+import { createModuleIdentityResolver, createProjectFileResolver } from './utils/module-identity.js';
 
 /**
  * Import 類型
@@ -41,6 +42,10 @@ enum ImportType {
  * 以程式碼中實際引用的 local binding 名稱為 key（見 indexImportedSymbols）
  */
 interface ImportSymbolInfo {
+  /**
+   * import 語句在**來源檔語境**下的字面 module specifier；相對路徑要寫進其他目錄的檔案前
+   * 必須先換算（見 rebaseExternalSpecifierToTarget）
+   */
   modulePath: string;
   type: ImportType;
   /** 原始 imported/exported 名稱：named import 若有 `as` 別名時與 local binding 不同 */
@@ -390,17 +395,26 @@ export class FileChangePreparer {
     targetContent: string | null
   ): Promise<string> {
     const symbolInfo = this.analyzeSourceSymbols(sourceContent, sourceFile);
+
+    // 判重身分一律以目標檔為解析基準：問的是「這行 import 寫進目標檔後會綁到哪個檔案」，
+    // 既有 import 與待插入 import 都必須在同一語境下比較
+    const resolveIdentity = createModuleIdentityResolver(this.fileSystem, targetFile);
+    // 來源檔語境的解析器：外部依賴 import 的相對 specifier 只在來源檔目錄下有意義，
+    // 要先在此語境解析出實際被依賴的檔案，才能換算成目標檔語境的 specifier
+    const resolveSourceContextFile = createProjectFileResolver(this.fileSystem, sourceFile);
+
     const existingTargetBindings = targetContent
-      ? this.collectExistingBindings(targetContent, targetFile)
+      ? await this.collectExistingBindings(targetContent, targetFile, resolveIdentity)
       : new Map<string, Set<string>>();
 
     // 按 modulePath + importType + isTypeOnly 分組
     // key: `${modulePath}::${importType}::${isTypeOnly}`, value: Map<localName, importedName>
     const neededImports: Map<string, { modulePath: string; type: ImportType; isTypeOnly: boolean; symbols: Map<string, string> }> = new Map();
 
-    const addNeeded = (modulePath: string, type: ImportType, isTypeOnly: boolean, localName: string, importedName: string): void => {
-      // 目標檔該 module 下已有同名 local binding：視為已可解析，跳過避免重複宣告（S4）
-      if (existingTargetBindings.get(modulePath)?.has(localName)) { return; }
+    const addNeeded = async (modulePath: string, type: ImportType, isTypeOnly: boolean, localName: string, importedName: string): Promise<void> => {
+      // 目標檔「同一個模組」下已有同名 local binding：視為已可解析，跳過避免重複宣告（S4）。
+      // 同一模組的判定以實際解析到的檔案為準，見 createModuleIdentityResolver
+      if (existingTargetBindings.get(await resolveIdentity(modulePath))?.has(localName)) { return; }
       const key = `${modulePath}::${type}::${isTypeOnly}`;
       const entry = neededImports.get(key) ?? { modulePath, type, isTypeOnly, symbols: new Map<string, string>() };
       entry.symbols.set(localName, importedName);
@@ -427,12 +441,19 @@ export class FileChangePreparer {
         const relativePath = this.calculateRelativePath(targetFile, sourceFile);
         const importType = symbolInfo.defaultExports.has(dep) ? ImportType.Default : ImportType.Named;
         const exportedName = symbolInfo.localExports.get(dep) ?? dep;
-        addNeeded(relativePath, importType, false, dep, exportedName);
+        await addNeeded(relativePath, importType, false, dep, exportedName);
       } else if (symbolInfo.importedSymbols.has(dep)) {
-        // 依賴來自外部模組，保持原本的 import 類型、別名與 type 修飾
+        // 依賴來自外部模組，保持原本的 import 類型、別名與 type 修飾；
+        // specifier 須換算到目標檔語境（來源檔語境的相對路徑不可直接沿用）
         const importInfo = symbolInfo.importedSymbols.get(dep);
         if (!importInfo) { continue; }
-        addNeeded(importInfo.modulePath, importInfo.type, importInfo.isTypeOnly, dep, importInfo.importedName);
+        const modulePath = await this.rebaseExternalSpecifierToTarget(
+          importInfo.modulePath,
+          resolveSourceContextFile,
+          sourceFile,
+          targetFile
+        );
+        await addNeeded(modulePath, importInfo.type, importInfo.isTypeOnly, dep, importInfo.importedName);
       }
     }
 
@@ -523,19 +544,25 @@ export class FileChangePreparer {
 
   /**
    * 收集檔案既有 import 已提供的 local binding，供插入依賴 import 前判重（S4）
-   * key: moduleSpecifier → 該 module 下已存在的 local binding 名稱集合
+   * key: 該 import specifier 的 module 身分 key（見 createModuleIdentityResolver）
+   *   → 該 module 下已存在的 local binding 名稱集合
    */
-  private collectExistingBindings(content: string, filePath: string): Map<string, Set<string>> {
+  private async collectExistingBindings(
+    content: string,
+    filePath: string,
+    resolveIdentity: (moduleSpecifier: string) => Promise<string>
+  ): Promise<Map<string, Set<string>>> {
     const bindings = new Map<string, Set<string>>();
 
     for (const decl of this.parseImportDeclarations(content, filePath)) {
-      const set = bindings.get(decl.moduleSpecifier) ?? new Set<string>();
+      const key = await resolveIdentity(decl.moduleSpecifier);
+      const set = bindings.get(key) ?? new Set<string>();
       if (decl.defaultImport) { set.add(decl.defaultImport); }
       if (decl.namespaceImport) { set.add(decl.namespaceImport); }
       for (const named of decl.namedImports ?? []) {
         set.add(named.alias ?? named.name);
       }
-      bindings.set(decl.moduleSpecifier, set);
+      bindings.set(key, set);
     }
 
     return bindings;
@@ -675,6 +702,40 @@ export class FileChangePreparer {
       content: splitLines.join('\n'),
       insertLine: targetLineIndex + 1
     };
+  }
+
+  /**
+   * 把成員外部依賴 import 的 specifier 從「來源檔語境」換算到「目標檔語境」。
+   *
+   * 相對 specifier 的意義綁在所在檔案的目錄上：`dirA/source.ts` 的 `'./helpers.js'`
+   * 原樣寫進 `dirB/target.ts` 後，無同名檔時指向不存在的模組、目標目錄剛好有同名檔
+   * （`dirB/helpers.ts`）時更糟——會被判重（以目標檔為基準解析身分）誤判成「目標檔
+   * 已有這個 import」而靜默跳過插入，搬進來的成員綁到錯的模組（值錯且無編譯錯）。
+   * 先以來源檔為基準解析出被依賴檔案的實際路徑，再以目標檔重算相對路徑（與本地
+   * export 依賴分支的 calculateRelativePath 用法一致）。
+   *
+   * 維持原字面的情況：
+   * - 非相對 specifier（bare package、path alias、絕對路徑）：語意與所在目錄無關
+   * - 來源檔與目標檔同目錄（含同檔案搬移）：相對 specifier 在兩邊解析結果必然相同
+   * - 解析不到實際檔案（依賴檔不存在、未設定的 alias）：無從重算，維持原字面
+   *
+   * 重算後若與目標檔既有 import 同名不同源（`dirA/helpers` 的 `helper` vs 既有
+   * `dirB/helpers` 的 `helper`），插入會產生 duplicate identifier——這是編譯期即報錯的
+   * 響亮失敗，優於靜默綁錯模組。
+   */
+  private async rebaseExternalSpecifierToTarget(
+    moduleSpecifier: string,
+    resolveSourceContextFile: (specifier: string) => Promise<string | null>,
+    sourceFile: string,
+    targetFile: string
+  ): Promise<string> {
+    if (!moduleSpecifier.startsWith('.')) { return moduleSpecifier; }
+    if (path.dirname(path.resolve(sourceFile)) === path.dirname(path.resolve(targetFile))) {
+      return moduleSpecifier;
+    }
+
+    const dependencyFile = await resolveSourceContextFile(moduleSpecifier);
+    return dependencyFile ? this.calculateRelativePath(targetFile, dependencyFile) : moduleSpecifier;
   }
 
   /**

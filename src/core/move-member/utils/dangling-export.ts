@@ -36,8 +36,13 @@ export function parseExportSymbolPairs(symbolListStr: string): Array<[localName:
 
 function findDanglingDefaultExportMatch(content: string, memberName: string): RegExpExecArray | null {
   const maskedContent = maskNonCode(content);
+  // 負向前瞻排除「識別符後仍接續運算式」的 default export（`export default Foo.bar;`、
+  // `Foo()`、`Foo[k]`、標籤模板）：這類 default 匯出的是運算式求值結果、不是成員本身，
+  // 改寫成 `export { Foo as default } from '<target>'` 既語意不符，也會把後綴（`.bar;`）
+  // 留在 match 外形成破碎語法。此處保守跳過，維持原運算式不動（Foo 的來源由 import
+  // 更新機制處理）。續行情形（`export default Foo\n  .bar;`）亦被涵蓋。
   const pattern = new RegExp(
-    `export\\s+default\\s+${createIdentifierBoundaryRegex(memberName).source}\\s*;?`,
+    `export\\s+default\\s+${createIdentifierBoundaryRegex(memberName).source}(?!\\s*[.([\`])\\s*;?`,
     'u'
   );
   return pattern.exec(maskedContent);

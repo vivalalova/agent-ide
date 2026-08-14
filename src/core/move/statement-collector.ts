@@ -88,6 +88,16 @@ function isCompleteExportFromAt(maskedText: string, offset: number): boolean {
 export const EXPORT_FROM_STATEMENT_PATTERN = new RegExp(EXPORT_FROM_STATEMENT_SOURCE, 'gu');
 
 /**
+ * `import` 關鍵字偵測（識別符邊界感知）：前後皆不可是識別符字元，避免
+ * `const important = true;` 這種「只是子字串含 import」的普通語句被當成多行
+ * import 起點——那會讓收集器一路吞到下一筆真 import，中間的
+ * require()/動態 import() 行被主迴圈整段跳過、路徑漏更新（見 T1 regression）。
+ * 邊界字元類別與 UNICODE_IDENTIFIER_CLASS 同源語意（ID_Continue 加 `$`），
+ * 不用 `\b`：`\b` 對 `$import` 之類的 `$` 前綴無法正確界定。
+ */
+const IMPORT_KEYWORD_PATTERN = /(?<![\p{ID_Continue}$])import(?![\p{ID_Continue}$])/u;
+
+/**
  * 收集完成的多行 import / require() / 動態 import() 語句 span：statement 為
  * 原始（未遮罩）文字，供呼叫端從中切出真正的路徑內容
  */
@@ -132,7 +142,7 @@ export function collectMultilineImportStatement(
   // 字串內的 `import(` 字樣造成誤判。maskedLines 由呼叫端對整份檔案內容一次
   // 計算（跨行狀態感知），非本函式各自逐行重算。
   const maskedStartLine = maskedLines[startIndex];
-  if (!maskedStartLine.includes('import') || /\bimport\s*\(/.test(maskedStartLine)) {
+  if (!IMPORT_KEYWORD_PATTERN.test(maskedStartLine) || /\bimport\s*\(/.test(maskedStartLine)) {
     return null;
   }
 

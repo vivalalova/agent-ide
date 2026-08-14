@@ -1430,10 +1430,6 @@ export class CallHierarchyAnalyzer {
     call: CallBindingQuery,
     bindingName: string
   ): boolean {
-    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bindingName)) {
-      return false;
-    }
-
     const identifier = this.findTypeScriptBindingIdentifierAtCallSite(sourceFile, call, bindingName);
     if (!identifier) {
       return false;
