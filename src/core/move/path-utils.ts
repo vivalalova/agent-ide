@@ -4,8 +4,18 @@
  */
 
 import * as path from 'path';
+import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { ImportResolver } from './import-resolver.js';
-import { isSourceFileExtension, SOURCE_FILE_EXTENSIONS, stripSourceFileExtension } from '@shared/types/index.js';
+import {
+  getImportResolutionExtensions,
+  isSourceFileExtension,
+  SOURCE_FILE_EXTENSIONS,
+  stripSourceFileExtension
+} from '@shared/types/index.js';
+import { findPathAliasMatch } from '@shared/path-alias-resolver.js';
+import { escapeRegex } from '@shared/regex-utils.js';
+import { MUTATION_SCAN_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
+import { resolveProjectImportCandidates } from '@core/foundations/index.js';
 
 /**
  * 支援的檔案副檔名
@@ -13,16 +23,40 @@ import { isSourceFileExtension, SOURCE_FILE_EXTENSIONS, stripSourceFileExtension
 export const ALLOWED_EXTENSIONS = [...SOURCE_FILE_EXTENSIONS, '.vue'] as const;
 
 /**
- * 排除的目錄模式
+ * 專案 ESM 慣例：相對 import 在目標為常見 .ts/.tsx/.js/.jsx 來源時補 `.js`
+ * （NodeNext 執行期副檔名；見 file-change-preparer C10、move-member self-ref F8）。
+ *
+ * `relativePath` 應已 strip 來源副檔名且以 `./` 或 `../` 開頭。
+ * 沿用 shared getImportResolutionExtensions('.js') 單一來源判斷候選副檔名，
+ * 不另立清單；.mts/.cts 對應 .mjs/.cjs 無法從同表推得，維持不補。
  */
-export const EXCLUDE_PATTERNS = ['node_modules', 'dist', '.git', 'coverage', '.build'] as const;
+export function withEsmRuntimeExtension(relativePath: string, targetFilePath: string): string {
+  if (path.extname(relativePath)) {
+    return relativePath;
+  }
+  const toExtension = path.extname(targetFilePath);
+  if (getImportResolutionExtensions('.js').includes(toExtension)) {
+    return `${relativePath}.js`;
+  }
+  return relativePath;
+}
+
+/**
+ * 排除的目錄模式（move 的引用掃描，屬變更類命令）
+ * 沿用 @shared/exclude-dirs 的 MUTATION_SCAN_EXCLUDE_DIR_NAMES 窄清單
+ * （正確性優先，非 COMMON_EXCLUDE_DIR_NAMES 廣清單），不另存局部子集
+ */
+export const EXCLUDE_PATTERNS = MUTATION_SCAN_EXCLUDE_DIR_NAMES;
 
 /**
  * 路徑工具類別
  * 處理 import 路徑的解析、比對和轉換
  */
 export class PathUtils {
-  constructor(private readonly importResolver: ImportResolver) {}
+  constructor(
+    private readonly importResolver: ImportResolver,
+    private readonly fileSystem?: IFileSystem
+  ) {}
 
   /**
    * 解析 import 路徑為絕對路徑
@@ -32,10 +66,6 @@ export class PathUtils {
    * @returns 解析後的絕對路徑
    */
   resolveImportPath(importPath: string, fromFile: string): string {
-    if (this.importResolver.isNodeModuleImport(importPath)) {
-      return importPath; // Node 模組不處理
-    }
-
     if (importPath.startsWith('.')) {
       // 相對路徑 - 轉換為絕對路徑
       const fromDir = path.dirname(path.isAbsolute(fromFile) ? fromFile : path.resolve(fromFile));
@@ -46,6 +76,30 @@ export class PathUtils {
 
     // 嘗試解析別名（如 @/ 開頭的路徑映射）
     const resolved = this.importResolver.resolvePathAlias(importPath);
+    return this.resolveImportPathAfterAlias(importPath, fromFile, resolved);
+  }
+
+  /**
+   * 以檔案系統存在性解析 path alias，再套用共用的 baseUrl / node module 規則。
+   */
+  async resolveImportPathAsync(importPath: string, fromFile: string): Promise<string> {
+    if (importPath.startsWith('.')) {
+      return this.resolveImportPath(importPath, fromFile);
+    }
+
+    if (!this.fileSystem) {
+      return this.resolveImportPath(importPath, fromFile);
+    }
+
+    const resolved = await this.importResolver.resolvePathAliasAsync(importPath, this.fileSystem);
+    return this.resolveImportPathAfterAlias(importPath, fromFile, resolved);
+  }
+
+  private resolveImportPathAfterAlias(
+    importPath: string,
+    fromFile: string,
+    resolved: string
+  ): string {
     if (resolved !== importPath) {
       // 如果解析成功（與原始路徑不同）
       if (path.isAbsolute(resolved)) {
@@ -60,14 +114,41 @@ export class PathUtils {
       return path.normalize(absoluteResolved);
     }
 
-    // 嘗試解析 baseUrl 相對路徑（如 src/utils）
     const baseUrl = this.importResolver.getBaseUrl();
+
+    // 設有 baseUrl 且為 bare/scoped-looking specifier 時，字面上無法區分究竟是
+    // node_modules 套件（如 'lodash'、'@scope/pkg'）還是 baseUrl 相對的專案內
+    // import。兩者都先嘗試 baseUrl 解析：真正的外部套件解析出的路徑不會巧合命中
+    // 專案內具體目標檔，pathsMatch 比對自然被排除，語意仍維持 node module 不處理；
+    // 只有恰好命中目標檔時才判定為專案內 import（見 R2-6b／scoped P2）。
+    if (
+      baseUrl
+      && !this.importResolver.isBuiltinModule(importPath)
+      && (!importPath.includes('/') || importPath.startsWith('@'))
+    ) {
+      return path.normalize(this.resolveBaseUrlCandidatePath(importPath, fromFile, baseUrl));
+    }
+
+    if (this.importResolver.isNodeModuleImport(importPath)) {
+      return importPath; // Node 模組不處理
+    }
+
+    // 嘗試解析 baseUrl 相對路徑（如 src/utils）
     if (baseUrl) {
-      const absoluteResolved = path.resolve(baseUrl, importPath);
-      return path.normalize(absoluteResolved);
+      return path.normalize(this.resolveBaseUrlCandidatePath(importPath, fromFile, baseUrl));
     }
 
     return importPath;
+  }
+
+  /**
+   * 計算 bare specifier 相對 baseUrl 的候選基礎路徑（未做副檔名/index 展開、未做 fs
+   * 存在性探測）。沿用 core/foundations 共用候選組裝的 baseUrl 分支，不在本檔另存一份
+   * `path.resolve(baseUrl, importPath)`；move 只需要這個未展開的第一候選（其餘候選為
+   * 副檔名/index 展開，move 靠下方 pathsMatch 的副檔名無關比對達成同等效果，不需要）。
+   */
+  private resolveBaseUrlCandidatePath(importPath: string, fromFile: string, baseUrl: string): string {
+    return resolveProjectImportCandidates(importPath, fromFile, { baseUrl })[0];
   }
 
   /**
@@ -166,34 +247,52 @@ export class PathUtils {
   ): string {
     // 如果原本是路徑別名或 baseUrl 相對路徑，保留樣式
     if (!originalImportPath.startsWith('.') && !originalImportPath.startsWith('/')) {
-      // 1. 檢查是否為路徑別名（精確匹配：alias 本身或 alias/ 開頭）
-      for (const [alias, aliasPath] of Object.entries(this.importResolver.getPathAliases())) {
-        if (originalImportPath === alias || originalImportPath.startsWith(alias + '/')) {
-          const resolvedAliasPath = path.normalize(aliasPath);
+      // 1. 檢查是否為路徑別名；匹配規則與候選展開由 shared resolver 統一提供。
+      const aliasMatch = findPathAliasMatch(
+        originalImportPath,
+        this.importResolver.getPathAliases()
+      );
+      let aliasEscapedAliasRoot = false;
+      if (aliasMatch) {
+        const resolvedAliasPath = path.normalize(aliasMatch.entry.candidates[0]);
 
-          // 計算新檔案相對於別名基礎路徑的相對路徑
-          let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
-          newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
+        // 計算新檔案相對於別名基礎路徑的相對路徑
+        let newRelativeToAlias = path.relative(resolvedAliasPath, path.normalize(newFilePath));
+        newRelativeToAlias = newRelativeToAlias.replace(/\\/g, '/');
 
+        // 新檔案已離開別名根目錄（如目錄整批搬出 alias root）時，
+        // newRelativeToAlias 會是 '../xxx' 形式，繼續組出 '@/../xxx'
+        // 會產生語意錯誤的別名路徑，改用一般相對路徑。
+        if (!this.escapesRoot(newRelativeToAlias)) {
           newRelativeToAlias = stripSourceFileExtension(newRelativeToAlias);
 
-          // 組合新的別名路徑：alias + / + newRelativeToAlias
-          // 如果 alias 本身不以 / 結尾，需要加上
-          const separator = alias.endsWith('/') ? '' : '/';
-          return this.preserveOriginalExtension(originalImportPath, alias + separator + newRelativeToAlias);
+          const separator = aliasMatch.entry.alias.endsWith('/') ? '' : '/';
+          return this.preserveOriginalExtension(
+            originalImportPath,
+            aliasMatch.entry.alias + separator + newRelativeToAlias
+          );
         }
+
+        // 原 import 本來就是 alias 風格，新位置已逃逸 alias 根目錄：不得因專案
+        // 另設有 baseUrl 就繼續嘗試改寫成裸 bare specifier（缺 './'/'../' 前綴，
+        // ESM runtime 無法解析），直接落回函式底部的一般相對路徑 fallback。
+        aliasEscapedAliasRoot = true;
       }
 
-      // 2. 檢查是否為 baseUrl 相對路徑（如 src/utils）
+      // 2. 檢查是否為 baseUrl 相對路徑（如 src/utils）；原 import 若已判定為
+      // 逃逸 alias 根目錄的 alias 風格，不進這支改用 baseUrl-bare 樣式。
       const baseUrl = this.importResolver.getBaseUrl();
-      if (baseUrl) {
+      if (baseUrl && !aliasEscapedAliasRoot) {
         // 保留原始的 baseUrl 相對路徑格式
         let newRelativeToBaseUrl = path.relative(baseUrl, path.normalize(newFilePath));
         newRelativeToBaseUrl = newRelativeToBaseUrl.replace(/\\/g, '/');
 
-        newRelativeToBaseUrl = stripSourceFileExtension(newRelativeToBaseUrl);
-
-        return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
+        // 同上：新檔案離開 baseUrl 根目錄時不得產生 '../xxx' 形式的 baseUrl 相對路徑，
+        // 改用一般相對路徑。
+        if (!this.escapesRoot(newRelativeToBaseUrl)) {
+          newRelativeToBaseUrl = stripSourceFileExtension(newRelativeToBaseUrl);
+          return this.preserveOriginalExtension(originalImportPath, newRelativeToBaseUrl);
+        }
       }
     }
 
@@ -202,6 +301,14 @@ export class PathUtils {
       originalImportPath,
       this.calculateNewImportPath(fromFile, newFilePath)
     );
+  }
+
+  /**
+   * 判斷一個（已轉為 '/' 分隔）相對路徑是否跳出了基準根目錄
+   * （即以 '..' 開頭），供別名／baseUrl 樣式判斷是否仍適用。
+   */
+  private escapesRoot(relativePath: string): boolean {
+    return relativePath === '..' || relativePath.startsWith('../');
   }
 
   private preserveOriginalExtension(originalImportPath: string, newImportPath: string): string {
@@ -223,6 +330,6 @@ export class PathUtils {
    * @returns 跳脫後的字串
    */
   escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escapeRegex(str);
   }
 }

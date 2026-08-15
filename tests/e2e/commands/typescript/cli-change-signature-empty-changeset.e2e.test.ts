@@ -113,6 +113,11 @@ describe('CLI change-signature - 空 changeset 與錯誤分類', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toMatch(/檔案不存在/);
+      expect(output.pathContext).toMatchObject({
+        role: 'targetFile',
+        resolvedFile: filePath,
+        projectRoot: fixture.rootPath
+      });
     });
   });
 

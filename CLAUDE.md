@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI 代理程式碼智能工具集：最小化 token、最大化準確性、CLI 介面、模組化架構
 
-**現況**：10 核心模組、2 Parser（TS/JS）、Unicode 識別符支援
+**現況**：9 核心模組、2 內建 Parser（TS/JS）、可註冊額外 Parser 副檔名、Unicode 識別符支援
 
-**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.6
+**環境**：Node.js ≥20 | TypeScript 5.0 | Vitest 4.0 | ESM | v0.13.7
 
 ## 常用指令
 
@@ -23,6 +23,8 @@ pnpm test:unit          # Unit 快速測試（無 coverage）
 pnpm test:coverage      # 全部 coverage 測試（E2E + Unit，含門檻）
 pnpm test:cli           # CLI 煙霧測試
 pnpm lint               # ESLint
+pnpm validate:plugin    # Plugin 結構 + skill docs/help 對齊檢查
+pnpm sync:skill-docs    # 從真實 CLI help 重新產生 skill reference 區塊與 plugin description
 npm link                # 本地安裝
 
 # 單一測試
@@ -38,7 +40,6 @@ src/
 │   ├── foundations/      # indexing/ | dependency-graph/ | symbol-finder/ | file-utils
 │   ├── cycles/           # 循環依賴（Tarjan）
 │   ├── impact/           # 影響分析（BFS）
-│   ├── find-references/  # 符號引用
 │   ├── call-hierarchy/   # 呼叫層次
 │   ├── rename/           # 重命名+引用更新
 │   ├── change-signature/ # 參數重構
@@ -51,9 +52,17 @@ src/
 └── interfaces/           # CLI
 ```
 
+### Parser 語言擴充契約
+
+- **單一註冊來源**：預設 Parser 由 `infrastructure/parser/initializer.ts` 管理；CLI、IndexEngine、worker 都必須呼叫同一套 bootstrap，禁止各自 hardcode TS/JS 註冊。
+- **副檔名來源**：索引、搜尋、impact、cycles 以 `ParserRegistry.getSupportedExtensions()` 合併 `includeExtensions`；新增 Parser 後不可另存一份副檔名清單。
+- **worker 擴充**：worker 任務可帶 `parserModulePaths`，worker 解析前會載入外部 Parser module；測試需覆蓋非 TS/JS extension。
+- **能力邊界**：`change-signature`、`call-hierarchy`、`move-member` 仍是 TS/JS 語意流程；非 TS/JS Parser 必須透過 `getCapabilities()` 明確宣告支援，否則 CLI fast-fail。
+- **測試要求**：新增語言支援時至少用假 Parser 驗證 indexing/search、impact/cycles、worker bootstrap，以及不支援能力的錯誤訊息。
+
 ### Core 設計原則
 
-- **CLI 對應**：`core/<module>/` 對應 CLI 命令
+- **CLI 對應**：`core/<module>/` 對應 CLI 命令；例外是 `find-references`，無獨立 `core/` 模組，實作直接在 `interfaces/cli/commands/find-references.command.ts` + `infrastructure/formatters/strategies/find-references-formatter.ts` + `plugins/{typescript,javascript}/reference-finder.ts`
 - **foundations/ 層**：核心內部共用基礎設施（indexing、dependency-graph、symbol-finder、file-utils）
 - **shared/ 層**：全域共用（types、errors）- 與 `core/foundations/` 區分
 - **re-export 規則**：僅 `index.ts` barrel export 允許
@@ -63,7 +72,7 @@ src/
 ```text
 第三層：impact（依賴 cycles + foundations）
     ↓
-第二層：cycles, find-references, call-hierarchy, rename, deadcode, move, move-member, change-signature
+第二層：cycles, call-hierarchy, rename, deadcode, move, move-member, change-signature
     ↓
 第一層：foundations/（indexing, dependency-graph, symbol-finder，無互依賴）→ @infrastructure
 ```
@@ -76,6 +85,14 @@ src/
 | E2E Full | `tests/e2e/` | `pnpm test:e2e` | 完整 CLI 端對端（memfs 隔離，無 coverage） |
 | Unit | `tests/unit/` | `pnpm test:unit` | 獨立模組測試（快速無 coverage） |
 | CLI | `tests/cli/` | `pnpm test:cli` | 整合煙霧測試 |
+
+### Fixtures（`tests/fixtures/`）
+
+E2E 測試用的範例專案與 parser 模組：
+
+- **專案 fixture**（`sample-project/`、`js-project/`…）：磁碟上的迷你 TS/JS 專案。`loadFixture(name)` 把整個目錄載入**全新 memfs 虛擬根目錄**（目錄內容有程序內快取），測試對檔案的讀寫都發生在記憶體、不碰磁碟原檔，每個測試拿獨立副本、天然隔離
+- **parser 模組 fixture**（`toy-parser.mjs` 等根層 `.mjs`）：測試 parser 註冊/生命週期用的假 parser 模組
+- 新 bug 重現需要特定專案形狀時建新 fixture 目錄（見下方「Bug 重現即測試案例」）；單檔案案例優先用 `fixture.writeFile()` 動態寫入既有 fixture，不必開新目錄
 
 ### E2E 測試模式
 
@@ -100,6 +117,13 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 - 覆蓋率驗證使用 `pnpm test:coverage`；日常 `pnpm test` 為 Unit + 關鍵 TS E2E 快速路徑
 - `tests/fixtures/` 專案必須可編譯
 
+### 🚨 Bug 重現即測試案例（禁拋棄式重現）
+
+- bug 修復**先寫 reproduction test**（先紅後綠），重現案例直接寫成 `tests/` 下的 test case + 需要的 fixture 專案放 `tests/fixtures/`，成為永久 regression 覆蓋
+- **禁**用 scratchpad／臨時目錄做一次性手動重現後丟棄：可重用的案例才留得住、下次回歸才驗得到
+- 共用 fixture 用 `loadFixture()` 載入；單檔案案例可在測試內 `fixture.writeFile()` 寫入
+- 手動 CLI 重現／隔離實驗必帶 `--no-cache`：索引快取以路徑為 key，實驗中增刪改 fixture 檔案後不失效，會讀到舊索引汙染隔離結論
+
 ## CLI 命令
 
 ### 輸出格式
@@ -118,21 +142,31 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 agent-ide cycles --path <path>
 agent-ide impact --file <file> --path <path>
 agent-ide search <symbol> --path <path> [--type function] [--no-fuzzy]
-agent-ide find-references <symbol> --path <path>
-agent-ide call-hierarchy <function> --path <path>
-agent-ide deadcode --path <path> --dry-run [--include-exports]
+agent-ide find-references <symbol> --path <path> [--at <file:line:column>]
+agent-ide call-hierarchy <function> --path <path> [--at <file:line:column>]
+agent-ide deadcode --path <path> [--dry-run] [--include-exports] [--include-public-members] [--exclude <patterns...>]
 ```
+
+`impact --path` 是 project root；相對 `--file` 以 `--path` 為基準解析。JSON validation errors 會提供 `pathContext`，包含 resolved project root 與 target file metadata。
 
 ### 變更類（支援 --dry-run）
 
 ```bash
 agent-ide rename --path <path> --from <old> --to <new> [--at <file:line:column>]
 agent-ide change-signature --file <file> --function <name> --reorder "b,a"
-agent-ide deadcode --path <path> [--include-exports]
+agent-ide change-signature --file <file> --function <name> --add "options:RequestOptions={ cache: false }" --call-site-value "options=runtimeOptions"
+agent-ide change-signature --file <file> --function <name> --remove "unused"
+agent-ide change-signature --file <file> --function <name> --rename "oldName:newName"
+agent-ide change-signature --file <file> --function <name> --change-type "value:unknown"
+agent-ide deadcode --path <path> --apply [--include-exports]
 agent-ide move <source> <target> --path <path>
 ```
 
+`deadcode` 預設只預覽，不寫入；實際刪除必須明確加 `--apply`。`--dry-run` 即使和 `--apply` 同時指定也會維持預覽模式。
+
 **move 位置格式**：source 帶位置時自動切換為成員移動模式：
+
+`--path` 是 project root；相對 source/target 都以 `--path` 為基準解析。`move --dry-run` 會輸出 resolved project root、source、requested target、final target 與 import 更新預覽；目標已存在且是目錄時 final target 會明確顯示嵌套後路徑。
 
 ```bash
 # 檔案移動
@@ -180,6 +214,8 @@ agent-ide rename --from userId --to uid
 # 用 --at 指定 file:line 精確定位
 agent-ide rename --from userId --to uid --at src/user.ts:42
 ```
+
+**唯讀符號查詢 `--at` 參數**：`find-references` 與 `call-hierarchy` 可用 `--at <file:line:column>` 鎖定同名符號；JSON 輸出包含 `symbols` 定義候選清單，定位成功時包含 `targetSymbol`。`find-references` 的 `symbols` / `definitions` 不包含 parser 產生的 import-only candidate。
 
 ## 輸出處理架構
 
@@ -262,11 +298,18 @@ if (dryRun) {
 用 Claude Code CLI 驗證設定檔正確性（錯誤訊息會指出問題欄位）：
 
 ```bash
-# 1. 直接驗證 manifest
+# 1. CLI help 或 SKILL.md description 變更後，先從 TS source CLI 同步 reference/plugin metadata
+pnpm sync:skill-docs
+
+# 2. 驗證 manifest、plugin 結構、skill docs/help 對齊
 claude plugin validate .claude-plugin/marketplace.json
 claude plugin validate plugins/skills/agent-ide/plugin.json
+pnpm validate:plugin
 
-# 2. 額外做一次本地安裝 smoke test（從專案根目錄執行）
+# 3. CLI source/help 有改時，另跑一般建置驗證；docs-only metadata 可跳過 build
+pnpm build
+
+# 4. 額外做一次本地安裝 smoke test（從專案根目錄執行）
 claude plugin marketplace add . --scope local
 claude plugin install agent-ide@agent-ide-skills --scope local
 

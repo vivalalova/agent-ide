@@ -257,7 +257,17 @@ export enum ChangeSignatureErrorCode {
   /** 必填參數不可移除（有呼叫點依賴） */
   RequiredParameterInUse = 'required-parameter-in-use',
   /** 可選參數位於必選參數之前（TypeScript 規則違反） */
-  OptionalBeforeRequired = 'optional-before-required'
+  OptionalBeforeRequired = 'optional-before-required',
+  /** rest 參數不在參數列表最後（TypeScript 規則違反） */
+  RestParameterNotLast = 'rest-parameter-not-last',
+  /** 呼叫點含 spread 引數，無法靜態重新映射定位引數（add/remove/reorder） */
+  SpreadArgumentCallSite = 'spread-argument-call-site',
+  /** 偵測到方法呼叫點（`obj.method(...)`），無型別解析無法安全重寫 */
+  MethodCallSiteUnsupported = 'method-call-site-unsupported',
+  /** 目標為 overload 簽章群，簽章變更語意不明確 */
+  OverloadSignatureGroup = 'overload-signature-group',
+  /** --add 預設值引用同函式其他參數，但未明確指定 --call-site-value（會逐字塞入呼叫點） */
+  AmbiguousDefaultValueCallSiteReference = 'ambiguous-default-value-call-site-reference'
 }
 
 /**

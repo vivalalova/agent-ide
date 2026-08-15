@@ -20,6 +20,17 @@ export interface SymbolReference {
   readonly isMethodCall?: boolean;
   /** 呼叫者類型名稱（用於精確匹配方法所屬類別） */
   readonly receiverType?: string;
+  /**
+   * 此引用是 object literal / destructuring shorthand token（`{ foo }`）：
+   * 帶原始 key 文字，供 rename 展開為 `key: newName`，避免天真替換把 key
+   * 一併改掉（見 Reference.shorthandKeyText，shared/types/symbol.ts）。
+   */
+  readonly shorthandKeyText?: string;
+  /**
+   * rename 目標符號是 property 宣告（key 側），展開方向為 `newName: 原文字`
+   * （見 Reference.shorthandTargetIsKey，shared/types/symbol.ts）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**
@@ -41,6 +52,8 @@ export interface CallSite {
   readonly arguments: readonly CallSiteArgument[];
   readonly isMethodCall: boolean;
   readonly receiver?: string;
+  /** 是否為 `new X(...)` 建構子呼叫點（NewExpression）；一般函式/方法呼叫為 undefined/false */
+  readonly isNewExpression?: boolean;
 }
 
 /**

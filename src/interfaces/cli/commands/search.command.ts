@@ -4,6 +4,7 @@
  */
 
 import type { Command } from 'commander';
+import * as path from 'path';
 import { CLI_INDEX_DEFAULTS, createSearchOptions } from '@core/foundations/indexing/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
@@ -15,7 +16,7 @@ import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { SymbolType } from '@shared/types/index.js';
@@ -74,15 +75,16 @@ async function handleSearchCommand(
     return;
   }
 
-  const parsedMax = parseInt(String(options.maxResults), 10);
-  if (isNaN(parsedMax) || parsedMax <= 0) {
+  const parsedMax = parseStrictInt(String(options.maxResults));
+  if (parsedMax === null || parsedMax <= 0) {
     outputHandler.outputError(`--max-results 須為正整數，收到: ${options.maxResults}`, format);
     process.exitCode = 1;
     return;
   }
   const maxResults = parsedMax;
 
-  const projectPath = options.path;
+  // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
+  const projectPath = path.resolve(options.path || process.cwd());
   const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
   if (!pathIsDirectory) {
     return;
@@ -91,14 +93,15 @@ async function handleSearchCommand(
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;
 
-  const indexEngine = await createAndIndexWithCache(
-    projectPath,
-    context.fileSystem,
-    CLI_INDEX_DEFAULTS,
-    { noCache, cacheDir: globalOpts.cacheDir }
-  );
+  let indexEngine: Awaited<ReturnType<typeof createAndIndexWithCache>> | undefined;
 
   try {
+    indexEngine = await createAndIndexWithCache(
+      projectPath,
+      context.fileSystem,
+      CLI_INDEX_DEFAULTS,
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     const startTime = Date.now();
 
@@ -148,6 +151,6 @@ async function handleSearchCommand(
     outputHandler.outputError(`搜尋符號失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine?.disposeAsync();
   }
 }

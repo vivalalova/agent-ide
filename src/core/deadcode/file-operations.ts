@@ -6,6 +6,7 @@
 import type { Range } from '@shared/types/core.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 import type {
   DeadCodeRemovalPreview,
   ImportCleanupOperation,
@@ -155,7 +156,25 @@ export class FileOperationsHandler {
       } else {
         // 完整刪除
         if (startLine < lines.length && deleteCount > 0) {
-          lines.splice(startLine, deleteCount);
+          const lastLine = lines[endLine] ?? '';
+          // range 是否涵蓋整行內容（從行首到行尾以上）；只有真正涵蓋整行才能整行砍掉，
+          // 否則同行中段刪除（如 `let dead, live;` 只刪 `dead, ` 這段）會連同行內存活的
+          // 其餘宣告一併誤刪（column-unaware 缺陷）。
+          const coversFullLine = op.range.start.column <= 1 && op.range.end.column >= lastLine.length + 1;
+
+          if (coversFullLine) {
+            lines.splice(startLine, deleteCount);
+          } else {
+            // column-aware：以字元 offset 對整段（startLine..endLine 合併為單一字串）
+            // 精確切除 range 涵蓋的部分，保留同行其餘存活內容。
+            const segment = lines.slice(startLine, endLine + 1).join('\n');
+            const startOffset = op.range.start.column - 1;
+            const endOffset = lines
+              .slice(startLine, endLine)
+              .reduce((sum, line) => sum + line.length + 1, 0) + (op.range.end.column - 1);
+            const spliced = segment.slice(0, startOffset) + segment.slice(endOffset);
+            lines.splice(startLine, deleteCount, ...spliced.split('\n'));
+          }
         }
 
         if (op.type === FileOperationType.Removal) {
@@ -218,7 +237,7 @@ export class FileOperationsHandler {
       this.cacheService.setFile(filePath, contentStr);
       return contentStr;
     } catch (error) {
-      diagnostics.warn('deadcode/file-operations', 'FILE_READ_ERROR', `Failed to read file: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('deadcode/file-operations', 'FILE_READ_ERROR', `Failed to read file: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }

@@ -108,6 +108,11 @@ export interface Changeset {
   readonly errors?: readonly string[];
   /** 警告訊息列表（可選） */
   readonly warnings?: readonly string[];
+  /**
+   * 命令特定的結構化統計資料（可選）
+   * 供 CLI 層消費權威計數，避免對 description/edits 字串做反推
+   */
+  readonly metadata?: Record<string, unknown>;
 }
 
 /**

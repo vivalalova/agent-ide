@@ -19,6 +19,14 @@ describe('source file extensions', () => {
     expect(stripSourceFileExtension(filePath)).toBe(expected);
   });
 
+  it.each([
+    ['/p/foo.d.ts', '/p/foo'],
+    ['/workspace/src/module.d.mts', '/workspace/src/module'],
+    ['/workspace/src/module.d.cts', '/workspace/src/module']
+  ])('strips declaration file extension as a single unit from %s', (filePath, expected) => {
+    expect(stripSourceFileExtension(filePath)).toBe(expected);
+  });
+
   it('keeps unsupported extensions unchanged', () => {
     expect(stripSourceFileExtension('/workspace/src/styles.css')).toBe('/workspace/src/styles.css');
   });

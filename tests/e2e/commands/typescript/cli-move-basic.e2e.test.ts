@@ -35,6 +35,16 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
     });
 
     it('應該自動更新引用該檔案的 import 語句', async () => {
+      await fixture.writeFile(
+        'src/uses-formatter.ts',
+        [
+          'import { formatDate } from \'./utils/formatter\';',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
       const source = path.join(fixture.rootPath, 'src/utils/formatter.ts');
       const target = path.join(fixture.rootPath, 'src/helpers/formatter.ts');
 
@@ -48,6 +58,315 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
       expect(output.pathUpdates).toBeDefined();
       expect(Array.isArray(output.pathUpdates)).toBe(true);
+      expect(output.pathUpdates.length).toBeGreaterThan(0);
+      expect(output.pathUpdates[0]).toMatchObject({
+        filePath: path.join(fixture.rootPath, 'src/uses-formatter.ts'),
+        oldImport: 'import { formatDate } from \'./utils/formatter\';',
+        newImport: 'import { formatDate } from \'./helpers/formatter\';'
+      });
+    });
+
+    it('應該更新跨多行的 import 語句', async () => {
+      await fixture.writeFile(
+        'src/consumer.ts',
+        [
+          'import {',
+          '  formatDate',
+          '} from \'./utils/formatter\';',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.pathUpdates.length).toBeGreaterThan(0);
+
+      const consumer = await fixture.readFile('src/consumer.ts');
+      expect(consumer).toContain('} from \'./helpers/formatter\';');
+      expect(consumer).not.toContain('} from \'./utils/formatter\';');
+    });
+
+    it('多行 import 中的註解提到 from 舊路徑時仍應更新真正 import', async () => {
+      await fixture.writeFile(
+        'src/commented-import-consumer.ts',
+        [
+          'import {',
+          '  // moved from \'./utils/formatter\'',
+          '  formatDate,',
+          '} from \'./utils/formatter\';',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/commented-import-consumer.ts');
+      expect(consumer).toContain('} from \'./helpers/formatter\';');
+      expect(consumer).not.toContain('} from \'./utils/formatter\';');
+    });
+
+    it('多行 import 中的註解含分號時仍應更新真正 import', async () => {
+      await fixture.writeFile(
+        'src/commented-semicolon-import-consumer.ts',
+        [
+          'import {',
+          '  // legacy import; keep the exported name',
+          '  formatDate,',
+          '} from \'./utils/formatter\';',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/commented-semicolon-import-consumer.ts');
+      expect(consumer).toContain('} from \'./helpers/formatter\';');
+      expect(consumer).not.toContain('} from \'./utils/formatter\';');
+    });
+
+    it('trailing comment 提到舊路徑時應更新真正 import 而不是註解', async () => {
+      await fixture.writeFile(
+        'src/trailing-comment-consumer.ts',
+        [
+          'import { formatDate } from \'./utils/formatter\'; // copied from \'./utils/formatter\'',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/trailing-comment-consumer.ts');
+      expect(consumer).toContain('from \'./helpers/formatter\'; // copied from \'./utils/formatter\'');
+    });
+
+    it('trailing block comment 後仍應更新真正 import', async () => {
+      await fixture.writeFile(
+        'src/trailing-block-comment-consumer.ts',
+        [
+          'import { formatDate } from \'./utils/formatter\'; /* copied from \'./utils/formatter\' */',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/trailing-block-comment-consumer.ts');
+      expect(consumer).toContain('from \'./helpers/formatter\'; /* copied from \'./utils/formatter\' */');
+    });
+
+    it('應該保留 import attributes 並更新 module specifier', async () => {
+      await fixture.writeFile(
+        'src/import-attributes-consumer.ts',
+        [
+          'import { formatDate } from \'./utils/formatter\' with { type: \'json\' };',
+          '',
+          'export const formatted = formatDate(new Date());',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/import-attributes-consumer.ts');
+      expect(consumer).toContain('from \'./helpers/formatter\' with { type: \'json\' };');
+      expect(consumer).not.toContain('./utils/formatter');
+    });
+
+    it('應該更新 require() 與 dynamic import() 的 module specifier', async () => {
+      await fixture.writeFile(
+        'src/runtime-loader.ts',
+        [
+          'const formatter = require(\'./utils/formatter\');',
+          'export async function loadFormatter() {',
+          '  return import(\'./utils/formatter\');',
+          '}',
+          'export const loaded = formatter;',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/formatter.ts',
+          'src/helpers/formatter.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/runtime-loader.ts');
+      expect(consumer).toContain('require(\'./helpers/formatter\')');
+      expect(consumer).toContain('import(\'./helpers/formatter\')');
+      expect(consumer).not.toContain('./utils/formatter');
+    });
+
+    it('應該更新同檔案中重複出現的相同 import', async () => {
+      await fixture.writeFile('src/setup.ts', 'export const setup = true;\n');
+      await fixture.writeFile(
+        'src/repeated-imports.ts',
+        [
+          'import \'./setup\';',
+          'import \'./setup\';',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/setup.ts',
+          'src/helpers/setup.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/repeated-imports.ts');
+      expect(consumer.match(/import '\.\/helpers\/setup';/g)).toHaveLength(2);
+      expect(consumer).not.toContain('import \'./setup\';');
+    });
+
+    it('應該更新超過十行的多行 import 語句', async () => {
+      const importedNames = Array.from({ length: 12 }, (_, index) => `  name${index},`);
+      await fixture.writeFile('src/large-module.ts', 'export const name0 = 0;\n');
+      await fixture.writeFile(
+        'src/long-import-consumer.ts',
+        [
+          'import {',
+          ...importedNames,
+          '} from \'./large-module\';',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/large-module.ts',
+          'src/helpers/large-module.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const consumer = await fixture.readFile('src/long-import-consumer.ts');
+      expect(consumer).toContain('} from \'./helpers/large-module\';');
+      expect(consumer).not.toContain('} from \'./large-module\';');
+    });
+
+    it('移動檔案內部 import 更新的 JSON 路徑應指向最終目標檔案', async () => {
+      await fixture.writeFile('src/deps/util.ts', 'export const util = 1;\n');
+      await fixture.writeFile(
+        'src/feature.ts',
+        [
+          'import { util } from \'./deps/util\';',
+          'export const feature = util;',
+          ''
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/feature.ts',
+          'src/features/feature.ts',
+          '--path', fixture.rootPath,
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.pathUpdates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: fixture.getFilePath('src/features/feature.ts'),
+            newImport: 'import { util } from \'../deps/util\';'
+          })
+        ])
+      );
+      const movedContent = await fixture.readFile('src/features/feature.ts');
+      expect(movedContent).toContain('import { util } from \'../deps/util\';');
     });
 
     it('應該在 JSON 輸出中包含 affected files 資訊', async () => {
@@ -116,6 +435,12 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.success).toBe(true);
       expect(output.files).toBeDefined();
       expect(output.summary).toBeDefined();
+      expect(output.projectRoot).toBe(fixture.rootPath);
+      expect(output.requestedSource).toBe(source);
+      expect(output.requestedTarget).toBe(target);
+      expect(output.source).toBe(source);
+      expect(output.target).toBe(target);
+      expect(output.finalTarget).toBe(target);
     });
 
     it('應該在dry-run 模式下顯示會受影響的 import', async () => {
@@ -149,6 +474,28 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.summary).toBeDefined();
       expect(output.summary.totalFiles).toBeGreaterThanOrEqual(0);
       expect(output.summary.totalChanges).toBeGreaterThanOrEqual(0);
+    });
+
+    it('目標為既有目錄時 summary dry-run 應顯示最終嵌套路徑', async () => {
+      await fixture.writeFile('src/existing-target/.keep', '');
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts',
+          'src/existing-target',
+          '--path', fixture.rootPath,
+          '--dry-run',
+          '--format', 'summary'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Project root: /test-workspace');
+      expect(result.stdout).toContain('Requested target: src/existing-target');
+      expect(result.stdout).toContain('Final target: src/existing-target/string-utils.ts');
+      expect(result.stdout).toContain('Target interpretation: existing directory');
     });
   });
 
@@ -267,6 +614,42 @@ describe('CLI move basic - 基於 sample-project fixture', () => {
       expect(output.success).toBe(false);
       expect(output.error).toBeDefined();
       expect(output.error).toMatch(/找不到|不存在/);
+      expect(output.pathContext).toMatchObject({
+        projectRoot: fixture.rootPath,
+        requestedSource: source,
+        requestedTarget: target,
+        resolvedSource: source,
+        finalTarget: target
+      });
+    });
+
+    it('應該區分 project root 不存在與來源檔案不存在', async () => {
+      const missingProjectRoot = '/tmp/agent-ide-definitely-missing-root';
+
+      const result = await executeCLI(
+        [
+          'move',
+          'src/utils/string-utils.ts',
+          'src/helpers/string-utils.ts',
+          '--path', missingProjectRoot,
+          '--dry-run',
+          '--format', 'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('project root');
+      expect(output.error).not.toContain('來源路徑不存在');
+      expect(output.pathContext).toMatchObject({
+        role: 'projectRoot',
+        inputPath: missingProjectRoot,
+        resolvedPath: missingProjectRoot,
+        expected: 'exists',
+        projectRoot: missingProjectRoot
+      });
     });
 
     it('應該處理目標路徑已存在的情況', async () => {

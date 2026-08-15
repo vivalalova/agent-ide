@@ -219,4 +219,150 @@ export function bothCaller() {
       expect(output.summary.uniqueFiles).toBeDefined();
     });
   });
+
+  // MARK: - --at 過濾器丟棄前向引用 regression
+
+  describe('--at 過濾器不應丟棄前向引用（非提升宣告的真實 caller）regression', () => {
+    it('arrow function const 定義在後：--at 鎖定定義時，定義前的 caller 不應從 incoming 消失', async () => {
+      await fixture.writeFile('src/ch-forward-ref-arrow.ts', [
+        'export function callArrow() { return handler(); }',
+        'export const handler = () => 1;'
+      ].join('\n'));
+
+      // 不帶 --at：baseline 應找到 callArrow 這個 incoming caller
+      const baseline = await executeCLI(
+        ['call-hierarchy', 'handler', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+      const baselineOutput: any = JSON.parse(baseline.stdout);
+      expect(baselineOutput.incoming.map((c: any) => c.caller)).toContain('callArrow');
+
+      // 帶 --at 鎖定 handler 的定義位置（line 2, column 14）
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'handler',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/ch-forward-ref-arrow.ts:2:14',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：--at 鎖定後 callArrow 這個定義前的真實 caller 從 incoming 消失
+      expect(output.incoming.map((c: any) => c.caller)).toContain('callArrow');
+    });
+  });
+
+  // MARK: - barrel re-export 鏈路 regression
+  //
+  // 缺陷：call-hierarchy 不跟 barrel re-export 鏈（`export { x } from './real'`，
+  // barrel 檔本身無本地宣告）：
+  // - outgoing：findCalleeDefinition 只在 import 目標檔（barrel 檔）內找符號的本地宣告，
+  //   barrel 檔沒有本地宣告 → 解析失敗 → depth 展開在 barrel 處斷掉，下游函式消失
+  // - incoming：isCallSiteAnchoredToDefinition 用單跳 resolvedFile === targetDefinitionFile
+  //   比對，caller 經 barrel import 時 resolvedFile 是 barrel 檔而非真正定義檔 → 合法 caller 被漏掉
+  describe('barrel re-export 鏈路（call-hierarchy 不跟 re-export）regression', () => {
+    beforeEach(async () => {
+      await fixture.writeFile('src/ch-barrel-real.ts', [
+        'export function chBarrelHelper() {',
+        '  return 1;',
+        '}',
+        '',
+        'export function chBarrelTarget() {',
+        '  return chBarrelHelper();',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile(
+        'src/ch-barrel-index.ts',
+        'export { chBarrelTarget } from \'./ch-barrel-real.js\';'
+      );
+      await fixture.writeFile('src/ch-barrel-caller.ts', [
+        'import { chBarrelTarget } from \'./ch-barrel-index.js\';',
+        '',
+        'export function chBarrelCaller() {',
+        '  return chBarrelTarget();',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/ch-barrel-direct-caller.ts', [
+        'import { chBarrelTarget } from \'./ch-barrel-real.js\';',
+        '',
+        'export function chBarrelDirectCaller() {',
+        '  return chBarrelTarget();',
+        '}'
+      ].join('\n'));
+    });
+
+    it('incoming: 經 barrel re-export 匯入的 caller 不應從 incoming 消失（對照：直接 import 的 caller 現為綠燈）', async () => {
+      const result = await executeCLI(
+        ['call-hierarchy', 'chBarrelTarget', '--path', fixture.rootPath, '--direction', 'incoming', '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      const callers = output.incoming.map((c: any) => c.caller);
+
+      // 對照組：直接 import 定義檔的 caller，目前應已正確出現
+      expect(callers).toContain('chBarrelDirectCaller');
+      // Bug：經 barrel re-export 匯入的 caller 應同樣出現，但目前被漏掉
+      expect(callers).toContain('chBarrelCaller');
+    });
+
+    it('outgoing: 經 barrel 匯入呼叫時，depth=2 應能穿透 barrel 找到下游 helper（對照：直接 import 現為綠燈）', async () => {
+      const directResult = await executeCLI(
+        [
+          'call-hierarchy',
+          'chBarrelDirectCaller',
+          '--path',
+          fixture.rootPath,
+          '--direction',
+          'outgoing',
+          '--depth',
+          '2',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+      expect(directResult.exitCode).toBe(0);
+      const directOutput: any = JSON.parse(directResult.stdout);
+      const directCallees = directOutput.outgoing.map((c: any) => c.callee);
+      // 對照組：直接 import 時，depth=2 目前應已正確穿透找到 chBarrelHelper
+      expect(directCallees).toContain('chBarrelTarget');
+      expect(directCallees).toContain('chBarrelHelper');
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'chBarrelCaller',
+          '--path',
+          fixture.rootPath,
+          '--direction',
+          'outgoing',
+          '--depth',
+          '2',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+      const callees = output.outgoing.map((c: any) => c.callee);
+
+      expect(callees).toContain('chBarrelTarget');
+      // Bug：經 barrel 匯入時，depth=2 展開在 barrel 處斷掉，chBarrelHelper 應出現但目前消失
+      expect(callees).toContain('chBarrelHelper');
+    });
+  });
 });

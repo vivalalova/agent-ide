@@ -3,6 +3,7 @@
  * 負責將變更集應用到檔案系統，支援 dry-run、備份、回滾
  */
 
+import { resolve as pathResolve, relative as pathRelative, join as pathJoin } from 'path';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import {
   FileOperationType,
@@ -12,10 +13,96 @@ import {
   type FileOperation,
   type ApplyResult,
   type ApplyOptions,
-  type BackupEntry,
-  type TextEdit
+  type BackupEntry
 } from './types.js';
+import { applyTextEdits } from './apply-text-edits.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+
+/**
+ * 目前 process 內正在被某個 apply() 呼叫獨佔處理的檔案路徑集合，依 IFileSystem 實例分桶。
+ *
+ * 模組層級、以 fileSystem 實例分桶（非單一全域 Set、也非 ChangeApplicator instance 層級）：
+ * CLI 各命令進入點都各自 `new ChangeApplicator(...)`（見 move.command.ts、
+ * move-glob-command-handler.ts、command-utils.ts、move-member-engine.ts），若鎖存在
+ * ChangeApplicator instance 上將無法防止「不同 ChangeApplicator 實例、同一 process 內」
+ * 併發套用同一份底層儲存的同一檔案。
+ *
+ * 但鎖 key 若只用正規化路徑字串、不含 fileSystem 身分，會誤判：不同 fileSystem 實例
+ * （例如各自獨立的 memfs，各自的檔案系統互不相干）恰好撞到同一路徑字串時，會被當成
+ * 同一檔案的併發衝突而誤 fail。改以 `WeakMap<IFileSystem, Set<string>>` 依實例分桶，
+ * 確保「同一 fileSystem 實例內」的路徑字串才互斥，不同底層儲存互不干擾。
+ *
+ * 僅作為 in-process 互斥用，防止同 process、同一 fileSystem 實例內併發 apply() 互踩
+ * （Bug B：兩個併發呼叫都讀到同一份原始內容、各自算出不同結果、最後寫入者靜默蓋掉前者）；
+ * 不處理跨 process／跨機器的併發（scope 外）。
+ *
+ * 路徑一律以 path.resolve 正規化後再入 Set，避免 `./a.ts` 與絕對路徑被當成不同檔。
+ */
+const filesInFlightByFileSystem = new WeakMap<IFileSystem, Set<string>>();
+
+/**
+ * 取得（或建立）指定 fileSystem 實例對應的 in-flight 路徑集合。
+ * @param fileSystem 檔案系統實例，作為鎖分桶 key
+ * @returns 該實例專屬的 in-flight 路徑 Set
+ */
+function getFilesInFlight(fileSystem: IFileSystem): Set<string> {
+  let filesInFlight = filesInFlightByFileSystem.get(fileSystem);
+  if (!filesInFlight) {
+    filesInFlight = new Set<string>();
+    filesInFlightByFileSystem.set(fileSystem, filesInFlight);
+  }
+  return filesInFlight;
+}
+
+/**
+ * 將路徑 canonicalize 為絕對、正規化形式，供 filesInFlight 互斥 key 使用。
+ * 語意同一檔、字串不同（如 `/a/../a/b.ts` 與 `/a/b.ts`）必須對到同一 key。
+ */
+function canonicalizePath(filePath: string): string {
+  return pathResolve(filePath);
+}
+
+/**
+ * 建立一個「全空陣列 + errors」的失敗 ApplyResult。
+ * apply() 內多處失敗分支（文字變更失敗、檔案操作失敗、未預期錯誤）共用同一失敗結果形狀，
+ * 差異只在 errors 內容，故抽出單一來源避免逐字複製。
+ * @param errors 錯誤訊息列表
+ * @returns 失敗的 ApplyResult
+ */
+function buildFailureResult(errors: string[]): ApplyResult {
+  return {
+    success: false,
+    modifiedFiles: [],
+    createdFiles: [],
+    deletedFiles: [],
+    movedFiles: [],
+    errors
+  };
+}
+
+/**
+ * 收集一個 changeset 會實際觸及（讀取備份／寫入）的所有檔案路徑，供併發鎖使用。
+ * 涵蓋文字變更的 filePath，以及檔案操作的 sourcePath 與 targetPath（Create/Move 皆可能有）。
+ * 回傳前一律 canonicalize，確保語意同檔字串不同時仍互斥。
+ * @param changeset 變更集
+ * @returns 去重且 canonicalize 後的檔案路徑列表
+ */
+function collectTouchedPaths(changeset: Changeset): string[] {
+  const paths = new Set<string>();
+
+  for (const textChange of changeset.textChanges) {
+    paths.add(canonicalizePath(textChange.filePath));
+  }
+
+  for (const operation of changeset.fileOperations) {
+    paths.add(canonicalizePath(operation.sourcePath));
+    if (operation.targetPath) {
+      paths.add(canonicalizePath(operation.targetPath));
+    }
+  }
+
+  return [...paths];
+}
 
 /**
  * 變更應用器
@@ -38,6 +125,19 @@ export class ChangeApplicator {
       return this.dryRunApply(changeset);
     }
 
+    // 併發鎖檢查必須是這個 async function 內第一個同步動作（在任何 await 之前）：
+    // 若本次 changeset 觸及的任一檔案已被另一個尚未完成的 apply() 呼叫佔用，
+    // 立即 fast-fail 回報衝突，禁止繼續執行導致兩者都回報成功、後寫者靜默覆蓋前者。
+    const filesInFlight = getFilesInFlight(this.fileSystem);
+    const touchedPaths = collectTouchedPaths(changeset);
+    const conflictPath = touchedPaths.find(p => filesInFlight.has(p));
+    if (conflictPath) {
+      return buildFailureResult([`並發衝突：檔案 [${conflictPath}] 正被另一個進行中的變更套用佔用，本次套用已中止（避免靜默覆蓋對方結果）`]);
+    }
+    for (const p of touchedPaths) {
+      filesInFlight.add(p);
+    }
+
     const backups: BackupEntry[] = [];
     const modifiedFiles: string[] = [];
     const createdFiles: string[] = [];
@@ -45,112 +145,115 @@ export class ChangeApplicator {
     const movedFiles: Array<{ from: string; to: string }> = [];
     const errors: string[] = [];
 
+    // 外層 try/finally：無論成功／失敗／回滾，本次佔用的檔案鎖都必須釋放，
+    // 讓後續 apply() 得以進行（內層 try/catch 為原有套用/回滾邏輯，不變）
     try {
-      // 1. 建立備份
-      await this.createBackups(changeset, backups);
+      try {
+        // 1. 建立備份
+        await this.createBackups(changeset, backups);
 
-      // 2. 應用文字變更
-      for (const textChange of changeset.textChanges) {
-        try {
-          await this.applyTextChange(textChange, atomic);
-          modifiedFiles.push(textChange.filePath);
-        } catch (error) {
-          const message = getErrorMessage(error);
-          errors.push(`文字變更失敗 [${textChange.filePath}]: ${message}`);
+        // 2. 應用文字變更
+        for (const textChange of changeset.textChanges) {
+          try {
+            await this.applyTextChange(textChange, atomic);
+            modifiedFiles.push(textChange.filePath);
+          } catch (error) {
+            const message = getErrorMessage(error);
+            errors.push(`文字變更失敗 [${textChange.filePath}]: ${message}`);
 
-          if (rollbackOnError) {
-            const rollbackErrors = await this.rollback(backups);
-            return {
-              success: false,
-              modifiedFiles: [],
-              createdFiles: [],
-              deletedFiles: [],
-              movedFiles: [],
-              errors: [...errors, ...rollbackErrors]
-            };
+            if (rollbackOnError) {
+              const rollbackErrors = await this.rollback(backups, atomic);
+              return buildFailureResult([...errors, ...rollbackErrors]);
+            }
           }
         }
-      }
 
-      // 3. 應用檔案操作
-      for (const operation of changeset.fileOperations) {
-        try {
-          await this.applyFileOperation(operation, atomic);
+        // 3. 應用檔案操作
+        for (const operation of changeset.fileOperations) {
+          try {
+            await this.applyFileOperation(operation, atomic);
 
-          switch (operation.type) {
-            case FileOperationType.Create:
-              if (operation.targetPath) {
-                createdFiles.push(operation.targetPath);
-              }
-              break;
-            case FileOperationType.Delete:
-              deletedFiles.push(operation.sourcePath);
-              break;
-            case FileOperationType.Move:
-              if (operation.targetPath) {
-                movedFiles.push({
-                  from: operation.sourcePath,
-                  to: operation.targetPath
-                });
-              }
-              break;
-          }
-        } catch (error) {
-          const message = getErrorMessage(error);
-          errors.push(`檔案操作失敗 [${operation.type}]: ${message}`);
+            switch (operation.type) {
+              case FileOperationType.Create:
+                if (operation.targetPath) {
+                  createdFiles.push(operation.targetPath);
+                }
+                break;
+              case FileOperationType.Delete:
+                deletedFiles.push(operation.sourcePath);
+                break;
+              case FileOperationType.Move:
+                if (operation.targetPath) {
+                  movedFiles.push({
+                    from: operation.sourcePath,
+                    to: operation.targetPath
+                  });
+                }
+                break;
+            }
+          } catch (error) {
+            const message = getErrorMessage(error);
+            errors.push(`檔案操作失敗 [${operation.type}]: ${message}`);
 
-          if (rollbackOnError) {
-            const rollbackErrors = await this.rollback(backups);
-            return {
-              success: false,
-              modifiedFiles: [],
-              createdFiles: [],
-              deletedFiles: [],
-              movedFiles: [],
-              errors: [...errors, ...rollbackErrors]
-            };
+            if (rollbackOnError) {
+              const rollbackErrors = await this.rollback(backups, atomic);
+              return buildFailureResult([...errors, ...rollbackErrors]);
+            }
           }
         }
+
+        return {
+          success: errors.length === 0,
+          modifiedFiles,
+          createdFiles,
+          deletedFiles,
+          movedFiles,
+          errors: errors.length > 0 ? errors : undefined
+        };
+      } catch (error) {
+        const message = getErrorMessage(error);
+        errors.push(`應用變更時發生未預期錯誤: ${message}`);
+
+        if (rollbackOnError && backups.length > 0) {
+          const rollbackErrors = await this.rollback(backups, atomic);
+          errors.push(...rollbackErrors);
+        }
+
+        return buildFailureResult(errors);
       }
-
-      return {
-        success: errors.length === 0,
-        modifiedFiles,
-        createdFiles,
-        deletedFiles,
-        movedFiles,
-        errors: errors.length > 0 ? errors : undefined
-      };
-    } catch (error) {
-      const message = getErrorMessage(error);
-      errors.push(`應用變更時發生未預期錯誤: ${message}`);
-
-      if (rollbackOnError && backups.length > 0) {
-        const rollbackErrors = await this.rollback(backups);
-        errors.push(...rollbackErrors);
+    } finally {
+      for (const p of touchedPaths) {
+        filesInFlight.delete(p);
       }
-
-      return {
-        success: false,
-        modifiedFiles: [],
-        createdFiles: [],
-        deletedFiles: [],
-        movedFiles: [],
-        errors
-      };
     }
   }
 
   /**
-   * Dry-run 模式：計算會修改的檔案，不實際執行
+   * Dry-run 模式：計算會修改的檔案，不實際寫入；
+   * 並在記憶體上驗證 text edits 可套用（重疊／座標非法等），失敗時 success=false。
    * @param changeset 變更集
    * @returns 預覽結果
    */
-  private dryRunApply(changeset: Changeset): ApplyResult {
+  private async dryRunApply(changeset: Changeset): Promise<ApplyResult> {
     const modifiedFiles = changeset.textChanges.map(tc => tc.filePath);
     const createdFiles: string[] = [];
     const deletedFiles: string[] = [];
     const movedFiles: Array<{ from: string; to: string }> = [];
+    const errors: string[] = [];
+
+    // 驗證每組 text edits 可在目前內容上套用（與實寫路徑共用 applyTextEdits）
+    for (const textChange of changeset.textChanges) {
+      try {
+        const exists = await this.fileSystem.exists(textChange.filePath);
+        const content = exists
+          ? (await this.fileSystem.readFile(textChange.filePath, 'utf-8')) as string
+          : '';
+        applyTextEdits(content, textChange.edits);
+      } catch (error) {
+        const message = getErrorMessage(error);
+        errors.push(`文字變更預檢失敗 [${textChange.filePath}]: ${message}`);
+      }
+    }
 
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
@@ -174,11 +277,12 @@ export class ChangeApplicator {
     }
 
     return {
-      success: true,
+      success: errors.length === 0,
       modifiedFiles,
       createdFiles,
       deletedFiles,
-      movedFiles
+      movedFiles,
+      errors: errors.length > 0 ? errors : undefined
     };
   }
 
@@ -208,16 +312,28 @@ export class ChangeApplicator {
     // 備份檔案操作
     for (const operation of changeset.fileOperations) {
       switch (operation.type) {
-        case FileOperationType.Create:
-          // 新建檔案：備份為 null（回滾時刪除）
+        case FileOperationType.Create: {
+          // 新建檔案：若目標已存在則備份原始內容，否則備份為 null（回滾時刪除）
           if (operation.targetPath) {
-            backups.push({
-              filePath: operation.targetPath,
-              originalContent: null,
-              type: BackupType.Create
-            });
+            const exists = await this.fileSystem.exists(operation.targetPath);
+
+            if (exists) {
+              const content = await this.fileSystem.readFile(operation.targetPath, 'utf-8');
+              backups.push({
+                filePath: operation.targetPath,
+                originalContent: content as string,
+                type: BackupType.Delete
+              });
+            } else {
+              backups.push({
+                filePath: operation.targetPath,
+                originalContent: null,
+                type: BackupType.Create
+              });
+            }
           }
           break;
+        }
 
         case FileOperationType.Delete: {
           // 刪除檔案：備份內容
@@ -273,115 +389,12 @@ export class ChangeApplicator {
     atomic: boolean
   ): Promise<void> {
     const content = await this.fileSystem.readFile(textChange.filePath, 'utf-8');
-    const newContent = this.applyEdits(content as string, textChange.edits);
+    // 委派給共用的編輯套用核心（dedupe→重疊檢查→排序→套用），實寫終態的單一權威來源
+    const newContent = applyTextEdits(content as string, textChange.edits);
 
     await this.fileSystem.writeFile(textChange.filePath, newContent, {
       fsync: atomic
     });
-  }
-
-  /**
-   * 應用編輯操作到內容
-   * 從後往前排序以避免位置偏移
-   * @param content 原始內容
-   * @param edits 編輯操作列表
-   * @returns 修改後的內容
-   */
-  private applyEdits(content: string, edits: readonly TextEdit[]): string {
-    if (edits.length === 0) {
-      return content;
-    }
-
-    // 空內容特殊處理：所有 edit 的位置都視為插入到開頭
-    // 這是因為對空內容而言，任何位置的插入都等同於從頭開始
-    if (content === '') {
-      return edits.map(e => e.newText).join('');
-    }
-
-    // 按位置從後往前排序（避免位置偏移）
-    const sortedEdits = [...edits].sort((a, b) => {
-      // 先比較行號
-      if (a.range.start.line !== b.range.start.line) {
-        return b.range.start.line - a.range.start.line; // 從後往前
-      }
-      // 同行則比較列號
-      return b.range.start.column - a.range.start.column;
-    });
-
-    // 只分割一次，用於計算 offset
-    const lines = this.splitLines(content);
-    let result = content;
-
-    // 依序應用編輯（直接在字串上操作，避免重複 join/split）
-    for (const edit of sortedEdits) {
-      const { range, newText } = edit;
-
-      // 計算起始和結束偏移
-      const startOffset = this.calculateOffset(lines, range.start.line, range.start.column);
-      const endOffset = this.calculateOffset(lines, range.end.line, range.end.column);
-
-      // 直接在字串上替換指定範圍
-      result = result.substring(0, startOffset) + newText + result.substring(endOffset);
-    }
-
-    return result;
-  }
-
-  /**
-   * 分割內容為行（保留換行符）
-   * @param content 原始內容
-   * @returns 行陣列
-   */
-  private splitLines(content: string): string[] {
-    if (!content) {return [];}
-    const lines = content.split('\n');
-    // 保留換行符（除了最後一行）
-    return lines.map((line, i) =>
-      i < lines.length - 1 ? line + '\n' : line
-    ).filter(line => line.length > 0 || lines.length === 1);
-  }
-
-  /**
-   * 計算指定位置的字元偏移量
-   *
-   * 座標系統說明：
-   * - line: 行號（1-based），有效範圍 [1, lines.length+1]
-   *   - 1 = 第一行
-   *   - lines.length+1 = 檔案末尾（用於追加內容）
-   * - column: 列號（1-based），有效範圍 [1, 當前行長度+1]
-   *   - 1 = 行首
-   *   - 行長度+1 = 行尾（用於行尾插入）
-   *
-   * 超出範圍的處理：
-   * - line > lines.length: 視為檔案末尾，offset 為檔案總長度
-   * - column > 行長度: 視為行尾，offset 為該行最後一個字元後
-   *
-   * @param lines 行陣列
-   * @param line 行號（1-based，從 1 開始，允許 lines.length+1 用於檔案末尾插入）
-   * @param column 列號（1-based，從 1 開始，允許行長度+1 用於行尾插入）
-   * @returns 字元偏移量
-   * @throws Error 當行號 < 1 或列號 < 1 時
-   */
-  private calculateOffset(lines: string[], line: number, column: number): number {
-    // 驗證基本參數（只禁止負數，超出範圍允許用於插入操作）
-    if (line < 1) {
-      throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
-    }
-    if (column < 1) {
-      throw new Error(`無效的列號: ${column}，列號必須 >= 1（1-based 索引）`);
-    }
-
-    let offset = 0;
-
-    // 累加前面所有行的長度（使用邊界檢查避免越界）
-    for (let i = 0; i < line - 1 && i < lines.length; i++) {
-      offset += lines[i].length;
-    }
-
-    // 加上當前行的列偏移
-    offset += column - 1;
-
-    return offset;
   }
 
   /**
@@ -426,7 +439,8 @@ export class ChangeApplicator {
   }
 
   /**
-   * 遞迴移動目錄
+   * 遞迴移動目錄。
+   * 中途失敗時反向回滾本層已成功的子檔／子目錄 move，避免半套目錄殘留。
    * @param source 來源目錄
    * @param target 目標目錄
    */
@@ -436,33 +450,71 @@ export class ChangeApplicator {
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
+    /** 本層已成功移到 target 的子路徑（sourcePath, targetPath, isDirectory），供失敗時 reverse */
+    const completed: Array<{ sourcePath: string; targetPath: string; isDirectory: boolean }> = [];
 
-    for (const entry of entries) {
-      const sourcePath = entry.path;
-      // 使用 path 模組計算相對路徑
-      const relativePath = sourcePath.slice(source.length);
-      const targetPath = target + relativePath;
+    try {
+      for (const entry of entries) {
+        const sourcePath = entry.path;
+        // 用 path.relative/path.join 計算相對路徑並組出目標路徑，避免字串 slice
+        // 對路徑分隔符（trailing slash、`..`）等邊界寫死長度假設而算錯
+        const relativePath = pathRelative(source, sourcePath);
+        const targetPath = pathJoin(target, relativePath);
 
-      if (entry.isDirectory) {
-        // 遞迴處理子目錄
-        await this.moveDirectory(sourcePath, targetPath);
-      } else if (entry.isFile) {
-        // 移動檔案
-        await this.fileSystem.moveFile(sourcePath, targetPath);
+        if (entry.isDirectory) {
+          await this.moveDirectory(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: true });
+        } else if (entry.isFile) {
+          await this.fileSystem.moveFile(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: false });
+        }
       }
-    }
 
-    // 刪除原目錄
-    await this.fileSystem.deleteDirectory(source);
+      // 刪除原目錄
+      await this.fileSystem.deleteDirectory(source);
+    } catch (error) {
+      // 反向回滾已成功的子 move（後完成者先 reverse）
+      for (let i = completed.length - 1; i >= 0; i--) {
+        const item = completed[i];
+        try {
+          if (item.isDirectory) {
+            await this.moveDirectory(item.targetPath, item.sourcePath);
+          } else {
+            await this.fileSystem.moveFile(item.targetPath, item.sourcePath);
+          }
+        } catch {
+          // 回滾個別失敗不掩蓋原錯誤；繼續嘗試其餘
+        }
+      }
+      // 若目標目錄已空則嘗試清掉；失敗忽略
+      try {
+        const remaining = await this.fileSystem.readDirectory(target);
+        if (remaining.length === 0) {
+          await this.fileSystem.deleteDirectory(target);
+        }
+      } catch {
+        // ignore
+      }
+      throw error;
+    }
   }
 
   /**
    * 回滾所有變更
    * 反向遍歷備份，恢復原始狀態
+   *
+   * Bug A 修復：回滾寫入必須沿用與 forward apply 相同的原子寫入原語
+   * （write-temp-then-rename，見 file-system.ts 的 atomicWrite）。原本回滾寫入
+   * 一律走非原子直接寫入，即使 forward apply 是原子的；若非原子寫入中途被
+   * I/O 錯誤（如磁碟已滿）中斷，檔案會被截斷成半殘留的損毀狀態，且不屬於
+   * 「新內容」也不屬於「原始內容」任一終態。改用 { fsync: atomic } 後，失敗
+   * 只會發生在 commit（rename）前，檔案維持在回滾前的狀態，絕不出現半殘留。
+   *
    * @param backups 備份列表
+   * @param atomic 是否使用與 forward apply 相同的原子寫入（沿用呼叫端的 atomic 選項）
    * @returns 回滾過程中發生的錯誤列表
    */
-  private async rollback(backups: readonly BackupEntry[]): Promise<readonly string[]> {
+  private async rollback(backups: readonly BackupEntry[], atomic: boolean): Promise<readonly string[]> {
     const rollbackErrors: string[] = [];
 
     // 反向遍歷備份
@@ -475,7 +527,7 @@ export class ChangeApplicator {
           case BackupType.Delete:
             // 恢復原始內容
             if (backup.originalContent !== null) {
-              await this.fileSystem.writeFile(backup.filePath, backup.originalContent);
+              await this.fileSystem.writeFile(backup.filePath, backup.originalContent, { fsync: atomic });
             }
             break;
 
@@ -496,7 +548,7 @@ export class ChangeApplicator {
                 if (backup.originalContent !== null) {
                   // 檔案移動：刪除目標檔案，恢復原始內容
                   await this.fileSystem.deleteFile(backup.targetPath);
-                  await this.fileSystem.writeFile(backup.filePath, backup.originalContent);
+                  await this.fileSystem.writeFile(backup.filePath, backup.originalContent, { fsync: atomic });
                 } else {
                   // 目錄移動：把目錄移回原位置
                   await this.moveDirectory(backup.targetPath, backup.filePath);

@@ -228,7 +228,9 @@ export enum MoveMemberErrorCode {
   /** 解析錯誤 */
   ParseError = 'parse-error',
   /** 目標檔案不存在（且不是新檔案模式） */
-  TargetFileNotFound = 'target-file-not-found'
+  TargetFileNotFound = 'target-file-not-found',
+  /** 寫入變更失敗（ChangeApplicator 回報失敗，已回滾） */
+  WriteFailed = 'write-failed'
 }
 
 /**

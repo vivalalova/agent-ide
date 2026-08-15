@@ -5,7 +5,7 @@
 import { Location } from '@shared/types/core.js';
 
 // 匯出錯誤工具
-export { getErrorMessage } from './error-utils.js';
+export { getErrorMessage, isFileNotFoundError } from './error-utils.js';
 
 // 匯出所有錯誤類別
 export { BaseError, isBaseError } from './base-error.js';

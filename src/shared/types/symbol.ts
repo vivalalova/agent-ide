@@ -68,6 +68,20 @@ export interface Reference {
   readonly symbol: Symbol;
   readonly location: Location;
   readonly type: ReferenceType;
+  /**
+   * 此引用所在的 token 同時是 object literal / destructuring shorthand 的
+   * key 與 value（如 `{ foo }`、`const { foo } = opts` 的 `foo`）。
+   * rename 展開為 `key: newName` 形式時，此欄位帶原始 key 文字（未 rename 前
+   * 的名稱，即 `symbol.name`）；一般（非 shorthand）引用不帶此欄位。
+   */
+  readonly shorthandKeyText?: string;
+  /**
+   * 本次 rename 的目標符號是 property 宣告（interface PropertySignature／class
+   * PropertyDeclaration）本身，即 shorthand token 的「key 側」語意。
+   * 展開方向由此決定：true → `newName: 原文字`（改 key、value 仍指向原本地繫結）；
+   * 未帶（預設）→ `原文字: newName`（改 value／binding、key 維持）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**
@@ -152,12 +166,16 @@ export function createSymbol(
 export function createReference(
   symbol: Symbol,
   location: Location,
-  type: ReferenceType
+  type: ReferenceType,
+  shorthandKeyText?: string,
+  shorthandTargetIsKey?: boolean
 ): Reference {
   return {
     symbol,
     location,
-    type
+    type,
+    ...(shorthandKeyText !== undefined ? { shorthandKeyText } : {}),
+    ...(shorthandTargetIsKey ? { shorthandTargetIsKey } : {})
   };
 }
 
@@ -276,6 +294,65 @@ export function getScopeDepth(scope: Scope): number {
   }
 
   return depth;
+}
+
+/**
+ * 判斷符號是否為「函式區域符號」——即無法被其他檔案引用、只存在於單一檔案內的符號。
+ *
+ * 單一權威定義（SSOT）：沿 scope 父鏈只要出現 function 或 block scope 即為區域符號。
+ * 依賴 scope 語意為「宣告所在的 enclosing scope」（見 symbol-extractor visitNode）：
+ * - 頂層 function / class / interface / const 等：enclosing scope 為 module/global，鏈中無
+ *   function/block → 非區域，需跨檔處理引用。
+ * - 函式內的區域變數 / 參數 / 巢狀函式：enclosing 鏈含 function → 區域，只需處理定義檔。
+ * - class 方法：enclosing scope 為 class（其上為 module）→ 非區域（方法可被跨檔透過成員存取引用）。
+ *
+ * 呼叫端（rename.command、reference-updater）一律引用此定義，禁自行重寫判定邏輯。
+ */
+export function isFunctionLocalSymbol(symbol: Symbol): boolean {
+  if (!symbol.location?.filePath) {
+    return false;
+  }
+
+  let scope: Scope | undefined = symbol.scope;
+  while (scope) {
+    if (scope.type === 'function' || scope.type === 'block') {
+      return true;
+    }
+    scope = scope.parent;
+  }
+
+  return false;
+}
+
+/**
+ * 取得符號所屬的 class 容器名稱（供作用域感知的引用查找限定 class 範圍，
+ * 避免不同類別的同名成員被誤合併/誤改）。
+ *
+ * class 方法/屬性宣告本身的 `scope` 在符號提取時即為其 enclosing scope，即 class scope
+ * 本身（type 'class'）；若 symbol.scope 是 function scope 且其 parent 為 class scope
+ * （method 內部符號、或未來其他以 method scope 為直接 enclosing scope 的情境），
+ * 則取 parent 的 class 名稱。找不到 class 容器時回傳 undefined。
+ *
+ * 呼叫端（symbol-finder、TS parser 的 findReferences 私有欄位分支）一律引用此定義，
+ * 禁自行重寫判定邏輯。
+ */
+export function getContainingClassName(symbol: Symbol): string | undefined {
+  if (symbol.scope?.type === 'function' && symbol.scope?.parent?.type === 'class') {
+    return symbol.scope.parent.name;
+  }
+  return symbol.scope?.type === 'class' ? symbol.scope.name : undefined;
+}
+
+/**
+ * 判斷是否為 parser 產生的 import-only binding 候選（例如 JS 檔案的 import specifier
+ * 也會產生 type: variable 的 Symbol，但它並非真正的本地宣告）。
+ *
+ * 單一權威定義（SSOT）：呼叫端（symbol-target-resolver、rename.command、
+ * call-hierarchy-analyzer 等）判斷候選是否為單純 import binding 時一律引用此定義，
+ * 禁自行重寫判定邏輯。
+ */
+export function isImportedSymbol(symbol: Symbol): boolean {
+  return (symbol as { readonly isImported?: boolean }).isImported === true;
 }
 
 /**

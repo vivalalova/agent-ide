@@ -3,12 +3,22 @@
  */
 
 export const TYPESCRIPT_SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'] as const;
-export const TYPESCRIPT_PARSER_EXTENSIONS = ['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.d.mts', '.d.cts'] as const;
+export const DECLARATION_FILE_EXTENSIONS = ['.d.ts', '.d.mts', '.d.cts'] as const;
+export const TYPESCRIPT_PARSER_EXTENSIONS = [
+  ...TYPESCRIPT_SOURCE_EXTENSIONS,
+  ...DECLARATION_FILE_EXTENSIONS
+] as const;
 export const JAVASCRIPT_SOURCE_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'] as const;
+const DECLARATION_EXTENSION_BY_SOURCE_EXTENSION: Record<string, string> = {
+  '.ts': '.d.ts',
+  '.mts': '.d.mts',
+  '.cts': '.d.cts'
+};
 export const SOURCE_FILE_EXTENSIONS = [
   ...TYPESCRIPT_SOURCE_EXTENSIONS,
   ...JAVASCRIPT_SOURCE_EXTENSIONS
 ] as const;
+export const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
 
 const RUNTIME_IMPORT_EXTENSION_CANDIDATES: Record<string, readonly string[]> = {
   '.js': ['.ts', '.tsx', '.js', '.jsx'],
@@ -25,12 +35,25 @@ export function isJavaScriptSourceExtension(extension: string): boolean {
   return (JAVASCRIPT_SOURCE_EXTENSIONS as readonly string[]).includes(extension);
 }
 
-export function isSourceFileExtension(extension: string): boolean {
-  return (SOURCE_FILE_EXTENSIONS as readonly string[]).includes(extension);
+export function isSourceFileExtension(
+  extension: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): boolean {
+  return sourceExtensions.includes(extension);
 }
 
-export function stripSourceFileExtension(filePath: string): string {
-  const extension = SOURCE_FILE_EXTENSIONS.find(sourceExtension => filePath.endsWith(sourceExtension));
+export function stripSourceFileExtension(
+  filePath: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): string {
+  for (const sourceExtension of sourceExtensions) {
+    const declarationExtension = DECLARATION_EXTENSION_BY_SOURCE_EXTENSION[sourceExtension];
+    if (declarationExtension && filePath.endsWith(declarationExtension)) {
+      return filePath.slice(0, -declarationExtension.length);
+    }
+  }
+
+  const extension = sourceExtensions.find(sourceExtension => filePath.endsWith(sourceExtension));
   return extension ? filePath.slice(0, -extension.length) : filePath;
 }
 
@@ -46,6 +69,13 @@ export function getSourceLanguage(extension: string): string | undefined {
   return undefined;
 }
 
-export function getImportResolutionExtensions(importExtension: string): readonly string[] {
-  return RUNTIME_IMPORT_EXTENSION_CANDIDATES[importExtension] ?? SOURCE_FILE_EXTENSIONS;
+export function hasRuntimeImportExtensionCandidates(importExtension: string): boolean {
+  return Object.prototype.hasOwnProperty.call(RUNTIME_IMPORT_EXTENSION_CANDIDATES, importExtension);
+}
+
+export function getImportResolutionExtensions(
+  importExtension: string,
+  sourceExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): readonly string[] {
+  return RUNTIME_IMPORT_EXTENSION_CANDIDATES[importExtension] ?? sourceExtensions;
 }

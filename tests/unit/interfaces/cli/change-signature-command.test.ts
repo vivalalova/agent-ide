@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { SignatureChangeType } from '@core/change-signature/index.js';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
-import { resolveChangeSignaturePaths } from '@interfaces/cli/commands/change-signature.command.js';
+import {
+  parseChangeSignatureChanges,
+  resolveChangeSignaturePaths
+} from '@interfaces/cli/commands/change-signature.command.js';
 
 describe('resolveChangeSignaturePaths', () => {
   it('uses explicit --path as project root', async () => {
@@ -61,5 +65,164 @@ describe('resolveChangeSignaturePaths', () => {
       projectRoot: '/repo',
       filePath: '/repo/src/service.ts'
     });
+  });
+});
+
+describe('parseChangeSignatureChanges', () => {
+  it('keeps --add default separate from explicit call-site value', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'locale:string=en-US',
+      callSiteValue: ['locale=runtimeLocale']
+    });
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      type: SignatureChangeType.AddParameter,
+      name: 'locale',
+      defaultValue: '\'en-US\'',
+      callSiteValue: 'runtimeLocale'
+    });
+  });
+
+  it('splits --add parameters without breaking object-literal defaults', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'options:Options={ cache: false, retries: 0 },enabled:boolean=false'
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      type: SignatureChangeType.AddParameter,
+      name: 'options',
+      defaultValue: '{ cache: false, retries: 0 }',
+      callSiteValue: '{ cache: false, retries: 0 }'
+    });
+    expect(changes[1]).toMatchObject({
+      type: SignatureChangeType.AddParameter,
+      name: 'enabled',
+      defaultValue: 'false',
+      callSiteValue: 'false'
+    });
+  });
+
+  it('splits parameters after comparison-expression defaults', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'enabled:boolean=left < right,label:string=ready',
+      targetFilePath: '/workspace/source.ts'
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      name: 'enabled',
+      defaultValue: 'left < right',
+      callSiteValue: 'left < right'
+    });
+    expect(changes[1]).toMatchObject({
+      name: 'label',
+      defaultValue: '\'ready\'',
+      callSiteValue: '\'ready\''
+    });
+  });
+
+  it('keeps generic type and generic default commas inside one added parameter', () => {
+    const changes = parseChangeSignatureChanges({
+      add: 'lookup:Map<string, number>=new Map<string, number>(),enabled:boolean=false',
+      targetFilePath: '/workspace/source.ts'
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      name: 'lookup',
+      parameterType: 'Map<string, number>',
+      defaultValue: 'new Map<string, number>()'
+    });
+    expect(changes[1]).toMatchObject({
+      name: 'enabled',
+      defaultValue: 'false'
+    });
+  });
+
+  it('accepts repeated --add values', () => {
+    const changes = parseChangeSignatureChanges({
+      add: ['label:string=default', 'enabled:boolean=false']
+    });
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({ name: 'label' });
+    expect(changes[1]).toMatchObject({ name: 'enabled' });
+  });
+
+  it('fails fast for malformed call-site value mappings', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string=default',
+      callSiteValue: ['label']
+    })).toThrow('--call-site-value');
+  });
+
+  it('fails fast for duplicate call-site value mappings', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string=default',
+      callSiteValue: ['label=a', 'label=b']
+    })).toThrow('重複');
+  });
+
+  it('fails fast when call-site value targets a parameter not added in this command', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string=default',
+      callSiteValue: ['missing=runtimeValue']
+    })).toThrow('只能指定本次 --add 新增的參數');
+  });
+
+  it('fails fast for invalid call-site expressions', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string=default',
+      callSiteValue: ['label={']
+    })).toThrow('expression 無效');
+  });
+
+  it('fails fast when explicit call-site value has no function default', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string',
+      callSiteValue: ['label=runtimeLabel']
+    })).toThrow('function default');
+  });
+
+  it('fails fast for invalid add default expressions', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'options:Options={ cache: true'
+    })).toThrow('default 無效');
+  });
+
+  it('fails fast for invalid added parameter names', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'bad-name:string=default'
+    })).toThrow('參數名稱');
+  });
+
+  it('fails fast when add parameter name uses rest syntax', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: '...labels=[]'
+    })).toThrow('參數名稱');
+  });
+
+  it('fails fast for invalid TypeScript parameter types', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:bad type=default',
+      targetFilePath: '/workspace/source.ts'
+    })).toThrow('type 無效');
+  });
+
+  it('fails fast for TypeScript-only expressions in JavaScript files', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label:string=default',
+      callSiteValue: ['label=runtimeLabel as string'],
+      targetFilePath: '/workspace/source.js'
+    })).toThrow('JavaScript');
+  });
+
+  it('fails fast when JavaScript add default cannot be a parameter initializer', () => {
+    expect(() => parseChangeSignatureChanges({
+      add: 'label=await getLabel()',
+      targetFilePath: '/workspace/source.js'
+    })).toThrow('default 無效');
   });
 });

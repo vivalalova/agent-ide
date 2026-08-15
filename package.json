@@ -26,9 +26,11 @@
     "test:cli": "vitest run --config vitest.config.cli.ts",
     "bench": "vitest bench --config vitest.config.bench.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}'",
-    "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' --fix",
-    "validate:plugin": "bash scripts/validate-plugin.sh",
+    "lint": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' 'scripts/**/*.js'",
+    "lint:fix": "eslint 'src/**/*.ts' 'tests/**/*.{ts,js}' 'scripts/**/*.js' --fix",
+    "validate:plugin": "bash scripts/validate-plugin.sh && pnpm validate:skill-docs",
+    "validate:skill-docs": "node scripts/validate-agent-ide-skill-docs.js --check",
+    "sync:skill-docs": "node scripts/validate-agent-ide-skill-docs.js --write",
     "review:test": "codex \"review 所有測試 code, 把修改建議更新到 review.md\""
   },
   "keywords": [

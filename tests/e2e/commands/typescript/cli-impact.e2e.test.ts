@@ -322,6 +322,12 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('檔案不存在');
+      expect(output.pathContext).toMatchObject({
+        role: 'targetFile',
+        projectRoot: fixture.rootPath,
+        requestedFile: 'not-exist-file.ts',
+        resolvedFile: fixture.getFilePath('not-exist-file.ts')
+      });
     });
 
     it('應該對不存在的檔案在 summary 格式顯示錯誤訊息', async () => {
@@ -345,6 +351,15 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('路徑不存在');
+      expect(output.pathContext).toMatchObject({
+        role: 'projectRoot',
+        inputPath: '/not-exist-path',
+        resolvedPath: '/not-exist-path',
+        expected: 'exists',
+        projectRoot: '/not-exist-path',
+        requestedFile: 'test.ts',
+        resolvedFile: '/not-exist-path/test.ts'
+      });
     });
 
     it('應該對不存在的專案路徑在 summary 格式顯示錯誤訊息', async () => {
@@ -370,6 +385,15 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('路徑不是目錄');
+      expect(output.pathContext).toMatchObject({
+        role: 'projectRoot',
+        inputPath: fixture.getFilePath('not-directory.ts'),
+        resolvedPath: fixture.getFilePath('not-directory.ts'),
+        expected: 'directory',
+        projectRoot: fixture.getFilePath('not-directory.ts'),
+        requestedFile: 'target.ts',
+        resolvedFile: fixture.getFilePath('not-directory.ts/target.ts')
+      });
     });
 
     it('應該對深層不存在的檔案路徑顯示錯誤', async () => {
@@ -382,6 +406,18 @@ describe('CLI impact - 基於 sample-project fixture', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(false);
       expect(output.error).toContain('檔案不存在');
+    });
+
+    it('應該拒絕將目錄路徑當成 --file 目標檔案', async () => {
+      const result = await executeCLI(
+        ['impact', '--file', 'src', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('不是檔案');
     });
   });
 

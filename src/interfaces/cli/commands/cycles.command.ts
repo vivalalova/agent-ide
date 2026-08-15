@@ -11,6 +11,7 @@ import { QueryCommand, type CyclesResult, type CycleInfo } from '@infrastructure
 import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
 import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 /** Cycles 命令選項 */
@@ -57,12 +58,18 @@ async function handleCyclesCommand(
   }
 
   if (format !== OutputFormat.Json) {
-    console.log('🔄 循環依賴分析...');
+    console.log('循環依賴分析...');
   }
 
   try {
+    // 讀取 tsconfig 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(analyzePath, context.fileSystem);
+
     // 初始化影響分析器
-    const impactAnalyzer = new ImpactAnalyzer(context.fileSystem);
+    const impactAnalyzer = new ImpactAnalyzer(context.fileSystem, {
+      pathAliases: tsconfigPathConfig.pathAliases,
+      baseUrl: tsconfigPathConfig.baseUrl
+    });
 
     // 分析專案依賴
     await impactAnalyzer.analyzeProject(analyzePath);
@@ -75,9 +82,11 @@ async function handleCyclesCommand(
 
     // 使用 CycleDetector 檢測循環依賴
     const cycleDetector = new CycleDetector();
+    // reportAllCycles: true — 同一 SCC 內可能存在多條彼此獨立的環（共享部分節點），
+    // 全部回報才不會漏掉其中幾條（見 G5：只報一條導致其他環消失）
     const cycles = cycleDetector.detectCycles(graph, {
       maxCycleLength: CLI_MAX_CYCLE_LENGTH,
-      reportAllCycles: false,
+      reportAllCycles: true,
       ignoreSelfLoops: true
     });
 
@@ -106,6 +115,5 @@ async function handleCyclesCommand(
     const errorMessage = getErrorMessage(error);
     outputHandler.outputError(`依賴分析失敗: ${errorMessage}`, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
 }

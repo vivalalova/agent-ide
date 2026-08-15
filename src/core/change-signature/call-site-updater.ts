@@ -17,7 +17,9 @@ import {
 } from './types.js';
 import { resolveParameterIndex, OMITTED_PARAMETER_MARKER } from './utils.js';
 import type { CallSite } from '@core/foundations/symbol-finder/index.js';
-import { FileUtils, createFileUtils } from '@core/foundations/index.js';
+import { FileUtils, createFileUtils, computeCodeStateMask } from '@core/foundations/index.js';
+import type { Position, Range } from '@shared/types/core.js';
+import { isPositionBefore } from '@shared/types/core.js';
 
 /**
  * 呼叫風格資訊
@@ -91,18 +93,44 @@ export class CallSiteUpdater {
 
       const lines = content.split('\n');
 
-      // 處理該檔案的所有 callSites
-      for (const callSite of fileCallSites) {
-        const update = this.processCallSite(
+      // 巢狀呼叫處理：偵測同檔案內呼叫點的範圍包含關係。
+      // 由內而外（先處理被包含的呼叫）重建每個呼叫的新呼叫運算式文字，
+      // 讓外層呼叫在重建引數時可直接嵌入內層已重排後的文字。
+      // 僅對最外層（未被任何其他目標呼叫包含）的呼叫發出 edit，避免重疊的 edit 互撞。
+      const ordered = this.orderByContainment(fileCallSites);
+      const rebuiltByCallSite = new Map<CallSite, string>();
+
+      for (const callSite of ordered) {
+        const rebuilt = this.rebuildCallExpression(
           callSite,
           lines,
           parameterMapping,
           changes,
-          originalSignature
+          originalSignature,
+          fileCallSites,
+          rebuiltByCallSite
         );
-        if (update) {
-          updates.push(update);
+        rebuiltByCallSite.set(callSite, rebuilt);
+      }
+
+      for (const callSite of fileCallSites) {
+        // 被其他目標呼叫包含的內層呼叫不另外發 edit（已併入外層 newText）
+        if (this.isContainedByOther(callSite, fileCallSites)) {
+          continue;
         }
+
+        const originalCode = this.extractCallExpression(callSite, lines);
+        const newCode = rebuiltByCallSite.get(callSite);
+        if (newCode === undefined || newCode === originalCode) {
+          continue;
+        }
+
+        updates.push({
+          filePath: callSite.location.filePath,
+          originalCode,
+          newCode,
+          location: callSite.location
+        });
       }
     }
 
@@ -110,77 +138,277 @@ export class CallSiteUpdater {
   }
 
   /**
-   * 處理單一呼叫點
+   * 判斷 outer 是否嚴格包含 inner（範圍包含且不相等）
    */
-  private processCallSite(
+  private rangeStrictlyContains(outer: Range, inner: Range): boolean {
+    const startsAtOrBefore = !isPositionBefore(inner.start, outer.start);
+    const endsAtOrAfter = !isPositionBefore(outer.end, inner.end);
+    if (!startsAtOrBefore || !endsAtOrAfter) {
+      return false;
+    }
+    // 排除完全相等（避免自我包含）
+    const sameStart = inner.start.line === outer.start.line && inner.start.column === outer.start.column;
+    const sameEnd = inner.end.line === outer.end.line && inner.end.column === outer.end.column;
+    return !(sameStart && sameEnd);
+  }
+
+  /**
+   * 是否被同檔案內其他目標呼叫包含
+   */
+  private isContainedByOther(callSite: CallSite, all: readonly CallSite[]): boolean {
+    return all.some(other =>
+      other !== callSite && this.rangeStrictlyContains(other.location.range, callSite.location.range)
+    );
+  }
+
+  /**
+   * 依包含關係由內而外排序：被包含者排前面，外層排後面。
+   * 確保重建外層呼叫時內層文字已就緒。
+   *
+   * 被包含的呼叫起點必嚴格晚於其外層呼叫（外層為 `name(...` 內層在括號內），
+   * 因此以「起點位置由後往前」排序即可保證內層先於外層處理，且為完整全序。
+   */
+  private orderByContainment(callSites: readonly CallSite[]): CallSite[] {
+    return [...callSites].sort((a, b) => {
+      const aStart = a.location.range.start;
+      const bStart = b.location.range.start;
+      if (isPositionBefore(aStart, bStart)) { return 1; }
+      if (isPositionBefore(bStart, aStart)) { return -1; }
+      return 0;
+    });
+  }
+
+  /**
+   * 從呼叫點的精確範圍擷取原始呼叫運算式文字（函式名第一個字元到右括號之後）
+   */
+  private extractCallExpression(callSite: CallSite, lines: readonly string[]): string {
+    return this.extractTextRange(callSite.location.range.start, callSite.location.range.end, lines);
+  }
+
+  /**
+   * 擷取兩個位置之間的原始文字（1-based line/column，支援跨行）
+   */
+  private extractTextRange(start: Position, end: Position, lines: readonly string[]): string {
+    const startLineIndex = start.line - 1;
+    const endLineIndex = end.line - 1;
+    const startCol = start.column - 1; // 0-based
+    const endCol = end.column - 1; // 0-based
+
+    if (startLineIndex === endLineIndex) {
+      return lines[startLineIndex].substring(startCol, endCol);
+    }
+
+    const segments: string[] = [];
+    segments.push(lines[startLineIndex].substring(startCol));
+    for (let i = startLineIndex + 1; i < endLineIndex; i++) {
+      segments.push(lines[i]);
+    }
+    segments.push(lines[endLineIndex].substring(0, endCol));
+    return segments.join('\n');
+  }
+
+  /**
+   * 計算 target 位置相對於 base 位置在「以 base 為起點擷取的文字」中的字元偏移量
+   * （與 extractTextRange 的拼接方式一致：跨行以 '\n' 相接）
+   */
+  private offsetWithinRange(base: Position, target: Position, lines: readonly string[]): number {
+    if (target.line === base.line) {
+      return target.column - base.column;
+    }
+
+    const baseLineIndex = base.line - 1;
+    let offset = lines[baseLineIndex].length - (base.column - 1); // base 到該行行尾
+    offset += 1; // 換行符號
+
+    for (let i = baseLineIndex + 1; i < target.line - 1; i++) {
+      offset += lines[i].length + 1; // 中間完整行 + 換行符號
+    }
+
+    offset += target.column - 1; // target 所在行內偏移
+    return offset;
+  }
+
+  /**
+   * 取得呼叫運算式「呼叫起點到引數列表開括號」之間的原始文字
+   * （含 callee 名稱、泛型型別引數 `<T>`、optional chaining `?.`），
+   * 供重建時保留原始語法，只重組括號內的引數。
+   *
+   * 注意：引數前的註解（若有）會被丟棄，prefix 只保留到開括號為止，
+   * 確保輸出恆為合法呼叫（見 computeCodeStateMask 的註解/字串感知掃描）。
+   */
+  private extractCallPrefix(callSite: CallSite, lines: readonly string[]): string {
+    if (callSite.arguments.length > 0) {
+      // 有引數：呼叫起點到第一個引數起點之間，最後一個「非註解/字串內」的 `(` 即為引數列表開括號
+      const firstArgStart = callSite.arguments[0].range.start;
+      const beforeFirstArg = this.extractTextRange(callSite.location.range.start, firstArgStart, lines);
+      const codeMask = computeCodeStateMask(beforeFirstArg);
+      let openParenIndex = -1;
+      for (let i = beforeFirstArg.length - 1; i >= 0; i--) {
+        if (beforeFirstArg[i] === '(' && codeMask[i]) {
+          openParenIndex = i;
+          break;
+        }
+      }
+      return openParenIndex >= 0 ? beforeFirstArg.substring(0, openParenIndex + 1) : beforeFirstArg;
+    }
+
+    // 無引數：整個呼叫運算式文字尾端通常為右括號，找到與其對應的左括號。
+    // 例外：parentheseless `new Foo`（無括號建構子呼叫，等同 `new Foo()`）文字裡完全沒有括號
+    // （matchIndex 為 -1）；此時直接在原始文字尾端補上開括號即可——fullText 已完整保留
+    // `new`、命名空間、泛型型別引數等原始語法，不得改用 callSite.functionName 重建
+    // （functionName 只是 callee 簡名，會丟失 `new`／命名空間前綴）
+    const fullText = this.extractCallExpression(callSite, lines);
+    const matchIndex = this.findMatchingOpenParenFromEnd(fullText);
+    return matchIndex >= 0 ? fullText.substring(0, matchIndex + 1) : `${fullText}(`;
+  }
+
+  /**
+   * 找到與文字尾端右括號對應的左括號 index。
+   * 適用於已知文字以 ')' 結尾的情況（如整個呼叫運算式）。
+   *
+   * 用 computeCodeStateMask 排除註解/字串內的括號後，正向以堆疊配對括號深度；
+   * 由於堆疊逐一配對、最後一次成功配對必對應文字尾端的 ')'，故正向掃描即可取得答案
+   * （不需另外反向掃描一次，與 extractCallPrefix 共用同一狀態機邏輯）。
+   */
+  private findMatchingOpenParenFromEnd(text: string): number {
+    const codeMask = computeCodeStateMask(text);
+    const openIndexStack: number[] = [];
+    let matchedOpenIndex = -1;
+
+    for (let i = 0; i < text.length; i++) {
+      if (!codeMask[i]) {
+        continue;
+      }
+      const char = text[i];
+      if (char === '(') {
+        openIndexStack.push(i);
+      } else if (char === ')') {
+        const openIndex = openIndexStack.pop();
+        if (openIndex !== undefined) {
+          matchedOpenIndex = openIndex;
+        }
+      }
+    }
+
+    return matchedOpenIndex;
+  }
+
+  /**
+   * 重建單一呼叫點的呼叫運算式文字（不含整行內容）。
+   * 巢狀情況：若某引數本身就是被包含的目標呼叫，改用該內層呼叫重排後的文字。
+   *
+   * @param rebuiltByCallSite - 已重建的內層呼叫文字（由內而外處理，內層先就緒）
+   */
+  private rebuildCallExpression(
     callSite: CallSite,
     lines: readonly string[],
     parameterMapping: Map<number, ParameterMappingInfo>,
     changes: readonly SignatureChange[],
-    originalSignature: FunctionSignature
-  ): CallSiteUpdate | null {
+    originalSignature: FunctionSignature,
+    allCallSites: readonly CallSite[],
+    rebuiltByCallSite: ReadonlyMap<CallSite, string>
+  ): string {
     const startLineIndex = callSite.location.range.start.line - 1;
     const endLineIndex = callSite.location.range.end.line - 1;
     const isMultiline = startLineIndex !== endLineIndex;
+
+    // 計算引數值覆寫：若某引數的範圍包含某個內層目標呼叫，
+    // 將該引數原文中對應的內層呼叫片段拼接替換為內層重排後的文字（遞迴套用），
+    // 引數其餘文字（如外層包裹呼叫、運算子）原樣保留。
+    const argumentOverrides = this.computeNestedArgumentOverrides(
+      callSite,
+      allCallSites,
+      rebuiltByCallSite,
+      lines
+    );
 
     // 建立新的參數列表
     const newArgs = this.mapCallSiteArguments(
       callSite,
       parameterMapping,
       changes,
-      originalSignature
+      originalSignature,
+      argumentOverrides
     );
 
-    // 找到呼叫的括號位置
-    const startLine = lines[startLineIndex];
-    const funcNameIndex = startLine.indexOf(callSite.functionName);
-    if (funcNameIndex < 0) { return null; }
-
-    const openParenIndex = startLine.indexOf('(', funcNameIndex);
+    // 保留原始呼叫文字中「呼叫起點到引數列表開括號」之間的部分
+    // （callee 名稱、泛型型別引數 `<T>`、optional chaining `?.`），只重組括號內引數
+    const prefix = this.extractCallPrefix(callSite, lines);
 
     if (isMultiline) {
-      // 多行呼叫點：提取完整的原始程式碼並替換
-      const originalCode = this.extractMultilineCode(lines, startLineIndex, endLineIndex);
-
-      // 檢測原始呼叫的格式風格
+      // 多行呼叫點：保留原始風格
       const originalStyle = this.detectCallStyle(lines, startLineIndex, endLineIndex);
-
-      // 生成新的參數字串（保留原始風格）
       const newArgsString = this.formatArgsWithStyle(newArgs, originalStyle);
-
-      // 生成新的程式碼
-      const newCode = startLine.substring(0, openParenIndex + 1)
-        + newArgsString
-        + ')' + this.getTrailingContent(lines, endLineIndex, callSite.location.range.end.column - 1);
-
-      if (newCode !== originalCode) {
-        return {
-          filePath: callSite.location.filePath,
-          originalCode,
-          newCode,
-          location: callSite.location
-        };
-      }
-    } else {
-      // 單行呼叫點：保持原有邏輯
-      const closeParenIndex = this.findMatchingParen(startLine, openParenIndex);
-      const newArgsString = newArgs.join(', ');
-
-      const newLine = startLine.substring(0, openParenIndex + 1)
-        + newArgsString
-        + startLine.substring(closeParenIndex);
-
-      if (newLine !== startLine) {
-        return {
-          filePath: callSite.location.filePath,
-          originalCode: startLine,
-          newCode: newLine,
-          location: callSite.location
-        };
-      }
+      return `${prefix}${newArgsString})`;
     }
 
-    return null;
+    // 單行呼叫點
+    return `${prefix}${newArgs.join(', ')})`;
+  }
+
+  /**
+   * 計算巢狀引數覆寫：將每個包含內層目標呼叫的引數 index 映射到「拼接後」的引數文字——
+   * 引數原文保留，僅將其中每個頂層被包含的內層目標呼叫片段換成內層重排後文字。
+   *
+   * 「頂層」：內層呼叫彼此巢狀時只處理最外層那個，因其 rebuilt 文字已含更內層的重排結果
+   * （rebuiltByCallSite 由內而外就緒）。同一引數可能含多個互不巢狀的頂層內層呼叫，全部替換。
+   */
+  private computeNestedArgumentOverrides(
+    callSite: CallSite,
+    allCallSites: readonly CallSite[],
+    rebuiltByCallSite: ReadonlyMap<CallSite, string>,
+    lines: readonly string[]
+  ): Map<number, string> {
+    const overrides = new Map<number, string>();
+
+    for (let argIndex = 0; argIndex < callSite.arguments.length; argIndex++) {
+      const argRange = callSite.arguments[argIndex].range;
+
+      const containedInner: Array<{ range: Range; rebuilt: string }> = [];
+      for (const inner of allCallSites) {
+        if (inner === callSite) {
+          continue;
+        }
+        const rebuilt = rebuiltByCallSite.get(inner);
+        if (rebuilt !== undefined && this.rangeContainsOrEquals(argRange, inner.location.range)) {
+          containedInner.push({ range: inner.location.range, rebuilt });
+        }
+      }
+      const topLevelInner = containedInner.filter(inner =>
+        !containedInner.some(other =>
+          other !== inner && this.rangeStrictlyContains(other.range, inner.range)
+        )
+      );
+
+      if (topLevelInner.length === 0) {
+        continue;
+      }
+
+      // 由右至左替換，避免先替換的片段改變後面片段的位移
+      const sortedByStartDescending = [...topLevelInner].sort((a, b) =>
+        isPositionBefore(a.range.start, b.range.start) ? 1 : -1
+      );
+
+      let spliced = this.extractTextRange(argRange.start, argRange.end, lines);
+      for (const inner of sortedByStartDescending) {
+        const relativeStart = this.offsetWithinRange(argRange.start, inner.range.start, lines);
+        const relativeEnd = this.offsetWithinRange(argRange.start, inner.range.end, lines);
+        spliced = spliced.slice(0, relativeStart) + inner.rebuilt + spliced.slice(relativeEnd);
+      }
+
+      overrides.set(argIndex, spliced);
+    }
+
+    return overrides;
+  }
+
+  /**
+   * outer 是否包含 inner（含邊界相等）
+   */
+  private rangeContainsOrEquals(outer: Range, inner: Range): boolean {
+    const startsAtOrBefore = !isPositionBefore(inner.start, outer.start);
+    const endsAtOrAfter = !isPositionBefore(outer.end, inner.end);
+    return startsAtOrBefore && endsAtOrAfter;
   }
 
   /**
@@ -190,8 +418,9 @@ export class CallSiteUpdater {
   mapCallSiteArguments(
     callSite: CallSite,
     parameterMapping: Map<number, ParameterMappingInfo>,
-    changes: readonly SignatureChange[],
-    originalSignature: FunctionSignature
+    _changes: readonly SignatureChange[],
+    originalSignature: FunctionSignature,
+    argumentOverrides?: ReadonlyMap<number, string>
   ): string[] {
     const result: string[] = [];
 
@@ -206,34 +435,29 @@ export class CallSiteUpdater {
       result.push('');
     }
 
-    // 映射原始參數
-    for (const [originalIndex, { newIndex }] of parameterMapping.entries()) {
+    // 映射原始參數與新增參數。
+    // 新增參數的值與位置以 parameterMapping 為唯一來源（newIndex 已反映 add 與
+    // reorder 的合成結果）；不得另以 change.position 直接填值——呼叫點缺必要引數時
+    // 兩種來源會指向不同 slot，導致同一個新增值被重複填入兩處
+    for (const [originalIndex, { newIndex, value }] of parameterMapping.entries()) {
       if (originalIndex >= 0) {
         if (originalIndex < callSite.arguments.length) {
           // 呼叫點有提供此參數
-          result[newIndex] = callSite.arguments[originalIndex].value;
+          // 巢狀呼叫：若此引數本身是被包含的目標呼叫，改用內層重排後文字
+          result[newIndex] = argumentOverrides?.get(originalIndex)
+            ?? callSite.arguments[originalIndex].value;
         } else {
           // 呼叫點省略了此可選參數
           // 檢查這個位置是否需要填入 undefined（當後面有其他參數時）
           const param = originalSignature.parameters[originalIndex];
-          if (param && (param.optional || param.defaultValue)) {
+          if (param && (param.optional || param.defaultValue !== undefined)) {
             // 標記為需要填入 undefined（如果後面有非空參數）
             result[newIndex] = OMITTED_PARAMETER_MARKER;
           }
         }
-      }
-    }
-
-    // 填入新增參數的值
-    const addedPositions = new Set<number>();
-    for (const change of changes) {
-      if (isAddParameterChange(change)) {
-        // 使用 callSiteValue 或 defaultValue（驗證階段已確保至少有一個值）
-        const value = change.callSiteValue ?? change.defaultValue ?? '';
-        const position = change.position < 0 ? result.length - 1 : Math.min(change.position, result.length - 1);
-        if (position >= 0 && position < result.length && !result[position]) {
-          result[position] = value;
-          addedPositions.add(position);
+      } else {
+        if (value !== undefined) {
+          result[newIndex] = value;
         }
       }
     }
@@ -254,19 +478,29 @@ export class CallSiteUpdater {
 
     // 建立最終結果
     for (let i = 0; i <= lastNonEmptyIndex; i++) {
-      if (result[i] === OMITTED_PARAMETER_MARKER) {
-        // 省略的可選參數，但後面有其他參數，需要填入 undefined
+      if (result[i] === OMITTED_PARAMETER_MARKER || result[i] === '') {
+        // 省略的可選參數後面還有其他參數，或呼叫點缺值的 slot：填入 undefined 保住語法
         processedResult.push('undefined');
-      } else if (result[i] === '') {
-        // 空值，檢查是否是新增的位置
-        if (addedPositions.has(i)) {
-          processedResult.push('undefined');
-        } else {
-          // 不應該出現的情況，填入 undefined 以避免語法錯誤
-          processedResult.push('undefined');
-        }
       } else {
         processedResult.push(result[i]);
+      }
+    }
+
+    // 保留超出宣告固定參數個數的尾端多餘引數（對應 rest/variadic 參數）：
+    // 參數映射把 rest 參數視為單一位置，只消費了它對應的第一個引數，
+    // 其餘 arguments[declaredParameterCount..] 需依原順序接在輸出尾端，避免被靜默丟棄。
+    // 被 remove 的參數位於 [0, declaredParameterCount)，其引數已由映射階段處理（丟棄），不受此影響。
+    //
+    // 例外：若原始簽名的 rest 參數本身正是這次被 remove 的目標，parameterMapping
+    // 不會有它的原始索引項目（已從 currentParams 移除）——此時「尾端多餘引數」整批
+    // 對應被移除的 rest，不應保留任何一個，否則會留下一個不屬於任何剩餘參數的孤兒引數。
+    const restParameterOriginalIndex = originalSignature.parameters.findIndex(p => p.rest);
+    const restParameterRemoved = restParameterOriginalIndex >= 0 && !parameterMapping.has(restParameterOriginalIndex);
+
+    if (!restParameterRemoved) {
+      const declaredParameterCount = originalSignature.parameters.length;
+      for (let i = declaredParameterCount; i < callSite.arguments.length; i++) {
+        processedResult.push(argumentOverrides?.get(i) ?? callSite.arguments[i].value);
       }
     }
 
@@ -300,20 +534,28 @@ export class CallSiteUpdater {
 
       if (isReorderParametersChange(change)) {
         const newOrder: typeof currentParams = [];
+        const usedIndices = new Set<number>();
         for (const nameOrIndex of change.newOrder) {
           const index = resolveParameterIndex(
             currentParams.map(p => ({ name: p.name })),
             nameOrIndex
           );
-          if (index >= 0) {
+          if (index >= 0 && !usedIndices.has(index)) {
             newOrder.push(currentParams[index]);
+            usedIndices.add(index);
+          }
+        }
+        // 保留未被 newOrder 指名的參數（例如先前 --add 新增的），依原本相對順序附加在後
+        for (let i = 0; i < currentParams.length; i++) {
+          if (!usedIndices.has(i)) {
+            newOrder.push(currentParams[i]);
           }
         }
         currentParams = newOrder;
       }
 
       if (isAddParameterChange(change)) {
-        const newParam = { name: change.name, originalIndex: -1, value: change.callSiteValue || change.defaultValue };
+        const newParam = { name: change.name, originalIndex: -1, value: change.callSiteValue ?? change.defaultValue };
         if (change.position < 0 || change.position >= currentParams.length) {
           currentParams.push(newParam);
         } else {
@@ -334,25 +576,6 @@ export class CallSiteUpdater {
     }
 
     return mapping;
-  }
-
-  /**
-   * 提取多行程式碼
-   */
-  extractMultilineCode(
-    lines: readonly string[],
-    startLine: number,
-    endLine: number
-  ): string {
-    if (startLine === endLine) {
-      return lines[startLine];
-    }
-
-    const result: string[] = [];
-    for (let i = startLine; i <= endLine; i++) {
-      result.push(lines[i]);
-    }
-    return result.join('\n');
   }
 
   /**
@@ -398,52 +621,11 @@ export class CallSiteUpdater {
       return args.join(', ');
     }
 
-    // 多行格式
+    // 多行格式：每個引數間恆以 ',\n' 分隔；trailingComma 只決定「最後一個引數後」是否補逗號（見下行）
     const formattedArgs = args.map(arg => `${style.indent}${arg}`);
-    const separator = style.trailingComma ? ',\n' : ',\n';
-    return '\n' + formattedArgs.join(separator) + (style.trailingComma ? ',' : '') + '\n';
+    return '\n' + formattedArgs.join(',\n') + (style.trailingComma ? ',' : '') + '\n';
   }
 
-  /**
-   * 取得結束行的尾隨內容（右括號之後的部分）
-   *
-   * @param lines - 檔案行陣列
-   * @param endLine - 結束行索引
-   * @param closeParenColumn - 右括號的列位置（0-based）
-   * @returns 右括號之後的字串內容（如分號、鏈式調用等）
-   *
-   * @remarks
-   * 若 closeParenColumn 超出行長度，會返回空字串
-   */
-  getTrailingContent(lines: readonly string[], endLine: number, closeParenColumn: number): string {
-    const line = lines[endLine];
-    // 找到右括號後的內容
-    return line.substring(closeParenColumn + 1);
-  }
-
-  /**
-   * 找到匹配的右括號位置
-   *
-   * @param line - 要搜尋的行字串
-   * @param openIndex - 左括號 '(' 的位置（0-based）
-   * @returns 匹配右括號的位置（0-based）
-   *
-   * @remarks
-   * - 使用深度計數處理巢狀括號
-   * - 若找不到匹配的右括號（例如多行函式呼叫），返回 `line.length`
-   * - 此函式僅處理單行情況，多行呼叫應使用 `extractMultilineCode`
-   */
-  private findMatchingParen(line: string, openIndex: number): number {
-    let depth = 1;
-    for (let i = openIndex + 1; i < line.length; i++) {
-      if (line[i] === '(') { depth++; }
-      else if (line[i] === ')') {
-        depth--;
-        if (depth === 0) { return i; }
-      }
-    }
-    return line.length;
-  }
 }
 
 /**

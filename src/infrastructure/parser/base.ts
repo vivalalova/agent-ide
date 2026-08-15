@@ -3,7 +3,8 @@
  * 提供 Parser 插件的基礎實作和通用功能
  */
 
-import { minimatch } from 'minimatch';
+import { extname } from 'node:path';
+import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
 import { logger as cliLogger } from '@infrastructure/logging/index.js';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
 import { isPosition, SymbolType } from '@shared/types/index.js';
@@ -280,8 +281,9 @@ export abstract class BaseParserPlugin implements ParserPlugin {
    * 從檔案路徑獲取副檔名
    */
   protected getFileExtension(filePath: string): string {
-    const lastDot = filePath.lastIndexOf('.');
-    return lastDot === -1 ? '' : filePath.substring(lastDot);
+    // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+    // 避免把含點號的父目錄誤判成副檔名，純隱藏檔名視為無副檔名
+    return extname(filePath);
   }
 
   /**
@@ -333,7 +335,10 @@ export abstract class BaseParserPlugin implements ParserPlugin {
 
   /**
    * 判斷是否應該忽略特定檔案
-   * 使用 minimatch 比對檔案路徑與排除模式
+   * 比對邏輯委派共用的 path-pattern 模組（見 @shared/path-pattern.js），
+   * 與 plugins/shared/parser-helpers.ts 的 matchesAnyPattern（TS/JS parser
+   * 子類實際使用的實作）採同一權威來源，避免 'dist/**' 這類樣式在此處退化成
+   * 只比對路徑最外層、與其他消費端語意分裂（見順手收斂項）。
    */
   shouldIgnoreFile(filePath: string): boolean {
     const patterns = this.getDefaultExcludePatterns();
@@ -341,15 +346,7 @@ export abstract class BaseParserPlugin implements ParserPlugin {
     // 正規化路徑（移除開頭的 ./ 或 /）
     const normalizedPath = filePath.replace(/^\.?\//, '');
 
-    // 檢查是否匹配任一排除模式
-    return patterns.some(pattern => {
-      try {
-        return minimatch(normalizedPath, pattern, { dot: true });
-      } catch {
-        this.log('warn', `無效的排除模式: ${pattern}`);
-        return false;
-      }
-    });
+    return matchesAnyGlobPattern(normalizedPath, patterns);
   }
 
   /**

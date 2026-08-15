@@ -8,6 +8,7 @@ import type { Range } from '@shared/types/core.js';
 import type { CallSite, CallSiteArgument } from './types.js';
 import { TextMatcher } from './text-matcher.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
  * 呼叫點解析器
@@ -23,13 +24,19 @@ export class CallSiteParser {
   /**
    * 查找檔案中的函式呼叫點
    * 使用 TypeScript AST 進行精確解析，正確處理字串、註解中的括號
+   *
+   * @param options.includeNewExpressions - 是否一併掃描 `new X(...)` 建構子呼叫點（NewExpression）。
+   *   預設 false 以維持既有消費端（call-hierarchy 等）行為；僅 change-signature 的 constructor
+   *   目標需要 opt-in。以類別名（functionName）比對 new-expression callee，與一般函式的名稱比對同保真度。
    */
   findCallSitesInFile(
     filePath: string,
     content: string,
-    functionName: string
+    functionName: string,
+    options?: { readonly includeNewExpressions?: boolean }
   ): CallSite[] {
     const callSites: CallSite[] = [];
+    const includeNewExpressions = options?.includeNewExpressions ?? false;
 
     try {
       // 使用 TypeScript 解析程式碼
@@ -55,6 +62,21 @@ export class CallSiteParser {
               receiver: callInfo.receiver
             });
           }
+        } else if (includeNewExpressions && ts.isNewExpression(node)) {
+          const newInfo = this.extractNewExpressionInfo(node, sourceFile, functionName);
+          if (newInfo) {
+            callSites.push({
+              functionName,
+              location: {
+                filePath,
+                range: newInfo.range
+              },
+              arguments: newInfo.arguments,
+              isMethodCall: newInfo.isMethodCall,
+              receiver: newInfo.receiver,
+              isNewExpression: true
+            });
+          }
         }
 
         ts.forEachChild(node, visit);
@@ -63,7 +85,7 @@ export class CallSiteParser {
       visit(sourceFile);
     } catch (error) {
       // AST 解析失敗，fallback 到正則匹配（保留向後相容）
-      diagnostics.warn('call-site-parser', 'AST_PARSE_FAILED', `AST parse failed, using regex fallback: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('call-site-parser', 'AST_PARSE_FAILED', `AST parse failed, using regex fallback: ${getErrorMessage(error)}`, filePath);
       return this.findCallSitesInFileFallback(filePath, content, functionName);
     }
 
@@ -114,7 +136,7 @@ export class CallSiteParser {
     const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
 
     // 提取參數
-    const args = this.extractArgumentsFromCallExpression(node, sourceFile);
+    const args = this.extractArguments(node.arguments, sourceFile);
 
     return {
       range: {
@@ -128,17 +150,72 @@ export class CallSiteParser {
   }
 
   /**
-   * 從 CallExpression 提取參數列表
-   * 使用 AST 精確解析，正確處理字串中的括號和逗號
+   * 從 NewExpression 節點提取呼叫資訊（`new X(...)`）。
+   * 以類別名（callee）比對；`new ns.X(...)` 形式標注為 method call（receiver=ns），
+   * 由呼叫端決定是否支援（無型別解析下不安全）。
    */
-  private extractArgumentsFromCallExpression(
-    node: ts.CallExpression,
+  private extractNewExpressionInfo(
+    node: ts.NewExpression,
+    sourceFile: ts.SourceFile,
+    targetName: string
+  ): {
+    range: Range;
+    arguments: CallSiteArgument[];
+    isMethodCall: boolean;
+    receiver?: string;
+  } | null {
+    const expr = node.expression;
+    let calleeName: string;
+    let isMethodCall = false;
+    let receiver: string | undefined;
+
+    if (ts.isIdentifier(expr)) {
+      calleeName = expr.text;
+    } else if (ts.isPropertyAccessExpression(expr)) {
+      calleeName = expr.name.text;
+      isMethodCall = true;
+      receiver = expr.expression.getText(sourceFile);
+    } else {
+      return null;
+    }
+
+    if (calleeName !== targetName) {
+      return null;
+    }
+
+    const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+
+    // 無引數的 `new Foo`（無括號）arguments 為 undefined，extractArguments 以空陣列處理
+    const args = this.extractArguments(node.arguments, sourceFile);
+
+    return {
+      range: {
+        start: { line: start.line + 1, column: start.character + 1 },
+        end: { line: end.line + 1, column: end.character + 1 }
+      },
+      arguments: args,
+      isMethodCall,
+      receiver
+    };
+  }
+
+  /**
+   * 從引數節點列表提取 CallSiteArgument（CallExpression 與 NewExpression 共用，SSOT）。
+   * 使用 AST 精確解析，正確處理字串中的括號和逗號。
+   * argsNodes 為 undefined 時（無括號的 `new Foo`）回傳空陣列。
+   */
+  private extractArguments(
+    argsNodes: ts.NodeArray<ts.Expression> | undefined,
     sourceFile: ts.SourceFile
   ): CallSiteArgument[] {
     const args: CallSiteArgument[] = [];
+    if (!argsNodes) {
+      return args;
+    }
 
-    for (let i = 0; i < node.arguments.length; i++) {
-      const arg = node.arguments[i];
+    for (let i = 0; i < argsNodes.length; i++) {
+      const arg = argsNodes[i];
       const start = sourceFile.getLineAndCharacterOfPosition(arg.getStart(sourceFile));
       const end = sourceFile.getLineAndCharacterOfPosition(arg.getEnd());
 

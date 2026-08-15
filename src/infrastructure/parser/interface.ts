@@ -3,8 +3,16 @@
  * 定義所有 Parser 插件必須實作的契約
  */
 
+import { extname } from 'node:path';
 import type { AST, Symbol, Reference, Dependency, Position, Range } from '@shared/types/index.js';
-import type { CodeEdit, Definition, Usage, ValidationResult } from '@infrastructure/parser/types.js';
+import type {
+  CodeEdit,
+  Definition,
+  ModuleSpecifierResolver,
+  ParserCapabilities,
+  Usage,
+  ValidationResult
+} from '@infrastructure/parser/types.js';
 import type { Location } from '@shared/types/core.js';
 
 // ===== Import 語句解析相關型別 =====
@@ -83,9 +91,11 @@ export interface ParserPlugin {
    * 查找符號的所有引用
    * @param ast AST 物件
    * @param symbol 目標符號
+   * @param moduleResolver 選用：判定 import/re-export specifier 是否曝露目標符號（跨 path alias 與
+   *   多層 barrel re-export）；由 rename 引擎注入，未提供時錨定層退回相對 specifier 保守比對
    * @returns 引用列表
    */
-  findReferences(ast: AST, symbol: Symbol): Promise<Reference[]>;
+  findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]>;
 
   /**
    * 從 AST 中提取所有依賴關係
@@ -137,6 +147,12 @@ export interface ParserPlugin {
    */
   dispose(): Promise<void>;
 
+  /**
+   * 宣告 Parser 支援的語意能力。
+   * 未宣告的能力一律視為不支援，避免非 TS/JS Parser 落入語言專屬重構流程。
+   */
+  getCapabilities?(): ParserCapabilities;
+
   // ===== 檔案過濾支援 =====
 
   /**
@@ -186,6 +202,25 @@ export interface ParserPlugin {
     symbolType: string,
     startLine: number
   ): Range | null;
+
+  /**
+   * 計算多宣告子語句（如 `let a, b;`）中，一組已知 dead 的宣告子名稱協調後的刪除範圍
+   * 用於 deadcode 模組同語句多個 dead 宣告子時的協調刪除，避免逐宣告子各自呼叫
+   * getFullDeclarationRange 時算出重疊、造成語法毀損的刪除範圍
+   * @param code 完整的檔案內容
+   * @param anchorSymbolName 群組中任一宣告子名稱，用來定位所屬語句
+   * @param startLine anchorSymbolName 所在行號（1-based）
+   * @param deadNames 同一語句中已知為 dead 的宣告子名稱集合（含 anchorSymbolName）
+   * @returns 依序回傳每個連續 dead run 的刪除範圍；全部宣告子皆 dead 時為單一元素
+   *          （整條語句範圍）。Parser 不支援此能力或非多宣告子語句時回傳 null，
+   *          呼叫端應 fallback 至逐一呼叫 getFullDeclarationRange
+   */
+  computeDeclaratorGroupRemovalRanges?(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null;
 
   // ===== Import 語句解析支援 =====
 
@@ -324,6 +359,43 @@ export function supportsLanguage(plugin: ParserPlugin, language: string): boolea
   return (plugin.supportedLanguages as string[]).includes(language);
 }
 
+/**
+ * Parser 能力預設值
+ */
+export const DEFAULT_PARSER_CAPABILITIES: ParserCapabilities = {
+  supportsRename: false,
+  supportsGoToDefinition: false,
+  supportsFindUsages: false,
+  supportsCodeActions: false,
+  supportsChangeSignature: false,
+  supportsCallHierarchy: false,
+  supportsMoveMember: false
+};
+
+/**
+ * 讀取 Parser 能力，未宣告欄位維持 fast-fail 預設。
+ */
+export function getParserCapabilities(plugin: ParserPlugin | null | undefined): ParserCapabilities {
+  if (!plugin?.getCapabilities) {
+    return DEFAULT_PARSER_CAPABILITIES;
+  }
+
+  return {
+    ...DEFAULT_PARSER_CAPABILITIES,
+    ...plugin.getCapabilities()
+  };
+}
+
+/**
+ * 檢查 Parser 是否宣告支援特定能力。
+ */
+export function parserSupportsCapability(
+  plugin: ParserPlugin | null | undefined,
+  capability: keyof ParserCapabilities
+): boolean {
+  return getParserCapabilities(plugin)[capability] === true;
+}
+
 // ===== 作用域感知符號查找相關型別 =====
 
 /**
@@ -349,7 +421,11 @@ export enum ScopedReferenceKind {
   /** 寫入引用（如變數賦值） */
   Write = 'write',
   /** 呼叫引用（如函式/方法呼叫） */
-  Call = 'call'
+  Call = 'call',
+  /** import 語句內的綁定（specifier/alias/default/namespace），僅為綁定非真正使用 */
+  Import = 'import',
+  /** 定義／宣告點（函式、變數、類別、方法、參數等 binding 宣告處） */
+  Definition = 'definition'
 }
 
 /**
@@ -433,6 +509,8 @@ export interface FormattedParameter {
   optional: boolean;
   /** 預設值（如果有） */
   defaultValue?: string;
+  /** 是否為 rest 參數（`...args`）；由 AST 的 dotDotDotToken 判定 */
+  rest?: boolean;
 }
 
 /**
@@ -454,8 +532,9 @@ export interface FormattedSignature {
  * 從檔案路徑獲取副檔名
  */
 export function getFileExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf('.');
-  return lastDot === -1 ? '' : filePath.substring(lastDot);
+  // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+  // 避免把含點號的父目錄誤判成副檔名，純隱藏檔名視為無副檔名
+  return extname(filePath);
 }
 
 /**

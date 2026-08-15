@@ -64,8 +64,8 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | Move file/member | `/agent-ide move` | Write + Delete + Edit imports |
 | Search symbol | `/agent-ide search` | Grep + manual ranking |
 | Find references | `/agent-ide find-references` | Grep + manual filtering |
-| Detect dead code | `/agent-ide deadcode --dry-run` | Manual analysis |
-| Remove dead code | `/agent-ide deadcode` | Manual deletion |
+| Detect dead code | `/agent-ide deadcode` | Manual analysis |
+| Remove dead code | `/agent-ide deadcode --apply` | Manual deletion |
 | Analyze impact | `/agent-ide impact` | Manual tracing |
 | Check cycles | `/agent-ide cycles` | Manual dependency review |
 | Function refactor | `/agent-ide change-signature` | Multiple Edit calls |
@@ -84,19 +84,27 @@ Use the `agent-ide` skill for TS/JS code intelligence operations. **Prefer agent
 | `cycles`          | Detect circular dependencies (Tarjan)  |
 | `impact`          | Analyze change impact range (BFS)      |
 | `search`          | Search symbols with fuzzy matching     |
-| `find-references` | Find symbol definitions and references |
-| `call-hierarchy`  | Analyze function call hierarchy        |
-| `deadcode --dry-run` | Detect unused code                  |
+| `find-references` | Find symbol definitions and references; use `--at` to disambiguate same-name symbols |
+| `call-hierarchy`  | Analyze function call hierarchy; use `--at` to target one same-name function or method |
+| `deadcode`        | Detect unused code and preview removals; use `--apply` to remove |
 
 ### Mutation (supports `--dry-run`)
 
 | Command            | Description                                      |
 | ------------------ | ------------------------------------------------ |
 | `rename`           | Rename symbols and update all references         |
-| `change-signature` | Refactor function parameters (reorder/add/remove)|
+| `change-signature` | Add, remove, reorder, rename, or retype function parameters; supports distinct call-site values for added params |
 | `move`             | Move files/directories and update imports        |
 | `move` (with line) | Move members across files (`path:line` syntax)   |
-| `deadcode`         | Remove unused code and clean imports             |
+| `deadcode --apply` | Remove unused code and clean imports             |
+
+`deadcode` is preview-only unless `--apply` is present. `--dry-run` wins even when passed with `--apply`.
+
+`move --path` is the project root for relative source/target paths. `move --dry-run` reports resolved project root, requested source/target, final target paths, and import-update hunks; glob JSON also lists `movedFiles`. Targets follow Unix `mv` nesting when the target directory already exists.
+
+`change-signature` supports `--add`, `--remove`, `--reorder`, `--rename`, and `--change-type`. Use `--call-site-value param=expression` with `--add` when existing call sites should receive a value different from the function default.
+
+`impact --path` is the project root for relative `--file` paths. JSON validation errors include `pathContext` with resolved project root and target file metadata.
 
 ## Documentation
 

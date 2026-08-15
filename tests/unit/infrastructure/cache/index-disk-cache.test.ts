@@ -8,9 +8,11 @@ import { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { IndexDiskCache } from '@infrastructure/cache/index-disk-cache.js';
+import { packageVersion } from '@infrastructure/package-info.js';
 import { CACHE_VERSION } from '@core/foundations/indexing/index-cache-serializer.js';
 import type { SerializedIndexData } from '@core/foundations/indexing/index-cache-serializer.js';
 import { MemFileSystem } from '@infrastructure/storage/mem-file-system.js';
+import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 
 let tmpCacheDir: string;
 
@@ -45,12 +47,23 @@ describe('IndexDiskCache', () => {
   describe('getCachePath', () => {
     it('cacheDir override가 있으면 해당 경로 사용', () => {
       const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
-      expect(cache.getCachePath()).toBe(join(tmpCacheDir, 'index.json'));
+      expect(dirname(dirname(dirname(dirname(cache.getCachePath()))))).toBe(tmpCacheDir);
+      expect(cache.getCachePath().endsWith(join('default', packageVersion, 'index.json'))).toBe(true);
     });
 
-    it('projectPath가 다르면 경로가 다르다', () => {
-      const cache1 = new IndexDiskCache('/proj/a', 'default', tmpCacheDir + '/a');
-      const cache2 = new IndexDiskCache('/proj/b', 'default', tmpCacheDir + '/b');
+    it('cacheDir override 下仍用 configKey 隔離路徑', () => {
+      const cache1 = new IndexDiskCache('/proj', 'config-a', tmpCacheDir);
+      const cache2 = new IndexDiskCache('/proj', 'config-b', tmpCacheDir);
+
+      expect(cache1.getCachePath().endsWith(join('config-a', packageVersion, 'index.json'))).toBe(true);
+      expect(cache2.getCachePath().endsWith(join('config-b', packageVersion, 'index.json'))).toBe(true);
+      expect(cache1.getCachePath()).not.toBe(cache2.getCachePath());
+    });
+
+    it('同一個 cacheDir 下不同 projectPath 仍隔離路徑', () => {
+      const cache1 = new IndexDiskCache('/proj/a', 'default', tmpCacheDir);
+      const cache2 = new IndexDiskCache('/proj/b', 'default', tmpCacheDir);
+
       expect(cache1.getCachePath()).not.toBe(cache2.getCachePath());
     });
   });
@@ -89,6 +102,98 @@ describe('IndexDiskCache', () => {
       expect(key1).toBe(key2);
       expect(typeof key1).toBe('string');
       expect(key1.length).toBeGreaterThan(0);
+    });
+
+    // 受控 fake fs：精確控制每個檔案的 mtime / size，computeCacheKey 用 glob + getStats + readFile。
+    // content 由 size 推導（同 size 給同 content），維持既有測試只關注 size/mtime 維度的意圖。
+    function makeFakeFs(files: ReadonlyArray<{ path: string; mtimeMs: number; size: number }>): IFileSystem {
+      return {
+        async glob() { return files.map(f => f.path); },
+        async getStats(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no stat: ${filePath}`); }
+          return { size: f.size, modifiedTime: new Date(f.mtimeMs) };
+        },
+        async readFile(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no content: ${filePath}`); }
+          return `content-of-size-${f.size}`;
+        }
+      } as unknown as IFileSystem;
+    }
+
+    // 受控 fake fs：額外帶 content，模擬 computeCacheKey 讀檔算 checksum 的路徑
+    function makeFakeFsWithContent(
+      files: ReadonlyArray<{ path: string; mtimeMs: number; size: number; content: string }>
+    ): IFileSystem {
+      return {
+        async glob() { return files.map(f => f.path); },
+        async getStats(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no stat: ${filePath}`); }
+          return { size: f.size, modifiedTime: new Date(f.mtimeMs) };
+        },
+        async readFile(filePath: string) {
+          const f = files.find(x => x.path === filePath);
+          if (!f) { throw new Error(`no content: ${filePath}`); }
+          return f.content;
+        }
+      } as unknown as IFileSystem;
+    }
+
+    it('同 size + 同 mtime(毫秒) 但內容不同時須產生不同 key (P2: 防 false cache hit)', async () => {
+      // 重現手法：快速檔案系統或 CI 中，替換檔案內容剛好落在同一 size 且同一 mtime 毫秒內，
+      // 若 cache key 只看 size+mtime 會誤判為未變更，回傳 stale 的舊符號/依賴資料。
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const same = { path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 5 };
+      const before = makeFakeFsWithContent([{ ...same, content: 'aaaaa' }]);
+      const after = makeFakeFsWithContent([{ ...same, content: 'bbbbb' }]);
+
+      const keyBefore = await cache.computeCacheKey('/proj', before);
+      const keyAfter = await cache.computeCacheKey('/proj', after);
+
+      expect(keyBefore).not.toBeNull();
+      expect(keyAfter).not.toBeNull();
+      expect(keyBefore).not.toBe(keyAfter);
+    });
+
+    it('內容變更但 mtime 不變(size 改變)須產生不同 key (P-B: 防 stale cache)', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      // 同路徑、同 mtime,但內容變了(size 不同)——例如 git checkout/cp -p 保留 mtime
+      const before = makeFakeFs([{ path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 100 }]);
+      const after = makeFakeFs([{ path: '/proj/src/a.ts', mtimeMs: 1_700_000_000_000, size: 250 }]);
+
+      const keyBefore = await cache.computeCacheKey('/proj', before);
+      const keyAfter = await cache.computeCacheKey('/proj', after);
+
+      expect(keyBefore).not.toBe(keyAfter);
+    });
+
+    it('glob 失敗時不得回穩定 sentinel(避免 false cache hit) (P-F)', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const throwingFs = {
+        async glob() { throw new Error('glob exploded'); },
+        async getStats() { throw new Error('unreachable'); }
+      } as unknown as IFileSystem;
+
+      const key = await cache.computeCacheKey('/proj', throwingFs);
+      // 不能是會在下次同樣失敗時命中的穩定字串;null 代表「無法計算 key → 不要信任快取」
+      expect(key).toBeNull();
+    });
+
+    it('任一檔案 stat 失敗時應回傳 null，避免用不完整檔案集合命中舊快取', async () => {
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const partialStatsFs = {
+        async glob() { return ['/proj/src/a.ts', '/proj/src/b.ts']; },
+        async getStats(filePath: string) {
+          if (filePath.endsWith('/b.ts')) {
+            throw new Error('stat failed');
+          }
+          return { size: 100, modifiedTime: new Date(1_700_000_000_000) };
+        }
+      } as unknown as IFileSystem;
+
+      await expect(cache.computeCacheKey('/proj', partialStatsFs)).resolves.toBeNull();
     });
   });
 
@@ -170,6 +275,24 @@ describe('IndexDiskCache', () => {
       // 실제 파일 존재
       const raw = await readFile(cache.getCachePath(), 'utf-8');
       expect(() => JSON.parse(raw)).not.toThrow();
+    });
+
+    it('rename 失敗（如目標路徑是目錄）時不得留下孤兒 tmp 檔 (P3 regression)', async () => {
+      // 重現手法：讓最終路徑 index.json 預先建成一個目錄，rename(tmp, index.json)
+      // 會因 EISDIR 失敗；此時已寫入的 tmp 檔案若無 cleanup 會永久殘留在快取目錄。
+      const mockEngine = {
+        snapshot: () => ({ fileEntries: new Map() })
+      };
+      const cache = new IndexDiskCache('/proj', 'default', tmpCacheDir);
+      const cachePath = cache.getCachePath();
+      const { mkdir, readdir } = await import('fs/promises');
+      await mkdir(cachePath, { recursive: true }); // index.json 預先是目錄，rename 必失敗
+
+      await cache.save(mockEngine as never, 'orphan-key'); // 靜默降級，不應拋錯
+
+      const cacheDir = dirname(cachePath);
+      const files = await readdir(cacheDir);
+      expect(files.filter(f => f.includes('.tmp'))).toHaveLength(0);
     });
   });
 

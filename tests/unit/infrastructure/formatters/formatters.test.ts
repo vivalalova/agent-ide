@@ -370,6 +370,94 @@ describe('DiffGenerator', () => {
       // 當只有一行時，格式可能是 @@ -10 +10 @@ 或 @@ -10,1 +10,1 @@
       expect(hunk.header).toMatch(/@@ -\d+,?\d* \+\d+,?\d* @@/);
     });
+
+    it('多行修改：未變更的首尾行應渲染為 context，不得呈現為 delete+add，且不計入增刪統計', () => {
+      const input: PreviewInput = {
+        command: PreviewCommand.Refactor,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/a.ts',
+          originalContent: 'foo(\n  a,\n  b\n)',
+          // 多行 modify：首行 'foo(' 與末行 ')' 內容不變，只有中間兩行對調
+          changes: [{ line: 1, oldContent: 'foo(\n  a,\n  b\n)', newContent: 'foo(\n  b,\n  a\n)' }]
+        }]
+      };
+
+      const result = generatePreviewResult(input, 3);
+      const allLines = result.files[0].hunks.flatMap(h => h.lines);
+      const addOrDelete = allLines
+        .filter(l => l.type === ChangeLineType.Add || l.type === ChangeLineType.Delete)
+        .map(l => l.content);
+      const contextContents = allLines
+        .filter(l => l.type === ChangeLineType.Context)
+        .map(l => l.content);
+
+      // 未變更的首尾行不得出現在 add/delete
+      expect(addOrDelete).not.toContain('foo(');
+      expect(addOrDelete).not.toContain(')');
+      // 應作為 context 出現
+      expect(contextContents).toContain('foo(');
+      expect(contextContents).toContain(')');
+      // 真正變更的兩行仍須呈現
+      expect(addOrDelete).toContain('  a,');
+      expect(addOrDelete).toContain('  b,');
+      // 統計只計真正變更的 2 行，不被 no-op 邊界灌水
+      expect(result.summary.additions).toBe(2);
+      expect(result.summary.deletions).toBe(2);
+      expect(result.summary.totalChanges).toBe(4);
+    });
+
+    it('單筆 LineChange 內嵌多行且刪多於增時，不應漏算尾端刪除行（G5）', () => {
+      // createHunk 用 expandedChanges 最後一個元素算 endLine；當刪除行數
+      // 多於新增行數時，展開後陣列的最後一個元素會是某個 newLine（其 .line
+      // 遠小於最大的 oldLine），導致 endLine 被算小、尾端刪除行被跳過。
+      const oldLines = Array.from({ length: 10 }, (_, i) => `old${i + 1}`);
+      const originalContent = oldLines.join('\n');
+
+      const input: PreviewInput = {
+        command: PreviewCommand.Refactor,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/b.ts',
+          originalContent,
+          changes: [{ line: 1, oldContent: originalContent, newContent: 'new1' }]
+        }]
+      };
+
+      const result = generatePreviewResult(input, 0);
+      const allLines = result.files[0].hunks.flatMap(h => h.lines);
+      const deletedContents = allLines
+        .filter(l => l.type === ChangeLineType.Delete)
+        .map(l => l.content);
+
+      // 10 行舊內容都應該出現在刪除行中
+      for (const oldLine of oldLines) {
+        expect(deletedContents).toContain(oldLine);
+      }
+      expect(result.summary.deletions).toBe(10);
+    });
+
+    it('R2-8：超大 hunk（單筆 LineChange 含 20 萬行刪除）不應因 Math.min/max spread 拋出例外', () => {
+      const lineCount = 200_000;
+      const oldLines = Array.from({ length: lineCount }, (_, i) => `line${i}`);
+      const originalContent = oldLines.join('\n');
+
+      const input: PreviewInput = {
+        command: PreviewCommand.Rename,
+        success: true,
+        fileChanges: [{
+          filePath: 'src/huge-r28.ts',
+          originalContent,
+          // 單筆 LineChange，oldContent 內含 20 萬行 → expandMultilineChanges 展開成
+          // 20 萬個獨立 LineChange，createHunk 對展開結果 map 出的 lineNumbers 陣列
+          // 用 Math.min(...lineNumbers) / Math.max(...lineNumbers) spread 呼叫，
+          // 目前的壞行為是陣列過大觸發 V8 引數上限，拋出 RangeError
+          changes: [{ line: 1, oldContent: originalContent, newContent: null }]
+        }]
+      };
+
+      expect(() => generatePreviewResult(input, 3)).not.toThrow();
+    });
   });
 });
 

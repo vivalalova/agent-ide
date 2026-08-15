@@ -352,8 +352,9 @@ describe('ChangeApplicator', () => {
       const result = await sut.apply(changeset, { rollbackOnError: true });
 
       expect(result.success).toBe(false);
-      // 應該嘗試回滾 file1.ts
-      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/file1.ts', 'backup content');
+      // 應該嘗試回滾 file1.ts；回滾寫入須沿用與 forward apply 相同的原子寫入
+      // 原語（Bug A 修復：{ fsync: atomic }），避免非原子寫入中途失敗留下損毀內容
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/file1.ts', 'backup content', { fsync: true });
     });
 
     it('rollbackOnError=false 時不應回滾', async () => {
@@ -373,6 +374,143 @@ describe('ChangeApplicator', () => {
       expect(result.success).toBe(false);
       expect(result.errors).toHaveLength(1);
       // 只應該有第一個檔案的寫入，不應有回滾的寫入
+    });
+
+    it('後續檔案操作失敗時應刪除已建立的檔案', async () => {
+      // '/created.ts' 是全新建立的檔案：備份當下（createBackups）尚不存在，
+      // 寫入後（rollback 檢查時）才存在，故需依呼叫順序回傳 false→true；
+      // 其餘路徑維持原本 blanket true。
+      let createdFileExists = false;
+      vi.mocked(mockFileSystem.exists).mockImplementation(async (path: string) => {
+        if (path === '/created.ts') {
+          const existedBefore = createdFileExists;
+          createdFileExists = true;
+          return existedBefore;
+        }
+        return true;
+      });
+
+      const changeset = createChangeset({
+        fileOperations: [
+          {
+            type: FileOperationType.Create,
+            sourcePath: '/created.ts',
+            targetPath: '/created.ts',
+            content: 'new content'
+          },
+          {
+            type: FileOperationType.Create,
+            sourcePath: '/invalid.ts'
+          }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { rollbackOnError: true });
+
+      expect(result.success).toBe(false);
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/created.ts',
+        'new content',
+        { fsync: true }
+      );
+      expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/created.ts');
+      expect(result.createdFiles).toEqual([]);
+    });
+
+    it('後續檔案操作失敗時應還原已移動的檔案', async () => {
+      vi.mocked(mockFileSystem.exists).mockResolvedValue(true);
+      vi.mocked(mockFileSystem.isDirectory).mockResolvedValue(false);
+      vi.mocked(mockFileSystem.readFile).mockImplementation(async (filePath) => {
+        if (filePath === '/old.ts') {
+          return 'old content';
+        }
+        return '';
+      });
+
+      const changeset = createChangeset({
+        fileOperations: [
+          {
+            type: FileOperationType.Move,
+            sourcePath: '/old.ts',
+            targetPath: '/new.ts'
+          },
+          {
+            type: FileOperationType.Move,
+            sourcePath: '/invalid.ts'
+          }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { rollbackOnError: true });
+
+      expect(result.success).toBe(false);
+      expect(mockFileSystem.moveFile).toHaveBeenCalledWith('/old.ts', '/new.ts');
+      expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/new.ts');
+      // 回滾寫入須沿用與 forward apply 相同的原子寫入原語（Bug A 修復）
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith('/old.ts', 'old content', { fsync: true });
+      expect(result.movedFiles).toEqual([]);
+    });
+
+    it('後續檔案操作失敗時應同時還原文字變更與檔案移動', async () => {
+      vi.mocked(mockFileSystem.exists).mockResolvedValue(true);
+      vi.mocked(mockFileSystem.isDirectory).mockResolvedValue(false);
+      vi.mocked(mockFileSystem.readFile).mockImplementation(async (filePath) => {
+        if (filePath === '/consumer.ts') {
+          return 'import { value } from \'./old\';\n';
+        }
+        if (filePath === '/old.ts') {
+          return 'export const value = 1;\n';
+        }
+        return '';
+      });
+
+      const changeset = createChangeset({
+        textChanges: [
+          {
+            filePath: '/consumer.ts',
+            edits: [
+              {
+                range: createTestRange(1, 24, 1, 29),
+                newText: './new'
+              }
+            ]
+          }
+        ],
+        fileOperations: [
+          {
+            type: FileOperationType.Move,
+            sourcePath: '/old.ts',
+            targetPath: '/new.ts'
+          },
+          {
+            type: FileOperationType.Create,
+            sourcePath: '/invalid.ts'
+          }
+        ]
+      });
+
+      const result = await sut.apply(changeset, { rollbackOnError: true });
+
+      expect(result.success).toBe(false);
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/consumer.ts',
+        'import { value } from \'./new\';\n',
+        { fsync: true }
+      );
+      expect(mockFileSystem.deleteFile).toHaveBeenCalledWith('/new.ts');
+      // 回滾寫入須沿用與 forward apply 相同的原子寫入原語（Bug A 修復）
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/old.ts',
+        'export const value = 1;\n',
+        { fsync: true }
+      );
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/consumer.ts',
+        'import { value } from \'./old\';\n',
+        { fsync: true }
+      );
+      expect(result.modifiedFiles).toEqual([]);
+      expect(result.movedFiles).toEqual([]);
     });
   });
 
@@ -472,6 +610,155 @@ describe('ChangeApplicator', () => {
         '/file.ts',
         'content',
         { fsync: false }
+      );
+    });
+  });
+
+  // MARK: - 重疊 TextEdit 偵測（CA-1 regression）
+
+  describe('重疊 TextEdit 偵測（CA-1）', () => {
+    it('範圍部分重疊、內容不同的 edits 不應靜默毀損內容', async () => {
+      // content: 'abcdefghij'
+      // edit1: col3-6 (0-based offset [2,5)) "cde" -> "X"
+      // edit2: col5-8 (0-based offset [4,7)) "efg" -> "Y"
+      // 兩者在 offset [4,5)（字元 'e'）重疊，屬衝突編輯
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abcdefghij');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/overlap.ts',
+          edits: [
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' },
+            { range: createTestRange(1, 5, 1, 8), newText: 'Y' }
+          ]
+        }]
+      });
+
+      const result = await sut.apply(changeset);
+
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/overlap.ts')?.[1];
+
+      if (result.success) {
+        // 若回報成功，寫入內容不得是重疊編輯互相踩踏產生的毀損結果
+        expect(writtenContent).not.toBe('abXhij');
+      } else {
+        // 至少要明確回報失敗原因，不能默默吞掉
+        expect(result.errors?.length ?? 0).toBeGreaterThan(0);
+      }
+    });
+
+    it('完全相同範圍、相同新文字的重複編輯：不得靜默毀損（要嘛正確 dedupe，要嘛明確報錯）', async () => {
+      // content: 'abcdefghij'
+      // 兩筆完全相同的 edit：col3-6 "cde" -> "X"
+      // 正確結果只能是二選一：
+      //   (a) dedupe 後只套用一次 -> 'abXfghij'
+      //   (b) 明確回報失敗（success:false + errors）
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abcdefghij');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/dup.ts',
+          edits: [
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' },
+            { range: createTestRange(1, 3, 1, 6), newText: 'X' }
+          ]
+        }]
+      });
+
+      const result = await sut.apply(changeset);
+
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/dup.ts')?.[1];
+
+      if (result.success) {
+        expect(writtenContent).toBe('abXfghij');
+      } else {
+        expect(result.errors?.length ?? 0).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  // MARK: - 空內容快速路徑繞過 dedupe regression（C4）
+
+  describe('空內容快速路徑繞過 dedupe（C4）', () => {
+    it('空內容時完全相同的重複零寬插入編輯應 dedupe 為一筆，而非各自套用', async () => {
+      // applyEdits 對空內容（content === ''）有獨立快速路徑（直接 join 所有 newText），
+      // 繞過 dedupeIdenticalEdits：完全相同的重複編輯在非空內容路徑會被 dedupe 為冪等的一筆，
+      // 但空內容路徑目前會把兩筆完全相同的編輯都套用，導致內容重複
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/empty.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 1), newText: 'x' },
+            { range: createTestRange(1, 1, 1, 1), newText: 'x' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 正確行為：與非空內容路徑一致，完全相同的重複編輯視為冪等操作，dedupe 後只套用一次
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/empty.ts',
+        'x',
+        { fsync: true }
+      );
+    });
+  });
+
+  // MARK: - 排序缺 tiebreak regression（C5）
+
+  describe('applyEdits 排序缺 tiebreak（C5）', () => {
+    it('輸入順序為 [零寬插入, 整段替換] 時，同起點編輯結果不應依賴輸入順序', async () => {
+      // 排序只比較 range.start（第 312-319 行），同起點時無 tiebreak，
+      // 依賴 Array.prototype.sort 的穩定排序保留輸入順序 —— 但這會讓「從後往前套用」
+      // 在同起點時把先出現的零寬插入誤置於後套用的整段替換之後，導致插入內容被替換蓋掉、
+      // 甚至吃掉不該吃的字元
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abc');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/tie1.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 1), newText: 'I' },
+            { range: createTestRange(1, 1, 1, 4), newText: 'X' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 正確行為：同起點時零寬插入須保留在整段替換結果之前，輸出應為 'IX'
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/tie1.ts',
+        'IX',
+        { fsync: true }
+      );
+    });
+
+    it('輸入順序為 [整段替換, 零寬插入] 時，同起點編輯結果不應依賴輸入順序', async () => {
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue('abc');
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/tie2.ts',
+          edits: [
+            { range: createTestRange(1, 1, 1, 4), newText: 'X' },
+            { range: createTestRange(1, 1, 1, 1), newText: 'I' }
+          ]
+        }]
+      });
+
+      await sut.apply(changeset);
+
+      // 兩種輸入順序都必須得到相同結果 'IX'，不得因輸入順序不同而改變輸出
+      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+        '/tie2.ts',
+        'IX',
+        { fsync: true }
       );
     });
   });

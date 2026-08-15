@@ -197,6 +197,21 @@ describe('CycleDetector', () => {
 
       expect(largeSCCs).toHaveLength(0);
     });
+
+    it('應該處理極深的線性依賴鏈而不 stack overflow', () => {
+      const nodeCount = 50000;
+      for (let i = 0; i < nodeCount - 1; i++) {
+        graph.addDependency(`/src/f${i}.ts`, `/src/f${i + 1}.ts`);
+      }
+
+      expect(() => detector.findStronglyConnectedComponents(graph)).not.toThrow();
+
+      const sccs = detector.findStronglyConnectedComponents(graph);
+      const largeSCCs = sccs.filter(scc => scc.size > 1);
+
+      expect(sccs).toHaveLength(nodeCount);
+      expect(largeSCCs).toHaveLength(0);
+    });
   });
 
   describe('hasCycles', () => {
@@ -379,6 +394,31 @@ describe('CycleDetector', () => {
 
       expect(cycles.length).toBeGreaterThan(0);
       expect(cycles[0].length).toBe(count);
+    });
+
+    it('應該在超過 maxCycleLength 的 SCC 中仍找出其中長度合規的短循環', () => {
+      // 建立 21 節點的大循環：n1→n2→…→n21→n1
+      const nodeCount = 21;
+      for (let i = 1; i <= nodeCount; i++) {
+        const from = `/src/n${i}.ts`;
+        const to = `/src/n${(i % nodeCount) + 1}.ts`;
+        graph.addDependency(from, to);
+      }
+      // 額外邊形成 n2 → n1 的 2 節點循環，但仍在同一個 SCC 內（size 21 > 預設 maxCycleLength 20）
+      graph.addDependency('/src/n2.ts', '/src/n1.ts');
+
+      const sccs = detector.findStronglyConnectedComponents(graph);
+      const largeSCC = sccs.find(scc => scc.size > 1);
+      expect(largeSCC?.size).toBe(nodeCount); // sanity check：SCC 確實超過預設 maxCycleLength
+
+      const cycles = detector.detectCycles(graph); // 使用預設選項（maxCycleLength: 20）
+      const shortCycle = cycles.find(cycle =>
+        cycle.length === 2 &&
+        cycle.cycle.includes('/src/n1.ts') &&
+        cycle.cycle.includes('/src/n2.ts')
+      );
+
+      expect(shortCycle).toBeDefined();
     });
 
     it('應該處理混合循環和非循環節點', () => {

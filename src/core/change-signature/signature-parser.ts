@@ -12,6 +12,7 @@ import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { FunctionSignature, ParameterDefinition } from './types.js';
 import { FileUtils, createFileUtils } from '@core/foundations/index.js';
+import { escapeRegex } from '@shared/regex-utils.js';
 
 /**
  * 簽名解析器
@@ -90,7 +91,8 @@ export class SignatureParser {
       type: param.type !== 'any' ? param.type : undefined,
       defaultValue: param.defaultValue,
       optional: param.optional,
-      rest: param.name.startsWith('...'),
+      // 優先採用 AST 判定的 rest 旗標；字串路徑（無此欄位）fallback 到名稱前綴
+      rest: param.rest ?? param.name.startsWith('...'),
       range: {
         start: { line: lineNumber, column: index * 10 },
         end: { line: lineNumber, column: index * 10 + param.name.length }
@@ -151,7 +153,7 @@ export class SignatureParser {
     column: number;
   } {
     // 合併正則：捕獲所有可能模式的群組
-    const escapedName = this.escapeRegex(functionName);
+    const escapedName = escapeRegex(functionName);
     const combinedPattern = new RegExp(
       '^(\\s*)(?:' +
       // function 宣告
@@ -200,7 +202,7 @@ export class SignatureParser {
    */
   private parseWithRegex(content: string, filePath: string, functionName: string): FunctionSignature | null {
     const lines = content.split('\n');
-    const escapedName = this.escapeRegex(functionName);
+    const escapedName = escapeRegex(functionName);
 
     // 合併三個模式為單一正則表達式
     const combinedPattern = new RegExp(
@@ -426,13 +428,6 @@ export class SignatureParser {
     }
 
     return undefined;
-  }
-
-  /**
-   * 跳脫正則表達式特殊字元
-   */
-  private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 

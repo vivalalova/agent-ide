@@ -54,6 +54,24 @@ describe('CLI deadcode - JavaScript 專案', () => {
       const afterContent = await fixture.readFile('src/unused.js');
       expect(afterContent).toBe(originalContent);
     });
+
+    it('預設應只預覽 JS dead code，不修改任何檔案', async () => {
+      const originalContent = await fixture.readFile('src/unused.js');
+
+      const result = await executeCLI(
+        ['deadcode', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.previewOnly).toBe(true);
+      expect(output.applied).toBe(false);
+      expect(output.mode).toBe('preview');
+
+      const afterContent = await fixture.readFile('src/unused.js');
+      expect(afterContent).toBe(originalContent);
+    });
   });
 
   describe('Dead code 檢測', () => {

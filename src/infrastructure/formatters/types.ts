@@ -148,6 +148,11 @@ export interface PreviewInput {
   success: boolean;
   /** 檔案變更資料 */
   fileChanges: FileChangeInput[];
+  /**
+   * fileChanges 的別名（與 PreviewResult.files 對齊），
+   * 方便以 `.files` 讀取同一份變更列表
+   */
+  files?: FileChangeInput[];
   /** 操作描述（如 "Renamed 'foo' to 'bar'"） */
   operationDescription?: string;
   /** 衝突列表 */

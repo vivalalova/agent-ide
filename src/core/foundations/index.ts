@@ -18,3 +18,13 @@ export * from './symbol-finder/index.js';
 
 // 檔案工具
 export * from './file-utils.js';
+
+// 程式碼狀態掃描（括號/引號/註解感知）
+export * from './code-state-mask.js';
+export * from './regex-literal-heuristic.js';
+
+// Re-export 轉發解析（barrel 鏈路共用）
+export * from './reexport-forwards.js';
+
+// 專案 import specifier → 檔案候選組裝（call-hierarchy/impact/cli/move 共用）
+export * from './project-import-resolver.js';

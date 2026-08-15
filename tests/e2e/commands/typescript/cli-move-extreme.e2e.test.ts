@@ -195,27 +195,32 @@ describe('CLI move extreme - 基於 sample-project fixture', () => {
 
   describe('Edge Cases - Import 解析特殊情境', () => {
     it('應該處理 require() 語法的更新', async () => {
-      // Create intermediate directories
       await fixture.writeFile('src/helpers/arrays/.gitkeep', '');
+      await fixture.writeFile(
+        'src/require-consumer.ts',
+        [
+          'const arrayUtils = require(\'./utils/array-utils\');',
+          'export const first = arrayUtils.first;',
+          ''
+        ].join('\n')
+      );
 
       const source = path.join(fixture.rootPath, 'src/utils/array-utils.ts');
       const target = path.join(fixture.rootPath, 'src/helpers/arrays/array-utils.ts');
 
       const result = await executeCLI(
-        ['move', source, target, '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
+        ['move', source, target, '--path', fixture.rootPath, '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      // 檔案可能不存在，檢查錯誤或成功
-      if (output.success === false) {
-        expect(output.error || output.errors).toBeDefined();
-      } else {
-        expect(output.command).toBe('move');
-        expect(output.success).toBe(true);
-        expect(output.summary).toBeDefined();
-      }
+      expect(output.command).toBe('move');
+      expect(output.success).toBe(true);
+
+      const consumer = await fixture.readFile('src/require-consumer.ts');
+      expect(consumer).toContain('require(\'./helpers/arrays/array-utils\')');
+      expect(consumer).not.toContain('./utils/array-utils');
     });
 
     it('應該處理 export * from 語法的更新', async () => {

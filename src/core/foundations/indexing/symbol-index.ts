@@ -39,6 +39,20 @@ export class SymbolIndex {
   // 作用域索引：作用域 -> 符號項目列表
   private readonly symbolsByScope = new Map<string, SymbolIndexEntry[]>();
 
+  // 檔案層級反向索引：filePath -> 該檔案符號涉及的 SymbolType / 作用域 key 集合。
+  // 讓 removeFileSymbols/removeFromOtherIndexes 只需走該檔案實際涉及的少數 key，
+  // 不必對 symbolsByType/symbolsByScope 做全專案 key 全表掃描。
+  // 集合只會隨 addToIndex 增長，移除時允許保留 stale key（superset，安全）：
+  // removeFileSymbols/removeFromOtherIndexes 內部都會先檢查 fileInfo.filePath 才動作，
+  // 多掃到一個已無該檔案項目的 key 只是空跑一次迴圈，不影響正確性。
+  private readonly fileTypeKeys = new Map<string, Set<SymbolType>>();
+  private readonly fileScopeKeys = new Map<string, Set<string>>();
+
+  // 檔案內符號去重鍵集合：filePath -> Set<symbolEntryKey>，讓 addToIndex 的重複偵測
+  // 從 O(n) 陣列掃描降為 O(1) Set 查詢；key 涵蓋 isSameSymbolEntry 比較的全部欄位
+  // （filePath 已由 map 的第一層 key 保證相同，不需重複放進 key 本身）
+  private readonly fileEntryKeys = new Map<string, Set<string>>();
+
   private lastUpdated = new Date();
 
   /**
@@ -111,45 +125,61 @@ export class SymbolIndex {
     for (const symbolName of symbolNames) {
       const nameEntries = this.symbolsByName.get(symbolName);
       if (nameEntries) {
-        const idx = nameEntries.findIndex(entry =>
-          entry.fileInfo.filePath === filePath
+        const filtered = nameEntries.filter(entry =>
+          entry.fileInfo.filePath !== filePath
         );
-        if (idx !== -1) {
-          nameEntries.splice(idx, 1);
-          if (nameEntries.length === 0) {
-            this.symbolsByName.delete(symbolName);
+        if (filtered.length === 0) {
+          this.symbolsByName.delete(symbolName);
+        } else {
+          this.symbolsByName.set(symbolName, filtered);
+        }
+      }
+    }
+
+    // 從類型索引中批次移除：只走該檔案實際涉及過的類型 key（反向索引），
+    // 不必遍歷 symbolsByType 全部 key
+    const typeKeys = this.fileTypeKeys.get(filePath);
+    if (typeKeys) {
+      for (const type of typeKeys) {
+        const entries = this.symbolsByType.get(type);
+        if (!entries) {
+          continue;
+        }
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].fileInfo.filePath === filePath) {
+            entries.splice(i, 1);
           }
         }
-      }
-    }
-
-    // 從類型索引中批次移除（遍歷所有類型，移除屬於該檔案的項目）
-    for (const [type, entries] of this.symbolsByType) {
-      // 反向遍歷以安全地使用 splice
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].fileInfo.filePath === filePath) {
-          entries.splice(i, 1);
+        if (entries.length === 0) {
+          this.symbolsByType.delete(type);
         }
       }
-      if (entries.length === 0) {
-        this.symbolsByType.delete(type);
-      }
+      this.fileTypeKeys.delete(filePath);
     }
 
-    // 從作用域索引中批次移除
-    for (const [scopeKey, entries] of this.symbolsByScope) {
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].fileInfo.filePath === filePath) {
-          entries.splice(i, 1);
+    // 從作用域索引中批次移除：同樣只走該檔案涉及過的作用域 key
+    const scopeKeys = this.fileScopeKeys.get(filePath);
+    if (scopeKeys) {
+      for (const scopeKey of scopeKeys) {
+        const entries = this.symbolsByScope.get(scopeKey);
+        if (!entries) {
+          continue;
+        }
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].fileInfo.filePath === filePath) {
+            entries.splice(i, 1);
+          }
+        }
+        if (entries.length === 0) {
+          this.symbolsByScope.delete(scopeKey);
         }
       }
-      if (entries.length === 0) {
-        this.symbolsByScope.delete(scopeKey);
-      }
+      this.fileScopeKeys.delete(filePath);
     }
 
-    // 最後移除檔案索引
+    // 最後移除檔案索引與去重鍵集合
     this.symbolsByFile.delete(filePath);
+    this.fileEntryKeys.delete(filePath);
     this.lastUpdated = new Date();
   }
 
@@ -232,21 +262,13 @@ export class SymbolIndex {
             fileInfo: entry.fileInfo,
             score
           });
-
-          if (results.length >= maxResults) {
-            break;
-          }
         }
-      }
-
-      if (results.length >= maxResults) {
-        break;
       }
     }
 
-    // 根據分數排序
+    // 根據分數排序後再截斷結果
     results.sort((a, b) => b.score - a.score);
-    return results;
+    return results.slice(0, maxResults);
   }
 
   /**
@@ -335,6 +357,9 @@ export class SymbolIndex {
     this.symbolsByType.clear();
     this.symbolsByFile.clear();
     this.symbolsByScope.clear();
+    this.fileTypeKeys.clear();
+    this.fileScopeKeys.clear();
+    this.fileEntryKeys.clear();
     this.lastUpdated = new Date();
   }
 
@@ -347,6 +372,9 @@ export class SymbolIndex {
     this.symbolsByType.clear();
     this.symbolsByFile.clear();
     this.symbolsByScope.clear();
+    this.fileTypeKeys.clear();
+    this.fileScopeKeys.clear();
+    this.fileEntryKeys.clear();
 
     for (const entry of fileEntries.values()) {
       if (!entry.isIndexed) {
@@ -372,9 +400,19 @@ export class SymbolIndex {
     const { symbol, fileInfo } = entry;
 
     const fileEntries = this.symbolsByFile.get(fileInfo.filePath) || [];
-    if (fileEntries.some(existingEntry => this.isSameSymbolEntry(existingEntry, entry))) {
+    let entryKeys = this.fileEntryKeys.get(fileInfo.filePath);
+    if (!entryKeys) {
+      entryKeys = new Set();
+      this.fileEntryKeys.set(fileInfo.filePath, entryKeys);
+    }
+
+    // O(1) 去重（取代原本 fileEntries.some(isSameSymbolEntry) 的 O(n) 陣列掃描）；
+    // key 涵蓋 isSameSymbolEntry 比較的全部欄位（filePath 已由 map 第一層 key 保證相同）
+    const entryKey = this.symbolEntryKey(entry);
+    if (entryKeys.has(entryKey)) {
       return;
     }
+    entryKeys.add(entryKey);
 
     // 名稱索引
     const nameEntries = this.symbolsByName.get(symbol.name) || [];
@@ -385,6 +423,7 @@ export class SymbolIndex {
     const typeEntries = this.symbolsByType.get(symbol.type) || [];
     typeEntries.push(entry);
     this.symbolsByType.set(symbol.type, typeEntries);
+    this.addToFileKeySet(this.fileTypeKeys, fileInfo.filePath, symbol.type);
 
     // 檔案索引
     fileEntries.push(entry);
@@ -396,59 +435,89 @@ export class SymbolIndex {
       const scopeEntries = this.symbolsByScope.get(scopeKey) || [];
       scopeEntries.push(entry);
       this.symbolsByScope.set(scopeKey, scopeEntries);
+      this.addToFileKeySet(this.fileScopeKeys, fileInfo.filePath, scopeKey);
     }
   }
 
-  private isSameSymbolEntry(a: SymbolIndexEntry, b: SymbolIndexEntry): boolean {
-    const aRange = a.symbol.location.range;
-    const bRange = b.symbol.location.range;
+  /** 將 key 加入 filePath 對應的集合（不存在則建立），供 fileTypeKeys/fileScopeKeys 共用 */
+  private addToFileKeySet<K>(map: Map<string, Set<K>>, filePath: string, key: K): void {
+    let set = map.get(filePath);
+    if (!set) {
+      set = new Set<K>();
+      map.set(filePath, set);
+    }
+    set.add(key);
+  }
 
-    return a.fileInfo.filePath === b.fileInfo.filePath
-      && a.symbol.name === b.symbol.name
-      && a.symbol.type === b.symbol.type
-      && aRange.start.line === bRange.start.line
-      && aRange.start.column === bRange.start.column
-      && aRange.end.line === bRange.end.line
-      && aRange.end.column === bRange.end.column;
+  /**
+   * 符號項目去重鍵：涵蓋 isSameSymbolEntry 比較的全部欄位（除 filePath，已由外層
+   * fileEntryKeys/symbolsByFile 的 map key 保證相同），任一欄位變動即為不同符號
+   */
+  private symbolEntryKey(entry: SymbolIndexEntry): string {
+    const range = entry.symbol.location.range;
+    return [
+      entry.symbol.name,
+      entry.symbol.type,
+      range.start.line,
+      range.start.column,
+      range.end.line,
+      range.end.column
+    ].join(' ');
   }
 
   /**
    * 從其他索引中移除符號
-   * 使用 findIndex + splice 避免 O(n^2) 的 filter 重建陣列
+   * 使用反向 splice，確保同檔案內同名符號的所有 entry 都會被移除。
    */
   private removeFromOtherIndexes(symbolName: string, filePath: string): void {
-    // 從類型索引中移除
-    for (const [type, entries] of this.symbolsByType) {
-      const idx = entries.findIndex(entry =>
-        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
-      );
-      if (idx !== -1) {
-        entries.splice(idx, 1);
+    // 從類型索引中移除：只走該檔案涉及過的類型 key（反向索引），不遍歷全部類型
+    const typeKeys = this.fileTypeKeys.get(filePath);
+    if (typeKeys) {
+      for (const type of typeKeys) {
+        const entries = this.symbolsByType.get(type);
+        if (!entries) {
+          continue;
+        }
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].fileInfo.filePath === filePath && entries[i].symbol.name === symbolName) {
+            entries.splice(i, 1);
+          }
+        }
         if (entries.length === 0) {
           this.symbolsByType.delete(type);
         }
       }
     }
 
-    // 從檔案索引中移除
+    // 從檔案索引中移除，同步清掉對應的去重鍵
     const fileEntries = this.symbolsByFile.get(filePath);
     if (fileEntries) {
-      const idx = fileEntries.findIndex(entry => entry.symbol.name === symbolName);
-      if (idx !== -1) {
-        fileEntries.splice(idx, 1);
-        if (fileEntries.length === 0) {
-          this.symbolsByFile.delete(filePath);
+      const entryKeys = this.fileEntryKeys.get(filePath);
+      for (let i = fileEntries.length - 1; i >= 0; i--) {
+        if (fileEntries[i].symbol.name === symbolName) {
+          entryKeys?.delete(this.symbolEntryKey(fileEntries[i]));
+          fileEntries.splice(i, 1);
         }
+      }
+      if (fileEntries.length === 0) {
+        this.symbolsByFile.delete(filePath);
+        this.fileEntryKeys.delete(filePath);
       }
     }
 
-    // 從作用域索引中移除
-    for (const [scopeKey, entries] of this.symbolsByScope) {
-      const idx = entries.findIndex(entry =>
-        entry.fileInfo.filePath === filePath && entry.symbol.name === symbolName
-      );
-      if (idx !== -1) {
-        entries.splice(idx, 1);
+    // 從作用域索引中移除：只走該檔案涉及過的作用域 key
+    const scopeKeys = this.fileScopeKeys.get(filePath);
+    if (scopeKeys) {
+      for (const scopeKey of scopeKeys) {
+        const entries = this.symbolsByScope.get(scopeKey);
+        if (!entries) {
+          continue;
+        }
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].fileInfo.filePath === filePath && entries[i].symbol.name === symbolName) {
+            entries.splice(i, 1);
+          }
+        }
         if (entries.length === 0) {
           this.symbolsByScope.delete(scopeKey);
         }

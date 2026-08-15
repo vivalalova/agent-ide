@@ -11,20 +11,19 @@ export * from './symbol.js';
 // AST 相關型別
 export * from './ast.js';
 
-// 行號工具函數
-export { isSameLine, toOneBased, toZeroBased } from './line-number.js';
-
 // Source file extension helpers
 export {
   TYPESCRIPT_SOURCE_EXTENSIONS,
   TYPESCRIPT_PARSER_EXTENSIONS,
   JAVASCRIPT_SOURCE_EXTENSIONS,
   SOURCE_FILE_EXTENSIONS,
+  SOURCE_INDEX_FILES,
   isTypeScriptSourceExtension,
   isJavaScriptSourceExtension,
   isSourceFileExtension,
   stripSourceFileExtension,
   getSourceLanguage,
+  hasRuntimeImportExtensionCandidates,
   getImportResolutionExtensions
 } from './source-file-extensions.js';
 

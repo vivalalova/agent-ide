@@ -7,7 +7,7 @@ import type { Symbol, Scope, ScopeType, Dependency } from '@shared/types/index.j
 import { SymbolType, DependencyType } from '@shared/types/index.js';
 import type { FileInfo, FileIndexEntry } from './types.js';
 
-export const CACHE_VERSION = '1.1.0';
+export const CACHE_VERSION = '1.1.1';
 
 /**
  * 序列化後的 Scope（tree → flat parent path）
@@ -36,6 +36,7 @@ interface SerializedSymbol {
   readonly attributes: readonly string[] | undefined;
   readonly superclass: string | undefined;
   readonly implements: readonly string[] | undefined;
+  readonly isImported?: boolean;
 }
 
 /**
@@ -201,7 +202,8 @@ export class IndexCacheSerializer {
       modifiers: [...symbol.modifiers],
       attributes: symbol.attributes ? [...symbol.attributes] : undefined,
       superclass: symbol.superclass,
-      implements: symbol.implements ? [...symbol.implements] : undefined
+      implements: symbol.implements ? [...symbol.implements] : undefined,
+      isImported: (symbol as { isImported?: boolean }).isImported
     };
   }
 
@@ -226,8 +228,9 @@ export class IndexCacheSerializer {
       modifiers: [...symbol.modifiers],
       ...(symbol.attributes !== undefined ? { attributes: [...symbol.attributes] } : {}),
       ...(symbol.superclass !== undefined ? { superclass: symbol.superclass } : {}),
-      ...(symbol.implements !== undefined ? { implements: [...symbol.implements] } : {})
-    };
+      ...(symbol.implements !== undefined ? { implements: [...symbol.implements] } : {}),
+      ...(symbol.isImported !== undefined ? { isImported: symbol.isImported } : {})
+    } as Symbol;
   }
 
   // ── private: Scope（flatten parent to path string） ──

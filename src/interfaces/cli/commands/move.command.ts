@@ -13,21 +13,40 @@ import { ALLOWED_EXTENSIONS } from '@core/move/path-utils.js';
 import { MoveMemberEngine, MoveTargetType } from '@core/move-member/index.js';
 import { parsePathLocation, hasPositionInfo } from '@interfaces/cli/path-location-parser.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { ChangeApplicator, convertChangesetToPreviewInput, FileOperationType } from '@infrastructure/changeset/index.js';
+import {
+  FileOperationType,
+  type Changeset
+} from '@infrastructure/changeset/index.js';
 import {
   createUnifiedOutputHandler,
   OutputFormat
 } from '@interfaces/cli/unified-output-handler.js';
 import {
-  outputMutationWithLegacyFields,
+  ensureDirectoryPath,
+  outputErrorWithDetails,
   tryParseOutputFormat,
   executeMutationCommand
 } from '@interfaces/cli/command-utils.js';
 import { handleGlobMoveCommand } from '@interfaces/cli/commands/move-glob-command-handler.js';
 import type { MoveOptions } from '@interfaces/cli/commands/move-command-options.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
-import { loadTsconfigPathConfig } from '@plugins/typescript/tsconfig-loader.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import {
+  ParserCapabilityName,
+  getUnsupportedParserCapabilityMessage
+} from '@interfaces/cli/parser-capability-guard.js';
+import { formatRelativePath } from '@interfaces/cli/commands/move-path-display.js';
+
+interface MovePathContext {
+  readonly projectRoot: string;
+  readonly requestedSource: string;
+  readonly requestedTarget: string;
+  readonly resolvedSource: string;
+  readonly resolvedTarget: string;
+  readonly finalTarget: string;
+  readonly targetKind: string;
+}
 
 /**
  * 設定 move 命令
@@ -58,7 +77,6 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
         const format = options.format === 'json' ? OutputFormat.Json : OutputFormat.Summary;
         outputHandler.outputError('必須指定來源和目標路徑。使用方式: agent-ide move <source> <target> 或 --source <source> --target <target>', format);
         process.exitCode = 1;
-        if (process.env.NODE_ENV !== 'test') { process.exit(1); }
         return;
       }
 
@@ -98,7 +116,17 @@ async function handleMoveCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), projectRootInput);
+  const projectRootIsDirectory = await ensureDirectoryPath(projectRoot, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot,
+    command: 'move'
+  });
+  if (!projectRootIsDirectory) {
+    return;
+  }
 
   // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
   const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
@@ -108,17 +136,9 @@ async function handleMoveCommand(
   }
 
   try {
-    // 檢查源檔案是否存在
-    const sourceExists = await context.fileSystem.exists(resolvedSource);
-    if (!sourceExists) {
-      outputHandler.outputError(`源檔案找不到: ${source}`, format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-      return;
-    }
-
     // Bug 2 修復：處理目標為目錄的情況
-    let resolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+    const initialResolvedTarget = path.isAbsolute(target) ? target : path.resolve(projectRoot, target);
+    let resolvedTarget = initialResolvedTarget;
 
     // 檢查目標是否為目錄（以 / 結尾或已存在的目錄）
     const targetEndsWithSlash = target.endsWith('/') || target.endsWith(path.sep);
@@ -142,18 +162,47 @@ async function handleMoveCommand(
       resolvedTarget = path.join(resolvedTarget, sourceBasename);
     }
 
+    const pathContext = createMovePathContext({
+      projectRoot,
+      requestedSource: source,
+      requestedTarget: target,
+      resolvedSource,
+      resolvedTarget: initialResolvedTarget,
+      finalTarget: resolvedTarget,
+      targetKind: getMoveTargetKind(targetIsDirectory, targetEndsWithSlash)
+    });
+
+    // 檢查源檔案是否存在
+    const sourceExists = await context.fileSystem.exists(resolvedSource);
+    if (!sourceExists) {
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `來源路徑不存在: ${source}`,
+        { pathContext },
+        'move'
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     // 檢查源和目標是否相同
     const normalizedSource = path.resolve(resolvedSource);
     const normalizedTarget = path.resolve(resolvedTarget);
     if (normalizedSource === normalizedTarget) {
-      outputHandler.outputError(`來源與目標相同，無需移動: ${normalizedSource}`, format);
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `來源與目標相同，無需移動: ${normalizedSource}`,
+        { pathContext },
+        'move'
+      );
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
 
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）
-    const tsconfigPathConfig = await loadTsconfigPathConfig(projectRoot, context.fileSystem);
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立移動服務
     const moveService = new MoveEngine(context.fileSystem, {
@@ -173,29 +222,21 @@ async function handleMoveCommand(
       projectRoot
     };
 
-    // 使用新的 Changeset 流程
-    const applicator = new ChangeApplicator(context.fileSystem);
-
-    // 生成 Changeset
+    // 生成 Changeset（changeset.success / previewInput 轉換失敗由 executeMutationCommand 統一把關）
     const changeset = await moveService.generateChangeset(moveOperation, moveOptions);
 
-    if (!changeset.success) {
-      outputHandler.outputError(changeset.errors?.join(', ') ?? '生成變更失敗', format);
+    // 防禦性退場：空 changeset 不應該發生在 success=true 的情境，這是 move 特有語意、非共用管線可表達
+    if (changeset.success && changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        '無檔案需移動，請檢查路徑',
+        { pathContext },
+        'move'
+      );
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
       return;
     }
-
-    // 防禦性退場：空 changeset 不應該發生在 success=true 的情境
-    if (changeset.textChanges.length === 0 && changeset.fileOperations.length === 0) {
-      outputHandler.outputError('無檔案需移動，請檢查路徑', format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
-      return;
-    }
-
-    // 轉換為 PreviewInput
-    const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
 
     // 收集 rename 與 import 更新摘要，給輸出層
     const renames = changeset.fileOperations
@@ -204,62 +245,122 @@ async function handleMoveCommand(
         from: op.sourcePath,
         to: op.targetPath ?? op.sourcePath
       }));
-    const pathUpdates = changeset.textChanges.map(tc => ({
-      file: tc.filePath,
-      edits: tc.edits.length
-    }));
+    const pathUpdates = createPathUpdateSummaries(changeset);
+    const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
 
-    // Dry-run 模式只輸出預覽
-    if (options.dryRun) {
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          renames,
-          pathUpdates
-        });
-      } else {
-        for (const { from, to } of renames) {
-          console.log(`Renamed: ${path.relative(projectRoot, from)} → ${path.relative(projectRoot, to)}`);
-        }
-        outputHandler.outputMutation(previewInput, format);
-      }
-      return;
-    }
-
-    // 執行移動操作（帶回滾）
     if (!isJsonFormat) {
-      console.log('   執行移動...');
-    }
-
-    const result = await applicator.apply(changeset, {
-      atomic: true,
-      rollbackOnError: true
-    });
-
-    if (result.success) {
-      // 統計 pathUpdates 數量（從 changeset.textChanges 計算）
-      const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
-      if (isJsonFormat) {
-        outputMutationWithLegacyFields(outputHandler, previewInput, format, {
-          source: normalizedSource,
-          target: normalizedTarget,
-          moved: result.movedFiles.length > 0,
-          pathUpdates: [],
-          message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
-        });
+      if (options.dryRun) {
+        printMovePathPreview(pathContext);
+        for (const { from, to } of renames) {
+          console.log(`Renamed: ${formatRelativePath(projectRoot, from)} → ${formatRelativePath(projectRoot, to)}`);
+        }
       } else {
-        printSuccess(totalUpdates, result.movedFiles);
+        console.log('   執行移動...');
       }
-    } else {
-      outputHandler.outputError(result.errors?.join(', ') ?? '執行失敗', format);
-      process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
     }
+
+    await executeMutationCommand(changeset, {
+      fileSystem: context.fileSystem,
+      format,
+      dryRun: options.dryRun ?? false,
+      outputHandler,
+      commandName: 'move',
+      legacyFields: { ...createMoveLegacyFields(pathContext), renames, pathUpdates },
+      successLegacyFields: {
+        ...createMoveLegacyFields(pathContext),
+        moved: renames.length > 0,
+        pathUpdates,
+        message: `成功移動 ${normalizedSource} → ${normalizedTarget}，更新了 ${totalUpdates} 個 import`
+      },
+      errorFields: createMoveLegacyFields(pathContext),
+      onSuccess: () => {
+        if (!isJsonFormat) {
+          printSuccess(totalUpdates, renames);
+        }
+      }
+    });
   } catch (error) {
     const errorMsg = getErrorMessage(error);
     outputHandler.outputError(errorMsg, format);
     process.exitCode = 1;
-    if (process.env.NODE_ENV !== 'test') { process.exit(1); }
   }
+}
+
+function createPathUpdateSummaries(changeset: Changeset): Array<{
+  filePath: string;
+  line: number;
+  oldImport: string;
+  newImport: string;
+}> {
+  return changeset.textChanges.flatMap(textChange =>
+    textChange.edits.map(edit => ({
+      filePath: getOutputPathForTextChange(changeset, textChange.filePath),
+      line: edit.range.start.line,
+      oldImport: extractOldImport(edit.description),
+      newImport: edit.newText
+    }))
+  );
+}
+
+function getOutputPathForTextChange(changeset: Changeset, filePath: string): string {
+  for (const operation of changeset.fileOperations) {
+    if (operation.type !== FileOperationType.Move || !operation.targetPath) {
+      continue;
+    }
+
+    if (filePath === operation.sourcePath) {
+      return operation.targetPath;
+    }
+
+    const sourcePrefix = operation.sourcePath + path.sep;
+    if (filePath.startsWith(sourcePrefix)) {
+      return path.join(operation.targetPath, filePath.slice(sourcePrefix.length));
+    }
+  }
+
+  return filePath;
+}
+
+function extractOldImport(description: string | undefined): string {
+  const match = description?.match(/^Update import: ([\s\S]*) → [\s\S]*$/);
+  return match?.[1] ?? '';
+}
+
+function createMovePathContext(input: MovePathContext): MovePathContext {
+  return input;
+}
+
+function createMoveLegacyFields(context: MovePathContext): Record<string, unknown> {
+  return {
+    projectRoot: context.projectRoot,
+    requestedSource: context.requestedSource,
+    requestedTarget: context.requestedTarget,
+    source: context.resolvedSource,
+    target: context.finalTarget,
+    resolvedSource: context.resolvedSource,
+    resolvedTarget: context.resolvedTarget,
+    finalTarget: context.finalTarget,
+    targetKind: context.targetKind,
+    pathContext: context
+  };
+}
+
+function getMoveTargetKind(targetIsDirectory: boolean, targetEndsWithSlash: boolean): string {
+  if (targetIsDirectory) {
+    return targetEndsWithSlash ? 'directory' : 'existing directory';
+  }
+
+  return 'file path';
+}
+
+function printMovePathPreview(context: MovePathContext): void {
+  console.log(`Project root: ${context.projectRoot}`);
+  console.log(`Requested source: ${context.requestedSource}`);
+  console.log(`Requested target: ${context.requestedTarget}`);
+  console.log(`Resolved source: ${formatRelativePath(context.projectRoot, context.resolvedSource)}`);
+  console.log(`Resolved target: ${formatRelativePath(context.projectRoot, context.resolvedTarget)}`);
+  console.log(`Final target: ${formatRelativePath(context.projectRoot, context.finalTarget)}`);
+  console.log(`Target interpretation: ${context.targetKind}`);
 }
 
 /**
@@ -300,7 +401,17 @@ async function handleMoveMemberCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
-  const projectRoot = path.resolve(process.cwd(), options.path || process.cwd());
+  const projectRootInput = options.path || process.cwd();
+  const projectRoot = path.resolve(process.cwd(), projectRootInput);
+  const projectRootIsDirectory = await ensureDirectoryPath(projectRoot, context.fileSystem, outputHandler, format, {
+    role: 'projectRoot',
+    inputPath: projectRootInput,
+    projectRoot,
+    command: 'move'
+  });
+  if (!projectRootIsDirectory) {
+    return;
+  }
 
   try {
     // 解析 source 和 target 路徑
@@ -321,6 +432,15 @@ async function handleMoveMemberCommand(
     const targetFilePath = path.isAbsolute(parsedTarget.filePath)
       ? parsedTarget.filePath
       : path.resolve(projectRoot, parsedTarget.filePath);
+    const pathContext = createMovePathContext({
+      projectRoot,
+      requestedSource: source,
+      requestedTarget: target,
+      resolvedSource: sourceFilePath,
+      resolvedTarget: targetFilePath,
+      finalTarget: targetFilePath,
+      targetKind: options.targetClass ? 'member target class' : 'member target file'
+    });
 
     if (!isJsonFormat) {
       console.log(`   移動成員: ${path.relative(projectRoot, sourceFilePath)}:${parsedSource.line}`);
@@ -329,11 +449,38 @@ async function handleMoveMemberCommand(
 
     // 取得 ParserRegistry（單例）
     const parserRegistry = ParserRegistry.getInstance();
+    const unsupportedCapability = getUnsupportedParserCapabilityMessage(
+      sourceFilePath,
+      parserRegistry,
+      ParserCapabilityName.MoveMember
+    );
+    if (unsupportedCapability) {
+      outputHandler.outputError(unsupportedCapability, format, 'move');
+      process.exitCode = 1;
+      return;
+    }
+    const unsupportedTargetCapability = getUnsupportedParserCapabilityMessage(
+      targetFilePath,
+      parserRegistry,
+      ParserCapabilityName.MoveMember
+    );
+    if (unsupportedTargetCapability) {
+      outputHandler.outputError(unsupportedTargetCapability, format, 'move');
+      process.exitCode = 1;
+      return;
+    }
+
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 解析任意別名
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立引擎
     const moveMemberEngine = new MoveMemberEngine(
       parserRegistry,
-      context.fileSystem
+      context.fileSystem,
+      {
+        pathAliases: tsconfigPathConfig.pathAliases,
+        baseUrl: tsconfigPathConfig.baseUrl
+      }
     );
 
     // 決定目標類型
@@ -366,13 +513,18 @@ async function handleMoveMemberCommand(
     if (!isJsonFormat && !options.dryRun) {
       console.log('   執行移動...');
     }
+    if (!isJsonFormat && options.dryRun) {
+      printMovePathPreview(pathContext);
+    }
 
     await executeMutationCommand(changeset, {
       fileSystem: context.fileSystem,
       format,
       dryRun: options.dryRun ?? false,
       outputHandler,
-      commandName: 'move'
+      commandName: 'move',
+      legacyFields: createMoveLegacyFields(pathContext),
+      errorFields: createMoveLegacyFields(pathContext)
     });
   } catch (error) {
     const errorMsg = getErrorMessage(error);

@@ -13,8 +13,12 @@ import {
   type ScopedReference,
   type ScopedFindReferencesOptions
 } from '@infrastructure/parser/index.js';
-import { tsNodeToRange } from './types.js';
+import { tsNodeToRange, tsPositionToPosition, privateIdentifierBareName } from './types.js';
+import type { Range } from '@shared/types/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
+import { findNearestLexicalDeclarationName } from './lexical-scope-binding.js';
+import { shouldExcludeByClassName as sharedShouldExcludeByClassName } from '@plugins/shared/index.js';
 
 /**
  * 標識符引用分析結果
@@ -24,8 +28,13 @@ interface IdentifierReferenceInfo {
   kind: ScopedReferenceKind;
   /** 容器名稱（類別、函式等） */
   containerName?: string;
-  /** 是否為方法呼叫 */
+  /** 是否為方法呼叫（obj.method()） */
   isMethodCall: boolean;
+  /**
+   * 是否為屬性存取形（obj.method、obj.method()、this.method；不論是否被呼叫）。
+   * 用於區分「屬性存取」與「裸識別符」兩種引用形狀——className 過濾對兩者採不同判定。
+   */
+  isPropertyAccess: boolean;
   /** Receiver 類型（用於區分不同類別的同名方法） */
   receiverType?: string;
 }
@@ -35,6 +44,8 @@ interface IdentifierReferenceInfo {
  * 提供作用域感知的符號引用查找
  */
 export class ReferenceFinder {
+  private readonly scopeAnalyzer: ScopeAnalyzer = createScopeAnalyzer();
+
   /**
    * 建立引用查找器
    * @param compilerOptions TypeScript 編譯選項
@@ -67,32 +78,47 @@ export class ReferenceFinder {
 
       // 遍歷 AST 查找所有符號引用
       const visit = (node: ts.Node): void => {
-        if (ts.isIdentifier(node) && node.text === symbolName) {
-          // 過濾：跳過字串字面值和模板字串中的符號（由 AST 遍歷自動處理）
-          const parent = node.parent;
+        const parent = node.parent;
 
-          // 過濾：檢查是否在字串字面值中（透過父節點判斷）
-          if (parent && ts.isStringLiteral(parent)) {
-            return;
-          }
+        // 一般標識符引用：foo、obj.foo、this.foo
+        const isPlainIdentifierMatch = ts.isIdentifier(node) && node.text === symbolName
+          // 過濾：跳過字串字面值中的符號（由 AST 遍歷自動處理）
+          && !(parent && ts.isStringLiteral(parent));
 
+        // Bracket 成員存取：obj['foo']（ElementAccessExpression 的 key 是字串字面值，
+        // 不是 Identifier，原本的 isIdentifier 檢查完全掃不到，導致 a['run']() 這類
+        // 方法呼叫對 deadcode/refs 隱形）。無插值的樣板字面值鍵（`` a[`foo`] ``）是另一種
+        // AST node kind（NoSubstitutionTemplateLiteral，非 StringLiteral），語意上同樣是
+        // 靜態字串鍵，一併納入，否則 `` a[`run`]() `` 仍對 deadcode/refs 隱形（見 R2 finding 3）。
+        const isBracketKeyMatch = (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+          && node.text === symbolName
+          && !!parent && ts.isElementAccessExpression(parent) && parent.argumentExpression === node;
+
+        // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 PrivateIdentifier，非 Identifier，
+        // 原本的 isPlainIdentifierMatch 完全掃不到，導致 `#secret` 宣告與 `this.#secret` 使用處
+        // 對 search/find-references/rename 全部隱形。symbolName 已在 getNodeName 去除 `#` 前綴
+        // （見 types.ts），故比對時同樣需去除節點 text 的 `#` 前綴（privateIdentifierBareName）。
+        const isPrivateIdentifierMatch = ts.isPrivateIdentifier(node)
+          && privateIdentifierBareName(node) === symbolName;
+
+        if (isPlainIdentifierMatch || isBracketKeyMatch || isPrivateIdentifierMatch) {
           // 判斷引用類型和所屬容器
           const refInfo = this.analyzeIdentifierReference(node, sourceFile);
 
           if (refInfo) {
-            // 如果指定了 className，過濾不匹配的引用
-            if (targetClassName && refInfo.containerName !== targetClassName) {
-              // 只有當引用確實是方法呼叫且 receiverType 不匹配時才過濾
-              if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-                // 但如果 receiverType === containerName，表示是 this.method() 呼叫
-                // 這種情況可能是子類呼叫繼承自父類的方法，不應該過濾
-                if (refInfo.receiverType !== refInfo.containerName) {
-                  return;
-                }
-              }
+            // 如果指定了 className，過濾不屬於該類別的引用
+            if (targetClassName && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, node)) {
+              return;
             }
 
-            const range = tsNodeToRange(node, sourceFile);
+            // 私有欄位的比對/替換範圍需排除 `#` 前綴本身，只涵蓋裸名（"secret"）：
+            // 下游 rename（reference-updater.ts 的 referenceTokenMatchesName）會將此範圍
+            // 對應的原文 token 與 symbol.name（裸名）比對，範圍含 `#` 會使 token 變成
+            // "#secret" 而永遠比對失敗；範圍排除 `#` 後，替換新名時 `#` 會留在範圍外、
+            // 自動保留（"#secret" → 範圍外的 "#" + 範圍內 "secret"→"hidden" = "#hidden"）。
+            const range = isPrivateIdentifierMatch
+              ? this.privateIdentifierNameRange(node, sourceFile)
+              : tsNodeToRange(node, sourceFile);
             const location = {
               filePath: sourceFile.fileName,
               range
@@ -121,21 +147,97 @@ export class ReferenceFinder {
   }
 
   /**
+   * 判斷某引用是否因不屬於目標類別而應被排除。
+   * 過濾規則為 TS/JS 共用策略，唯一定義見 `@plugins/shared/reference-class-filter.js`
+   * 的 `shouldExcludeByClassName`；此處只負責提供 TS 側的
+   * hasEnclosingTargetFunction 判定（詞法作用域鏈走訪）。
+   */
+  private shouldExcludeByClassName(
+    refInfo: IdentifierReferenceInfo,
+    targetClassName: string,
+    symbolName: string,
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.PrivateIdentifier
+  ): boolean {
+    return sharedShouldExcludeByClassName(
+      refInfo,
+      targetClassName,
+      symbolName,
+      () => this.hasEnclosingTargetFunction(node, symbolName)
+    );
+  }
+
+  /**
+   * 取得 PrivateIdentifier 節點裸名部分（去除 `#` 前綴）的範圍。
+   * `node.getStart()` 指向 `#` 本身，裸名從其後一個字元開始、到節點結尾為止；
+   * 此範圍即 rename 實際替換的文字區間，讓 `#` 留在範圍外而被保留（見呼叫端註解）。
+   */
+  private privateIdentifierNameRange(node: ts.PrivateIdentifier, sourceFile: ts.SourceFile): Range {
+    return {
+      start: tsPositionToPosition(sourceFile, node.getStart(sourceFile) + 1),
+      end: tsPositionToPosition(sourceFile, node.getEnd())
+    };
+  }
+
+  /**
+   * 由近到遠沿區塊鏈（Block/SourceFile）往外查找，該節點是否位於某個含同名
+   * `function name() {}` 宣告的區塊之內（含該區塊自身）。函式宣告具 hoisting
+   * 語意、於整個外層區塊皆可見，故只需檢查各層區塊的直接陳述句，不需比對
+   * 宣告與使用點的先後順序。只沿祖先鏈往外走，不會誤觸及無關的手足子樹。
+   */
+  private hasEnclosingTargetFunction(
+    node: ts.Node,
+    name: string
+  ): boolean {
+    if (!ts.isIdentifier(node)) {
+      return false;
+    }
+    const nearest = findNearestLexicalDeclarationName(node.getSourceFile(), node, name);
+    return nearest !== undefined && ts.isFunctionDeclaration(nearest.parent);
+  }
+
+  /**
    * 分析標識符引用的詳細資訊
    * 判斷引用類型（讀取/寫入/呼叫）和所屬容器
-   * @param node TypeScript 標識符節點
+   * @param node TypeScript 標識符節點，或 bracket 存取的字串字面值鍵（obj['foo']）
    * @param sourceFile 來源檔案
    * @returns 引用分析結果，如果無法分析則返回 null
    */
   private analyzeIdentifierReference(
-    node: ts.Identifier,
+    node: ts.Identifier | ts.StringLiteral | ts.NoSubstitutionTemplateLiteral | ts.PrivateIdentifier,
     sourceFile: ts.SourceFile
   ): IdentifierReferenceInfo | null {
     const parent = node.parent;
 
+    // import 語句內的標識符（specifier/alias/default/namespace）只是綁定本身，
+    // 不是對該符號的真正使用（D4：避免「只被 import 從未使用」的符號因 import
+    // specifier 被誤算成一次使用而永遠判定為存活）
+    if (this.scopeAnalyzer.isInImportStatement(node)) {
+      return {
+        kind: ScopedReferenceKind.Import,
+        containerName: this.findContainerName(node),
+        isMethodCall: false,
+        isPropertyAccess: false
+      };
+    }
+
+    // 物件字面量的非計算屬性 key（`{ deadF25: 1 }` 的 deadF25）：
+    // 是屬性名稱字面，不是對同名變數／解構綁定的引用。
+    // 若不排除，`const { deadF25 } = { deadF25: 1 }` 會把屬性 key 誤算成 usage，
+    // 導致未使用的解構綁定永遠判不了 dead（F25）。
+    // Shorthand `{ deadF25 }` 是 ShorthandPropertyAssignment，不走此分支，語意上是引用、保留。
+    if (
+      parent
+      && ts.isPropertyAssignment(parent)
+      && parent.name === node
+      && ts.isIdentifier(node)
+    ) {
+      return null;
+    }
+
     // 判斷引用類型
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;
+    let isPropertyAccess = false;
     let receiverType: string | undefined;
 
     // 檢查是否為函式/方法呼叫
@@ -147,34 +249,61 @@ export class ReferenceFinder {
       }
     }
 
-    // 檢查是否為方法呼叫：obj.method()
+    // 檢查是否為屬性存取：obj.method（不論是否被呼叫）
     if (parent && ts.isPropertyAccessExpression(parent) && parent.name === node) {
+      isPropertyAccess = true;
+      // 屬性存取皆嘗試推斷 receiver 型別（供 className 過濾判定歸屬）
+      receiverType = this.inferReceiverType(parent.expression, sourceFile);
+
+      // 進一步判斷是否為方法呼叫：obj.method()
       const grandParent = parent.parent;
       if (grandParent && ts.isCallExpression(grandParent) && grandParent.expression === parent) {
         kind = ScopedReferenceKind.Call;
         isMethodCall = true;
-
-        // 嘗試取得 receiver 的類型名稱
-        receiverType = this.inferReceiverType(parent.expression, sourceFile);
       }
     }
 
-    // 檢查是否為寫入（賦值左側）
+    // 檢查是否為 bracket 成員存取：obj['method']（不論是否被呼叫）
+    // 語意與屬性存取（obj.method）相同，只是鍵以字串字面值表達
+    if (parent && ts.isElementAccessExpression(parent) && parent.argumentExpression === node) {
+      isPropertyAccess = true;
+      receiverType = this.inferReceiverType(parent.expression, sourceFile);
+
+      const grandParent = parent.parent;
+      if (grandParent && ts.isCallExpression(grandParent) && grandParent.expression === parent) {
+        kind = ScopedReferenceKind.Call;
+        isMethodCall = true;
+      }
+    }
+
+    // 檢查是否為寫入（賦值左側）——賦值是使用，不是定義
     if (parent && ts.isBinaryExpression(parent)) {
       if (parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
         kind = ScopedReferenceKind.Write;
       }
     }
 
-    // 檢查是否為宣告（變數宣告、參數等）
+    // 檢查是否為宣告點（變數／參數／屬性／函式／類別／方法／解構綁定等 binding 處）
     if (
       parent
-      && (ts.isVariableDeclaration(parent)
+      && (
+        ts.isVariableDeclaration(parent)
         || ts.isParameter(parent)
-        || ts.isPropertyDeclaration(parent))
+        || ts.isPropertyDeclaration(parent)
+        || ts.isFunctionDeclaration(parent)
+        || ts.isClassDeclaration(parent)
+        || ts.isMethodDeclaration(parent)
+        || ts.isGetAccessor(parent)
+        || ts.isSetAccessor(parent)
+        || ts.isInterfaceDeclaration(parent)
+        || ts.isTypeAliasDeclaration(parent)
+        || ts.isEnumDeclaration(parent)
+        || ts.isEnumMember(parent)
+        || ts.isBindingElement(parent)
+      )
       && (parent as { name?: ts.Node }).name === node
     ) {
-      kind = ScopedReferenceKind.Write;
+      kind = ScopedReferenceKind.Definition;
     }
 
     // 取得所屬容器名稱（類別、函式等）
@@ -184,6 +313,7 @@ export class ReferenceFinder {
       kind,
       containerName,
       isMethodCall,
+      isPropertyAccess,
       receiverType
     };
   }
@@ -193,46 +323,29 @@ export class ReferenceFinder {
    * 例如：dog.bark() 中推斷 dog 的類型為 Dog
    */
   private inferReceiverType(expression: ts.Expression, sourceFile: ts.SourceFile): string | undefined {
-    // 1. 如果是標識符，嘗試查找其宣告並推斷類型
+    // 1. 如果是標識符，依詞法作用域由近到遠找「最近」的同名宣告並推斷類型
+    //    （非整檔第一個同名宣告——同名變數在不同函式各自宣告不同型別時，
+    //    整檔優先序會把後面函式的 receiver 誤判成第一個宣告所屬的類別）
     if (ts.isIdentifier(expression)) {
       const varName = expression.text;
+      const decl = this.findNearestVariableDeclaration(expression, varName, sourceFile);
+      if (!decl) {
+        return undefined;
+      }
 
-      // 簡單的類型推斷：查找 const dog = new Dog() 或 const dog: Dog = ...
-      let result: string | undefined;
+      // 檢查類型註解：const dog: Dog
+      if (decl.type && ts.isTypeReferenceNode(decl.type) && ts.isIdentifier(decl.type.typeName)) {
+        return decl.type.typeName.text;
+      }
 
-      const findDeclaration = (node: ts.Node): void => {
-        if (result) {
-          return;
-        }
+      // 檢查初始化器：const dog = new Dog()
+      if (decl.initializer && ts.isNewExpression(decl.initializer) && ts.isIdentifier(decl.initializer.expression)) {
+        return decl.initializer.expression.text;
+      }
 
-        if (
-          ts.isVariableDeclaration(node)
-          && ts.isIdentifier(node.name)
-          && node.name.text === varName
-        ) {
-          // 檢查類型註解：const dog: Dog
-          if (node.type && ts.isTypeReferenceNode(node.type)) {
-            if (ts.isIdentifier(node.type.typeName)) {
-              result = node.type.typeName.text;
-              return;
-            }
-          }
-
-          // 檢查初始化器：const dog = new Dog()
-          if (node.initializer && ts.isNewExpression(node.initializer)) {
-            const newExpr = node.initializer;
-            if (ts.isIdentifier(newExpr.expression)) {
-              result = newExpr.expression.text;
-              return;
-            }
-          }
-        }
-
-        ts.forEachChild(node, findDeclaration);
-      };
-
-      findDeclaration(sourceFile);
-      return result;
+      // 找到最近的同名宣告但推不出型別：不得再往外層作用域找（會誤把外層同名
+      // 但無關的宣告當成型別來源），視為無法推斷
+      return undefined;
     }
 
     // 2. 如果是 new 表達式：(new Dog()).bark()
@@ -251,6 +364,95 @@ export class ReferenceFinder {
     // 4. 如果是屬性存取：this.dog.bark()（較複雜，暫不處理）
 
     return undefined;
+  }
+
+  /**
+   * 由近到遠依詞法作用域鏈查找 varName 最近的 VariableDeclaration。
+   * 從 usage 節點所在的最近作用域開始搜尋（不進入巢狀子作用域，維持
+   * let/const 的區塊作用域語意），找不到才往外一層作用域繼續找，直到
+   * SourceFile 頂層為止。找到即回傳（即使該宣告推不出型別也不再往外找，
+   * 因為它已遮蔽外層同名宣告）。
+   */
+  private findNearestVariableDeclaration(
+    usageNode: ts.Node,
+    varName: string,
+    sourceFile: ts.SourceFile
+  ): ts.VariableDeclaration | undefined {
+    let searchFrom: ts.Node = usageNode;
+
+    while (true) {
+      const scope = this.getEnclosingScope(searchFrom);
+      const decl = this.findVariableDeclarationDirectlyIn(scope, varName);
+      if (decl) {
+        return decl;
+      }
+
+      if (scope === sourceFile || !scope.parent) {
+        return undefined;
+      }
+      searchFrom = scope.parent;
+    }
+  }
+
+  /**
+   * 取得節點最近的作用域容器（Block/函式/SourceFile），語意同 ScopeAnalyzer.getScopeContainer，
+   * 差異僅在此處需要包含節點自身（節點本身即作用域邊界時，直接以自己為起點）。
+   */
+  private getEnclosingScope(node: ts.Node): ts.Node {
+    let current: ts.Node | undefined = node;
+    while (current) {
+      if (this.isScopeBoundaryNode(current)) {
+        return current;
+      }
+      current = current.parent;
+    }
+    return node.getSourceFile();
+  }
+
+  /** 判斷節點是否為作用域邊界（Block、函式各型、SourceFile） */
+  private isScopeBoundaryNode(node: ts.Node): boolean {
+    return ts.isBlock(node)
+      || ts.isFunctionDeclaration(node)
+      || ts.isFunctionExpression(node)
+      || ts.isArrowFunction(node)
+      || ts.isMethodDeclaration(node)
+      || ts.isConstructorDeclaration(node)
+      || ts.isSourceFile(node);
+  }
+
+  /**
+   * 在指定作用域節點內查找 varName 的 VariableDeclaration，不進入巢狀子作用域
+   * （巢狀 Block/函式屬於更內層作用域，其宣告對外層不可見）。
+   */
+  private findVariableDeclarationDirectlyIn(
+    scopeNode: ts.Node,
+    varName: string
+  ): ts.VariableDeclaration | undefined {
+    let result: ts.VariableDeclaration | undefined;
+
+    const visit = (node: ts.Node): void => {
+      if (result) {
+        return;
+      }
+
+      if (node !== scopeNode && this.isScopeBoundaryNode(node)) {
+        return; // 不進入巢狀子作用域
+      }
+
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.name.text === varName
+      ) {
+        result = node;
+        return;
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    visit(scopeNode);
+    return result;
   }
 
   /**

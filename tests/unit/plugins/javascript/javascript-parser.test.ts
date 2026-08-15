@@ -5,7 +5,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { JavaScriptParser } from '@plugins/javascript/parser.js';
-import { SymbolType, DependencyType } from '@shared/types/index.js';
+import { SymbolType, DependencyType, ReferenceType } from '@shared/types/index.js';
+import { createPosition } from '@shared/types/index.js';
 
 describe('JavaScriptParser', () => {
   let parser: JavaScriptParser;
@@ -396,6 +397,8 @@ describe('JavaScriptParser', () => {
       // shouldIgnoreFile 使用簡單的子字串匹配
       expect(parser.shouldIgnoreFile('node_modules/package/index.js')).toBe(true);
       expect(parser.shouldIgnoreFile('src/app.js')).toBe(false);
+      expect(parser.shouldIgnoreFile('src/dist/index.js')).toBe(true);
+      expect(parser.shouldIgnoreFile('src/distance.js')).toBe(false);
     });
 
     it('isAbstractDeclaration 應該識別抽象宣告', async () => {
@@ -507,5 +510,204 @@ describe('JavaScriptParser', () => {
       const ast = await parser.parse(code, '/test/nullish.js');
       expect(ast).toBeDefined();
     });
+  });
+
+  // MARK: - 弱雜湊快取碰撞（G1）
+  // DeclarationAnalyzer.computeHash 與 ReferenceFinder.computeCodeHash 都只用
+  // `${code.length}:前 100 字元` 當快取 key，兩份「長度相同、前 100 字元相同、
+  // 之後內容不同」的程式碼會拿到彼此的快取結果。
+
+  describe('弱雜湊快取碰撞', () => {
+    // 100 字元的固定 banner：'/' + 98 個 '*' + '/'
+    const BANNER = '/' + '*'.repeat(98) + '/';
+
+    function makeCode(letter: string): string {
+      return `${BANNER}\nimport { helper${letter} } from './module-${letter.toLowerCase()}.js';\nexport function use${letter}() { return helper${letter}(); }\n`;
+    }
+
+    const codeA = makeCode('A');
+    const codeB = makeCode('B');
+
+    it('前提：codeA 與 codeB 長度相同且前 100 字元相同（碰撞條件成立）', () => {
+      expect(codeA.length).toBe(codeB.length);
+      expect(codeA.substring(0, 100)).toBe(codeB.substring(0, 100));
+      expect(codeA).not.toBe(codeB);
+    });
+
+    it('getImportDeclarations 不應該讓 codeB 拿到 codeA 的快取結果', () => {
+      const declsA = parser.getImportDeclarations(codeA);
+      const declsB = parser.getImportDeclarations(codeB);
+
+      expect(declsA?.[0]?.moduleSpecifier).toBe('./module-a.js');
+      // 目前因弱雜湊碰撞會回傳 codeA 快取的 './module-a.js'
+      expect(declsB?.[0]?.moduleSpecifier).toBe('./module-b.js');
+    });
+
+    it('findScopedReferences 不應該讓 codeB 拿到 codeA 的快取 AST', () => {
+      const refsA = parser.findScopedReferences(codeA, 'helperA');
+      const refsB = parser.findScopedReferences(codeB, 'helperB');
+
+      expect(refsA?.length).toBeGreaterThanOrEqual(1);
+      // 目前因弱雜湊碰撞會沿用 codeA 的快取 AST，其中沒有 helperB
+      // 識別符，導致回傳空陣列
+      expect(refsB?.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // MARK: - 解構綁定符號提取（bug repro）
+  // extractVariableSymbol／extractParameterSymbols 只處理 babel.isIdentifier(node.id/param)，
+  // 物件/陣列解構的綁定（ObjectPattern／ArrayPattern）一律被跳過，導致解構出的變數
+  // 無法被 search/rename 定位到（找不到符號，或符號的定義與使用處無法正確關聯）。
+
+  describe('解構綁定符號提取', () => {
+    it('物件解構變數應該可透過 findSymbolAtPosition 定位並找到使用處引用', async () => {
+      const code = 'const { value } = source;\nconsole.log(value);\n';
+
+      const ast = await parser.parse(code, '/test/destructure-var.js');
+      const symbols = await parser.extractSymbols(ast);
+
+      const valueSymbol = symbols.find(s => s.name === 'value');
+      expect(valueSymbol).toBeDefined();
+
+      const references = await parser.findReferences(ast, valueSymbol!);
+      const usages = references.filter(r => r.type === ReferenceType.Usage);
+      // console.log(value) 中的 value 應該被辨識為對解構出變數的使用
+      expect(usages.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('解構參數應該可被提取為符號且能定位到函式內的使用處', async () => {
+      const code = 'function f({ value }) {\n  return value;\n}\n';
+
+      const ast = await parser.parse(code, '/test/destructure-param.js');
+      const symbols = await parser.extractSymbols(ast);
+
+      const valueSymbol = symbols.find(s => s.name === 'value');
+      expect(valueSymbol).toBeDefined();
+
+      const references = await parser.findReferences(ast, valueSymbol!);
+      const usages = references.filter(r => r.type === ReferenceType.Usage);
+      expect(usages.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // MARK: - JSX 屬性 key 誤判為引用（bug repro）
+  // findReferences 的 JSXIdentifier visitor 只比對名稱字串，未區分 JSXAttribute 的
+  // key（如 `id="x"` 中的 `id=`）與真正的 JS 綁定使用，導致同名的無關 JSX 屬性
+  // 也被當成引用回傳，重命名時會誤改到 JSX attribute。
+
+  describe('JSX 屬性 key 誤判為引用', () => {
+    it('JSX 屬性 key 不應該被當成變數 id 的引用', async () => {
+      const code = 'const id = 1;\nconst el = <div id="x" />;\n';
+
+      const ast = await parser.parse(code, '/test/jsx-attr.jsx');
+      const symbols = await parser.extractSymbols(ast);
+
+      const idSymbol = symbols.find(s => s.name === 'id' && s.type === SymbolType.Variable);
+      expect(idSymbol).toBeDefined();
+
+      const references = await parser.findReferences(ast, idSymbol!);
+      // 唯一合法引用是變數 `id` 自己的宣告；<div id="x" /> 的屬性 key 與此變數無關
+      expect(references).toHaveLength(1);
+    });
+  });
+
+  // MARK: - Class method 引用完整性（F3）
+  // isReferenceToSymbol 濾掉 ClassMethod key（定義名）且 enclosingClass 僅認 class 內
+  // this.m，導致 rename/find-ref 漏定義與外部 instance.m()。
+  // 跨類別同名方法仍不得互混。
+
+  describe('Class method 引用完整性（F3）', () => {
+    it('A.run 應含定義 + this.run，且不應混入 B.run 的 this.run()', async () => {
+      const code = `
+        class A {
+          run() {}
+          call() { this.run(); }
+        }
+        class B {
+          run() {}
+          call() { this.run(); }
+        }
+      `;
+
+      const ast = await parser.parse(code, '/test/class-methods.js');
+      const symbols = await parser.extractSymbols(ast);
+
+      const runMethods = symbols.filter(s => s.name === 'run' && s.type === SymbolType.Function);
+      expect(runMethods).toHaveLength(2);
+
+      const [firstRun] = runMethods;
+      const references = await parser.findReferences(ast, firstRun);
+
+      // 正確：定義名 run + A.call 內 this.run() → 至少 2 筆，且全在 class A 區塊
+      // 目前壞行為：ClassMethod key 被濾掉，只剩 this.run（1 筆）
+      expect(references.length).toBeGreaterThanOrEqual(2);
+      for (const ref of references) {
+        expect(ref.location.range.start.line).toBeLessThanOrEqual(4);
+      }
+    });
+
+    it('外部 instance.m() 應被視為 class method 的引用（F3）', async () => {
+      const code = `
+        class Greeter {
+          greet() { return 1; }
+          call() { return this.greet(); }
+        }
+        const g = new Greeter();
+        g.greet();
+      `;
+
+      const ast = await parser.parse(code, '/test/class-method-external.js');
+      const symbols = await parser.extractSymbols(ast);
+      const greet = symbols.find(s => s.name === 'greet' && s.type === SymbolType.Function);
+      expect(greet).toBeDefined();
+
+      const references = await parser.findReferences(ast, greet!);
+      const lines = references.map(r => r.location.range.start.line);
+
+      // 定義 + this.greet + g.greet → 至少 3 筆
+      // 目前壞行為：enclosingClass 只認 class 內 this.m，外部 g.greet 漏掉；
+      // ClassMethod key 也漏掉定義
+      expect(references.length).toBeGreaterThanOrEqual(3);
+      expect(lines.some(line => line >= 6)).toBe(true);
+    });
+  });
+
+  // MARK: - Babel plugin 保留字缺漏 enum（bug repro）
+  // JAVASCRIPT_RESERVED_WORDS（types.ts）遺漏 'enum'，導致 rename 驗證誤判其為合法
+  // 識別符，實際 Babel/JS 文法禁止 `enum` 作為變數名稱。
+
+  describe('保留字驗證：enum', () => {
+    it('rename 為保留字 enum 應該被拒絕', async () => {
+      const code = 'const value = 1;\n';
+      const ast = await parser.parse(code, '/test/reserved-enum.js');
+
+      await expect(
+        parser.rename(ast, createPosition(1, 7), 'enum')
+      ).rejects.toThrow();
+    });
+  });
+});
+
+// MARK: - Babel 使用者插件合併（bug repro）
+// getParseOptionsForFile() 呼叫 getPluginsForFile(filePath) 時完全丟棄建構子傳入的
+// parseOptions.plugins，一律套用模組內建的預設插件清單，導致使用者透過
+// `new JavaScriptParser({ plugins: [...] })` 指定的插件（例如 'flow'）永遠不會生效。
+
+describe('JavaScriptParser - 使用者提供的 Babel plugins', () => {
+  it('建構子傳入的 plugins 應該被實際使用（而非被預設清單取代）', async () => {
+    const parser = new JavaScriptParser({ plugins: ['flow'] });
+    // Flow 語法：變數型別註記，需要 'flow' plugin 才能解析
+    const code = 'const x: number = 1;\n';
+
+    await expect(parser.parse(code, '/test/flow.js')).resolves.toBeDefined();
+  });
+
+  it('使用者提供的 plugins 應該與預設插件合併，而非完全取代預設清單', async () => {
+    const parser = new JavaScriptParser({ plugins: ['flow'] });
+    // 預設插件包含 nullishCoalescingOperator/optionalChaining 等；
+    // 加入 'flow' 不應該讓這些預設語法失效
+    const code = 'const value = obj?.prop ?? "default";\n';
+
+    await expect(parser.parse(code, '/test/flow-defaults.js')).resolves.toBeDefined();
   });
 });

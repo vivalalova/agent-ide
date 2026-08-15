@@ -26,8 +26,24 @@ export {
   isRelativePath,
   UNICODE_IDENTIFIER_PATTERN,
   isValidUnicodeIdentifier,
-  matchesAnyPattern
+  matchesAnyPattern,
+  isSameDeclaringFile
 } from './parser-helpers.js';
+
+export {
+  VALUE_SPACE_RESERVED_WORDS,
+  MODULE_SYNTAX_CONTEXTUAL_KEYWORDS,
+  isValueSpaceReservedWord,
+  isRenameUnsafeIdentifier
+} from './reserved-words.js';
+
+export { computeContentHash } from '@shared/content-hash.js';
+
+// 引用 className 過濾策略（TS/JS reference-finder 共用）
+export {
+  shouldExcludeByClassName,
+  type ClassNameFilterRefInfo
+} from './reference-class-filter.js';
 
 // 驗證邏輯
 export { validateParserInput, validateRenameInput } from './validators.js';

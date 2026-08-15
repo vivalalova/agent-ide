@@ -7,23 +7,19 @@
  */
 
 import * as path from 'path';
-import { ParserRegistry } from '@infrastructure/parser/index.js';
-import { TypeScriptParser } from '@plugins/typescript/parser.js';
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import {
+  ParserRegistry,
+  disposeRegisteredParserModules,
+  initializeDefaultParsers,
+  initializeParserModules,
+  type RegisteredParserModule
+} from '@infrastructure/parser/index.js';
 import type { ParseTask, ParseResult } from '../types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 
 // Worker 初始化（每個 Worker 執行一次）
 const registry = ParserRegistry.getInstance();
-
-// 確保 Parser 已註冊
-if (!registry.getParser('.ts')) {
-  registry.register(new TypeScriptParser());
-}
-
-if (!registry.getParser('.js')) {
-  registry.register(new JavaScriptParser());
-}
+initializeDefaultParsers(registry);
 
 /**
  * 解析單一檔案
@@ -34,19 +30,23 @@ if (!registry.getParser('.js')) {
  */
 export default async function parseFile(task: ParseTask): Promise<ParseResult> {
   const { filePath, content } = task;
-  const ext = path.extname(filePath);
-  const parser = registry.getParser(ext);
-
-  if (!parser) {
-    return {
-      filePath,
-      symbols: [],
-      dependencies: [],
-      errors: [`No parser for extension: ${ext}`]
-    };
-  }
-
+  let registeredParsers: readonly RegisteredParserModule[] = [];
   try {
+    registeredParsers = await initializeParserModules(registry, task.parserModulePaths ?? [], {
+      isolateModuleInstances: true
+    });
+    const ext = path.extname(filePath);
+    const parser = registry.getParser(ext);
+
+    if (!parser) {
+      return {
+        filePath,
+        symbols: [],
+        dependencies: [],
+        errors: [`No parser for extension: ${ext}`]
+      };
+    }
+
     const ast = await parser.parse(content, filePath);
     const symbols = await parser.extractSymbols(ast);
     const dependencies = await parser.extractDependencies(ast);
@@ -72,5 +72,11 @@ export default async function parseFile(task: ParseTask): Promise<ParseResult> {
       dependencies: [],
       errors: [errorMessage]
     };
+  } finally {
+    await disposeTaskParsers(registeredParsers);
   }
+}
+
+async function disposeTaskParsers(registeredParsers: readonly RegisteredParserModule[]): Promise<void> {
+  await disposeRegisteredParserModules(registry, registeredParsers);
 }

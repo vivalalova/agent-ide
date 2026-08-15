@@ -4,10 +4,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as ts from 'typescript';
 import { loadFixture, executeCLI, type FixtureContext } from '../../../helpers/index.js';
 
 describe('CLI change-signature - JavaScript 專案', () => {
   let fixture: FixtureContext;
+
+  function expectValidJavaScript(sourceText: string): void {
+    const sourceFile = ts.createSourceFile('generated.js', sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    expect(sourceFile.parseDiagnostics).toEqual([]);
+  }
 
   beforeEach(async () => {
     fixture = await loadFixture('js-project');
@@ -132,6 +138,83 @@ describe('CLI change-signature - JavaScript 專案', () => {
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
     });
+
+    it('應該支援 explicit call-site value 並產生有效 JS 語法', async () => {
+      await fixture.writeFile('src/test-add-call-site-value.js', [
+        'const runtimeLevel = getRuntimeLevel();',
+        'function log(message) {',
+        '  console.log(message);',
+        '}',
+        'log(\'test\');',
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['change-signature', fixture.getFilePath('src/test-add-call-site-value.js'), 'log',
+          '-p', fixture.rootPath,
+          '--add', 'level=\'info\'',
+          '--call-site-value', 'level=runtimeLevel',
+          '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const updatedContent = await fixture.memfs.readFile(fixture.getFilePath('src/test-add-call-site-value.js'), 'utf-8') as string;
+      expect(updatedContent).toContain('function log(message, level = \'info\')');
+      expect(updatedContent).toContain('log(\'test\', runtimeLevel);');
+      expectValidJavaScript(updatedContent);
+    });
+
+    it('應該拒絕 JS 目標中的 TypeScript-only call-site expression', async () => {
+      const originalContent = [
+        'const runtimeLevel = getRuntimeLevel();',
+        'function log(message) {',
+        '  console.log(message);',
+        '}',
+        'log(\'test\');',
+      ].join('\n');
+      await fixture.writeFile('src/test-invalid-call-site-expression.js', originalContent);
+
+      const filePath = fixture.getFilePath('src/test-invalid-call-site-expression.js');
+      const result = await executeCLI(
+        ['change-signature', filePath, 'log',
+          '-p', fixture.rootPath,
+          '--add', 'level=\'info\'',
+          '--call-site-value', 'level=runtimeLevel as string',
+          '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('JavaScript');
+      expect(await fixture.memfs.readFile(filePath, 'utf-8')).toBe(originalContent);
+    });
+
+    it('應該拒絕 JS 目標中不能作為 parameter default 的 expression', async () => {
+      const originalContent = [
+        'function log(message) {',
+        '  console.log(message);',
+        '}',
+        'log(\'test\');',
+      ].join('\n');
+      await fixture.writeFile('src/test-invalid-default-expression.js', originalContent);
+
+      const filePath = fixture.getFilePath('src/test-invalid-default-expression.js');
+      const result = await executeCLI(
+        ['change-signature', filePath, 'log',
+          '-p', fixture.rootPath,
+          '--add', 'level=await getLevel()',
+          '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('default');
+      expect(await fixture.memfs.readFile(filePath, 'utf-8')).toBe(originalContent);
+    });
   });
 
   describe('刪除參數', () => {
@@ -177,8 +260,8 @@ describe('CLI change-signature - JavaScript 專案', () => {
   });
 
   describe('class 方法', () => {
-    it('應該處理 JS class 方法的簽章修改', async () => {
-      await fixture.writeFile('src/test-class-method.js', [
+    it('存在方法呼叫點時應拒絕 JS class 方法的簽章修改（無 receiver 型別解析，重寫不安全）', async () => {
+      const source = [
         'class Calculator {',
         '  add(a, b) {',
         '    return a + b;',
@@ -186,7 +269,8 @@ describe('CLI change-signature - JavaScript 專案', () => {
         '}',
         'const calc = new Calculator();',
         'const result = calc.add(1, 2);',
-      ].join('\n'));
+      ].join('\n');
+      await fixture.writeFile('src/test-class-method.js', source);
 
       const result = await executeCLI(
         ['change-signature', fixture.getFilePath('src/test-class-method.js'), 'add',
@@ -194,9 +278,12 @@ describe('CLI change-signature - JavaScript 專案', () => {
         { memfs: fixture.memfs }
       );
 
-      expect(result.exitCode).toBe(0);
+      // T1 修復後語意：偵測到方法呼叫點（calc.add(1, 2)）即拒絕，非零 exit 且檔案不變，
+      // 不得成功執行卻靜默跳過方法呼叫點造成定義與呼叫點不一致
+      expect(result.exitCode).not.toBe(0);
       const output = JSON.parse(result.stdout);
-      expect(output.success).toBe(true);
+      expect(output.success).toBe(false);
+      expect(await fixture.readFile('src/test-class-method.js')).toBe(source);
     });
   });
 

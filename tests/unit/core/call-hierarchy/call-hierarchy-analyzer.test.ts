@@ -239,6 +239,40 @@ export function target() {
       ]));
     });
 
+    it('Given TypeScript 函數內有巢狀具名函數, when analyze outgoing, then 巢狀函數內的呼叫不應歸屬外層函數', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested.ts': `
+function outer() {
+  function inner() {
+    sideEffect();
+  }
+  bar();
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer', ['/src/nested.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).toContain('bar');
+      expect(callees).not.toContain('sideEffect');
+    });
+
+    it('Given TypeScript 函數內有匿名 arrow function callback, when analyze outgoing, then callback 內的呼叫仍歸屬外層函數', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested-anonymous.ts': `
+function outer2() {
+  items.map(x => transform(x));
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer2', ['/src/nested-anonymous.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).toContain('transform');
+    });
+
     it('Given JavaScript caller 在另一個檔案, when analyze incoming, then 用 Babel AST 找到 caller 名稱與 context', async () => {
       const analyzer = await createAnalyzerWithRealParsers({
         '/src/target.js': `
@@ -264,6 +298,113 @@ export function jsCaller() {
           callerDefinitionFile: '/src/caller.js'
         })
       ]);
+    });
+  });
+
+  describe('outgoing 遞迴深度', () => {
+    const chainFiles = {
+      '/src/chain.ts': [
+        'export function leaf() {',
+        '  return 1;',
+        '}',
+        'export function mid() {',
+        '  return leaf();',
+        '}',
+        'export function top() {',
+        '  return mid();',
+        '}'
+      ].join('\n')
+    };
+
+    it('Given 呼叫鏈 top→mid→leaf 且 depth 1, when analyze outgoing, then 只含直接呼叫 mid', async () => {
+      const analyzer = await createAnalyzerWithRealParsers(chainFiles);
+
+      const result = await analyzer.analyze('top', ['/src/chain.ts'], { direction: 'outgoing', depth: 1 });
+
+      expect(result?.outgoing.map(call => call.callee)).toEqual(['mid']);
+    });
+
+    it('Given 呼叫鏈 top→mid→leaf 且 depth 2, when analyze outgoing, then 包含第二層的 leaf', async () => {
+      const analyzer = await createAnalyzerWithRealParsers(chainFiles);
+
+      const result = await analyzer.analyze('top', ['/src/chain.ts'], { direction: 'outgoing', depth: 2 });
+
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+      expect(callees).toContain('mid');
+      expect(callees).toContain('leaf');
+    });
+  });
+
+  describe('incoming 遞迴錨定 caller 定義檔', () => {
+    it('Given 兩檔各自定義同名 shared, when depth 2 incoming, then 不把另一個 shared 的 caller 誤列', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/a.ts': [
+          'export function target() {}',
+          'export function shared() {',
+          '  target();',
+          '}',
+          'export function topA() {',
+          '  shared();',
+          '}'
+        ].join('\n'),
+        '/src/b.ts': [
+          'function shared() {}',
+          'export function topB() {',
+          '  shared();',
+          '}'
+        ].join('\n')
+      });
+
+      const result = await analyzer.analyze('target', ['/src/a.ts', '/src/b.ts'], { direction: 'incoming', depth: 2 });
+
+      const callers = result?.incoming.map(call => call.caller) ?? [];
+      expect(callers).toContain('shared');
+      expect(callers).toContain('topA');
+      expect(callers).not.toContain('topB');
+    });
+  });
+
+  describe('對抗式審查缺陷重現（regression）', () => {
+    // Bug A: outgoing 未把「賦值給變數的 arrow function」視為巢狀函數邊界，
+    // 導致從未被呼叫的 inner closure 內部呼叫被誤歸屬到外層函數。
+    it('Given arrow function 賦值給變數且從未被呼叫, when analyze outer 的 outgoing, then 不應包含只存在於該 arrow 內部的呼叫', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/nested-arrow-var.ts': `
+function outer() {
+  const inner = () => callee();
+}
+        `.trim()
+      });
+
+      const result = await analyzer.analyze('outer', ['/src/nested-arrow-var.ts'], { direction: 'outgoing', depth: 1 });
+      const callees = result?.outgoing.map(call => call.callee) ?? [];
+
+      expect(callees).not.toContain('callee');
+    });
+
+    // Bug B: incoming 在 depth 1（無 --at）時以函數名稱在「整個專案」找呼叫點，
+    // 未綁定到本次選定的具體定義，導致其他檔案裡「同名但無關」的函數之呼叫者被誤列。
+    it('Given a.ts 的 target 與 b.ts 另一個無關的同名 target, when analyze a.ts target 的 incoming（無 --at）, then 不應包含只呼叫 b.ts 那個 target 的 caller', async () => {
+      const analyzer = await createAnalyzerWithRealParsers({
+        '/src/a.ts': [
+          'export function target() {',
+          '  return 1;',
+          '}'
+        ].join('\n'),
+        '/src/b.ts': [
+          'function target() {',
+          '  return 2;',
+          '}',
+          'export function caller() {',
+          '  return target();',
+          '}'
+        ].join('\n')
+      });
+
+      const result = await analyzer.analyze('target', ['/src/a.ts', '/src/b.ts'], { direction: 'incoming', depth: 1 });
+      const callerNames = result?.incoming.map(call => call.caller) ?? [];
+
+      expect(callerNames).not.toContain('caller');
     });
   });
 });

@@ -135,6 +135,24 @@ export interface DefinitionLocation {
   column: number;
 }
 
+/** 穩定符號身份，用於同名符號候選與精確定位 */
+export interface SymbolIdentity {
+  /** 符號名稱 */
+  name: string;
+  /** 符號類型 */
+  type: string;
+  /** 定義所在檔案 */
+  file: string;
+  /** 定義行號 */
+  line: number;
+  /** 定義欄位 */
+  column: number;
+  /** 所屬 scope 名稱 */
+  scopeName?: string;
+  /** 所屬 scope 類型 */
+  scopeType?: string;
+}
+
 /** FindReferences 結果 */
 export interface FindReferencesResult extends QueryResult {
   command: QueryCommand.FindReferences;
@@ -146,6 +164,10 @@ export interface FindReferencesResult extends QueryResult {
   definition: DefinitionLocation | null;
   /** 所有定義位置（多個同名符號時使用） */
   definitions?: DefinitionLocation[];
+  /** 符號候選身份；有 --at 時為選中的符號 */
+  symbols?: SymbolIdentity[];
+  /** --at 選中的符號身份 */
+  targetSymbol?: SymbolIdentity;
   /** 所有引用 */
   references: ReferenceItem[];
 }
@@ -204,6 +226,10 @@ export interface CallHierarchyResult extends QueryResult {
   definitionLine?: number;
   /** 所有定義位置（多個同名函數時使用） */
   definitions?: FunctionDefinitionInfo[];
+  /** 函數候選身份；有 --at 時為選中的函數 */
+  symbols?: SymbolIdentity[];
+  /** --at 選中的函數身份 */
+  targetSymbol?: SymbolIdentity;
   /** 分析方向 */
   direction: CallHierarchyDirection;
   /** 分析深度 */

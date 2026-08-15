@@ -8,7 +8,6 @@ export { MoveMemberEngine, createMoveMemberEngine } from './move-member-engine.j
 export { MemberExtractor, createMemberExtractor } from './member-extractor.js';
 export { ReferenceUpdater } from './reference-updater.js';
 export { FileChangePreparer } from './file-change-preparer.js';
-export { ChangeApplier } from './change-applier.js';
 
 // 型別定義
 export type {

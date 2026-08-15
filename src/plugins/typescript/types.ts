@@ -10,7 +10,7 @@ import type {
   Symbol
 } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
-import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
+import { isRelativePath, isValidUnicodeIdentifier, VALUE_SPACE_RESERVED_WORDS } from '@plugins/shared/index.js';
 import * as ts from 'typescript';
 
 // Re-export 共用函數供外部使用
@@ -120,6 +120,7 @@ export const SYMBOL_TYPE_MAP: Partial<Record<ts.SyntaxKind, SymbolType>> = {
   [ts.SyntaxKind.FunctionDeclaration]: SymbolType.Function,
   [ts.SyntaxKind.MethodDeclaration]: SymbolType.Function,
   [ts.SyntaxKind.VariableDeclaration]: SymbolType.Variable,
+  [ts.SyntaxKind.BindingElement]: SymbolType.Variable,
   [ts.SyntaxKind.PropertyDeclaration]: SymbolType.Variable,
   [ts.SyntaxKind.TypeAliasDeclaration]: SymbolType.Type,
   [ts.SyntaxKind.EnumDeclaration]: SymbolType.Enum,
@@ -243,9 +244,36 @@ interface NodeWithName extends ts.Node {
   name?: ts.Identifier | ts.StringLiteral | ts.PropertyName;
 }
 
+/**
+ * ES2022 私有欄位/方法識別符（`ts.PrivateIdentifier`，如 `#secret`）的 `.text` 恆帶 `#` 前綴。
+ * 符號名（供 search/find-references/rename 等既有的精確名稱 Map 比對使用）與
+ * `reference-finder.ts` 比對引用 token 時都需要「去除前綴的裸名」（`"secret"`），
+ * 故抽成單一來源，避免兩處各自 `.slice(1)`。`#` 前綴本身由位置範圍
+ * （`getSymbolIdentifierRange`，見 symbol-extractor.ts）與引用比對的範圍計算
+ * （`reference-finder.ts`）另行保留，重建含 `#` 的原始文字。
+ */
+export function privateIdentifierBareName(node: ts.PrivateIdentifier): string {
+  return node.text.slice(1);
+}
+
+/**
+ * 是否為 ES2022 私有欄位/方法宣告（`name` 為 `PrivateIdentifier`，如 `#secret`）。
+ * 供 findReferences 判斷是否需改走檔案作用域掃描：TypeScript Language Service 的
+ * identifier-anchor 機制（`getIdentifierFromSymbolNode`）只認 `ts.Identifier`，對
+ * `PrivateIdentifier` 名稱一律回傳 `null`，導致 LS 完全找不到引用（見 parser.ts findReferences）。
+ */
+export function isPrivateFieldDeclaration(node: ts.Node): node is ts.Node & { name: ts.PrivateIdentifier } {
+  const namedNode = node as NodeWithName;
+  return !!namedNode.name && ts.isPrivateIdentifier(namedNode.name);
+}
+
 export function getNodeName(node: ts.Node): string | undefined {
   if (ts.isIdentifier(node)) {
     return node.text;
+  }
+
+  if (ts.isPrivateIdentifier(node)) {
+    return privateIdentifierBareName(node);
   }
 
   const namedNode = node as NodeWithName;
@@ -255,6 +283,12 @@ export function getNodeName(node: ts.Node): string | undefined {
     }
     if (ts.isStringLiteral(namedNode.name)) {
       return namedNode.name.text;
+    }
+    if (ts.isPrivateIdentifier(namedNode.name)) {
+      // ES2022 私有欄位/方法（如 #secret）：符號名去除 `#` 前綴，讓既有以名稱做精確比對
+      // 的機制（Map key，如 findSymbol／rename --from）能用使用者輸入的裸名（"secret"）
+      // 命中；`#` 僅是固定語法前綴，由位置範圍與引用比對另行處理。
+      return privateIdentifierBareName(namedNode.name);
     }
   }
 
@@ -271,6 +305,7 @@ export function isSymbolDeclaration(node: ts.Node): boolean {
     ts.isInterfaceDeclaration(node) ||
     ts.isFunctionDeclaration(node) ||
     ts.isVariableDeclaration(node) ||
+    ts.isBindingElement(node) ||
     ts.isMethodDeclaration(node) ||
     ts.isPropertyDeclaration(node) ||
     ts.isPropertySignature(node) ||
@@ -399,15 +434,16 @@ export function createTypeScriptASTNode(
   });
 
   // 對於某些節點，還需要檢查語法結構，特別是 export 語句
+  // 注意：VariableStatement 不需要額外處理——forEachChild 已經會遍歷
+  // declarationList（VariableDeclarationList），而該節點自身的 forEachChild
+  // 又會遍歷其 declarations，因此每個 VariableDeclaration 已經會出現在樹中
+  // （巢狀於 VariableDeclarationList 之下）。過去在此額外把 declarations 直接
+  // push 成 VariableStatement 的子節點，會讓同一個 VariableDeclaration 節點
+  // 被建立兩次，導致 symbol-extractor 對同一宣告重複提取符號。
   if (ts.isExportDeclaration(tsNode) && tsNode.exportClause && ts.isNamedExports(tsNode.exportClause)) {
     // Export 可能包含額外的符號
     for (const element of tsNode.exportClause.elements) {
       children.push(createTypeScriptASTNode(element, sourceFile));
-    }
-  } else if (ts.isVariableStatement(tsNode)) {
-    // VariableStatement 中的聲明
-    for (const declaration of tsNode.declarationList.declarations) {
-      children.push(createTypeScriptASTNode(declaration, sourceFile));
     }
   }
 
@@ -431,22 +467,15 @@ export function createTypeScriptASTNode(
 /**
  * TypeScript/JavaScript 保留字列表
  */
-const TYPESCRIPT_RESERVED_WORDS = new Set([
-  // JavaScript reserved words
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  // ES6+
-  'let', 'static', 'async', 'await',
-  // Strict mode reserved words
-  'implements', 'interface', 'package', 'private', 'protected', 'public',
-  // TypeScript specific
-  'enum', 'type', 'namespace', 'module', 'declare', 'abstract', 'as',
+const TYPESCRIPT_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  // 值空間保留字（SSOT：@plugins/shared/reserved-words.js）
+  ...VALUE_SPACE_RESERVED_WORDS,
+  // TypeScript specific（contextual keyword：僅型別／宣告語法位置有特殊意義）
+  'type', 'namespace', 'module', 'declare', 'abstract', 'as',
   'asserts', 'any', 'boolean', 'constructor', 'get', 'infer', 'is',
   'keyof', 'never', 'readonly', 'require', 'number', 'object', 'set',
   'string', 'symbol', 'undefined', 'unique', 'unknown', 'from', 'global',
-  'of', 'null', 'true', 'false'
+  'of'
 ]);
 
 /**

@@ -5,7 +5,15 @@
 
 import * as path from 'path';
 import * as ts from 'typescript';
-import { Dependency, DependencyType, isSourceFileExtension } from '@shared/types/index.js';
+import {
+  type Dependency,
+  DependencyType,
+  isJavaScriptSourceExtension,
+  isSourceFileExtension,
+  isTypeScriptSourceExtension
+} from '@shared/types/index.js';
+import type { ParserRegistry } from '@infrastructure/parser/index.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import type { PathResolver } from './path-resolver.js';
 import type { FileScanner } from './file-scanner.js';
 
@@ -24,7 +32,8 @@ export class DependencyExtractor {
 
   constructor(
     pathResolver: PathResolver,
-    fileScanner: FileScanner
+    fileScanner: FileScanner,
+    private readonly parserRegistry?: ParserRegistry
   ) {
     this.pathResolver = pathResolver;
     this.fileScanner = fileScanner;
@@ -34,14 +43,20 @@ export class DependencyExtractor {
    * 從檔案內容中提取依賴關係
    * @param content 檔案內容
    * @param filePath 檔案路徑
+   * @param root 比對基準根目錄（如專案根目錄），供 fileScanner 相對化排除樣式比對；
+   *   未提供時（如直接對單一檔案分析、無專案掃描上下文）退回以原始路徑比對
    * @returns 依賴列表
    */
-  async extractDependencies(content: string, filePath: string): Promise<Dependency[]> {
+  async extractDependencies(content: string, filePath: string, root?: string): Promise<Dependency[]> {
     const dependencies: Dependency[] = [];
     const fileExt = path.extname(filePath);
 
-    if (!isSourceFileExtension(fileExt)) {
+    if (!isSourceFileExtension(fileExt) && !this.parserRegistry?.getParser(fileExt)) {
       return dependencies;
+    }
+
+    if (!isTypeScriptSourceExtension(fileExt) && !isJavaScriptSourceExtension(fileExt)) {
+      return this.extractParserDependencies(content, filePath, root);
     }
 
     const dependencySpecs = this.extractDependencySpecs(content, filePath);
@@ -49,7 +64,11 @@ export class DependencyExtractor {
     for (const dependencySpec of dependencySpecs) {
       const resolvedPath = await this.pathResolver.resolvePath(dependencySpec.importPath, filePath);
 
-      if (resolvedPath && this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath)) {
+      if (
+        resolvedPath &&
+        resolvedPath.exists &&
+        this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)
+      ) {
         dependencies.push({
           path: resolvedPath.resolvedPath,
           type: dependencySpec.type,
@@ -63,13 +82,42 @@ export class DependencyExtractor {
     return dependencies;
   }
 
+  private async extractParserDependencies(content: string, filePath: string, root?: string): Promise<Dependency[]> {
+    const parser = this.parserRegistry?.getParser(path.extname(filePath));
+    if (!parser) {
+      return [];
+    }
+
+    const ast = await parser.parse(content, filePath);
+    const parserDependencies = await parser.extractDependencies(ast);
+    const dependencies: Dependency[] = [];
+
+    for (const parserDependency of parserDependencies) {
+      const resolvedPath = await this.pathResolver.resolvePath(parserDependency.path, filePath);
+
+      if (
+        resolvedPath &&
+        resolvedPath.exists &&
+        this.fileScanner.shouldIncludeDependency(resolvedPath.resolvedPath, root)
+      ) {
+        dependencies.push({
+          ...parserDependency,
+          path: resolvedPath.resolvedPath,
+          isRelative: resolvedPath.isRelative
+        });
+      }
+    }
+
+    return dependencies;
+  }
+
   private extractDependencySpecs(content: string, filePath: string): DependencySpec[] {
     const sourceFile = ts.createSourceFile(
       filePath,
       content,
       ts.ScriptTarget.Latest,
       true,
-      this.getScriptKind(filePath)
+      getScriptKind(filePath)
     );
     const dependencySpecs: DependencySpec[] = [];
 
@@ -221,19 +269,4 @@ export class DependencyExtractor {
       && exportClause.elements.every(element => element.isTypeOnly);
   }
 
-  private getScriptKind(filePath: string): ts.ScriptKind {
-    if (filePath.endsWith('.tsx')) {
-      return ts.ScriptKind.TSX;
-    }
-
-    if (filePath.endsWith('.jsx')) {
-      return ts.ScriptKind.JSX;
-    }
-
-    if (filePath.endsWith('.js') || filePath.endsWith('.mjs') || filePath.endsWith('.cjs')) {
-      return ts.ScriptKind.JS;
-    }
-
-    return ts.ScriptKind.TS;
-  }
 }

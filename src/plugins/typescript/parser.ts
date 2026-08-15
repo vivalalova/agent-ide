@@ -10,7 +10,6 @@ import {
   Definition,
   Usage,
   ValidationResult,
-  DefinitionKind,
   createValidationSuccess,
   createValidationFailure,
   createCodeEdit,
@@ -40,12 +39,10 @@ import {
 } from '@shared/types/index.js';
 import {
   TypeScriptAST,
-  TypeScriptSymbol,
   DEFAULT_COMPILER_OPTIONS,
   TypeScriptParseError,
   createTypeScriptASTNode,
   createParseError,
-  tsPositionToPosition,
   positionToTsPosition,
   tsNodeToRange,
   isValidIdentifier
@@ -57,16 +54,29 @@ import {
   TYPESCRIPT_EXCLUDE_PATTERNS,
   matchesAnyPattern,
   validateParserInput,
-  validateRenameInput
+  validateRenameInput,
+  computeContentHash
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
-import { createHash } from 'node:crypto';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
 import { createPatternAnalyzer, type PatternAnalyzer } from './pattern-analyzer.js';
 import { createReferenceFinder, type ReferenceFinder } from './reference-finder.js';
+import { createReferenceResolver, type ReferenceResolver } from './reference-resolver.js';
+import {
+  findNodeAtPosition,
+  isRenameableNode,
+  isDefinitionNode,
+  getDefinitionKind,
+  symbolTypeToDefinitionKind,
+  getReferenceUsageKind,
+  findSymbolAtPosition,
+  findInnermostScopedSymbol
+} from './node-locator.js';
 
 /**
  * AST 快取項目
@@ -96,6 +106,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
   private declarationAnalyzer: DeclarationAnalyzer;
   private patternAnalyzer: PatternAnalyzer;
   private referenceFinder: ReferenceFinder;
+  private referenceResolver: ReferenceResolver;
 
   /** AST 快取（以 filePath 為 key，LRU 由 MemoryCache 自動處理） */
   private readonly astCache: MemoryCache<string, ASTCacheItem> = createLRUCache(100);
@@ -109,17 +120,10 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     this.declarationAnalyzer = createDeclarationAnalyzer(this.compilerOptions);
     this.patternAnalyzer = createPatternAnalyzer(this.compilerOptions);
     this.referenceFinder = createReferenceFinder(this.compilerOptions);
+    this.referenceResolver = createReferenceResolver(this.languageServiceManager, this.scopeAnalyzer, this.referenceFinder);
 
     // 註冊到記憶體監控器
     MemoryMonitor.getInstance().register(this);
-  }
-
-  /**
-   * 計算程式碼內容的雜湊值
-   * 用於快取驗證
-   */
-  private computeContentHash(content: string): string {
-    return createHash('sha256').update(content).digest('hex');
   }
 
   /**
@@ -129,7 +133,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     validateParserInput(code, filePath);
 
     // 檢查 AST 快取
-    const contentHash = this.computeContentHash(code);
+    const contentHash = computeContentHash(code);
     const cached = this.astCache.get(filePath);
     if (cached && cached.contentHash === contentHash) {
       return cached.ast;
@@ -143,7 +147,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
         code,
         this.compilerOptions.target || ts.ScriptTarget.ES2020,
         true, // setParentNodes
-        this.getScriptKind(filePath)
+        getScriptKind(filePath)
       );
 
       // 檢查語法錯誤 - 使用 TypeScript Program 來檢查語法錯誤
@@ -219,130 +223,10 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
   /**
    * 查找符號引用
+   * 委託給 ReferenceResolver
    */
-  async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
-    const typedAst = ast as TypeScriptAST;
-    const typedSymbol = symbol as TypeScriptSymbol;
-
-    // 確保 Language Service 已初始化
-    this.languageServiceManager.ensureInitialized(typedAst.tsSourceFile);
-
-    if (!this.languageServiceManager.languageService) {
-      // 如果無法使用 Language Service，回退到原始方法
-      return this.findReferencesBasic(ast, symbol);
-    }
-
-    const fileName = typedAst.tsSourceFile.fileName;
-
-    // 取得符號位置
-    const symbolPosition = this.languageServiceManager.getSymbolPosition(
-      typedSymbol,
-      typedAst.tsSourceFile,
-      (node) => this.scopeAnalyzer.getIdentifierFromSymbolNode(node) ?? undefined
-    );
-    if (symbolPosition === undefined) {
-      return [];
-    }
-
-    // 使用 Language Service 查找引用
-    const referencesResult = this.languageServiceManager.languageService.findReferences(fileName, symbolPosition);
-
-    if (!referencesResult) {
-      return [];
-    }
-
-    const references: Reference[] = [];
-
-    for (const refSymbol of referencesResult) {
-      for (const ref of refSymbol.references) {
-        const sourceFile = this.languageServiceManager.getSourceFileFromFileName(ref.fileName);
-        if (!sourceFile) { continue; }
-
-        const range: Range = {
-          start: tsPositionToPosition(sourceFile, ref.textSpan.start),
-          end: tsPositionToPosition(sourceFile, ref.textSpan.start + ref.textSpan.length)
-        };
-
-        const refType: ReferenceType = ref.isDefinition
-          ? ReferenceType.Definition
-          : ReferenceType.Usage;
-
-        references.push({
-          symbol,
-          location: {
-            filePath: ref.fileName,
-            range
-          },
-          type: refType
-        });
-      }
-    }
-
-    return references;
-  }
-
-  /**
-   * 基本的符號引用查找（回退方法）
-   * 使用 AST 遍歷，過濾字串和註解中的符號
-   */
-  private async findReferencesBasic(ast: AST, symbol: Symbol): Promise<Reference[]> {
-    const typedAst = ast as TypeScriptAST;
-    const typedSymbol = symbol as TypeScriptSymbol;
-
-    const references: Reference[] = [];
-    const symbolName = typedSymbol.name;
-
-    // 獲取符號的標識符節點
-    const symbolIdentifier = this.scopeAnalyzer.getIdentifierFromSymbolNode(typedSymbol.tsNode);
-    if (!symbolIdentifier) {
-      return references;
-    }
-
-    // 使用 TypeScript 原生的節點遍歷，收集所有標識符
-    const collectIdentifiers = (node: ts.Node): void => {
-      // 過濾：跳過字串字面值
-      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-        return; // 不處理子節點
-      }
-
-      // 過濾：跳過模板字串
-      if (ts.isTemplateExpression(node)) {
-        // 只處理模板表達式中的插值部分，跳過字串部分
-        node.templateSpans.forEach(span => {
-          collectIdentifiers(span.expression);
-        });
-        return;
-      }
-
-      if (ts.isIdentifier(node) && node.text === symbolName) {
-        // 檢查這個標識符是否真的引用了我們的符號
-        if (this.scopeAnalyzer.isReferenceToSymbol(node, typedSymbol)) {
-          const location = {
-            filePath: typedAst.tsSourceFile.fileName,
-            range: tsNodeToRange(node, typedAst.tsSourceFile)
-          };
-
-          const referenceType = this.scopeAnalyzer.getReferenceType(
-            node,
-            typedSymbol,
-            this.isDeclarationNode.bind(this)
-          );
-
-          references.push({
-            symbol,
-            location,
-            type: referenceType
-          });
-        }
-      }
-
-      // 遞歸處理所有子節點
-      ts.forEachChild(node, collectIdentifiers);
-    };
-
-    // 從 SourceFile 開始遍歷
-    collectIdentifiers(typedAst.tsSourceFile);
-    return references;
+  async findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]> {
+    return this.referenceResolver.findReferences(ast, symbol, moduleResolver);
   }
 
   /**
@@ -363,7 +247,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
 
     // 查找位置上的節點
-    const node = this.findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
+    const node = findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
     if (!node) {
       throw new Error('在指定位置找不到符號');
     }
@@ -373,7 +257,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     if (ts.isIdentifier(node)) {
       targetIdentifier = node;
-    } else if (this.isRenameableNode(node)) {
+    } else if (isRenameableNode(node)) {
       targetIdentifier = this.scopeAnalyzer.getIdentifierFromSymbolNode(node);
     }
 
@@ -390,7 +274,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
 
     // 查找所有引用
-    const symbol = await this.findSymbolAtPosition(typedAst, position);
+    const symbol = await findSymbolAtPosition(typedAst, position, this.symbolExtractor, this.scopeAnalyzer);
     if (!symbol) {
       throw new Error('無法找到符號定義');
     }
@@ -420,7 +304,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     const typedAst = ast as TypeScriptAST;
     const tsPosition = positionToTsPosition(typedAst.tsSourceFile, position);
 
-    const node = this.findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
+    const node = findNodeAtPosition(typedAst.tsSourceFile, tsPosition);
     if (!node) {
       return null;
     }
@@ -431,33 +315,33 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     }
 
     // 如果當前節點本身就是定義，返回它
-    if (this.isDefinitionNode(node)) {
+    if (isDefinitionNode(node)) {
       const location = {
         filePath: typedAst.tsSourceFile.fileName,
         range: tsNodeToRange(node, typedAst.tsSourceFile)
       };
 
-      return createDefinition(location, this.getDefinitionKind(node));
+      return createDefinition(location, getDefinitionKind(node));
     }
 
     // 如果是標識符，查找它的定義
     if (ts.isIdentifier(node)) {
       const name = node.text;
       const symbols = await this.extractSymbols(ast);
+      const matchingSymbols = symbols.filter(symbol => symbol.name === name);
+      const scopedSymbol = findInnermostScopedSymbol(matchingSymbols, node, this.scopeAnalyzer);
+      const symbol = scopedSymbol ?? matchingSymbols[0];
 
-      // 查找匹配名稱的符號定義
-      for (const symbol of symbols) {
-        if (symbol.name === name) {
-          // 直接返回符號的定義位置（不需要檢查 isReferenceToSymbol，因為我們是在查找定義）
-          return createDefinition(symbol.location, this.symbolTypeToDefinitionKind(symbol.type));
-        }
+      if (symbol) {
+        // 直接返回符號的定義位置（不需要檢查 isReferenceToSymbol，因為我們是在查找定義）
+        return createDefinition(symbol.location, symbolTypeToDefinitionKind(symbol.type));
       }
     }
 
     // 查找符號的定義
-    const symbol = await this.findSymbolAtPosition(typedAst, position);
+    const symbol = await findSymbolAtPosition(typedAst, position, this.symbolExtractor, this.scopeAnalyzer);
     if (symbol) {
-      return createDefinition(symbol.location, this.symbolTypeToDefinitionKind(symbol.type));
+      return createDefinition(symbol.location, symbolTypeToDefinitionKind(symbol.type));
     }
 
     return null;
@@ -472,7 +356,7 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     // 過濾出使用位置（排除定義）
     return references
       .filter(ref => ref.type === ReferenceType.Usage)
-      .map(ref => createUsage(ref.location, this.getReferenceUsageKind(ref)));
+      .map(ref => createUsage(ref.location, getReferenceUsageKind(ref)));
   }
 
   /**
@@ -543,6 +427,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
     this.referenceFinder = null as unknown as ReferenceFinder;
 
+    this.referenceResolver = null as unknown as ReferenceResolver;
+
     // 清理編譯器選項參考
 
     this.compilerOptions = null as unknown as ts.CompilerOptions;
@@ -610,155 +496,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
 
   // 私有輔助方法
 
-  private getScriptKind(filePath: string): ts.ScriptKind {
-    if (filePath.endsWith('.tsx')) {
-      return ts.ScriptKind.TSX;
-    }
-
-    return ts.ScriptKind.TS;
-  }
-
   private getLanguageFromFilePath(filePath: string): string {
     return filePath.endsWith('.tsx') ? 'tsx' : 'typescript';
-  }
-
-  private findNodeAtPosition(sourceFile: ts.SourceFile, position: number): ts.Node | undefined {
-    function findNode(node: ts.Node): ts.Node | undefined {
-      if (position >= node.getStart(sourceFile) && position < node.getEnd()) {
-        // 先檢查子節點
-        for (const child of node.getChildren(sourceFile)) {
-          const result = findNode(child);
-          if (result) {
-            return result;
-          }
-        }
-        // 如果子節點中沒找到，返回當前節點
-        return node;
-      }
-      return undefined;
-    }
-
-    return findNode(sourceFile);
-  }
-
-  private isRenameableNode(node: ts.Node): boolean {
-    return (
-      ts.isIdentifier(node) ||
-      ts.isClassDeclaration(node) ||
-      ts.isInterfaceDeclaration(node) ||
-      ts.isFunctionDeclaration(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isMethodDeclaration(node) ||
-      ts.isPropertyDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node) ||
-      ts.isModuleDeclaration(node) ||
-      ts.isParameter(node) ||
-      ts.isGetAccessor(node) ||
-      ts.isSetAccessor(node) ||
-      ts.isTypeParameterDeclaration(node) ||
-      ts.isPropertySignature(node) ||
-      ts.isMethodSignature(node)
-    );
-  }
-
-  private isDefinitionNode(node: ts.Node): boolean {
-    return (
-      ts.isClassDeclaration(node) ||
-      ts.isInterfaceDeclaration(node) ||
-      ts.isFunctionDeclaration(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isMethodDeclaration(node) ||
-      ts.isPropertyDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node)
-    );
-  }
-
-  private isDeclarationNode(node: ts.Node): boolean {
-    return (
-      ts.isParameter(node) ||
-      ts.isVariableDeclaration(node) ||
-      ts.isBindingElement(node)
-    );
-  }
-
-  private getDefinitionKind(node: ts.Node): DefinitionKind {
-    if (ts.isClassDeclaration(node)) {return 'class';}
-    if (ts.isInterfaceDeclaration(node)) {return 'interface';}
-    if (ts.isFunctionDeclaration(node)) {return 'function';}
-    if (ts.isMethodDeclaration(node)) {return 'method';}
-    if (ts.isVariableDeclaration(node)) {return 'variable';}
-    if (ts.isPropertyDeclaration(node)) {return 'variable';}
-    if (ts.isTypeAliasDeclaration(node)) {return 'type';}
-    if (ts.isEnumDeclaration(node)) {return 'enum';}
-    if (ts.isModuleDeclaration(node)) {return 'module';}
-    return 'variable';
-  }
-
-  private symbolTypeToDefinitionKind(symbolType: SymbolType): DefinitionKind {
-    // 將 SymbolType 映射到 DefinitionKind
-    switch (symbolType) {
-    case SymbolType.Class:
-      return 'class';
-    case SymbolType.Interface:
-      return 'interface';
-    case SymbolType.Function:
-      return 'function';
-    case SymbolType.Variable:
-      return 'variable';
-    case SymbolType.Constant:
-      return 'constant';
-    case SymbolType.Type:
-      return 'type';
-    case SymbolType.Enum:
-      return 'enum';
-    case SymbolType.Module:
-      return 'module';
-    case SymbolType.Namespace:
-      return 'namespace';
-    default:
-      return 'variable'; // 預設為變數
-    }
-  }
-
-  private getReferenceUsageKind(_reference: Reference): 'read' | 'write' | 'call' | 'reference' {
-    // 基於上下文判斷使用類型
-    return 'reference'; // 簡化實作
-  }
-
-  private async findSymbolAtPosition(ast: TypeScriptAST, position: Position): Promise<Symbol | null> {
-    const symbols = await this.extractSymbols(ast);
-    const tsPosition = positionToTsPosition(ast.tsSourceFile, position);
-
-    // 查找最精確匹配該位置的符號
-    let bestMatch: Symbol | null = null;
-    let bestMatchSize = Number.MAX_SAFE_INTEGER;
-
-    for (const symbol of symbols) {
-      const typedSymbol = symbol as TypeScriptSymbol;
-
-      // 獲取符號的標識符節點
-      const identifier = this.scopeAnalyzer.getIdentifierFromSymbolNode(typedSymbol.tsNode);
-      if (!identifier) {
-        continue;
-      }
-
-      // 檢查位置是否在標識符範圍內
-      const identifierStart = identifier.getStart(ast.tsSourceFile);
-      const identifierEnd = identifier.getEnd();
-
-      if (tsPosition >= identifierStart && tsPosition < identifierEnd) {
-        // 找到最小的匹配範圍（最精確的符號）
-        const size = identifierEnd - identifierStart;
-        if (size < bestMatchSize) {
-          bestMatch = symbol;
-          bestMatchSize = size;
-        }
-      }
-    }
-
-    return bestMatch;
   }
 
   /**
@@ -781,6 +520,19 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
     startLine: number
   ): Range | null {
     return this.declarationAnalyzer.getFullDeclarationRange(code, symbolName, symbolType, startLine);
+  }
+
+  /**
+   * 計算多宣告子語句中，一組已知 dead 的宣告子協調後的刪除範圍
+   * 委託給 DeclarationAnalyzer
+   */
+  computeDeclaratorGroupRemovalRanges(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null {
+    return this.declarationAnalyzer.computeDeclaratorGroupRemovalRanges(code, anchorSymbolName, startLine, deadNames);
   }
 
   /**

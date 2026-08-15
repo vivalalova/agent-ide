@@ -2,3 +2,5 @@ node_modules/
 dist/
 coverage/
 .git/
+.agent-ide/
+pnpm-lock.yaml

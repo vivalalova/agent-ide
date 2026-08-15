@@ -3,6 +3,8 @@
  */
 
 import { Dependency, SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import { COMMON_EXCLUDE_DIR_NAMES } from '@shared/exclude-dirs.js';
 
 /**
  * 檔案依賴資訊
@@ -83,19 +85,25 @@ export interface ExtendedDependencyAnalysisOptions extends DependencyAnalysisOpt
   /** 是否輸出詳細警告資訊（預設 true） */
   readonly verbose?: boolean;
   /** TypeScript 路徑別名映射（鍵為別名前綴，值為絕對路徑） */
-  readonly pathAliases?: Record<string, string>;
+  readonly pathAliases?: PathAliasInput;
+  /** TypeScript baseUrl（絕對路徑），供 bare import 解析 */
+  readonly baseUrl?: string;
+  /** runtime 已註冊 Parser 支援的原始碼副檔名 */
+  readonly sourceFileExtensions?: readonly string[];
 }
 
 /**
  * 建立預設依賴分析選項
  */
-export function createDefaultAnalysisOptions(): DependencyAnalysisOptions {
+export function createDefaultAnalysisOptions(
+  sourceFileExtensions: readonly string[] = SOURCE_FILE_EXTENSIONS
+): DependencyAnalysisOptions {
   return {
     includeNodeModules: false,
     followSymlinks: true,
     maxDepth: 100,
-    excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-    includePatterns: SOURCE_FILE_EXTENSIONS.map(extension => `**/*${extension}`)
+    excludePatterns: COMMON_EXCLUDE_DIR_NAMES,
+    includePatterns: sourceFileExtensions.map(extension => `**/*${extension}`)
   };
 }
 

@@ -13,9 +13,10 @@ import type {
   DocumentationTag
 } from '@infrastructure/parser/index.js';
 import type { Range } from '@shared/types/index.js';
-import { isLineMatch } from '@plugins/shared/index.js';
+import { isLineMatch, computeContentHash } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { tsPositionToPosition, tsNodeToRange } from './types.js';
 
 /**
  * 宣告分析器類別
@@ -24,7 +25,7 @@ import { logger } from '@infrastructure/logging/index.js';
 export class DeclarationAnalyzer {
   /**
    * SourceFile 快取（使用 MemoryCache 自動 LRU 淘汰）
-   * key: code 的 hash（長度 + 前後各 100 字元）
+   * key: code 的 SHA256 全內容雜湊（computeContentHash）
    * value: ts.SourceFile
    */
   private readonly sourceFileCache: MemoryCache<string, ts.SourceFile> = createLRUCache(100);
@@ -41,8 +42,7 @@ export class DeclarationAnalyzer {
    * @returns SourceFile
    */
   private getOrCreateSourceFile(code: string): ts.SourceFile {
-    // 使用簡單的 hash：長度 + 前 100 字元 + 後 100 字元
-    const hash = `${code.length}_${code.slice(0, 100)}_${code.slice(-100)}`;
+    const hash = computeContentHash(code);
 
     // 檢查快取（MemoryCache 自動更新 lastAccessedAt）
     const cached = this.sourceFileCache.get(hash);
@@ -85,44 +85,47 @@ export class DeclarationAnalyzer {
         return null;
       }
 
-      // 取得完整範圍（包含前導註解）
-      // getFullStart() 包含前導 trivia（空白、註解）
-      // getStart() 是實際程式碼開始位置
-      // getEnd() 是結束位置
-      const fullStart = targetNode.getFullStart();
-      const end = targetNode.getEnd();
-
-      const startPos = sourceFile.getLineAndCharacterOfPosition(fullStart);
-      const endPos = sourceFile.getLineAndCharacterOfPosition(end);
-
-      // 修正：當 trivia 開始於行中間（column > 0，即不是行首）時，
-      // 表示該行有其他程式碼（如前一個宣告的 }），應從下一行開始刪除。
-      // 這是因為呼叫端的刪除邏輯是按整行刪除，不考慮 column。
-      let adjustedStartLine = startPos.line + 1;
-      let adjustedStartColumn = startPos.character + 1;
-      if (startPos.character > 0) {
-        // trivia 不是從行首開始，調整到下一行
-        adjustedStartLine = startPos.line + 2;
-        adjustedStartColumn = 1;
+      // 多宣告子語句（如 `let a, b;`）：findDeclarationNode 已回傳精確的目標 VariableDeclaration
+      // 節點（而非整個 VariableStatement），偵測粒度＝刪除粒度，只刪這個宣告子（含前後逗號手術）
+      if (ts.isVariableDeclaration(targetNode)) {
+        return this.computeDeclaratorRemovalRange(sourceFile, targetNode);
       }
 
-      return {
-        start: {
-          line: adjustedStartLine,
-          column: adjustedStartColumn,
-          offset: fullStart
-        },
-        end: {
-          line: endPos.line + 1,
-          column: endPos.character + 1,
-          offset: end
-        }
-      };
+      // 解構綁定（如 `const { dead, live } = x`）：回傳精確 BindingElement 含逗號手術（F25）
+      if (ts.isBindingElement(targetNode)) {
+        return this.computeBindingElementRemovalRange(sourceFile, targetNode);
+      }
+
+      // 取得完整範圍（包含前導註解）
+      return this.computeFullNodeRange(sourceFile, targetNode);
     } catch (error) {
       logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
       // 解析失敗，返回 null 讓呼叫端 fallback 到字串匹配
       return null;
     }
+  }
+
+  /**
+   * 計算節點的完整範圍（包含前導 trivia：空白、註解）
+   * getFullStart() 包含前導 trivia，getStart() 是實際程式碼開始位置，getEnd() 是結束位置
+   *
+   * 當 trivia 開始於行中間（column > 0，即不是行首）時，表示該行有其他程式碼
+   * （如前一個宣告的 }），應從下一行開始刪除，因為呼叫端的刪除邏輯是按整行刪除，不考慮 column。
+   */
+  private computeFullNodeRange(sourceFile: ts.SourceFile, node: ts.Node): Range {
+    const fullStart = node.getFullStart();
+    const end = node.getEnd();
+
+    const startPos = tsPositionToPosition(sourceFile, fullStart);
+    const endPos = tsPositionToPosition(sourceFile, end);
+
+    let start = startPos;
+    if (startPos.column > 1) {
+      // trivia 不是從行首開始，調整到下一行
+      start = { line: startPos.line + 1, column: 1, offset: fullStart };
+    }
+
+    return { start, end: endPos };
   }
 
   /**
@@ -144,10 +147,10 @@ export class DeclarationAnalyzer {
     const visit = (node: ts.Node): void => {
       if (result) { return; } // 已找到，停止搜尋
 
-      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      const nodeStartLine = tsPositionToPosition(sourceFile, node.getStart(sourceFile)).line;
 
       if (this.isMatchingDeclaration(node, symbolName, symbolType, nodeStartLine, startLine)) {
-        result = node;
+        result = this.resolveMatchedDeclarationNode(node, symbolName, symbolType);
         return;
       }
 
@@ -156,6 +159,338 @@ export class DeclarationAnalyzer {
 
     ts.forEachChild(sourceFile, visit);
     return result;
+  }
+
+  /**
+   * 將 isMatchingDeclaration 判定為符合的節點，收斂為實際要刪除的目標節點
+   *
+   * 對多宣告子的 VariableStatement（如 `let a, b;`），偵測粒度是單一宣告子
+   * （每個變數各自獨立判定是否為 dead code），刪除粒度必須與之一致，
+   * 故回傳精確的目標 VariableDeclaration 節點，而非整個語句。
+   *
+   * 對解構綁定（如 `const { dead, live } = x`），偵測粒度是單一 BindingElement，
+   * 回傳該 BindingElement 以便 getFullDeclarationRange 做逗號手術（F25）；
+   * 若 pattern 只剩一個 element，改回傳整個語句以整句刪除。
+   *
+   * 單一識別符宣告子時維持回傳整個語句節點（含前導註解等既有行為不變）。
+   */
+  private resolveMatchedDeclarationNode(node: ts.Node, symbolName: string, symbolType: string): ts.Node {
+    if (
+      (symbolType === 'variable' || symbolType === 'constant')
+      && ts.isVariableStatement(node)
+    ) {
+      if (node.declarationList.declarations.length > 1) {
+        const target = node.declarationList.declarations.find(
+          decl => ts.isIdentifier(decl.name) && decl.name.text === symbolName
+        );
+        if (target) {
+          return target;
+        }
+      }
+
+      // 解構：Object/Array BindingPattern 內的 BindingElement
+      for (const decl of node.declarationList.declarations) {
+        if (!ts.isObjectBindingPattern(decl.name) && !ts.isArrayBindingPattern(decl.name)) {
+          continue;
+        }
+        const element = this.findBindingElementByName(decl.name, symbolName);
+        if (!element) {
+          continue;
+        }
+        // 單一 binding element：整句刪除（與單一 VariableDeclaration 語意對齊）
+        if (decl.name.elements.length === 1) {
+          return node;
+        }
+        return element;
+      }
+    }
+    return node;
+  }
+
+  /**
+   * 在 Object/Array BindingPattern（可巢狀）中尋找名稱相符的 BindingElement
+   */
+  private findBindingElementByName(
+    pattern: ts.BindingPattern,
+    symbolName: string
+  ): ts.BindingElement | null {
+    for (const element of pattern.elements) {
+      if (ts.isOmittedExpression(element)) {
+        continue;
+      }
+      if (ts.isIdentifier(element.name) && element.name.text === symbolName) {
+        return element;
+      }
+      if (ts.isObjectBindingPattern(element.name) || ts.isArrayBindingPattern(element.name)) {
+        const nested = this.findBindingElementByName(element.name, symbolName);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 計算 BindingElement 的精確刪除範圍（含前後逗號手術），對齊多宣告子 VariableDeclaration
+   * 的文字手術語意，避免 `const { dead, live } = x` 刪 dead 時連 live 一併吃掉（F25）。
+   */
+  private computeBindingElementRemovalRange(
+    sourceFile: ts.SourceFile,
+    element: ts.BindingElement
+  ): Range {
+    const parent = element.parent;
+    if (!ts.isObjectBindingPattern(parent) && !ts.isArrayBindingPattern(parent)) {
+      return this.computeFullNodeRange(sourceFile, element);
+    }
+
+    const elements = parent.elements.filter(
+      (el): el is ts.BindingElement => !ts.isOmittedExpression(el)
+    );
+    const index = elements.indexOf(element);
+    if (index < 0 || elements.length <= 1) {
+      return this.computeFullNodeRange(sourceFile, element);
+    }
+
+    const isLast = index === elements.length - 1;
+    let startPos: number;
+    let endPos: number;
+
+    if (isLast) {
+      // 末位：連同其前的逗號（從前一個 element 結尾開始刪）
+      const prev = elements[index - 1];
+      const prevEnd = prev.getEnd();
+      const commentsBeforeComma = this.scanCommentRangesInGap(
+        sourceFile, prevEnd, element.getStart(sourceFile)
+      );
+      startPos = commentsBeforeComma.length > 0
+        ? commentsBeforeComma[commentsBeforeComma.length - 1].end
+        : prevEnd;
+      endPos = element.getEnd();
+    } else {
+      // 首位／中間：連同其後的逗號（刪到下一個 element 起始）
+      startPos = element.getStart(sourceFile);
+      const next = elements[index + 1];
+      const nextStart = next.getStart(sourceFile);
+      const commaStart = this.findSeparatorCommaStart(sourceFile, element.getEnd(), nextStart);
+      const commentsAfterComma = this.scanCommentRangesInGap(sourceFile, commaStart + 1, nextStart);
+      endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
+    }
+
+    return {
+      start: tsPositionToPosition(sourceFile, startPos),
+      end: tsPositionToPosition(sourceFile, endPos)
+    };
+  }
+
+  /**
+   * 計算多宣告子語句中，單一宣告子的精確刪除範圍（文字手術）
+   *
+   * 三種位置：
+   * - 首位／中間：連同其後的逗號（刪到下一個宣告子的起始位置）
+   * - 末位：連同其前的逗號（從前一個宣告子的結尾開始刪）
+   */
+  private computeDeclaratorRemovalRange(sourceFile: ts.SourceFile, declarator: ts.VariableDeclaration): Range {
+    // VariableDeclaration.parent 型別是 VariableDeclarationList | CatchClause；
+    // 透過 resolveMatchedDeclarationNode 產生的節點必然來自 VariableStatement.declarationList，
+    // 此處窄化型別以安全存取 .declarations（CatchClause 分支僅為防禦性 fallback，理論上不會走到）
+    const parent = declarator.parent;
+    const declarations = ts.isVariableDeclarationList(parent) ? parent.declarations : [declarator];
+    const index = declarations.indexOf(declarator);
+    return this.computeDeclaratorRunRemovalRange(sourceFile, declarations, index, index);
+  }
+
+  /**
+   * 計算多宣告子語句中，一段「連續宣告子 run」（單一宣告子時 startIndex === endIndex）
+   * 的精確刪除範圍（文字手術），確保同語句內多個 run 各自的範圍彼此不重疊（D5）。
+   *
+   * 三種位置（以整個 run 的邊界判斷，而非單一宣告子）：
+   * - run 不含末位：連同 run 之後的逗號（刪到 run 後一個宣告子的起始位置）
+   * - run 含末位（且非起始於首位）：連同 run 之前的逗號（從 run 前一個宣告子的結尾開始刪）
+   * - run 涵蓋全部宣告子：交由呼叫端改走整句刪除路徑，不應呼叫本方法
+   *
+   * trivia 歸屬（R2-3）：分隔逗號前的 trivia 屬於前一個宣告子、逗號後的 trivia 屬於
+   * 後一個宣告子。非末位 run 的終點與末位 run 的起點若跨過分隔逗號侵入存活宣告子的
+   * trivia 區，會把存活宣告子自身的註解一併刪除；因此邊界須先落在分隔逗號本身，
+   * 再檢查逗號另一側是否有存活宣告子的註解，有則把邊界退讓到註解外側予以保留。
+   */
+  private computeDeclaratorRunRemovalRange(
+    sourceFile: ts.SourceFile,
+    declarations: readonly ts.VariableDeclaration[],
+    startIndex: number,
+    endIndex: number
+  ): Range {
+    return this.computeNodeListRemovalRange(sourceFile, declarations, startIndex, endIndex);
+  }
+
+  /**
+   * 對「逗號分隔的節點列表」計算一段連續 run 的刪除範圍
+   * （VariableDeclaration 多宣告子與 BindingElement 解構共用）
+   */
+  private computeNodeListRemovalRange(
+    sourceFile: ts.SourceFile,
+    nodes: readonly ts.Node[],
+    startIndex: number,
+    endIndex: number
+  ): Range {
+    const isLastRun = endIndex === nodes.length - 1;
+
+    let startPos: number;
+    if (isLastRun && startIndex > 0) {
+      const prevEnd = nodes[startIndex - 1].getEnd();
+      // 逗號前若夾著屬於前一個（存活）節點的註解，保留註解，只從註解結尾之後開始刪
+      const commentsBeforeComma = this.scanCommentRangesInGap(
+        sourceFile, prevEnd, nodes[startIndex].getStart(sourceFile)
+      );
+      startPos = commentsBeforeComma.length > 0
+        ? commentsBeforeComma[commentsBeforeComma.length - 1].end
+        : prevEnd;
+    } else {
+      startPos = nodes[startIndex].getStart(sourceFile);
+    }
+
+    let endPos: number;
+    if (isLastRun) {
+      endPos = nodes[endIndex].getEnd();
+    } else {
+      const nextStart = nodes[endIndex + 1].getStart(sourceFile);
+      const commaStart = this.findSeparatorCommaStart(sourceFile, nodes[endIndex].getEnd(), nextStart);
+      // 逗號後若夾著屬於下一個（存活）節點的前導註解，保留註解，只刪到註解開始之前
+      const commentsAfterComma = this.scanCommentRangesInGap(sourceFile, commaStart + 1, nextStart);
+      endPos = commentsAfterComma.length > 0 ? commentsAfterComma[0].pos : nextStart;
+    }
+
+    return {
+      start: tsPositionToPosition(sourceFile, startPos),
+      end: tsPositionToPosition(sourceFile, endPos)
+    };
+  }
+
+  /**
+   * 在 [from, to) 範圍內尋找分隔宣告子的逗號 token 起始位置
+   * 使用 scanner 逐 token 掃描（而非字串搜尋），避免區間內的註解本身含有逗號字元時
+   * 誤判分隔位置
+   */
+  private findSeparatorCommaStart(sourceFile: ts.SourceFile, from: number, to: number): number {
+    const scanner = ts.createScanner(sourceFile.languageVersion, /* skipTrivia */ true, sourceFile.languageVariant, sourceFile.text);
+    scanner.setTextPos(from);
+    while (scanner.getTextPos() < to) {
+      const token = scanner.scan();
+      if (token === ts.SyntaxKind.CommaToken) {
+        return scanner.getTextPos() - 1;
+      }
+      if (token === ts.SyntaxKind.EndOfFileToken) {
+        break;
+      }
+    }
+    // 理論上不會發生（宣告子之間必有逗號分隔），fallback 回 to 維持既有行為
+    return to;
+  }
+
+  /**
+   * 在 [from, to) 範圍內掃描所有註解 trivia（不要求前面有換行，涵蓋同行內註解），
+   * 停在第一個非空白、非註解的真實字元（即分隔逗號或下一個宣告子本身）。
+   * 用於判斷分隔逗號前後是否夾著需要保留的宣告子註解。
+   */
+  private scanCommentRangesInGap(
+    sourceFile: ts.SourceFile, from: number, to: number
+  ): Array<{ pos: number; end: number }> {
+    if (from >= to) {
+      return [];
+    }
+    const scanner = ts.createScanner(
+      sourceFile.languageVersion, /* skipTrivia */ false, sourceFile.languageVariant, sourceFile.text,
+      undefined, from, to - from
+    );
+    const ranges: Array<{ pos: number; end: number }> = [];
+    let token = scanner.scan();
+    while (token !== ts.SyntaxKind.EndOfFileToken) {
+      if (token === ts.SyntaxKind.SingleLineCommentTrivia || token === ts.SyntaxKind.MultiLineCommentTrivia) {
+        ranges.push({ pos: scanner.getTokenPos(), end: scanner.getTextPos() });
+      } else if (token !== ts.SyntaxKind.WhitespaceTrivia && token !== ts.SyntaxKind.NewLineTrivia) {
+        break;
+      }
+      token = scanner.scan();
+    }
+    return ranges;
+  }
+
+  /**
+   * 計算多宣告子語句中，一組已知 dead 的宣告子名稱協調後的刪除範圍（D5：跨宣告子避免重疊）
+   *
+   * 逐宣告子各自呼叫 getFullDeclarationRange 時，「首位吃尾逗號」與「末位吃前逗號」的
+   * 規則在同語句有多個 dead 宣告子時會各自算出重疊的刪除範圍，--apply 後把換行與分號
+   * 一併吞掉，造成語法毀損。本方法在同一次呼叫中掌握全部宣告子的 dead 狀態，統一協調：
+   * - 全部宣告子皆 dead → 回傳單一元素（整條語句範圍，含前導 trivia），回到 D1 修復前
+   *   對整句的處理路徑
+   * - 部分 dead → 只把「連續的 dead 宣告子」合併成一個 run，每個 run 各自做首/中/末的
+   *   逗號手術，run 與 run 之間、run 與存活宣告子之間保證不重疊
+   *
+   * @param code 原始程式碼
+   * @param anchorSymbolName 群組中任一宣告子名稱，用來定位所屬的 VariableStatement
+   * @param startLine anchorSymbolName 所在行號（1-based）
+   * @param deadNames 同一語句中已知為 dead 的宣告子名稱集合（含 anchorSymbolName）
+   * @returns 依序回傳每個 dead run 的刪除範圍；找不到符合的宣告、非多宣告子語句、或宣告子
+   *          含非簡單識別符（如解構）時回傳 null，呼叫端應 fallback 至逐一呼叫
+   *          getFullDeclarationRange
+   */
+  computeDeclaratorGroupRemovalRanges(
+    code: string,
+    anchorSymbolName: string,
+    startLine: number,
+    deadNames: ReadonlySet<string>
+  ): Range[] | null {
+    try {
+      const sourceFile = this.getOrCreateSourceFile(code);
+      const targetNode = this.findDeclarationNode(sourceFile, anchorSymbolName, 'variable', startLine);
+      if (!targetNode || !ts.isVariableDeclaration(targetNode)) {
+        // 非多宣告子語句（單一宣告子時 findDeclarationNode 回傳整個 VariableStatement，
+        // 不會窄化為 VariableDeclaration），呼叫端應 fallback
+        return null;
+      }
+
+      const declarationList = targetNode.parent;
+      if (!ts.isVariableDeclarationList(declarationList)) {
+        return null;
+      }
+      const statement = declarationList.parent;
+      if (!ts.isVariableStatement(statement)) {
+        return null;
+      }
+
+      const declarations = declarationList.declarations;
+      const names = declarations.map(decl => (ts.isIdentifier(decl.name) ? decl.name.text : null));
+
+      // 含非簡單識別符（如解構 `let { a, b } = x`）時，run 合併邏輯無法安全判定歸屬，fallback
+      if (names.some(name => name === null)) {
+        return null;
+      }
+
+      const deadFlags = names.map(name => deadNames.has(name as string));
+
+      if (deadFlags.every(flag => flag)) {
+        // 全部宣告子皆 dead：整條語句一起刪除，避免逐宣告子各自手術造成的重疊
+        return [this.computeFullNodeRange(sourceFile, statement)];
+      }
+
+      const ranges: Range[] = [];
+      let runStart = -1;
+      for (let i = 0; i <= deadFlags.length; i++) {
+        const isDead = i < deadFlags.length && deadFlags[i];
+        if (isDead && runStart === -1) {
+          runStart = i;
+        } else if (!isDead && runStart !== -1) {
+          ranges.push(this.computeDeclaratorRunRemovalRange(sourceFile, declarations, runStart, i - 1));
+          runStart = -1;
+        }
+      }
+
+      return ranges;
+    } catch (error) {
+      logger.warn('ts/declaration-analyzer', `AST extraction failed: ${error}`);
+      // 解析失敗，返回 null 讓呼叫端 fallback 到逐一獨立處理
+      return null;
+    }
   }
 
   /**
@@ -213,6 +548,13 @@ export class DeclarationAnalyzer {
         if (ts.isVariableStatement(node)) {
           for (const decl of node.declarationList.declarations) {
             if (ts.isIdentifier(decl.name) && decl.name.text === symbolName) {
+              return true;
+            }
+            // 解構綁定：Object/Array BindingPattern 內的 BindingElement（F25）
+            if (
+              (ts.isObjectBindingPattern(decl.name) || ts.isArrayBindingPattern(decl.name))
+              && this.findBindingElementByName(decl.name, symbolName)
+            ) {
               return true;
             }
           }
@@ -296,12 +638,7 @@ export class DeclarationAnalyzer {
     const moduleSpecifier = node.moduleSpecifier.text;
 
     // 取得範圍（1-based）
-    const startPos = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-    const endPos = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-    const range = {
-      start: { line: startPos.line + 1, column: startPos.character + 1, offset: node.getStart(sourceFile) },
-      end: { line: endPos.line + 1, column: endPos.character + 1, offset: node.getEnd() }
-    };
+    const range = tsNodeToRange(node, sourceFile);
 
     // 取得原始語句文字
     const rawStatement = code.substring(node.getStart(sourceFile), node.getEnd());
@@ -381,7 +718,7 @@ export class DeclarationAnalyzer {
       const typeParameters = this.extractTypeParameters(targetNode);
 
       // 計算函數起始行號（1-based）
-      const startLine = sourceFile.getLineAndCharacterOfPosition(targetNode.getStart(sourceFile)).line + 1;
+      const startLine = tsPositionToPosition(sourceFile, targetNode.getStart(sourceFile)).line;
 
       return {
         parameters,
@@ -407,13 +744,13 @@ export class DeclarationAnalyzer {
     sourceFile: ts.SourceFile,
     functionName: string,
     targetLine?: number
-  ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null {
-    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | null = null;
+  ): ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null {
+    let result: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression | null = null;
 
     const visit = (node: ts.Node): void => {
       if (result) { return; }
 
-      const nodeStartLine = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      const nodeStartLine = tsPositionToPosition(sourceFile, node.getStart(sourceFile)).line;
 
       // 檢查函數宣告
       if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
@@ -431,12 +768,12 @@ export class DeclarationAnalyzer {
         }
       }
 
-      // 檢查箭頭函數（變數宣告）
+      // 檢查箭頭函數／function expression（變數宣告：`const f = (...) => {}` 或 `const f = function (...) {}`）
       if (ts.isVariableDeclaration(node)
           && ts.isIdentifier(node.name)
           && node.name.text === functionName
           && node.initializer
-          && ts.isArrowFunction(node.initializer)) {
+          && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
         if (targetLine === undefined || isLineMatch(nodeStartLine, targetLine)) {
           result = node.initializer;
           return;
@@ -457,19 +794,22 @@ export class DeclarationAnalyzer {
    * @returns 格式化參數陣列
    */
   extractParameters(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
     sourceFile: ts.SourceFile
   ): FormattedParameter[] {
     const parameters: FormattedParameter[] = [];
 
     for (const param of node.parameters) {
+      const isRest = !!param.dotDotDotToken;
+
       if (!ts.isIdentifier(param.name)) {
         // 跳過解構參數等複雜情況，使用整體表示
         const paramText = param.getText(sourceFile);
         parameters.push({
           name: paramText.split(':')[0].trim(),
           type: param.type ? param.type.getText(sourceFile) : 'any',
-          optional: !!param.questionToken || !!param.initializer
+          optional: !!param.questionToken || !!param.initializer,
+          rest: isRest
         });
         continue;
       }
@@ -483,7 +823,8 @@ export class DeclarationAnalyzer {
         name: paramName,
         type: paramType,
         optional,
-        defaultValue
+        defaultValue,
+        rest: isRest
       });
     }
 
@@ -497,7 +838,7 @@ export class DeclarationAnalyzer {
    * @returns 回傳型別字串
    */
   extractReturnType(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
     sourceFile: ts.SourceFile
   ): string {
     if (node.type) {
@@ -512,7 +853,7 @@ export class DeclarationAnalyzer {
    * @returns 泛型參數名稱陣列
    */
   extractTypeParameters(
-    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction
+    node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression
   ): string[] {
     if (!node.typeParameters) {
       return [];

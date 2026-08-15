@@ -4,11 +4,15 @@
  */
 
 import { minimatch } from 'minimatch';
+import * as ts from 'typescript';
+import { matchesPathFragment } from '@shared/path-pattern.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { Changeset } from '@infrastructure/changeset/index.js';
-import { createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
+import { SymbolType } from '@shared/types/symbol.js';
+import { ChangeApplicator, createChangesetBuilder, ChangesetCommand, TextEditOperationType } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { isLineMatch } from '@plugins/shared/index.js';
 import type {
   DeadCodeItem,
   DeadCodeRemovalOptions,
@@ -17,19 +21,20 @@ import type {
   RemovalOperation,
   ImportCleanupOperation,
   RemovalSummary,
-  UpdatedFile
+  UpdatedFile,
+  ResolvedDeadCodeRemovalOptions
 } from './types.js';
 import { DEFAULT_REMOVAL_OPTIONS } from './types.js';
 import { RangeExpander } from './range-expander.js';
 import { ImportCleaner } from './import-cleaner.js';
-import { FileOperationsHandler } from './file-operations.js';
+import { FileOperationsHandler, FileOperationType } from './file-operations.js';
 import { DeadCodeCacheService, createDeadCodeCacheService } from './shared-cache.js';
 
 /**
  * Dead Code 刪除器
  */
 export class DeadCodeRemover {
-  private readonly options: Required<DeadCodeRemovalOptions>;
+  private readonly options: ResolvedDeadCodeRemovalOptions;
   private readonly rangeExpander: RangeExpander;
   private readonly importCleaner: ImportCleaner;
   private readonly fileOperations: FileOperationsHandler;
@@ -44,14 +49,28 @@ export class DeadCodeRemover {
     this.options = { ...DEFAULT_REMOVAL_OPTIONS, ...options };
     this.cacheService = cacheService ?? createDeadCodeCacheService();
     this.rangeExpander = new RangeExpander(parserRegistry);
-    this.importCleaner = new ImportCleaner(fileSystem, parserRegistry, this.cacheService);
+    this.importCleaner = new ImportCleaner(
+      fileSystem,
+      parserRegistry,
+      this.cacheService,
+      this.options.pathAliases,
+      this.options.baseUrl
+    );
     this.fileOperations = new FileOperationsHandler(fileSystem, this.cacheService);
   }
 
   /**
    * 預覽刪除操作
+   *
+   * @param deadCodeItems 待刪除的死代碼項目
+   * @param projectFiles 專案全部檔案路徑（可選）。提供時 import 清理會掃描這些 consumer
+   *   檔案，清掉「引用了被刪 export 符號、但自身沒有任何刪除項」的殘留 import specifier
+   *   （N3）；未提供時退回只掃描有刪除項的檔案（向後相容）。
    */
-  async preview(deadCodeItems: readonly DeadCodeItem[]): Promise<DeadCodeRemovalPreview> {
+  async preview(
+    deadCodeItems: readonly DeadCodeItem[],
+    projectFiles?: readonly string[]
+  ): Promise<DeadCodeRemovalPreview> {
     try {
       // 1. 過濾符合條件的項目
       const { filteredItems, warnings } = this.filterItems(deadCodeItems);
@@ -60,14 +79,22 @@ export class DeadCodeRemover {
         return this.createEmptyPreview(warnings);
       }
 
-      // 2. 產生刪除操作
+      // 2. 產生刪除操作（isImportBinding 項目排除在外，見 generateRemovalOperations 說明）
       const { operations: removals, warnings: removalWarnings } = await this.generateRemovalOperations(filteredItems);
       warnings.push(...removalWarnings);
 
       // 3. 分析並產生 import 清理操作
       let importCleanups: ImportCleanupOperation[] = [];
       if (this.options.cleanupImports) {
-        const importResult = await this.importCleaner.analyzeImportCleanups(removals);
+        // 「檔內未使用的 import binding」項目（isImportBinding）不在 removals 裡（見下方
+        // generateRemovalOperations 排除說明），必須另外告知 ImportCleaner 才能把它們的
+        // import 陳述式一併清掉，否則這類項目會被回報但 --apply 時刪不掉任何東西。
+        const importBindingItems = filteredItems.filter(item => item.isImportBinding);
+        const importResult = await this.importCleaner.analyzeImportCleanups(
+          removals,
+          projectFiles,
+          importBindingItems
+        );
         importCleanups = importResult.cleanups;
         warnings.push(...importResult.warnings);
       }
@@ -103,12 +130,26 @@ export class DeadCodeRemover {
    * @param deadCodeItems 待刪除的死代碼項目
    * @returns Changeset 變更集
    */
-  async generateChangeset(deadCodeItems: readonly DeadCodeItem[]): Promise<Changeset> {
+  async generateChangeset(
+    deadCodeItems: readonly DeadCodeItem[],
+    projectFiles?: readonly string[],
+    mode: 'preview' | 'apply' = 'preview'
+  ): Promise<Changeset> {
+    return this.buildChangeset(await this.preview(deadCodeItems, projectFiles), mode);
+  }
+
+  /**
+   * 把 preview 結果轉成 Changeset。
+   * `generateChangeset()`（CLI 路徑）與 `execute()` 都引用這裡，
+   * 確保刪除語意只有一份定義。
+   *
+   * `mode` 決定 description 措辭：'preview' 尚未寫入（CLI dry-run／未帶 --apply），
+   * 'apply' 為即將／已經真的寫入（execute() 呼叫、或 CLI 帶 --apply）。呼叫端若拿得到
+   * 實際寫入狀態務必如實傳入，避免 preview 模式誤報「已刪除」。
+   */
+  private buildChangeset(preview: DeadCodeRemovalPreview, mode: 'preview' | 'apply' = 'preview'): Changeset {
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.Deadcode);
-
-    // 使用現有的 preview 邏輯收集變更
-    const preview = await this.preview(deadCodeItems);
 
     if (!preview.success) {
       return builder
@@ -139,11 +180,16 @@ export class DeadCodeRemover {
       }], cleanup.cleanupType === 'delete' ? TextEditOperationType.Delete : TextEditOperationType.Modify);
     }
 
-    // 設定描述
+    // 設定描述：preview 模式尚未真的寫入，措辭不得暗示已刪除（見上方 mode 說明）
     const { totalRemovals, importsCleanedUp } = preview.summary;
     builder.withDescription(
-      `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
+      mode === 'apply'
+        ? `Removed ${totalRemovals} dead code items and cleaned ${importsCleanedUp} imports`
+        : `Found ${totalRemovals} dead code items to remove and ${importsCleanedUp} imports to clean (preview)`
     );
+
+    // 附上結構化統計資料（權威來源，供 CLI 層讀取，避免對 description/edits 字串反推）
+    builder.withMetadata({ ...preview.summary });
 
     // 加入警告
     for (const warning of preview.warnings ?? []) {
@@ -166,27 +212,31 @@ export class DeadCodeRemover {
       };
     }
 
-    const errors: string[] = [];
+    // 與 CLI 的 --apply 走同一條寫入路徑（Changeset → ChangeApplicator），
+    // 確保備份／回滾／併發鎖語意一致，不另開直接 writeFile 的第二條寫入路徑。
+    const applyResult = await new ChangeApplicator(this.fileSystem).apply(
+      this.buildChangeset(preview, 'apply'),
+      { atomic: true, rollbackOnError: true }
+    );
+
+    const modifiedFiles = new Set(applyResult.modifiedFiles);
     const updatedFiles: UpdatedFile[] = [];
-
-    // 按檔案分組操作
-    const fileOperationsMap = this.fileOperations.groupOperationsByFile(preview);
-
-    // 逐檔案套用變更
-    for (const [filePath, operations] of fileOperationsMap) {
-      try {
-        const result = await this.fileOperations.applyFileOperations(filePath, operations);
-        updatedFiles.push(result);
-      } catch (error) {
-        errors.push(`檔案 ${filePath} 處理失敗: ${getErrorMessage(error)}`);
+    for (const [filePath, operations] of this.fileOperations.groupOperationsByFile(preview)) {
+      if (!modifiedFiles.has(filePath)) {
+        continue;
       }
+      updatedFiles.push({
+        filePath,
+        removedSymbols: operations.filter(op => op.type === FileOperationType.Removal).length,
+        cleanedImports: operations.filter(op => op.type !== FileOperationType.Removal).length
+      });
     }
 
     return {
-      success: errors.length === 0,
+      success: applyResult.success,
       updatedFiles,
       summary: preview.summary,
-      errors: errors.length > 0 ? errors : undefined
+      errors: applyResult.errors
     };
   }
 
@@ -223,41 +273,237 @@ export class DeadCodeRemover {
 
   /**
    * 產生刪除操作
+   *
+   * 同一 VariableStatement 中若有多個 dead 宣告子（如 `let a, b;` 或跨行
+   * `const a = 1,\n  b = 2;` 兩者皆 dead），逐項獨立呼叫 expandRangeToFullDeclaration
+   * 各自算出的手術範圍會互相重疊，--apply 後造成語法毀損（D5/F12）。
+   * 先以 statement 身分（非 start.line）把同語句 variable/constant 分組，交給
+   * RangeExpander.expandDeclaratorGroupRanges 一次協調出彼此不重疊的範圍；
+   * 非多宣告子語句或其他符號類型維持既有逐項處理路徑不變。
+   *
+   * `isImportBinding` 項目（檔內未使用的 import binding）一律排除在外：RangeExpander
+   * 不理解 import 陳述式語法（named/default/namespace 皆非其 symbolType 分支涵蓋的
+   * 宣告形狀），逐項處理會產生語法錯誤的手術範圍，且會與 ImportCleaner 對同一段
+   * import 陳述式各自產生一次刪除 edit 而重疊（J1c 的重疊 fast-fail 根因）。這類項目
+   * 統一交給 preview() 傳給 ImportCleaner.analyzeImportCleanups 處理（單一編輯來源）。
    */
   private async generateRemovalOperations(
     items: readonly DeadCodeItem[]
   ): Promise<{ operations: RemovalOperation[]; warnings: string[] }> {
     const operations: RemovalOperation[] = [];
     const warnings: string[] = [];
+    const removableItems = items.filter(item => !item.isImportBinding);
 
-    for (const item of items) {
+    // 先依檔案彙整 variable/constant 候選，讀檔後再以 AST statement 身分分組
+    const varConstByFile = new Map<string, DeadCodeItem[]>();
+    const otherSingles: DeadCodeItem[] = [];
+
+    for (const item of removableItems) {
+      if (item.type !== SymbolType.Variable && item.type !== SymbolType.Constant) {
+        otherSingles.push(item);
+        continue;
+      }
+      const filePath = item.location.filePath;
+      const bucket = varConstByFile.get(filePath);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        varConstByFile.set(filePath, [item]);
+      }
+    }
+
+    for (const [filePath, fileItems] of varConstByFile) {
+      const content = await this.readFile(filePath);
+      if (!content) {
+        warnings.push(`跳過 ${fileItems.map(i => i.name).join(', ')}：無法讀取檔案 ${filePath}`);
+        continue;
+      }
+
+      const { groups, singles } = this.partitionMultiDeclaratorGroupsInFile(fileItems, content);
+
+      for (const group of groups) {
+        const anchor = group[0];
+        const deadNames = new Set(group.map(i => i.name));
+        const coordinatedRanges = this.rangeExpander.expandDeclaratorGroupRanges(
+          content,
+          anchor.location.range.start.line,
+          anchor.name,
+          deadNames,
+          anchor.type,
+          filePath
+        );
+
+        if (coordinatedRanges) {
+          for (const range of coordinatedRanges) {
+            operations.push({
+              filePath,
+              range,
+              originalCode: this.fileOperations.extractCode(content, range),
+              symbolName: group.map(i => i.name).join(', '),
+              symbolType: anchor.type
+            });
+          }
+          continue;
+        }
+
+        // Parser 不支援跨宣告子協調：fallback 至既有逐項獨立處理
+        for (const item of group) {
+          this.pushIndividualRemovalOperation(item, content, operations, warnings);
+        }
+      }
+
+      for (const item of singles) {
+        this.pushIndividualRemovalOperation(item, content, operations, warnings);
+      }
+    }
+
+    for (const item of otherSingles) {
       const content = await this.readFile(item.location.filePath);
       if (!content) {
         warnings.push(`跳過 ${item.name}：無法讀取檔案 ${item.location.filePath}`);
         continue;
       }
 
-      // 擴展範圍以包含完整宣告（含 JSDoc 註解）
-      const expandedRange = this.rangeExpander.expandRangeToFullDeclaration(
-        content,
-        item.location.range,
-        item.type,
-        item.name,
-        item.location.filePath
-      );
-
-      const originalCode = this.fileOperations.extractCode(content, expandedRange);
-
-      operations.push({
-        filePath: item.location.filePath,
-        range: expandedRange,
-        originalCode,
-        symbolName: item.name,
-        symbolType: item.type
-      });
+      this.pushIndividualRemovalOperation(item, content, operations, warnings);
     }
 
     return { operations, warnings };
+  }
+
+  /**
+   * 將單一項目的刪除操作加入 operations；RangeExpander 判定無法安全計算刪除範圍時
+   * 跳過該項並記錄警告（見 RangeExpander.canSafelyRemoveWholeLines）
+   */
+  private pushIndividualRemovalOperation(
+    item: DeadCodeItem,
+    content: string,
+    operations: RemovalOperation[],
+    warnings: string[]
+  ): void {
+    const operation = this.buildIndividualRemovalOperation(item, content);
+    if (!operation) {
+      warnings.push(`跳過 ${item.name}：無法安全計算刪除範圍（同行有其他語句或為解構綁定成員）`);
+      return;
+    }
+    operations.push(operation);
+  }
+
+  /**
+   * 產生單一 dead code 項目的刪除操作（既有逐項獨立處理路徑）
+   */
+  private buildIndividualRemovalOperation(item: DeadCodeItem, content: string): RemovalOperation | null {
+    // 擴展範圍以包含完整宣告（含 JSDoc 註解）
+    const expandedRange = this.rangeExpander.expandRangeToFullDeclaration(
+      content,
+      item.location.range,
+      item.type,
+      item.name,
+      item.location.filePath
+    );
+
+    // 無法安全判定刪除範圍（如同物理行有其他語句、解構綁定成員）：跳過該項，
+    // 寧可少刪 dead code 也不誤刪活碼（N1／F6-1）
+    if (!expandedRange) {
+      return null;
+    }
+
+    return {
+      filePath: item.location.filePath,
+      range: expandedRange,
+      originalCode: this.fileOperations.extractCode(content, expandedRange),
+      symbolName: item.name,
+      symbolType: item.type
+    };
+  }
+
+  /**
+   * 以 VariableStatement 身分（statement 起始 offset）把同一檔案內的
+   * variable/constant dead 項目分組。跨行多宣告子必須落在同組，故禁用 start.line
+   * 當唯一 key（F12）。
+   *
+   * 僅「多宣告子語句」且桶內 ≥2 個 dead 項目才形成協調群組；其餘走 singles。
+   */
+  private partitionMultiDeclaratorGroupsInFile(
+    items: readonly DeadCodeItem[],
+    content: string
+  ): { groups: DeadCodeItem[][]; singles: DeadCodeItem[] } {
+    const sourceFile = ts.createSourceFile(
+      'temp.ts',
+      content,
+      ts.ScriptTarget.ES2020,
+      true
+    );
+
+    // statementStartOffset → items belonging to that multi-declarator statement
+    const statementBuckets = new Map<number, DeadCodeItem[]>();
+    const singles: DeadCodeItem[] = [];
+
+    for (const item of items) {
+      const statementStart = this.findMultiDeclaratorStatementStart(
+        sourceFile,
+        item.name,
+        item.location.range.start.line
+      );
+      if (statementStart === null) {
+        singles.push(item);
+        continue;
+      }
+      const bucket = statementBuckets.get(statementStart);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        statementBuckets.set(statementStart, [item]);
+      }
+    }
+
+    const groups: DeadCodeItem[][] = [];
+    for (const bucket of statementBuckets.values()) {
+      if (bucket.length > 1) {
+        groups.push(bucket);
+      } else {
+        singles.push(bucket[0]);
+      }
+    }
+
+    return { groups, singles };
+  }
+
+  /**
+   * 在 AST 中找到包含指定名稱、且靠近 targetLine 的多宣告子 VariableStatement，
+   * 回傳 statement 起始 offset 作為分組身分；找不到或不屬多宣告子則回 null。
+   */
+  private findMultiDeclaratorStatementStart(
+    sourceFile: ts.SourceFile,
+    symbolName: string,
+    targetLine: number
+  ): number | null {
+    let found: number | null = null;
+
+    const visit = (node: ts.Node): void => {
+      if (found !== null) {
+        return;
+      }
+
+      if (ts.isVariableStatement(node) && node.declarationList.declarations.length > 1) {
+        for (const decl of node.declarationList.declarations) {
+          if (!ts.isIdentifier(decl.name) || decl.name.text !== symbolName) {
+            continue;
+          }
+          const declLine = sourceFile.getLineAndCharacterOfPosition(
+            decl.getStart(sourceFile)
+          ).line + 1;
+          if (isLineMatch(declLine, targetLine)) {
+            found = node.getStart(sourceFile);
+            return;
+          }
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return found;
   }
 
   /**
@@ -316,11 +562,22 @@ export class DeadCodeRemover {
    * 支援 glob 模式（如 *.test.ts、**\/__tests__/**）和簡單字串匹配
    */
   private matchesExcludePattern(filePath: string, pattern: string): boolean {
-    // 如果 pattern 包含 glob 特殊字符，使用 minimatch
+    // 如果 pattern 包含 glob 特殊字符，使用 minimatch（此處刻意保留 matchBase:
+    // true，讓 '*.spec.ts' 這類無目錄前綴的樣式也能對到巢狀路徑的檔名部分；
+    // shared/path-pattern.ts 的共用 matcher 不提供 matchBase 語意，兩者用途不同，
+    // 不適合在此處直接替換，見該檔頭部關於此例外的說明）
     if (pattern.includes('*') || pattern.includes('?') || pattern.includes('[')) {
       return minimatch(filePath, pattern, { dot: true, matchBase: true });
     }
-    // 否則使用簡單字串包含匹配（向後相容）
+    // 純路徑片段（含 '/'）：可能是精確檔案路徑（葉節點，如 'src/legacy/api.ts'）
+    // 也可能是目錄／路徑前綴（如 'src/legacy/'），委派共用的 matchesPathFragment
+    // 同時涵蓋兩種情況，避免子字串誤傷同前綴的不同名稱（如 'src/dist' 誤殺
+    // 'src/distance/'，見 P2-A regression：葉節點檔案路徑排除永不命中）。
+    if (pattern.includes('/')) {
+      return matchesPathFragment(filePath, pattern);
+    }
+    // 否則使用簡單字串包含匹配（向後相容，允許任意檔名片段的子字串排除，
+    // 如 '.mock.' 排除任何檔名含此片段的檔案）
     return filePath.includes(pattern);
   }
 

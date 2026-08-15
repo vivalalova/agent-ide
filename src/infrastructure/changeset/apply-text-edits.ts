@@ -1,0 +1,217 @@
+/**
+ * 文字編輯套用核心
+ *
+ * 這是「把一組 TextEdit 套用到內容字串、算出檔案終態」的單一權威實作：
+ * dedupe（去重冪等編輯）→ 重疊檢查（fast-fail）→ 排序 → 從後往前套用。
+ *
+ * ChangeApplicator（實際寫入）委派此函數，作為實寫終態的唯一來源；把此邏輯獨立成
+ * 純函數，方便單獨測試、並讓「編輯如何套用」只有一處定義（含空內容 dedupe、同起點
+ * tiebreak 等邊界規則）。
+ */
+
+import type { TextEdit } from './types.js';
+
+/**
+ * 將編輯操作套用到內容，回傳套用後的完整內容
+ *
+ * @param content 原始內容
+ * @param edits 編輯操作列表
+ * @returns 修改後的內容
+ * @throws Error 偵測到互相踩踏（範圍重疊）的編輯時
+ */
+export function applyTextEdits(content: string, edits: readonly TextEdit[]): string {
+  if (edits.length === 0) {
+    return content;
+  }
+
+  // 完全相同（range 與 newText 皆相同）的重複編輯屬合法冪等操作，靜默 dedupe 為一筆。
+  const dedupedEdits = dedupeIdenticalEdits(edits);
+
+  // 只分割一次，用於計算 offset。空內容走同一套排序＋套用邏輯（不再另開快速路徑），
+  // 確保空內容與非空內容對「同起點零寬插入」的套用順序語意一致（見 calculateOffset：
+  // lines 為空陣列時任一位置皆解析為 offset 0，等同「插入到開頭」）。
+  const lines = splitLines(content);
+
+  // 去重後仍有範圍重疊（以原始 offset 判定）即為衝突編輯，fast-fail：
+  // 絕不靜默套用會互相踩踏的編輯，讓呼叫端走既有錯誤/回滾路徑
+  assertNoOverlappingEdits(dedupedEdits, lines);
+
+  // 按位置從後往前排序（避免位置偏移）
+  const indexedEdits = dedupedEdits.map((edit, index) => ({ edit, index }));
+  indexedEdits.sort((a, b) => {
+    // 先比較起始行號
+    if (a.edit.range.start.line !== b.edit.range.start.line) {
+      return b.edit.range.start.line - a.edit.range.start.line; // 從後往前
+    }
+    // 同起始行則比較起始列號
+    if (a.edit.range.start.column !== b.edit.range.start.column) {
+      return b.edit.range.start.column - a.edit.range.start.column; // 從後往前
+    }
+    // 起點完全相同時的 tiebreak：結束位置較大者先套用（降冪）。
+    // 「從後往前套用」時先套用的會被後套用的疊在前面；讓零寬插入（end === start，
+    // 結束位置最小）最後套用，就能保留在整段替換的結果之前，不被替換吃掉。
+    if (a.edit.range.end.line !== b.edit.range.end.line) {
+      return b.edit.range.end.line - a.edit.range.end.line;
+    }
+    if (a.edit.range.end.column !== b.edit.range.end.column) {
+      return b.edit.range.end.column - a.edit.range.end.column;
+    }
+    // range 完全相同（僅可能是同一位置的多筆零寬插入，非零寬的完全同 range 會被上面的
+    // assertNoOverlappingEdits 判為重疊而拋錯）：此處排序決定的是「套用順序」，而套用迴圈
+    // 對同一 offset 重複插入時，後套用者會疊在先套用者之前（見上方主迴圈），故套用順序
+    // 與最終視覺順序恰好相反。要讓最終結果保留輸入順序（先列出的插入排在前面，
+    // 與 changeset-converter.ts 的 mergeAdjacentEdits 對同位置零寬插入的合併語意一致），
+    // 套用順序須是輸入順序的反轉：index 較大者（輸入中較晚出現）先套用。
+    return b.index - a.index;
+  });
+  const sortedEdits = indexedEdits.map(({ edit }) => edit);
+
+  let result = content;
+
+  // 依序應用編輯（直接在字串上操作，避免重複 join/split）
+  for (const edit of sortedEdits) {
+    const { range, newText } = edit;
+
+    // 計算起始和結束偏移
+    const startOffset = calculateOffset(lines, range.start.line, range.start.column);
+    const endOffset = calculateOffset(lines, range.end.line, range.end.column);
+
+    // 直接在字串上替換指定範圍
+    result = result.substring(0, startOffset) + newText + result.substring(endOffset);
+  }
+
+  return result;
+}
+
+/**
+ * 去除完全相同（range 與 newText 皆相同）的重複編輯
+ * 這是合法的冪等情況（例如上游對同一筆變更重複產生），靜默 dedupe 為一筆即可，
+ * 不應被後續的重疊偵測誤判為衝突
+ * @param edits 原始編輯操作列表
+ * @returns 去重後的編輯操作列表（保留原始相對順序）
+ */
+function dedupeIdenticalEdits(edits: readonly TextEdit[]): TextEdit[] {
+  const seen = new Set<string>();
+  const deduped: TextEdit[] = [];
+
+  for (const edit of edits) {
+    const { start, end } = edit.range;
+    const key = `${start.line}:${start.column}-${end.line}:${end.column} ${edit.newText}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(edit);
+  }
+
+  return deduped;
+}
+
+/**
+ * 偵測去重後仍存在的範圍重疊編輯，重疊時直接拋錯（fast-fail）
+ *
+ * 重疊判定以「原始內容」計算出的 offset 為準（同一份 lines，僅計算一次）：
+ * - 零寬插入（start === end）與相鄰編輯（前一筆的 end === 後一筆的 start）
+ *   兩者的範圍在字元層級並無重疊，不算衝突（move-member M4 的零寬 import 插入
+ *   與後續整檔替換即依賴此邊界不誤殺）
+ * - 僅當前一筆（依 start 遞增排序後）的結束 offset 嚴格大於後一筆的起始 offset，
+ *   代表兩者實際字元範圍互踩，才視為衝突
+ *
+ * @param edits 已去重的編輯操作列表
+ * @param lines 原始內容分割後的行陣列（用於計算 offset）
+ * @throws Error 偵測到重疊編輯時，訊息包含兩筆編輯各自的 range 與 offset
+ */
+function assertNoOverlappingEdits(edits: readonly TextEdit[], lines: string[]): void {
+  if (edits.length < 2) {
+    return;
+  }
+
+  const withOffsets = edits
+    .map(edit => ({
+      edit,
+      start: calculateOffset(lines, edit.range.start.line, edit.range.start.column),
+      end: calculateOffset(lines, edit.range.end.line, edit.range.end.column)
+    }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  for (let i = 1; i < withOffsets.length; i++) {
+    const prev = withOffsets[i - 1];
+    const curr = withOffsets[i];
+
+    if (prev.end > curr.start) {
+      const describe = (r: typeof prev): string =>
+        `[${r.edit.range.start.line}:${r.edit.range.start.column}-${r.edit.range.end.line}:${r.edit.range.end.column}]（offset [${r.start},${r.end})）`;
+      throw new Error(
+        `偵測到重疊的 TextEdit：${describe(prev)} 與 ${describe(curr)} 重疊`
+      );
+    }
+  }
+}
+
+/**
+ * 分割內容為行（保留換行符）
+ * @param content 原始內容
+ * @returns 行陣列
+ */
+function splitLines(content: string): string[] {
+  if (!content) {return [];}
+  const lines = content.split('\n');
+  // 保留換行符（除了最後一行）
+  return lines.map((line, i) =>
+    i < lines.length - 1 ? line + '\n' : line
+  ).filter(line => line.length > 0 || lines.length === 1);
+}
+
+/**
+ * 計算指定位置的字元偏移量
+ *
+ * 座標系統說明：
+ * - line: 行號（1-based），有效範圍 [1, lines.length+1]
+ *   - 1 = 第一行
+ *   - lines.length+1 = 檔案末尾（用於追加內容）
+ * - column: 列號（1-based），有效範圍 [1, 當前行長度+1]
+ *   - 1 = 行首
+ *   - 行長度+1 = 行尾（用於行尾插入）
+ *
+ * 超出範圍的處理：
+ * - line > lines.length: 視為檔案末尾，offset 為檔案總長度
+ * - column > 行長度: 視為行尾，offset 為該行最後一個字元後
+ *
+ * @param lines 行陣列
+ * @param line 行號（1-based，從 1 開始，允許 lines.length+1 用於檔案末尾插入）
+ * @param column 列號（1-based，從 1 開始，允許行長度+1 用於行尾插入）
+ * @returns 字元偏移量
+ * @throws Error 當行號 < 1 或列號 < 1 時
+ */
+function calculateOffset(lines: string[], line: number, column: number): number {
+  // 驗證基本參數（只禁止負數，超出範圍允許用於插入操作）
+  if (line < 1) {
+    throw new Error(`無效的行號: ${line}，行號必須 >= 1（1-based 索引）`);
+  }
+  if (column < 1) {
+    throw new Error(`無效的列號: ${column}，列號必須 >= 1（1-based 索引）`);
+  }
+
+  let offset = 0;
+
+  // 累加前面所有行的長度（使用邊界檢查避免越界）
+  for (let i = 0; i < line - 1 && i < lines.length; i++) {
+    offset += lines[i].length;
+  }
+
+  // 加上當前行的列偏移；column 超出該行實際長度時 clamp 到行尾（不含換行符），
+  // 避免未 clamp 時直接把偏移量加到超出行界，越界走進下一行的內容（見文件註解
+  // 「column > 行長度: 視為行尾」——此處補上原本只寫在註解、未落實的 clamp）。
+  // line 超出 lines.length（檔案末尾插入）時沒有實際行內容可 clamp，維持原樣相加。
+  const currentLine = lines[line - 1];
+  if (currentLine !== undefined) {
+    const hasTrailingNewline = currentLine.endsWith('\n');
+    const lineContentLength = hasTrailingNewline ? currentLine.length - 1 : currentLine.length;
+    const clampedColumn = Math.min(column, lineContentLength + 1);
+    offset += clampedColumn - 1;
+  } else {
+    offset += column - 1;
+  }
+
+  return offset;
+}

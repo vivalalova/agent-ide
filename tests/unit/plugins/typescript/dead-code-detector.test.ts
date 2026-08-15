@@ -178,6 +178,7 @@ describe('DEFAULT_DEAD_CODE_OPTIONS', () => {
     { type: SymbolType.Function, description: '函式' },
     { type: SymbolType.Class, description: '類別' },
     { type: SymbolType.Variable, description: '變數' },
+    { type: SymbolType.Constant, description: '常數' },
     { type: SymbolType.Interface, description: '介面' },
     { type: SymbolType.Type, description: '型別' },
   ])('應該檢測 $description ($type)', ({ type }) => {
@@ -454,10 +455,6 @@ describe('DeadCodeDetector 排除邏輯', () => {
       {
         scenario: 'Property（預設不檢測）',
         symbolType: SymbolType.Property,
-      },
-      {
-        scenario: 'Constant（預設不檢測）',
-        symbolType: SymbolType.Constant,
       },
       {
         scenario: 'Enum（預設不檢測）',

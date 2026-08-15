@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertChangesetToPreviewInput } from '@infrastructure/changeset/changeset-converter.js';
+import { ChangeApplicator } from '@infrastructure/changeset/change-applicator.js';
 import { PreviewCommand } from '@infrastructure/formatters/types.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import { ChangesetCommand, FileOperationType, type Changeset } from '@infrastructure/changeset/types.js';
@@ -299,6 +300,135 @@ describe('convertChangesetToPreviewInput', () => {
       const result = await convertChangesetToPreviewInput(changeset, mockFileSystem);
 
       expect(result.fileChanges[0].changes.length).toBeGreaterThan(0);
+    });
+  });
+
+  // MARK: - 假變更行 regression（deadcode 整行刪除接續 unchanged 行）
+
+  describe('假變更行 regression：跨行刪除接續 unchanged 行（LSP exclusive end, endCol=1）', () => {
+    it('刪除前兩行（函式宣告＋尾隨空行）不應把第三行 unchanged 內容假造成變更', async () => {
+      // 模擬 deadcode 刪除 dead() 函式：其後緊接一個空白行，
+      // range-expander 會把 range 擴展到吞掉該空行，
+      // end 落在下一行（keep() 那行）的 column 1 —— LSP exclusive end，
+      // 意即「刪除到此列之前」，keep() 那行本身應維持不變、不出現在任何 change 中。
+      const deadLine = 'function dead() { return 1; }';
+      const blankLine = '';
+      const keepLine = 'export function keep() { return 2; }';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(
+        `${deadLine}\n${blankLine}\n${keepLine}`
+      );
+
+      const changeset = createChangeset({
+        command: ChangesetCommand.Deadcode,
+        textChanges: [{
+          filePath: '/a.ts',
+          edits: [{ range: createTestRange(1, 1, 3, 1), newText: '' }]
+        }]
+      });
+
+      const result = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = result.fileChanges[0].changes;
+
+      // 正確行為：只有 line1、line2 被刪除，line3（keep，unchanged）不應出現在任何 change 中
+      expect(changes).toHaveLength(2);
+      expect(
+        changes.some(c => c.oldContent === keepLine || c.newContent === keepLine)
+      ).toBe(false);
+      expect(changes.find(c => c.line === 3)).toBeUndefined();
+
+      // line1 應為純刪除，不應把 line3 內容 reattach 成 newContent（假新增行）
+      expect(changes[0]).toEqual({ line: 1, oldContent: deadLine, newContent: null });
+      expect(changes[1]).toEqual({ line: 2, oldContent: blankLine, newContent: null });
+
+      // 統計不應虛增：只有 2 筆刪除、0 筆新增
+      const deletions = changes.filter(c => c.newContent === null).length;
+      const additions = changes.filter(c => c.oldContent === null).length;
+      expect(deletions).toBe(2);
+      expect(additions).toBe(0);
+    });
+  });
+
+  // MARK: - 純刪除範圍丟棄結尾行 suffix regression（endCol 起被保留）
+
+  describe('純刪除範圍丟棄結尾行 suffix regression', () => {
+    it('刪除範圍終止於結尾行中段時，該行 endCol 起被保留的 suffix 不應被靜默丟棄', async () => {
+      // 模擬刪除一段以整行開始、但終止於下一行中段的程式碼：
+      // range 從 line1 col1 到 line3 col3，newText 為空字串。
+      // line3 內容為 `}; const keep = 1;`，endCol=3 表示刪除涵蓋前兩個字元 `};`，
+      // 從 column 3 起（含前導空白）的 ` const keep = 1;` 屬於 endCol 之後、應被保留。
+      const line1 = 'const unused = () => {';
+      const line2 = '  return 1;';
+      const line3 = '}; const keep = 1;';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(`${line1}\n${line2}\n${line3}`);
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/b.ts',
+          edits: [{ range: createTestRange(1, 1, 3, 3), newText: '' }]
+        }]
+      });
+
+      const result = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = result.fileChanges[0].changes;
+
+      // 正確行為：line3 保留段 ` const keep = 1;` 必須出現在某個 change 的 newContent 中
+      // （例如以 modify 形式呈現：oldContent 為整行 line3，newContent 為保留的 suffix）
+      expect(
+        changes.some(c => typeof c.newContent === 'string' && c.newContent.includes('const keep = 1;'))
+      ).toBe(true);
+
+      // Bug：目前的壞行為是 line3 被當成純刪除（newContent: null），
+      // suffix 被靜默丟棄，沒有任何 change 保留它、統計把 keep 段誤當已刪
+      const line3IsPureDelete = changes.some(c => c.line === 3 && c.newContent === null);
+      const suffixKeptSomewhere = changes.some(
+        c => typeof c.newContent === 'string' && c.newContent.includes('const keep = 1;')
+      );
+      expect(line3IsPureDelete && !suffixKeptSomewhere).toBe(false);
+    });
+  });
+
+  // MARK: - 跨行相鄰編輯被 processedLines 誤丟棄 regression（C6）
+
+  describe('跨行相鄰編輯被 processedLines 誤丟棄（C6）', () => {
+    it('offset 相鄰（不重疊）的第二筆跨行編輯不應被 processedLines 整筆丟棄，預覽須與實寫一致', async () => {
+      // content: 'abcdef\nghijkl\nmnop'
+      // edit1: range 1:1-2:4 -> 'X'（跨行，起始行 1、結束行 2）
+      // edit2: range 2:4-3:1 -> 'Y'（跨行，起始行 2、結束行 3）
+      // 兩者以 offset 計算是相鄰、不重疊（第一筆結束 offset === 第二筆起始 offset），
+      // ChangeApplicator 依此規則判定合法、兩筆都會套用（實寫結果 'XYmnop'）。
+      // 但 convertEditsToLineChanges 用 processedLines（第 341-345 行）以「行號」判斷是否已處理：
+      // edit1 處理完會把 line1、line2 都標記進 processedLines，
+      // edit2 的 start.line=2 命中 processedLines，導致整筆 edit2 被跳過丟棄，
+      // 與 offset 層級「相鄰不算重疊」的規則不一致
+      const content = 'abcdef\nghijkl\nmnop';
+      vi.mocked(mockFileSystem.readFile).mockResolvedValue(content);
+
+      const changeset = createChangeset({
+        textChanges: [{
+          filePath: '/c6.ts',
+          edits: [
+            { range: createTestRange(1, 1, 2, 4), newText: 'X' },
+            { range: createTestRange(2, 4, 3, 1), newText: 'Y' }
+          ]
+        }]
+      });
+
+      // 先驗證 applicator 實際寫入結果：兩筆 offset 相鄰編輯合法、都應套用
+      const applicator = new ChangeApplicator(mockFileSystem);
+      const applyResult = await applicator.apply(changeset);
+      expect(applyResult.success).toBe(true);
+      const writtenContent = vi.mocked(mockFileSystem.writeFile).mock.calls
+        .find(call => call[0] === '/c6.ts')?.[1];
+      expect(writtenContent).toBe('XYmnop');
+
+      // 再驗證預覽必須與實寫結果一致：不得只呈現第一筆編輯、丟棄第二筆
+      const previewResult = await convertChangesetToPreviewInput(changeset, mockFileSystem);
+      const changes = previewResult.fileChanges[0].changes;
+
+      // Bug 現況：edit2 整筆被丟棄，line1 只吸收了 edit1 的 'X' 與 line2 未被消費的 suffix 'jkl'，
+      // 變成 'Xjkl'，完全沒有 'Y' 的痕跡（等效預覽內容為 'Xjkl\nmnop'，與實寫 'XYmnop' 不一致）
+      expect(changes.some(c => c.newContent === 'Xjkl')).toBe(false);
+      expect(changes.some(c => typeof c.newContent === 'string' && c.newContent.startsWith('XY'))).toBe(true);
     });
   });
 

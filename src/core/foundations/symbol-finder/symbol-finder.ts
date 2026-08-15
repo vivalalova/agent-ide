@@ -3,10 +3,12 @@
  * 整合 AST 分析和文字匹配，提供跨檔案符號查找能力
  */
 
+import * as path from 'path';
 import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
-import type { ScopedFindReferencesOptions } from '@infrastructure/parser/interface.js';
+import type { ScopedFindReferencesOptions, ScopedReference, ParserPlugin } from '@infrastructure/parser/interface.js';
+import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
 import { ScopedReferenceKind } from '@infrastructure/parser/interface.js';
 
 import {
@@ -23,9 +25,15 @@ import { TextMatcher } from './text-matcher.js';
 import { CallSiteParser } from './call-site-parser.js';
 import { createFileUtils, type FileUtils } from '../file-utils.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /** 批次並行讀取的檔案數量上限（避免 fd 耗盡） */
 const BATCH_SIZE = 20;
+
+interface NamedImportAlias {
+  readonly moduleSpecifier: string;
+  readonly localName: string;
+}
 
 /**
  * 符號查找器
@@ -89,7 +97,7 @@ export class SymbolFinder {
         documentation
       };
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return null;
     }
   }
@@ -155,6 +163,11 @@ export class SymbolFinder {
         const parser = this.fileUtils.getParser(filePath);
         const lines = content.split('\n');
 
+        // 別名 import 感知：此檔以 `import { X as Y }` 形式匯入的符號，其真正使用點是本地
+        // 別名 Y，而 findScopedReferences 只依原始名 X 掃描會完全對不上（C15：使用中的
+        // export 被誤判 dead）。先建 匯入名 → 本地別名 的對應，稍後對每個目標符號補搜其別名。
+        const aliasMap = this.collectNamedImportAliases(parser, content);
+
         // 對每個目標符號查找引用
         for (const [key, symbol] of symbolKeyMap) {
           // 對於 class method，需要使用 class name 作為 containerName
@@ -174,19 +187,24 @@ export class SymbolFinder {
               const refs = results.get(key);
               if (!refs) {continue;}
               for (const ref of scopedRefs) {
-                const lineIndex = ref.location.range.start.line - 1;
-                const context = lineIndex >= 0 && lineIndex < lines.length
-                  ? lines[lineIndex]
-                  : undefined;
+                refs.push(this.scopedRefToSymbolReference(ref, symbol.name, filePath, lines));
+              }
 
-                refs.push({
-                  symbolName: symbol.name,
-                  location: { filePath, range: ref.location.range },
-                  type: this.scopedReferenceKindToType(ref.kind),
-                  context,
-                  containerName: ref.containerName,
-                  isMethodCall: ref.kind === ScopedReferenceKind.Call
-                });
+              // 補搜本地別名的引用（C15）：以原始名綁定、但使用點為別名的引用會在上面漏掉。
+              // 別名的 import binding token 本身回傳為 Import 類型，不會被誤算為 usage。
+              const sameNameSymbols = symbolsByName.get(symbol.name) ?? [];
+              const hasAmbiguousName = sameNameSymbols.length > 1;
+              for (const alias of aliasMap.get(symbol.name) ?? []) {
+                if (
+                  hasAmbiguousName
+                  && !this.importResolvesToSymbolFile(filePath, alias.moduleSpecifier, symbol.location.filePath)
+                ) {
+                  continue;
+                }
+                const aliasRefs = parser.findScopedReferences(content, alias.localName, { className: containerName });
+                for (const ref of aliasRefs ?? []) {
+                  refs.push(this.scopedRefToSymbolReference(ref, symbol.name, filePath, lines));
+                }
               }
               continue;
             }
@@ -209,15 +227,13 @@ export class SymbolFinder {
                 refs.push({
                   symbolName: symbol.name,
                   location: ref.location,
-                  type: ref.type === 'definition'
-                    ? SymbolReferenceType.Definition
-                    : SymbolReferenceType.Usage,
+                  type: this.mapParserReferenceTypeString(ref.type),
                   context
                 });
               }
             } catch (error) {
               // Parser 失敗，降級到文字匹配
-              diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
+              diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${getErrorMessage(error)}`, filePath);
               const textRefs = this.textMatcher.findReferencesByText(filePath, content, symbol.name);
               const refs = results.get(key);
               if (refs) {refs.push(...textRefs);}
@@ -255,8 +271,12 @@ export class SymbolFinder {
    * @param symbol 完整的符號資訊
    * @returns 符號引用陣列
    */
-  async findReferencesInFileWithSymbol(filePath: string, symbol: Symbol): Promise<SymbolReference[]> {
-    return this.findReferencesInFileCore(filePath, symbol, { filtered: true });
+  async findReferencesInFileWithSymbol(
+    filePath: string,
+    symbol: Symbol,
+    moduleResolver?: ModuleSpecifierResolver
+  ): Promise<SymbolReference[]> {
+    return this.findReferencesInFileCore(filePath, symbol, { filtered: true, moduleResolver });
   }
 
   /**
@@ -350,14 +370,18 @@ export class SymbolFinder {
   /**
    * 查找函式的所有呼叫點
    */
-  async findCallSites(functionName: string, projectFiles: readonly string[]): Promise<CallSite[]> {
+  async findCallSites(
+    functionName: string,
+    projectFiles: readonly string[],
+    options?: { readonly includeNewExpressions?: boolean }
+  ): Promise<CallSite[]> {
     const results: CallSite[] = [];
 
     // 批次並行處理（控制並發數避免 fd 耗盡）
     for (let i = 0; i < projectFiles.length; i += BATCH_SIZE) {
       const batch = projectFiles.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map(filePath => this.findCallSitesInFile(filePath, functionName))
+        batch.map(filePath => this.findCallSitesInFile(filePath, functionName, options))
       );
       for (const callSites of batchResults) {
         results.push(...callSites);
@@ -369,8 +393,14 @@ export class SymbolFinder {
 
   /**
    * 查找檔案中的函式呼叫點
+   *
+   * @param options.includeNewExpressions - 是否一併掃描 `new X(...)` 建構子呼叫點；預設 false
    */
-  async findCallSitesInFile(filePath: string, functionName: string): Promise<CallSite[]> {
+  async findCallSitesInFile(
+    filePath: string,
+    functionName: string,
+    options?: { readonly includeNewExpressions?: boolean }
+  ): Promise<CallSite[]> {
     const content = await this.fileUtils.readFile(filePath);
     if (!content) {
       return [];
@@ -386,9 +416,9 @@ export class SymbolFinder {
       await parser.parse(content, filePath);
 
       // 使用 CallSiteParser 查找呼叫點
-      return this.callSiteParser.findCallSitesInFile(filePath, content, functionName);
+      return this.callSiteParser.findCallSitesInFile(filePath, content, functionName, options);
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return [];
     }
   }
@@ -437,20 +467,121 @@ export class SymbolFinder {
           valueType: undefined
         }));
     } catch (error) {
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed: ${getErrorMessage(error)}`, filePath);
       return [];
     }
+  }
+
+  /**
+   * 將 Parser 的 ScopedReference 轉換為 SymbolReference（含行內容 context）。
+   * findReferencesMultiple 的原始名/別名查找與 findReferencesInFileCore 的作用域查找共用，
+   * 避免同一套轉換邏輯散落多處（Single Source of Truth）。
+   */
+  private scopedRefToSymbolReference(
+    ref: ScopedReference,
+    symbolName: string,
+    filePath: string,
+    lines: string[]
+  ): SymbolReference {
+    const lineIndex = ref.location.range.start.line - 1;
+    const context = lineIndex >= 0 && lineIndex < lines.length
+      ? lines[lineIndex]
+      : undefined;
+
+    return {
+      symbolName,
+      location: { filePath, range: ref.location.range },
+      type: this.scopedReferenceKindToType(ref.kind),
+      context,
+      containerName: ref.containerName,
+      isMethodCall: ref.kind === ScopedReferenceKind.Call
+    };
+  }
+
+  /**
+   * 建立此檔「被匯入名稱 → 本地別名」的對應，只收錄別名與原名不同的 named import
+   * （如 `import { ping as p }` → ping → [{ moduleSpecifier, localName: 'p' }]）。
+   * 同一名稱可能有多個別名，故值為陣列。
+   * 供 findReferencesMultiple 對別名使用點補搜，修正別名 import 使用中的 export 被漏抓
+   * （C15）。Parser 不支援 getImportDeclarations 或解析失敗時回傳空 Map。
+   */
+  private collectNamedImportAliases(
+    parser: ParserPlugin | null | undefined,
+    content: string
+  ): Map<string, NamedImportAlias[]> {
+    const aliasMap = new Map<string, NamedImportAlias[]>();
+    if (!parser?.getImportDeclarations) {
+      return aliasMap;
+    }
+
+    const declarations = parser.getImportDeclarations(content);
+    if (!declarations) {
+      return aliasMap;
+    }
+
+    for (const declaration of declarations) {
+      for (const named of declaration.namedImports ?? []) {
+        if (!named.alias || named.alias === named.name) {
+          continue;
+        }
+        const aliases = aliasMap.get(named.name) ?? [];
+        const alias = {
+          moduleSpecifier: declaration.moduleSpecifier,
+          localName: named.alias
+        };
+        if (!aliases.some(existing =>
+          existing.moduleSpecifier === alias.moduleSpecifier && existing.localName === alias.localName
+        )) {
+          aliases.push(alias);
+        }
+        aliasMap.set(named.name, aliases);
+      }
+    }
+
+    return aliasMap;
+  }
+
+  /**
+   * 判定 import 是否直接指向指定 symbol 所在檔案。
+   * 只處理相對／絕對路徑；node module 與未注入 tsconfig path alias 的 bare specifier 不可安全推斷。
+   * 同時容許 TypeScript 專案以 `.js` import 指向 `.ts` 檔，以及目錄 index 檔。
+   */
+  private importResolvesToSymbolFile(
+    importingFilePath: string,
+    moduleSpecifier: string,
+    symbolFilePath: string
+  ): boolean {
+    if (!moduleSpecifier.startsWith('.') && !path.isAbsolute(moduleSpecifier)) {
+      return false;
+    }
+
+    const importedPath = path.resolve(path.dirname(importingFilePath), moduleSpecifier);
+    const targetPath = path.resolve(symbolFilePath);
+    const withoutExtension = (filePath: string): string => filePath.replace(/\.[^/.]+$/, '');
+
+    return withoutExtension(importedPath) === withoutExtension(targetPath)
+      || withoutExtension(path.join(importedPath, 'index')) === withoutExtension(targetPath);
   }
 
   /**
    * 轉換 ScopedReferenceKind 到 SymbolReferenceType
    */
   private scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
-    switch (kind) {
-      case ScopedReferenceKind.Write:
+    return scopedReferenceKindToType(kind);
+  }
+
+  /**
+   * 將 Parser（ReferenceType 字串：'definition' | 'usage' | 'declaration' | 'import'）
+   * 的引用類型字串轉換為 SymbolReferenceType
+   * 供 findReferencesMultiple 的 fallback 分支與 convertParserRefToSymbolReference 共用，
+   * 避免同一套映射邏輯散落兩處（Single Source of Truth）
+   */
+  private mapParserReferenceTypeString(type: string): SymbolReferenceType {
+    switch (type) {
+      case 'definition':
         return SymbolReferenceType.Definition;
-      case ScopedReferenceKind.Call:
-      case ScopedReferenceKind.Read:
+      case 'import':
+        return SymbolReferenceType.Import;
       default:
         return SymbolReferenceType.Usage;
     }
@@ -466,7 +597,12 @@ export class SymbolFinder {
    * @returns 標準化的 SymbolReference
    */
   private convertParserRefToSymbolReference(
-    ref: { location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }; type: string },
+    ref: {
+      location: { filePath: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } };
+      type: string;
+      shorthandKeyText?: string;
+      shorthandTargetIsKey?: boolean;
+    },
     symbolName: string,
     _filePath: string,
     lines: string[]
@@ -479,10 +615,10 @@ export class SymbolFinder {
     return {
       symbolName,
       location: ref.location,
-      type: ref.type === 'definition'
-        ? SymbolReferenceType.Definition
-        : SymbolReferenceType.Usage,
-      context
+      type: this.mapParserReferenceTypeString(ref.type),
+      context,
+      ...(ref.shorthandKeyText !== undefined ? { shorthandKeyText: ref.shorthandKeyText } : {}),
+      ...(ref.shorthandTargetIsKey ? { shorthandTargetIsKey: ref.shorthandTargetIsKey } : {})
     };
   }
 
@@ -510,6 +646,8 @@ export class SymbolFinder {
       scopeOptions?: ScopedFindReferencesOptions;
       /** 是否使用 filtered 文字匹配（過濾字串和註解） */
       filtered?: boolean;
+      /** 跨 path alias 與多層 barrel re-export 的 specifier 曝露判定（由 rename 引擎注入） */
+      moduleResolver?: ModuleSpecifierResolver;
     }
   ): Promise<SymbolReference[]> {
     const content = await this.fileUtils.readFile(filePath);
@@ -536,21 +674,7 @@ export class SymbolFinder {
       const scopedRefs = parser.findScopedReferences(content, symbolName, options.scopeOptions);
 
       if (scopedRefs) {
-        return scopedRefs.map(ref => {
-          const lineIndex = ref.location.range.start.line - 1;
-          const context = lineIndex >= 0 && lineIndex < lines.length
-            ? lines[lineIndex]
-            : undefined;
-
-          return {
-            symbolName,
-            location: { filePath, range: ref.location.range },
-            type: this.scopedReferenceKindToType(ref.kind),
-            context,
-            containerName: ref.containerName,
-            isMethodCall: ref.kind === ScopedReferenceKind.Call
-          };
-        });
+        return scopedRefs.map(ref => this.scopedRefToSymbolReference(ref, symbolName, filePath, lines));
       }
     }
 
@@ -573,12 +697,20 @@ export class SymbolFinder {
         modifiers: []
       };
 
-      const references = await parser.findReferences(ast, targetSymbol);
+      const references = await parser.findReferences(ast, targetSymbol, options?.moduleResolver);
 
-      return references.map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
+      // 只保留目前檔案的引用：此方法語意為「查找單一檔案內的引用」，逐檔迭代時各檔獨立
+      // 負責自己的引用。Language Service 在模組可解析時可能回傳跨檔引用，若不過濾會被
+      // 呼叫端（rename 逐檔收集）錯誤歸屬到目前檔案，造成重複或張冠李戴。
+      // 路徑正規化後比較（縱深防禦）：parser 引用路徑來自 LS（絕對），filePath 可能沿用呼叫端
+      // 傳入的路徑形式，形式分歧（相對 vs 絕對）會讓同檔引用被誤篩掉（缺陷 N1／N2-a 的其中一環）。
+      const resolvedFilePath = path.resolve(filePath);
+      return references
+        .filter(ref => path.resolve(ref.location.filePath) === resolvedFilePath)
+        .map(ref => this.convertParserRefToSymbolReference(ref, symbolName, filePath, lines));
     } catch (error) {
       // Parser 失敗，降級到文字匹配
-      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      diagnostics.warn('symbol-finder', 'AST_PARSE_FAILED', `Parse failed, falling back to text match: ${getErrorMessage(error)}`, filePath);
       return useFiltered
         ? this.textMatcher.findReferencesByTextFiltered(filePath, content, symbolName)
         : this.textMatcher.findReferencesByText(filePath, content, symbolName);
@@ -654,6 +786,27 @@ export class SymbolFinder {
       default:
         return ClassMemberType.Property;
     }
+  }
+}
+
+/**
+ * 轉換 ScopedReferenceKind 到 SymbolReferenceType。
+ * - Definition（宣告點）→ Definition
+ * - Write（賦值）是使用而非定義 → Usage
+ * - Import → Import
+ * - Call / Read → Usage
+ */
+export function scopedReferenceKindToType(kind: ScopedReferenceKind): SymbolReferenceType {
+  switch (kind) {
+    case ScopedReferenceKind.Definition:
+      return SymbolReferenceType.Definition;
+    case ScopedReferenceKind.Import:
+      return SymbolReferenceType.Import;
+    case ScopedReferenceKind.Write:
+    case ScopedReferenceKind.Call:
+    case ScopedReferenceKind.Read:
+    default:
+      return SymbolReferenceType.Usage;
   }
 }
 

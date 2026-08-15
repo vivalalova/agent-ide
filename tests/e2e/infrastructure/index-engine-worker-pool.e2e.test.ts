@@ -5,8 +5,10 @@
  * 透過 vi.stubEnv 暫時覆蓋測試環境偵測，啟用 Worker Pool
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
+import { mkdtemp, rm, writeFile, mkdir } from 'fs/promises';
+import { tmpdir } from 'os';
 import { IndexEngine } from '@core/foundations/indexing/index-engine.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import type { IndexConfig } from '@core/foundations/indexing/types.js';
@@ -72,6 +74,45 @@ describe('IndexEngine Worker Pool 整合測試 - 多執行緒路徑', () => {
       // 驗證兩種路徑結果一致
       expect(workerSymbols.length).toBe(singleSymbols.length);
       expect(workerSymbols).toEqual(singleSymbols);
+    });
+  });
+
+  describe('Worker Pool 解析錯誤處理 (P-A)', () => {
+    // eslint-disable-next-line custom/no-new-filesystem -- Worker Pool 測試需要真實 FileSystem（Worker 無法存取 memfs）
+    const realFs = new FileSystem();
+    let projectDir: string;
+
+    beforeEach(async () => {
+      projectDir = await mkdtemp(path.join(tmpdir(), 'agent-ide-worker-parse-err-'));
+      await mkdir(path.join(projectDir, 'src'), { recursive: true });
+      // 正常檔
+      await writeFile(path.join(projectDir, 'src', 'good.js'), 'export function good() { return 1; }\n', 'utf-8');
+      // 語法錯誤檔（babel 解析會 throw → worker 回傳 errors）
+      await writeFile(path.join(projectDir, 'src', 'broken.js'), 'export function broken( { return;\n', 'utf-8');
+    });
+
+    afterEach(async () => {
+      await rm(projectDir, { recursive: true, force: true });
+    });
+
+    it('worker pool 模式下，解析失敗的檔仍須留在索引（帶 parseErrors），不得靜默丟棄', async () => {
+      enableWorkerPool();
+      const engine = new IndexEngine({ ...BASE_CONFIG, workspacePath: projectDir }, realFs);
+      try {
+        await engine.indexProject();
+
+        const brokenPath = path.join(projectDir, 'src', 'broken.js');
+        const goodPath = path.join(projectDir, 'src', 'good.js');
+        const entries = engine.snapshot().fileEntries;
+
+        // 正常檔成功索引
+        expect(engine.isIndexed(goodPath)).toBe(true);
+        // 解析失敗檔不得被丟棄：須留在索引中（present）且記錄 parseErrors
+        expect(entries.has(brokenPath)).toBe(true);
+        expect(entries.get(brokenPath)?.parseErrors.length ?? 0).toBeGreaterThan(0);
+      } finally {
+        engine.dispose();
+      }
     });
   });
 

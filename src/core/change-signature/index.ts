@@ -31,6 +31,9 @@ export type {
   ChangeSignatureValidationError
 } from './types.js';
 
+// call-site 值自足性判定（CLI 早期 fast-fail 與 validator 共用）
+export { findUnresolvableIdentifierInCallSiteValue } from './call-site-value-self-containment.js';
+
 // 列舉
 export {
   SignatureChangeType,

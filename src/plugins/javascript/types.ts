@@ -2,6 +2,7 @@
  * JavaScript Parser 特定型別定義
  */
 
+import { extname } from 'node:path';
 import type {
   AST,
   ASTNode,
@@ -10,7 +11,7 @@ import type {
   Symbol
 } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
-import { isRelativePath, isValidUnicodeIdentifier } from '@plugins/shared/index.js';
+import { isRelativePath, isValidUnicodeIdentifier, VALUE_SPACE_RESERVED_WORDS } from '@plugins/shared/index.js';
 import * as babel from '@babel/types';
 import type { ParseResult, ParserPlugin as BabelParserPlugin } from '@babel/parser';
 
@@ -42,6 +43,13 @@ export interface JavaScriptSymbol extends Symbol {
   readonly babelNode: babel.Node;
   readonly isExported?: boolean;
   readonly isImported?: boolean;
+  /**
+   * 方法所屬的 class 節點（ClassDeclaration／ClassExpression）身分參照。
+   * 僅 class method 符號會設定；用於在缺乏 Babel binding 可查的成員存取
+   * （如 `this.method()`）情境下，以節點身分比對「同一 class」，
+   * 避免不同 class 內同名方法互相誤判為同一符號。
+   */
+  readonly enclosingClassNode?: babel.ClassDeclaration | babel.ClassExpression;
 }
 
 /**
@@ -151,7 +159,7 @@ export const BABEL_SYMBOL_TYPE_MAP: Partial<Record<string, SymbolType>> = {
   'ImportDefaultSpecifier': SymbolType.Variable,
   'ImportSpecifier': SymbolType.Variable,
   'ImportNamespaceSpecifier': SymbolType.Variable,
-  'ObjectProperty': SymbolType.Variable,
+  'ObjectProperty': SymbolType.Property,
   'ObjectMethod': SymbolType.Function
 };
 
@@ -178,6 +186,21 @@ export function babelLocationToPosition(location: babel.SourceLocation): Range {
       column: end.column + 1,
       offset: end.index ?? 0
     }
+  };
+}
+
+/**
+ * 取得 Babel 節點對應的 Range（無位置資訊時回傳預設空範圍）
+ */
+export function getNodeRange(node: babel.Node): Range {
+  if (node.loc) {
+    return babelLocationToPosition(node.loc);
+  }
+
+  // 如果沒有位置資訊，返回預設範圍
+  return {
+    start: { line: 0, column: 0, offset: 0 },
+    end: { line: 0, column: 0, offset: 0 }
   };
 }
 
@@ -209,6 +232,13 @@ export function getNodeName(node: babel.Node): string | undefined {
     return node.name;
   }
 
+  // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 PrivateName，
+  // 其 `.id`（Identifier）名稱本身不含 `#` 前綴（與 TS 側 PrivateIdentifier.text
+  // 恆帶 `#` 不同，Babel 已天然回傳裸名），無需額外剝除。
+  if (babel.isPrivateName(node)) {
+    return node.id.name;
+  }
+
   if ('id' in node && node.id && babel.isIdentifier(node.id)) {
     return node.id.name;
   }
@@ -219,6 +249,9 @@ export function getNodeName(node: babel.Node): string | undefined {
     }
     if (babel.isStringLiteral(node.key)) {
       return node.key.value;
+    }
+    if (babel.isPrivateName(node.key)) {
+      return node.key.id.name;
     }
   }
 
@@ -242,10 +275,24 @@ export function isSymbolDeclaration(node: babel.Node): boolean {
     babel.isImportNamespaceSpecifier(node) ||
     babel.isClassMethod(node) ||
     babel.isClassProperty(node) ||
+    babel.isClassPrivateProperty(node) ||
+    babel.isClassPrivateMethod(node) ||
     babel.isObjectProperty(node) ||
     babel.isObjectMethod(node) ||
     babel.isArrowFunctionExpression(node)
   );
+}
+
+/**
+ * 是否為 ES2022 私有欄位/方法宣告（`key` 為 `babel.PrivateName`，如 `#secret`）。
+ * 對齊 TS 側 `isPrivateFieldDeclaration`（`src/plugins/typescript/types.ts`）：供
+ * `JavaScriptParser.findReferences` 判斷是否需改走 `ReferenceFinder.findScopedReferences`
+ * 的作用域感知掃描——一般 Identifier 為主的引用蒐集無法匹配 `PrivateName` 節點。
+ */
+export function isPrivateFieldDeclaration(
+  node: babel.Node
+): node is babel.ClassPrivateProperty | babel.ClassPrivateMethod {
+  return babel.isClassPrivateProperty(node) || babel.isClassPrivateMethod(node);
 }
 
 /**
@@ -379,20 +426,9 @@ export function createJavaScriptASTNode(
 }
 
 /**
- * JavaScript 保留字列表
+ * JavaScript 保留字列表（值空間保留字 SSOT：@plugins/shared/reserved-words.js）
  */
-const JAVASCRIPT_RESERVED_WORDS = new Set([
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
-  'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
-  'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
-  'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
-  // ES6+
-  'let', 'static', 'async', 'await',
-  // Strict mode reserved words
-  'implements', 'interface', 'package', 'private', 'protected', 'public',
-  // Literals
-  'null', 'true', 'false'
-]);
+const JAVASCRIPT_RESERVED_WORDS = VALUE_SPACE_RESERVED_WORDS;
 
 /**
  * 驗證識別符名稱
@@ -442,26 +478,69 @@ export function createParseError(
 }
 
 /**
- * 獲取檔案的預設 Babel 插件
+ * 取得 Babel plugin 的名稱（plugin 可能是純字串，或 `[name, options]` tuple）
  */
-export function getPluginsForFile(filePath: string): BabelPlugin[] {
-  const ext = filePath.substring(filePath.lastIndexOf('.'));
-  const basePlugins = [...(DEFAULT_PARSE_OPTIONS.plugins ?? [])];
+function getBabelPluginName(plugin: BabelPlugin): string {
+  return Array.isArray(plugin) ? plugin[0] : plugin;
+}
+
+/**
+ * 合併兩組 Babel plugin 清單並去重（以 plugin 名稱比對，忽略 tuple 的 options）
+ * base 中已存在的 plugin 名稱優先保留，extra 只補上 base 沒有的
+ *
+ * 供建構子合併「預設插件」與「使用者透過 constructor 傳入的插件」使用，
+ * 避免使用者指定的 plugins 被預設清單整組取代（見 bug repro：flow plugin 被忽略）
+ */
+export function mergeBabelPlugins(
+  base: readonly BabelPlugin[],
+  extra: readonly BabelPlugin[]
+): BabelPlugin[] {
+  const merged = [...base];
+  const existingNames = new Set(merged.map(getBabelPluginName));
+
+  for (const plugin of extra) {
+    const name = getBabelPluginName(plugin);
+    if (!existingNames.has(name)) {
+      merged.push(plugin);
+      existingNames.add(name);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * 獲取檔案的 Babel 插件清單
+ *
+ * @param filePath 檔案路徑，用於根據副檔名調整插件（.jsx/.tsx 加 jsx、.ts/.tsx 加 typescript）
+ * @param basePlugins 基底插件清單；預設為模組內建的預設插件，呼叫端（JavaScriptParser）
+ *   應傳入「已合併使用者 constructor 設定」後的清單，而非略過使用者設定
+ */
+export function getPluginsForFile(
+  filePath: string,
+  basePlugins: readonly BabelPlugin[] = DEFAULT_PARSE_OPTIONS.plugins ?? []
+): BabelPlugin[] {
+  // 比照 node:path.extname 語意：以 basename 為基準取副檔名，
+  // 避免把含點號的父目錄誤判成副檔名
+  const ext = extname(filePath);
+  const plugins = [...basePlugins];
+  const pluginNames = new Set(plugins.map(getBabelPluginName));
 
   // 根據副檔名調整插件
-  if (ext === '.jsx' || ext === '.tsx') {
-    if (!basePlugins.includes('jsx')) {
-      basePlugins.push('jsx');
-    }
+  if ((ext === '.jsx' || ext === '.tsx') && !pluginNames.has('jsx')) {
+    plugins.push('jsx');
+    pluginNames.add('jsx');
   }
 
-  if (ext === '.ts' || ext === '.tsx') {
-    if (!basePlugins.includes('typescript')) {
-      basePlugins.push('typescript');
-    }
+  // Babel parser 的 'typescript' 與 'flow' plugin 互斥（會拋出
+  // "Cannot combine typescript and flow plugins" 解析錯誤），若使用者已透過
+  // constructor 指定 'flow'，副檔名比對就不再額外加上 'typescript'
+  if ((ext === '.ts' || ext === '.tsx') && !pluginNames.has('typescript') && !pluginNames.has('flow')) {
+    plugins.push('typescript');
+    pluginNames.add('typescript');
   }
 
-  return basePlugins;
+  return plugins;
 }
 
 /**

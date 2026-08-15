@@ -4,14 +4,17 @@
  */
 
 import type { Command } from 'commander';
+import * as path from 'path';
 import { IndexEngine, CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
 import {
   createDeadCodeDetector,
   createDeadCodeRemover,
-  type DeadCodeDetectionResult
+  type DeadCodeDetectionResult,
+  type RemovalSummary
 } from '@core/deadcode/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { PreviewCommand } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
@@ -33,7 +36,8 @@ interface DeadCodeOptions {
   format: string;
   includeExports: boolean;
   includePublicMembers: boolean;
-  dryRun: boolean;
+  dryRun?: boolean;
+  apply?: boolean;
   exclude: string[];
 }
 
@@ -43,12 +47,13 @@ interface DeadCodeOptions {
 export function setupDeadCodeCommand(program: Command, context: CommandContext): void {
   program
     .command('deadcode')
-    .description('檢測並刪除未使用的程式碼（dead code）')
+    .description('檢測未使用的程式碼（dead code）；刪除需明確 --apply')
     .option('-p, --path <path>', '專案路徑', '.')
     .option('--format <format>', '輸出格式 (json|summary|diff)', 'summary')
     .option('--include-exports', '包含 export 的符號（預設排除）', false)
     .option('--include-public-members', '包含 public class members（預設排除）', false)
-    .option('--dry-run', '預覽變更而不執行')
+    .option('--dry-run', '預覽變更而不執行（即使同時指定 --apply）')
+    .option('--apply', '實際刪除 dead code 並清理 import')
     .option('--exclude <patterns...>', '排除的檔案/符號模式')
     .action(async (options: DeadCodeOptions, command: Command) => {
       await handleDeadCodeCommand(options, context, command);
@@ -94,12 +99,14 @@ async function handleDeadCodeCommand(
   const format = formatResult.format;
 
   const isJsonFormat = format === OutputFormat.Json;
+  const willApply = options.apply === true && options.dryRun !== true;
 
   if (!isJsonFormat) {
-    console.log('   檢測並準備刪除 Dead Code...');
+    process.stderr.write(willApply ? '   檢測並刪除 Dead Code...\n' : '   檢測 Dead Code（預覽模式）...\n');
   }
 
-  const projectPath = options.path || process.cwd();
+  // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
+  const projectPath = path.resolve(options.path || process.cwd());
 
   const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
   if (!pathIsDirectory) {
@@ -109,16 +116,17 @@ async function handleDeadCodeCommand(
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;
 
-  const indexEngine = await createAndIndexWithCache(
-    projectPath,
-    context.fileSystem,
-    CLI_INDEX_DEFAULTS,
-    { noCache, cacheDir: globalOpts.cacheDir }
-  );
-
   const parserRegistry = ParserRegistry.getInstance();
 
+  let indexEngine: Awaited<ReturnType<typeof createAndIndexWithCache>> | undefined;
+
   try {
+    indexEngine = await createAndIndexWithCache(
+      projectPath,
+      context.fileSystem,
+      CLI_INDEX_DEFAULTS,
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     // 1. 執行 dead code 檢測
     const detectionResult = await runDeadCodeDetection(options, context, indexEngine, parserRegistry);
@@ -133,12 +141,14 @@ async function handleDeadCodeCommand(
       if (!isJsonFormat) {
         console.log('   沒有檢測到 dead code');
       } else {
+        // 零結果：即使帶 --apply 也未實際寫入 → applied: false
         outputMutationWithLegacyFields(
           outputHandler,
           createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '沒有檢測到 dead code'),
           format,
           {
             message: '沒有檢測到 dead code',
+            ...createDeadCodeExecutionFields(willApply, false),
             removals: []
           }
         );
@@ -147,14 +157,20 @@ async function handleDeadCodeCommand(
     }
 
     // 2. 建立 DeadCodeRemover
-    // 區分 --exclude 參數中的檔案模式和符號名稱
+    // --exclude 分流：
+    // - path（excludeFiles）：全部 pattern 都進 path 排除——含 glob、路徑片段，以及
+    //   裸名 pure-name 慣例（如 `artifacts` → 排除路徑上的 artifacts/ 目錄，見 path-pattern）
+    // - symbol（excludeSymbols）：僅裸名（無 /、*、?、不以 . 開頭）另作精確符號名排除
+    //   （如 `unusedFunction`）；裸目錄名因此同時可擋 path + 同名符號
     const excludePatterns = options.exclude || [];
-    const excludeFiles = excludePatterns.filter(p =>
-      p.includes('/') || p.includes('*') || p.includes('?') || p.startsWith('.')
-    );
+    const excludeFiles = excludePatterns;
     const excludeSymbols = excludePatterns.filter(p =>
       !p.includes('/') && !p.includes('*') && !p.includes('?') && !p.startsWith('.')
     );
+
+    // 讀取 tsconfig.json path-alias 設定（會向上查找 tsconfig.json），供 import 清理
+    // 精準判定非相對 specifier 是否真的指向被刪檔案（見 import-cleaner.ts 的 alias 解析契約）
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectPath, context.fileSystem);
 
     const remover = createDeadCodeRemover(
       context.fileSystem,
@@ -162,12 +178,21 @@ async function handleDeadCodeCommand(
       {
         excludeFiles,
         excludeSymbols,
-        cleanupImports: true
+        cleanupImports: true,
+        pathAliases: tsconfigPathConfig.pathAliases,
+        baseUrl: tsconfigPathConfig.baseUrl
       }
     );
 
     // 3. 生成 Changeset
-    const changeset = await remover.generateChangeset(detectionResult.items);
+    // 傳入全專案檔案，讓 import 清理能掃描 consumer 檔案：被刪 export 符號在其他檔案的
+    // import specifier 必須一起清掉，否則 apply 後殘留指向已不存在符號的 import（N3）
+    const projectFiles = indexEngine.getAllIndexedFiles().map(f => f.filePath);
+    const changeset = await remover.generateChangeset(
+      detectionResult.items,
+      projectFiles,
+      willApply ? 'apply' : 'preview'
+    );
 
     // 無變更時的處理（changeset.success 但無 textChanges）
     if (changeset.success && changeset.textChanges.length === 0) {
@@ -180,12 +205,14 @@ async function handleDeadCodeCommand(
           }
         }
       } else {
+        // 零 removals：即使帶 --apply 也未實際寫入 → applied: false
         outputMutationWithLegacyFields(
           outputHandler,
           createEmptyMutationPreviewInput(PreviewCommand.DeadCodeRemoval, '符合條件的 dead code 已被過濾'),
           format,
           {
             message: '符合條件的 dead code 已被過濾',
+            ...createDeadCodeExecutionFields(willApply, false),
             warnings: changeset.warnings,
             removals: []
           }
@@ -195,24 +222,24 @@ async function handleDeadCodeCommand(
     }
 
     // 4. 執行變更類命令統一流程
-    if (!isJsonFormat && !options.dryRun) {
-      console.log('   執行刪除...');
+    if (!isJsonFormat && willApply) {
+      process.stderr.write('   執行刪除...\n');
     }
 
+    // applied 僅在實際有變更且會寫入時為 true（preview / 零結果皆 false）
     const result = await executeMutationCommand(changeset, {
       fileSystem: context.fileSystem,
       format,
-      dryRun: options.dryRun,
+      dryRun: !willApply,
       outputHandler,
       commandName: 'deadcode',
+      legacyFields: createDeadCodeExecutionFields(willApply, willApply),
       onSuccess: () => {
         if (!isJsonFormat) {
-          const totalRemovals = changeset.textChanges
-            .flatMap(tc => tc.edits)
-            .filter(e => e.description?.startsWith('Remove ')).length;
-          const importsCleanedUp = changeset.textChanges
-            .flatMap(tc => tc.edits)
-            .filter(e => e.description?.includes('import')).length;
+          // 權威來源：DeadCodeRemover.generateChangeset() 附加的 RemovalSummary（避免對 description/edits 字串反推）
+          const summary = changeset.metadata as RemovalSummary | undefined;
+          const totalRemovals = summary?.totalRemovals ?? 0;
+          const importsCleanedUp = summary?.importsCleanedUp ?? 0;
 
           console.log(`\n   已刪除 ${totalRemovals} 個 dead code`);
           if (importsCleanedUp > 0) {
@@ -222,15 +249,31 @@ async function handleDeadCodeCommand(
       }
     });
 
-    // dry-run 提示
-    if (options.dryRun && result.success && !isJsonFormat) {
-      console.log('\n   移除 --dry-run 實際執行刪除');
+    // preview 提示
+    if (!willApply && result.success && !isJsonFormat) {
+      console.log('\n   加上 --apply 實際執行刪除');
     }
   } catch (error) {
     const errorMessage = getErrorMessage(error);
-    outputHandler.outputError(`Dead code 刪除失敗: ${errorMessage}`, format);
+    const action = willApply ? '刪除' : '檢測';
+    outputHandler.outputError(`Dead code ${action}失敗: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine?.disposeAsync();
   }
+}
+
+/**
+ * deadcode 執行狀態欄位。
+ * `applied` = 實際有套用變更，不得只因 CLI 帶了 --apply 就標 true。
+ */
+function createDeadCodeExecutionFields(
+  willApply: boolean,
+  applied: boolean
+): Record<string, unknown> {
+  return {
+    mode: willApply ? 'apply' : 'preview',
+    previewOnly: !willApply,
+    applied
+  };
 }

@@ -16,12 +16,13 @@ import type { Range } from '@shared/types/index.js';
 import { babelLocationToPosition } from './types.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import {
+  computeContentHash,
+  shouldExcludeByClassName as sharedShouldExcludeByClassName
+} from '@plugins/shared/index.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
-
-/** 程式碼雜湊樣本長度（前 N 字元） */
-const CODE_HASH_SAMPLE_LENGTH = 100;
 
 /**
  * 引用分析結果
@@ -31,8 +32,13 @@ interface ReferenceAnalysis {
   kind: ScopedReferenceKind;
   /** 容器名稱（類別或函式） */
   containerName?: string;
-  /** 是否為方法呼叫 */
+  /** 是否為方法呼叫（obj.method()） */
   isMethodCall: boolean;
+  /**
+   * 是否為屬性存取形（obj.method、obj.method()；不論是否被呼叫）。
+   * 用於區分「屬性存取」與「裸識別符」兩種引用形狀——className 過濾對兩者採不同判定。
+   */
+  isPropertyAccess: boolean;
   /** Receiver 類型名稱（用於區分不同類別的同名方法，如 dog.bark() 中 dog 的類型為 Dog） */
   receiverType?: string;
 }
@@ -63,28 +69,11 @@ export class ReferenceFinder {
   private readonly astCache: MemoryCache<string, ASTCacheEntry> = createLRUCache(50);
 
   /**
-   * 計算程式碼的雜湊值（用於快取 key）
-   * 使用 djb2 演算法計算雜湊，比簡易長度+前綴更可靠
-   */
-  private computeCodeHash(code: string): string {
-    let hash = 5381;
-    const sampleLength = Math.min(code.length, CODE_HASH_SAMPLE_LENGTH);
-
-    for (let i = 0; i < sampleLength; i++) {
-      hash = ((hash << 5) + hash) + code.charCodeAt(i);
-      hash = hash & hash; // 轉為 32 位元整數
-    }
-
-    // 結合長度確保不同大小的檔案不會碰撞
-    return `${code.length}:${hash >>> 0}`;
-  }
-
-  /**
    * 取得或建立 AST 快取（僅解析 AST，不做 traverse）
    * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
   private getOrCreateASTCache(code: string): ASTCacheEntry | null {
-    const hash = this.computeCodeHash(code);
+    const hash = computeContentHash(code);
     // MemoryCache.get() 自動更新 lastAccessedAt
     const cached = this.astCache.get(hash);
 
@@ -167,8 +156,18 @@ export class ReferenceFinder {
           return;
         }
 
-        // 過濾：跳過 import 的原始名稱
-        if (babel.isImportSpecifier(parent) && parent.imported === path.node) {
+        // 過濾：ES2022 私有欄位/方法（`#secret`）的裸名 Identifier 是 PrivateName.id
+        // 的內部子節點，交由下方獨立的 PrivateName visitor 處理（需要涵蓋
+        // 正確的宣告/使用形狀判定），此處略過避免同一引用被重複收集兩次。
+        if (babel.isPrivateName(parent)) {
+          return;
+        }
+
+        // 過濾：無別名的具名 import/export specifier（`import { x }` / `export { x }`）
+        // 在 Babel AST 中是兩個位置完全相同的 Identifier 節點（imported/local 或
+        // local/exported），visitor 會各觸發一次而產生同位置的重複引用。只保留
+        // 本地綁定那一個節點；有別名時兩節點位置不同，兩者都是真實引用，不去重。
+        if (this.isDuplicateSpecifierTwin(path)) {
           return;
         }
 
@@ -176,11 +175,12 @@ export class ReferenceFinder {
         const refInfo = this.analyzeIdentifierReference(path, variableTypes);
 
         if (refInfo) {
-          // 如果指定了 className，過濾不匹配的引用
-          if (targetClassName && refInfo.containerName !== targetClassName) {
-            if (refInfo.isMethodCall && refInfo.receiverType !== targetClassName) {
-              return;
-            }
+          // 如果指定了 className，過濾不屬於該類別的引用
+          if (
+            targetClassName
+            && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, path)
+          ) {
+            return;
           }
 
           const location = {
@@ -195,10 +195,220 @@ export class ReferenceFinder {
             containerName: refInfo.containerName
           });
         }
+      },
+      // Bracket 成員存取：obj['method'] / obj[`method`]
+      // 鍵是字串／無插值樣板字面值，不是 Identifier；Identifier visitor 掃不到，
+      // 會讓 a['run']() 這類方法呼叫對 deadcode/refs 隱形（對齊 TS ElementAccess）。
+      MemberExpression: (path: NodePath<babel.MemberExpression>) => {
+        if (!path.node.computed) {
+          return;
+        }
+
+        const keyNode = path.node.property;
+        const keyName = this.getStaticComputedMemberKey(keyNode);
+        if (keyName !== symbolName) {
+          return;
+        }
+
+        const refInfo = this.analyzeComputedMemberReference(path, variableTypes);
+        if (!refInfo) {
+          return;
+        }
+
+        if (
+          targetClassName
+          && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, path)
+        ) {
+          return;
+        }
+
+        references.push({
+          location: {
+            filePath,
+            range: this.getNodeRange(keyNode)
+          },
+          kind: refInfo.kind,
+          isExactMatch: true,
+          containerName: refInfo.containerName
+        });
+      },
+      // ES2022 私有欄位/方法（`#secret`）：宣告（ClassPrivateProperty/
+      // ClassPrivateMethod 的 key）與使用處（`this.#secret` 的 MemberExpression
+      // property）AST node kind 都是 PrivateName，非 Identifier，上方的
+      // Identifier visitor 完全掃不到（對齊 TS 側 ts.PrivateIdentifier 修復，
+      // 見 plugins/typescript/reference-finder.ts）。
+      PrivateName: (path: NodePath<babel.PrivateName>) => {
+        if (path.node.id.name !== symbolName) {
+          return;
+        }
+
+        const parent = path.parent;
+        const isDeclaration =
+          (babel.isClassPrivateProperty(parent) || babel.isClassPrivateMethod(parent))
+          && parent.key === path.node;
+        const isMemberAccess = babel.isMemberExpression(parent) && parent.property === path.node;
+
+        if (!isDeclaration && !isMemberAccess) {
+          return;
+        }
+
+        const refInfo = this.analyzePrivateNameReference(path, isDeclaration, variableTypes);
+
+        if (
+          targetClassName
+          && this.shouldExcludeByClassName(refInfo, targetClassName, symbolName, path)
+        ) {
+          return;
+        }
+
+        references.push({
+          // 替換範圍取內部裸名 Identifier（PrivateName.id）的 loc，天然排除 `#`
+          // 前綴本身（Babel 為 PrivateName 額外包了一層 id 子節點，不同於 TS 側
+          // PrivateIdentifier 單一 token 需手動切片）；下游 rename 用 symbol.name
+          // （裸名）替換此範圍時，`#` 落在範圍外而原樣保留（"#secret" →
+          // 範圍外的 "#" + 範圍內 "secret"→"hidden" = "#hidden"）。
+          location: { filePath, range: this.getNodeRange(path.node.id) },
+          kind: refInfo.kind,
+          isExactMatch: true,
+          containerName: refInfo.containerName
+        });
       }
     });
 
     return references;
+  }
+
+  /**
+   * 取得 computed 成員存取的靜態字串鍵名。
+   * 支援 StringLiteral（obj['foo']）與無插值 TemplateLiteral（obj[`foo`]）。
+   */
+  private getStaticComputedMemberKey(
+    property: babel.Expression | babel.PrivateName
+  ): string | undefined {
+    if (babel.isStringLiteral(property)) {
+      return property.value;
+    }
+
+    // 無插值樣板：`method` → quasis 單一片段且 expressions 為空
+    if (
+      babel.isTemplateLiteral(property)
+      && property.expressions.length === 0
+      && property.quasis.length === 1
+    ) {
+      return property.quasis[0]?.value.cooked ?? undefined;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 分析 computed 成員存取（obj['method'] / obj[`method`]）的引用詳情
+   */
+  private analyzeComputedMemberReference(
+    path: NodePath<babel.MemberExpression>,
+    variableTypes: VariableTypeMap
+  ): ReferenceAnalysis | null {
+    const member = path.node;
+    let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
+    let isMethodCall = false;
+
+    const grandParent = path.parent;
+    if (babel.isCallExpression(grandParent) && grandParent.callee === member) {
+      kind = ScopedReferenceKind.Call;
+      isMethodCall = true;
+    }
+
+    return {
+      kind,
+      containerName: this.findContainerName(path),
+      isMethodCall,
+      isPropertyAccess: true,
+      receiverType: this.inferReceiverType(member.object, variableTypes)
+    };
+  }
+
+  /**
+   * 分析 ES2022 私有欄位/方法（`#secret`）PrivateName 節點的引用詳情。
+   * 對齊 analyzeIdentifierReference／analyzeComputedMemberReference：宣告點
+   * （ClassPrivateProperty/ClassPrivateMethod 的 key）為 Definition；成員存取
+   * （`this.#secret`／`obj.#secret`）依是否被呼叫區分 Call/Write/Read。
+   */
+  private analyzePrivateNameReference(
+    path: NodePath<babel.PrivateName>,
+    isDeclaration: boolean,
+    variableTypes: VariableTypeMap
+  ): ReferenceAnalysis {
+    if (isDeclaration) {
+      return {
+        kind: ScopedReferenceKind.Definition,
+        containerName: this.findContainerName(path),
+        isMethodCall: false,
+        isPropertyAccess: false
+      };
+    }
+
+    const member = path.parent as babel.MemberExpression;
+    let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
+    let isMethodCall = false;
+
+    const grandParent = path.parentPath?.parent;
+    if (babel.isCallExpression(grandParent) && grandParent.callee === member) {
+      kind = ScopedReferenceKind.Call;
+      isMethodCall = true;
+    } else if (babel.isAssignmentExpression(grandParent) && grandParent.left === member) {
+      kind = ScopedReferenceKind.Write;
+    }
+
+    return {
+      kind,
+      containerName: this.findContainerName(path),
+      isMethodCall,
+      isPropertyAccess: true,
+      receiverType: this.inferReceiverType(member.object, variableTypes)
+    };
+  }
+
+  /**
+   * 判斷某引用是否因不屬於目標類別而應被排除。
+   * 過濾規則為 TS/JS 共用策略，唯一定義見 `@plugins/shared/reference-class-filter.js`
+   * 的 `shouldExcludeByClassName`；此處只負責提供 JS 側的
+   * hasEnclosingTargetFunction 判定（Babel scope binding）。
+   */
+  private shouldExcludeByClassName(
+    refInfo: ReferenceAnalysis,
+    targetClassName: string,
+    symbolName: string,
+    path: NodePath
+  ): boolean {
+    return sharedShouldExcludeByClassName(
+      refInfo,
+      targetClassName,
+      symbolName,
+      () => this.hasEnclosingTargetFunction(path, symbolName)
+    );
+  }
+
+  /**
+   * 判斷節點最近的同名詞法綁定是否為 FunctionDeclaration（巢狀函式慣例的宣告形式）。
+   * 對齊 TS hasEnclosingTargetFunction：function 宣告具 hoisting，於整個外層區塊可見；
+   * 若最近綁定是 const/let 等同名 shadow，則不視為目標函式的直接引用。
+   */
+  private hasEnclosingTargetFunction(path: NodePath, name: string): boolean {
+    // 宣告名本身：function name() {} 的 id
+    if (
+      path.isIdentifier()
+      && babel.isFunctionDeclaration(path.parent)
+      && path.parent.id === path.node
+      && path.parent.id.name === name
+    ) {
+      return true;
+    }
+
+    const binding = path.scope.getBinding(name);
+    if (!binding) {
+      return false;
+    }
+    return binding.path.isFunctionDeclaration();
   }
 
   /**
@@ -212,8 +422,22 @@ export class ReferenceFinder {
     variableTypes: VariableTypeMap
   ): ReferenceAnalysis | null {
     const parent = path.parent;
+
+    // import 語句內的標識符（named/default/namespace specifier 的 local 綁定）
+    // 只是綁定本身，不是對該符號的真正使用（對齊 TS 側 D4 修復：避免「只被
+    // import 從未使用」的符號因 import specifier 被誤算成一次使用而永遠判定為存活）
+    if (this.isInImportStatement(path)) {
+      return {
+        kind: ScopedReferenceKind.Import,
+        containerName: this.findContainerName(path),
+        isMethodCall: false,
+        isPropertyAccess: false
+      };
+    }
+
     let kind: ScopedReferenceKind = ScopedReferenceKind.Read;
     let isMethodCall = false;
+    let isPropertyAccess = false;
     let receiverType: string | undefined;
 
     // 檢查是否為函式呼叫
@@ -222,26 +446,41 @@ export class ReferenceFinder {
       isMethodCall = false;
     }
 
-    // 檢查是否為方法呼叫：obj.method()
+    // 檢查是否為屬性存取：obj.method（不論是否被呼叫）
     if (babel.isMemberExpression(parent) && parent.property === path.node && !parent.computed) {
+      isPropertyAccess = true;
+      // 屬性存取皆嘗試推斷 receiver 型別（供 className 過濾判定歸屬）
+      receiverType = this.inferReceiverType(parent.object, variableTypes);
+
+      // 進一步判斷是否為方法呼叫：obj.method()
       const grandParent = path.parentPath?.parent;
       if (babel.isCallExpression(grandParent) && grandParent.callee === parent) {
         kind = ScopedReferenceKind.Call;
         isMethodCall = true;
-
-        // 使用快取的變數類型映射來推斷 receiver 類型
-        receiverType = this.inferReceiverType(parent.object, variableTypes);
       }
     }
 
-    // 檢查是否為寫入（賦值左側）
+    // 檢查是否為寫入（賦值左側）——賦值是使用，不是定義
     if (babel.isAssignmentExpression(parent) && parent.left === path.node) {
       kind = ScopedReferenceKind.Write;
     }
 
-    // 檢查是否為宣告
+    // 檢查是否為宣告點（變數／函式／類別／方法等 binding 處）
     if (babel.isVariableDeclarator(parent) && parent.id === path.node) {
-      kind = ScopedReferenceKind.Write;
+      kind = ScopedReferenceKind.Definition;
+    } else if (babel.isFunctionDeclaration(parent) && parent.id === path.node) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (babel.isClassDeclaration(parent) && parent.id === path.node) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (
+      (babel.isClassMethod(parent) || babel.isClassProperty(parent) || babel.isObjectMethod(parent))
+      && parent.key === path.node
+      && !parent.computed
+    ) {
+      kind = ScopedReferenceKind.Definition;
+    } else if (path.listKey === 'params') {
+      // 參數綁定宣告點（含函式／方法／箭頭函式 params）
+      kind = ScopedReferenceKind.Definition;
     }
 
     // 取得所屬容器名稱
@@ -251,6 +490,7 @@ export class ReferenceFinder {
       kind,
       containerName,
       isMethodCall,
+      isPropertyAccess,
       receiverType
     };
   }
@@ -279,29 +519,45 @@ export class ReferenceFinder {
   }
 
   /**
-   * 查找 JavaScript 標識符所屬的容器名稱
-   * @param path Babel 標識符節點路徑
+   * 判斷該 Identifier 是否為無別名具名 specifier 的重複孿生節點
+   * （`import { x }` 的 `imported`、`export { x }` 的 `exported`）。
+   */
+  private isDuplicateSpecifierTwin(path: NodePath<babel.Identifier>): boolean {
+    const parent = path.parent;
+    if (babel.isImportSpecifier(parent)) {
+      return parent.imported === path.node && parent.imported.start === parent.local.start;
+    }
+    if (babel.isExportSpecifier(parent)) {
+      return parent.exported === path.node && parent.exported.start === parent.local.start;
+    }
+    return false;
+  }
+
+  /**
+   * 檢查標識符是否位於 import 語句內（named/default/namespace specifier 的 local 節點）
+   */
+  private isInImportStatement(path: NodePath<babel.Identifier>): boolean {
+    return path.findParent((p) => babel.isImportDeclaration(p.node)) !== null;
+  }
+
+  /**
+   * 查找節點所屬的容器名稱
+   * @param path Babel 節點路徑（Identifier 或 MemberExpression 等）
    * @returns 容器名稱（類別或函式），如果無法找到則返回 undefined
    */
-  private findContainerName(path: NodePath<babel.Identifier>): string | undefined {
+  private findContainerName(path: NodePath): string | undefined {
     let current: NodePath | null = path.parentPath;
 
     while (current) {
       const node = current.node;
 
-      // 類別方法
-      if (babel.isClassMethod(node)) {
-        const classPath = current.parentPath;
-        if (classPath && babel.isClassBody(classPath.node)) {
-          const classDecl = classPath.parentPath?.node;
-          if (classDecl && babel.isClassDeclaration(classDecl) && classDecl.id) {
-            return classDecl.id.name;
-          }
-        }
-      }
-
-      // 類別屬性
-      if (babel.isClassProperty(node)) {
+      // 類別方法／屬性（含 ES2022 私有欄位/方法 ClassPrivateProperty/ClassPrivateMethod）
+      if (
+        babel.isClassMethod(node)
+        || babel.isClassProperty(node)
+        || babel.isClassPrivateProperty(node)
+        || babel.isClassPrivateMethod(node)
+      ) {
         const classPath = current.parentPath;
         if (classPath && babel.isClassBody(classPath.node)) {
           const classDecl = classPath.parentPath?.node;

@@ -4,6 +4,7 @@
 
 import type { Location, Range } from '@shared/types/core.js';
 import { SymbolType } from '@shared/types/symbol.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /**
  * Dead Code 項目
@@ -17,6 +18,13 @@ export interface DeadCodeItem {
   readonly location: Location;
   /** 原因說明 */
   readonly reason: string;
+  /**
+   * 是否為「檔內未使用的 import binding」（ESM named/default/namespace）。
+   * 為 true 時 DeadCodeRemover 不對此項產生獨立的 RemovalOperation（RangeExpander
+   * 不理解 import 陳述式語法，硬砍會產生語法錯誤或與 ImportCleaner 的編輯重疊），
+   * 一律改由 ImportCleaner 統一處理該 import 陳述式的刪除/部分清理（單一編輯來源）。
+   */
+  readonly isImportBinding?: boolean;
 }
 
 /**
@@ -89,6 +97,7 @@ export const DEFAULT_DEAD_CODE_OPTIONS: Required<DeadCodeDetectorOptions> = {
     SymbolType.Function,
     SymbolType.Class,
     SymbolType.Variable,
+    SymbolType.Constant,
     SymbolType.Interface,
     SymbolType.Type
   ],
@@ -109,6 +118,11 @@ export interface DeadCodeRemovalOptions {
   readonly excludeSymbols?: readonly string[];
   /** 是否清理變成未使用的 import */
   readonly cleanupImports?: boolean;
+  /** tsconfig path-alias 映射（alias -> 絕對路徑），供非相對 import specifier 精準解析
+   *  是否指向被刪檔案；未提供時視為無 alias 設定，非相對 specifier 一律不清理 */
+  readonly pathAliases?: PathAliasInput;
+  /** tsconfig baseUrl（絕對路徑），供無 paths 設定的 bare import 解析 */
+  readonly baseUrl?: string | undefined;
 }
 
 /**
@@ -219,8 +233,13 @@ const DEFAULT_EXCLUDE_SYMBOLS: readonly string[] = ['main'];
 /**
  * 刪除選項預設值
  */
-export const DEFAULT_REMOVAL_OPTIONS: Required<DeadCodeRemovalOptions> = {
+export type ResolvedDeadCodeRemovalOptions =
+  Required<Omit<DeadCodeRemovalOptions, 'baseUrl'>> & { readonly baseUrl: string | undefined };
+
+export const DEFAULT_REMOVAL_OPTIONS: ResolvedDeadCodeRemovalOptions = {
   excludeFiles: [],
   excludeSymbols: DEFAULT_EXCLUDE_SYMBOLS,
-  cleanupImports: true
+  cleanupImports: true,
+  pathAliases: {},
+  baseUrl: undefined
 };

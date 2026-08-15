@@ -76,7 +76,7 @@ export class MemberExtractor {
   async extractMemberAtPosition(
     filePath: string,
     line: number,
-    _column?: number
+    column?: number
   ): Promise<MemberDefinition | null> {
     const members = await this.listMembers(filePath);
     if (members.length === 0) {
@@ -97,6 +97,23 @@ export class MemberExtractor {
     // 如果只有一個，直接返回
     if (containingMembers.length === 1) {
       return containingMembers[0];
+    }
+
+    // 多個成員同時「起始行」正好是目標行時（典型情境：同一物理行有多個宣告，
+    // 如 `export function a() {} export function b() {}`），只靠行號無法消歧，
+    // 必須用欄位挑出目標欄位落在哪個候選的宣告範圍內。候選彼此不重疊、由左到右
+    // 排列，故選「起始欄位 <= 目標欄位」中最靠右（欄位最大）的那個，即為目標
+    // 欄位所屬的候選；若無候選的起始欄位 <= 目標欄位（欄位在最左候選之前），
+    // 退回全部同起始行候選，維持與行號限定一致的行為。
+    if (column !== undefined) {
+      const sameStartLine = containingMembers.filter(m => m.location.range.start.line === line);
+      if (sameStartLine.length > 1) {
+        const eligible = sameStartLine.filter(m => m.location.range.start.column <= column);
+        const pool = eligible.length > 0 ? eligible : sameStartLine;
+        return pool.reduce((best, current) =>
+          current.location.range.start.column > best.location.range.start.column ? current : best
+        );
+      }
     }
 
     // 多個成員時，選擇範圍最小的（最內層）

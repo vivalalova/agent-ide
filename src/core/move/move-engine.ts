@@ -13,6 +13,7 @@ import {
   createChangesetBuilder
 } from '@infrastructure/changeset/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { offsetToPosition } from '@shared/position-utils.js';
 import { ImportResolver } from './import-resolver.js';
 import { PathCalculator } from './path-calculator.js';
 import { ALLOWED_EXTENSIONS, PathUtils } from './path-utils.js';
@@ -114,8 +115,9 @@ export class MoveEngine {
       await this.performMove(source, target);
       fileMoved = true;
 
-      // 5. 更新 import 路徑
+      // 5. 更新 import 路徑（先備份會改寫的檔案內容，失敗時一併還原 import）
       if (updateImports && pathUpdates.length > 0) {
+        const importContentBackups = await this.backupImportTargetContents(pathUpdates);
         try {
           await this.applyPathUpdates(pathUpdates);
           transactionLog.push(`IMPORT_UPDATES: ${JSON.stringify(
@@ -132,6 +134,17 @@ export class MoveEngine {
 
           // 記錄錯誤到事務日誌
           transactionLog.push(`IMPORT_UPDATE_FAILED: ${errorMessage}`);
+
+          // 先還原已寫入的 import 變更（即使檔案 move 回滾也須先還原，避免半套 import）
+          try {
+            await this.restoreImportTargetContents(importContentBackups);
+            transactionLog.push('IMPORT_CONTENT_ROLLBACK_SUCCESS');
+          } catch (importRollbackError) {
+            const importRollbackMsg = importRollbackError instanceof Error
+              ? importRollbackError.message
+              : 'Unknown error';
+            transactionLog.push(`IMPORT_CONTENT_ROLLBACK_FAILED: ${importRollbackMsg}`);
+          }
 
           // 嘗試回滾檔案移動
           try {
@@ -225,11 +238,8 @@ export class MoveEngine {
       .withDescription(`Moved '${path.basename(source)}' to '${path.basename(target)}'`);
 
     try {
-      // 驗證路徑（只讀驗證，不建立目錄）
-      await this.validatePathsForChangeset(source, target);
-
-      // 檢查是否為目錄
-      const isDirectory = await this.fileSystem.isDirectory(source);
+      // 驗證路徑（只讀驗證，不建立目錄），並取得是否為目錄
+      const isDirectory = await this.validatePathsForChangeset(source, target);
 
       // 收集 import 更新
       const pathUpdates = updateImports
@@ -268,23 +278,7 @@ export class MoveEngine {
           }
         }
         const content = await this.fileSystem.readFile(readPath, 'utf-8') as string;
-        const lines = content.split('\n');
-
-        const edits: TextEdit[] = updates.map(update => {
-          const lineIndex = update.line - 1;
-          const lineContent = lines[lineIndex] ?? '';
-          const startCol = lineContent.indexOf(update.oldImport) + 1;
-          const endCol = startCol + update.oldImport.length;
-
-          return {
-            range: {
-              start: { line: update.line, column: startCol },
-              end: { line: update.line, column: endCol }
-            },
-            newText: update.newImport,
-            description: `Update import: ${update.oldImport} → ${update.newImport}`
-          };
-        });
+        const edits: TextEdit[] = updates.map(update => this.createPathUpdateTextEdit(content, update));
 
         // 對於被移動檔案，使用原始路徑來建立 TextChange（轉換器會從該路徑讀取）
         // 實際的檔案移動由 fileOperations 處理
@@ -302,15 +296,59 @@ export class MoveEngine {
     }
   }
 
+  private createPathUpdateTextEdit(content: string, update: PathUpdate): TextEdit {
+    const startOffset = this.findPathUpdateStartOffset(content, update);
+    if (startOffset < 0) {
+      throw new Error(`找不到 import 語句: ${update.oldImport}`);
+    }
+
+    const endOffset = startOffset + update.oldImport.length;
+    return {
+      range: {
+        start: offsetToPosition(content, startOffset),
+        end: offsetToPosition(content, endOffset)
+      },
+      newText: update.newImport,
+      description: `Update import: ${update.oldImport} → ${update.newImport}`
+    };
+  }
+
+  private findPathUpdateStartOffset(content: string, update: PathUpdate): number {
+    if (update.column === undefined) {
+      const lineStartOffset = this.positionToOffset(content, update.line, 1);
+      return content.indexOf(update.oldImport, lineStartOffset);
+    }
+
+    const startOffset = this.positionToOffset(content, update.line, update.column);
+    return content.startsWith(update.oldImport, startOffset) ? startOffset : -1;
+  }
+
+  private positionToOffset(content: string, line: number, column: number): number {
+    const lines = content.split('\n');
+    let offset = 0;
+    for (let i = 0; i < line - 1; i++) {
+      offset += (lines[i]?.length ?? 0) + 1;
+    }
+
+    return offset + column - 1;
+  }
+
   /**
    * 驗證路徑（只讀版本，用於 generateChangeset）
    * 不建立任何目錄，只做驗證
+   *
+   * @returns source 是否為目錄
    */
-  private async validatePathsForChangeset(source: string, target: string): Promise<void> {
+  private async validatePathsForChangeset(source: string, target: string): Promise<boolean> {
     // 檢查來源是否存在
     const sourceExists = await this.fileSystem.exists(source);
     if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
+    }
+
+    const isDirectory = await this.fileSystem.isDirectory(source);
+    if (isDirectory) {
+      this.assertTargetNotWithinSource(source, target);
     }
 
     // 檢查目標是否已存在
@@ -318,6 +356,8 @@ export class MoveEngine {
     if (targetExists) {
       throw new Error(`目標路徑已存在: ${target}`);
     }
+
+    return isDirectory;
   }
 
   /**
@@ -328,6 +368,10 @@ export class MoveEngine {
     const sourceExists = await this.fileSystem.exists(source);
     if (!sourceExists) {
       throw new Error(`來源路徑不存在: ${source}`);
+    }
+
+    if (await this.fileSystem.isDirectory(source)) {
+      this.assertTargetNotWithinSource(source, target);
     }
 
     // 檢查目標路徑的父目錄
@@ -342,6 +386,21 @@ export class MoveEngine {
     const targetExists = await this.fileSystem.exists(target);
     if (targetExists) {
       throw new Error(`目標路徑已存在: ${target}`);
+    }
+  }
+
+  /**
+   * 目錄移動時，目標不得等於來源、也不得位於來源之內
+   * （比照 Unix mv 的 cannot move to a subdirectory of itself 語意），
+   * 避免 moveDirectory() 遞迴自我嵌套直到 ENAMETOOLONG 才失敗
+   */
+  private assertTargetNotWithinSource(source: string, target: string): void {
+    const resolvedSource = path.resolve(source);
+    const resolvedTarget = path.resolve(target);
+    if (resolvedTarget === resolvedSource || resolvedTarget.startsWith(resolvedSource + path.sep)) {
+      throw new Error(
+        `無法將目錄移動到其自身或其子目錄內: 來源 ${source} 目標 ${target}`
+      );
     }
   }
 
@@ -363,7 +422,8 @@ export class MoveEngine {
   }
 
   /**
-   * 遞迴移動目錄
+   * 遞迴移動目錄。
+   * 中途失敗時反向回滾本層已成功的子檔／子目錄 move，避免半套目錄殘留。
    */
   private async moveDirectory(source: string, target: string): Promise<void> {
     // 建立目標目錄（recursive: true 確保父目錄也被建立）
@@ -371,25 +431,55 @@ export class MoveEngine {
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
+    /** 本層已成功移到 target 的子路徑，供失敗時 reverse */
+    const completed: Array<{ sourcePath: string; targetPath: string; isDirectory: boolean }> = [];
 
-    for (const entry of entries) {
-      const sourcePath = entry.path;
-      const relativePath = path.relative(source, sourcePath);
-      const targetPath = path.join(target, relativePath);
+    try {
+      for (const entry of entries) {
+        const sourcePath = entry.path;
+        const relativePath = path.relative(source, sourcePath);
+        const targetPath = path.join(target, relativePath);
 
-      if (entry.isDirectory) {
-        // 遞迴處理子目錄
-        await this.moveDirectory(sourcePath, targetPath);
-      } else if (entry.isFile) {
-        // 複製檔案
-        const content = await this.fileSystem.readFile(sourcePath, 'utf-8');
-        await this.fileSystem.writeFile(targetPath, content as string);
-        await this.fileSystem.deleteFile(sourcePath);
+        if (entry.isDirectory) {
+          await this.moveDirectory(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, isDirectory: true });
+        } else if (entry.isFile) {
+          // 複製檔案後刪來源（與既有語意一致）
+          const content = await this.fileSystem.readFile(sourcePath, 'utf-8');
+          await this.fileSystem.writeFile(targetPath, content as string);
+          await this.fileSystem.deleteFile(sourcePath);
+          completed.push({ sourcePath, targetPath, isDirectory: false });
+        }
       }
-    }
 
-    // 刪除原目錄
-    await this.fileSystem.deleteDirectory(source);
+      // 刪除原目錄
+      await this.fileSystem.deleteDirectory(source);
+    } catch (error) {
+      // 反向回滾已成功的子 move（後完成者先 reverse）
+      for (let i = completed.length - 1; i >= 0; i--) {
+        const item = completed[i];
+        try {
+          if (item.isDirectory) {
+            await this.moveDirectory(item.targetPath, item.sourcePath);
+          } else {
+            const content = await this.fileSystem.readFile(item.targetPath, 'utf-8');
+            await this.fileSystem.writeFile(item.sourcePath, content as string);
+            await this.fileSystem.deleteFile(item.targetPath);
+          }
+        } catch {
+          // 個別 reverse 失敗不掩蓋原錯誤
+        }
+      }
+      try {
+        const remaining = await this.fileSystem.readDirectory(target);
+        if (remaining.length === 0) {
+          await this.fileSystem.deleteDirectory(target);
+        }
+      } catch {
+        // ignore
+      }
+      throw error;
+    }
   }
 
   /**
@@ -416,6 +506,44 @@ export class MoveEngine {
   }
 
   /**
+   * 備份 pathUpdates 會改寫的檔案原始內容（每檔一份，供 import 更新失敗時還原）
+   */
+  private async backupImportTargetContents(
+    updates: PathUpdate[]
+  ): Promise<Map<string, string>> {
+    const backups = new Map<string, string>();
+    for (const update of updates) {
+      if (backups.has(update.filePath)) {
+        continue;
+      }
+      const content = await this.fileSystem.readFile(update.filePath, 'utf-8') as string;
+      backups.set(update.filePath, content);
+    }
+    return backups;
+  }
+
+  /**
+   * 還原 import 目標檔案內容（失敗時 reverse 已寫入的 import 變更）
+   */
+  private async restoreImportTargetContents(
+    backups: Map<string, string>
+  ): Promise<void> {
+    const errors: string[] = [];
+    for (const [filePath, content] of backups) {
+      try {
+        await this.fileSystem.writeFile(filePath, content);
+      } catch (error) {
+        errors.push(
+          `${filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }
+    if (errors.length > 0) {
+      throw new Error(`還原 import 檔案內容失敗: ${errors.join('; ')}`);
+    }
+  }
+
+  /**
    * 應用單一檔案的更新
    */
   private async applyFileUpdates(filePath: string, updates: PathUpdate[]): Promise<void> {
@@ -424,19 +552,37 @@ export class MoveEngine {
 
       let newContent = content;
 
-      // 對於多行語句，需要特別處理
+      // 先按原始內容的列位置從後往前套用，避免前面的替換改變後續 offset
+      const anchoredUpdates = updates
+        .filter(update => update.column !== undefined)
+        .map(update => {
+          const startOffset = this.findPathUpdateStartOffset(content, update);
+          if (startOffset < 0) {
+            throw new Error(`找不到 import 語句: ${update.oldImport}`);
+          }
+          return { update, startOffset };
+        })
+        .sort((a, b) => b.startOffset - a.startOffset);
+
+      for (const { update, startOffset } of anchoredUpdates) {
+        const endOffset = startOffset + update.oldImport.length;
+        newContent = newContent.substring(0, startOffset) + update.newImport + newContent.substring(endOffset);
+      }
+
+      // 沒有列位置的舊來源沿用首次字串匹配與多行規範化行為
       for (const update of updates) {
-        // 直接使用字串替換，支援多行
+        if (update.column !== undefined) {
+          continue;
+        }
+
         newContent = newContent.replace(update.oldImport, update.newImport);
 
-        // 如果未找到完全匹配，嘗試規範化並再試一次
         if (newContent.indexOf(update.oldImport) === -1) {
-          // 嘗試將多行 oldImport 規範化（移除額外的空格和換行）
           const normalizedOldImport = update.oldImport.replace(/\s+/g, ' ').trim();
           const contentNormalized = newContent.replace(/\s+/g, ' ');
 
           if (contentNormalized.indexOf(normalizedOldImport) !== -1) {
-            newContent = content; // 重置
+            newContent = content;
             newContent = newContent.replace(
               new RegExp(this.pathUtils.escapeRegex(normalizedOldImport).replace(/\s+/g, '\\s+'), 'g'),
               update.newImport.replace(/\s+/g, ' ').trim()

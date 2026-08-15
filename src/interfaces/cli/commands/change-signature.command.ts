@@ -4,11 +4,15 @@
  */
 
 import type { Command } from 'commander';
+import { parse as parseJavaScript, type ParserPlugin } from '@babel/parser';
 import * as path from 'path';
+import * as ts from 'typescript';
 import {
   ChangeSignatureEngine,
   SignatureChangeType,
-  type SignatureChange
+  type SignatureChange,
+  type AddParameterChange,
+  findUnresolvableIdentifierInCallSiteValue
 } from '@core/change-signature/index.js';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
 import { convertChangesetToPreviewInput } from '@infrastructure/changeset/index.js';
@@ -16,18 +20,33 @@ import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unifie
 import {
   tryParseOutputFormat,
   executeMutationCommand,
-  outputMutationWithLegacyFields
+  outputMutationWithLegacyFields,
+  outputErrorWithDetails
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { isJavaScriptSourceExtension } from '@shared/types/index.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
+import {
+  ParserCapabilityName,
+  getUnsupportedParserCapabilityMessage
+} from '@interfaces/cli/parser-capability-guard.js';
+import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
+import {
+  splitAddParameters,
+  splitParameterNameAndType,
+  splitTopLevelParameterList,
+  findTopLevelDefaultSeparatorIndex,
+  normalizeParameterSpecText
+} from './change-signature-parameter-spec.js';
 
 /** Change Signature 命令選項 */
 interface ChangeSignatureOptions {
   path?: string;
   file?: string;
   function?: string;
-  add?: string;
+  add?: string | string[];
+  callSiteValue?: string[];
   remove?: string;
   reorder?: string;
   rename?: string;
@@ -46,7 +65,12 @@ export function setupChangeSignatureCommand(program: Command, context: CommandCo
     .option('-p, --path <path>', '專案根目錄路徑')
     .option('--file <file>', '要修改的檔案路徑')
     .option('--function <name>', '要修改的函式名稱')
-    .option('--add <params>', '新增參數 (格式: name:type=default@position,name2:type2)')
+    .option('--add <params>', '新增參數 (格式: name:type=default@position,name2:type2=default2，可重複)', collectRepeatedOption)
+    .option(
+      '--call-site-value <mapping>',
+      '新增參數在呼叫點使用的值 (格式: param=expression，可重複；未指定時使用 --add 的 default)',
+      collectRepeatedOption
+    )
     .option('--remove <params>', '移除參數 (參數名稱或索引，逗號分隔)')
     .option('--reorder <order>', '重新排序 (參數名稱或索引，逗號分隔)')
     .option('--rename <mapping>', '重命名參數 (格式: oldName:newName,oldName2:newName2)')
@@ -94,14 +118,42 @@ async function handleChangeSignatureCommand(
 
     // 檔案存在性前置檢查（與 engine 「找不到函式」分流）
     if (!(await context.fileSystem.exists(filePath))) {
-      outputHandler.outputError(`檔案不存在: ${filePath}`, format, 'change-signature');
+      outputErrorWithDetails(
+        outputHandler,
+        format,
+        `檔案不存在: ${filePath}`,
+        {
+          pathContext: {
+            role: 'targetFile',
+            requestedFile: resolvedFile,
+            resolvedFile: filePath,
+            projectRoot
+          }
+        },
+        'change-signature'
+      );
       process.exitCode = 1;
-      if (process.env.NODE_ENV !== 'test') { process.exit(1); }
+      return;
+    }
+
+    // 取得 ParserRegistry（單例）
+    const parserRegistry = ParserRegistry.getInstance();
+    const unsupportedCapability = getUnsupportedParserCapabilityMessage(
+      filePath,
+      parserRegistry,
+      ParserCapabilityName.ChangeSignature
+    );
+    if (unsupportedCapability) {
+      outputHandler.outputError(unsupportedCapability, format, 'change-signature');
+      process.exitCode = 1;
       return;
     }
 
     // 解析變更操作
-    const changes = parseChanges(options);
+    const changes = parseChangeSignatureChanges({
+      ...options,
+      targetFilePath: filePath
+    });
 
     if (changes.length === 0) {
       outputHandler.outputError('請指定至少一個變更操作 (--add, --remove, --reorder, --rename, --change-type)', format);
@@ -114,13 +166,17 @@ async function handleChangeSignatureCommand(
       console.log(`   檔案: ${path.relative(process.cwd(), filePath)}`);
     }
 
-    // 取得 ParserRegistry（單例）
-    const parserRegistry = ParserRegistry.getInstance();
+    // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 讓引擎解析任意別名 import
+    const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
 
     // 建立引擎
     const changeSignatureEngine = new ChangeSignatureEngine(
       parserRegistry,
-      context.fileSystem
+      context.fileSystem,
+      {
+        pathAliases: tsconfigPathConfig.pathAliases,
+        baseUrl: tsconfigPathConfig.baseUrl
+      }
     );
 
     // 生成 Changeset
@@ -134,6 +190,14 @@ async function handleChangeSignatureCommand(
     // No-op 偵測：success=true 但套用後 previewInput 為空（typical reorder 同序）
     if (changeset.success) {
       const previewInput = await convertChangesetToPreviewInput(changeset, context.fileSystem);
+      // 轉換失敗（如重疊 edits）不得當 noop 成功；空 fileChanges 且 success 才是真 noop
+      if (!previewInput.success) {
+        const message = previewInput.errors?.join(', ') ?? '生成預覽失敗';
+        outputHandler.outputError(message, format, 'change-signature');
+        process.exitCode = 1;
+        return;
+      }
+
       if (previewInput.fileChanges.length === 0) {
         const message = `無實質變更：函式 ${resolvedFunctionName} 在套用變更後與原狀相同`;
         if (isJsonFormat) {
@@ -258,18 +322,41 @@ async function findNearestProjectRoot(filePath: string, fileSystem: IFileSystem)
 /**
  * 解析變更操作
  */
-function parseChanges(options: ChangeSignatureOptions): SignatureChange[] {
+function collectRepeatedOption(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
+}
+
+export interface ChangeSignatureParseOptions {
+  add?: string | readonly string[];
+  callSiteValue?: readonly string[];
+  targetFilePath?: string;
+  remove?: string;
+  reorder?: string;
+  rename?: string;
+  changeType?: string;
+}
+
+export function parseChangeSignatureChanges(options: ChangeSignatureParseOptions): SignatureChange[] {
   const changes: SignatureChange[] = [];
+  const syntaxMode = getSyntaxValidationMode(options.targetFilePath);
+  const callSiteValues = parseCallSiteValueMappings(options.callSiteValue ?? [], syntaxMode);
+  const addedParameterNames = new Set<string>();
 
   // 解析 --add 參數
   if (options.add) {
-    const addParams = options.add.split(',');
+    const addParams = splitAddParameters(options.add);
     for (const param of addParams) {
-      const change = parseAddParameter(param);
+      const change = parseAddParameter(param, callSiteValues, syntaxMode);
       if (change) {
         changes.push(change);
+        addedParameterNames.add(change.name);
       }
     }
+  }
+
+  const unknownCallSiteParameters = [...callSiteValues.keys()].filter(name => !addedParameterNames.has(name));
+  if (unknownCallSiteParameters.length > 0) {
+    throw new Error(`--call-site-value 只能指定本次 --add 新增的參數: ${unknownCallSiteParameters.join(', ')}`);
   }
 
   // 解析 --remove 參數
@@ -297,33 +384,40 @@ function parseChanges(options: ChangeSignatureOptions): SignatureChange[] {
     });
   }
 
-  // 解析 --rename 參數
+  // 解析 --rename 參數（無效段 fast-fail，對齊 --change-type）
   if (options.rename) {
     const mappings = options.rename.split(',');
     for (const mapping of mappings) {
-      const [oldName, newName] = mapping.split(':').map(s => s.trim());
-      if (oldName && newName) {
-        changes.push({
-          type: SignatureChangeType.RenameParameter,
-          parameterNameOrIndex: oldName,
-          newName
-        });
+      const parts = mapping.split(':').map(s => s.trim());
+      const oldName = parts[0];
+      const newName = parts[1];
+      if (!oldName || !newName || parts.length !== 2) {
+        throw new Error(`無效的 --rename 語法: ${mapping}。格式: oldName:newName`);
       }
+      changes.push({
+        type: SignatureChangeType.RenameParameter,
+        parameterNameOrIndex: oldName,
+        newName
+      });
     }
   }
 
   // 解析 --change-type 參數
+  // 與 --add 共用深度感知切割：只在頂層逗號切 mapping、只在第一個冒號切名稱/型別，
+  // 避免箭頭型別（`(e: Event) => void`）的冒號或泛型（`Map<string, number>`）的逗號被天真切斷。
   if (options.changeType) {
-    const mappings = options.changeType.split(',');
+    const mappings = splitTopLevelParameterList(options.changeType);
     for (const mapping of mappings) {
-      const [name, newType] = mapping.split(':').map(s => s.trim());
-      if (name && newType) {
-        changes.push({
-          type: SignatureChangeType.ChangeParameterType,
-          parameterNameOrIndex: name,
-          newType
-        });
+      const { name, type: newType } = splitParameterNameAndType(mapping);
+      if (!name || !newType) {
+        throw new Error(`無效的 --change-type 語法: ${mapping}。格式: name:newType`);
       }
+      validateParameterType(name, newType, syntaxMode);
+      changes.push({
+        type: SignatureChangeType.ChangeParameterType,
+        parameterNameOrIndex: name,
+        newType
+      });
     }
   }
 
@@ -334,7 +428,11 @@ function parseChanges(options: ChangeSignatureOptions): SignatureChange[] {
  * 解析新增參數
  * 格式: name:type=default@position
  */
-function parseAddParameter(param: string): SignatureChange | null {
+function parseAddParameter(
+  param: string,
+  callSiteValues: ReadonlyMap<string, string>,
+  syntaxMode: SyntaxValidationMode
+): AddParameterChange | null {
   const trimmed = param.trim();
   if (!trimmed) {return null;}
 
@@ -350,16 +448,36 @@ function parseAddParameter(param: string): SignatureChange | null {
   // 解析預設值
   let defaultValue: string | undefined;
   let nameTypePart = paramPart;
-  const defaultMatch = paramPart.match(/=(.+)$/);
-  if (defaultMatch) {
-    defaultValue = defaultMatch[1];
-    nameTypePart = paramPart.slice(0, -defaultMatch[0].length);
+  const defaultSeparatorIndex = findTopLevelDefaultSeparatorIndex(paramPart);
+  if (defaultSeparatorIndex >= 0) {
+    defaultValue = normalizeParameterSpecText(paramPart.slice(defaultSeparatorIndex + 1));
+    nameTypePart = paramPart.slice(0, defaultSeparatorIndex);
+    if (!defaultValue.trim()) {
+      throw new Error(`無效的 --add 參數語法: ${param}`);
+    }
   }
 
-  // 解析名稱和類型
-  const [name, type] = nameTypePart.split(':').map(s => s.trim());
-  if (!name) {return null;}
+  // 解析名稱和類型（與 --change-type 共用第一個冒號切法）
+  const { name, type } = splitParameterNameAndType(nameTypePart);
+  if (!name) {
+    throw new Error(`無效的 --add 參數語法: ${param}`);
+  }
+  validateParameterName(name);
+  validateParameterType(name, type, syntaxMode);
   const normalizedDefaultValue = normalizeDefaultValue(type, defaultValue);
+  const explicitCallSiteValue = callSiteValues.get(name);
+  if (normalizedDefaultValue) {
+    validateAddDefaultExpression(name, normalizedDefaultValue, syntaxMode);
+  }
+  if (explicitCallSiteValue !== undefined && !normalizedDefaultValue) {
+    const unresolvableIdentifier = findUnresolvableIdentifierInCallSiteValue(explicitCallSiteValue);
+    if (unresolvableIdentifier) {
+      throw new Error(
+        `--call-site-value ${name} 引用呼叫點不保證存在的識別字 ${unresolvableIdentifier}，`
+        + '需要 --add 為該參數指定 function default'
+      );
+    }
+  }
 
   return {
     type: SignatureChangeType.AddParameter,
@@ -368,8 +486,166 @@ function parseAddParameter(param: string): SignatureChange | null {
     defaultValue: normalizedDefaultValue,
     optional: !!normalizedDefaultValue,
     position,
-    callSiteValue: normalizedDefaultValue
+    callSiteValue: explicitCallSiteValue ?? normalizedDefaultValue
   };
+}
+
+interface SyntaxValidationMode {
+  readonly language: 'typescript' | 'javascript';
+  readonly jsx: boolean;
+}
+
+function getSyntaxValidationMode(targetFilePath: string | undefined): SyntaxValidationMode {
+  const extension = targetFilePath ? path.extname(targetFilePath) : '';
+  return {
+    language: isJavaScriptSourceExtension(extension) ? 'javascript' : 'typescript',
+    jsx: extension === '.jsx' || extension === '.tsx'
+  };
+}
+
+function parseCallSiteValueMappings(
+  mappings: readonly string[],
+  syntaxMode: SyntaxValidationMode
+): Map<string, string> {
+  const result = new Map<string, string>();
+
+  for (const mapping of mappings) {
+    const trimmed = mapping.trim();
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
+      throw new Error(`無效的 --call-site-value 語法: ${mapping}。格式: param=expression`);
+    }
+
+    const parameterName = trimmed.slice(0, separatorIndex).trim();
+    const expression = trimmed.slice(separatorIndex + 1).trim();
+    if (!parameterName || !expression) {
+      throw new Error(`無效的 --call-site-value 語法: ${mapping}。格式: param=expression`);
+    }
+    if (result.has(parameterName)) {
+      throw new Error(`--call-site-value 重複指定參數: ${parameterName}`);
+    }
+
+    validateCallSiteExpression(parameterName, expression, syntaxMode);
+    result.set(parameterName, expression);
+  }
+
+  return result;
+}
+
+function validateParameterName(parameterName: string): void {
+  try {
+    const ast = parseJavaScript(`function __agentIdeValidate(${parameterName}) {}`, { sourceType: 'module' });
+    const declaration = ast.program.body[0];
+    if (
+      declaration?.type !== 'FunctionDeclaration'
+      || declaration.params.length !== 1
+      || declaration.params[0]?.type !== 'Identifier'
+      || declaration.params[0].name !== parameterName
+    ) {
+      throw new Error('not a plain identifier');
+    }
+  } catch {
+    throw new Error(`無效的 --add 參數名稱: ${parameterName}`);
+  }
+}
+
+function validateParameterType(
+  parameterName: string,
+  parameterType: string | undefined,
+  syntaxMode: SyntaxValidationMode
+): void {
+  if (!parameterType || syntaxMode.language === 'javascript') {
+    return;
+  }
+
+  const message = getTypeScriptSyntaxError(`type __AgentIdeParameterType = ${parameterType};`);
+  if (message) {
+    throw new Error(`--add ${parameterName} type 無效: ${message}`);
+  }
+}
+
+function validateCallSiteExpression(
+  parameterName: string,
+  expression: string,
+  syntaxMode: SyntaxValidationMode
+): void {
+  const message = getExpressionSyntaxError(expression, syntaxMode);
+  if (message) {
+    throw new Error(`--call-site-value ${parameterName} expression 無效: ${message}`);
+  }
+}
+
+function validateAddDefaultExpression(
+  parameterName: string,
+  expression: string,
+  syntaxMode: SyntaxValidationMode
+): void {
+  const message = getParameterDefaultSyntaxError(expression, syntaxMode);
+  if (message) {
+    throw new Error(`--add ${parameterName} default 無效: ${message}`);
+  }
+}
+
+function getParameterDefaultSyntaxError(expression: string, syntaxMode: SyntaxValidationMode): string | undefined {
+  try {
+    parseJavaScript(`function __agentIdeDefault(__value = ${expression}) {}`, {
+      sourceType: 'module',
+      plugins: getBabelPlugins(syntaxMode, syntaxMode.language === 'typescript')
+    });
+    return undefined;
+  } catch (error) {
+    return `${syntaxMode.language === 'javascript' ? 'JavaScript' : 'TypeScript'} parameter default 無效: ${getErrorMessage(error)}`;
+  }
+}
+
+function getExpressionSyntaxError(expression: string, syntaxMode: SyntaxValidationMode): string | undefined {
+  if (syntaxMode.language === 'javascript') {
+    try {
+      parseJavaScript(`const __agentIdeCallSiteValue = (${expression});`, {
+        sourceType: 'module',
+        plugins: getBabelPlugins(syntaxMode, false)
+      });
+      return undefined;
+    } catch (error) {
+      return `JavaScript expression 無效: ${getErrorMessage(error)}`;
+    }
+  }
+
+  return getTypeScriptSyntaxError(`const __agentIdeCallSiteValue = (${expression});`, syntaxMode);
+}
+
+function getBabelPlugins(syntaxMode: SyntaxValidationMode, includeTypeScript: boolean): ParserPlugin[] {
+  const plugins: ParserPlugin[] = [];
+  if (includeTypeScript) {
+    plugins.push('typescript');
+  }
+  if (syntaxMode.jsx) {
+    plugins.push('jsx');
+  }
+  return plugins;
+}
+
+function getTypeScriptSyntaxError(source: string, syntaxMode?: SyntaxValidationMode): string | undefined {
+  const compilerOptions: ts.CompilerOptions = {
+    module: ts.ModuleKind.ESNext,
+    target: ts.ScriptTarget.Latest
+  };
+  if (syntaxMode?.jsx) {
+    compilerOptions.jsx = ts.JsxEmit.Preserve;
+  }
+
+  const diagnostics = ts.transpileModule(source, {
+    compilerOptions,
+    fileName: syntaxMode?.jsx ? '__agentIdeExpression.tsx' : '__agentIdeExpression.ts',
+    reportDiagnostics: true
+  }).diagnostics ?? [];
+
+  const syntaxErrors = diagnostics.filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (syntaxErrors.length === 0) {
+    return undefined;
+  }
+
+  return ts.flattenDiagnosticMessageText(syntaxErrors[0].messageText, ' ');
 }
 
 function normalizeDefaultValue(parameterType: string | undefined, defaultValue: string | undefined): string | undefined {

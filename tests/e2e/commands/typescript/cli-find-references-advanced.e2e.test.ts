@@ -222,4 +222,208 @@ export function getPair(): StringPair {
       expect(result.exitCode).toBe(1);
     });
   });
+
+  // MARK: - re-export 別名追蹤
+
+  describe('re-export 別名追蹤 (P-J)', () => {
+    it('應該透過 barrel re-export 別名找到 consumer 的實際呼叫引用', async () => {
+      await fixture.writeFile('src/pipeline.ts', [
+        'export function selectedPipeline(): number {',
+        '  return 1;',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/index.ts', [
+        'export { selectedPipeline as renamed } from \'./pipeline.js\';'
+      ].join('\n'));
+      await fixture.writeFile('src/consumer.ts', [
+        'import { renamed } from \'./index.js\';',
+        '',
+        'export function consume(): number {',
+        '  return renamed();',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['find-references', 'selectedPipeline', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // consumer.ts 中透過別名 renamed 的引用必須被找到
+      expect(
+        output.references.some(
+          (r: { file: string; context: string }) =>
+            r.file.endsWith('consumer.ts') && r.context.includes('renamed')
+        )
+      ).toBe(true);
+
+      // 整體引用數：定義（pipeline.ts）+ re-export（index.ts）+ consumer.ts import + consumer.ts 呼叫 = 至少 3
+      expect(output.summary.totalReferences).toBeGreaterThanOrEqual(3);
+
+      // consumer.ts 裡 `import { renamed }` 那一行的引用型別必須是 'import'，不得是 'definition'
+      const consumerImportRef = output.references.find(
+        (r: any) => r.file.endsWith('consumer.ts') && r.context.includes('import { renamed }')
+      );
+      expect(consumerImportRef).toBeDefined();
+      expect(consumerImportRef.type).toBe('import');
+    });
+
+    it('別名引用追蹤不得誤報同名遮蔽變數或字串字面值', async () => {
+      await fixture.writeFile('src/pipeline.ts', [
+        'export function selectedPipeline(): number {',
+        '  return 1;',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/index.ts', [
+        'export { selectedPipeline as renamed } from \'./pipeline.js\';'
+      ].join('\n'));
+      await fixture.writeFile('src/consumer.ts', [
+        'import { renamed } from \'./index.js\';',
+        '',
+        'export function useIt(): number {',
+        '  return renamed();',
+        '}',
+        '',
+        'export function unrelated(): number {',
+        '  const renamed = 99;',
+        '  return renamed + renamed;',
+        '}',
+        '',
+        'const message = \'renamed should not match in string\';'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        ['find-references', 'selectedPipeline', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output: any = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+
+      // 正向：consumer.ts 第 4 行的 renamed() 呼叫必須被找到
+      expect(
+        output.references.some(
+          (r: any) => r.file.endsWith('consumer.ts') && r.context.includes('return renamed()')
+        )
+      ).toBe(true);
+
+      // 負向（核心）：不得誤報遮蔽變數與字串字面值
+      const contexts: string[] = output.references.map((r: any) => r.context);
+      expect(contexts.some((c: string) => c.includes('const renamed = 99'))).toBe(false);
+      expect(contexts.some((c: string) => c.includes('renamed + renamed'))).toBe(false);
+      expect(contexts.some((c: string) => c.includes('should not match in string'))).toBe(false);
+
+      // consumer.ts 內的引用數應為 2（import binding + renamed() 呼叫），不含遮蔽變數那 3 處
+      expect(
+        output.references.filter((r: any) => r.file.endsWith('consumer.ts')).length
+      ).toBe(2);
+    });
+  });
+
+  // MARK: - --at 過濾器丟棄前向引用 regression
+
+  describe('--at 過濾器不應丟棄前向引用（非提升宣告的真引用）regression', () => {
+    it('const 定義在後：--at 鎖定 const 定義時，定義前的真實引用不應被丟棄', async () => {
+      // 符號名故意取 fixture 全域唯一名稱（非 'config'）：sample-project 本身在
+      // src/index.ts、src/quality-test/type-safety-issues.ts 已各自宣告一個
+      // 同名 const config，撞名會觸發 F6 fail-fast（找到多個同名符號），baseline
+      // 步驟根本跑不到本測試真正要驗的前向引用邏輯。
+      await fixture.writeFile('src/forward-ref-const.ts', [
+        'export function useLater() {',
+        '  return forwardRefConfig.value;',
+        '}',
+        'export const forwardRefConfig = { value: 42 };'
+      ].join('\n'));
+
+      // 不帶 --at：驗證 baseline 應含 line 2（forwardRefConfig.value 的使用）與 line 4（定義）
+      const baseline = await executeCLI(
+        ['find-references', 'forwardRefConfig', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+      const baselineOutput: any = JSON.parse(baseline.stdout);
+      expect(baselineOutput.references.some((r: any) => r.line === 2)).toBe(true);
+      expect(baselineOutput.references.some((r: any) => r.line === 4)).toBe(true);
+
+      // 帶 --at 鎖定 forwardRefConfig 的定義位置（line 4, column 14，取自 baseline 的 definition）
+      const result = await executeCLI(
+        [
+          'find-references',
+          'forwardRefConfig',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-const.ts:4:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：帶 --at 後 line 2 的前向引用被靜默丟棄，只剩 line 4 的定義本身
+      expect(output.references.some((r: any) => r.line === 2)).toBe(true);
+    });
+
+    it('class 定義在後：--at 鎖定 class 定義時，定義前的真實引用不應被丟棄', async () => {
+      await fixture.writeFile('src/forward-ref-class.ts', [
+        'export function useClass() { return new Later(); }',
+        'export class Later {}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'Later',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-class.ts:2:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：new Later() 在 line 1 的前向引用被 --at 過濾器丟棄
+      expect(output.references.some((r: any) => r.line === 1)).toBe(true);
+    });
+
+    it('arrow function const 定義在後：--at 鎖定 const 定義時，定義前的真實呼叫引用不應被丟棄', async () => {
+      await fixture.writeFile('src/forward-ref-arrow.ts', [
+        'export function callArrow() { return handler(); }',
+        'export const handler = () => 1;'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'find-references',
+          'handler',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/forward-ref-arrow.ts:2:14',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output: any = JSON.parse(result.stdout);
+
+      // Bug：handler() 在 line 1 的前向呼叫引用被 --at 過濾器丟棄
+      expect(output.references.some((r: any) => r.line === 1)).toBe(true);
+    });
+  });
 });

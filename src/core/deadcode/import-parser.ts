@@ -12,21 +12,40 @@ import { FileUtils } from '@core/foundations/index.js';
 const MAX_MULTILINE_IMPORT = 20;
 
 /**
+ * Unicode 識別符字元類（不含錨點），與 move/statement-collector、import-resolver 同形
+ * （UAX #31 ID_Start/ID_Continue + `$`）。deadcode 不依賴 move 層，故本地定義同等字元類。
+ */
+export const UNICODE_IDENTIFIER_CLASS = '[\\p{ID_Start}_$][\\p{ID_Continue}$]*';
+
+/**
  * Import 語句匹配 Regex 常數
+ * 識別符一律用 UNICODE_IDENTIFIER_CLASS（UAX #31），禁止 \w+（會漏 Unicode 別名）
  */
 const IMPORT_PATTERNS = {
   /** Namespace import: import * as X from '...' */
-  NAMESPACE: /import\s+\*\s+as\s+(\w+)\s+from/,
+  NAMESPACE: new RegExp(
+    'import\\s+\\*\\s+as\\s+(' + UNICODE_IDENTIFIER_CLASS + ')\\s+from',
+    'u'
+  ),
   /** Default import with named: import X, { Y, Z } from '...' */
-  DEFAULT_WITH_NAMED: /import\s+(\w+)\s*,\s*\{([^}]+)\}\s*from/,
+  DEFAULT_WITH_NAMED: new RegExp(
+    'import\\s+(' + UNICODE_IDENTIFIER_CLASS + ')\\s*,\\s*\\{([^}]+)\\}\\s*from',
+    'u'
+  ),
   /** Default import only: import X from '...' */
-  DEFAULT_ONLY: /import\s+(\w+)\s+from\s+['"]/,
+  DEFAULT_ONLY: new RegExp(
+    'import\\s+(' + UNICODE_IDENTIFIER_CLASS + ')\\s+from\\s+[\'"]',
+    'u'
+  ),
   /** Named import: import { X, Y } from '...' or import type { X } from '...' */
   NAMED: /import\s+(?:type\s*)?\{([^}]+)\}\s*from/,
   /** Side-effect import: import '...' */
   SIDE_EFFECT: /^import\s+['"][^'"]+['"]/,
   /** As alias: X as Y */
-  AS_ALIAS: /^(\w+)\s+as\s+(\w+)$/
+  AS_ALIAS: new RegExp(
+    '^(' + UNICODE_IDENTIFIER_CLASS + ')\\s+as\\s+(' + UNICODE_IDENTIFIER_CLASS + ')$',
+    'u'
+  )
 } as const;
 
 /**

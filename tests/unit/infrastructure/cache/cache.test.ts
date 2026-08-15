@@ -20,6 +20,7 @@ import {
   type CacheItem,
   type CacheEvent
 } from '@infrastructure/cache/types.js';
+import { CacheUtils } from '@infrastructure/cache/index.js';
 
 // === 測試常數 ===
 const DEFAULT_CACHE_SIZE = 5;
@@ -96,6 +97,31 @@ describe('MemoryCache', () => {
       smallCache.dispose();
     });
 
+    it('should not retain entries when maxSize is zero', () => {
+      const zeroSizeCache = new MemoryCache<string, string>({ maxSize: 0 });
+      zeroSizeCache.set('key1', 'value1');
+
+      expect(zeroSizeCache.size()).toBe(0);
+
+      zeroSizeCache.dispose();
+    });
+
+    it('should warn when maxSize is zero', () => {
+      expect(CacheUtils.validateCacheOptions({ maxSize: 0 })).toContain(
+        'maxSize should be greater than 0'
+      );
+    });
+
+    // P3-6: validateCacheOptions 對 cleanupInterval 的檢查用 `options.cleanupInterval && ...`
+    // 短路判斷，0 是 falsy，導致 cleanupInterval: 0（與 maxSize: 0、defaultTTL 為負值同樣
+    // 不合理的配置）完全不觸發警告。根因：src/infrastructure/cache/index.ts:244
+    // （應比照 maxSize/defaultTTL 改用 `!== undefined` 顯式判斷 undefined）。
+    it('should warn when cleanupInterval is zero (錯誤重現點：目前 0 被當成 falsy 略過檢查)', () => {
+      expect(CacheUtils.validateCacheOptions({ cleanupInterval: 0 })).toContain(
+        'cleanupInterval should be at least 1000ms for performance reasons'
+      );
+    });
+
     it('should handle very large maxSize', () => {
       const largeCache = new MemoryCache<string, string>({ maxSize: 1000000 });
       largeCache.set('key1', 'value1');
@@ -118,6 +144,15 @@ describe('MemoryCache', () => {
       cache.set('key1', null);
       expect(cache.has('key1')).toBe(true);
       expect(cache.get('key1')).toBeNull();
+    });
+
+    it('should report the current item count even when request statistics are disabled', () => {
+      const noStatsCache = new MemoryCache<string, string>({ enableStats: false });
+      noStatsCache.set('key1', 'value1');
+
+      expect(noStatsCache.getStats().size).toBe(1);
+
+      noStatsCache.dispose();
     });
   });
 
@@ -296,6 +331,54 @@ describe('MemoryCache', () => {
       const stats = cache.getStats();
       expect(stats.memoryUsage).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('MemoryCache maxMemory 上限強制（C9 defect regression）', () => {
+  // C9：MemoryCache 建構時接受並驗證 maxMemory 選項，但 set()（memory-cache.ts）
+  // 只檢查 this.cache.size >= this.options.maxSize 來決定是否淘汰，從未讀取
+  // this.options.maxMemory，導致 maxMemory 完全沒有作用 —— 單筆超過上限的項目、
+  // 或多筆總和超過上限後新寫入的項目，都會被無限制保留。
+  // calculateSize()（memory-cache.ts）對字串的估算是 value.length * 2（bytes）。
+
+  it('單筆項目大小已超過 maxMemory 時，該項目不得被保留', () => {
+    const cache = new MemoryCache<string, string>({
+      maxSize: 100,
+      maxMemory: 5, // 5 bytes 預算
+      enableStats: true
+    });
+
+    // 'toolong' 長度 7，calculateSize = 7 * 2 = 14 bytes，遠超過 5 bytes 預算
+    cache.set('k', 'toolong');
+
+    // 正確行為：單筆已超出 maxMemory 預算的項目不應被保留；
+    // 目前的壞行為是 set() 從未檢查 maxMemory，項目照樣寫入且可讀出
+    expect(cache.get('k')).toBeUndefined();
+
+    cache.dispose();
+  });
+
+  it('maxMemory 足夠容納多筆時，寫入超出預算的新項目應淘汰最舊項目使總用量 ≤ maxMemory', () => {
+    const cache = new MemoryCache<string, string>({
+      maxSize: 100, // 夠大，確保不會因為 maxSize（筆數）觸發淘汰
+      maxMemory: 30, // 每筆字串 size = 5 字元 * 2 = 10 bytes，預算剛好容納 3 筆
+      enableStats: true
+    });
+
+    cache.set('k0', 'v0000'); // 10 bytes，累計 10
+    cache.set('k1', 'v1111'); // 10 bytes，累計 20
+    cache.set('k2', 'v2222'); // 10 bytes，累計 30（已達預算上限）
+    cache.set('k3', 'v3333'); // 再寫入 10 bytes 會使累計達 40，超過 30 的預算
+
+    // 正確行為：寫入 k3 前應先淘汰最舊的 k0，讓總用量回到 ≤ 30；
+    // 目前的壞行為是 set() 不檢查 maxMemory，四筆全部保留、總用量達 40
+    expect(cache.get('k0')).toBeUndefined();
+    expect(cache.get('k3')).toBe('v3333');
+
+    const stats = cache.getStats();
+    expect(stats.memoryUsage).toBeLessThanOrEqual(30);
+
+    cache.dispose();
   });
 });
 
@@ -499,6 +582,24 @@ describe('MemoryCache with different strategies', () => {
     expect(cache.size()).toBe(3);
     cache.dispose();
   });
+
+  it('should respect maxSize with TTL strategy even when no item has an expiresAt (G4)', () => {
+    // TTLStrategy.selectEvictionKey() 在所有項目都沒有 expiresAt 時回傳
+    // undefined（見 strategies.ts），evict() 因此變成 no-op，但 set()
+    // 仍持續寫入 —— maxSize 形同虛設。這裡不帶 defaultTTL（= 0，永不過期），
+    // 讓每筆項目都沒有 expiresAt，重現此情境。
+    const cache = new MemoryCache<string, string>({
+      maxSize: 2,
+      evictionStrategy: EvictionStrategy.TTL
+    });
+
+    cache.set('key1', 'value1');
+    cache.set('key2', 'value2');
+    cache.set('key3', 'value3');
+
+    expect(cache.size()).toBeLessThanOrEqual(2);
+    cache.dispose();
+  });
 });
 
 // ============================================
@@ -637,6 +738,44 @@ describe('LFUStrategy', () => {
     strategy.onSet('key1', { value: 1, createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 0 });
     strategy.onDelete('key1');
   });
+
+  it('key 0（falsy 但合法）須能被選為淘汰候選，不因 truthy 檢查被跳過', () => {
+    // 重現手法：若 selectEvictionKey 內部用 `if (!minKey)` 判斷「尚未找到候選」，
+    // 數字 key `0` 會被誤判成「還沒找到」而永遠選不到它，即使它才是真正最小 accessCount。
+    const numericStrategy = new LFUStrategy<number, any>();
+    const items = new Map<number, CacheItem<any>>();
+
+    items.set(0, { value: 'a', createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 1 });
+    items.set(1, { value: 'b', createdAt: Date.now(), lastAccessedAt: Date.now(), accessCount: 5 });
+
+    numericStrategy.onSet(0, items.get(0)!);
+    numericStrategy.onSet(1, items.get(1)!);
+
+    // key 0 的 accessCount 最小，應被選為淘汰候選
+    expect(numericStrategy.selectEvictionKey(items)).toBe(0);
+  });
+});
+
+describe('MemoryCache LFU eviction 不得因 key 0 falsy 而跳過 (P2 regression)', () => {
+  it('maxSize=2，key 0 存取次數最少時應被淘汰，而非誤淘汰存取次數較高的 key 1', () => {
+    const cache = new MemoryCache<number, string>({
+      maxSize: 2,
+      evictionStrategy: EvictionStrategy.LFU
+    });
+
+    cache.set(0, 'value0');
+    cache.set(1, 'value1');
+    cache.get(1); // 提高 key 1 的存取頻率
+
+    // 觸發淘汰：真正最少存取的是 key 0（accessCount 0），應該被淘汰
+    cache.set(2, 'value2');
+
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+    expect(cache.has(2)).toBe(true);
+
+    cache.dispose();
+  });
 });
 
 describe('FIFOStrategy', () => {
@@ -698,13 +837,14 @@ describe('TTLStrategy', () => {
     expect(keyToEvict).toBe('key2');
   });
 
-  it('should return undefined for items without expiresAt', () => {
+  it('should fall back to the oldest-inserted key when no item has expiresAt', () => {
     const now = Date.now();
     const items = new Map<string, CacheItem<any>>();
     items.set('key1', { value: 1, createdAt: now, lastAccessedAt: now, accessCount: 0 });
+    items.set('key2', { value: 2, createdAt: now, lastAccessedAt: now, accessCount: 0 });
 
     const keyToEvict = strategy.selectEvictionKey(items);
-    expect(keyToEvict).toBeUndefined();
+    expect(keyToEvict).toBe('key1');
   });
 });
 

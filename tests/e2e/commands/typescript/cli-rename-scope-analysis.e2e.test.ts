@@ -112,36 +112,50 @@ export function formatTime(date: Date): string {
   // MARK: - validation 錯誤路徑
 
   describe('validation 錯誤', () => {
-    it('新名稱是 reserved keyword 應附帶衝突警告（exitCode=0）', async () => {
-      // rename-engine 將 reserved keyword 衝突視為 warning（非 abort）
-      // generateChangeset() 仍會成功，conflicts 寫入 JSON 的 conflicts 欄位
+    it('新名稱是 reserved keyword 時非 dry-run 應拒絕套用（exitCode 非 0）', async () => {
+      // rename-engine 將 reserved keyword 衝突記為 ConflictType warning，
+      // 非 dry-run 下 rename.command 偵測到此類 warning 會擋下套用、不寫檔
+      const originalContent = await fixture.readFile('src/types/user.ts');
+      expect(originalContent).toContain('UserAddress');
+
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'UserAddress', '--to', 'class', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      // exitCode 應為 0（warning，非 abort）
-      expect(result.exitCode).toBe(0);
-      // JSON 輸出應包含 conflicts 欄位（警告資訊）
+      // exitCode 應非 0（拒絕套用）
+      expect(result.exitCode).not.toBe(0);
+      // JSON 輸出應為失敗且錯誤訊息包含衝突資訊
       const output = JSON.parse(result.stdout);
-      expect(Array.isArray(output.conflicts)).toBe(true);
-      expect(output.conflicts.length).toBeGreaterThan(0);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('衝突');
+
+      // 檔案應維持原樣
+      const modifiedContent = await fixture.readFile('src/types/user.ts');
+      expect(modifiedContent).toBe(originalContent);
     });
 
-    it('新名稱包含特殊字元應附帶衝突警告（exitCode=0）', async () => {
-      // rename-engine 將無效識別符衝突視為 warning（非 abort）
-      // 輸出 JSON 的 conflicts 欄位包含警告訊息
+    it('新名稱包含特殊字元時非 dry-run 應拒絕套用（exitCode 非 0）', async () => {
+      // rename-engine 將無效識別符衝突記為 ConflictType warning，
+      // 非 dry-run 下 rename.command 偵測到此類 warning 會擋下套用、不寫檔
+      const originalContent = await fixture.readFile('src/types/user.ts');
+      expect(originalContent).toContain('UserAddress');
+
       const result = await executeCLI(
         ['rename', '--path', fixture.rootPath, '--from', 'UserAddress', '--to', '123invalid', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
-      // exitCode 應為 0（warning，非 abort）
-      expect(result.exitCode).toBe(0);
-      // JSON 輸出應包含 conflicts 欄位（警告資訊）
+      // exitCode 應非 0（拒絕套用）
+      expect(result.exitCode).not.toBe(0);
+      // JSON 輸出應為失敗且錯誤訊息包含衝突資訊
       const output = JSON.parse(result.stdout);
-      expect(Array.isArray(output.conflicts)).toBe(true);
-      expect(output.conflicts.length).toBeGreaterThan(0);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('衝突');
+
+      // 檔案應維持原樣
+      const modifiedContent = await fixture.readFile('src/types/user.ts');
+      expect(modifiedContent).toBe(originalContent);
     });
 
     it('新名稱為空白字串應報錯', async () => {

@@ -241,6 +241,18 @@ export interface SymbolReference {
   readonly type: 'definition' | 'usage' | 'comment';
   /** 引用所在行的完整程式碼（用於輸出顯示上下文） */
   readonly context?: string;
+  /**
+   * 此引用是 object literal / destructuring shorthand token（`{ foo }`）：
+   * 帶原始 key 文字，rename 產生 TextChange 時展開為 `key: newName`，
+   * 避免天真替換把 key 一併改掉（見
+   * @core/foundations/symbol-finder SymbolReference.shorthandKeyText）。
+   */
+  readonly shorthandKeyText?: string;
+  /**
+   * rename 目標符號是 property 宣告（key 側）：展開為 `newName: 原文字`
+   * （見 @shared/types Reference.shorthandTargetIsKey）。
+   */
+  readonly shorthandTargetIsKey?: boolean;
 }
 
 /**

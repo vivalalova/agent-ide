@@ -410,7 +410,7 @@ export const chainVersion = '1.0';
       // affectedFiles = { 'dead-chain-lib.ts', 'dead-chain.ts' }
       // dead-chain.ts 的 import { chainHelper } 中 chainHelper ∈ removedSymbols → 命中!
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -478,7 +478,7 @@ export const consumerVersion = '2.0';
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -509,7 +509,7 @@ export function activeEntry() {
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -543,7 +543,7 @@ export const bsearchAlive = 'alive';
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 
@@ -575,7 +575,7 @@ export const mlConst = 'active';
       `.trim());
 
       const result = await executeCLI(
-        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--format', 'json'],
+        ['deadcode', '--path', fixture.rootPath, '--include-exports', '--apply', '--format', 'json'],
         { memfs: fixture.memfs }
       );
 

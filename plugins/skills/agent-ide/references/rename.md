@@ -2,14 +2,26 @@
 
 重命名符號並自動更新所有引用。
 
-## 參數
+## CLI Help
 
-- `--from <old>` / `--symbol <name>` - 原始符號名稱（必填）
-- `--to <new>` / `--new-name <name>` - 新符號名稱（必填）
-- `--path <path>` - 專案路徑（預設 `.`）
-- `--at <file:line:column>` - 指定符號位置（同名消歧）
-- `--dry-run` - 預覽變更
-- `--format json|summary|diff` - 輸出格式（預設 diff）
+<!-- agent-ide-help:start -->
+```text
+Usage: agent-ide rename [options]
+
+重新命名程式碼元素
+
+Options:
+  -s, --symbol <name>    要重新命名的符號
+  -f, --from <name>      原始名稱（--symbol 的別名）
+  -n, --new-name <name>  新名稱
+  -o, --to <name>        新名稱（--new-name 的別名）
+  -p, --path <path>      檔案或目錄路徑 (default: ".")
+  -a, --at <location>    指定符號位置 (file:line:column)，用於區分同名符號
+  --dry-run              預覽變更而不執行
+  --format <format>      輸出格式 (diff|json|summary) (default: "diff")
+  -h, --help             display help for command
+```
+<!-- agent-ide-help:end -->
 
 ## 範例
 

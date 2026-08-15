@@ -58,22 +58,20 @@ export class CycleDetector {
             });
           }
         }
-      } else if (scc.size > 1 && scc.size <= opts.maxCycleLength) {
-        // 找出 SCC 中的實際循環路徑
-        const cyclePaths = this.findCyclePathsInSCC(graph, [...scc.nodes]);
+      } else if (scc.size > 1) {
+        // 找出 SCC 中的實際循環路徑（已保證回傳長度 <= opts.maxCycleLength）
+        const cyclePaths = this.findCyclePathsInSCC(graph, [...scc.nodes], opts.maxCycleLength);
 
         for (const cyclePath of cyclePaths) {
-          if (cyclePath.length <= opts.maxCycleLength) {
-            cycles.push({
-              cycle: cyclePath,
-              length: cyclePath.length,
-              severity: calculateCycleSeverity(cyclePath.length)
-            });
+          cycles.push({
+            cycle: cyclePath,
+            length: cyclePath.length,
+            severity: calculateCycleSeverity(cyclePath.length)
+          });
 
-            // 如果不需要報告所有循環，找到第一個就停止
-            if (!opts.reportAllCycles) {
-              break;
-            }
+          // 如果不需要報告所有循環，找到第一個就停止
+          if (!opts.reportAllCycles) {
+            break;
           }
         }
       }
@@ -94,68 +92,88 @@ export class CycleDetector {
     const sccs: StronglyConnectedComponent[] = [];
     let index = 0;
 
-    const strongConnect = (node: string) => {
-      // 設定節點的索引和 lowLink
-      nodeStates.set(node, {
-        index: index,
-        lowLink: index,
-        onStack: true
-      });
+    // 迭代版 Tarjan：用顯式工作堆疊模擬遞迴，避免深依賴鏈（線性長鏈）
+    // 在遞迴版下每個節點對應一層呼叫堆疊而導致 stack overflow
+    interface WorkFrame {
+      node: string;
+      dependencies: string[];
+      depIndex: number;
+    }
+
+    for (const start of nodes) {
+      if (nodeStates.has(start)) {
+        continue;
+      }
+
+      const workStack: WorkFrame[] = [];
+      nodeStates.set(start, { index, lowLink: index, onStack: true });
       index++;
-      stack.push(node);
+      stack.push(start);
+      workStack.push({ node: start, dependencies: graph.getDependencies(start), depIndex: 0 });
 
-      // 考慮所有依賴
-      const dependencies = graph.getDependencies(node);
-      for (const dep of dependencies) {
-        const depState = nodeStates.get(dep);
+      while (workStack.length > 0) {
+        const frame = workStack[workStack.length - 1];
 
-        if (!depState) {
-          // 依賴尚未被訪問，遞歸處理
-          strongConnect(dep);
-          const nodeState = nodeStates.get(node);
-          const depStateAfter = nodeStates.get(dep);
-          if (nodeState && depStateAfter) {
-            nodeState.lowLink = Math.min(nodeState.lowLink, depStateAfter.lowLink);
+        if (frame.depIndex < frame.dependencies.length) {
+          const dep = frame.dependencies[frame.depIndex];
+          frame.depIndex++;
+          const depState = nodeStates.get(dep);
+
+          if (!depState) {
+            // 依賴尚未被訪問，推入工作堆疊模擬遞歸處理
+            nodeStates.set(dep, { index, lowLink: index, onStack: true });
+            index++;
+            stack.push(dep);
+            workStack.push({ node: dep, dependencies: graph.getDependencies(dep), depIndex: 0 });
+          } else if (depState.onStack) {
+            // 依賴在當前路徑上，更新 lowLink
+            const nodeState = nodeStates.get(frame.node);
+            if (nodeState) {
+              nodeState.lowLink = Math.min(nodeState.lowLink, depState.index);
+            }
           }
-        } else if (depState.onStack) {
-          // 依賴在當前路徑上，更新 lowLink
-          const nodeState = nodeStates.get(node);
-          if (nodeState) {
-            nodeState.lowLink = Math.min(nodeState.lowLink, depState.index);
+          continue;
+        }
+
+        // 該節點的所有依賴都已處理完畢，彈出工作堆疊
+        workStack.pop();
+        const nodeState = nodeStates.get(frame.node);
+        if (!nodeState) {
+          continue;
+        }
+
+        // 回傳給父節點：用子節點（已收斂）的 lowLink 更新父節點的 lowLink
+        if (workStack.length > 0) {
+          const parentFrame = workStack[workStack.length - 1];
+          const parentState = nodeStates.get(parentFrame.node);
+          if (parentState) {
+            parentState.lowLink = Math.min(parentState.lowLink, nodeState.lowLink);
           }
         }
-      }
 
-      // 如果是根節點，產生 SCC
-      const nodeState = nodeStates.get(node);
-      if (nodeState && nodeState.lowLink === nodeState.index) {
-        const sccNodes: string[] = [];
-        let currentNode: string | undefined;
+        // 如果是根節點，產生 SCC
+        if (nodeState.lowLink === nodeState.index) {
+          const sccNodes: string[] = [];
+          let currentNode: string | undefined;
 
-        do {
-          currentNode = stack.pop();
-          if (!currentNode) {break;}
-          const currentState = nodeStates.get(currentNode);
-          if (currentState) {
-            currentState.onStack = false;
+          do {
+            currentNode = stack.pop();
+            if (!currentNode) {break;}
+            const currentState = nodeStates.get(currentNode);
+            if (currentState) {
+              currentState.onStack = false;
+            }
+            sccNodes.push(currentNode);
+          } while (currentNode !== frame.node);
+
+          if (sccNodes.length > 0) {
+            sccs.push({
+              nodes: sccNodes,
+              size: sccNodes.length,
+              cycleComplexity: this.calculateCycleComplexity(graph, sccNodes)
+            });
           }
-          sccNodes.push(currentNode);
-        } while (currentNode !== node);
-
-        if (sccNodes.length > 0) {
-          sccs.push({
-            nodes: sccNodes,
-            size: sccNodes.length,
-            cycleComplexity: this.calculateCycleComplexity(graph, sccNodes)
-          });
         }
-      }
-    };
-
-    // 對每個未訪問的節點執行 Tarjan 算法
-    for (const node of nodes) {
-      if (!nodeStates.has(node)) {
-        strongConnect(node);
       }
     }
 
@@ -166,23 +184,26 @@ export class CycleDetector {
    * 在強連通分量中找出循環路徑
    * @param graph 依賴圖
    * @param sccNodes SCC 中的節點
-   * @returns 循環路徑列表
+   * @param maxCycleLength 允許的最大循環長度，超過此長度的循環不回傳
+   * @returns 循環路徑列表（保證每條長度 <= maxCycleLength）
    */
-  private findCyclePathsInSCC(graph: DependencyGraph, sccNodes: string[]): string[][] {
+  private findCyclePathsInSCC(graph: DependencyGraph, sccNodes: string[], maxCycleLength: number): string[][] {
     const cycles: string[][] = [];
-    const visited = new Set<string>();
+    const seenCycleKeys = new Set<string>();
 
-    // 從每個節點開始嘗試找出循環
+    // 對 SCC 內每個節點都嘗試找出經過該節點回到自身的最短循環。
+    // 不可用「一條環涵蓋的節點全標記已訪問」剪枝：同一 SCC 內可能存在
+    // 共享節點但彼此獨立的多條環（例如 a↔b 與 a↔c 共享節點 a），
+    // 剪枝會讓後面的起點被跳過，導致那些環永遠不會被找到（漏報）。
     for (const startNode of sccNodes) {
-      if (visited.has(startNode)) {
-        continue;
-      }
-
-      const cycle = this.findShortestCyclePath(graph, startNode, sccNodes);
+      const cycle = this.findShortestCyclePath(graph, startNode, sccNodes, maxCycleLength);
       if (cycle && cycle.length > 1) {
-        cycles.push(cycle);
-        // 標記這個循環中的所有節點為已訪問
-        cycle.forEach(node => visited.add(node));
+        // 不同起點可能找到同一條環（僅旋轉起點不同），需去重後才全報
+        const key = this.canonicalCycleKey(cycle);
+        if (!seenCycleKeys.has(key)) {
+          seenCycleKeys.add(key);
+          cycles.push(cycle);
+        }
       }
     }
 
@@ -190,16 +211,35 @@ export class CycleDetector {
   }
 
   /**
-   * 找出從指定節點開始的最短循環路徑
+   * 將循環路徑正規化為「旋轉不變」的唯一鍵，用於去重
+   * 同一條環無論從哪個節點開始描述，正規化後的鍵值都相同
+   * @param cycle 循環路徑（節點序列，方向為依賴方向）
+   * @returns 正規化後的唯一鍵
+   */
+  private canonicalCycleKey(cycle: string[]): string {
+    let minIndex = 0;
+    for (let i = 1; i < cycle.length; i++) {
+      if (cycle[i] < cycle[minIndex]) {
+        minIndex = i;
+      }
+    }
+    const rotated = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
+    return rotated.join('\0');
+  }
+
+  /**
+   * 找出從指定節點開始、長度不超過 maxLength 的最短循環路徑
    * @param graph 依賴圖
    * @param startNode 起始節點
    * @param sccNodes 限制搜尋範圍的節點
-   * @returns 循環路徑或 null
+   * @param maxLength 允許的最大循環長度
+   * @returns 循環路徑或 null（找不到合規循環）
    */
   private findShortestCyclePath(
     graph: DependencyGraph,
     startNode: string,
-    sccNodes: string[]
+    sccNodes: string[],
+    maxLength: number
   ): string[] | null {
     const sccSet = new Set(sccNodes);
     const queue: Array<{ node: string; path: string[] }> = [{
@@ -224,8 +264,16 @@ export class CycleDetector {
 
       for (const dep of dependencies) {
         if (dep === startNode && path.length > 1) {
-          // 找到循環
-          return path;
+          // 找到循環，長度 = path.length，需在上限內才算合規
+          if (path.length <= maxLength) {
+            return path;
+          }
+          continue;
+        }
+
+        // 已達長度上限，不再展開新節點（仍允許上方在當前長度收口成環）
+        if (path.length >= maxLength) {
+          continue;
         }
 
         if (!path.includes(dep)) {

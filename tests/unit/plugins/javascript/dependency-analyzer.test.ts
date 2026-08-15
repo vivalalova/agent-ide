@@ -545,10 +545,12 @@ describe('ImpactAnalyzer (JavaScript)', () => {
       const fs = createMockFileSystem(files);
       const analyzer = new ImpactAnalyzer(fs);
 
-      await analyzer.analyzeFile('/src/app.js');
-      await analyzer.analyzeFile('/src/app.js');
+      const first = await analyzer.analyzeFile('/src/app.js');
+      const second = await analyzer.analyzeFile('/src/app.js');
 
-      expect(fs.readFile).toHaveBeenCalledTimes(1);
+      // mtime+size 命中後仍可讀一次做 contentHash 驗證；結果來自快取（依賴不變）
+      expect(fs.readFile).toHaveBeenCalledTimes(2);
+      expect(second.dependencies).toEqual(first.dependencies);
     });
 
     it('應該重新分析當 JavaScript 檔案已修改', async () => {

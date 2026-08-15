@@ -103,6 +103,212 @@ describe('CLI call-hierarchy - JavaScript 專案', () => {
     });
   });
 
+  describe('--at 符號定位', () => {
+    it('應該用 --at 鎖定同名 JS 函數的呼叫層次', async () => {
+      await fixture.writeFile('src/js-left-helper.js', 'export function jsLeftHelper() {}');
+      await fixture.writeFile('src/js-right-helper.js', 'export function jsRightHelper() {}');
+      await fixture.writeFile('src/js-left-entry.js', [
+        'import { jsLeftHelper } from "./js-left-helper.js";',
+        'export function duplicateJsEntry() {',
+        '  jsLeftHelper();',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/js-right-entry.js', [
+        'import { jsRightHelper } from "./js-right-helper.js";',
+        'export function duplicateJsEntry() {',
+        '  jsRightHelper();',
+        '}'
+      ].join('\n'));
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'duplicateJsEntry',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/js-left-entry.js:2',
+          '--direction',
+          'outgoing',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.targetSymbol.file).toContain('src/js-left-entry.js');
+      expect(output.symbols).toHaveLength(1);
+
+      const callees = output.outgoing.map((call: { callee: string }) => call.callee);
+      expect(callees).toContain('jsLeftHelper');
+      expect(callees).not.toContain('jsRightHelper');
+    });
+
+    it('應該用 --at 保留同名 JS 類別方法的 incoming 呼叫者', async () => {
+      await fixture.writeFile('src/js-left-runner-incoming.js', [
+        'export class JsLeftIncomingRunner {',
+        '  run() { return "left"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile('src/js-right-runner-incoming.js', [
+        'export class JsRightIncomingRunner {',
+        '  run() { return "right"; }',
+        '}'
+      ].join('\n'));
+      await fixture.writeFile(
+        'src/js-left-runner-caller.js',
+        'import { JsLeftIncomingRunner } from "./js-left-runner-incoming.js";\nexport function jsLeftRunCaller() { return new JsLeftIncomingRunner().run(); }'
+      );
+      await fixture.writeFile(
+        'src/js-right-runner-caller.js',
+        'import { JsRightIncomingRunner } from "./js-right-runner-incoming.js";\nexport function jsRightRunCaller() { return new JsRightIncomingRunner().run(); }'
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'run',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/js-left-runner-incoming.js:2',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const callers = output.incoming.map((call: { caller: string }) => call.caller);
+
+      expect(callers).toContain('jsLeftRunCaller');
+      expect(callers).not.toContain('jsRightRunCaller');
+    });
+
+    it('同名 JS 函數沒有 --at 時應 fail-fast，不得 silently merge（F6，與 TS 對齊）', async () => {
+      await fixture.writeFile('src/js-symbol-a.js', 'export function duplicateJsSymbol() {}');
+      await fixture.writeFile('src/js-symbol-b.js', 'export function duplicateJsSymbol() {}');
+
+      const result = await executeCLI(
+        ['call-hierarchy', 'duplicateJsSymbol', '--path', fixture.rootPath, '--format', 'json'],
+        { memfs: fixture.memfs }
+      );
+
+      // F6：與 TS 側（cli-call-hierarchy.e2e.test.ts）及 rename / find-references 對齊，
+      // 多定義無 --at → fail-fast，不得 exit 0 silently 合併回傳全部 identity
+      expect(result.exitCode).not.toBe(0);
+      const combined = `${result.stdout}\n${result.stderr}`;
+      expect(combined).toMatch(/--at|同名|ambiguous|多個/i);
+    });
+
+    it('應該用 --at 鎖定同名 JS 函數的 incoming 呼叫者', async () => {
+      await fixture.writeFile('src/js-left-incoming.js', 'export function incomingJsTarget() { return "left"; }');
+      await fixture.writeFile('src/js-right-incoming.js', 'export function incomingJsTarget() { return "right"; }');
+      await fixture.writeFile(
+        'src/js-left-incoming-caller.js',
+        'import { incomingJsTarget } from "./js-left-incoming.js";\nexport function leftIncomingJsCaller() { return incomingJsTarget(); }'
+      );
+      await fixture.writeFile(
+        'src/js-right-incoming-caller.js',
+        'import { incomingJsTarget } from "./js-right-incoming.js";\nexport function rightIncomingJsCaller() { return incomingJsTarget(); }'
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'incomingJsTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/js-left-incoming.js:1',
+          '--direction',
+          'incoming',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      const callers = output.incoming.map((call: { caller: string }) => call.caller);
+
+      expect(callers).toContain('leftIncomingJsCaller');
+      expect(callers).not.toContain('rightIncomingJsCaller');
+    });
+
+    it('應該用 --at 鎖定同名 JS arrow function 候選', async () => {
+      await fixture.writeFile('src/js-function-helper.js', 'export function jsFunctionHelper() {}');
+      await fixture.writeFile('src/js-arrow-helper.js', 'export function jsArrowHelper() {}');
+      await fixture.writeFile(
+        'src/js-function-mixed-target.js',
+        'import { jsFunctionHelper } from "./js-function-helper.js";\nexport function mixedJsTarget() { jsFunctionHelper(); }'
+      );
+      await fixture.writeFile(
+        'src/js-arrow-mixed-target.js',
+        [
+          'import { jsArrowHelper } from "./js-arrow-helper.js";',
+          'export const mixedJsTarget = () => {',
+          '  jsArrowHelper();',
+          '};'
+        ].join('\n')
+      );
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'mixedJsTarget',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/js-arrow-mixed-target.js:2',
+          '--direction',
+          'outgoing',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.targetSymbol.file).toContain('src/js-arrow-mixed-target.js');
+
+      const callees = output.outgoing.map((call: { callee: string }) => call.callee);
+      expect(callees).toContain('jsArrowHelper');
+      expect(callees).not.toContain('jsFunctionHelper');
+    });
+
+    it('無效 JS --at 位置應回傳清楚錯誤', async () => {
+      await fixture.writeFile('src/js-located-call.js', 'export function locatedJsCall() {}');
+
+      const result = await executeCLI(
+        [
+          'call-hierarchy',
+          'locatedJsCall',
+          '--path',
+          fixture.rootPath,
+          '--at',
+          'src/js-located-call.js:42',
+          '--format',
+          'json'
+        ],
+        { memfs: fixture.memfs }
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(false);
+      expect(output.error).toContain('locatedJsCall');
+      expect(output.error).toContain('src/js-located-call.js:42');
+    });
+  });
+
   describe('incoming 呼叫分析', () => {
     it('formatName 應該找到 incoming 呼叫 createUser', async () => {
       // Given: service.js 中 createUser 呼叫 formatName

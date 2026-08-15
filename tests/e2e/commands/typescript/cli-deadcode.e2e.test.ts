@@ -88,7 +88,7 @@ describe('CLI deadcode - 基於 deadcode-test fixture', () => {
 
       // 從 operationDescription 提取符號數量
       const extractCount = (output: { operationDescription?: string }) => {
-        const match = output.operationDescription?.match(/Removed (\d+) dead code/);
+        const match = output.operationDescription?.match(/Found (\d+) dead code/);
         return match ? parseInt(match[1], 10) : 0;
       };
 

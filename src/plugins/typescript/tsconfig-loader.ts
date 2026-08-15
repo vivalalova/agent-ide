@@ -7,11 +7,18 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { isFileNotFoundError, getErrorMessage } from '@shared/errors/index.js';
+import {
+  createStructuredPathAliasMap,
+  getPathAliasEntries,
+  mergePathAliasMaps,
+  type PathAliasMap
+} from '@shared/path-alias-resolver.js';
 
 /** tsconfig 路徑設定 */
 export interface TsconfigPathConfig {
-  /** path aliases 映射（alias -> 絕對路徑） */
-  pathAliases: Record<string, string>;
+  /** 結構化 path aliases；entries 保留 wildcard 與所有候選路徑。 */
+  pathAliases: PathAliasMap;
   /** baseUrl 絕對路徑 */
   baseUrl?: string;
   /** tsconfig.json 所在目錄 */
@@ -42,10 +49,40 @@ interface PackageExtendsSpec {
   configPath?: string;
 }
 
+/**
+ * tsconfig extends 循環偵測到的錯誤
+ *
+ * 與「tsconfig.json 不存在」可優雅回空不同，extends 循環代表設定本身邏輯矛盾
+ * （fast-fail 原則）：呼叫端必須明確得知此錯誤，不可被靜默吞掉後退化成
+ * 「專案沒有任何 path alias」的空設定，否則 rename/impact 等命令會誤判為零 alias，
+ * 漏掉所有透過該 alias 匯入的消費端。
+ */
+export class CircularTsconfigExtendsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CircularTsconfigExtendsError';
+  }
+}
+
+/**
+ * tsconfig 檔案存在但無法解析（JSON 語法錯誤、結構損壞等）的錯誤。
+ *
+ * 與「專案沒有 tsconfig」不同：無檔可回空 pathAliases；壞檔必須可觀測，
+ * 不得 silent empty 與無檔不可區分，否則 path-alias 消費端會被漏改卻報 success。
+ */
+export class InvalidTsconfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidTsconfigError';
+  }
+}
+
 function parseTsconfig(tsconfigPath: string, content: string): TsconfigFile {
   const parsed = ts.parseConfigFileTextToJson(tsconfigPath, content);
   if (parsed.error) {
-    throw new Error(ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n'));
+    throw new InvalidTsconfigError(
+      `Invalid tsconfig.json at ${tsconfigPath}: ${ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n')}`
+    );
   }
 
   return parsed.config as TsconfigFile;
@@ -177,20 +214,29 @@ async function resolveExtendsPath(
 function resolvePathAliases(
   paths: Record<string, unknown>,
   basePath: string
-): Record<string, string> {
-  const aliases: Record<string, string> = {};
+): PathAliasMap {
+  const aliases = [];
 
   for (const [alias, mappedPaths] of Object.entries(paths)) {
-    if (Array.isArray(mappedPaths) && mappedPaths.length > 0) {
-      // 移除 /* 後綴
-      const cleanAlias = alias.replace(/\/\*$/, '');
-      const cleanPath = (mappedPaths[0] as string).replace(/\/\*$/, '');
-      // 轉換為絕對路徑
-      aliases[cleanAlias] = path.resolve(basePath, cleanPath);
+    if (!Array.isArray(mappedPaths)) {
+      continue;
     }
+
+    const candidates = mappedPaths
+      .filter((mappedPath): mappedPath is string => typeof mappedPath === 'string')
+      .map(mappedPath => mappedPath.replace(/\/\*$/, ''));
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    aliases.push({
+      alias: alias.replace(/\/\*$/, ''),
+      wildcard: alias.endsWith('/*'),
+      candidates: candidates.map(candidate => path.resolve(basePath, candidate))
+    });
   }
 
-  return aliases;
+  return createStructuredPathAliasMap(aliases);
 }
 
 async function loadResolvedTsconfigPathConfig(
@@ -200,14 +246,14 @@ async function loadResolvedTsconfigPathConfig(
 ): Promise<TsconfigPathConfig> {
   const resolvedTsconfigPath = path.resolve(tsconfigPath);
   if (visited.has(resolvedTsconfigPath)) {
-    throw new Error(`Circular tsconfig extends detected: ${resolvedTsconfigPath}`);
+    throw new CircularTsconfigExtendsError(`Circular tsconfig extends detected: ${resolvedTsconfigPath}`);
   }
   visited.add(resolvedTsconfigPath);
 
   const tsconfigDir = path.dirname(resolvedTsconfigPath);
   const tsconfigContent = await fileSystem.readFile(resolvedTsconfigPath, 'utf-8') as string;
   const tsconfig = parseTsconfig(resolvedTsconfigPath, tsconfigContent);
-  const config: TsconfigPathConfig = { pathAliases: {}, tsconfigDir };
+  const config: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]), tsconfigDir };
   const extendedConfigs = Array.isArray(tsconfig.extends)
     ? tsconfig.extends
     : tsconfig.extends ? [tsconfig.extends] : [];
@@ -220,7 +266,7 @@ async function loadResolvedTsconfigPathConfig(
     }
 
     const inheritedConfig = await loadResolvedTsconfigPathConfig(resolvedExtends, fileSystem, new Set(visited));
-    config.pathAliases = { ...config.pathAliases, ...inheritedConfig.pathAliases };
+    config.pathAliases = mergePathAliasMaps(config.pathAliases, inheritedConfig.pathAliases);
     if (inheritedConfig.baseUrl) {
       config.baseUrl = inheritedConfig.baseUrl;
     }
@@ -285,22 +331,92 @@ export async function loadTsconfigPathConfig(
   projectRoot: string,
   fileSystem: IFileSystem
 ): Promise<TsconfigPathConfig> {
-  const config: TsconfigPathConfig = { pathAliases: {} };
+  const empty: TsconfigPathConfig = { pathAliases: createStructuredPathAliasMap([]) };
 
-  try {
-    // 向上查找 tsconfig.json
-    const found = await findTsconfigUp(projectRoot, fileSystem);
-    if (!found) {
-      return config;
-    }
-
-    return await loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
-  } catch (error) {
-    // graceful-degradation: tsconfig.json 不存在或格式錯誤時使用空設定
-    logger.warn('tsconfig-loader', `Failed to load tsconfig.json: ${error}`);
+  // 向上查找 tsconfig.json；無檔 → 空設定合法
+  const found = await findTsconfigUp(projectRoot, fileSystem);
+  if (!found) {
+    return empty;
   }
 
-  return config;
+  const cache = getTsconfigCache(fileSystem);
+  const cacheKey = path.resolve(found.tsconfigPath);
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return await cached;
+  }
+
+  const loading = loadResolvedTsconfigPathConfig(found.tsconfigPath, fileSystem);
+  const cachedLoading = loading.catch(error => {
+    if (cache.get(cacheKey) === cachedLoading) {
+      cache.delete(cacheKey);
+    }
+    throw error;
+  });
+  cache.set(cacheKey, cachedLoading);
+
+  try {
+    return await cachedLoading;
+  } catch (error) {
+    // 無檔／競態刪除／exists 與 read 不一致 → 空 alias 合法（與「沒找到 tsconfig」同語意）
+    // 含正式 FileNotFoundError、ENOENT，以及 mock FS 的 plain Error("File not found: …")
+    if (isMissingTsconfigFileError(error)) {
+      return empty;
+    }
+    // 檔案存在但內容非法（JSON 語法錯誤／結構損壞）或 extends 循環：必須可觀測
+    // （throw），不得 silent empty 與「無 tsconfig」不可區分（見 F26 regression：
+    // rename/impact 等命令會誤判為零 alias，漏掉所有透過該 alias 匯入的消費端）。
+    // 呼叫端若要在「壞掉但存在」時優雅降級繼續執行，改呼叫本檔匯出的
+    // loadTsconfigPathConfigOrWarn，不得在此處吞掉——確保這裡永遠可觀測。
+    if (error instanceof CircularTsconfigExtendsError || error instanceof InvalidTsconfigError) {
+      throw error;
+    }
+    const message = getErrorMessage(error);
+    throw new InvalidTsconfigError(`Failed to load tsconfig.json at ${found.tsconfigPath}: ${message}`);
+  }
+}
+
+/** 載入 tsconfig 時視為「檔案不存在」→ 可回空 alias 的錯誤 */
+function isMissingTsconfigFileError(error: unknown): boolean {
+  if (isFileNotFoundError(error)) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  // FileNotFoundError / 常見 mock 訊息：`File not found: <path>`
+  return /^File not found:/i.test(error.message);
+}
+
+/**
+ * loadTsconfigPathConfig 的優雅降級版本，供唯讀／變更類 CLI 命令使用
+ * （move/impact/rename/cycles/change-signature/deadcode 皆直接呼叫、無自己的
+ * try/catch）：tsconfig.json 存在但 JSON 語法錯誤／結構損壞時，僅 warn 並回空
+ * pathAliases 繼續執行，不中斷整條 CLI 指令（見既有 regression：
+ * cli-move-tsconfig-lookup.e2e.test.ts／cli-impact-tsconfig-lookup.e2e.test.ts
+ * 的「tsconfig.json 解析錯誤時應該優雅降級」）。
+ *
+ * extends 循環（CircularTsconfigExtendsError）刻意不在此吞掉、原樣拋出：
+ * 循環代表設定本身邏輯矛盾，非「壞掉但仍可忽略」的單純解析錯誤。
+ *
+ * loadTsconfigPathConfig 本身維持 fast-fail（見 F26 regression：raw loader
+ * 必須可觀測，禁止 silent empty 與「無 tsconfig」不可區分）；本函式是唯一
+ * 允許在 InvalidTsconfigError 上優雅降級的地方，呼叫端一律引用此處、禁止
+ * 各自重複 try/catch（Single Source of Truth）。
+ */
+export async function loadTsconfigPathConfigOrWarn(
+  projectRoot: string,
+  fileSystem: IFileSystem
+): Promise<TsconfigPathConfig> {
+  try {
+    return await loadTsconfigPathConfig(projectRoot, fileSystem);
+  } catch (error) {
+    if (error instanceof InvalidTsconfigError) {
+      logger.warn('tsconfig-loader', `Ignoring invalid tsconfig.json path aliases: ${error.message}`);
+      return { pathAliases: createStructuredPathAliasMap([]) };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -315,5 +431,44 @@ export async function loadPathAliases(
   fileSystem: IFileSystem
 ): Promise<Record<string, string>> {
   const config = await loadTsconfigPathConfig(projectRoot, fileSystem);
-  return config.pathAliases;
+  return toLegacyPathAliases(config.pathAliases);
+}
+
+const tsconfigCache = new WeakMap<object, Map<string, Promise<TsconfigPathConfig>>>();
+
+function getTsconfigCache(fileSystem: IFileSystem): Map<string, Promise<TsconfigPathConfig>> {
+  const existing = tsconfigCache.get(fileSystem as object);
+  if (existing) {
+    return existing;
+  }
+
+  const cache = new Map<string, Promise<TsconfigPathConfig>>();
+  tsconfigCache.set(fileSystem as object, cache);
+  return cache;
+}
+
+/**
+ * Compatibility view for the old `loadPathAliases` helper.  The structured
+ * loader never chooses a candidate; this view only preserves the old one-path
+ * return shape for callers that have not migrated yet.
+ */
+function toLegacyPathAliases(pathAliases: PathAliasMap): Record<string, string> {
+  const legacy: Record<string, string> = {};
+  const entries = getPathAliasEntries(pathAliases);
+
+  for (const entry of entries) {
+    const candidate = entry.candidates[entry.candidates.length - 1];
+    if (candidate === undefined) {
+      continue;
+    }
+
+    if (!entry.wildcard || !Object.prototype.hasOwnProperty.call(legacy, entry.alias)) {
+      legacy[entry.alias] = candidate;
+    }
+    if (entry.wildcard) {
+      legacy[`${entry.alias}/*`] = candidate;
+    }
+  }
+
+  return legacy;
 }

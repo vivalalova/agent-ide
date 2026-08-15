@@ -57,10 +57,18 @@ export class SignatureTransformer {
 
       if (isReorderParametersChange(change)) {
         const newParams: ParameterDefinition[] = [];
+        const usedIndices = new Set<number>();
         for (const nameOrIndex of change.newOrder) {
           const index = resolveParameterIndex(parameters, nameOrIndex);
-          if (index >= 0) {
+          if (index >= 0 && !usedIndices.has(index)) {
             newParams.push(parameters[index]);
+            usedIndices.add(index);
+          }
+        }
+        // 保留未被 newOrder 指名的參數（例如先前 --add 新增的），依原本相對順序附加在後
+        for (let i = 0; i < parameters.length; i++) {
+          if (!usedIndices.has(i)) {
+            newParams.push(parameters[i]);
           }
         }
         parameters = newParams;

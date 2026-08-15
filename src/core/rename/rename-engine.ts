@@ -16,13 +16,18 @@ import {
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
-import { ReferenceUpdater } from './reference-updater.js';
+import { ReferenceUpdater, type RenameModuleResolutionConfig } from './reference-updater.js';
+import { createIdentifierBoundaryRegex } from '@core/foundations/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import { FileSystem } from '@infrastructure/storage/index.js';
 import { ChangesetCommand, TextEditOperationType, type Changeset } from '@infrastructure/changeset/index.js';
 import { createChangesetBuilder } from '@infrastructure/changeset/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
+import { getErrorMessage } from '@shared/errors/index.js';
+// SSOT：TypeScript/JavaScript 保留字（含 async/await/yield/null/true/false/this/super/new/typeof…，
+// 以及 TS 關鍵字 type/from/as）；禁在 core 再維護短 Set（F29）
+import { isRenameUnsafeIdentifier } from '@plugins/shared/index.js';
 
 /** 預編譯的 Unicode 識別符正則表達式 */
 const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
@@ -32,20 +37,17 @@ const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
  * 使用 Parser 的 AST 分析進行精確的符號重命名
  */
 export class RenameEngine {
-  private readonly reservedKeywords = new Set([
-    'function', 'var', 'let', 'const', 'if', 'else', 'for', 'while',
-    'do', 'switch', 'case', 'break', 'continue', 'return', 'try',
-    'catch', 'finally', 'throw', 'class', 'interface', 'enum',
-    'import', 'export', 'default', 'from', 'as', 'type'
-  ]);
-
   private readonly referenceUpdater: ReferenceUpdater;
   private readonly fileSystem: IFileSystem;
 
-  constructor(parserRegistry?: ParserRegistry, fileSystem?: IFileSystem) {
+  constructor(
+    parserRegistry?: ParserRegistry,
+    fileSystem?: IFileSystem,
+    pathConfig?: RenameModuleResolutionConfig
+  ) {
     // eslint-disable-next-line custom/no-new-filesystem, custom/no-default-instance-in-constructor -- 需要向後相容
     this.fileSystem = fileSystem ?? new FileSystem();
-    this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem);
+    this.referenceUpdater = new ReferenceUpdater(parserRegistry, this.fileSystem, pathConfig);
   }
 
   /**
@@ -66,8 +68,9 @@ export class RenameEngine {
           const content = await this.fileSystem.readFile(filePath, 'utf-8') as string;
           const lines = content.split('\n');
 
-          // 使用單詞邊界進行精確匹配（快取 RegExp 避免重複編譯）
-          const regex = new RegExp(`\\b${symbol.name}\\b`, 'g');
+          // 使用 Unicode 邊界感知比對進行精確匹配（快取 RegExp 避免重複編譯）；
+          // `\b` 對純 Unicode 識別符（如 `用戶`）失效（缺陷 G6），且此處另需逸出符號名。
+          const regex = createIdentifierBoundaryRegex(symbol.name, 'g');
 
           // 查找所有包含符號名稱的行
           lines.forEach((line, lineIndex) => {
@@ -85,11 +88,11 @@ export class RenameEngine {
             }
           });
         } catch (error) {
-          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${error instanceof Error ? error.message : String(error)}`, filePath);
+          diagnostics.warn('rename-engine', 'FILE_READ_ERROR', `Cannot read file during reference search: ${getErrorMessage(error)}`, filePath);
         }
       }
     } catch (error) {
-      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Unexpected error during reference search: ${getErrorMessage(error)}`);
     }
 
     return references;
@@ -103,8 +106,11 @@ export class RenameEngine {
 
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查是否為保留字
-    if (this.reservedKeywords.has(options.newName)) {
+    // 檢查新名稱是否為 rename 不安全的字（SSOT：@plugins/shared/reserved-words.js）：
+    // 值空間保留字，加上 import/export specifier 位置具語法意義的 as/from/type。
+    // 其餘 TS contextual keyword（get/set/string/namespace/constructor…）在值空間
+    // 合法，不得誤擋。
+    if (isRenameUnsafeIdentifier(options.newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${options.newName}' 是保留字，不能用作識別符`,
@@ -208,7 +214,7 @@ export class RenameEngine {
         summary
       };
     } catch (error) {
-      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      diagnostics.warn('rename-engine', 'ANALYSIS_DEGRADED', `Preview generation failed: ${getErrorMessage(error)}`);
       throw error;
     }
   }
@@ -269,8 +275,8 @@ export class RenameEngine {
   ): ConflictInfo[] {
     const conflicts: ConflictInfo[] = [];
 
-    // 檢查保留字
-    if (this.reservedKeywords.has(newName)) {
+    // 檢查保留字（SSOT：@plugins/shared/reserved-words.js 的 isRenameUnsafeIdentifier）
+    if (isRenameUnsafeIdentifier(newName)) {
       conflicts.push(createConflictInfo(
         ConflictType.ReservedKeyword,
         `'${newName}' 是保留字`,

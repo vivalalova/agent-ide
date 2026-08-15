@@ -3,7 +3,9 @@
  * TypeScript 和 JavaScript Parser 共享的邏輯
  */
 
+import { resolve as pathResolve } from 'node:path';
 import type { Range, Position } from '@shared/types/core.js';
+import { matchesAnyGlobPattern } from '@shared/path-pattern.js';
 import type {
   Documentation,
   DocumentationTag,
@@ -229,6 +231,11 @@ export function isRelativePath(path: string): boolean {
  * 符合 UAX #31 標準：
  * - 第一個字元：Unicode 類別 ID_Start、底線、或 $
  * - 後續字元：Unicode 類別 ID_Continue 或 $
+ *
+ * 註：ECMAScript IdentifierPart 額外允許 <ZWNJ>（U+200C）／<ZWJ>（U+200D）出現在
+ * 識別符中間；經查證（V8 \p{ID_Continue} 與 @babel/helper-validator-identifier 的
+ * isIdentifierChar 兩個獨立來源皆回傳 true），這兩個字元已被 Unicode 的
+ * ID_Continue 衍生屬性涵蓋，本正則表達式無需另外列舉即已正確接受。
  */
 export const UNICODE_IDENTIFIER_PATTERN = /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u;
 
@@ -248,7 +255,8 @@ export function isValidUnicodeIdentifier(name: string): boolean {
 
 /**
  * 檢查檔案路徑是否匹配任一模式
- * 使用簡單的字串匹配，不依賴外部 glob 套件
+ * 實際比對邏輯委派共用的 path-pattern 模組（見 @shared/path-pattern.js），
+ * 避免各 Parser 各自手刻子字串匹配造成 dist/distance 之類的誤判
  *
  * @param filePath 檔案路徑
  * @param patterns 模式列表
@@ -256,30 +264,25 @@ export function isValidUnicodeIdentifier(name: string): boolean {
  */
 export function matchesAnyPattern(filePath: string, patterns: readonly string[]): boolean {
   const normalizedPath = filePath.replace(/^\.?\//, '');
+  return matchesAnyGlobPattern(normalizedPath, patterns);
+}
 
-  return patterns.some(pattern => {
-    try {
-      // 直接使用字串包含檢查來提高效能
-      if (pattern.includes('**')) {
-        // 對於包含 ** 的模式，進行簡單的子字串匹配
-        const simplePattern = pattern.replace(/\*\*/g, '').replace(/\//g, '');
-        if (normalizedPath.includes(simplePattern)) {
-          return true;
-        }
-      }
-
-      // 檢查檔案路徑是否匹配模式
-      if (pattern.startsWith('**/')) {
-        const suffix = pattern.substring(3);
-        if (normalizedPath.endsWith(suffix) || normalizedPath.includes('/' + suffix)) {
-          return true;
-        }
-      }
-
-      return false;
-    } catch {
-      // graceful-degradation: 無效 glob pattern 視為不匹配
-      return false;
-    }
-  });
+/**
+ * 判斷正在掃描引用的檔案是否就是符號的宣告檔（路徑正規化後比較）。
+ *
+ * ES2022 私有欄位/方法（`#x`）恆宣告於單一 class、無法跨模組 export/import，
+ * 天生檔案作用域封閉：非宣告檔上同名的屬性存取（如 `cfg.secret`）純屬字面
+ * 巧合，不可能是同一符號的引用。TS/JS Parser 的 findPrivateFieldReferences
+ * 改走 ReferenceFinder.findScopedReferences 做 AST＋class 名字串比對，對
+ * 推不出 receiver 型別的屬性存取「寧留勿漏」；rename 等命令逐檔掃描全專案
+ * 時若不先擋下非宣告檔，會把其他檔案裡的巧合同名成員誤判為引用（見 defect
+ * regression test cli-private-field-symbol-defect.e2e.test.ts 的跨檔誤改案例）。
+ * 呼叫前提：僅適用於恆同檔案的私有欄位/方法場景，非通用的跨符號檔案比對。
+ *
+ * @param scanningFilePath 正在查找引用的檔案路徑（AST 所屬檔案）
+ * @param declarationFilePath 符號宣告所在的檔案路徑
+ * @returns 是否為同一檔案
+ */
+export function isSameDeclaringFile(scanningFilePath: string, declarationFilePath: string): boolean {
+  return pathResolve(scanningFilePath) === pathResolve(declarationFilePath);
 }

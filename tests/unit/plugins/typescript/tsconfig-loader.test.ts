@@ -141,4 +141,26 @@ describe('loadTsconfigPathConfig', () => {
       '#': path.resolve('/project/app')
     });
   });
+
+  it('Given cyclic extends chain, when loading path aliases, then surfaces an error instead of silently returning empty aliases', async () => {
+    const fileSystem = await createFileSystem({
+      '/project/tsconfig.json': JSON.stringify({
+        extends: './base.json',
+        compilerOptions: {
+          baseUrl: '.',
+          paths: {
+            '@/*': ['src/*']
+          }
+        }
+      }),
+      '/project/base.json': JSON.stringify({
+        extends: './tsconfig.json'
+      })
+    });
+
+    // 偵測到 extends 循環時必須明確拋錯（fast-fail），
+    // 不得被上層 catch 吞掉後靜默退化成「專案沒有任何 alias」的空設定，
+    // 否則 rename/impact 等命令會漏掉所有透過此 alias 匯入的消費端。
+    await expect(loadTsconfigPathConfig('/project/src', fileSystem)).rejects.toThrow(/circular/i);
+  });
 });

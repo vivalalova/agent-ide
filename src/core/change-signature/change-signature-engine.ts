@@ -4,7 +4,6 @@
  */
 
 import * as path from 'path';
-import * as ts from 'typescript';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { Changeset, TextEdit } from '@infrastructure/changeset/index.js';
@@ -17,12 +16,31 @@ import type {
   ChangeSignatureOptions,
   ChangeSignatureResult,
   FunctionSignature,
+  ParameterDefinition,
   CallSiteUpdate,
   SignatureChange
 } from './types.js';
-import { ChangeSignatureErrorCode, isRemoveParameterChange, isRenameParameterChange } from './types.js';
-import { resolveParameterIndex } from './utils.js';
+import {
+  ChangeSignatureErrorCode,
+  isAddParameterChange,
+  isRemoveParameterChange,
+  isReorderParametersChange
+} from './types.js';
 import { SymbolFinder, FileUtils, createFileUtils } from '@core/foundations/index.js';
+import type { CallSite } from '@core/foundations/symbol-finder/index.js';
+import { ImportResolver } from '@core/move/import-resolver.js';
+import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import { createFunctionDeclarationLocator, type FunctionDeclarationLocator } from './function-declaration-locator.js';
+import { createParameterReferenceScanner, type ParameterReferenceScanner } from './parameter-reference-scanner.js';
+import { createDefinitionUpdater, type DefinitionUpdater } from './definition-updater.js';
+import { createCallSiteBindingResolver, type CallSiteBindingResolver } from './call-site-binding-resolver.js';
+
+/** tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
+export interface ChangeSignaturePathConfig {
+  readonly pathAliases?: PathAliasInput;
+  readonly baseUrl?: string;
+}
 
 /**
  * Change Signature Engine
@@ -34,10 +52,16 @@ export class ChangeSignatureEngine {
   private readonly validator: SignatureValidator;
   private readonly transformer: SignatureTransformer;
   private readonly callSiteUpdater: CallSiteUpdater;
+  private readonly pathUtils: PathUtils;
+  private readonly functionLocator: FunctionDeclarationLocator;
+  private readonly scanner: ParameterReferenceScanner;
+  private readonly definitionUpdater: DefinitionUpdater;
+  private readonly bindingResolver: CallSiteBindingResolver;
 
   constructor(
-    parserRegistry: ParserRegistry,
-    private readonly fileSystem: IFileSystem
+    private readonly parserRegistry: ParserRegistry,
+    private readonly fileSystem: IFileSystem,
+    pathConfig?: ChangeSignaturePathConfig
   ) {
     this.fileUtils = createFileUtils(fileSystem, parserRegistry);
     this.signatureParser = new SignatureParser(parserRegistry, fileSystem);
@@ -45,6 +69,25 @@ export class ChangeSignatureEngine {
     this.validator = new SignatureValidator();
     this.transformer = new SignatureTransformer();
     this.callSiteUpdater = new CallSiteUpdater(fileSystem, parserRegistry);
+    // 重用 file-move 的 PathUtils 解析 import specifier（相對路徑、tsconfig paths 別名、
+    // baseUrl、index 檔慣例），與 move / move-member 同一把尺（Single Source of Truth）
+    this.pathUtils = new PathUtils(
+      new ImportResolver({
+        pathAliases: pathConfig?.pathAliases ?? {},
+        baseUrl: pathConfig?.baseUrl,
+        supportedExtensions: ALLOWED_EXTENSIONS
+      }),
+      fileSystem
+    );
+    this.functionLocator = createFunctionDeclarationLocator(this.fileUtils);
+    this.scanner = createParameterReferenceScanner(this.fileUtils, this.transformer, this.functionLocator);
+    this.definitionUpdater = createDefinitionUpdater(this.fileUtils, this.functionLocator);
+    this.bindingResolver = createCallSiteBindingResolver(
+      this.parserRegistry,
+      this.fileUtils,
+      this.pathUtils,
+      this.symbolFinder
+    );
   }
 
   /**
@@ -64,6 +107,21 @@ export class ChangeSignatureEngine {
       );
     }
 
+    // 1b. overload 簽章群偵測（T3）：同 scope 有多個同名 function-like 宣告且含無 body 的
+    // overload 簽章時，任何簽章變更只會命中其中一個宣告（findFunctionNode 前序取第一個），
+    // 且 reorder/add 對各異參數列的 overload 群語意不明確 → 偵測即拒絕，不做「聰明地」全群改寫。
+    // 偵測邏輯放定位層，不改共用 findFunctionNode 的回傳語意（deadcode 亦依賴之），防跨模組回歸。
+    const overloadDeclarationLines = await this.functionLocator.detectOverloadSignatureGroup(originalSignature);
+    if (overloadDeclarationLines) {
+      const positions = overloadDeclarationLines
+        .map(line => `${originalSignature.location.filePath}:${line}`)
+        .join(', ');
+      return this.createErrorResult(
+        ChangeSignatureErrorCode.OverloadSignatureGroup,
+        `不支援 overload 簽章群的簽章變更：${options.functionName} 有 ${overloadDeclarationLines.length} 個同名宣告（${positions}）`
+      );
+    }
+
     // 2. 驗證變更
     const validationErrors = this.validator.validateChanges(originalSignature, options.changes);
     if (validationErrors.length > 0) {
@@ -73,7 +131,7 @@ export class ChangeSignatureEngine {
       );
     }
 
-    const removedParameterUsageError = await this.validateRemovedParameterBodyReferences(originalSignature, options.changes);
+    const removedParameterUsageError = await this.scanner.validateRemovedParameterBodyReferences(originalSignature, options.changes);
     if (removedParameterUsageError) {
       return this.createErrorResult(
         ChangeSignatureErrorCode.RequiredParameterInUse,
@@ -81,58 +139,200 @@ export class ChangeSignatureEngine {
       );
     }
 
+    // 2a. --add 預設值若引用同函式其他參數、且呼叫點值未經 --call-site-value 明確指定，
+    // 該預設值運算式文字會逐字塞進每個呼叫點（CallSiteUpdater 對 add 的呼叫點填值即取
+    // callSiteValue ?? defaultValue），呼叫端並無同名區域繫結 → 產生的引數是懸空識別字
+    // （TS2304）。及早 fast-fail，不修改任何檔案。
+    const ambiguousDefaultValueError = this.scanner.validateAddParameterCallSiteSafety(originalSignature, options.changes);
+    if (ambiguousDefaultValueError) {
+      return this.createErrorResult(
+        ambiguousDefaultValueError.code,
+        ambiguousDefaultValueError.message
+      );
+    }
+
+    // 2b. 參數 rename 時，先於 transform 前修正其他參數預設值字串中對該參數的引用
+    // （AST 位置改寫，見 rewriteOtherParameterDefaultsForRename），讓後續由結構欄位
+    // 重建的定義文字天然帶有正確引用，避免另外產生會與定義區塊整體重寫互相重疊的 text edit。
+    const signatureForTransform = await this.scanner.rewriteOtherParameterDefaultsForRename(originalSignature, options.changes);
+
     // 3. 計算新簽名
-    const newSignature = this.transformer.applyChangesToSignature(originalSignature, options.changes);
+    const newSignature = this.transformer.applyChangesToSignature(signatureForTransform, options.changes);
+
+    // 3b. 驗證變更後的最終參數順序：rest 參數必須位於最後。此檢查作用於 transformer
+    // 算出的最終列表，無論觸發原因是 reorder、add 或其他變更組合皆一併涵蓋，不需在
+    // 各變更類型分支各自模擬一套順序邏輯（Single Source of Truth：與 transformer 同一份計算）。
+    const restOrderError = this.validator.validateRestParameterIsLast(newSignature.parameters);
+    if (restOrderError) {
+      return this.createErrorResult(restOrderError.code, restOrderError.message);
+    }
 
     // 4. 取得所有呼叫點
-    // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
-    let effectiveProjectRoot = options.projectRoot;
-    if (path.isAbsolute(options.filePath) && !options.filePath.startsWith(effectiveProjectRoot)) {
-      effectiveProjectRoot = path.dirname(options.filePath);
-      // 嘗試向上找到 package.json 所在目錄
-      let searchDir = effectiveProjectRoot;
-      while (searchDir !== path.dirname(searchDir)) {
-        const packageJsonPath = path.join(searchDir, 'package.json');
-        try {
-          const exists = await this.fileSystem.exists(packageJsonPath);
-          if (exists) {
-            effectiveProjectRoot = searchDir;
-            break;
+    // 純 rename / change-type（不含 add/remove/reorder）不改變呼叫點的參數映射，
+    // 對呼叫點而言語意等價 → 跳過掃描與重寫，避免產生純重新排版（如 `fn(a,b)` -> `fn(a, b)`）的噪音 diff。
+    const requiresCallSiteRewrite = this.changesRequireCallSiteRewrite(options.changes);
+    let callSites: CallSite[] = [];
+
+    if (requiresCallSiteRewrite) {
+      // 當檔案路徑是絕對路徑且不在 projectRoot 內時，自動推斷 projectRoot
+      let effectiveProjectRoot = options.projectRoot;
+      // 邊界比對須含路徑分隔符，避免 /repo/src-gen 誤判為 /repo/src 的子路徑
+      const isFilePathWithinRoot = options.filePath === effectiveProjectRoot
+        || options.filePath.startsWith(effectiveProjectRoot + path.sep);
+      if (path.isAbsolute(options.filePath) && !isFilePathWithinRoot) {
+        effectiveProjectRoot = path.dirname(options.filePath);
+        // 嘗試向上找到 package.json 所在目錄
+        let searchDir = effectiveProjectRoot;
+        while (searchDir !== path.dirname(searchDir)) {
+          const packageJsonPath = path.join(searchDir, 'package.json');
+          try {
+            const exists = await this.fileSystem.exists(packageJsonPath);
+            if (exists) {
+              effectiveProjectRoot = searchDir;
+              break;
+            }
+          } catch {
+            // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
           }
-        } catch {
-          // graceful-degradation: 無法存取此目錄的 package.json，繼續向上搜索
+          searchDir = path.dirname(searchDir);
         }
-        searchDir = path.dirname(searchDir);
+      }
+
+      const projectFiles = options.targetFiles ?? await this.bindingResolver.getProjectFiles(effectiveProjectRoot);
+
+      // T2：constructor 目標的呼叫點是 `new ClassName(...)`（NewExpression），以「類別名」定位，
+      // 與一般函式的名稱比對同保真度；非 constructor 目標維持以函式名定位一般呼叫點。
+      const constructorClassName = (originalSignature.name === 'constructor' && originalSignature.className)
+        ? originalSignature.className
+        : undefined;
+      const isConstructorTarget = constructorClassName !== undefined;
+      const searchName = constructorClassName ?? options.functionName;
+
+      // 限縮呼叫點掃描範圍：僅「語意上可能引用目標」的檔案。逐檔解析出目標符號的本地繫結
+      // （named／alias／default import 的本地名、namespace import 的 receiver，以及遞迴 barrel
+      // re-export 轉發），避免全專案掃同名而誤改跨檔同名符號。
+      const bindings = await this.bindingResolver.resolveTargetBindings(
+        projectFiles,
+        options.filePath,
+        searchName
+      );
+
+      if (isConstructorTarget || originalSignature.isMethod) {
+        // constructor／method 目標維持既有「以目標名全域掃描 + 型別安全性拒絕」路徑：
+        // 僅取「以本地名 === 目標名」繫結的檔案；constructor 目標額外納入 namespace-receiver
+        // 繫結的檔案，讓下方限定式 new 呼叫點（`new ns.ClassName(...)`）拒絕檢查涵蓋得到——
+        // 否則該檔案從未被掃描，拒絕永遠不會觸發，呼叫點就這樣被靜默漏掉（見下方 alias 掃描
+        // 同一批修復的註解）。
+        const relevantFiles = [...bindings.keys()].filter(file => {
+          const binding = bindings.get(file);
+          if (!binding) {
+            return false;
+          }
+          if (binding.localNames.has(searchName)) {
+            return true;
+          }
+          return isConstructorTarget && binding.namespaceReceivers.size > 0;
+        });
+        // constructor 目標才 opt-in 掃描 new-expression，避免變更其他消費端（如 call-hierarchy）行為。
+        const allCallSites = await this.symbolFinder.findCallSites(
+          searchName,
+          relevantFiles,
+          { includeNewExpressions: isConstructorTarget }
+        );
+
+        if (isConstructorTarget) {
+          // `new ns.ClassName(...)`（帶 receiver）需型別解析才能確認指向同一類別，無此基礎設施 → 拒絕。
+          const qualifiedNewCallSites = allCallSites.filter(cs => cs.isNewExpression && cs.isMethodCall);
+          if (qualifiedNewCallSites.length > 0) {
+            return this.createErrorResult(
+              ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+              `偵測到 ${qualifiedNewCallSites.length} 個限定式建構子呼叫點（new receiver.Class(...)），` +
+              `無型別解析無法安全重寫：${this.formatCallSitePositions(qualifiedNewCallSites)}`
+            );
+          }
+          // alias import（`import { ClassName as Alias }`）的本地繫結名不是 searchName（原始類別
+          // 名），上面以 searchName 為準的掃描找不到 `new Alias(...)`；逐 binding 用實際本地名
+          // 補掃，否則會靜默漏改該呼叫點（定義改了、alias 呼叫點停在舊引數順序，success:true）。
+          // 與限定式（receiver-qualified）呼叫不同，plain identifier 呼叫點的重寫只依賴呼叫點
+          // 位置、不依賴本地名字面值，故可安全直接納入重寫，不需 fast-fail。
+          const aliasCallSites: CallSite[] = [];
+          for (const [file, binding] of bindings) {
+            for (const localName of binding.localNames) {
+              if (localName === searchName) {
+                continue; // 已由上面 searchName 掃描涵蓋
+              }
+              const sites = await this.symbolFinder.findCallSites(
+                localName,
+                [file],
+                { includeNewExpressions: true }
+              );
+              for (const site of sites) {
+                if (site.isNewExpression === true && !site.isMethodCall) {
+                  aliasCallSites.push(site);
+                }
+              }
+            }
+          }
+          callSites = allCallSites
+            .filter(cs => cs.isNewExpression === true && !cs.isMethodCall)
+            .concat(aliasCallSites);
+        } else {
+          // T1：目標「本身是 class 方法」時，同名的方法呼叫點（`calc.add(1, 2)`）確為對目標的引用，
+          // 但重寫需 receiver 型別解析才能避免把無關類別的同名方法（各種 `.add()`）一起改壞；本工具
+          // 無型別解析基礎設施。故偵測到即拒絕，不再靜默丟棄——靜默丟棄會造成定義改了、方法呼叫點
+          // 沒動的毀損（success:true 但呼叫端停在舊引數順序）。
+          const methodCallSites = allCallSites.filter(cs => cs.isMethodCall);
+          if (methodCallSites.length > 0) {
+            return this.createErrorResult(
+              ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+              `偵測到 ${methodCallSites.length} 個方法呼叫點，方法呼叫點重寫不受支援（需 receiver 型別解析）：` +
+              `${this.formatCallSitePositions(methodCallSites)}`
+            );
+          }
+          callSites = allCallSites.filter(cs => !cs.isMethodCall);
+        }
+      } else {
+        // 目標是頂層函數／變數函數：逐檔以「該檔實際繫結目標的本地名」定位呼叫點——
+        // 直接／具名／別名 import 以本地識別字呼叫（`combine(...)`、別名 `merge(...)`），
+        // namespace import 以 `<receiver>.<functionName>(...)` 呼叫。以本地名精確比對，
+        // 天然排除無關同名符號（不需再靠 method-call 全域過濾，該過濾會誤殺 namespace 呼叫）。
+        callSites = await this.bindingResolver.collectTopLevelFunctionCallSites(bindings, options.functionName);
+      }
+
+      // 呼叫點含 spread 引數（如 `f(...values)`）時，CallSiteUpdater 依「定位索引」重新映射
+      // 引數（add/remove/reorder 皆會改變定位映射，見 changesRequireCallSiteRewrite），但單一
+      // spread 引數在原始碼中只佔一個 AST 引數位置、實際可能展開對應多個宣告參數，其真正數量
+      // 與內容只能在執行期得知，無法靜態決定要搬到哪個新位置——連「只在尾端新增參數」也一樣會壞
+      // （spread 涵蓋不到的後續必要參數位置會被誤判成「省略」而補 undefined，見 call-site-updater
+      // mapCallSiteArguments 對 `param.optional || param.defaultValue !== undefined` 的省略判斷）。
+      // 純 rename／change-type 不需要呼叫點重寫（見 changesRequireCallSiteRewrite），不會走到此檢查。
+      const spreadCallSiteError = this.findSpreadCallSiteError(callSites);
+      if (spreadCallSiteError) {
+        return this.createErrorResult(
+          ChangeSignatureErrorCode.SpreadArgumentCallSite,
+          spreadCallSiteError
+        );
       }
     }
 
-    const projectFiles = options.targetFiles ?? await this.getProjectFiles(effectiveProjectRoot);
-
-    // 只查找獨立函式呼叫（非 method call）
-    const allCallSites = await this.symbolFinder.findCallSites(options.functionName, projectFiles);
-    const callSites = allCallSites.filter(cs => !cs.isMethodCall);
-
     // 5. 生成定義更新
-    const definitionUpdate = await this.generateDefinitionUpdate(
+    const definitionUpdate = await this.definitionUpdater.generateDefinitionUpdate(
       options.filePath,
       originalSignature,
       newSignature
     );
 
     // 6. 生成呼叫點更新
-    const callSiteUpdates = await this.callSiteUpdater.generateCallSiteUpdates(
-      callSites,
-      originalSignature,
-      newSignature,
-      options.changes
-    );
+    const callSiteUpdates = requiresCallSiteRewrite
+      ? await this.callSiteUpdater.generateCallSiteUpdates(
+        callSites,
+        originalSignature,
+        newSignature,
+        options.changes
+      )
+      : [];
 
-    // 7. 執行或預覽
-    if (!options.preview) {
-      await this.applyChanges(definitionUpdate, callSiteUpdates);
-    }
-
-    // 8. 計算影響的檔案
+    // 7. 計算影響的檔案
     const affectedFiles = new Set<string>();
     affectedFiles.add(definitionUpdate.filePath);
     for (const update of callSiteUpdates) {
@@ -145,7 +345,9 @@ export class ChangeSignatureEngine {
       newSignature,
       definitionUpdate,
       callSiteUpdates,
-      executed: !options.preview,
+      // 本方法從不直接寫入檔案：實際寫入統一經由 generateChangeset() 產生的
+      // Changeset + ChangeApplicator 完成（見 CLI 呼叫路徑），故恆為 false。
+      executed: false,
       stats: {
         callSitesUpdated: callSiteUpdates.length,
         filesAffected: affectedFiles.size
@@ -179,21 +381,21 @@ export class ChangeSignatureEngine {
     // 轉換 definitionUpdate
     const { filePath, originalCode, newCode, location } = result.definitionUpdate;
 
-    // originalCode 和 newCode 都是完整的一行內容
-    // 因此 range 應該從行首（column 1）開始，到行尾結束
-    const lineNumber = location.range.start.line;
-    const originalLineLength = originalCode.length;
+    if (!this.areParametersEquivalent(
+      result.originalSignature.parameters,
+      result.newSignature.parameters
+    )) {
+      builder.addTextChange(filePath, [{
+        range: {
+          start: location.range.start,
+          end: location.range.end
+        },
+        newText: newCode,
+        description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
+      }], TextEditOperationType.Modify);
+    }
 
-    builder.addTextChange(filePath, [{
-      range: {
-        start: { line: lineNumber, column: 1 },
-        end: { line: lineNumber, column: originalLineLength + 1 }
-      },
-      newText: newCode,
-      description: `Update definition: ${originalCode.trim()} -> ${newCode.trim()}`
-    }], TextEditOperationType.Modify);
-
-    const parameterRenameEdits = await this.generateParameterRenameBodyEdits(
+    const parameterRenameEdits = await this.scanner.generateParameterRenameBodyEdits(
       result.originalSignature,
       options.changes
     );
@@ -214,22 +416,14 @@ export class ChangeSignatureEngine {
     }
 
     for (const [updateFilePath, updates] of updatesByFile) {
+      const effectiveUpdates = updates.filter(update => update.originalCode !== update.newCode);
+      if (effectiveUpdates.length === 0) {
+        continue;
+      }
+
       // 跳過與 definitionUpdate 同一檔案（避免重複）
       // 已經在上面處理過了，呼叫點和定義可能在同一行
-      const edits = updates.map(update => {
-        // originalCode 和 newCode 都是完整的一行內容
-        // 因此 range 應該從行首（column 1）開始，到行尾結束
-        const lineStart = update.location.range.start.line;
-        const callOriginalLength = update.originalCode.length;
-        return {
-          range: {
-            start: { line: lineStart, column: 1 },
-            end: { line: lineStart, column: callOriginalLength + 1 }
-          },
-          newText: update.newCode,
-          description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
-        };
-      });
+      const edits = effectiveUpdates.map(update => this.createCallSiteTextEdit(update));
 
       builder.addTextChange(updateFilePath, edits, TextEditOperationType.Modify);
     }
@@ -244,424 +438,73 @@ export class ChangeSignatureEngine {
     return builder.build();
   }
 
-  private async validateRemovedParameterBodyReferences(
-    signature: FunctionSignature,
-    changes: readonly SignatureChange[]
-  ): Promise<string | null> {
-    const removedNames: string[] = [];
-
-    for (const change of changes) {
-      if (!isRemoveParameterChange(change)) {
-        continue;
-      }
-
-      const index = resolveParameterIndex(signature.parameters, change.parameterNameOrIndex);
-      const parameter = index >= 0 ? signature.parameters[index] : undefined;
-      if (parameter) {
-        removedNames.push(parameter.name);
-      }
-    }
-
-    if (removedNames.length === 0) {
-      return null;
-    }
-
-    const usedNames = await this.findBodyParameterReferences(signature, new Set(removedNames));
-    if (usedNames.length === 0) {
-      return null;
-    }
-
-    return `無法移除參數 ${usedNames.join(', ')}：仍在函式 body 中使用`;
+  private createCallSiteTextEdit(update: CallSiteUpdate): TextEdit {
+    // 直接使用呼叫點的精確範圍（函式名第一個字元到右括號之後），
+    // newText 為重建後的呼叫運算式。如此同一行的不同呼叫會產生互不重疊的 edit。
+    return {
+      range: {
+        start: update.location.range.start,
+        end: update.location.range.end
+      },
+      newText: update.newCode,
+      description: `Update call: ${update.originalCode.trim()} -> ${update.newCode.trim()}`
+    };
   }
 
-  private async generateParameterRenameBodyEdits(
-    signature: FunctionSignature,
-    changes: readonly SignatureChange[]
-  ): Promise<TextEdit[]> {
-    const renameMap = new Map<string, string>();
-
-    for (const change of changes) {
-      if (!isRenameParameterChange(change)) {
-        continue;
+  /**
+   * 檢查呼叫點清單中是否有引數為 spread element（如 `...values`）。
+   * 只需文字前綴判斷：CallSiteArgument.value 是引數節點的原始原始碼文字（見
+   * call-site-parser.ts extractArguments／parseArgumentsMultiline），
+   * `...` 只會出現在 spread/rest 引數的開頭，不會是其他合法運算式文字的前三個字元
+   * （optional chaining 是 `?.`，字串/樣板字面量以引號開頭），故無誤判風險。
+   * 回傳第一個命中的呼叫點對應的錯誤訊息；無命中回傳 null。
+   */
+  private findSpreadCallSiteError(callSites: readonly CallSite[]): string | null {
+    for (const callSite of callSites) {
+      const hasSpreadArgument = callSite.arguments.some(arg => arg.value.startsWith('...'));
+      if (hasSpreadArgument) {
+        return `呼叫點 ${callSite.functionName}(...) 於 ${callSite.location.filePath}:${callSite.location.range.start.line} 含 spread 引數，` +
+          '無法靜態重新映射定位引數，change-signature 的新增/移除/重排參數操作已中止';
       }
-
-      const index = resolveParameterIndex(signature.parameters, change.parameterNameOrIndex);
-      const parameter = index >= 0 ? signature.parameters[index] : undefined;
-      if (parameter && parameter.name !== change.newName) {
-        renameMap.set(parameter.name, change.newName);
-      }
     }
+    return null;
+  }
 
-    if (renameMap.size === 0) {
-      return [];
-    }
-
-    const content = await this.fileUtils.readFile(signature.location.filePath);
-    if (!content) {
-      return [];
-    }
-
-    const sourceFile = ts.createSourceFile(
-      signature.location.filePath,
-      content,
-      ts.ScriptTarget.Latest,
-      true,
-      this.getScriptKind(signature.location.filePath)
+  /**
+   * 判斷變更集合是否需要重寫呼叫點。
+   * 呼叫點的參數映射（順序/數量）只受 Add/Remove/Reorder 影響（見 CallSiteUpdater.createParameterMapping）；
+   * 純 rename、change-type（或兩者組合）不改變呼叫點的引數順序或數量，跳過呼叫點掃描與重寫。
+   * 混合變更（如 rename + reorder）因含 Reorder 仍會回傳 true。
+   */
+  private changesRequireCallSiteRewrite(changes: readonly SignatureChange[]): boolean {
+    return changes.some(change =>
+      isAddParameterChange(change) || isRemoveParameterChange(change) || isReorderParametersChange(change)
     );
-    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
-    const body = targetFunction && 'body' in targetFunction ? targetFunction.body : undefined;
-
-    if (!body) {
-      return [];
-    }
-
-    const edits: TextEdit[] = [];
-
-    const visit = (node: ts.Node): void => {
-      if (node !== body && this.isFunctionLikeDeclaration(node)) {
-        return;
-      }
-
-      if (ts.isIdentifier(node)) {
-        const newName = renameMap.get(node.text);
-        if (newName && !this.shouldSkipParameterIdentifier(node)) {
-          const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-          const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-
-          edits.push({
-            range: {
-              start: { line: start.line + 1, column: start.character + 1 },
-              end: { line: end.line + 1, column: end.character + 1 }
-            },
-            newText: newName,
-            description: `Rename parameter reference ${node.text} -> ${newName}`
-          });
-        }
-      }
-
-      ts.forEachChild(node, visit);
-    };
-
-    ts.forEachChild(body, visit);
-    return edits;
   }
 
-  private async findBodyParameterReferences(
-    signature: FunctionSignature,
-    names: ReadonlySet<string>
-  ): Promise<string[]> {
-    const content = await this.fileUtils.readFile(signature.location.filePath);
-    if (!content) {
-      return [];
-    }
-
-    const sourceFile = ts.createSourceFile(
-      signature.location.filePath,
-      content,
-      ts.ScriptTarget.Latest,
-      true,
-      this.getScriptKind(signature.location.filePath)
-    );
-    const targetFunction = this.findFunctionLikeDeclaration(sourceFile, signature);
-    const body = targetFunction && 'body' in targetFunction ? targetFunction.body : undefined;
-
-    if (!body) {
-      return [];
-    }
-
-    const usedNames = new Set<string>();
-
-    const visit = (node: ts.Node): void => {
-      if (node !== body && this.isFunctionLikeDeclaration(node)) {
-        return;
-      }
-
-      if (ts.isIdentifier(node) && names.has(node.text) && !this.shouldSkipParameterIdentifier(node)) {
-        usedNames.add(node.text);
-      }
-
-      ts.forEachChild(node, visit);
-    };
-
-    ts.forEachChild(body, visit);
-    return Array.from(usedNames);
-  }
-
-  private findFunctionLikeDeclaration(
-    sourceFile: ts.SourceFile,
-    signature: FunctionSignature
-  ): ts.FunctionLikeDeclaration | undefined {
-    let found: ts.FunctionLikeDeclaration | undefined;
-
-    const visit = (node: ts.Node): void => {
-      if (found) {
-        return;
-      }
-
-      if (this.isNamedFunctionLikeDeclaration(node, signature.name)) {
-        const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-        if (start.line + 1 === signature.location.range.start.line) {
-          found = node;
-          return;
-        }
-      }
-
-      ts.forEachChild(node, visit);
-    };
-
-    visit(sourceFile);
-    return found;
-  }
-
-  private isNamedFunctionLikeDeclaration(node: ts.Node, name: string): node is ts.FunctionLikeDeclaration {
-    if (
-      (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node))
-      && this.getFunctionLikeName(node) === name
-    ) {
-      return true;
-    }
-
-    if (ts.isArrowFunction(node)) {
-      const parent = node.parent;
-      return ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) && parent.name.text === name;
-    }
-
-    return false;
-  }
-
-  private getFunctionLikeName(node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.FunctionExpression): string | undefined {
-    const nodeName = node.name;
-    if (!nodeName) {
-      return undefined;
-    }
-    if (ts.isIdentifier(nodeName) || ts.isStringLiteral(nodeName) || ts.isNumericLiteral(nodeName)) {
-      return nodeName.text;
-    }
-    return undefined;
-  }
-
-  private isFunctionLikeDeclaration(node: ts.Node): boolean {
-    return ts.isFunctionDeclaration(node)
-      || ts.isMethodDeclaration(node)
-      || ts.isFunctionExpression(node)
-      || ts.isArrowFunction(node)
-      || ts.isConstructorDeclaration(node)
-      || ts.isGetAccessorDeclaration(node)
-      || ts.isSetAccessorDeclaration(node);
-  }
-
-  private shouldSkipParameterIdentifier(node: ts.Identifier): boolean {
-    const parent = node.parent;
-    if (!parent) {
+  private areParametersEquivalent(
+    left: readonly ParameterDefinition[],
+    right: readonly ParameterDefinition[]
+  ): boolean {
+    if (left.length !== right.length) {
       return false;
     }
 
-    if (ts.isPropertyAccessExpression(parent) && parent.name === node) {
-      return true;
-    }
-
-    if (ts.isPropertyAssignment(parent) && parent.name === node) {
-      return true;
-    }
-
-    if (ts.isPropertyDeclaration(parent) && parent.name === node) {
-      return true;
-    }
-
-    if (ts.isPropertySignature(parent) && parent.name === node) {
-      return true;
-    }
-
-    if (ts.isMethodDeclaration(parent) && parent.name === node) {
-      return true;
-    }
-
-    return false;
-  }
-
-  private getScriptKind(filePath: string): ts.ScriptKind {
-    if (filePath.endsWith('.tsx')) {
-      return ts.ScriptKind.TSX;
-    }
-    if (filePath.endsWith('.jsx')) {
-      return ts.ScriptKind.JSX;
-    }
-    if (filePath.endsWith('.js')) {
-      return ts.ScriptKind.JS;
-    }
-    return ts.ScriptKind.TS;
-  }
-
-  /**
-   * 生成定義更新
-   */
-  private async generateDefinitionUpdate(
-    filePath: string,
-    originalSignature: FunctionSignature,
-    newSignature: FunctionSignature
-  ): Promise<{ filePath: string; originalCode: string; newCode: string; location: typeof originalSignature.location }> {
-    const content = await this.fileUtils.readFile(filePath);
-    if (!content) {
-      throw new Error(`無法讀取檔案: ${filePath}`);
-    }
-
-    const lines = content.split('\n');
-    const startLine = originalSignature.location.range.start.line - 1;
-    const originalLine = lines[startLine];
-
-    // 生成新的參數列表
-    const newParamsString = this.generateParameterString(newSignature, filePath);
-
-    // 替換參數部分
-    const funcNameIndex = originalLine.indexOf(originalSignature.name);
-    const openParenIndex = originalLine.indexOf('(', funcNameIndex);
-    const closeParenIndex = this.findMatchingParen(originalLine, openParenIndex);
-
-    const newLine = originalLine.substring(0, openParenIndex + 1) +
-      newParamsString +
-      originalLine.substring(closeParenIndex);
-
-    return {
-      filePath,
-      originalCode: originalLine,
-      newCode: newLine,
-      location: originalSignature.location
-    };
-  }
-
-  /**
-   * 執行變更
-   */
-  private async applyChanges(
-    definitionUpdate: { filePath: string; originalCode: string; newCode: string },
-    callSiteUpdates: readonly CallSiteUpdate[]
-  ): Promise<void> {
-    // 按檔案分組
-    const fileUpdates = new Map<string, Array<{ originalCode: string; newCode: string; line: number }>>();
-
-    // 加入定義更新
-    if (!fileUpdates.has(definitionUpdate.filePath)) {
-      fileUpdates.set(definitionUpdate.filePath, []);
-    }
-    const defUpdates = fileUpdates.get(definitionUpdate.filePath);
-    defUpdates?.push({
-      originalCode: definitionUpdate.originalCode,
-      newCode: definitionUpdate.newCode,
-      line: 0 // 會在下面重新計算
+    return left.every((parameter, index) => {
+      const other = right[index];
+      return parameter.name === other.name &&
+        parameter.type === other.type &&
+        parameter.defaultValue === other.defaultValue &&
+        parameter.optional === other.optional &&
+        parameter.rest === other.rest;
     });
-
-    // 加入呼叫點更新
-    for (const update of callSiteUpdates) {
-      if (!fileUpdates.has(update.filePath)) {
-        fileUpdates.set(update.filePath, []);
-      }
-      const callUpdates = fileUpdates.get(update.filePath);
-      callUpdates?.push({
-        originalCode: update.originalCode,
-        newCode: update.newCode,
-        line: update.location.range.start.line
-      });
-    }
-
-    // 套用到每個檔案
-    for (const [filePath, updates] of fileUpdates) {
-      let content = await this.fileUtils.readFile(filePath);
-      if (!content) { continue; }
-
-      // 從後往前替換，避免行號偏移
-      const sortedUpdates = updates.sort((a, b) => b.line - a.line);
-
-      for (const update of sortedUpdates) {
-        content = content.replace(update.originalCode, update.newCode);
-      }
-
-      await this.fileSystem.writeFile(filePath, content);
-    }
   }
 
-  /**
-   * 生成參數字串
-   */
-  private generateParameterString(signature: FunctionSignature, filePath: string): string {
-    const isTypeScript = FileUtils.isTypeScript(filePath);
-
-    return signature.parameters.map(param => {
-      let result = '';
-
-      if (param.rest) {
-        result += '...';
-      }
-
-      result += param.name;
-
-      if (param.optional && !param.defaultValue) {
-        result += '?';
-      }
-
-      if (param.type && isTypeScript) {
-        result += `: ${param.type}`;
-      }
-
-      if (param.defaultValue) {
-        result += ` = ${param.defaultValue}`;
-      }
-
-      return result;
-    }).join(', ');
-  }
-
-  /**
-   * 找到匹配的括號
-   */
-  private findMatchingParen(line: string, openIndex: number): number {
-    let depth = 1;
-    for (let i = openIndex + 1; i < line.length; i++) {
-      if (line[i] === '(') { depth++; }
-      else if (line[i] === ')') {
-        depth--;
-        if (depth === 0) { return i; }
-      }
-    }
-    return line.length;
-  }
-
-  /**
-   * 取得專案檔案
-   */
-  private async getProjectFiles(projectRoot: string): Promise<string[]> {
-    const files: string[] = [];
-    await this.collectFiles(projectRoot, files);
-    return files;
-  }
-
-  /**
-   * 遞迴收集檔案
-   */
-  private async collectFiles(dirPath: string, files: string[]): Promise<void> {
-    const entries = await this.fileSystem.readDirectory(dirPath);
-
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-
-      // 跳過 node_modules、build 輸出目錄和隱藏目錄
-      const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
-      if (skipDirs.includes(entry.name) || entry.name.startsWith('.')) {
-        continue;
-      }
-
-      if (entry.isDirectory) {
-        await this.collectFiles(fullPath, files);
-      } else if (entry.isFile && this.isSupportedFile(entry.name)) {
-        files.push(fullPath);
-      }
-    }
-  }
-
-  /**
-   * 檢查是否為支援的檔案類型
-   */
-  private isSupportedFile(filename: string): boolean {
-    return FileUtils.isSupportedLanguage(filename);
+  /** 將呼叫點清單格式化為 `filePath:line` 的逗號分隔字串（供拒絕訊息列位置） */
+  private formatCallSitePositions(callSites: readonly CallSite[]): string {
+    return callSites
+      .map(cs => `${cs.location.filePath}:${cs.location.range.start.line}`)
+      .join(', ');
   }
 
   /**

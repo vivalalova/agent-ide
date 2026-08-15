@@ -10,10 +10,24 @@ import { PathUtils } from './path-utils.js';
 import { FileScanner } from './file-scanner.js';
 import type { PathUpdate, BatchMoveInfo } from './types.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
-import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
+import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
+import { SOURCE_FILE_EXTENSIONS, SOURCE_INDEX_FILES, stripSourceFileExtension } from '@shared/types/index.js';
 
 const SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT = [...SOURCE_FILE_EXTENSIONS, ''] as const;
-const SOURCE_INDEX_FILES = SOURCE_FILE_EXTENSIONS.map(extension => `/index${extension}`);
+
+/**
+ * 由 import 字面解析出的路徑，展開成磁碟上可能的實際檔案候選。
+ *
+ * import 字面可能已帶顯式副檔名（TS ESM 慣例 './b.js' 指向磁碟上的 b.ts），
+ * 直接疊加候選副檔名會得到 'b.js.ts' 這種雙副檔名、永遠命中不到真正的 'b.ts'。
+ * 因此候選一律先用 stripSourceFileExtension 剝除字面副檔名再組合；省略副檔名
+ * 的 import 本就無副檔名可剝，行為不變。相對路徑分支的 co-move 目錄判定與
+ * shadow-file 保護（來源／目標兩個 exists 迴圈）共用這一份候選展開。
+ */
+function buildResolvedFileCandidates(resolvedPath: string): string[] {
+  const base = stripSourceFileExtension(resolvedPath);
+  return SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.map(ext => path.normalize(base + ext));
+}
 
 /**
  * 路徑計算器類別
@@ -28,7 +42,7 @@ export class PathCalculator {
     private readonly fileSystem: IFileSystem,
     private readonly importResolver: ImportResolver
   ) {
-    this.pathUtils = new PathUtils(importResolver);
+    this.pathUtils = new PathUtils(importResolver, fileSystem);
     this.fileScanner = new FileScanner(fileSystem, importResolver);
   }
 
@@ -117,10 +131,11 @@ export class PathCalculator {
         : path.resolve(projectRoot, update.filePath)
     }));
 
-    // 去重：使用 filePath + line + oldImport 作為唯一鍵
+    // 去重：有 column 時區分同一行的不同 import；未提供時維持既有鍵語意
     const seen = new Set<string>();
     const uniqueUpdates = normalizedUpdates.filter(update => {
-      const key = `${update.filePath}:${update.line}:${update.oldImport}`;
+      const baseKey = `${update.filePath}:${update.line}:${update.oldImport}`;
+      const key = update.column === undefined ? baseKey : `${baseKey}:${update.column}`;
       if (seen.has(key)) {
         return false;
       }
@@ -184,7 +199,10 @@ export class PathCalculator {
 
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 
@@ -194,7 +212,7 @@ export class PathCalculator {
           : path.normalize(path.resolve(oldPath));
 
         // 計算 import 指向的絕對路徑
-        const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, filePath);
+        const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, filePath);
 
         // 使用 pathsMatch 檢查是否指向被移動的檔案
         if (this.pathUtils.pathsMatch(resolvedPath, normalizedOldPath)) {
@@ -206,21 +224,37 @@ export class PathCalculator {
             newPath
           );
 
-          const newImport = importStatement.rawStatement.replace(
-            new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-            `$1${newImportPath}$1`
+          const newImport = this.replaceModuleSpecifier(
+            importStatement.rawStatement,
+            importStatement.path,
+            newImportPath,
+            importStatement.specifierOffset
           );
+          if (newImport === importStatement.rawStatement) {
+            continue;
+          }
 
           updates.push({
             filePath,
             line: importStatement.position.line,
+            column: importStatement.position.column,
             oldImport: importStatement.rawStatement,
             newImport
           });
         }
       }
     } catch (error) {
-      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理檔案: ${error instanceof Error ? error.message : String(error)}`, filePath);
+      if (isFileNotFoundError(error)) {
+        // 合理的空結果：此候選檔案在被判定為 affected 之後、實際重讀計算
+        // 更新內容之前已經消失（如已被刪除），自然沒有更新可產生。
+        diagnostics.warn('move/path-calculator', 'FILE_MISSING_DURING_SCAN', `File no longer exists, skipping: ${getErrorMessage(error)}`, filePath);
+        return updates;
+      }
+      // fast-fail：非「檔案不存在」的讀取/解析失敗（如權限不足）若被吞掉，
+      // 這個已知會引用被移動檔案的檔案就完全不會產生更新，move 會靜默漏改
+      // 它的 import 卻仍回報成功，造成資料不一致（見 P2 regression）。必須讓
+      // 錯誤往外傳播中止整個 move。
+      throw new Error(`Failed to compute path updates for file: ${filePath}: ${getErrorMessage(error)}`);
     }
 
     return updates;
@@ -260,25 +294,12 @@ export class PathCalculator {
         ? new Set(filesInMovedDir.map(f => path.normalize(f)))
         : null;
 
-      // 如果是批次移動（glob 模式），建立 Set 以快速查找
-      // 將所有被移動檔案的 source 路徑規範化，同時加入不帶副檔名的版本
-      let normalizedBatchSources: Set<string> | null = null;
-      if (batchMoveInfo) {
-        normalizedBatchSources = new Set<string>();
-        for (const filePath of batchMoveInfo.allMovedFiles.keys()) {
-          const normalized = path.normalize(filePath);
-          normalizedBatchSources.add(normalized);
-          // 同時加入不帶副檔名的版本（用於比較省略副檔名的 import）
-          const ext = path.extname(normalized);
-          if (ext) {
-            normalizedBatchSources.add(normalized.slice(0, -ext.length));
-          }
-        }
-      }
-
       for (const importStatement of imports) {
         // 跳過 node_modules
-        if (this.importResolver.isNodeModuleImport(importStatement.path)) {
+        if (
+          this.importResolver.isNodeModuleImport(importStatement.path)
+          && !this.importResolver.isScopedBaseUrlImport(importStatement.path)
+        ) {
           continue;
         }
 
@@ -291,11 +312,25 @@ export class PathCalculator {
 
           // 如果是目錄移動，檢查被引用的檔案是否也在被移動的目錄內
           if (movedDirectory && normalizedFilesInDir) {
-            // 嘗試解析到實際檔案（處理省略副檔名的情況）
-            const isTargetInMovedDir = SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT.some(ext => {
-              const fullPath = path.normalize(normalizedResolved + ext);
-              return normalizedFilesInDir.has(fullPath);
-            });
+            // 嘗試解析到實際檔案（處理省略副檔名的情況，如 ./utils → utils.ts）。
+            // import 字面若已帶顯式副檔名（如 './sub/deep.js'），normalizedResolved
+            // 已經是 'deep.js'；候選副檔名比對前須先剝除該字面副檔名，否則會疊加成
+            // 'deep.js.ts' 這種雙副檔名去比對，永遠命中不到實際的 'deep.ts'（見
+            // explicit-extension co-move regression）。候選展開共用
+            // buildResolvedFileCandidates 單一來源。
+            let isTargetInMovedDir = buildResolvedFileCandidates(normalizedResolved)
+              .some(candidate => normalizedFilesInDir.has(candidate));
+
+            // 如果不是直接匹配，檢查 index 檔案（如 ./utils → utils/index.ts）。
+            // 缺這一步時，co-move 目錄索引檔會被誤判成「未一起搬移」，導致
+            // 明明相對位置不變的 import 被錯誤改寫（見 adversarial R3 regression，
+            // 比照下方 alias/baseUrl 分支已有的 SOURCE_INDEX_FILES 檢查）。
+            if (!isTargetInMovedDir) {
+              isTargetInMovedDir = SOURCE_INDEX_FILES.some(indexFile => {
+                const fullPath = path.normalize(normalizedResolved + indexFile);
+                return normalizedFilesInDir.has(fullPath);
+              });
+            }
 
             // 如果目標檔案也在被移動的目錄內，相對位置不變，跳過更新
             if (isTargetInMovedDir) {
@@ -328,16 +363,31 @@ export class PathCalculator {
 
           // 檢查目標位置是否存在同名檔案
           let targetFileExists = false;
-          for (const ext of SOURCE_FILE_EXTENSIONS_WITH_EXTENSIONLESS_IMPORT) {
-            const fullPath = potentialTargetResolved + ext;
-            if (await this.fileSystem.exists(fullPath)) {
+          for (const candidate of buildResolvedFileCandidates(potentialTargetResolved)) {
+            if (await this.fileSystem.exists(candidate)) {
               targetFileExists = true;
               break;
             }
           }
 
-          // 如果目標目錄有同名檔案，保持相對路徑不變，跳過更新
-          if (targetFileExists) {
+          // 檢查這個 import 目前解析到的原始檔案是否仍存在於原位置。
+          // 只有「原檔已不在原位（已被搬走）」時，目標目錄的同名檔案才代表
+          // 這是連帶／增量搬移的結果；原檔仍在原位時，目標目錄的同名檔案
+          // 只是巧合，繼續保留相對路徑會讓 import 靜默綁到錯誤的模組。
+          // 候選展開必須剝除 import 字面副檔名（見 buildResolvedFileCandidates）：
+          // 顯式 `.js` import 疊加成 'b.js.ts' 時此判斷永遠為 false，會讓下方
+          // shadow-file 保護誤判「來源已被搬走」而跳過本該更新的 import。
+          let sourceFileStillExists = false;
+          for (const candidate of buildResolvedFileCandidates(normalizedResolved)) {
+            if (await this.fileSystem.exists(candidate)) {
+              sourceFileStillExists = true;
+              break;
+            }
+          }
+
+          // 如果目標目錄有同名檔案，且原檔已不在原位（已被搬移過去），
+          // 保持相對路徑不變，跳過更新
+          if (targetFileExists && !sourceFileStillExists) {
             continue;
           }
 
@@ -351,21 +401,29 @@ export class PathCalculator {
 
           // 如果路徑改變了，加入更新列表
           if (newImportPath !== importStatement.path) {
+            const newImport = this.replaceModuleSpecifier(
+              importStatement.rawStatement,
+              importStatement.path,
+              newImportPath,
+              importStatement.specifierOffset
+            );
+            if (newImport === importStatement.rawStatement) {
+              continue;
+            }
+
             updates.push({
               filePath: target, // 注意：這裡是 target，因為更新會在檔案移動後套用
               line: importStatement.position.line,
+              column: importStatement.position.column,
               oldImport: importStatement.rawStatement,
-              newImport: importStatement.rawStatement.replace(
-                new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-                `$1${newImportPath}$1`
-              )
+              newImport
             });
           }
         }
         // 處理 alias 和 baseUrl 相對路徑（如 @/modules/db/...）
         else {
           // 解析 alias 到實際檔案路徑
-          const resolvedPath = this.pathUtils.resolveImportPath(importStatement.path, source);
+          const resolvedPath = await this.pathUtils.resolveImportPathAsync(importStatement.path, source);
 
           // 如果解析結果與原始路徑相同，表示無法解析，跳過
           if (resolvedPath === importStatement.path) {
@@ -419,24 +477,123 @@ export class PathCalculator {
 
               // 如果路徑改變了，加入更新列表
               if (newImportPath !== importStatement.path) {
+                const newImport = this.replaceModuleSpecifier(
+                  importStatement.rawStatement,
+                  importStatement.path,
+                  newImportPath,
+                  importStatement.specifierOffset
+                );
+                if (newImport === importStatement.rawStatement) {
+                  continue;
+                }
+
                 updates.push({
                   filePath: target,
                   line: importStatement.position.line,
+                  column: importStatement.position.column,
                   oldImport: importStatement.rawStatement,
-                  newImport: importStatement.rawStatement.replace(
-                    new RegExp(`(['"\`])${this.pathUtils.escapeRegex(importStatement.path)}\\1`),
-                    `$1${newImportPath}$1`
-                  )
+                  newImport
                 });
+              }
+            }
+          }
+
+          // 如果是批次移動（glob 模式），檢查被引用的檔案是否也在被移動列表中。
+          // 缺這一段時，批次移動只會改寫相對路徑 import（上面 if 分支對應的
+          // 相對路徑處理已有 batchMoveInfo 感知），alias/baseUrl import 完全
+          // 沒有對應的批次感知邏輯，導致同批一起搬移的 alias 目標在搬移後
+          // 仍指向舊路徑（見 P2 batch-alias regression）。
+          if (batchMoveInfo) {
+            let matchedNewPath: string | undefined;
+            for (const [batchSource, batchTarget] of batchMoveInfo.allMovedFiles.entries()) {
+              if (this.pathUtils.pathsMatch(normalizedResolved, batchSource)) {
+                matchedNewPath = batchTarget;
+                break;
+              }
+            }
+
+            if (matchedNewPath) {
+              // 使用 calculateNewImportPathPreservingStyle 計算新的 alias 路徑，
+              // 保留原本的別名／baseUrl 樣式（若新位置已離開別名根目錄，
+              // 該方法會自動退回一般相對路徑）
+              const newImportPath = this.pathUtils.calculateNewImportPathPreservingStyle(
+                importStatement.path,
+                target,
+                normalizedResolved,
+                matchedNewPath
+              );
+
+              if (newImportPath !== importStatement.path) {
+                const newImport = this.replaceModuleSpecifier(
+                  importStatement.rawStatement,
+                  importStatement.path,
+                  newImportPath,
+                  importStatement.specifierOffset
+                );
+                if (newImport !== importStatement.rawStatement) {
+                  updates.push({
+                    filePath: target,
+                    line: importStatement.position.line,
+                    column: importStatement.position.column,
+                    oldImport: importStatement.rawStatement,
+                    newImport
+                  });
+                }
               }
             }
           }
         }
       }
     } catch (error) {
-      diagnostics.warn('move/path-calculator', 'ANALYSIS_DEGRADED', `無法處理被移動檔案的內部 import ${source}: ${error instanceof Error ? error.message : String(error)}`);
+      // source 在此處必為移動前的原始檔案（呼叫端在實際搬移發生前計算內部 import
+      // 更新，見上方呼叫處註解「在移動前處理」），不存在合理的「檔案已消失」情境；
+      // 吞掉真正的讀取/解析失敗（如權限不足）會讓被移動檔案自己的 import 完全不
+      // 被改寫，move 卻仍回報成功，造成資料不一致（與 calculatePathUpdates 同型
+      // 缺陷）。必須讓錯誤往外傳播中止整個 move。
+      throw new Error(`Failed to compute internal import updates for moved file: ${source}: ${getErrorMessage(error)}`);
     }
 
     return updates;
+  }
+
+  /**
+   * 將 rawStatement 中的 module specifier 替換成新路徑。
+   *
+   * 優先使用 specifierOffset 精確位置錨點（若提供）：多行 require()/import()
+   * 呼叫起始行行尾若有假呼叫形狀的行內註解，「keyword( 緊接著引號」的結構假設
+   * 會因中間插入的註解文字而找不到真正呼叫的 specifier（`\s*` 無法跨越非空白
+   * 的註解內容），必須依賴解析階段算出的精確位置才能正確定位（見 P2-1
+   * regression）。位置錨點驗證失敗時（理論上不會發生）才退回既有的文字匹配。
+   */
+  private replaceModuleSpecifier(rawStatement: string, oldPath: string, newPath: string, specifierOffset?: number): string {
+    if (specifierOffset !== undefined) {
+      const quoteChar = rawStatement[specifierOffset];
+      const contentStart = specifierOffset + 1;
+      const contentEnd = contentStart + oldPath.length;
+      const isValidQuote = quoteChar === '\'' || quoteChar === '"' || quoteChar === '`';
+      if (
+        isValidQuote &&
+        rawStatement.slice(contentStart, contentEnd) === oldPath &&
+        rawStatement[contentEnd] === quoteChar
+      ) {
+        return rawStatement.slice(0, specifierOffset) + quoteChar + newPath + quoteChar + rawStatement.slice(contentEnd + 1);
+      }
+    }
+
+    const escapedOldPath = this.pathUtils.escapeRegex(oldPath);
+    const fromSpecifierPattern = new RegExp(
+      `(\\bfrom\\s*['"\`])${escapedOldPath}(['"\`])(?=\\s*(?:(?:with|assert)\\s+\\{[\\s\\S]*?\\}\\s*)?;?\\s*(?://[^\\n\\r]*|/\\*[\\s\\S]*?\\*/)?\\s*$)`
+    );
+    if (fromSpecifierPattern.test(rawStatement)) {
+      return rawStatement.replace(fromSpecifierPattern, `$1${newPath}$2`);
+    }
+
+    const sideEffectImportPattern = new RegExp(`(\\bimport\\s*['"\`])${escapedOldPath}(['"\`])`);
+    if (sideEffectImportPattern.test(rawStatement)) {
+      return rawStatement.replace(sideEffectImportPattern, `$1${newPath}$2`);
+    }
+
+    const callSpecifierPattern = new RegExp(`(\\b(?:require|import)\\(\\s*['"\`])${escapedOldPath}(['"\`])`);
+    return rawStatement.replace(callSpecifierPattern, `$1${newPath}$2`);
   }
 }

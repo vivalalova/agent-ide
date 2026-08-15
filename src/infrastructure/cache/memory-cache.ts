@@ -20,6 +20,12 @@ export class MemoryCache<K, V> {
   private readonly strategy: CacheStrategy<K, V>;
   private stats: CacheStats;
   private cleanupTimer?: ReturnType<typeof setInterval>;
+  /**
+   * 記憶體用量的權威累計（single source of truth）。
+   * 獨立於 enableStats 維護，因為 maxMemory 強制執行不能依賴統計功能是否開啟；
+   * getStats() 回報的 memoryUsage 直接引用此欄位，不另外記一套帳。
+   */
+  private currentMemoryUsage = 0;
 
   constructor(options: CacheOptions = {}) {
     // 設定預設選項
@@ -112,17 +118,34 @@ export class MemoryCache<K, V> {
    * 設定快取值
    */
   set(key: K, value: V, customTTL?: number): void {
+    // maxSize <= 0 表示不保留任何條目（非「無上限」），fail-fast 直接拒絕寫入
+    if (this.options.maxSize <= 0) {
+      return;
+    }
+
     const now = Date.now();
     const ttl = customTTL ?? this.options.defaultTTL;
     const expiresAt = ttl > 0 ? now + ttl : undefined;
+    const size = this.calculateSize(value);
 
-    // 如果已存在，先刪除（這樣可以更新 LRU 順序）
+    // 單筆大小已超過 maxMemory 預算：拒絕儲存（fail-fast，不截斷不降級）
+    // 必須在刪舊 key 之前檢查，否則拒寫時會把仍可用的舊值一併清掉
+    if (size > this.options.maxMemory) {
+      return;
+    }
+
+    // 如果已存在，先刪除（這樣可以更新 LRU 順序，同時釋放其佔用的記憶體額度）
     if (this.cache.has(key)) {
       this.delete(key);
     }
 
-    // 檢查是否需要淘汰
+    // 檢查是否需要因筆數超限而淘汰
     if (this.cache.size >= this.options.maxSize) {
+      this.evict();
+    }
+
+    // 檢查是否需要因記憶體總量超限而淘汰（沿用既有淘汰策略選擇邏輯，非另立淘汰順序）
+    while (this.currentMemoryUsage + size > this.options.maxMemory && this.cache.size > 0) {
       this.evict();
     }
 
@@ -133,20 +156,15 @@ export class MemoryCache<K, V> {
       lastAccessedAt: now,
       accessCount: 0,
       ...(expiresAt && { expiresAt }),
-      size: this.calculateSize(value)
+      size
     };
 
     // 儲存到快取
     this.cache.set(key, item);
+    this.currentMemoryUsage += size;
 
     // 通知策略項目被設定
     this.strategy.onSet(key, item);
-
-    // 更新統計
-    if (this.options.enableStats) {
-      this.stats.size = this.cache.size;
-      this.stats.memoryUsage += item.size || 0;
-    }
 
     this.emitEvent(CacheEventType.SET, key, value);
   }
@@ -175,15 +193,10 @@ export class MemoryCache<K, V> {
 
     // 從快取中刪除
     this.cache.delete(key);
+    this.currentMemoryUsage -= item.size ?? 0;
 
     // 通知策略項目被刪除
     this.strategy.onDelete(key);
-
-    // 更新統計
-    if (this.options.enableStats) {
-      this.stats.size = this.cache.size;
-      this.stats.memoryUsage -= item.size || 0;
-    }
 
     this.emitEvent(CacheEventType.DELETE, key, item.value);
     return true;
@@ -195,12 +208,7 @@ export class MemoryCache<K, V> {
   clear(): void {
     this.cache.clear();
     this.strategy.clear();
-
-    if (this.options.enableStats) {
-      this.stats.size = 0;
-      this.stats.memoryUsage = 0;
-    }
-
+    this.currentMemoryUsage = 0;
 
     this.emitEvent(CacheEventType.CLEAR, undefined as unknown as K);
   }
@@ -272,7 +280,9 @@ export class MemoryCache<K, V> {
    * 取得統計資訊
    */
   getStats(): CacheStats {
-    return { ...this.stats };
+    // size 是現況（目前條目數），非請求統計，不受 enableStats 影響，
+    // 因此直接引用 this.cache.size 作為權威來源，不另外記一套帳
+    return { ...this.stats, size: this.cache.size, memoryUsage: this.currentMemoryUsage };
   }
 
   /**

@@ -131,14 +131,23 @@ export class MemFileSystem implements IFileSystem {
   }
 
   async glob(pattern: string, options: GlobOptions = {}): Promise<string[]> {
-    return this.vfs.glob(pattern, {
+    const globOptions = {
       cwd: options.cwd,
       ignore: options.ignore,
       dot: options.dot,
       onlyFiles: options.onlyFiles,
       onlyDirectories: options.onlyDirectories,
       absolute: options.absolute,
-    });
+    };
+    const results = await this.vfs.glob(pattern, globOptions);
+
+    if (!pattern.startsWith('**/')) {
+      return results;
+    }
+
+    // upstream @lova/mem-vfs 的 patternToRegex 無法讓 **/ 匹配零層目錄，補查去掉前綴的 pattern
+    const rootLevelResults = await this.vfs.glob(pattern.slice(3), globOptions);
+    return [...new Set([...results, ...rootLevelResults])];
   }
 
   // ============================================================

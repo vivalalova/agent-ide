@@ -482,4 +482,97 @@ describe('CLI rename cross-file - 跨檔案引用更新', () => {
       expect(output.summary.totalFiles).toBeGreaterThanOrEqual(3);
     });
   });
+
+  // MARK: - 已確認缺陷（手動重現）
+
+  describe('已確認缺陷（手動重現）', () => {
+    describe('缺陷R1: top-level export function 跨檔改名漏改引用端', () => {
+      it('top-level function 被其他檔案 import 並呼叫時，引用端應同步改名', async () => {
+        // Given: top-level function 定義於 a 檔，b 檔 import 並呼叫
+        await fixture.writeFile('src/regression-r1-a.ts', `
+export function getConfig(): number {
+  return 1;
+}
+`.trim());
+        await fixture.writeFile('src/regression-r1-b.ts', `
+import { getConfig } from './regression-r1-a';
+
+getConfig();
+`.trim());
+
+        // When: 重命名 getConfig -> loadConfig（用 --at 指到 a 檔的函式定義位置，
+        // 避免與 fixture 既有的 src/core/config/settings.ts 的同名 getConfig 混淆）
+        const result = await executeCLI(
+          [
+            'rename', '--path', fixture.rootPath,
+            '--from', 'getConfig', '--to', 'loadConfig',
+            '--at', 'src/regression-r1-a.ts:1:17',
+            '--format', 'json'
+          ],
+          { memfs: fixture.memfs }
+        );
+
+        // Then: 應該成功，且引用端的 import 與呼叫都同步改名
+        expect(result.exitCode).toBe(0);
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+
+        const bContent = await fixture.readFile('src/regression-r1-b.ts');
+        // 正確行為：b 檔的 import 與呼叫都應改為 loadConfig；
+        // 目前的壞行為是 top-level function 的 scope.type 被誤記為 'function'，
+        // isFunctionLocalSymbol 誤判為區域符號，filesToProcess 被縮成只有定義檔，
+        // b 檔完全不會被處理
+        expect(bContent).toContain('loadConfig');
+        expect(bContent).not.toContain('getConfig');
+      });
+    });
+
+    describe('缺陷R2: 非 function-local 符號降級純文字匹配誤改同名成員', () => {
+      it('rename top-level const 時，同名的 interface 屬性鍵與成員存取不應被誤改', async () => {
+        // Given: top-level const 被跨檔 import 使用，另一檔案中有無關的同名屬性鍵/成員存取
+        await fixture.writeFile('src/regression-r2-a.ts', `
+export const total = 0;
+`.trim());
+        await fixture.writeFile('src/regression-r2-b.ts', `
+import { total } from './regression-r2-a';
+
+console.log(total);
+
+interface OrderRecord {
+  total: number;
+}
+
+const order: OrderRecord = { total: 5 };
+console.log(order.total);
+`.trim());
+
+        // When: 重命名 total -> sum（用 --at 指到 a 檔的 const 定義位置，避免多符號歧義）
+        const result = await executeCLI(
+          [
+            'rename', '--path', fixture.rootPath,
+            '--from', 'total', '--to', 'sum',
+            '--at', 'src/regression-r2-a.ts:1:14',
+            '--format', 'json'
+          ],
+          { memfs: fixture.memfs }
+        );
+
+        // Then: 應該成功
+        expect(result.exitCode).toBe(0);
+        const output = JSON.parse(result.stdout);
+        expect(output.success).toBe(true);
+
+        const bContent = await fixture.readFile('src/regression-r2-b.ts');
+        // 正確行為：真正的 import 與引用應改為 sum，
+        // 但無關的 interface 屬性鍵與 order.total 成員存取應維持 total；
+        // 目前的壞行為是非 function-local 符號降級為 `\btotal\b` 全檔文字匹配，
+        // 把 OrderRecord 的屬性鍵與 order.total 成員存取也一併誤改成 sum
+        expect(bContent).toContain('import { sum }');
+        expect(bContent).toContain('console.log(sum);');
+        expect(bContent).toContain('total: number;');
+        expect(bContent).toContain('{ total: 5 }');
+        expect(bContent).toContain('console.log(order.total);');
+      });
+    });
+  });
 });

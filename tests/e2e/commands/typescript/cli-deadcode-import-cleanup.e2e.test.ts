@@ -202,7 +202,7 @@ export function anotherExportedUnused() {
       }
     });
 
-    it('json 格式的 operationDescription 應包含 Removed 字樣', async () => {
+    it('json 格式的 operationDescription 應為預覽語意的字串', async () => {
       const result = await executeCLI(
         ['deadcode', '--path', fixture.rootPath, '--dry-run', '--format', 'json'],
         { memfs: fixture.memfs }

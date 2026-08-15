@@ -5,8 +5,7 @@
 
 import { Command } from 'commander';
 import { ParserRegistry } from '@infrastructure/parser/registry.js';
-import { TypeScriptParser } from '@plugins/typescript/parser.js';
-import { JavaScriptParser } from '@plugins/javascript/parser.js';
+import { initializeDefaultParsers } from '@infrastructure/parser/initializer.js';
 import { FileSystem, type IFileSystem } from '@infrastructure/storage/index.js';
 import { logger, LogLevel } from '@infrastructure/logging/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
@@ -22,31 +21,10 @@ import {
   setupSearchCommand,
   type CommandContext
 } from '@interfaces/cli/commands/index.js';
-import { readFileSync } from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { readPackageVersion, packageVersion } from '@infrastructure/package-info.js';
 
-// 讀取 package.json 版本
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const packageJsonPath = path.resolve(__dirname, '../../../package.json');
-
-export function readPackageVersion(targetPath: string = packageJsonPath): string {
-  let packageJson: { version?: unknown };
-  try {
-    packageJson = JSON.parse(readFileSync(targetPath, 'utf-8')) as { version?: unknown };
-  } catch (error) {
-    throw new Error(`Cannot read package version from ${targetPath}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  if (typeof packageJson.version !== 'string' || packageJson.version.trim().length === 0) {
-    throw new Error(`Invalid package version in ${targetPath}`);
-  }
-
-  return packageJson.version;
-}
-
-const packageVersion = readPackageVersion();
+// re-export：維持既有 public API（單一權威來源見 @infrastructure/package-info.js）
+export { readPackageVersion };
 
 export class AgentIdeCLI {
   private program: Command;
@@ -88,35 +66,7 @@ export class AgentIdeCLI {
         return;
       }
 
-      // 在測試環境中，檢查是否已經有測試 Parser 註冊
-      if (process.env.NODE_ENV === 'test') {
-        // 如果所有測試 Parser 都已經註冊，就不需要重複註冊
-        const tsParser = registry.getParserByName('typescript');
-        const jsParser = registry.getParserByName('javascript');
-        if (tsParser && jsParser) {
-          return;
-        }
-      }
-
-      // 嘗試註冊內建的 TypeScript Parser
-      try {
-        const tsParser = new TypeScriptParser();
-        if (!registry.getParserByName('typescript')) {
-          registry.register(tsParser);
-        }
-      } catch (tsError) {
-        logger.verbose('parser', `TypeScript parser loading failed: ${tsError}`);
-      }
-
-      // 嘗試註冊內建的 JavaScript Parser
-      try {
-        const jsParser = new JavaScriptParser();
-        if (!registry.getParserByName('javascript')) {
-          registry.register(jsParser);
-        }
-      } catch (jsError) {
-        logger.verbose('parser', `JavaScript parser loading failed: ${jsError}`);
-      }
+      initializeDefaultParsers(registry);
 
     } catch (error) {
       logger.verbose('parser', `Parser initialization warning: ${error}`);

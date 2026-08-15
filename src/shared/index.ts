@@ -53,6 +53,57 @@ export {
 } from './types/ast.js';
 
 export {
+  // 內容雜湊
+  computeContentHash
+} from './content-hash.js';
+
+export {
+  // 正則表達式跳脫
+  escapeRegex
+} from './regex-utils.js';
+
+export {
+  // 通用排除目錄（廣清單：唯讀/索引/效能掃描用）
+  COMMON_EXCLUDE_DIR_NAMES,
+  // 變更類命令引用掃描排除目錄（窄清單：正確性優先）
+  MUTATION_SCAN_EXCLUDE_DIR_NAMES
+} from './exclude-dirs.js';
+
+export {
+  // offset ↔ position 換算
+  offsetToPosition
+} from './position-utils.js';
+
+export {
+  // 路徑樣式比對
+  matchesGlobPattern,
+  matchesAnyGlobPattern,
+  matchesPathSegment,
+  matchesPathFragment,
+  relativizeToRoot
+} from './path-pattern.js';
+
+export {
+  // tsconfig path-alias 解析
+  createPathAliasMap,
+  createStructuredPathAliasMap,
+  findPathAliasMatch,
+  getPathAliasEntries,
+  mergePathAliasMaps,
+  resolveBarePathAlias,
+  resolveBarePathAliasAsync,
+  withLegacyPathAliasWildcards
+} from './path-alias-resolver.js';
+
+export type {
+  PathAliasEntry,
+  PathAliasInput,
+  PathAliasMap,
+  PathAliasMatch,
+  PathAliasExists
+} from './path-alias-resolver.js';
+
+export {
   // 錯誤處理
   BaseError,
   ParserError,

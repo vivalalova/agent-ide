@@ -33,11 +33,13 @@ function getWorkerPath(): string {
  */
 export class ParserWorkerPool {
   private pool: Tinypool;
+  private readonly parserModulePaths: readonly string[];
   private disposed = false;
 
   constructor(options?: WorkerPoolOptions) {
     const maxThreads = options?.maxThreads ?? Math.max(1, cpus().length - 1);
     const minThreads = options?.minThreads ?? 1;
+    this.parserModulePaths = options?.parserModulePaths ?? [];
 
     this.pool = new Tinypool({
       filename: getWorkerPath(),
@@ -62,7 +64,7 @@ export class ParserWorkerPool {
 
     // 並行執行所有任務
     const results = await Promise.all(
-      tasks.map(task => this.pool.run(task) as Promise<ParseResult>)
+      tasks.map(task => this.pool.run(this.withParserModules(task)) as Promise<ParseResult>)
     );
 
     return results;
@@ -78,7 +80,23 @@ export class ParserWorkerPool {
       throw new Error('ParserWorkerPool 已被釋放');
     }
 
-    return this.pool.run(task) as Promise<ParseResult>;
+    return this.pool.run(this.withParserModules(task)) as Promise<ParseResult>;
+  }
+
+  private withParserModules(task: ParseTask): ParseTask {
+    if (this.parserModulePaths.length === 0) {
+      return task;
+    }
+
+    return {
+      ...task,
+      parserModulePaths: [
+        ...new Set([
+          ...(task.parserModulePaths ?? []),
+          ...this.parserModulePaths
+        ])
+      ]
+    };
   }
 
   /**

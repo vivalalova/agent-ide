@@ -48,6 +48,9 @@ export class ChangesetBuilder {
   /** 警告訊息列表 */
   private warnings: string[] = [];
 
+  /** 命令特定的結構化統計資料 */
+  private metadata: Record<string, unknown> | undefined;
+
   /**
    * 設定命令類型
    * @param command - 命令類型
@@ -85,22 +88,35 @@ export class ChangesetBuilder {
     const existing = this.textChangesMap.get(filePath);
 
     if (existing) {
-      // 合併到現有的變更，去除重複的 edits（根據 range 比對）
-      // 使用 Set 基於 range hash 快速查詢 - O(n) 取代 O(n²)
-      const existingRanges = new Set(
-        existing.edits.map(edit =>
-          `${edit.range.start.line}:${edit.range.start.column}-${edit.range.end.line}:${edit.range.end.column}`
-        )
-      );
+      // 合併到現有的變更：以 range 為鍵去重，但必須連同 newText 一起判斷——
+      // 同 range 同 newText 屬冪等重複，靜默去重為一筆；同 range 不同 newText 是真正的
+      // 衝突變更，若靜默丟棄其一會造成變更遺失（C18），故直接拋錯 fast-fail，由呼叫端
+      // 走既有錯誤路徑處理。O(n) 以 Map 查詢，同時涵蓋 incoming edits 彼此間的衝突。
+      const newTextByRange = new Map<string, string>();
+      for (const edit of existing.edits) {
+        newTextByRange.set(this.rangeKey(edit.range), edit.newText);
+      }
 
-      const deduplicatedEdits = edits.filter(newEdit => {
-        const rangeKey = `${newEdit.range.start.line}:${newEdit.range.start.column}-${newEdit.range.end.line}:${newEdit.range.end.column}`;
-        return !existingRanges.has(rangeKey);
-      });
+      const mergedEdits: TextEdit[] = [];
+      for (const newEdit of edits) {
+        const rangeKey = this.rangeKey(newEdit.range);
+        const previousNewText = newTextByRange.get(rangeKey);
+        if (previousNewText !== undefined) {
+          if (previousNewText === newEdit.newText) {
+            continue;
+          }
+          throw new Error(
+            `衝突的 TextEdit：${filePath} 範圍 ${rangeKey} 已存在不同內容的變更`
+            + `（既有 "${previousNewText}" vs 新增 "${newEdit.newText}"）`
+          );
+        }
+        newTextByRange.set(rangeKey, newEdit.newText);
+        mergedEdits.push(newEdit);
+      }
 
       this.textChangesMap.set(filePath, {
         ...existing,
-        edits: [...existing.edits, ...deduplicatedEdits],
+        edits: [...existing.edits, ...mergedEdits],
         operationType: operationType ?? existing.operationType
       });
     } else {
@@ -113,6 +129,13 @@ export class ChangesetBuilder {
     }
 
     return this;
+  }
+
+  /**
+   * 產生 TextEdit range 的去重鍵（行列座標）
+   */
+  private rangeKey(range: TextEdit['range']): string {
+    return `${range.start.line}:${range.start.column}-${range.end.line}:${range.end.column}`;
   }
 
   /**
@@ -216,6 +239,17 @@ export class ChangesetBuilder {
   }
 
   /**
+   * 設定命令特定的結構化統計資料
+   * 供 CLI 層讀取權威計數（如刪除數、清理數），避免對 description/edits 字串反推
+   * @param metadata - 結構化統計資料
+   * @returns this - 支援鏈式調用
+   */
+  withMetadata(metadata: Record<string, unknown>): this {
+    this.metadata = metadata;
+    return this;
+  }
+
+  /**
    * 建構 Changeset
    * @returns 完整的 Changeset 物件
    */
@@ -227,7 +261,8 @@ export class ChangesetBuilder {
       command: this.command,
       success: this.errors.length === 0,
       errors: this.errors.length > 0 ? this.errors : undefined,
-      warnings: this.warnings.length > 0 ? this.warnings : undefined
+      warnings: this.warnings.length > 0 ? this.warnings : undefined,
+      metadata: this.metadata
     };
   }
 }

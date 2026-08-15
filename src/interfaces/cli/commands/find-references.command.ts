@@ -4,6 +4,7 @@
  */
 
 import type { Command } from 'commander';
+import * as path from 'path';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/index.js';
 import {
   createSymbolFinder,
@@ -18,7 +19,8 @@ import {
   type FindReferencesResult,
   type ReferenceItem,
   type ReferenceType,
-  type DefinitionLocation
+  type DefinitionLocation,
+  type SymbolIdentity
 } from '@infrastructure/formatters/index.js';
 import {
   createUnifiedOutputHandler,
@@ -28,11 +30,17 @@ import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/comma
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
+import { resolveSymbolTarget } from '@interfaces/cli/commands/symbol-target-resolver.js';
+import { resolveUsageSiteSymbolTarget } from '@interfaces/cli/commands/usage-site-symbol-resolver.js';
+import { filterReferencesToSelectedSymbol } from '@interfaces/cli/commands/symbol-reference-filter.js';
+import { findReExportAliasReferences } from '@interfaces/cli/commands/reexport-alias-references.js';
+import { findDefaultImportAliasReferences } from '@interfaces/cli/commands/default-import-alias-references.js';
 
 /** find-references 命令選項 */
 interface FindReferencesOptions {
   path: string;
   format: string;
+  at?: string;
 }
 
 /**
@@ -43,6 +51,7 @@ export function setupFindReferencesCommand(program: Command, context: CommandCon
     .command('find-references <symbol>')
     .description('查找符號的定義和所有引用')
     .option('-p, --path <path>', '專案路徑', '.')
+    .option('-a, --at <location>', '指定符號位置 (file:line:column)，用於區分同名符號')
     .option('--format <format>', '輸出格式 (json|summary)', 'summary')
     .action(async (symbol: string, options: FindReferencesOptions, command: Command) => {
       await handleFindReferencesCommand(symbol, options, context, command);
@@ -69,7 +78,8 @@ async function handleFindReferencesCommand(
     console.log(`🔍 查找符號引用: ${symbolName}...`);
   }
 
-  const projectPath = options.path || process.cwd();
+  // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
+  const projectPath = path.resolve(options.path || process.cwd());
   const pathIsDirectory = await ensureDirectoryPath(projectPath, context.fileSystem, outputHandler, format);
   if (!pathIsDirectory) {
     return;
@@ -78,14 +88,15 @@ async function handleFindReferencesCommand(
   const globalOpts = command.optsWithGlobals() as { cache?: boolean; cacheDir?: string };
   const noCache = globalOpts.cache === false;
 
-  const indexEngine = await createAndIndexWithCache(
-    projectPath,
-    context.fileSystem,
-    CLI_INDEX_DEFAULTS,
-    { noCache, cacheDir: globalOpts.cacheDir }
-  );
+  let indexEngine: Awaited<ReturnType<typeof createAndIndexWithCache>> | undefined;
 
   try {
+    indexEngine = await createAndIndexWithCache(
+      projectPath,
+      context.fileSystem,
+      CLI_INDEX_DEFAULTS,
+      { noCache, cacheDir: globalOpts.cacheDir }
+    );
 
     // 取得所有已索引檔案路徑
     const indexedFiles = indexEngine.getAllIndexedFiles();
@@ -93,13 +104,37 @@ async function handleFindReferencesCommand(
 
     // 查找符號定義
     const symbolResults = await indexEngine.findSymbol(symbolName);
+    let targetResult = resolveSymbolTarget(symbolName, symbolResults, projectPath, options.at);
+    if (!targetResult.success && options.at) {
+      // --at 未命中任一符號宣告位置：可能指向使用點（如呼叫點識別符）而非宣告本身，
+      // 嘗試透過既有的 --at 引用過濾機制反向解析其綁定的符號（涵蓋 ESM import 與
+      // CJS require 解構，兩者共用同一套 binding 收集，見 usage-site-symbol-resolver）。
+      const usageResult = await resolveUsageSiteSymbolTarget(
+        symbolName,
+        symbolResults,
+        projectPath,
+        options.at,
+        context.fileSystem
+      );
+      if (usageResult) {
+        targetResult = usageResult;
+      }
+    }
+    if (!targetResult.success) {
+      outputHandler.outputError(targetResult.error, format);
+      process.exitCode = 1;
+      return;
+    }
+
+    const selectedSymbolResults = targetResult.resolution.selectedResults;
+    const symbolIdentities: SymbolIdentity[] = targetResult.resolution.symbols;
     let definition: DefinitionLocation | null = null;
     let definitions: DefinitionLocation[] = [];
     let symbolType = 'unknown';
 
-    if (symbolResults.length > 0) {
+    if (selectedSymbolResults.length > 0) {
       // 收集所有定義位置
-      definitions = symbolResults.map(result => ({
+      definitions = selectedSymbolResults.map(result => ({
         file: result.symbol.location.filePath,
         line: result.symbol.location.range.start.line,
         column: result.symbol.location.range.start.column
@@ -107,7 +142,7 @@ async function handleFindReferencesCommand(
 
       // 第一個定義（向後相容）
       definition = definitions[0];
-      symbolType = symbolResults[0].symbol.type;
+      symbolType = selectedSymbolResults[0].symbol.type;
     }
 
     // 建立 SymbolFinder 查找所有引用
@@ -117,9 +152,9 @@ async function handleFindReferencesCommand(
     // 收集所有引用（包括所有同名符號的定義）
     let refs: SymbolReference[] = [];
 
-    if (symbolResults.length > 0) {
+    if (selectedSymbolResults.length > 0) {
       // 有找到定義：使用完整 Symbol 資訊查找引用
-      const symbols = symbolResults.map(r => r.symbol);
+      const symbols = selectedSymbolResults.map(r => r.symbol);
       const refsMap = await symbolFinder.findReferencesMultiple(symbols, filePaths);
 
       // 合併所有同名符號的引用
@@ -127,6 +162,46 @@ async function handleFindReferencesCommand(
         const key = serializeSymbolKey(symbolToKey(symbol));
         const symbolRefs = refsMap.get(key) ?? [];
         refs.push(...symbolRefs);
+      }
+
+      if (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0]) {
+        refs = await filterReferencesToSelectedSymbol(
+          refs,
+          selectedSymbolResults[0].symbol,
+          projectPath,
+          context.fileSystem
+        );
+      }
+
+      // 補上單層 re-export 別名引用：索引與 SymbolFinder 都以名稱比對，
+      // 故 `export { X as Y }` 改名 re-export 後、下游 `import { Y }; Y()` 的引用會漏抓。
+      // 無 --at 時對所有候選定義補抓；有 --at 時只對鎖定的那一個（與 default import 別名策略對齊）。
+      const aliasSourceSymbols = (options.at && targetResult.resolution.targetSymbol && selectedSymbolResults[0])
+        ? [selectedSymbolResults[0].symbol]
+        : symbols;
+      for (const symbol of aliasSourceSymbols) {
+        const aliasRefs = await findReExportAliasReferences(
+          symbol,
+          projectPath,
+          context.fileSystem,
+          filePaths,
+          (filePath, bindingSymbol) => symbolFinder.findReferencesInFileWithSymbol(filePath, bindingSymbol)
+        );
+        refs.push(...aliasRefs);
+      }
+
+      // 補上 default import 別名引用：default export 宣告名與 consumer local 名不同時，
+      // 名稱搜尋會漏掉 import binding 與其使用點。只要能解析 default export 宣告名即補抓
+      // （findDefaultImportAliasReferences 內會自行比對宣告名）；不限 --at。
+      for (const symbol of aliasSourceSymbols) {
+        const defaultImportAliasRefs = await findDefaultImportAliasReferences(
+          symbol,
+          projectPath,
+          context.fileSystem,
+          filePaths,
+          (filePath, bindingSymbol) => symbolFinder.findReferencesInFileWithSymbol(filePath, bindingSymbol)
+        );
+        refs.push(...defaultImportAliasRefs);
       }
     } else {
       // 無定義：使用作用域感知查找（fallback）
@@ -155,6 +230,8 @@ async function handleFindReferencesCommand(
       type: symbolType,
       definition,
       definitions: definitions.length > 1 ? definitions : undefined,
+      symbols: symbolIdentities,
+      targetSymbol: targetResult.resolution.targetSymbol,
       references,
       summary: {
         totalReferences: references.length,
@@ -176,7 +253,7 @@ async function handleFindReferencesCommand(
     outputHandler.outputError(`${errorPrefix}: ${errorMessage}`, format);
     process.exitCode = 1;
   } finally {
-    indexEngine.dispose();
+    await indexEngine?.disposeAsync();
   }
 }
 
