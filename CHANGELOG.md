@@ -1,3 +1,8 @@
+## <small>0.13.8 (2026-08-15)</small>
+
+* fix: src/ 全面對抗式審計——26 項缺陷修復、deadcode import binding 回報、引擎/parser 職責拆分 (#61) ([81b8f15](https://github.com/vivalalova/agent-ide/commit/81b8f15)), closes [#61](https://github.com/vivalalova/agent-ide/issues/61) [#58](https://github.com/vivalalova/agent-ide/issues/58) [#private](https://github.com/vivalalova/agent-ide/issues/private) [#private](https://github.com/vivalalova/agent-ide/issues/private) [#61](https://github.com/vivalalova/agent-ide/issues/61)
+* test(logging): 補上 logger 分支覆蓋 ([22e5b71](https://github.com/vivalalova/agent-ide/commit/22e5b71))
+
 ## <small>0.13.7 (2026-05-13)</small>
 
 * fix(call-hierarchy): formatter summary 顯示找不到函數錯誤訊息 ([1620a70](https://github.com/vivalalova/agent-ide/commit/1620a70))
