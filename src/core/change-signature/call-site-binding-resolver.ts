@@ -77,8 +77,12 @@ export class CallSiteBindingResolver {
   async resolveTargetBindings(
     files: readonly string[],
     targetFilePath: string,
-    name: string
+    name: string,
+    options?: { readonly includeTypeOnly?: boolean }
   ): Promise<Map<string, TargetFileBindings>> {
+    // includeTypeOnly：method 目標以 owner（類別名）找「可能持有 owner 實例」的檔案時，
+    // `import type { Svc }` 標注的參數（`svc: Svc`）一樣會產生 `svc.m()` runtime 呼叫點。
+    const includeTypeOnly = options?.includeTypeOnly ?? false;
     const targetAbsolute = path.resolve(targetFilePath);
     const bindings = new Map<string, TargetFileBindings>();
     const targetHasDefaultExport = await this.hasDefaultExportName(targetAbsolute, name);
@@ -113,7 +117,7 @@ export class CallSiteBindingResolver {
 
       const declarations = parser.getImportDeclarations(content) ?? [];
       for (const declaration of declarations) {
-        if (declaration.isTypeOnly) {
+        if (declaration.isTypeOnly && !includeTypeOnly) {
           continue; // type-only import 不會產生 runtime 呼叫點
         }
 
@@ -123,7 +127,7 @@ export class CallSiteBindingResolver {
         // 用「spec.name === name」預先篩掉，一律交給 moduleExposesTargetFunction
         // 沿 re-export 鏈追查 spec.name 最終是否對應回目標（本地繫結名為 alias ?? name）
         for (const spec of declaration.namedImports) {
-          if (spec.isTypeOnly) {
+          if (spec.isTypeOnly && !includeTypeOnly) {
             continue;
           }
           const requestedExportName = spec.name === 'default' ? 'default' : spec.name;

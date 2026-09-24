@@ -16,6 +16,7 @@ import {
 } from './types.js';
 import { createRange, createPosition } from '@shared/types/core.js';
 import { Symbol } from '@shared/types/symbol.js';
+import { detectBindingConflicts } from './binding-conflict-detector.js';
 import { ReferenceUpdater, type RenameModuleResolutionConfig } from './reference-updater.js';
 import { createIdentifierBoundaryRegex } from '@core/foundations/index.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
@@ -200,17 +201,22 @@ export class RenameEngine {
         }
       }
 
+      const bindingConflicts = await detectBindingConflicts(
+        this.fileSystem, options.symbol.name, options.newName, fileChanges
+      );
+      const conflicts = [...validation.conflicts, ...bindingConflicts];
+
       const summary: RenameSummary = {
         totalReferences: operations.length,
         totalFiles: affectedFiles.length,
-        conflictCount: validation.conflicts.length,
+        conflictCount: conflicts.length,
         estimatedTime: operations.length * 10 // 預估每個操作 10ms
       };
 
       return {
         operations,
         affectedFiles,
-        conflicts: validation.conflicts,
+        conflicts,
         summary
       };
     } catch (error) {
@@ -233,11 +239,13 @@ export class RenameEngine {
     // 1. 驗證（收集衝突但不阻止繼續處理）
     const validation = await this.validateRename(options);
 
-    // 2. 使用 collectRenameChanges 收集變更
+    // 2. 使用 collectRenameChanges 收集變更（解析不到的專案 import 轉為警告，不靜默漏改）
+    const resolutionWarnings: string[] = [];
     const fileChanges = await this.referenceUpdater.collectRenameChanges(
       options.symbol,
       options.newName,
-      Array.from(options.filePaths)
+      Array.from(options.filePaths),
+      resolutionWarnings
     );
 
     // 3. 轉換為 Changeset
@@ -254,9 +262,15 @@ export class RenameEngine {
       builder.addTextChange(filePath, edits, TextEditOperationType.Rename);
     }
 
-    // 4. 加入驗證衝突為警告（格式：type:message，方便解析）
-    for (const conflict of validation.conflicts) {
+    // 4. 加入驗證衝突與綁定衝突（撞名／遮蔽／捕獲）為警告（格式：type:message，方便解析）
+    const bindingConflicts = await detectBindingConflicts(
+      this.fileSystem, options.symbol.name, options.newName, fileChanges
+    );
+    for (const conflict of [...validation.conflicts, ...bindingConflicts]) {
       builder.addWarning(`${conflict.type}:${conflict.message}`);
+    }
+    for (const warning of resolutionWarnings) {
+      builder.addWarning(warning);
     }
 
     return builder.build();

@@ -50,6 +50,31 @@ export interface JavaScriptSymbol extends Symbol {
    * 避免不同 class 內同名方法互相誤判為同一符號。
    */
   readonly enclosingClassNode?: babel.ClassDeclaration | babel.ClassExpression;
+  /** 物件字面量成員（ObjectProperty／ObjectMethod）所屬的物件節點 */
+  readonly enclosingObjectNode?: babel.ObjectExpression;
+  /** 成員所屬 class／物件本身是宣告檔的模組匯出值（供跨檔 receiver 解析） */
+  readonly ownerExport?: ModuleValueExport;
+  /** 成員所屬 class／物件在宣告檔的具名匯出名（`export const api = {…}`、`export { Box as B }`） */
+  readonly ownerExportNames?: readonly string[];
+  /** 宣告本身是宣告檔 `export default` 的匯出值（含 `export default X;` 另行匯出） */
+  readonly isDefaultExport?: boolean;
+}
+
+/**
+ * 是否為 JS class 的公開成員符號（帶 enclosingClassNode、非 `#private`）：跨檔 class 族譜
+ * （ClassFamilyResolver）只對它有意義，rename 引擎據此決定是否預掃專案 class 繼承。
+ */
+export function isJavaScriptClassMemberSymbol(symbol: Symbol): boolean {
+  const { enclosingClassNode, babelNode } = symbol as Partial<JavaScriptSymbol>;
+  return enclosingClassNode !== undefined && !!babelNode && !isPrivateFieldDeclaration(babelNode);
+}
+
+/** 值以何種方式成為模組匯出本身（非具名匯出） */
+export enum ModuleValueExport {
+  /** `export default <value>` */
+  EsmDefault = 'esm-default',
+  /** `module.exports = <value>` */
+  CommonJS = 'commonjs'
 }
 
 /**

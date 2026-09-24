@@ -200,6 +200,7 @@ export class FileSystem implements IFileSystem {
           path: entryPath,
           isFile: entry.isFile(),
           isDirectory: entry.isDirectory(),
+          isSymbolicLink: entry.isSymbolicLink(),
           size,
           modifiedTime,
         });
@@ -361,6 +362,32 @@ export class FileSystem implements IFileSystem {
         // 跨裝置移動，使用複製+刪除
         await this.copyFile(srcPath, destPath);
         await this.deleteFile(srcPath);
+        return;
+      }
+      if (nodeError.code === 'ENOENT') {
+        throw new FileNotFoundError(srcPath, nodeError);
+      }
+      if (nodeError.code === 'EACCES') {
+        throw new PermissionError(nodeError.path || srcPath, nodeError);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 移動符號連結本身（不 follow；連結字串原樣保留，比照 Unix mv）
+   */
+  async moveSymlink(srcPath: string, destPath: string): Promise<void> {
+    try {
+      await this.createDirectory(path.dirname(destPath), true);
+      await fs.rename(srcPath, destPath);
+    } catch (error) {
+      const nodeError = error as NodeSystemError;
+      if (nodeError.code === 'EXDEV') {
+        // 跨裝置：重建同一連結字串再刪原連結（copyFile 會 follow，不可用）
+        const linkTarget = await fs.readlink(srcPath);
+        await fs.symlink(linkTarget, destPath);
+        await fs.unlink(srcPath);
         return;
       }
       if (nodeError.code === 'ENOENT') {

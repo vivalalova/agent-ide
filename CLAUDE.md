@@ -56,7 +56,7 @@ src/
 
 - **單一註冊來源**：預設 Parser 由 `infrastructure/parser/initializer.ts` 管理；CLI、IndexEngine、worker 都必須呼叫同一套 bootstrap，禁止各自 hardcode TS/JS 註冊。
 - **副檔名來源**：索引、搜尋、impact、cycles 以 `ParserRegistry.getSupportedExtensions()` 合併 `includeExtensions`；新增 Parser 後不可另存一份副檔名清單。
-- **worker 擴充**：worker 任務可帶 `parserModulePaths`，worker 解析前會載入外部 Parser module；測試需覆蓋非 TS/JS extension。
+- **worker 擴充**：worker 任務可帶 `parserModulePaths`，worker 解析前會載入外部 Parser module；測試需覆蓋非 TS/JS extension。僅 library API（`IndexConfig`）可用，CLI 無對應選項。
 - **能力邊界**：`change-signature`、`call-hierarchy`、`move-member` 仍是 TS/JS 語意流程；非 TS/JS Parser 必須透過 `getCapabilities()` 明確宣告支援，否則 CLI fast-fail。
 - **測試要求**：新增語言支援時至少用假 Parser 驗證 indexing/search、impact/cycles、worker bootstrap，以及不支援能力的錯誤訊息。
 
@@ -128,7 +128,7 @@ describe('CLI <command> - 基於 sample-project fixture', () => {
 
 ### 輸出格式
 
-`--format`：json | summary | diff（變更類預設）
+`--format`：json | summary | diff（變更類預設；`deadcode` 例外，預設 summary——預設只預覽不寫入，summary 較合理）
 
 ### 全域選項
 

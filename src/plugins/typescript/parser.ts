@@ -4,24 +4,26 @@
  */
 
 import * as ts from 'typescript';
-import {
+import type {
   ParserPlugin,
-  CodeEdit,
-  Definition,
-  Usage,
-  ValidationResult,
+  ImportDeclaration,
+  FormattedSignature,
+  Documentation,
+  PatternInfo,
+  ScopedFindReferencesOptions,
+  ScopedReference
+} from '@infrastructure/parser/interface.js';
+import {
+  type CodeEdit,
+  type Definition,
+  type Usage,
+  type ValidationResult,
   createValidationSuccess,
   createValidationFailure,
   createCodeEdit,
   createDefinition,
-  createUsage,
-  type ImportDeclaration,
-  type FormattedSignature,
-  type Documentation,
-  type PatternInfo,
-  type ScopedFindReferencesOptions,
-  type ScopedReference
-} from '@infrastructure/parser/index.js';
+  createUsage
+} from '@infrastructure/parser/types.js';
 import type {
   AST,
   Symbol,
@@ -60,7 +62,7 @@ import {
 import { getErrorMessage } from '@shared/errors/index.js';
 import { getScriptKind } from '@shared/script-kind.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
-import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
+import type { FindReferencesOptions } from '@infrastructure/parser/types.js';
 import { createLanguageServiceManager, type ILanguageServiceManager } from './language-service.js';
 import { createScopeAnalyzer, type ScopeAnalyzer } from './scope-analyzer.js';
 import { createDeclarationAnalyzer, type DeclarationAnalyzer } from './declaration-analyzer.js';
@@ -225,8 +227,8 @@ export class TypeScriptParser implements ParserPlugin, Disposable {
    * 查找符號引用
    * 委託給 ReferenceResolver
    */
-  async findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]> {
-    return this.referenceResolver.findReferences(ast, symbol, moduleResolver);
+  async findReferences(ast: AST, symbol: Symbol, options?: FindReferencesOptions): Promise<Reference[]> {
+    return this.referenceResolver.findReferences(ast, symbol, options);
   }
 
   /**

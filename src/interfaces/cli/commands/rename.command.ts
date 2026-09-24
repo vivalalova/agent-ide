@@ -14,6 +14,7 @@ import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unifie
 import {
   createEmptyMutationPreviewInput,
   outputMutationWithLegacyFields,
+  outputProgress,
   tryParseOutputFormat,
   executeMutationCommand
 } from '@interfaces/cli/command-utils.js';
@@ -106,9 +107,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     return;
   }
 
-  if (!isJsonFormat) {
-    process.stderr.write(`   重新命名 ${from}   ${to}\n`);
-  }
+  outputProgress(`   重新命名 ${from}   ${to}`, format);
 
   try {
     // 索引器（IndexEngine.indexDirectory）以 glob absolute:true 產出絕對路徑符號，
@@ -153,9 +152,7 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     try {
 
     // 1. 查找符號
-    if (!isJsonFormat) {
-      process.stderr.write(`   查找符號 "${from}"...\n`);
-    }
+    outputProgress(`   查找符號 "${from}"...`, format);
     const searchResults = await indexEngine.findSymbol(from);
 
     if (searchResults.length === 0) {
@@ -268,8 +265,8 @@ async function handleRenameCommand(options: RenameOptions, context: CommandConte
     });
 
     // 執行變更類命令統一流程
-    if (!isJsonFormat && !options.dryRun) {
-      process.stderr.write('   執行重新命名...\n');
+    if (!options.dryRun) {
+      outputProgress('   執行重新命名...', format);
     }
 
     if (!options.dryRun) {

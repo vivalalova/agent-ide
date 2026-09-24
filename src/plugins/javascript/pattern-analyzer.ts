@@ -7,12 +7,13 @@ import { parse as babelParse } from '@babel/parser';
 import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
 
-import { type PatternInfo } from '@infrastructure/parser/index.js';
+import { type PatternInfo } from '@infrastructure/parser/interface.js';
 import {
   calculateFactoryConfidence,
   createFactoryPatternInfo
 } from '@plugins/shared/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
+import { DEFAULT_PARSE_OPTIONS, type JavaScriptParseOptions } from './types.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -22,6 +23,9 @@ const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }
  * 識別程式碼中的設計模式，包括 Factory、Singleton 等
  */
 export class PatternAnalyzer {
+  /** @param parseOptions Babel 解析選項，與 JavaScriptParser 主解析同源（SSOT） */
+  constructor(private readonly parseOptions: JavaScriptParseOptions = DEFAULT_PARSE_OPTIONS) {}
+
   /**
    * 識別程式碼中的設計模式
    * JavaScript 沒有型別標註，因此主要依賴：
@@ -31,10 +35,7 @@ export class PatternAnalyzer {
    */
   identifyPatterns(code: string): PatternInfo[] | null {
     try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx']
-      });
+      const ast = babelParse(code, this.parseOptions);
 
       const patterns: PatternInfo[] = [];
 

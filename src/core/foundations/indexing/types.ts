@@ -46,6 +46,20 @@ export interface FileInfo {
 }
 
 /**
+ * 因超過 maxFileSize 而未進索引的檔案紀錄（不 parse、無 FileIndex 條目）。
+ * 供 cache key 導出使用：磁碟快取的 pre-index key（computeCacheKey）涵蓋所有
+ * 符合副檔名/排除規則的檔（含超大檔），snapshot 導出的 key 必須涵蓋同一檔案集合，
+ * 否則含超大檔的專案 cache 永遠 MISS。
+ */
+export interface OversizedFileRecord {
+  readonly filePath: string;
+  readonly lastModified: Date;
+  readonly size: number;
+  /** 與 FileInfo.checksum 同算法（全內容 sha256） */
+  readonly checksum: string;
+}
+
+/**
  * 符號索引項目
  */
 export interface SymbolIndexEntry {

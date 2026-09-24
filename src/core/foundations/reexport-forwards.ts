@@ -2,7 +2,8 @@
  * Re-export 轉發解析（barrel 鏈路共用素材）
  *
  * `export { name } from '<spec>'` / `export * from '<spec>'` /
- * `export * as ns from '<spec>'` 的單層轉發解析，供需要「跟隨 barrel re-export 鏈追到
+ * `export * as ns from '<spec>'`，以及等價的二段式（`import { name } from '<spec>'` 後
+ * `export { name }`／`export default name`）的單層轉發解析，供需要「跟隨 barrel re-export 鏈追到
  * 真正定義檔」的模組共用（rename 的 target-exposure-resolver、call-hierarchy 的
  * outgoing/incoming barrel 穿透皆使用同一份，Single Source of Truth）。
  */
@@ -32,18 +33,36 @@ export interface ReexportForward {
  * `export { type X } from './y'`）一併視為轉發：判定的是「對外曝露成源自定義檔」，
  * 目標符號本身也可能就是 type-only（如 type alias／interface），略過 type-only 轉發
  * 會漏掉這類 barrel。
+ *
+ * 無 from 子句的 `export { local as name }`／`export default local`，若 local 是 import 綁定，
+ * 語意等同一段式轉發（`import { x } from './a'; export { x }` ≡ `export { x } from './a'`；
+ * namespace import 對應 `export * as name from`），一併產生轉發；local 為本檔宣告則不是轉發。
  */
 export function parseReexportForwards(filePath: string, content: string): ReexportForward[] {
   const forwards: ReexportForward[] = [];
   const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+  const importBindings = collectTopLevelImportBindings(sourceFile);
 
   for (const statement of sourceFile.statements) {
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals && ts.isIdentifier(statement.expression)) {
+      pushImportBindingForward(forwards, importBindings.get(statement.expression.text), 'default');
+      continue;
+    }
     if (!ts.isExportDeclaration(statement)) {
       continue;
     }
     const moduleSpecifier = statement.moduleSpecifier;
-    if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) {
-      continue; // 非 re-export（純 local export，無 from 子句）
+    if (!moduleSpecifier) {
+      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          const localName = element.propertyName?.text ?? element.name.text;
+          pushImportBindingForward(forwards, importBindings.get(localName), element.name.text);
+        }
+      }
+      continue;
+    }
+    if (!ts.isStringLiteral(moduleSpecifier)) {
+      continue;
     }
     if (!statement.exportClause) {
       forwards.push({ moduleSpecifier: moduleSpecifier.text }); // `export * from`
@@ -70,6 +89,54 @@ export function parseReexportForwards(filePath: string, content: string): Reexpo
   }
 
   return forwards;
+}
+
+/** 頂層 import 綁定：來源 specifier 與被匯入名（'default' 為 default import；namespace import 無被匯入名） */
+export interface TopLevelImportBinding {
+  readonly moduleSpecifier: string;
+  readonly importedName?: string;
+  readonly isNamespace?: boolean;
+}
+
+/** 頂層 import 的本地名 → 來源（import 宣告可出現在 export 之後，故先整份收集） */
+export function collectTopLevelImportBindings(sourceFile: ts.SourceFile): Map<string, TopLevelImportBinding> {
+  const bindings = new Map<string, TopLevelImportBinding>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const moduleSpecifier = statement.moduleSpecifier.text;
+    const clause = statement.importClause;
+    if (clause?.name) {
+      bindings.set(clause.name.text, { moduleSpecifier, importedName: 'default' });
+    }
+    const namedBindings = clause?.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      bindings.set(namedBindings.name.text, { moduleSpecifier, isNamespace: true });
+    } else if (namedBindings) {
+      for (const element of namedBindings.elements) {
+        bindings.set(element.name.text, {
+          moduleSpecifier,
+          importedName: element.propertyName?.text ?? element.name.text
+        });
+      }
+    }
+  }
+  return bindings;
+}
+
+/** 二段式轉發：被 export 的 local 是 import 綁定時，依綁定種類產生對應的單層轉發 */
+function pushImportBindingForward(
+  forwards: ReexportForward[],
+  binding: TopLevelImportBinding | undefined,
+  exportedName: string
+): void {
+  if (!binding) {
+    return;
+  }
+  forwards.push(binding.isNamespace
+    ? { moduleSpecifier: binding.moduleSpecifier, exportedName, isNamespaceExport: true }
+    : { moduleSpecifier: binding.moduleSpecifier, importedName: binding.importedName, exportedName });
 }
 
 /**

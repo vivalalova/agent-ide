@@ -11,7 +11,7 @@ import type {
   FormattedParameter,
   Documentation,
   DocumentationTag
-} from '@infrastructure/parser/index.js';
+} from '@infrastructure/parser/interface.js';
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch, computeContentHash } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';

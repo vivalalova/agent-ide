@@ -26,6 +26,47 @@ export type ModuleSpecifierResolver = (
   namedImportLocalName?: string
 ) => boolean;
 
+/** ClassFamilyResolver 查詢的目標成員與其所屬 class */
+export interface ClassFamilyOwner {
+  /** owner class 宣告檔（絕對路徑） */
+  readonly filePath: string;
+  /** owner class 名稱 */
+  readonly className: string;
+  /** 目標成員名：鏈上任一類別自身宣告同名同 static 的成員即為 override，其下的存取不屬 owner */
+  readonly memberName: string;
+  readonly isStatic: boolean;
+}
+
+/**
+ * 判定 `importingFileName` 以 `moduleSpecifier` 匯入的 `importedName`（'default' 表 default 匯入）
+ * 是否為 owner class 本身或其（跨檔、遞迴 extends 的）子類，且鏈上無 override 目標成員。由 rename 引擎預掃專案 class 繼承後注入，
+ * 供 parser 解析 `new Sub().m()` 這類 receiver 型別須跨檔追 extends 鏈的成員存取。
+ */
+export type ClassFamilyResolver = (
+  importingFileName: string,
+  moduleSpecifier: string,
+  importedName: string,
+  owner: ClassFamilyOwner
+) => boolean;
+
+/** parser.findReferences 的選用跨檔解析輔助（由 rename 引擎注入；未提供時 parser 退回單檔保守判定） */
+export interface FindReferencesOptions {
+  readonly moduleResolver?: ModuleSpecifierResolver;
+  readonly classFamilyResolver?: ClassFamilyResolver;
+  /**
+   * 專案檔內容快照（絕對路徑 → 內容）：供需型別檢查的 parser（TS Language Service）跨檔解析
+   * import 圖（含 memfs 等非磁碟檔案系統），以綁定 `this.m()`／`sub.m()`／`user.email` 這類
+   * 非 import binding 的成員存取。
+   */
+  readonly projectSources?: ReadonlyMap<string, string>;
+  /** 專案 tsconfig `paths`（候選皆為絕對路徑），供型別檢查 parser 解析 path alias import */
+  readonly pathMappings?: Readonly<Record<string, readonly string[]>>;
+  /** 專案 tsconfig `baseUrl`（絕對路徑），供型別檢查 parser 解析 baseUrl 下的裸 specifier */
+  readonly baseUrl?: string;
+  /** 目前檔案有專案內 import 無法解析（成員引用可能漏收）時回報 */
+  readonly onUnresolvedImport?: (filePath: string, moduleSpecifier: string) => void;
+}
+
 /**
  * 程式碼編輯操作
  * 表示對程式碼的修改操作

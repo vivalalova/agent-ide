@@ -20,7 +20,8 @@ import type { ParserRegistry } from '@infrastructure/parser/index.js';
 import type {
   IndexConfig,
   FileInfo,
-  BatchIndexOptions
+  BatchIndexOptions,
+  OversizedFileRecord
 } from './types.js';
 import {
   createFileInfo,
@@ -46,6 +47,12 @@ export interface IndexBatchCoordination {
    * critical section 內才允許 remove/set；過期則整段不碰索引。
    */
   runExclusiveWrite: <T>(filePath: string, fn: () => Promise<T>) => Promise<T>;
+  /**
+   * 記錄／清除超大檔（> maxFileSize）紀錄，供 cache key 涵蓋與 computeCacheKey 相同的檔案集合。
+   * 必須在 runExclusiveWrite 臨界區內、generation 檢查後呼叫。
+   */
+  recordOversizedFile?: (record: OversizedFileRecord) => void;
+  forgetOversizedFile?: (filePath: string) => void;
 }
 
 /**
@@ -202,13 +209,18 @@ export class IndexBatchParser {
         : 0;
 
       /** 清除 stale 索引：必須經寫入鎖 + gen 檢查，禁與並行寫入交錯抹掉較新結果 */
-      const clearStaleIfCurrent = async (): Promise<void> => {
+      const clearStaleIfCurrent = async (oversizedRecord?: OversizedFileRecord): Promise<void> => {
         const clear = async (): Promise<void> => {
           if (
             this.coordination &&
             !this.coordination.isCurrentGeneration(filePath, generation)
           ) {
             return;
+          }
+          if (oversizedRecord) {
+            this.coordination?.recordOversizedFile?.(oversizedRecord);
+          } else {
+            this.coordination?.forgetOversizedFile?.(filePath);
           }
           if (this.fileIndex.hasFile(filePath)) {
             await this.symbolIndex.removeFileSymbols(filePath);
@@ -228,7 +240,10 @@ export class IndexBatchParser {
         // 跳過大檔案：若該路徑先前已有索引項目（檔案在兩次索引之間變大），
         // 必須連同清除舊條目，否則 stale 符號會繼續被查到（同型缺陷見 index-engine.ts 單檔索引路徑）
         if (stat.size > config.maxFileSize) {
-          await clearStaleIfCurrent();
+          // 不 parse，但須讀內容算 checksum 記錄下來：cache key 需涵蓋此檔（見 OversizedFileRecord）
+          const oversizedContent = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+          const record = this.createOversizedFileRecord(filePath, stat, oversizedContent);
+          await clearStaleIfCurrent(record);
           return;
         }
 
@@ -282,6 +297,9 @@ export class IndexBatchParser {
         return;
       }
 
+      // 已進索引 → 不再是超大檔（檔案縮小跨過門檻）
+      this.coordination?.forgetOversizedFile?.(result.filePath);
+
       // 先將檔案加入索引（與單執行緒 indexFile 一致：先 addFile 再判斷錯誤），
       // 確保解析失敗的檔案也會留在索引中（帶 parseErrors），而非被靜默丟棄
       await this.fileIndex.addFile(fileInfo);
@@ -316,6 +334,18 @@ export class IndexBatchParser {
    * content 計算 checksum，避免對同一檔案獨立讀取兩次造成 TOCTOU（parse 用的內容版本
    * 與 checksum 對應的內容版本不一致，corrupting 以 checksum 判斷 staleness 的機制）
    */
+  /**
+   * 建立超大檔紀錄；checksum 與 createFileInfoFromContent 同算法
+   */
+  createOversizedFileRecord(filePath: string, stat: FileStats, content: string): OversizedFileRecord {
+    return {
+      filePath,
+      lastModified: stat.modifiedTime,
+      size: stat.size,
+      checksum: createHash('sha256').update(content).digest('hex')
+    };
+  }
+
   async createFileInfoFromContent(
     filePath: string,
     stat: FileStats,

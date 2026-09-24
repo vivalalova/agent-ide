@@ -32,3 +32,4 @@ npx agent-ide call-hierarchy myFunction --path . --at src/service.ts:42 --format
 
 - `symbols` - 函式候選 identity 清單
 - `targetSymbol` - 使用 `--at` 成功定位時的目標 identity
+- outgoing 項目的 `receiver`（optional）- method 呼叫的 receiver 文字，如 `emailRegex.test(email)` 的 `emailRegex`；自由函式呼叫無此欄位。summary 格式顯示為 `receiver.callee`

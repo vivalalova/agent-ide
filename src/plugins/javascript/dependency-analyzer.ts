@@ -39,7 +39,7 @@ export class JavaScriptDependencyAnalyzer {
 
       CallExpression: (path: NodePath<babel.CallExpression>) => {
         // 處理 require() 和動態 import()
-        this.extractCallExpressionDependency(path.node, dependencies);
+        this.extractCallExpressionDependency(path, dependencies);
       }
     });
 
@@ -73,17 +73,61 @@ export class JavaScriptDependencyAnalyzer {
         target,
         DependencyType.Import,
         isRelativePath(target),
-        []
+        this.getExportedSymbols(node)
       );
 
       dependencies.push(dependency);
     }
   }
 
+  /**
+   * re-export 的符號（對齊 TS getExportedSymbols）：`export { a, b } from` 取匯出名，
+   * `export * from` / `export * as ns from` 記為 '*'
+   */
+  private getExportedSymbols(node: babel.ExportNamedDeclaration | babel.ExportAllDeclaration): string[] {
+    if (babel.isExportAllDeclaration(node)) {
+      return ['*'];
+    }
+    const symbols: string[] = [];
+    for (const specifier of node.specifiers) {
+      if (babel.isExportNamespaceSpecifier(specifier)) {
+        symbols.push('*');
+      } else if (babel.isExportSpecifier(specifier)) {
+        const exported = specifier.exported;
+        symbols.push(babel.isIdentifier(exported) ? exported.name : exported.value);
+      }
+    }
+    return symbols;
+  }
+
+  /**
+   * require 導入的符號（對齊 TS getRequireImportedSymbols）：
+   * `const m = require()` 取 m，`const { a, b } = require()` 取各綁定名
+   */
+  private getRequireImportedSymbols(path: NodePath<babel.CallExpression>): string[] {
+    const parent = path.parent;
+    if (!babel.isVariableDeclarator(parent) || parent.init !== path.node) {
+      return [];
+    }
+    if (babel.isIdentifier(parent.id)) {
+      return [parent.id.name];
+    }
+    const symbols: string[] = [];
+    if (babel.isObjectPattern(parent.id)) {
+      for (const property of parent.id.properties) {
+        if (babel.isObjectProperty(property) && babel.isIdentifier(property.value)) {
+          symbols.push(property.value.name);
+        }
+      }
+    }
+    return symbols;
+  }
+
   private extractCallExpressionDependency(
-    node: babel.CallExpression,
+    path: NodePath<babel.CallExpression>,
     dependencies: Dependency[]
   ): void {
+    const node = path.node;
     // 處理 require() 呼叫
     if (isRequireCallExpression(node)) {
       const firstArg = node.arguments[0];
@@ -94,7 +138,7 @@ export class JavaScriptDependencyAnalyzer {
           target,
           DependencyType.Require,
           isRelativePath(target),
-          []
+          this.getRequireImportedSymbols(path)
         );
 
         dependencies.push(dependency);

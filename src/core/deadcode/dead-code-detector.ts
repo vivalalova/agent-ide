@@ -4,7 +4,7 @@
  */
 
 import type { Symbol } from '@shared/types/symbol.js';
-import { SymbolType, isImportedSymbol } from '@shared/types/symbol.js';
+import { SymbolType, isImportedSymbol, isDecoratedSymbol } from '@shared/types/symbol.js';
 import { findNodesByType } from '@shared/types/ast.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index.js';
@@ -204,6 +204,12 @@ export class DeadCodeDetector {
 
           if (isPublicClassMember && !this.options.includePublicMembers) {
             // public class member，可能被外部使用，跳過
+            continue;
+          }
+
+          if (this.isClassMember(symbol) && isDecoratedSymbol(symbol)) {
+            // 帶 member decorator 的成員常只經框架反射使用（路由 handler、@Input 等），
+            // 無靜態呼叫點不代表 dead：寧漏報不誤刪。class-level decorator 不保護未修飾成員。
             continue;
           }
 

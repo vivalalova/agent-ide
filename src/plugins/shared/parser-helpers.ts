@@ -11,7 +11,7 @@ import type {
   DocumentationTag,
   PatternInfo,
   FormattedParameter
-} from '@infrastructure/parser/index.js';
+} from '@infrastructure/parser/interface.js';
 import {
   LINE_TOLERANCE,
   NON_FACTORY_RETURN_TYPES,

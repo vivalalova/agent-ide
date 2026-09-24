@@ -232,10 +232,14 @@ export class MoveEngine {
   async generateChangeset(operation: MoveInput, options: MoveOptions = {}): Promise<Changeset> {
     const { source, target, updateImports = true } = operation;
     const { projectRoot = process.cwd() } = options;
+    const describeRelativeToRoot = (targetPath: string): string => {
+      const relativePath = path.relative(projectRoot, targetPath);
+      return relativePath.length > 0 ? relativePath : '.';
+    };
 
     const builder = createChangesetBuilder()
       .forCommand(ChangesetCommand.Move)
-      .withDescription(`Moved '${path.basename(source)}' to '${path.basename(target)}'`);
+      .withDescription(`Moved '${describeRelativeToRoot(source)}' to '${describeRelativeToRoot(target)}'`);
 
     try {
       // 驗證路徑（只讀驗證，不建立目錄），並取得是否為目錄

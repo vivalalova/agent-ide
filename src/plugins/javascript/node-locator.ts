@@ -5,7 +5,7 @@
  * 供 parser.ts（rename、findDefinition）共用。
  */
 
-import type { DefinitionKind } from '@infrastructure/parser/index.js';
+import type { DefinitionKind } from '@infrastructure/parser/types.js';
 import type { Symbol, Position, Range } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
 import { computeContentHash } from '@plugins/shared/index.js';

@@ -7,8 +7,8 @@ import * as path from 'path';
 import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { QueryCommand, type ImpactResult } from '@infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, outputErrorWithDetails, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { createUnifiedOutputHandler } from '@interfaces/cli/unified-output-handler.js';
+import { ensureDirectoryPath, outputErrorWithDetails, outputProgress, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -105,9 +105,7 @@ async function handleImpactCommand(
     return;
   }
 
-  if (format !== OutputFormat.Json) {
-    process.stderr.write('💥 影響分析...\n');
-  }
+  outputProgress('💥 影響分析...', format);
 
   try {
     // 讀取 tsconfig 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）

@@ -5,9 +5,9 @@
 
 import type { Symbol, Scope, ScopeType, Dependency } from '@shared/types/index.js';
 import { SymbolType, DependencyType } from '@shared/types/index.js';
-import type { FileInfo, FileIndexEntry } from './types.js';
+import type { FileInfo, FileIndexEntry, OversizedFileRecord } from './types.js';
 
-export const CACHE_VERSION = '1.1.1';
+export const CACHE_VERSION = '1.1.3';
 
 /**
  * 序列化後的 Scope（tree → flat parent path）
@@ -81,6 +81,13 @@ export interface SerializedIndexData {
   readonly version: string;
   readonly cacheKey: string;
   readonly fileEntries: Array<{ key: string; value: SerializedFileIndexEntry }>;
+  /** 超過 maxFileSize 未進索引的檔（cache key 涵蓋用，見 OversizedFileRecord）；缺欄位＝無超大檔 */
+  readonly oversizedFiles?: Array<{
+    readonly filePath: string;
+    readonly lastModified: string; // ISO string
+    readonly size: number;
+    readonly checksum: string;
+  }>;
   readonly timestamp: string; // ISO string
 }
 
@@ -95,7 +102,8 @@ export class IndexCacheSerializer {
    * 序列化 fileEntries（不含 cacheKey，由呼叫方填入）
    */
   serialize(
-    entries: ReadonlyMap<string, FileIndexEntry>
+    entries: ReadonlyMap<string, FileIndexEntry>,
+    oversizedFiles: readonly OversizedFileRecord[] = []
   ): Omit<SerializedIndexData, 'cacheKey'> {
     const fileEntries: Array<{ key: string; value: SerializedFileIndexEntry }> = [];
 
@@ -109,6 +117,12 @@ export class IndexCacheSerializer {
     return {
       version: CACHE_VERSION,
       fileEntries,
+      oversizedFiles: oversizedFiles.map(record => ({
+        filePath: record.filePath,
+        lastModified: record.lastModified.toISOString(),
+        size: record.size,
+        checksum: record.checksum
+      })),
       timestamp: new Date().toISOString()
     };
   }
@@ -129,6 +143,21 @@ export class IndexCacheSerializer {
     }
 
     return result;
+  }
+
+  /**
+   * 從序列化資料還原超大檔紀錄；version 不符時拋錯
+   */
+  deserializeOversizedFiles(data: SerializedIndexData): OversizedFileRecord[] {
+    if (data.version !== CACHE_VERSION) {
+      throw new Error(`Cache version mismatch: expected ${CACHE_VERSION}, got ${data.version}`);
+    }
+    return (data.oversizedFiles ?? []).map(record => ({
+      filePath: record.filePath,
+      lastModified: new Date(record.lastModified),
+      size: record.size,
+      checksum: record.checksum
+    }));
   }
 
   // ── private: entry ──

@@ -356,6 +356,19 @@ export function isImportedSymbol(symbol: Symbol): boolean {
 }
 
 /**
+ * Symbol.attributes 標記：宣告本身帶 decorator（member/class decorator）。
+ * 帶 decorator 的成員常只經框架反射使用（NestJS 路由、Angular @Input），無靜態呼叫點。
+ */
+export const DECORATED_ATTRIBUTE = 'decorated';
+
+/**
+ * 宣告是否帶 decorator（SSOT：parser 以 DECORATED_ATTRIBUTE 寫入 attributes）
+ */
+export function isDecoratedSymbol(symbol: Symbol): boolean {
+  return symbol.attributes?.includes(DECORATED_ATTRIBUTE) === true;
+}
+
+/**
  * 檢查兩個 Symbol 是否在同一 Scope
  */
 export function isSameScope(symbol1: Symbol, symbol2: Symbol): boolean {

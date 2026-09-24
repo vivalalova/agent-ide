@@ -1,9 +1,9 @@
 /**
  * JavaScript 符號引用解析器（Babel AST）
  *
- * 負責 findReferences 的完整編排：Babel traverse 全檔案掃描、
- * CJS require 解構跨檔綁定判定、class method 成員存取 receiver 型別推斷、
- * 以及 ES2022 私有欄位的作用域感知掃描回退。
+ * 負責 findReferences 的完整編排：Babel traverse 全檔案掃描，以 allowlist 判定同名識別符
+ * 是否正向解析到目標符號宣告（import/export specifier、CJS require、模組命名空間、class／
+ * 物件成員 receiver），以及 ES2022 私有欄位的作用域感知掃描回退。
  */
 
 import { dirname, resolve as pathResolve } from 'node:path';
@@ -21,11 +21,34 @@ import {
   isFunctionLocalSymbol
 } from '@shared/types/index.js';
 import { isSameDeclaringFile } from '@plugins/shared/index.js';
-import { ScopedReferenceKind, type ScopedReference } from '@infrastructure/parser/index.js';
-import { JavaScriptAST, JavaScriptSymbol, getNodeRange, isPrivateFieldDeclaration } from './types.js';
-import { isRequireCallExpression } from './cjs-require-ast.js';
+import { ScopedReferenceKind, type ScopedReference } from '@infrastructure/parser/interface.js';
+import type {
+  ClassFamilyResolver,
+  FindReferencesOptions,
+  ModuleSpecifierResolver
+} from '@infrastructure/parser/types.js';
+import {
+  JavaScriptAST,
+  JavaScriptSymbol,
+  ModuleValueExport,
+  getNodeRange,
+  isPrivateFieldDeclaration
+} from './types.js';
+import { isModuleExportsTarget, isRequireCallExpression } from './cjs-require-ast.js';
 import { getShorthandKeyText } from './shorthand-rename.js';
 import type { ReferenceFinder } from './reference-finder.js';
+
+/** 單次 findReferences 的判定上下文 */
+interface ResolutionContext {
+  readonly symbol: JavaScriptSymbol;
+  /** 目前掃描（引用所在）的檔案 */
+  readonly consumerFilePath: string;
+  readonly moduleResolver?: ModuleSpecifierResolver;
+  readonly classFamilyResolver?: ClassFamilyResolver;
+}
+
+/** superclass 鏈解析上限（防環） */
+const MAX_CLASS_RESOLUTION_DEPTH = 8;
 
 /**
  * 符號引用解析器類別
@@ -36,7 +59,7 @@ export class ReferenceResolver {
   /**
    * 查找符號引用
    */
-  async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
+  async findReferences(ast: AST, symbol: Symbol, options?: FindReferencesOptions): Promise<Reference[]> {
     const typedAst = ast as JavaScriptAST;
     const typedSymbol = symbol as JavaScriptSymbol;
 
@@ -50,49 +73,33 @@ export class ReferenceResolver {
       return this.findPrivateFieldReferences(typedAst, typedSymbol);
     }
 
+    const ctx: ResolutionContext = {
+      symbol: typedSymbol,
+      consumerFilePath: typedAst.sourceFile,
+      moduleResolver: options?.moduleResolver,
+      classFamilyResolver: options?.classFamilyResolver
+    };
+    const locationOf = (node: babel.Node) => ({ filePath: typedAst.sourceFile, range: getNodeRange(node) });
     const references: Reference[] = [];
 
-    // 使用 Babel traverse 查找引用
     traverse(typedAst.babelAST, {
       Identifier: (path: NodePath<babel.Identifier>) => {
-        if (path.node.name === typedSymbol.name) {
-          // 檢查是否為真正的引用（帶目前檔案路徑，供 CJS require 來源比對）
-          if (this.isReferenceToSymbol(path, typedSymbol, typedAst.sourceFile)) {
-            const location = {
-              filePath: typedAst.sourceFile,
-              range: getNodeRange(path.node)
-            };
-
-            const referenceType = this.getReferenceType(path, typedSymbol);
-
-            // object literal shorthand（`{ foo }`）與 destructuring shorthand
-            // （`const { foo } = opts`）：此 token 同時是 key 與 value/binding，
-            // 天真替換成 newName 會把 key 一併改掉（缺陷：見
-            // tests/e2e/commands/javascript/cli-rename-shorthand-bugs.e2e.test.ts）。
-            // 標記後由 rename edit 產生端展開為 `key: newName`。
-            const shorthandKeyText = getShorthandKeyText(path);
-
-            references.push(createReference(symbol, location, referenceType, shorthandKeyText));
-          }
+        if (path.node.name !== typedSymbol.name || !this.isReferenceToSymbol(path, ctx)) {
+          return;
         }
+        const shorthand = this.getShorthandEdit(path, ctx);
+        references.push(createReference(
+          symbol,
+          locationOf(path.node),
+          this.getReferenceType(path, ctx),
+          shorthand.keyText,
+          shorthand.targetIsKey
+        ));
       },
 
       JSXIdentifier: (path: NodePath<babel.JSXIdentifier>) => {
-        // 處理 JSX 中的識別符
-        if (path.node.name === typedSymbol.name) {
-          // 🚨 過濾：跳過 JSX 屬性 key（例如 <div id="x" /> 的 `id`）。
-          // JSXAttribute.name 只是屬性名稱字面文字，並非對應同名變數/符號的
-          // 綁定使用，不應被當成引用（否則重命名變數會誤改到無關的 JSX 屬性）。
-          if (babel.isJSXAttribute(path.parent) && path.parent.name === path.node) {
-            return;
-          }
-
-          const location = {
-            filePath: typedAst.sourceFile,
-            range: getNodeRange(path.node)
-          };
-
-          references.push(createReference(symbol, location, ReferenceType.Usage));
+        if (path.node.name === typedSymbol.name && this.isJsxReferenceToSymbol(path, ctx)) {
+          references.push(createReference(symbol, locationOf(path.node), ReferenceType.Usage));
         }
       }
     });
@@ -132,242 +139,536 @@ export class ReferenceResolver {
     ));
   }
 
-  private isReferenceToSymbol(
-    path: NodePath<babel.Identifier>,
-    symbol: JavaScriptSymbol,
-    consumerFilePath?: string
-  ): boolean {
-    // 檢查名稱是否相同且在合理的作用域內，過濾字串和屬性名
-    const node = path.node;
-
-    if (!babel.isIdentifier(node)) {
-      return false;
+  /**
+   * Allowlist 判定：同名識別符只有在正向解析到目標符號宣告時才算引用，其餘一律不算
+   * （rename 的誤判＝靜默改壞無關程式碼）。
+   */
+  private isReferenceToSymbol(path: NodePath<babel.Identifier>, ctx: ResolutionContext): boolean {
+    if (!ctx.symbol.babelNode) {
+      return this.isLooseNameReference(path, ctx.symbol);
+    }
+    if (this.isDeclarationSite(path, ctx)) {
+      return true;
     }
 
-    if (node.name !== symbol.name) {
-      return false;
-    }
-
-    // 🚨 過濾：跳過物件「字面量」屬性名（key 位置）
-    // 例如：{ oldName: value } 中的 oldName 不應被重命名
-    // 例外：解構 pattern（ObjectPattern）內的 key 是 binding／被匯入名，
-    // 例如 `const { foo } = require('./mod')` 的 foo 必須可被跨檔 rename（F4）
     const parent = path.parent;
-    if (
-      babel.isObjectProperty(parent)
-      && parent.key === node
-      && !parent.computed
-      && !babel.isObjectPattern(path.parentPath?.parent)
-    ) {
-      return false; // 非計算屬性的 key 不是引用
+    if (babel.isImportSpecifier(parent) || babel.isImportDefaultSpecifier(parent) || babel.isImportNamespaceSpecifier(parent)) {
+      return this.isImportSpecifierReference(path, parent, ctx);
     }
+    if (babel.isExportSpecifier(parent)) {
+      return this.isExportSpecifierReference(path, ctx);
+    }
+    if ((babel.isMemberExpression(parent) || babel.isOptionalMemberExpression(parent))
+      && parent.property === path.node && !parent.computed) {
+      return this.isMemberAccessOf(parent.object, path, ctx);
+    }
+    if (babel.isObjectProperty(parent) && path.parentKey === 'key' && !parent.computed) {
+      // shorthand 的 key 與 value 同位，交由 value 判定
+      return !parent.shorthand
+        && babel.isObjectPattern(path.parentPath?.parent)
+        && this.isRequirePatternKeyOf(path, ctx);
+    }
+    const anyPath = path as NodePath<babel.Node>;
+    if (anyPath.isReferencedIdentifier() || anyPath.isBindingIdentifier()) {
+      return this.bindingResolvesToSymbol(path, ctx);
+    }
+    return false;
+  }
 
-    // 🚨 過濾：跳過物件方法名
-    if (babel.isObjectMethod(parent) && parent.key === node && !parent.computed) {
+  private isJsxReferenceToSymbol(path: NodePath<babel.JSXIdentifier>, ctx: ResolutionContext): boolean {
+    const parent = path.parent;
+    // JSX 屬性名只是屬性文字，非綁定使用
+    if (babel.isJSXAttribute(parent) && parent.name === path.node) {
       return false;
     }
-
-    // 類別方法定義名（ClassMethod key）：僅當此節點就是目標符號自身定義時才算引用
-    // （rename/find-ref 必須包含定義位置）。其他 class 的同名方法定義一律排除。
-    if (babel.isClassMethod(parent) && parent.key === node && !parent.computed) {
-      return symbol.babelNode === parent;
+    if (!ctx.symbol.babelNode) {
+      return true;
     }
+    if (babel.isJSXMemberExpression(parent) && parent.property === path.node) {
+      return this.isMemberAccessOf(parent.object, path, ctx);
+    }
+    return path.isReferencedIdentifier() && this.bindingResolvesToSymbol(path, ctx);
+  }
 
-    // 🚨 過濾：跳過類別屬性名
-    if (babel.isClassProperty(parent) && parent.key === node && !parent.computed) {
+  /**
+   * 無 babelNode 的虛擬符號（以名稱查找，如 deadcode import-cleaner、import binding 補抓）
+   * 沒有宣告可解析，沿用名稱比對：只排除物件/class 成員 key 與非別名 import 的外部名。
+   */
+  private isLooseNameReference(path: NodePath<babel.Identifier>, symbol: JavaScriptSymbol): boolean {
+    const node = path.node;
+    const parent = path.parent;
+    if (babel.isObjectProperty(parent) && parent.key === node && !parent.computed
+      && !babel.isObjectPattern(path.parentPath?.parent)) {
       return false;
     }
-
-    // import specifier 的 imported（外部/被匯出名稱）節點
-    // 例如 `import { greet2 as g }` 中的 greet2
+    if ((babel.isObjectMethod(parent) || babel.isClassMethod(parent) || babel.isClassProperty(parent))
+      && parent.key === node && !parent.computed) {
+      return false;
+    }
     if (babel.isImportSpecifier(parent) && parent.imported === node) {
-      // 別名 import（`import { x as y }`）：本地別名 y 及其呼叫沿用別名、不動，
-      //   唯有外部（被匯出）名稱 x 需要跟著 export 一起改名 → 視此節點為引用。
-      // 非別名 import（`import { x }`）：imported 與 local 為兩個範圍相同的節點，
-      //   交由 local 節點的 visit 處理改名，此處略過以免對同一段文字重複編輯。
-      // 函式區域符號不可能被 import 的外部名稱引用。
-      const local = parent.local;
-      return !isFunctionLocalSymbol(symbol)
-        && babel.isIdentifier(local)
-        && local.name !== node.name;
+      return !isFunctionLocalSymbol(symbol) && parent.local.name !== node.name;
     }
+    return !isFunctionLocalSymbol(symbol);
+  }
 
-    if (isFunctionLocalSymbol(symbol)) {
-      if (babel.isMemberExpression(parent) && parent.property === node && !parent.computed) {
-        return false;
-      }
-
-      return this.isSameBabelBinding(path, symbol);
+  /** 宣告點本身（含同 class getter/setter 配對的另一邊定義） */
+  private isDeclarationSite(path: NodePath<babel.Identifier>, ctx: ResolutionContext): boolean {
+    const declaration = ctx.symbol.babelNode;
+    const parent = path.parent;
+    if (babel.isIdentifier(declaration)) {
+      const isShorthandKeyClone = babel.isObjectProperty(parent) && parent.shorthand && path.parentKey === 'key';
+      return !isShorthandKeyClone && this.isSameNode(path.node, declaration, ctx);
     }
-
-    // 頂層（模組層）符號：做 module binding 驗證，避免誤改「其他檔案自己的
-    // 同名頂層定義」（例如另一檔各自宣告的 `function greet`）。跨檔引用只有透過
-    // import 綁定（Babel binding.kind === 'module'）建立關聯、或就在定義檔本身
-    // （binding 即符號自身宣告節點）才算目標引用。
-    //
-    // 僅在具備完整符號（帶 babelNode，如 rename/scoped find-references）時收斂；
-    // 無 babelNode 的虛擬符號（findReferencesInFile 以名稱查找，如 deadcode
-    // import-cleaner）沿用寬鬆比對。
-    if (symbol.babelNode) {
-      const binding = path.scope.getBinding(node.name);
-      // 綁定到本檔的區域宣告（function/const/let/var/class/param，kind 非 'module'）時，
-      // 僅當它就是本符號的定義節點才算引用；否則是另一個同名的獨立符號 → 排除。
-      // 例外：`const { foo } = require('./mod')` 在 Babel 是 const binding，但語意等同
-      // named import；require 來源指向定義檔時，解構綁定與使用點都是對 export 的引用（F4）。
-      if (binding && binding.kind !== 'module') {
-        if (this.isRequireDestructuringBindingOf(binding, symbol, consumerFilePath)) {
-          return true;
-        }
-        return this.isSameBabelBinding(path, symbol);
-      }
+    const slot = getDeclarationNameSlot(declaration);
+    if (slot !== undefined && path.parentKey === slot && this.isSameNode(parent, declaration, ctx)) {
+      return true;
     }
-
-    // Class method 的成員存取（`this.method()` / `obj.method()`）：Babel 不會為
-    // method 名稱建立變數 binding，上面的 binding 查詢一律拿到 undefined，
-    // 若不特別處理就會落入下方寬鬆候選集、讓不同 class 裡的同名方法互相誤判為
-    // 同一符號的引用。
-    //
-    // 判定順序：
-    // 1. 存取發生在同一個 enclosingClassNode 內（this.method / 同類內呼叫）→ 引用
-    // 2. 類別外 instance.method：以 receiver 型別（new ClassName / 變數綁定推斷）
-    //    比對 class 名稱；型別相符才算引用，避免混入其他 class 的同名方法
-    if (
-      symbol.enclosingClassNode
-      && babel.isMemberExpression(parent)
-      && parent.property === node
-      && !parent.computed
-    ) {
-      const enclosingClass = path.findParent(
-        p => p.isClassDeclaration() || p.isClassExpression()
-      );
-      if (enclosingClass?.node === symbol.enclosingClassNode) {
-        return true;
-      }
-
-      const className = symbol.enclosingClassNode.id?.name;
-      if (!className) {
-        return false;
-      }
-      return this.inferMemberReceiverType(parent.object, path) === className;
-    }
-
-    // 無 binding（如 namespace 成員存取，交由上層查詢過濾）或為 import/module
-    // binding：維持寬鬆候選集，符合 find-references「先廣收候選、再由 CLI 過濾層
-    // 依模組消歧」的既有設計。
-    return true;
+    return babel.isClassMethod(parent) && path.parentKey === 'key' && !parent.computed
+      && this.isPairedAccessor(parent, path, ctx);
   }
 
   /**
-   * 推斷成員存取 receiver 的類型名稱（供 class method 外部引用判定）。
-   * 支援：`(new Greeter()).m`、`const g = new Greeter(); g.m`
+   * getter/setter 配對：同一 class、同 static、同名、get/set 對向的另一個 accessor。
+   * rename 任一邊時兩個定義必須同步改名，否則使用點與另一邊定義脫鉤（F4）。
    */
-  private inferMemberReceiverType(
-    object: babel.Expression | babel.Super | babel.V8IntrinsicIdentifier,
-    path: NodePath
-  ): string | undefined {
-    if (babel.isNewExpression(object) && babel.isIdentifier(object.callee)) {
-      return object.callee.name;
-    }
-
-    if (!babel.isIdentifier(object)) {
-      return undefined;
-    }
-
-    const binding = path.scope.getBinding(object.name);
-    if (!binding || !binding.path.isVariableDeclarator()) {
-      return undefined;
-    }
-
-    const init = binding.path.node.init;
-    if (init && babel.isNewExpression(init) && babel.isIdentifier(init.callee)) {
-      return init.callee.name;
-    }
-
-    return undefined;
-  }
-
-  private isSameBabelBinding(path: NodePath<babel.Identifier>, symbol: JavaScriptSymbol): boolean {
-    const targetIdentifier = this.getBindingIdentifier(symbol.babelNode);
-    if (!targetIdentifier) {
+  private isPairedAccessor(candidate: babel.ClassMethod, path: NodePath, ctx: ResolutionContext): boolean {
+    const symbolNode = ctx.symbol.babelNode;
+    if (!babel.isClassMethod(symbolNode) || symbolNode.computed) {
       return false;
     }
-
-    const binding = path.scope.getBinding(symbol.name);
-    return binding?.identifier === targetIdentifier;
+    const kinds = new Set([symbolNode.kind, candidate.kind]);
+    if (!(kinds.has('get') && kinds.has('set')) || symbolNode.static !== candidate.static) {
+      return false;
+    }
+    if (!babel.isIdentifier(symbolNode.key) || !babel.isIdentifier(candidate.key)
+      || symbolNode.key.name !== candidate.key.name) {
+      return false;
+    }
+    const classBody = path.parentPath?.parent;
+    return babel.isClassBody(classBody)
+      && classBody.body.some(member => this.isSameNode(member, symbolNode, ctx));
   }
 
-  /**
-   * 判定 Babel binding 是否為 `const { symbolName } = require(spec)` 解構匯入，
-   * 且 spec 解析後指向 symbol 的定義檔（F4：CJS require 跨檔 rename）。
-   *
-   * 有別名時（`const { foo: bar } = require(...)`）：
-   * - 本地 binding 名是 bar，被匯入名是 foo
-   * - 此方法在 binding.identifier 名 === symbol.name 時（無別名）回 true；
-   * - 別名本地名與 export 名不同時，binding 名是 bar，不進此分支（rename export 只動 key 側，
-   *   由 ObjectProperty key 訪點 + 模組來源比對另行處理；F4 主路徑為無別名解構）。
-   */
-  private isRequireDestructuringBindingOf(
-    binding: Binding,
-    symbol: JavaScriptSymbol,
-    consumerFilePath?: string
+  /** `import { x }`／`import { x as y }`／`import x` 的 specifier 名稱位置 */
+  private isImportSpecifierReference(
+    path: NodePath<babel.Identifier>,
+    specifier: babel.ImportSpecifier | babel.ImportDefaultSpecifier | babel.ImportNamespaceSpecifier,
+    ctx: ResolutionContext
   ): boolean {
-    if (!symbol.location?.filePath || binding.identifier.name !== symbol.name) {
+    if (!this.isModuleExportable(ctx.symbol)) {
       return false;
     }
+    if (babel.isImportSpecifier(specifier) && path.parentKey === 'imported') {
+      // 非別名時 imported 與 local 同位，交由 local 判定；別名只改外部名、本地別名不動
+      const importDecl = path.parentPath?.parent;
+      return specifier.local.name !== path.node.name
+        && babel.isImportDeclaration(importDecl)
+        && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+    }
+    return path.parentKey === 'local' && this.bindingResolvesToSymbol(path, ctx);
+  }
 
-    const declaratorPath = binding.path;
-    if (!declaratorPath.isVariableDeclarator()) {
+  /** `export { x }`／`export { x as y }`／`export { x } from '...'` 的 specifier 名稱位置 */
+  private isExportSpecifierReference(path: NodePath<babel.Identifier>, ctx: ResolutionContext): boolean {
+    // exported：非別名時與 local 同位；別名是另一個對外名稱
+    if (path.parentKey !== 'local') {
       return false;
     }
+    const exportDecl = path.parentPath?.parent;
+    if (babel.isExportNamedDeclaration(exportDecl) && exportDecl.source) {
+      return this.isModuleExportable(ctx.symbol)
+        && this.specifierResolvesToDeclaringFile(exportDecl.source.value, ctx);
+    }
+    return this.bindingResolvesToSymbol(path, ctx);
+  }
 
-    const init = declaratorPath.node.init;
-    if (
-      !isRequireCallExpression(init)
-      || init.arguments.length < 1
-      || !babel.isStringLiteral(init.arguments[0])
-    ) {
+  /** `const { x: y } = require('...')` 的被匯入名 key */
+  private isRequirePatternKeyOf(path: NodePath<babel.Identifier>, ctx: ResolutionContext): boolean {
+    const pattern = path.parentPath?.parent;
+    const declarator = path.parentPath?.parentPath?.parent;
+    return this.isModuleExportable(ctx.symbol)
+      && babel.isVariableDeclarator(declarator)
+      && declarator.id === pattern
+      && this.requireSourceResolves(declarator.init, ctx);
+  }
+
+  /**
+   * 值／綁定位置識別符的 scope binding 是否就是目標符號：符號自身的宣告綁定，或
+   * （模組層符號）解析到宣告檔的 import 綁定／CJS require 解構綁定。
+   */
+  private bindingResolvesToSymbol(
+    path: NodePath<babel.Identifier | babel.JSXIdentifier>,
+    ctx: ResolutionContext
+  ): boolean {
+    const binding = path.scope.getBinding(path.node.name);
+    if (!binding) {
       return false;
     }
-
-    const id = declaratorPath.node.id;
-    if (!babel.isObjectPattern(id)) {
+    const target = this.getBindingIdentifier(ctx.symbol.babelNode);
+    if (target && this.isSameNode(binding.identifier, target, ctx)) {
+      return true;
+    }
+    if (!this.isModuleExportable(ctx.symbol)) {
       return false;
     }
+    return binding.kind === 'module'
+      ? this.isImportBindingOf(binding, ctx)
+      : this.isRequireDestructuringBindingOf(binding, ctx);
+  }
 
-    // 確認解構中確有被匯入名（或 shorthand 本地名）等於 symbol.name 的元素
-    let importsSymbol = false;
-    for (const prop of id.properties) {
-      if (!babel.isObjectProperty(prop) || prop.computed) {
-        continue;
-      }
-      if (!babel.isIdentifier(prop.key)) {
-        continue;
-      }
-      // 被匯入名稱 = key；shorthand 時 key 即本地名
-      if (prop.key.name === symbol.name) {
-        importsSymbol = true;
-        break;
-      }
-    }
-    if (!importsSymbol) {
+  /** import 綁定是否匯入目標符號：具名匯入名相同，或 default 匯入且符號即宣告檔 default export */
+  private isImportBindingOf(binding: Binding, ctx: ResolutionContext): boolean {
+    const specifier = binding.path.node;
+    const importDecl = binding.path.parent;
+    if (!babel.isImportDeclaration(importDecl)) {
       return false;
     }
+    const importsSymbol = importsDefault(specifier)
+      ? ctx.symbol.isDefaultExport === true
+      : babel.isImportSpecifier(specifier) && getImportedName(specifier) === ctx.symbol.name;
+    return importsSymbol && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+  }
 
-    const moduleSpecifier = init.arguments[0].value;
-    if (!moduleSpecifier.startsWith('.')) {
+  /**
+   * `const { symbolName } = require(spec)`（含 `{ symbolName = d }`）解構綁定，且 spec 解析到
+   * 符號宣告檔（F4：CJS require 跨檔 rename）。別名解構的本地名不同名，不會進到此判定。
+   */
+  private isRequireDestructuringBindingOf(binding: Binding, ctx: ResolutionContext): boolean {
+    const declarator = binding.path.node;
+    if (!babel.isVariableDeclarator(declarator) || !babel.isObjectPattern(declarator.id)) {
       return false;
     }
-
-    // 無消費端路徑時無法安全驗證 module specifier → 不錨定（避免跨模組同名誤改）
-    if (!consumerFilePath) {
-      return false;
-    }
-
-    return this.requireSpecifierMatchesDefinition(
-      consumerFilePath,
-      moduleSpecifier,
-      symbol.location.filePath
+    const bound = binding.identifier;
+    const property = declarator.id.properties.find(prop =>
+      babel.isObjectProperty(prop)
+      && (prop.value === bound || (babel.isAssignmentPattern(prop.value) && prop.value.left === bound))
     );
+    return babel.isObjectProperty(property)
+      && !property.computed
+      && babel.isIdentifier(property.key, { name: ctx.symbol.name })
+      && this.requireSourceResolves(declarator.init, ctx);
+  }
+
+  /** 非計算成員存取（`x.m`／`x?.m`／`<X.m>`）：receiver 須正向解析到符號的擁有者 */
+  private isMemberAccessOf(receiver: babel.Node, path: NodePath, ctx: ResolutionContext): boolean {
+    if (ctx.symbol.enclosingClassNode) {
+      return this.isClassMemberAccess(receiver, path, ctx);
+    }
+    if (ctx.symbol.enclosingObjectNode) {
+      return this.isObjectMemberAccess(receiver, path, ctx);
+    }
+    return this.isModuleExportable(ctx.symbol) && this.isModuleNamespaceReceiver(receiver, path, ctx);
+  }
+
+  /**
+   * 模組命名空間 receiver（其屬性即宣告檔匯出）：`import * as ns`、`const m = require()`、
+   * `require().x`、宣告檔自身未綁定的 `exports`／`module.exports`。
+   * default import 不是命名空間（`export default {…}` 物件的同名屬性與具名匯出無關）。
+   */
+  private isModuleNamespaceReceiver(receiver: babel.Node, path: NodePath, ctx: ResolutionContext): boolean {
+    if (isRequireCallExpression(receiver)) {
+      return this.requireSourceResolves(receiver, ctx);
+    }
+    if (babel.isMemberExpression(receiver)) {
+      return isModuleExportsTarget(receiver) && !path.scope.getBinding('module') && this.isDeclaringFile(ctx);
+    }
+    const name = getReceiverName(receiver);
+    if (name === undefined) {
+      return false;
+    }
+    const binding = path.scope.getBinding(name);
+    if (!binding) {
+      return name === 'exports' && this.isDeclaringFile(ctx);
+    }
+    const declaration = binding.path.node;
+    if (babel.isImportNamespaceSpecifier(declaration)) {
+      const importDecl = binding.path.parent;
+      return babel.isImportDeclaration(importDecl)
+        && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+    }
+    return babel.isVariableDeclarator(declaration)
+      && babel.isIdentifier(declaration.id)
+      && this.requireSourceResolves(declaration.init, ctx);
+  }
+
+  /**
+   * class 成員存取：`this.m`／`super.m`（owner 或子類內、static 語境一致）、
+   * static 的 `Owner.m`（receiver 解析到 owner class 或其子類）、instance 的
+   * `new Owner().m`／`const o = new Owner(); o.m`。
+   */
+  private isClassMemberAccess(receiver: babel.Node, path: NodePath, ctx: ResolutionContext): boolean {
+    const isStatic = isStaticMemberSymbol(ctx.symbol);
+
+    if (babel.isThisExpression(receiver) || babel.isSuper(receiver)) {
+      const context = getThisClassContext(path);
+      if (!context || context.isStatic !== isStatic) {
+        return false;
+      }
+      return babel.isSuper(receiver)
+        ? this.superClassResolvesToOwner(context.classPath, ctx, 0)
+        : this.isOwnerOrSubclass(context.classPath, ctx, 0);
+    }
+    if (isStatic) {
+      return this.resolvesToOwnerClass(receiver, path, ctx, 0);
+    }
+    if (babel.isNewExpression(receiver)) {
+      return this.resolvesToOwnerClass(receiver.callee, path, ctx, 0);
+    }
+    if (!babel.isIdentifier(receiver)) {
+      return false;
+    }
+    const binding = path.scope.getBinding(receiver.name);
+    if (!binding?.path.isVariableDeclarator()) {
+      return false;
+    }
+    const init = binding.path.node.init;
+    return babel.isNewExpression(init) && this.resolvesToOwnerClass(init.callee, binding.path, ctx, 0);
+  }
+
+  /**
+   * class 是否為 owner，或其子類且 owner 以下（含自身）無類別 override 目標成員
+   * （override 類別及其後代的存取解析到 override，不屬 owner 成員）。
+   */
+  private isOwnerOrSubclass(classPath: NodePath<babel.Class>, ctx: ResolutionContext, depth: number): boolean {
+    if (this.isSameNode(classPath.node, ctx.symbol.enclosingClassNode, ctx)) {
+      return true;
+    }
+    return !declaresSameMember(classPath.node, ctx.symbol)
+      && this.superClassResolvesToOwner(classPath, ctx, depth);
+  }
+
+  private superClassResolvesToOwner(classPath: NodePath<babel.Class>, ctx: ResolutionContext, depth: number): boolean {
+    const superClass = classPath.node.superClass;
+    return !!superClass
+      && depth < MAX_CLASS_RESOLUTION_DEPTH
+      && this.resolvesToOwnerClass(superClass, classPath, ctx, depth + 1);
+  }
+
+  /**
+   * 表達式是否解析到符號所屬 class（或其子類）：同檔 class 宣告／class 表達式綁定、
+   * 具名匯出的 import 綁定／命名空間成員、宣告檔 default export 該 class 時的 default
+   * import，以及 `module.exports = Owner` 時的 require 結果。
+   */
+  private resolvesToOwnerClass(expr: babel.Node, scopePath: NodePath, ctx: ResolutionContext, depth: number): boolean {
+    const { ownerExport } = ctx.symbol;
+    if (isRequireCallExpression(expr)) {
+      return ownerExport === ModuleValueExport.CommonJS && this.requireSourceResolves(expr, ctx);
+    }
+    if (this.isOwnerNamedExportAccess(expr, scopePath, ctx) || this.isImportedClassInFamily(expr, scopePath, ctx)) {
+      return true;
+    }
+    const name = getReceiverName(expr);
+    const binding = name === undefined ? undefined : scopePath.scope.getBinding(name);
+    if (!binding) {
+      return false;
+    }
+    const bindingPath = binding.path;
+    if (bindingPath.isClassDeclaration()) {
+      return this.isOwnerOrSubclass(bindingPath, ctx, depth);
+    }
+    if (bindingPath.isVariableDeclarator()) {
+      const init = bindingPath.get('init');
+      if (init.isClassExpression()) {
+        return this.isOwnerOrSubclass(init, ctx, depth);
+      }
+      return ownerExport === ModuleValueExport.CommonJS && this.requireSourceResolves(init.node, ctx);
+    }
+    const importDecl = bindingPath.parent;
+    return babel.isImportDeclaration(importDecl)
+      && importsDefault(bindingPath.node)
+      && ownerExport === ModuleValueExport.EsmDefault
+      && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+  }
+
+  /**
+   * 自其他檔匯入的 class（`import { Sub }`、`import Sub`、`ns.Sub`）是否為 owner 或其跨檔子類：
+   * 交由 rename 引擎注入的 classFamilyResolver 追 extends 鏈（parser 無法讀其他檔）。
+   */
+  private isImportedClassInFamily(expr: babel.Node, scopePath: NodePath, ctx: ResolutionContext): boolean {
+    const resolver = ctx.classFamilyResolver;
+    const className = ctx.symbol.enclosingClassNode?.id?.name;
+    if (!resolver || className === undefined) {
+      return false;
+    }
+    let bindingName: string | undefined;
+    let memberName: string | undefined;
+    if (babel.isMemberExpression(expr) && !expr.computed && babel.isIdentifier(expr.property)) {
+      bindingName = getReceiverName(expr.object);
+      memberName = expr.property.name;
+    } else {
+      bindingName = getReceiverName(expr);
+    }
+    const binding = bindingName === undefined ? undefined : scopePath.scope.getBinding(bindingName);
+    const importDecl = binding?.path.parent;
+    if (!binding || !babel.isImportDeclaration(importDecl)) {
+      return false;
+    }
+    const specifier = binding.path.node;
+    const importedName = memberName !== undefined
+      ? (babel.isImportNamespaceSpecifier(specifier) ? memberName : undefined)
+      : importsDefault(specifier)
+        ? 'default'
+        : babel.isImportSpecifier(specifier) ? getImportedName(specifier) : undefined;
+    return importedName !== undefined && resolver(
+      ctx.consumerFilePath,
+      importDecl.source.value,
+      importedName,
+      {
+        filePath: ctx.symbol.location.filePath,
+        className,
+        memberName: ctx.symbol.name,
+        isStatic: isStaticMemberSymbol(ctx.symbol)
+      }
+    );
+  }
+
+  /**
+   * 表達式是否取到擁有者（class／物件）在宣告檔的具名匯出：具名／別名 import 綁定
+   * （`import { api as a }`），或模組命名空間成員（`ns.api`、`require('./m').api`）。
+   */
+  private isOwnerNamedExportAccess(expr: babel.Node, scopePath: NodePath, ctx: ResolutionContext): boolean {
+    const exportNames = ctx.symbol.ownerExportNames;
+    if (!exportNames) {
+      return false;
+    }
+    if (babel.isMemberExpression(expr) && !expr.computed && babel.isIdentifier(expr.property)) {
+      return exportNames.includes(expr.property.name) && this.isModuleNamespaceReceiver(expr.object, scopePath, ctx);
+    }
+    const name = getReceiverName(expr);
+    const binding = name === undefined ? undefined : scopePath.scope.getBinding(name);
+    const importDecl = binding?.path.parent;
+    return !!binding
+      && babel.isImportSpecifier(binding.path.node)
+      && exportNames.includes(getImportedName(binding.path.node))
+      && babel.isImportDeclaration(importDecl)
+      && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+  }
+
+  /**
+   * 物件字面量成員存取：同檔以該物件初始化的變數、物件自身方法內的 `this`、
+   * 物件本身是宣告檔匯出值時的 default import／require 結果／自身 `module.exports`，
+   * 以及物件具名匯出的 import 綁定／命名空間成員。
+   */
+  private isObjectMemberAccess(receiver: babel.Node, path: NodePath, ctx: ResolutionContext): boolean {
+    const owner = ctx.symbol.enclosingObjectNode;
+    if (babel.isThisExpression(receiver)) {
+      return this.isSameNode(getThisObjectOwner(path), owner, ctx);
+    }
+    if (this.isModuleValueReceiver(receiver, path, ctx) || this.isOwnerNamedExportAccess(receiver, path, ctx)) {
+      return true;
+    }
+    const name = getReceiverName(receiver);
+    const declaration = name === undefined ? undefined : path.scope.getBinding(name)?.path.node;
+    return babel.isVariableDeclarator(declaration) && this.isSameNode(declaration.init, owner, ctx);
+  }
+
+  /** receiver 是否為宣告檔「整個匯出值」（成員擁有者的 ownerExport 決定可接受的形狀） */
+  private isModuleValueReceiver(receiver: babel.Node, path: NodePath, ctx: ResolutionContext): boolean {
+    const { ownerExport } = ctx.symbol;
+    if (ownerExport === ModuleValueExport.CommonJS) {
+      if (babel.isMemberExpression(receiver)) {
+        return isModuleExportsTarget(receiver) && !path.scope.getBinding('module') && this.isDeclaringFile(ctx);
+      }
+      if (isRequireCallExpression(receiver)) {
+        return this.requireSourceResolves(receiver, ctx);
+      }
+    }
+    const name = getReceiverName(receiver);
+    const binding = name === undefined ? undefined : path.scope.getBinding(name);
+    if (!binding || ownerExport === undefined) {
+      return false;
+    }
+    if (ownerExport === ModuleValueExport.EsmDefault) {
+      const importDecl = binding.path.parent;
+      return importsDefault(binding.path.node)
+        && babel.isImportDeclaration(importDecl)
+        && this.specifierResolvesToDeclaringFile(importDecl.source.value, ctx);
+    }
+    const declaration = binding.path.node;
+    return babel.isVariableDeclarator(declaration)
+      && babel.isIdentifier(declaration.id)
+      && this.requireSourceResolves(declaration.init, ctx);
+  }
+
+  /** 可被其他模組以匯出名存取的模組層符號（非函式區域、非 class／物件成員） */
+  private isModuleExportable(symbol: JavaScriptSymbol): boolean {
+    return !isFunctionLocalSymbol(symbol)
+      && !symbol.enclosingClassNode
+      && !symbol.enclosingObjectNode
+      && !this.isMemberDeclarationNode(symbol.babelNode);
+  }
+
+  /** 以屬性存取（`obj.name`）為正常引用方式的成員宣告節點 */
+  private isMemberDeclarationNode(node: babel.Node): boolean {
+    return babel.isClassProperty(node)
+      || babel.isClassMethod(node)
+      || babel.isClassPrivateProperty(node)
+      || babel.isClassPrivateMethod(node)
+      || babel.isClassAccessorProperty(node)
+      || babel.isObjectProperty(node)
+      || babel.isObjectMethod(node);
+  }
+
+  private isDeclaringFile(ctx: ResolutionContext): boolean {
+    return isSameDeclaringFile(ctx.consumerFilePath, ctx.symbol.location.filePath);
+  }
+
+  private requireSourceResolves(node: babel.Node | null | undefined, ctx: ResolutionContext): boolean {
+    return isRequireCallExpression(node)
+      && babel.isStringLiteral(node.arguments[0])
+      && this.specifierResolvesToDeclaringFile(node.arguments[0].value, ctx);
+  }
+
+  /**
+   * module specifier 是否解析到符號宣告檔：rename 注入的 moduleResolver（tsconfig alias、
+   * barrel re-export 鏈）優先，否則只認相對路徑直接解析（含省略副檔名、目錄 index）。
+   */
+  private specifierResolvesToDeclaringFile(specifier: string, ctx: ResolutionContext): boolean {
+    if (ctx.moduleResolver?.(ctx.consumerFilePath, specifier)) {
+      return true;
+    }
+    return specifier.startsWith('.')
+      && this.requireSpecifierMatchesDefinition(ctx.consumerFilePath, specifier, ctx.symbol.location.filePath);
+  }
+
+  /**
+   * 節點身分比對。符號可能來自另一次 parse 的 AST（如 deadcode 收集符號與 symbol-finder
+   * fallback 各自解析），物件身分不同但指向同一原始碼節點；純 `===` 會讓所有比對失敗、
+   * 回 0 引用而把活碼判 dead（J1）。僅在掃描檔即符號宣告檔時退而以 type+位置比對，
+   * 避免不同檔同位置節點互相誤認。
+   */
+  private isSameNode(
+    a: babel.Node | null | undefined,
+    b: babel.Node | null | undefined,
+    ctx: ResolutionContext
+  ): boolean {
+    if (!a || !b) {
+      return false;
+    }
+    if (a === b) {
+      return true;
+    }
+    return this.isDeclaringFile(ctx)
+      && a.type === b.type
+      && a.start !== null
+      && a.start !== undefined
+      && a.start === b.start
+      && a.end === b.end;
+  }
+
+  /**
+   * shorthand token（`{ foo }`／`const { foo } = opts`）同時是 key 與 value/binding，
+   * 需展開成兩側形式（見 getShorthandKeyText）；目標是物件字面量屬性本身時改的是 key 側。
+   */
+  private getShorthandEdit(
+    path: NodePath<babel.Identifier>,
+    ctx: ResolutionContext
+  ): { keyText?: string; targetIsKey?: boolean } {
+    const parent = path.parent;
+    if (babel.isObjectProperty(ctx.symbol.babelNode) && babel.isObjectProperty(parent) && path.parentKey === 'key') {
+      return parent.shorthand ? { keyText: path.node.name, targetIsKey: true } : {};
+    }
+    return { keyText: getShorthandKeyText(path) };
   }
 
   private requireSpecifierMatchesDefinition(
@@ -416,24 +717,19 @@ export class ReferenceResolver {
     return null;
   }
 
-  private getReferenceType(
-    path: NodePath<babel.Identifier>,
-    symbol: JavaScriptSymbol
-  ): ReferenceType {
+  private getReferenceType(path: NodePath<babel.Identifier>, ctx: ResolutionContext): ReferenceType {
     const node = path.node;
+    const symbol = ctx.symbol;
 
     // 如果是符號的原始定義位置（ClassMethod 的 babelNode 是整段方法，
     // 定義名錨在 key Identifier，需一併辨識）
     if (
-      node === symbol.babelNode
+      this.isSameNode(node, symbol.babelNode, ctx)
       || (babel.isClassMethod(symbol.babelNode)
-        && symbol.babelNode.key === node)
+        && this.isSameNode(symbol.babelNode.key, node, ctx))
     ) {
       return ReferenceType.Definition;
     }
-
-    // 檢查是否為宣告上下文
-    // 使用 Babel 的 path.isReferencedIdentifier 方法
 
     const anyPath = path as NodePath<babel.Node>;
     if (anyPath.isReferencedIdentifier()) {
@@ -446,4 +742,99 @@ export class ReferenceResolver {
 
     return ReferenceType.Usage;
   }
+}
+
+/** 宣告節點上名稱識別符所在的欄位（供辨識宣告點本身） */
+function getDeclarationNameSlot(declaration: babel.Node): 'id' | 'local' | 'key' | undefined {
+  if (babel.isFunctionDeclaration(declaration) || babel.isClassDeclaration(declaration)
+    || babel.isVariableDeclarator(declaration)) {
+    return 'id';
+  }
+  if (babel.isImportSpecifier(declaration) || babel.isImportDefaultSpecifier(declaration)
+    || babel.isImportNamespaceSpecifier(declaration)) {
+    return 'local';
+  }
+  if ((babel.isClassMethod(declaration) || babel.isClassProperty(declaration)
+    || babel.isClassAccessorProperty(declaration) || babel.isObjectProperty(declaration)
+    || babel.isObjectMethod(declaration)) && !declaration.computed) {
+    return 'key';
+  }
+  return undefined;
+}
+
+function getImportedName(specifier: babel.ImportSpecifier): string {
+  return babel.isIdentifier(specifier.imported) ? specifier.imported.name : specifier.imported.value;
+}
+
+function isStaticMemberSymbol(symbol: JavaScriptSymbol): boolean {
+  const member = symbol.babelNode;
+  return (babel.isClassMethod(member) || babel.isClassProperty(member) || babel.isClassAccessorProperty(member))
+    && member.static === true;
+}
+
+/** class 自身是否宣告與目標成員同名同 static 的 method／getter／setter／property（不含 constructor） */
+function declaresSameMember(classNode: babel.Class, symbol: JavaScriptSymbol): boolean {
+  const isStatic = isStaticMemberSymbol(symbol);
+  return classNode.body.body.some(member => {
+    const isMember = (babel.isClassMethod(member) && member.kind !== 'constructor')
+      || babel.isClassProperty(member) || babel.isClassAccessorProperty(member);
+    if (!isMember || member.computed || (member.static === true) !== isStatic) {
+      return false;
+    }
+    const key = member.key;
+    return (babel.isIdentifier(key) && key.name === symbol.name)
+      || (babel.isStringLiteral(key) && key.value === symbol.name);
+  });
+}
+
+/** `import X` 或 `import { default as X }` */
+function importsDefault(node: babel.Node): boolean {
+  return babel.isImportDefaultSpecifier(node)
+    || (babel.isImportSpecifier(node) && getImportedName(node) === 'default');
+}
+
+function getReceiverName(receiver: babel.Node | null | undefined): string | undefined {
+  return babel.isIdentifier(receiver) || babel.isJSXIdentifier(receiver) ? receiver.name : undefined;
+}
+
+/** `this`／`super` 所屬的 class 與 static 語境：跳過箭頭函式，一般 function 另立 this 則無 */
+function getThisClassContext(path: NodePath): { classPath: NodePath<babel.Class>; isStatic: boolean } | undefined {
+  for (let current = path.parentPath; current; current = current.parentPath) {
+    if (current.isArrowFunctionExpression()) {
+      continue;
+    }
+    const node = current.node;
+    const isClassMember = babel.isClassMethod(node) || babel.isClassPrivateMethod(node)
+      || babel.isClassProperty(node) || babel.isClassPrivateProperty(node)
+      || babel.isClassAccessorProperty(node) || babel.isStaticBlock(node);
+    if (isClassMember) {
+      const classPath = current.parentPath?.parentPath;
+      if (!classPath?.isClass()) {
+        return undefined;
+      }
+      return { classPath, isStatic: babel.isStaticBlock(node) || node.static === true };
+    }
+    if (current.isFunction()) {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** 物件字面量方法（`m() {}`／`m: function () {}`）內 `this` 所指的物件 */
+function getThisObjectOwner(path: NodePath): babel.Node | undefined {
+  for (let current = path.parentPath; current; current = current.parentPath) {
+    if (current.isArrowFunctionExpression()) {
+      continue;
+    }
+    if (current.isObjectMethod()) {
+      return current.parent;
+    }
+    if (current.isFunction()) {
+      return current.parentPath?.isObjectProperty() && current.parentKey === 'value'
+        ? current.parentPath.parent
+        : undefined;
+    }
+  }
+  return undefined;
 }

@@ -10,7 +10,8 @@ import type {
 } from '@shared/types/index.js';
 import {
   SymbolType,
-  createScope
+  createScope,
+  DECORATED_ATTRIBUTE
 } from '@shared/types/index.js';
 import {
   TypeScriptAST,
@@ -19,6 +20,7 @@ import {
   SYMBOL_TYPE_MAP,
   getNodeName,
   getNodeModifiers,
+  hasNodeDecorators,
   tsNodeToRange,
   isSymbolDeclaration
 } from './types.js';
@@ -199,6 +201,7 @@ export class TypeScriptSymbolExtractor {
       location,
       scope,
       modifiers,
+      ...(hasNodeDecorators(node) ? { attributes: [DECORATED_ATTRIBUTE] } : {}),
       tsNode: node,
       typeInfo: this.extractTypeInfo(node),
       signature: this.extractSignature(node)

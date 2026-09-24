@@ -203,6 +203,8 @@ export interface OutgoingCallItem {
   column?: number;
   /** 程式碼上下文 */
   context?: string;
+  /** method call 的 receiver（如 `emailRegex.test(email)` 的 `emailRegex`）；free call 無此欄位 */
+  receiver?: string;
 }
 
 /** 函數定義資訊（用於多定義場景） */

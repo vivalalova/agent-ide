@@ -12,7 +12,7 @@ import {
   ScopedReferenceKind,
   type ScopedReference,
   type ScopedFindReferencesOptions
-} from '@infrastructure/parser/index.js';
+} from '@infrastructure/parser/interface.js';
 import { tsNodeToRange, tsPositionToPosition, privateIdentifierBareName } from './types.js';
 import type { Range } from '@shared/types/index.js';
 import { logger } from '@infrastructure/logging/index.js';

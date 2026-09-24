@@ -16,3 +16,16 @@ import * as babel from '@babel/types';
 export function isRequireCallExpression(node: babel.Node | null | undefined): node is babel.CallExpression {
   return !!node && babel.isCallExpression(node) && babel.isIdentifier(node.callee) && node.callee.name === 'require';
 }
+
+/** `module.exports` 或裸 `exports`（CJS 匯出物件本身） */
+export function isModuleExportsTarget(node: babel.Node): boolean {
+  if (
+    babel.isMemberExpression(node)
+    && !node.computed
+    && babel.isIdentifier(node.object, { name: 'module' })
+    && babel.isIdentifier(node.property, { name: 'exports' })
+  ) {
+    return true;
+  }
+  return babel.isIdentifier(node, { name: 'exports' });
+}

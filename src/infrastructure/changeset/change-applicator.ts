@@ -450,8 +450,8 @@ export class ChangeApplicator {
 
     // 讀取源目錄內容
     const entries = await this.fileSystem.readDirectory(source);
-    /** 本層已成功移到 target 的子路徑（sourcePath, targetPath, isDirectory），供失敗時 reverse */
-    const completed: Array<{ sourcePath: string; targetPath: string; isDirectory: boolean }> = [];
+    /** 本層已成功移到 target 的子路徑與種類，供失敗時 reverse */
+    const completed: Array<{ sourcePath: string; targetPath: string; kind: 'directory' | 'file' | 'symlink' }> = [];
 
     try {
       for (const entry of entries) {
@@ -461,12 +461,19 @@ export class ChangeApplicator {
         const relativePath = pathRelative(source, sourcePath);
         const targetPath = pathJoin(target, relativePath);
 
-        if (entry.isDirectory) {
+        // symlink 必須先判斷：搬連結本身、不 follow（指向目錄的連結不得遞迴進去）
+        if (entry.isSymbolicLink) {
+          await this.fileSystem.moveSymlink(sourcePath, targetPath);
+          completed.push({ sourcePath, targetPath, kind: 'symlink' });
+        } else if (entry.isDirectory) {
           await this.moveDirectory(sourcePath, targetPath);
-          completed.push({ sourcePath, targetPath, isDirectory: true });
+          completed.push({ sourcePath, targetPath, kind: 'directory' });
         } else if (entry.isFile) {
           await this.fileSystem.moveFile(sourcePath, targetPath);
-          completed.push({ sourcePath, targetPath, isDirectory: false });
+          completed.push({ sourcePath, targetPath, kind: 'file' });
+        } else {
+          // 其他型別（FIFO、socket 等）無法正確搬移：fast-fail 點名路徑，觸發回滾
+          throw new Error(`無法移動不支援的目錄項型別: ${sourcePath}`);
         }
       }
 
@@ -477,8 +484,10 @@ export class ChangeApplicator {
       for (let i = completed.length - 1; i >= 0; i--) {
         const item = completed[i];
         try {
-          if (item.isDirectory) {
+          if (item.kind === 'directory') {
             await this.moveDirectory(item.targetPath, item.sourcePath);
+          } else if (item.kind === 'symlink') {
+            await this.fileSystem.moveSymlink(item.targetPath, item.sourcePath);
           } else {
             await this.fileSystem.moveFile(item.targetPath, item.sourcePath);
           }

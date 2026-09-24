@@ -23,10 +23,9 @@ import {
   type SymbolIdentity
 } from '@infrastructure/formatters/index.js';
 import {
-  createUnifiedOutputHandler,
-  OutputFormat
+  createUnifiedOutputHandler
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, outputProgress, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { createAndIndexWithCache } from '@interfaces/cli/cached-index-engine.js';
@@ -74,9 +73,7 @@ async function handleFindReferencesCommand(
   if (!formatResult.success) {return;}
   const format = formatResult.format;
 
-  if (format !== OutputFormat.Json) {
-    console.log(`🔍 查找符號引用: ${symbolName}...`);
-  }
+  outputProgress(`🔍 查找符號引用: ${symbolName}...`, format);
 
   // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
   const projectPath = path.resolve(options.path || process.cwd());

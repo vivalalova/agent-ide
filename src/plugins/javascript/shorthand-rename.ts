@@ -10,7 +10,7 @@
 
 import * as babel from '@babel/types';
 import type { NodePath } from '@babel/traverse';
-import { isRequireCallExpression } from './cjs-require-ast.js';
+import { isModuleExportsTarget, isRequireCallExpression } from './cjs-require-ast.js';
 
 /**
  * 判定引用節點是否為 object property shorthand token（`{ foo }`，含
@@ -66,19 +66,4 @@ function isRequireOrModuleExportsShorthand(path: NodePath<babel.Identifier>): bo
   }
 
   return false;
-}
-
-/** 判定表達式是否為 `module.exports` 或裸 `exports` */
-function isModuleExportsTarget(left: babel.Node): boolean {
-  if (
-    babel.isMemberExpression(left)
-    && babel.isIdentifier(left.object)
-    && left.object.name === 'module'
-    && babel.isIdentifier(left.property)
-    && left.property.name === 'exports'
-    && !left.computed
-  ) {
-    return true;
-  }
-  return babel.isIdentifier(left) && left.name === 'exports';
 }

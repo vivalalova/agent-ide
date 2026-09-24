@@ -11,9 +11,9 @@ import {
   ScopedReferenceKind,
   type ScopedFindReferencesOptions,
   type ScopedReference
-} from '@infrastructure/parser/index.js';
+} from '@infrastructure/parser/interface.js';
 import type { Range } from '@shared/types/index.js';
-import { babelLocationToPosition } from './types.js';
+import { babelLocationToPosition, DEFAULT_PARSE_OPTIONS, type JavaScriptParseOptions } from './types.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
 import {
@@ -65,6 +65,12 @@ interface ASTCacheEntry {
  * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class ReferenceFinder {
+  /**
+   * @param parseOptions Babel 解析選項；由 JavaScriptParser 傳入其合併後的選項，
+   *   與主解析同源（SSOT），避免 plugin 清單不同步導致 decorator 等語法解析失敗（J1）
+   */
+  constructor(private readonly parseOptions: JavaScriptParseOptions = DEFAULT_PARSE_OPTIONS) {}
+
   /** AST 快取（程式碼 hash -> 快取項目），LRU 由 MemoryCache 自動處理 */
   private readonly astCache: MemoryCache<string, ASTCacheEntry> = createLRUCache(50);
 
@@ -82,10 +88,7 @@ export class ReferenceFinder {
     }
 
     try {
-      const ast = babelParse(code, {
-        sourceType: 'unambiguous',
-        plugins: ['jsx']
-      });
+      const ast = babelParse(code, this.parseOptions);
 
       // 僅建立空的 variableTypes，在 findScopedReferences 中一併收集
       const variableTypes: VariableTypeMap = new Map();

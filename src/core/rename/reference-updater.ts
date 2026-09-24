@@ -18,9 +18,11 @@ import { createSymbolFinder, SymbolReferenceType, type SymbolFinder, FileUtils, 
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage } from '@shared/errors/index.js';
-import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
+import type { FindReferencesOptions } from '@infrastructure/parser/types.js';
 import { createTargetExposureResolver } from './target-exposure-resolver.js';
-import type { PathAliasInput } from '@shared/path-alias-resolver.js';
+import { createClassFamilyResolver } from './class-family-resolver.js';
+import { isJavaScriptClassMemberSymbol } from '@plugins/javascript/types.js';
+import { withLegacyPathAliasWildcards, type PathAliasInput } from '@shared/path-alias-resolver.js';
 
 /** rename 的 tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
 export interface RenameModuleResolutionConfig {
@@ -118,7 +120,7 @@ export class ReferenceUpdater {
   async findSymbolReferencesWithSymbol(
     filePath: string,
     symbol: Symbol,
-    moduleResolver?: ModuleSpecifierResolver
+    referenceOptions?: FindReferencesOptions
   ): Promise<SymbolReference[]> {
     // 檢查參數有效性
     if (!filePath || typeof filePath !== 'string' || !symbol || !symbol.name) {
@@ -128,7 +130,7 @@ export class ReferenceUpdater {
     // 使用 SymbolFinder 的作用域感知版本查找引用
     if (this.symbolFinder) {
       try {
-        const refs = await this.symbolFinder.findReferencesInFileWithSymbol(filePath, symbol, moduleResolver);
+        const refs = await this.symbolFinder.findReferencesInFileWithSymbol(filePath, symbol, referenceOptions);
 
         return refs.map(ref => ({
           symbolName: symbol.name,
@@ -242,7 +244,9 @@ export class ReferenceUpdater {
   async collectRenameChanges(
     symbol: Symbol,
     newName: string,
-    projectFiles: string[]
+    projectFiles: string[],
+    /** 選用：收集「部分引用可能未更新」的警告（目前檔有專案內 import 無法解析） */
+    warnings?: string[]
   ): Promise<{ filePath: string; changes: TextChange[] }[]> {
     const fileChanges: { filePath: string; changes: TextChange[] }[] = [];
 
@@ -263,17 +267,44 @@ export class ReferenceUpdater {
     // 建立跨檔曝露述詞（一次），供錨定層判定 consumer 的 import/re-export specifier 是否曝露目標符號：
     // 涵蓋 tsconfig path alias（缺陷 C3）與多層 barrel re-export 鏈（缺陷 C4）。函式區域符號無跨檔
     // 引用、免建。無 tsconfig 時 pathAliases 為空，述詞退化為「相對 specifier 直接解析到定義檔或
-    // 經 barrel 轉發回定義檔」，涵蓋既有相對路徑行為。
-    const moduleResolver: ModuleSpecifierResolver | undefined =
-      symbol.location?.filePath && !isFunctionLocalSymbol(symbol)
-        ? await createTargetExposureResolver({
-          fileSystem: this.fileSystem,
-          projectFiles,
-          definitionFilePath: symbol.location.filePath,
-          symbolName: symbol.name,
-          pathAliases: this.pathConfig?.pathAliases,
-          baseUrl: this.pathConfig?.baseUrl
-        })
+    // 經 barrel 轉發回定義檔」，涵蓋既有相對路徑行為。JS class 成員另建跨檔 class 族譜述詞，供
+    // parser 判定 `new Sub().m()` 這類 receiver 是否為成員所屬 class 的（跨檔）子類（TS 不消費）。
+    const isCrossFileSymbol = Boolean(symbol.location?.filePath) && !isFunctionLocalSymbol(symbol);
+    const referenceOptions: FindReferencesOptions | undefined =
+      isCrossFileSymbol
+        ? {
+          // 全專案內容快照（非僅文字候選檔）：型別綁定需完整 import 圖，繼承鏈中間層
+          // （`class Mid extends Base {}`）可能不含符號名，但 `Leaf extends Mid` 的 `this.m()` 須經它解析
+          projectSources: await this.collectProjectSources(projectFiles),
+          pathMappings: this.pathConfig?.pathAliases
+            ? toTsPathMappings(this.pathConfig.pathAliases)
+            : undefined,
+          baseUrl: this.pathConfig?.baseUrl,
+          onUnresolvedImport: warnings
+            ? (filePath: string, moduleSpecifier: string) => {
+              const message = `IncompleteReferences:${filePath} 的 import '${moduleSpecifier}' 無法解析，該檔的 '${symbol.name}' 成員引用可能未更新`;
+              if (!warnings.includes(message)) {
+                warnings.push(message);
+              }
+            }
+            : undefined,
+          moduleResolver: await createTargetExposureResolver({
+            fileSystem: this.fileSystem,
+            projectFiles,
+            definitionFilePath: symbol.location.filePath,
+            symbolName: symbol.name,
+            pathAliases: this.pathConfig?.pathAliases,
+            baseUrl: this.pathConfig?.baseUrl
+          }),
+          classFamilyResolver: isJavaScriptClassMemberSymbol(symbol)
+            ? await createClassFamilyResolver({
+              fileSystem: this.fileSystem,
+              projectFiles,
+              pathAliases: this.pathConfig?.pathAliases,
+              baseUrl: this.pathConfig?.baseUrl
+            })
+            : undefined
+        }
         : undefined;
 
     for (const filePath of filesToProcess) {
@@ -283,7 +314,7 @@ export class ReferenceUpdater {
       }
 
       // 使用作用域感知的方法查找引用
-      const references = await this.findSymbolReferencesWithSymbol(filePath, symbol, moduleResolver);
+      const references = await this.findSymbolReferencesWithSymbol(filePath, symbol, referenceOptions);
 
       // N2-b：別名 import（`import { x as y }`）下，Language Service 的 findReferences 會連同
       // 別名本地綁定（`y`）的引用群組一併回傳，這些引用的實際 token 是別名 `y`、而非目標符號 `x`。
@@ -326,6 +357,21 @@ export class ReferenceUpdater {
     }
 
     return fileChanges;
+  }
+
+  /** 讀取專案檔內容快照（絕對路徑 → 內容），讀不到的檔略過 */
+  private async collectProjectSources(projectFiles: string[]): Promise<ReadonlyMap<string, string>> {
+    const sources = new Map<string, string>();
+    for (const filePath of projectFiles) {
+      if (!filePath || typeof filePath !== 'string') {
+        continue;
+      }
+      const content = await this.getFileContent(filePath);
+      if (content !== null) {
+        sources.set(path.resolve(filePath), content);
+      }
+    }
+    return sources;
   }
 
   /**
@@ -444,4 +490,17 @@ function expandShorthandNewText(ref: SymbolReference, newName: string): string {
   return ref.shorthandTargetIsKey
     ? `${newName}: ${ref.shorthandKeyText}`
     : `${ref.shorthandKeyText}: ${newName}`;
+}
+
+/**
+ * 將已解析的 path alias（候選為絕對路徑）還原為 tsconfig `paths` 形狀，供 TS Language Service 解析
+ * alias import（`@lib/*` → `/abs/src/lib/*`）。
+ */
+function toTsPathMappings(pathAliases: PathAliasInput): Record<string, string[]> {
+  const mappings: Record<string, string[]> = {};
+  for (const entry of withLegacyPathAliasWildcards(pathAliases).entries) {
+    const key = entry.wildcard ? `${entry.alias}/*` : entry.alias;
+    mappings[key] = entry.candidates.map(candidate => entry.wildcard ? `${candidate}/*` : candidate);
+  }
+  return mappings;
 }

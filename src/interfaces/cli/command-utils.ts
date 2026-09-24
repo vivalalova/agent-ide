@@ -133,6 +133,16 @@ export async function ensureDirectoryPath(
   return true;
 }
 
+/**
+ * 輸出非 JSON 模式的進度／狀態訊息（統一走 stderr，與 search 對齊）。
+ * JSON 模式不輸出，結果本體與成功摘要不得走這個 helper（見各命令的 outputMutation/outputQuery）。
+ */
+export function outputProgress(message: string, format: OutputFormat): void {
+  if (format !== OutputFormat.Json) {
+    process.stderr.write(`${message}\n`);
+  }
+}
+
 export function outputErrorWithDetails(
   outputHandler: UnifiedOutputHandler,
   format: OutputFormat,

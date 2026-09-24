@@ -189,6 +189,13 @@ export function positionToTsPosition(
 }
 
 /**
+ * 節點是否帶 decorator（TS 4.8+ decorator 與 modifier 分離，須用 ts.getDecorators）
+ */
+export function hasNodeDecorators(node: ts.Node): boolean {
+  return ts.canHaveDecorators(node) && (ts.getDecorators(node)?.length ?? 0) > 0;
+}
+
+/**
  * 獲取節點的修飾符
  */
 export function getNodeModifiers(node: ts.Node): string[] {

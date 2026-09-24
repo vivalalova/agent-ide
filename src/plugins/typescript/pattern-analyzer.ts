@@ -4,7 +4,7 @@
  */
 
 import * as ts from 'typescript';
-import type { PatternInfo } from '@infrastructure/parser/index.js';
+import type { PatternInfo } from '@infrastructure/parser/interface.js';
 import {
   isFactoryReturnType,
   calculateFactoryConfidence,

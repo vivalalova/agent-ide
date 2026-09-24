@@ -21,7 +21,8 @@ import {
   tryParseOutputFormat,
   executeMutationCommand,
   outputMutationWithLegacyFields,
-  outputErrorWithDetails
+  outputErrorWithDetails,
+  outputProgress
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -161,10 +162,8 @@ async function handleChangeSignatureCommand(
       return;
     }
 
-    if (!isJsonFormat) {
-      console.log(`   修改函式簽名: ${resolvedFunctionName}`);
-      console.log(`   檔案: ${path.relative(process.cwd(), filePath)}`);
-    }
+    outputProgress(`   修改函式簽名: ${resolvedFunctionName}`, format);
+    outputProgress(`   檔案: ${path.relative(process.cwd(), filePath)}`, format);
 
     // 讀取 tsconfig.json 路徑設定（paths + baseUrl），比照 file-move 讓引擎解析任意別名 import
     const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
@@ -229,8 +228,8 @@ async function handleChangeSignatureCommand(
     }
 
     // 執行變更類命令統一流程
-    if (!isJsonFormat && !options.dryRun) {
-      console.log('   執行變更...');
+    if (!options.dryRun) {
+      outputProgress('   執行變更...', format);
     }
 
     await executeMutationCommand(changeset, {

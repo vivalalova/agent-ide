@@ -17,8 +17,8 @@ import {
   isPrivateFieldDeclaration
 } from './types.js';
 import { isSameDeclaringFile } from '@plugins/shared/index.js';
-import { ScopedReferenceKind } from '@infrastructure/parser/index.js';
-import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
+import { ScopedReferenceKind } from '@infrastructure/parser/interface.js';
+import type { FindReferencesOptions } from '@infrastructure/parser/types.js';
 import type { ILanguageServiceManager } from './language-service.js';
 import type { ScopeAnalyzer } from './scope-analyzer.js';
 import type { ReferenceFinder } from './reference-finder.js';
@@ -38,7 +38,8 @@ export class ReferenceResolver {
   /**
    * 查找符號引用
    */
-  async findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]> {
+  async findReferences(ast: AST, symbol: Symbol, options?: FindReferencesOptions): Promise<Reference[]> {
+    const moduleResolver = options?.moduleResolver;
     const typedAst = ast as TypeScriptAST;
     const typedSymbol = symbol as TypeScriptSymbol;
 
@@ -51,6 +52,17 @@ export class ReferenceResolver {
     // PrivateIdentifier 宣告點與 `this.#x` 使用處偵測），避免重造一套 anchor 機制。
     if (isPrivateFieldDeclaration(typedSymbol.tsNode)) {
       return this.findPrivateFieldReferences(typedAst, typedSymbol);
+    }
+
+    // 專案快照須先於初始化／查找設定，Host 才能跨檔解析 import 圖（memfs 亦然）
+    if (options?.projectSources) {
+      this.languageServiceManager.setProjectSources(options.projectSources);
+    }
+    if (options?.pathMappings) {
+      this.languageServiceManager.setPathMappings(options.pathMappings);
+    }
+    if (options?.baseUrl) {
+      this.languageServiceManager.setBaseUrl(options.baseUrl);
     }
 
     // 確保 Language Service 已初始化
@@ -77,9 +89,28 @@ export class ReferenceResolver {
       moduleResolver
     );
 
+    // 目前檔案沒有該符號的 import binding（成員存取 `this.m()`／`sub.m()`／`user.email` 本就不經
+    // import 綁定）：改由定義檔內的定義識別符查找，交給 checker 依型別（含繼承鏈）綁定引用。
+    // 與「把 foreign 節點偏移量套到目前檔」不同：查找發生在定義檔本身，偏移量經內容一致性守衛。
+    // 回傳的跨檔引用由呼叫端（SymbolFinder）切回目前檔案。
+    const anchor = symbolPosition !== undefined
+      ? { fileName, position: symbolPosition }
+      : this.languageServiceManager.getDefinitionAnchor(
+        typedSymbol,
+        (node) => this.scopeAnalyzer.getIdentifierFromSymbolNode(node) ?? undefined
+      );
+
+    // 走定義檔 anchor 時，引用完整性取決於目前檔的 import 圖能否解析：
+    // 有專案內 import 解析不到時不可靜默，回報給呼叫端（rename 轉為 warning）
+    if (symbolPosition === undefined && options?.onUnresolvedImport) {
+      for (const specifier of this.languageServiceManager.getUnresolvedProjectImports(typedAst.tsSourceFile)) {
+        options.onUnresolvedImport(fileName, specifier);
+      }
+    }
+
     // 使用 Language Service 從 anchor 查找引用
-    if (symbolPosition !== undefined) {
-      const referencesResult = this.languageServiceManager.languageService.findReferences(fileName, symbolPosition);
+    if (anchor !== undefined) {
+      const referencesResult = this.languageServiceManager.languageService.findReferences(anchor.fileName, anchor.position);
 
       for (const refSymbol of referencesResult ?? []) {
         for (const ref of refSymbol.references) {

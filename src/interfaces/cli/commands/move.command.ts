@@ -24,6 +24,7 @@ import {
 import {
   ensureDirectoryPath,
   outputErrorWithDetails,
+  outputProgress,
   tryParseOutputFormat,
   executeMutationCommand
 } from '@interfaces/cli/command-utils.js';
@@ -74,8 +75,9 @@ export function setupMoveCommand(program: Command, context: CommandContext): voi
 
       if (!source || !target) {
         const outputHandler = createUnifiedOutputHandler();
-        const format = options.format === 'json' ? OutputFormat.Json : OutputFormat.Summary;
-        outputHandler.outputError('必須指定來源和目標路徑。使用方式: agent-ide move <source> <target> 或 --source <source> --target <target>', format);
+        const formatResult = tryParseOutputFormat(options.format, true, outputHandler);
+        if (!formatResult.success) {return;}
+        outputHandler.outputError('必須指定來源和目標路徑。使用方式: agent-ide move <source> <target> 或 --source <source> --target <target>', formatResult.format);
         process.exitCode = 1;
         return;
       }
@@ -131,9 +133,7 @@ async function handleMoveCommand(
   // Bug 1 修復：解析相對路徑為絕對路徑（相對於 --path）
   const resolvedSource = path.isAbsolute(source) ? source : path.resolve(projectRoot, source);
 
-  if (!isJsonFormat) {
-    console.log(`   ${source}   ${target}`);
-  }
+  outputProgress(`   ${source}   ${target}`, format);
 
   try {
     // Bug 2 修復：處理目標為目錄的情況
@@ -248,15 +248,15 @@ async function handleMoveCommand(
     const pathUpdates = createPathUpdateSummaries(changeset);
     const totalUpdates = changeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
 
-    if (!isJsonFormat) {
-      if (options.dryRun) {
+    if (options.dryRun) {
+      if (!isJsonFormat) {
         printMovePathPreview(pathContext);
         for (const { from, to } of renames) {
           console.log(`Renamed: ${formatRelativePath(projectRoot, from)} → ${formatRelativePath(projectRoot, to)}`);
         }
-      } else {
-        console.log('   執行移動...');
       }
+    } else {
+      outputProgress('   執行移動...', format);
     }
 
     await executeMutationCommand(changeset, {
@@ -442,10 +442,8 @@ async function handleMoveMemberCommand(
       targetKind: options.targetClass ? 'member target class' : 'member target file'
     });
 
-    if (!isJsonFormat) {
-      console.log(`   移動成員: ${path.relative(projectRoot, sourceFilePath)}:${parsedSource.line}`);
-      console.log(`   目標: ${path.relative(projectRoot, targetFilePath)}`);
-    }
+    outputProgress(`   移動成員: ${path.relative(projectRoot, sourceFilePath)}:${parsedSource.line}`, format);
+    outputProgress(`   目標: ${path.relative(projectRoot, targetFilePath)}`, format);
 
     // 取得 ParserRegistry（單例）
     const parserRegistry = ParserRegistry.getInstance();
@@ -510,8 +508,8 @@ async function handleMoveMemberCommand(
     const changeset = await moveMemberEngine.generateChangeset(moveMemberOptions);
 
     // 執行變更類命令統一流程
-    if (!isJsonFormat && !options.dryRun) {
-      console.log('   執行移動...');
+    if (!options.dryRun) {
+      outputProgress('   執行移動...', format);
     }
     if (!isJsonFormat && options.dryRun) {
       printMovePathPreview(pathContext);

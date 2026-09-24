@@ -19,11 +19,9 @@
 import * as path from 'path';
 import type { IFileSystem } from '@infrastructure/storage/index.js';
 import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
-import { ImportResolver } from '@core/move/import-resolver.js';
-import { ALLOWED_EXTENSIONS, PathUtils } from '@core/move/path-utils.js';
+import { createProjectFileLocator } from './project-file-locator.js';
 import { type ReexportForward, parseReexportForwards, forwardReexportsName } from '@core/foundations/index.js';
 import type { PathAliasInput } from '@shared/path-alias-resolver.js';
-import { resolveBarePathAlias } from '@shared/path-alias-resolver.js';
 
 export interface TargetExposureConfig {
   readonly fileSystem: IFileSystem;
@@ -46,14 +44,6 @@ export interface TargetExposureConfig {
 export async function createTargetExposureResolver(
   config: TargetExposureConfig
 ): Promise<ModuleSpecifierResolver> {
-  const pathUtils = new PathUtils(
-    new ImportResolver({
-      pathAliases: config.pathAliases ?? {},
-      baseUrl: config.baseUrl,
-      supportedExtensions: ALLOWED_EXTENSIONS
-    })
-  );
-
   const definitionAbsolute = path.resolve(config.definitionFilePath);
   const projectAbsolute = config.projectFiles.map(file => path.resolve(file));
 
@@ -76,19 +66,7 @@ export async function createTargetExposureResolver(
     }
   }
 
-  /** 將 specifier 從 importingFile 解析後，找出對應的專案檔絕對路徑（含省略副檔名/index 慣例） */
-  const resolveToProjectFile = (importingFile: string, specifier: string): string | null => {
-    const aliasResolved = resolveBarePathAlias(
-      specifier,
-      config.pathAliases ?? {},
-      candidate => projectAbsolute.some(fileAbs => pathUtils.pathsMatch(candidate, fileAbs))
-    );
-    const resolved = aliasResolved ?? pathUtils.resolveImportPath(specifier, importingFile);
-    if (pathUtils.pathsMatch(resolved, definitionAbsolute)) {
-      return definitionAbsolute;
-    }
-    return projectAbsolute.find(fileAbs => pathUtils.pathsMatch(resolved, fileAbs)) ?? null;
-  };
+  const resolveToProjectFile = createProjectFileLocator(config, [definitionAbsolute]);
 
   // 只快取「確定曝露（true）」的結果：true 一旦找到即為定論（存在一條轉發鏈到定義檔）。
   // false 可能是被 visited 環偵測提前截斷的「此路徑不成立」，非全域定論，故不快取以免污染

@@ -7,7 +7,7 @@
  */
 
 import * as ts from 'typescript';
-import type { DefinitionKind } from '@infrastructure/parser/index.js';
+import type { DefinitionKind } from '@infrastructure/parser/types.js';
 import type { Symbol, Reference, Position } from '@shared/types/index.js';
 import { SymbolType } from '@shared/types/index.js';
 import { TypeScriptAST, TypeScriptSymbol, positionToTsPosition } from './types.js';

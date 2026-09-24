@@ -11,6 +11,7 @@ import {
   ensureDirectoryPath,
   executeMutationCommand,
   outputErrorWithDetails,
+  outputProgress,
   tryParseOutputFormat
 } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
@@ -103,10 +104,8 @@ export async function handleGlobMoveCommand(
       return;
     }
 
-    if (!isJsonFormat) {
-      console.log(`   Glob: ${source} (${matchedFiles.length} 個檔案)`);
-      console.log(`   目標: ${target}`);
-    }
+    outputProgress(`   Glob: ${source} (${matchedFiles.length} 個檔案)`, format);
+    outputProgress(`   目標: ${target}`, format);
 
     // 讀取 tsconfig 設定
     const tsconfigPathConfig = await loadTsconfigPathConfigOrWarn(projectRoot, context.fileSystem);
@@ -180,12 +179,12 @@ export async function handleGlobMoveCommand(
     const totalUpdates = mergedChangeset.textChanges.reduce((sum, tc) => sum + tc.edits.length, 0);
     const legacyFields = createGlobMoveLegacyFields(source, target, projectRoot, resolvedTarget, matchedFiles.length, movePlan.movedFiles);
 
-    if (!isJsonFormat) {
-      if (options.dryRun) {
+    if (options.dryRun) {
+      if (!isJsonFormat) {
         printGlobPreview(projectRoot, movePlan.movedFiles);
-      } else {
-        console.log('   執行移動...');
       }
+    } else {
+      outputProgress('   執行移動...', format);
     }
 
     // 轉換為 PreviewInput、preview 失敗把關、dry-run 輸出、實際套用（帶回滾）與結果輸出統一走共用管線

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import * as path from 'path';
 import Tinypool from 'tinypool';
 import type { ParseTask, ParseResult, WorkerPoolOptions } from './types.js';
+import { getErrorMessage } from '@shared/errors/index.js';
 
 /**
  * 計算 worker 檔案路徑
@@ -62,9 +63,25 @@ export class ParserWorkerPool {
       return [];
     }
 
-    // 並行執行所有任務
+    // 並行執行所有任務；worker 級失敗（crash、parser module 載入失敗等）逐檔隔離成該檔 parse error，
+    // 與單執行緒路徑逐檔 try/catch 對稱，不讓單一檔讓整批 reject。
+    // pool 已釋放（dispose/cancel 造成的 reject）則原樣拋出，不得降格成 parse error 寫回索引。
     const results = await Promise.all(
-      tasks.map(task => this.pool.run(this.withParserModules(task)) as Promise<ParseResult>)
+      tasks.map(async (task): Promise<ParseResult> => {
+        try {
+          return await (this.pool.run(this.withParserModules(task)) as Promise<ParseResult>);
+        } catch (error) {
+          if (this.disposed) {
+            throw error;
+          }
+          return {
+            filePath: task.filePath,
+            symbols: [],
+            dependencies: [],
+            errors: [`worker 解析失敗: ${getErrorMessage(error)}`]
+          };
+        }
+      })
     );
 
     return results;

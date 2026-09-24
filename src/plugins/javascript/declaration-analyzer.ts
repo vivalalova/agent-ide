@@ -3,7 +3,7 @@
  * 負責解析宣告範圍、import 宣告、函數簽章和 JSDoc 文件
  */
 
-import { parse as babelParse, type ParserOptions } from '@babel/parser';
+import { parse as babelParse } from '@babel/parser';
 import * as babel from '@babel/types';
 import babelTraverse, { NodePath } from '@babel/traverse';
 
@@ -13,11 +13,12 @@ import type {
   FormattedSignature,
   FormattedParameter,
   Documentation
-} from '@infrastructure/parser/index.js';
+} from '@infrastructure/parser/interface.js';
 import type { Range } from '@shared/types/index.js';
 import { isLineMatch, parseJSDocContent, computeContentHash } from '@plugins/shared/index.js';
 import { createLRUCache, type MemoryCache } from '@infrastructure/cache/index.js';
 import { logger } from '@infrastructure/logging/index.js';
+import { DEFAULT_PARSE_OPTIONS, type JavaScriptParseOptions } from './types.js';
 
 // Handle both ESM and CJS module formats
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
@@ -28,6 +29,9 @@ const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }
  * 注意：LRU 淘汰由 MemoryCache 自動處理
  */
 export class DeclarationAnalyzer {
+  /** @param parseOptions Babel 解析選項，與 JavaScriptParser 主解析同源（SSOT，J1） */
+  constructor(private readonly parseOptions: JavaScriptParseOptions = DEFAULT_PARSE_OPTIONS) {}
+
   /** AST 快取（hash -> AST），LRU 由 MemoryCache 自動處理 */
   private readonly astCache: MemoryCache<string, babel.File> = createLRUCache(10);
 
@@ -35,10 +39,7 @@ export class DeclarationAnalyzer {
    * 解析並快取 AST
    * 注意：LRU 淘汰由 MemoryCache 自動處理
    */
-  private parseWithCache(
-    code: string,
-    options: ParserOptions
-  ): babel.File | null {
+  private parseWithCache(code: string): babel.File | null {
     const hash = computeContentHash(code);
 
     // 檢查快取（MemoryCache.get() 自動更新 lastAccessedAt）
@@ -48,7 +49,7 @@ export class DeclarationAnalyzer {
     }
 
     try {
-      const ast = babelParse(code, options);
+      const ast = babelParse(code, { ...this.parseOptions, attachComment: true });
       this.astCache.set(hash, ast); // MemoryCache 自動處理 LRU 淘汰
       return ast;
     } catch (error) {
@@ -78,11 +79,7 @@ export class DeclarationAnalyzer {
     symbolType: string,
     startLine: number
   ): Range | null {
-    const ast = this.parseWithCache(code, {
-      sourceType: 'unambiguous',
-      plugins: ['jsx'],
-      attachComment: true
-    });
+    const ast = this.parseWithCache(code);
 
     if (!ast) {
       return null;
@@ -217,11 +214,7 @@ export class DeclarationAnalyzer {
     startLine: number,
     deadNames: ReadonlySet<string>
   ): Range[] | null {
-    const ast = this.parseWithCache(code, {
-      sourceType: 'unambiguous',
-      plugins: ['jsx'],
-      attachComment: true
-    });
+    const ast = this.parseWithCache(code);
 
     if (!ast) {
       return null;
@@ -444,10 +437,7 @@ export class DeclarationAnalyzer {
    * @returns import 宣告陣列或 null
    */
   getImportDeclarations(code: string): ImportDeclaration[] | null {
-    const ast = this.parseWithCache(code, {
-      sourceType: 'unambiguous',
-      plugins: ['jsx']
-    });
+    const ast = this.parseWithCache(code);
 
     if (!ast) {
       return null;
@@ -480,10 +470,7 @@ export class DeclarationAnalyzer {
     functionName: string,
     line?: number
   ): FormattedSignature | null {
-    const ast = this.parseWithCache(code, {
-      sourceType: 'unambiguous',
-      plugins: ['jsx']
-    });
+    const ast = this.parseWithCache(code);
 
     if (!ast) {
       return null;
@@ -552,11 +539,7 @@ export class DeclarationAnalyzer {
     symbolType: string,
     line: number
   ): Documentation | null {
-    const ast = this.parseWithCache(code, {
-      sourceType: 'unambiguous',
-      plugins: ['jsx'],
-      attachComment: true
-    });
+    const ast = this.parseWithCache(code);
 
     if (!ast) {
       return null;

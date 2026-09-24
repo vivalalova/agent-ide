@@ -7,6 +7,11 @@ export interface DirectoryEntry {
   path: string;
   isFile: boolean;
   isDirectory: boolean;
+  /**
+   * 目錄項本身是否為符號連結（不 follow；為 true 時 isFile/isDirectory 皆為 false）。
+   * optional：舊有 DirectoryEntry 字面值（如測試替身）未帶此欄位時視為非 symlink。
+   */
+  isSymbolicLink?: boolean;
   size?: number;
   modifiedTime?: Date;
 }

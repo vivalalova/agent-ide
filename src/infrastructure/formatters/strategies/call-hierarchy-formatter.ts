@@ -63,7 +63,7 @@ export class CallHierarchyFormatter extends BaseFormatter<CallHierarchyResult> {
           lines.push(`  ${this.colorize(file, Colors.cyan)}`);
           lines.push(...formatLimitedList({
             items: items as OutgoingCallItem[],
-            formatItem: item => `➡️  ${item.callee} (L${item.line})`,
+            formatItem: item => `➡️  ${item.receiver ? `${item.receiver}.${item.callee}` : item.callee} (L${item.line})`,
             overflowUnit: '被呼叫者'
           }));
         }

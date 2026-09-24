@@ -4,6 +4,7 @@
  */
 
 import * as path from 'path';
+import * as ts from 'typescript';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { ImportDeclaration } from '@infrastructure/parser/interface.js';
@@ -17,6 +18,7 @@ import {
 import { diagnostics } from '@shared/errors/diagnostic-collector.js';
 import { getErrorMessage, isFileNotFoundError } from '@shared/errors/index.js';
 import { stripSourceFileExtension } from '@shared/types/index.js';
+import { getScriptKind } from '@shared/script-kind.js';
 import {
   FileUtils,
   findMatchingBodyBraceEnd,
@@ -214,6 +216,9 @@ export class FileChangePreparer {
     // 替換成「該行已拆行」版本，讓下游以行為單位的插入邏輯仍能正確運作
     let classInsertContent = content;
     let insertLine = target.insertPosition ?? -1;
+    // 同檔移動時 insertLine 會被 remap 成 post-removal 座標（見下方），供錯誤
+    // 訊息把行號換算回使用者輸入座標用（見 assertInsertLineOnTopLevelBoundary）
+    let sameFileRemoval: { start: number; end: number } | undefined;
 
     if (target.type === MoveTargetType.ExistingClass && target.className) {
       // 插入到類別內（位置已在 content 座標系上計算；找不到類別時 throw，
@@ -225,8 +230,20 @@ export class FileChangePreparer {
       // 同檔：CLI/呼叫端的 insertPosition 是磁碟原文座標（1-based 行號；
       // 0 = 檔案開頭），但 content 已是 post-removal。必須 remap 到
       // post-removal 的 0-based slice 索引，否則會插到錯位（M1）。
-      const removal = this.getMemberRemovalLineRange(member);
-      insertLine = this.remapSameFileInsertLine(insertLine, removal.start, removal.end);
+      sameFileRemoval = this.getMemberRemovalLineRange(member);
+      insertLine = this.remapSameFileInsertLine(insertLine, sameFileRemoval.start, sameFileRemoval.end);
+    }
+
+    // 明確指定的插入位置必須落在目標檔頂層語句邊界（插在某宣告之前或之後），
+    // 不得落在宣告內部——否則會把成員硬插進另一宣告的簽名與本體之間，寫出
+    // 語法壞掉的檔案（R3：groupBy 插進 capitalize 簽名與函式體中間，exit 0
+    // 無警告）。ExistingClass 分支的 insertLine 由 findClassInsertPosition
+    // 依大括號配對算出，恆落在類別收尾 `}` 前（成員邊界），不受此檢查管轄，
+    // 也不該管——此處僅認頂層宣告，類別本身整段都會被列為一個頂層宣告，
+    // 套用會誤判類別內部的合法插入點。insertLine < 0（未指定，預設插檔尾）
+    // 同樣不受管，檔尾必為頂層邊界。
+    if (target.type !== MoveTargetType.ExistingClass && insertLine >= 0) {
+      this.assertInsertLineOnTopLevelBoundary(content, target.filePath, insertLine, sameFileRemoval);
     }
 
     // classInsertContent 只在 ExistingClass 分支可能被替換成「已拆行」版本，
@@ -277,6 +294,112 @@ export class FileChangePreparer {
       newCode: finalCode,
       isNewFile: false
     };
+  }
+
+  /**
+   * 驗證明確指定的插入位置落在目標檔頂層語句邊界，不得落在某頂層語句內部（R3）。
+   *
+   * insertLine：0-based slice 索引＝插入點之前保留的 1-based 行數（插入點落在
+   * 1-based 行 `insertLine` 與 `insertLine + 1` 之間；0 為檔案開頭）。頂層語句
+   * 佔用 1-based 行區間 `[startLine, endLine]`（含頭尾、含其前導 JSDoc／註解）。
+   * 非法若且唯若 `startLine <= insertLine < endLine`；`insertLine === startLine - 1`
+   * （插在語句之前）與 `insertLine === endLine`（插在語句之後）皆為合法邊界。
+   *
+   * 用 TS compiler API 取 `sourceFile.statements` 作為頂層單元（含多行 import/
+   * export，範圍天生正確），而非行級 regex——避免遺漏 import 語句、且
+   * `ts.getLeadingCommentRanges` 能把 JSDoc／註解併入語句範圍，插入點落在
+   * JSDoc 中間時同樣視為「語句內部」。class 等巢狀成員的行區間已完全包含在
+   * 其頂層宣告範圍內，故只需檢查頂層語句即涵蓋類別內部落點。
+   *
+   * @param sameFileRemoval 同檔移動時傳入：content 是「成員已從舊位置移除後」的
+   *   座標系，與使用者 `--at file:line` 打的磁碟原文行號不同軸，訊息中所有行號
+   *   都須換算回使用者輸入座標（`toGap`／`toContentLine`），否則使用者照抄建議行
+   *   會再被 remap 一次、插到錯誤位置。跨檔移動時 content 本身即磁碟原文，
+   *   不傳此參數即維持原樣輸出。
+   */
+  private assertInsertLineOnTopLevelBoundary(
+    content: string,
+    filePath: string,
+    insertLine: number,
+    sameFileRemoval?: { start: number; end: number }
+  ): void {
+    const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, false, getScriptKind(filePath));
+    // 建議插入邊界是「插入點」座標（與 insertLine 同一 gap 軸），換算用
+    // toUserFacingInsertPosition（remapSameFileInsertLine 反函式）；語句本身
+    // 佔用的內容行號（display）換算用 toDiskContentLine——兩者座標軸相同但
+    // 換算公式不同（見各自註解），不可混用，否則同檔訊息行號會錯位（見本函式
+    // 上一輪修復遺留的 P2：display 誤用 gap 公式，跨檔又誤加 -1 位移）
+    const toGap = (postLine: number): number =>
+      sameFileRemoval ? this.toUserFacingInsertPosition(postLine, sameFileRemoval.start, sameFileRemoval.end) : postLine;
+    const toContentLine = (postLine: number): number =>
+      sameFileRemoval ? this.toDiskContentLine(postLine, sameFileRemoval.start, sameFileRemoval.end) : postLine;
+
+    for (const statement of sourceFile.statements) {
+      const leadingComments = ts.getLeadingCommentRanges(content, statement.pos) ?? [];
+      const rangeStartPos = leadingComments.length > 0 ? leadingComments[0].pos : statement.getStart(sourceFile);
+      const startLine = sourceFile.getLineAndCharacterOfPosition(rangeStartPos).line + 1;
+      const endLine = sourceFile.getLineAndCharacterOfPosition(statement.getEnd()).line + 1;
+
+      if (insertLine >= startLine && insertLine < endLine) {
+        const description = this.describeTopLevelStatement(statement, sourceFile);
+        const displayStartLine = toContentLine(startLine);
+        const displayEndLine = toContentLine(endLine);
+        const suggestAfterLine = toGap(endLine);
+        const suggestBeforeLine = toGap(Math.max(startLine - 1, 0));
+        throw new Error(
+          `插入位置落在既有頂層語句 '${description}'（第 ${displayStartLine}-${displayEndLine} 行）內部，` +
+          `無法插入：會寫出語法錯誤的檔案。請改用邊界行，例如第 ${suggestAfterLine} 行` +
+          `（插在該語句結束行之後）或第 ${suggestBeforeLine} 行（插在該語句之前）。`
+        );
+      }
+    }
+  }
+
+  /**
+   * 把插入 gap 座標（與 insertLine 同軸：N 代表插在磁碟原文第 N 行之前，
+   * `remapSameFileInsertLine` 的 CLI 輸入格式）換算回使用者應輸入的磁碟原文行號
+   * ——`remapSameFileInsertLine` 的反函式，用於建議可用的插入邊界。
+   */
+  private toUserFacingInsertPosition(postLine: number, removeStart0: number, removeEnd0: number): number {
+    const removedCount = removeEnd0 - removeStart0 + 1;
+    const diskIndex0 = postLine <= removeStart0 ? postLine : postLine + removedCount;
+    return diskIndex0 === 0 ? 0 : diskIndex0 + 1;
+  }
+
+  /**
+   * 把 post-removal content 中「實際內容行」的 1-based 行號換算回同一行內容
+   * 在磁碟原文中的 1-based 行號，供訊息點名衝突語句的行範圍用。與
+   * `toUserFacingInsertPosition` 同一平移量（移除區間前不變、之後平移
+   * `removedCount` 行），但作用對象是內容行本身而非插入 gap，故不套用該函式
+   * 內建的 CLI `insertPosition` 的 -1/+1 慣例轉換，分開成獨立函式避免誤用。
+   */
+  private toDiskContentLine(postLine: number, removeStart0: number, removeEnd0: number): number {
+    const removedCount = removeEnd0 - removeStart0 + 1;
+    const postIndex0 = postLine - 1;
+    const diskIndex0 = postIndex0 < removeStart0 ? postIndex0 : postIndex0 + removedCount;
+    return diskIndex0 + 1;
+  }
+
+  /** 供插入邊界錯誤訊息點名衝突語句：優先取具名宣告的名稱，其餘退回語句種類 */
+  private describeTopLevelStatement(statement: ts.Statement, sourceFile: ts.SourceFile): string {
+    if (ts.isImportDeclaration(statement)) {
+      return `import ${statement.moduleSpecifier.getText(sourceFile)}`;
+    }
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
+      return `export ${statement.moduleSpecifier.getText(sourceFile)}`;
+    }
+    if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) ||
+        ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) ||
+        ts.isEnumDeclaration(statement)) && statement.name
+    ) {
+      return statement.name.getText(sourceFile);
+    }
+    if (ts.isVariableStatement(statement)) {
+      const first = statement.declarationList.declarations[0]?.name;
+      if (first && ts.isIdentifier(first)) { return first.getText(sourceFile); }
+    }
+    return ts.SyntaxKind[statement.kind];
   }
 
   /**

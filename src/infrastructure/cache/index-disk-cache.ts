@@ -11,6 +11,7 @@ import { readFile, writeFile, mkdir, rename as fsRename, access, unlink } from '
 import { constants as fsConstants } from 'fs';
 import { createUniqueTempPath, type IFileSystem } from '@infrastructure/storage/index.js';
 import type { IndexEngine } from '@core/foundations/indexing/index-engine.js';
+import type { OversizedFileRecord } from '@core/foundations/indexing/types.js';
 import { CLI_INDEX_DEFAULTS } from '@core/foundations/indexing/types.js';
 import { SOURCE_FILE_EXTENSIONS } from '@shared/types/index.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -157,18 +158,21 @@ export class IndexDiskCache {
    * 讓 save 寫入的 key 永遠對齊 body，禁止 pre-index key 綁 post-index snapshot。
    */
   private deriveCacheKeyFromSnapshot(
-    fileEntries: Map<string, { fileInfo: { filePath: string; lastModified: Date; size: number; checksum: string } }>
+    fileEntries: Map<string, { fileInfo: { filePath: string; lastModified: Date; size: number; checksum: string } }>,
+    oversizedFiles: readonly OversizedFileRecord[]
   ): string | null {
-    if (fileEntries.size === 0) {
+    // 超大檔未進 fileEntries 但 computeCacheKey 會涵蓋，必須一併納入才能對齊同一檔案集合
+    const records = [...[...fileEntries.values()].map(entry => entry.fileInfo), ...oversizedFiles];
+    if (records.length === 0) {
       return null;
     }
 
-    const fileStats = [...fileEntries.values()]
-      .map(entry => ({
-        path: entry.fileInfo.filePath,
-        mtime: entry.fileInfo.lastModified.getTime(),
-        size: entry.fileInfo.size,
-        contentHash: entry.fileInfo.checksum
+    const fileStats = records
+      .map(record => ({
+        path: record.filePath,
+        mtime: record.lastModified.getTime(),
+        size: record.size,
+        contentHash: record.checksum
       }))
       .sort((a, b) => a.path.localeCompare(b.path));
 
@@ -194,11 +198,12 @@ export class IndexDiskCache {
       // 確保目錄存在
       await mkdir(cacheParentDir, { recursive: true });
 
-      const { fileEntries } = engine.snapshot();
-      const partial = this.serializer.serialize(fileEntries);
+      // oversizedFiles 缺欄位（舊形狀的 snapshot 提供者，如測試替身）＝無超大檔
+      const { fileEntries, oversizedFiles = [] } = engine.snapshot();
+      const partial = this.serializer.serialize(fileEntries, oversizedFiles);
 
       // key 必須對齊 snapshot body：由 checksum 導出，拒絕 pre-index key 綁 post-index body
-      const snapshotKey = this.deriveCacheKeyFromSnapshot(fileEntries);
+      const snapshotKey = this.deriveCacheKeyFromSnapshot(fileEntries, oversizedFiles);
       const effectiveKey = snapshotKey ?? cacheKey;
 
       const data: SerializedIndexData = {
@@ -247,7 +252,7 @@ export class IndexDiskCache {
   hydrateEngine(engine: IndexEngine, data: SerializedIndexData): boolean {
     try {
       const fileEntries = this.serializer.deserialize(data);
-      engine.hydrate(fileEntries);
+      engine.hydrate(fileEntries, this.serializer.deserializeOversizedFiles(data));
       return true;
     } catch {
       return false;

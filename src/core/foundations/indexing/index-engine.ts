@@ -18,7 +18,8 @@ import type {
   FileInfo,
   FileIndexEntry,
   SymbolSearchResult,
-  SearchOptions
+  SearchOptions,
+  OversizedFileRecord
 } from './types.js';
 import { shouldIndexFile } from './types.js';
 
@@ -65,6 +66,11 @@ export class IndexEngine {
    * 避免 worker batch 慢結果覆蓋較新的 indexFile 結果。
    */
   private readonly indexGeneration = new Map<string, number>();
+  /**
+   * 超過 maxFileSize 而未進索引的檔案紀錄（key 為 canonical path）。
+   * 供 snapshot/cache key 涵蓋與 IndexDiskCache.computeCacheKey 相同的檔案集合。
+   */
+  private readonly oversizedFiles = new Map<string, OversizedFileRecord>();
 
   constructor(config: IndexConfig, fileSystem: IFileSystem) {
     // 檢查 ParserRegistry 是否已被清理，如果是則重新建立實例
@@ -109,7 +115,13 @@ export class IndexEngine {
         isCurrentGeneration: (filePath: string, generation: number) =>
           this.isCurrentIndexGeneration(filePath, generation),
         runExclusiveWrite: <T>(filePath: string, fn: () => Promise<T>) =>
-          this.runPathWriteExclusive(filePath, fn)
+          this.runPathWriteExclusive(filePath, fn),
+        recordOversizedFile: (record: OversizedFileRecord) => {
+          this.oversizedFiles.set(record.filePath, record);
+        },
+        forgetOversizedFile: (filePath: string) => {
+          this.oversizedFiles.delete(filePath);
+        }
       }
     );
   }
@@ -331,6 +343,13 @@ export class IndexEngine {
       .map(fileInfo => fileInfo.filePath)
       .filter(filePath => !currentFilesSet.has(filePath));
 
+    // 已不存在的超大檔紀錄一併移除
+    for (const oversizedPath of [...this.oversizedFiles.keys()]) {
+      if (!currentFilesSet.has(oversizedPath)) {
+        this.oversizedFiles.delete(oversizedPath);
+      }
+    }
+
     // 批次移除過期檔案（經 path 寫入鎖）
     await Promise.all(staleFiles.map(async stalePath => {
       await this.runPathWriteExclusive(stalePath, async () => {
@@ -402,13 +421,18 @@ export class IndexEngine {
 
       // 檢查檔案大小，超過限制則跳過
       if (stat.size > this.config.maxFileSize) {
-        // 靜默跳過大檔案；若先前已有索引須清除 stale。經寫入鎖 + gen 檢查，
+        // 跳過大檔案（不 parse）；若先前已有索引須清除 stale。經寫入鎖 + gen 檢查，
         // 避免與並行 batch/indexFile 交錯抹掉較新結果。
+        // 仍讀內容算 checksum 記錄：cache key 需涵蓋此檔（見 OversizedFileRecord）
+        const oversizedContent = await this.fileSystem.readFile(filePath, 'utf-8') as string;
+        this.assertNotDisposed();
+        const oversizedRecord = this.batchParser.createOversizedFileRecord(filePath, stat, oversizedContent);
         await this.runPathWriteExclusive(filePath, async () => {
           this.assertNotDisposed();
           if (!this.isCurrentIndexGeneration(filePath, generation)) {
             return;
           }
+          this.oversizedFiles.set(filePath, oversizedRecord);
           if (this.fileIndex.hasFile(filePath)) {
             await this.symbolIndex.removeFileSymbols(filePath);
             await this.fileIndex.removeFile(filePath);
@@ -462,6 +486,7 @@ export class IndexEngine {
           return;
         }
 
+        this.oversizedFiles.delete(filePath);
         await this.fileIndex.addFile(fileInfo);
         await this.symbolIndex.removeFileSymbols(filePath);
         indexWriteStarted = true;
@@ -493,6 +518,9 @@ export class IndexEngine {
       await this.runPathWriteExclusive(filePath, async () => {
         if (this._disposed || !this.isCurrentIndexGeneration(filePath, generation)) {
           return;
+        }
+        if (!indexWriteStarted) {
+          this.oversizedFiles.delete(filePath);
         }
         if (!indexWriteStarted && this.fileIndex.hasFile(filePath)) {
           await this.symbolIndex.removeFileSymbols(filePath);
@@ -533,6 +561,7 @@ export class IndexEngine {
     const filePath = this.resolvePath(filePathInput);
 
     await this.runPathWriteExclusive(filePath, async () => {
+      this.oversizedFiles.delete(filePath);
       await this.symbolIndex.removeFileSymbols(filePath);
       await this.fileIndex.removeFile(filePath);
     });
@@ -648,6 +677,7 @@ export class IndexEngine {
    * 清空所有索引
    */
   async clear(): Promise<void> {
+    this.oversizedFiles.clear();
     await this.fileIndex.clear();
     await this.symbolIndex.clear();
     this._indexed = false;
@@ -710,17 +740,22 @@ export class IndexEngine {
   /**
    * 取得當前 fileIndex 的快照（用於快取儲存）
    */
-  snapshot(): { fileEntries: Map<string, FileIndexEntry> } {
+  snapshot(): { fileEntries: Map<string, FileIndexEntry>; oversizedFiles: OversizedFileRecord[] } {
     // 複製一份，避免外部修改影響內部狀態
     return {
-      fileEntries: new Map(this.fileIndex.getAllEntries())
+      fileEntries: new Map(this.fileIndex.getAllEntries()),
+      oversizedFiles: [...this.oversizedFiles.values()]
     };
   }
 
   /**
    * 從快取資料水合引擎（跳過 indexProject）
    */
-  hydrate(fileEntries: Map<string, FileIndexEntry>): void {
+  hydrate(fileEntries: Map<string, FileIndexEntry>, oversizedFiles: readonly OversizedFileRecord[] = []): void {
+    this.oversizedFiles.clear();
+    for (const record of oversizedFiles) {
+      this.oversizedFiles.set(record.filePath, record);
+    }
     this.fileIndex.hydrateEntries(fileEntries);
     this.symbolIndex.hydrateFromFileEntries(fileEntries);
     this._indexed = true;

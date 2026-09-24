@@ -10,9 +10,137 @@ import babelTraverse, { NodePath } from '@babel/traverse';
 const traverse = (babelTraverse as unknown as { default?: typeof babelTraverse }).default || babelTraverse;
 
 import type { AST, Symbol, Scope } from '@shared/types/index.js';
-import { SymbolType, createSymbol, createScope } from '@shared/types/index.js';
-import { JavaScriptAST, JavaScriptSymbol, getNodeRange } from './types.js';
-import { isRequireCallExpression } from './cjs-require-ast.js';
+import { SymbolType, createSymbol, createScope, DECORATED_ATTRIBUTE } from '@shared/types/index.js';
+import { JavaScriptAST, JavaScriptSymbol, ModuleValueExport, getNodeRange } from './types.js';
+import { isModuleExportsTarget, isRequireCallExpression } from './cjs-require-ast.js';
+
+/** 宣告檔中「整個值即模組匯出」的節點 → 匯出方式 */
+type ModuleValueExports = ReadonlyMap<babel.Node, ModuleValueExport>;
+
+/**
+ * 收集頂層 `export default X` 與 `module.exports = X` 的匯出值節點；X 為 Identifier 時
+ * 解析到其宣告（VariableDeclarator 一併登錄其 init，供 class／物件表達式成員查詢）。
+ */
+function collectModuleValueExports(programPath: NodePath<babel.Program>): ModuleValueExports {
+  const targets = new Map<babel.Node, ModuleValueExport>();
+  const add = (valuePath: NodePath, kind: ModuleValueExport): void => {
+    let node: babel.Node = valuePath.node;
+    if (babel.isIdentifier(node)) {
+      const binding = valuePath.scope.getBinding(node.name);
+      if (!binding) {
+        return;
+      }
+      node = binding.path.node;
+      if (babel.isVariableDeclarator(node) && node.init) {
+        targets.set(node.init, kind);
+      }
+    }
+    targets.set(node, kind);
+  };
+  for (const statement of programPath.get('body')) {
+    if (statement.isExportDefaultDeclaration()) {
+      add(statement.get('declaration'), ModuleValueExport.EsmDefault);
+      continue;
+    }
+    if (statement.isExportNamedDeclaration() && !statement.node.source) {
+      // `export { X as default }`
+      for (const specifier of statement.get('specifiers')) {
+        if (specifier.isExportSpecifier() && getExportedName(specifier.node) === 'default') {
+          add(specifier.get('local'), ModuleValueExport.EsmDefault);
+        }
+      }
+      continue;
+    }
+    if (!statement.isExpressionStatement()) {
+      continue;
+    }
+    const expression = statement.get('expression');
+    if (
+      expression.isAssignmentExpression()
+      && babel.isMemberExpression(expression.node.left)
+      && isModuleExportsTarget(expression.node.left)
+      && !statement.scope.getBinding('module')
+    ) {
+      add(expression.get('right'), ModuleValueExport.CommonJS);
+    }
+  }
+  return targets;
+}
+
+function getExportedName(specifier: babel.ExportSpecifier): string {
+  return babel.isIdentifier(specifier.exported) ? specifier.exported.name : specifier.exported.value;
+}
+
+/** 宣告檔中以具名匯出對外的值節點 → 匯出名清單 */
+type ModuleNamedExports = ReadonlyMap<babel.Node, readonly string[]>;
+
+/**
+ * 收集頂層具名匯出（`export const x = …`、`export class X`、`export { x as y }`）的值節點；
+ * VariableDeclarator 一併登錄其 init，供 class／物件表達式成員查詢。
+ */
+function collectModuleNamedExports(programPath: NodePath<babel.Program>): ModuleNamedExports {
+  const names = new Map<babel.Node, string[]>();
+  const add = (node: babel.Node | null | undefined, name: string): void => {
+    if (!node) {
+      return;
+    }
+    names.set(node, [...(names.get(node) ?? []), name]);
+    if (babel.isVariableDeclarator(node)) {
+      add(node.init, name);
+    }
+  };
+  for (const statement of programPath.get('body')) {
+    if (!statement.isExportNamedDeclaration() || statement.node.source) {
+      continue;
+    }
+    const declaration = statement.node.declaration;
+    if (babel.isVariableDeclaration(declaration)) {
+      for (const declarator of declaration.declarations) {
+        if (babel.isIdentifier(declarator.id)) {
+          add(declarator, declarator.id.name);
+        }
+      }
+    } else if ((babel.isClassDeclaration(declaration) || babel.isFunctionDeclaration(declaration)) && declaration.id) {
+      add(declaration, declaration.id.name);
+    }
+    for (const specifier of statement.get('specifiers')) {
+      const exportedName = specifier.isExportSpecifier() ? getExportedName(specifier.node) : undefined;
+      if (!specifier.isExportSpecifier() || exportedName === undefined || exportedName === 'default') {
+        continue;
+      }
+      const local = specifier.node.local;
+      add(statement.scope.getBinding(local.name)?.path.node, exportedName);
+    }
+  }
+  return names;
+}
+
+/** 宣告檔層級的匯出資訊（供成員擁有者跨檔解析） */
+interface ModuleExportInfo {
+  readonly valueExports: ModuleValueExports;
+  readonly namedExports: ModuleNamedExports;
+}
+
+/** 成員所屬容器（class／物件字面量）若本身是模組匯出值或具名匯出，帶出匯出方式與匯出名 */
+function ownerExportFields(
+  owner: babel.Node | undefined,
+  exportInfo: ModuleExportInfo
+): Pick<JavaScriptSymbol, 'ownerExport' | 'ownerExportNames'> {
+  const ownerExport = owner ? exportInfo.valueExports.get(owner) : undefined;
+  const ownerExportNames = owner ? exportInfo.namedExports.get(owner) : undefined;
+  return {
+    ...(ownerExport ? { ownerExport } : {}),
+    ...(ownerExportNames ? { ownerExportNames } : {})
+  };
+}
+
+/** 宣告本身是否為 `export default` 的匯出值 */
+function defaultExportFields(
+  declaration: babel.Node,
+  exportInfo: ModuleExportInfo
+): Pick<JavaScriptSymbol, 'isDefaultExport'> {
+  return exportInfo.valueExports.get(declaration) === ModuleValueExport.EsmDefault ? { isDefaultExport: true } : {};
+}
 
 /**
  * JavaScript 符號提取器類別
@@ -24,21 +152,31 @@ export class JavaScriptSymbolExtractor {
   async extractSymbols(ast: AST): Promise<Symbol[]> {
     const typedAst = ast as JavaScriptAST;
     const symbols: JavaScriptSymbol[] = [];
+    let exportInfo: ModuleExportInfo = { valueExports: new Map(), namedExports: new Map() };
 
     // 使用 Babel traverse 遍歷 AST
     traverse(typedAst.babelAST, {
+      Program: (path: NodePath<babel.Program>) => {
+        exportInfo = {
+          valueExports: collectModuleValueExports(path),
+          namedExports: collectModuleNamedExports(path)
+        };
+      },
+
       // 處理各種宣告節點
       FunctionDeclaration: (path: NodePath<babel.FunctionDeclaration>) => {
-        this.extractFunctionSymbol(path, symbols, typedAst.sourceFile);
+        this.extractFunctionSymbol(path, symbols, typedAst.sourceFile, exportInfo);
         this.extractParameterSymbols(path.node.params, path.node.id?.name, symbols, typedAst.sourceFile);
       },
 
       ClassDeclaration: (path: NodePath<babel.ClassDeclaration>) => {
-        this.extractClassSymbol(path, symbols, typedAst.sourceFile);
+        this.extractClassSymbol(path, symbols, typedAst.sourceFile, exportInfo);
       },
 
       VariableDeclarator: (path: NodePath<babel.VariableDeclarator>) => {
-        this.extractVariableSymbol(path, symbols, typedAst.sourceFile, this.getNearestFunctionName(path));
+        this.extractVariableSymbol(
+          path, symbols, typedAst.sourceFile, exportInfo, this.getNearestFunctionName(path)
+        );
       },
 
       ImportDefaultSpecifier: (path: NodePath<babel.ImportDefaultSpecifier>) => {
@@ -54,7 +192,7 @@ export class JavaScriptSymbolExtractor {
       },
 
       ClassMethod: (path: NodePath<babel.ClassMethod>) => {
-        this.extractMethodSymbol(path, symbols, typedAst.sourceFile);
+        this.extractMethodSymbol(path, symbols, typedAst.sourceFile, exportInfo);
         this.extractParameterSymbols(
           path.node.params,
           babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
@@ -64,7 +202,7 @@ export class JavaScriptSymbolExtractor {
       },
 
       ClassProperty: (path: NodePath<babel.ClassProperty>) => {
-        this.extractPropertySymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractPropertySymbol(path, symbols, typedAst.sourceFile, exportInfo);
       },
 
       // ES2022 私有欄位/方法（`#secret`）：AST node kind 是 ClassPrivateProperty/
@@ -86,7 +224,7 @@ export class JavaScriptSymbolExtractor {
       },
 
       ObjectMethod: (path: NodePath<babel.ObjectMethod>) => {
-        this.extractObjectMethodSymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractObjectMethodSymbol(path, symbols, typedAst.sourceFile, exportInfo);
         this.extractParameterSymbols(
           path.node.params,
           babel.isIdentifier(path.node.key) ? path.node.key.name : undefined,
@@ -121,7 +259,7 @@ export class JavaScriptSymbolExtractor {
         if (babel.isObjectPattern(path.parent)) {
           return;
         }
-        this.extractObjectPropertySymbol(path.node, symbols, typedAst.sourceFile);
+        this.extractObjectPropertySymbol(path, symbols, typedAst.sourceFile, exportInfo);
       }
     });
 
@@ -131,7 +269,8 @@ export class JavaScriptSymbolExtractor {
   private extractFunctionSymbol(
     path: NodePath<babel.FunctionDeclaration>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
     const node = path.node;
     if (node.id) {
@@ -144,14 +283,15 @@ export class JavaScriptSymbolExtractor {
         undefined,
         node.id
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, ...defaultExportFields(node, exportInfo) });
     }
   }
 
   private extractClassSymbol(
     path: NodePath<babel.ClassDeclaration>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
     const node = path.node;
     if (node.id) {
@@ -164,7 +304,7 @@ export class JavaScriptSymbolExtractor {
         undefined,
         node.id
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, ...defaultExportFields(node, exportInfo) });
     }
   }
 
@@ -172,6 +312,7 @@ export class JavaScriptSymbolExtractor {
     path: NodePath<babel.VariableDeclarator>,
     symbols: JavaScriptSymbol[],
     sourceFile: string,
+    exportInfo: ModuleExportInfo,
     functionScopeName?: string
   ): void {
     const node = path.node;
@@ -193,7 +334,7 @@ export class JavaScriptSymbolExtractor {
         functionScopeName ? createScope('function', functionScopeName) : undefined,
         node.id
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, ...defaultExportFields(node, exportInfo) });
       return;
     }
 
@@ -340,7 +481,8 @@ export class JavaScriptSymbolExtractor {
   private extractMethodSymbol(
     path: NodePath<babel.ClassMethod>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
     const node = path.node;
     if (babel.isIdentifier(node.key)) {
@@ -361,7 +503,11 @@ export class JavaScriptSymbolExtractor {
         classPath ? createScope('class', classPath.node.id?.name) : undefined,
         node.key
       );
-      symbols.push({ ...symbol, enclosingClassNode: classPath?.node });
+      symbols.push({
+        ...symbol,
+        enclosingClassNode: classPath?.node,
+        ...ownerExportFields(classPath?.node, exportInfo)
+      });
     }
   }
 
@@ -421,11 +567,16 @@ export class JavaScriptSymbolExtractor {
   }
 
   private extractPropertySymbol(
-    node: babel.ClassProperty,
+    path: NodePath<babel.ClassProperty>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
+    const node = path.node;
     if (babel.isIdentifier(node.key)) {
+      const classPath = path.findParent(
+        p => p.isClassDeclaration() || p.isClassExpression()
+      ) as NodePath<babel.ClassDeclaration | babel.ClassExpression> | null;
       const symbol = this.createSymbolFromNode(
         node,
         node.key.name,
@@ -435,15 +586,21 @@ export class JavaScriptSymbolExtractor {
         undefined,
         node.key
       );
-      symbols.push(symbol);
+      symbols.push({
+        ...symbol,
+        enclosingClassNode: classPath?.node,
+        ...ownerExportFields(classPath?.node, exportInfo)
+      });
     }
   }
 
   private extractObjectMethodSymbol(
-    node: babel.ObjectMethod,
+    path: NodePath<babel.ObjectMethod>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
+    const node = path.node;
     if (babel.isIdentifier(node.key)) {
       const symbol = this.createSymbolFromNode(
         node,
@@ -454,15 +611,17 @@ export class JavaScriptSymbolExtractor {
         undefined,
         node.key
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, ...this.objectOwnerFields(path, exportInfo) });
     }
   }
 
   private extractObjectPropertySymbol(
-    node: babel.ObjectProperty,
+    path: NodePath<babel.ObjectProperty>,
     symbols: JavaScriptSymbol[],
-    sourceFile: string
+    sourceFile: string,
+    exportInfo: ModuleExportInfo
   ): void {
+    const node = path.node;
     if (babel.isIdentifier(node.key)) {
       const symbol = this.createSymbolFromNode(
         node,
@@ -473,8 +632,19 @@ export class JavaScriptSymbolExtractor {
         undefined,
         node.key
       );
-      symbols.push(symbol);
+      symbols.push({ ...symbol, ...this.objectOwnerFields(path, exportInfo) });
     }
+  }
+
+  private objectOwnerFields(
+    path: NodePath<babel.ObjectProperty | babel.ObjectMethod>,
+    exportInfo: ModuleExportInfo
+  ): Pick<JavaScriptSymbol, 'enclosingObjectNode' | 'ownerExport' | 'ownerExportNames'> {
+    const owner = path.parent;
+    if (!babel.isObjectExpression(owner)) {
+      return {};
+    }
+    return { enclosingObjectNode: owner, ...ownerExportFields(owner, exportInfo) };
   }
 
   private createSymbolFromNode(
@@ -492,7 +662,10 @@ export class JavaScriptSymbolExtractor {
     const range = getNodeRange(identifierNode);
     const location = { filePath: sourceFile, range };
 
-    const baseSymbol = createSymbol(name, type, location, scope, options.modifiers ?? []);
+    // 宣告帶 decorator（Babel `decorators` 屬性）→ 標記 attributes，供 deadcode 保守跳過
+    const decorators = (node as { decorators?: readonly babel.Decorator[] | null }).decorators;
+    const attributes = decorators && decorators.length > 0 ? [DECORATED_ATTRIBUTE] : undefined;
+    const baseSymbol = createSymbol(name, type, location, scope, options.modifiers ?? [], attributes);
 
     return {
       ...baseSymbol,

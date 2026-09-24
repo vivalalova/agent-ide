@@ -86,6 +86,7 @@ export class MemFileSystem implements IFileSystem {
       path: entry.path,
       isFile: entry.isFile,
       isDirectory: entry.isDirectory,
+      isSymbolicLink: entry.isSymlink,
       size: entry.size,
       modifiedTime: entry.modifiedTime,
     }));
@@ -128,6 +129,13 @@ export class MemFileSystem implements IFileSystem {
 
   async moveFile(srcPath: string, destPath: string): Promise<void> {
     await this.vfs.moveFile(srcPath, destPath);
+  }
+
+  /** 移動符號連結本身（不 follow；連結字串原樣保留） */
+  async moveSymlink(srcPath: string, destPath: string): Promise<void> {
+    const linkTarget = await this.vfs.readSymlink(srcPath);
+    await this.vfs.createSymlink(linkTarget, destPath);
+    await this.vfs.deleteFile(srcPath);
   }
 
   async glob(pattern: string, options: GlobOptions = {}): Promise<string[]> {

@@ -25,10 +25,9 @@ import {
   type SymbolIdentity
 } from '@infrastructure/formatters/index.js';
 import {
-  createUnifiedOutputHandler,
-  OutputFormat
+  createUnifiedOutputHandler
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, outputProgress, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import type { Symbol } from '@shared/types/symbol.js';
@@ -98,9 +97,7 @@ async function handleCallHierarchyCommand(
     return;
   }
 
-  if (format !== OutputFormat.Json) {
-    console.log(`📞 分析呼叫層次: ${functionName}...`);
-  }
+  outputProgress(`📞 分析呼叫層次: ${functionName}...`, format);
 
   // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
   const projectPath = path.resolve(options.path || process.cwd());
@@ -302,7 +299,8 @@ async function handleCallHierarchyCommand(
         file: call.location.filePath,
         line: call.location.range.start.line,
         column: call.location.range.start.column,
-        context: call.context
+        context: call.context,
+        receiver: call.receiver
       })))
     );
 
@@ -396,7 +394,7 @@ function dedupeOutgoingCalls(calls: readonly OutgoingCallItem[]): OutgoingCallIt
   const uniqueCalls: OutgoingCallItem[] = [];
 
   for (const call of calls) {
-    const key = `${call.callee}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}`;
+    const key = `${call.callee}:${call.file}:${call.line}:${call.column ?? ''}:${call.context ?? ''}:${call.receiver ?? ''}`;
     if (seen.has(key)) {
       continue;
     }

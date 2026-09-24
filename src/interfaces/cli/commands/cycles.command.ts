@@ -8,8 +8,8 @@ import type { Command } from 'commander';
 import { ImpactAnalyzer } from '@core/impact/index.js';
 import { CycleDetector } from '@core/cycles/index.js';
 import { QueryCommand, type CyclesResult, type CycleInfo } from '@infrastructure/formatters/index.js';
-import { createUnifiedOutputHandler, OutputFormat } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
+import { createUnifiedOutputHandler } from '@interfaces/cli/unified-output-handler.js';
+import { ensureDirectoryPath, outputProgress, tryParseOutputFormat } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { loadTsconfigPathConfigOrWarn } from '@plugins/typescript/tsconfig-loader.js';
 import { getErrorMessage } from '@shared/errors/index.js';
@@ -57,9 +57,7 @@ async function handleCyclesCommand(
     return;
   }
 
-  if (format !== OutputFormat.Json) {
-    console.log('循環依賴分析...');
-  }
+  outputProgress('循環依賴分析...', format);
 
   try {
     // 讀取 tsconfig 路徑設定（paths + baseUrl，會向上查找 tsconfig.json）

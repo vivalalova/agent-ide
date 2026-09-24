@@ -6,24 +6,27 @@
 import { extname } from 'node:path';
 import { parse as babelParse } from '@babel/parser';
 
-import {
+import type {
   ParserPlugin,
-  CodeEdit,
-  Definition,
-  Usage,
-  ValidationResult,
+  ImportDeclaration,
+  FormattedSignature,
+  Documentation,
+  PatternInfo,
+  ScopedFindReferencesOptions,
+  ScopedReference
+} from '@infrastructure/parser/interface.js';
+import {
+  type CodeEdit,
+  type Definition,
+  type Usage,
+  type ValidationResult,
+  type FindReferencesOptions,
   createValidationSuccess,
   createValidationFailure,
   createCodeEdit,
   createDefinition,
-  createUsage,
-  type ImportDeclaration,
-  type FormattedSignature,
-  type Documentation,
-  type PatternInfo,
-  type ScopedFindReferencesOptions,
-  type ScopedReference
-} from '@infrastructure/parser/index.js';
+  createUsage
+} from '@infrastructure/parser/types.js';
 import type {
   AST,
   Symbol,
@@ -115,9 +118,9 @@ export class JavaScriptParser implements ParserPlugin {
       parseOptions?.plugins ?? []
     );
     this.parseOptions = { ...DEFAULT_PARSE_OPTIONS, ...parseOptions, plugins: mergedPlugins };
-    this.patternAnalyzer = new PatternAnalyzer();
-    this.referenceFinder = new ReferenceFinder();
-    this.declarationAnalyzer = new DeclarationAnalyzer();
+    this.patternAnalyzer = new PatternAnalyzer(this.parseOptions);
+    this.referenceFinder = new ReferenceFinder(this.parseOptions);
+    this.declarationAnalyzer = new DeclarationAnalyzer(this.parseOptions);
     this.symbolExtractor = new JavaScriptSymbolExtractor();
     this.dependencyAnalyzer = new JavaScriptDependencyAnalyzer();
     this.referenceResolver = new ReferenceResolver(this.referenceFinder);
@@ -189,8 +192,8 @@ export class JavaScriptParser implements ParserPlugin {
    * 查找符號引用
    * 委託給 ReferenceResolver
    */
-  async findReferences(ast: AST, symbol: Symbol): Promise<Reference[]> {
-    return this.referenceResolver.findReferences(ast, symbol);
+  async findReferences(ast: AST, symbol: Symbol, options?: FindReferencesOptions): Promise<Reference[]> {
+    return this.referenceResolver.findReferences(ast, symbol, options);
   }
 
   /**

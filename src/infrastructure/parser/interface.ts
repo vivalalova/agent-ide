@@ -8,7 +8,7 @@ import type { AST, Symbol, Reference, Dependency, Position, Range } from '@share
 import type {
   CodeEdit,
   Definition,
-  ModuleSpecifierResolver,
+  FindReferencesOptions,
   ParserCapabilities,
   Usage,
   ValidationResult
@@ -91,11 +91,12 @@ export interface ParserPlugin {
    * 查找符號的所有引用
    * @param ast AST 物件
    * @param symbol 目標符號
-   * @param moduleResolver 選用：判定 import/re-export specifier 是否曝露目標符號（跨 path alias 與
-   *   多層 barrel re-export）；由 rename 引擎注入，未提供時錨定層退回相對 specifier 保守比對
+   * @param options 選用：跨檔解析輔助（moduleResolver：specifier 是否曝露目標符號，跨 path alias 與
+   *   多層 barrel re-export；classFamilyResolver：匯入的 class 是否為 owner 或其子類）；由 rename
+   *   引擎注入，未提供時退回單檔保守比對
    * @returns 引用列表
    */
-  findReferences(ast: AST, symbol: Symbol, moduleResolver?: ModuleSpecifierResolver): Promise<Reference[]>;
+  findReferences(ast: AST, symbol: Symbol, options?: FindReferencesOptions): Promise<Reference[]>;
 
   /**
    * 從 AST 中提取所有依賴關係

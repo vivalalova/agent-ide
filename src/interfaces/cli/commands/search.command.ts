@@ -13,10 +13,9 @@ import {
   type SearchMatch
 } from '@infrastructure/formatters/index.js';
 import {
-  createUnifiedOutputHandler,
-  OutputFormat
+  createUnifiedOutputHandler
 } from '@interfaces/cli/unified-output-handler.js';
-import { ensureDirectoryPath, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
+import { ensureDirectoryPath, outputProgress, tryParseOutputFormat, parseStrictInt } from '@interfaces/cli/command-utils.js';
 import type { CommandContext } from '@interfaces/cli/commands/types.js';
 import { getErrorMessage } from '@shared/errors/index.js';
 import { SymbolType } from '@shared/types/index.js';
@@ -64,9 +63,7 @@ async function handleSearchCommand(
   if (!formatResult.success) {return;}
   const format = formatResult.format;
 
-  if (format !== OutputFormat.Json) {
-    process.stderr.write(`🔍 搜尋符號: ${symbolName}...\n`);
-  }
+  outputProgress(`🔍 搜尋符號: ${symbolName}...`, format);
 
   // 驗證 --type 參數
   if (options.type !== undefined && !VALID_SYMBOL_TYPES.has(options.type)) {

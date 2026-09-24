@@ -82,6 +82,11 @@ export interface IFileSystem {
   moveFile(srcPath: string, destPath: string): Promise<void>;
 
   /**
+   * 移動符號連結本身（不 follow；連結字串原樣保留，比照 Unix mv）
+   */
+  moveSymlink(srcPath: string, destPath: string): Promise<void>;
+
+  /**
    * Glob 搜尋檔案
    */
   glob(pattern: string, options?: GlobOptions): Promise<string[]>;

@@ -8,7 +8,7 @@ import { SymbolType, type Symbol } from '@shared/types/symbol.js';
 import type { ParserRegistry } from '@infrastructure/parser/registry.js';
 import type { IFileSystem } from '@infrastructure/storage/file-system.interface.js';
 import type { ScopedFindReferencesOptions, ScopedReference, ParserPlugin } from '@infrastructure/parser/interface.js';
-import type { ModuleSpecifierResolver } from '@infrastructure/parser/types.js';
+import type { FindReferencesOptions } from '@infrastructure/parser/types.js';
 import { ScopedReferenceKind } from '@infrastructure/parser/interface.js';
 
 import {
@@ -274,9 +274,9 @@ export class SymbolFinder {
   async findReferencesInFileWithSymbol(
     filePath: string,
     symbol: Symbol,
-    moduleResolver?: ModuleSpecifierResolver
+    referenceOptions?: FindReferencesOptions
   ): Promise<SymbolReference[]> {
-    return this.findReferencesInFileCore(filePath, symbol, { filtered: true, moduleResolver });
+    return this.findReferencesInFileCore(filePath, symbol, { filtered: true, referenceOptions });
   }
 
   /**
@@ -646,8 +646,8 @@ export class SymbolFinder {
       scopeOptions?: ScopedFindReferencesOptions;
       /** 是否使用 filtered 文字匹配（過濾字串和註解） */
       filtered?: boolean;
-      /** 跨 path alias 與多層 barrel re-export 的 specifier 曝露判定（由 rename 引擎注入） */
-      moduleResolver?: ModuleSpecifierResolver;
+      /** parser.findReferences 的跨檔解析輔助（由 rename 引擎注入） */
+      referenceOptions?: FindReferencesOptions;
     }
   ): Promise<SymbolReference[]> {
     const content = await this.fileUtils.readFile(filePath);
@@ -697,7 +697,7 @@ export class SymbolFinder {
         modifiers: []
       };
 
-      const references = await parser.findReferences(ast, targetSymbol, options?.moduleResolver);
+      const references = await parser.findReferences(ast, targetSymbol, options?.referenceOptions);
 
       // 只保留目前檔案的引用：此方法語意為「查找單一檔案內的引用」，逐檔迭代時各檔獨立
       // 負責自己的引用。Language Service 在模組可解析時可能回傳跨檔引用，若不過濾會被

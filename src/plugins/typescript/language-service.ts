@@ -59,6 +59,33 @@ export interface ILanguageServiceManager extends Disposable {
   getSourceFileFromFileName(fileName: string): ts.SourceFile | undefined;
 
   /**
+   * 設定專案檔內容快照：Host 讀檔／判斷檔案與目錄存在時，於已掛載檔案之後、磁碟之前查詢，
+   * 使 memfs 等非磁碟環境也能跨檔解析 import 圖。
+   */
+  setProjectSources(sources: ReadonlyMap<string, string>): void;
+
+  /** 設定 tsconfig `paths`（絕對路徑候選），供 Program 解析 path alias import */
+  setPathMappings(pathMappings: Readonly<Record<string, readonly string[]>>): void;
+
+  /** 設定 tsconfig `baseUrl`（絕對路徑），供 Program 解析 baseUrl 下的裸 specifier */
+  setBaseUrl(baseUrl: string): void;
+
+  /**
+   * 列出目前檔案中無法解析的專案內 import specifier（相對路徑或符合 path mapping 者；
+   * 外部套件不計）。
+   */
+  getUnresolvedProjectImports(sourceFile: ts.SourceFile): string[];
+
+  /**
+   * 取得定義檔中符號識別符的 Language Service 查找 anchor（定義檔名＋偏移量）。
+   * 定義檔不在 program 內、或其內容與符號 AST 來源不一致時回傳 undefined（禁誤錨）。
+   */
+  getDefinitionAnchor(
+    symbol: TypeScriptSymbol,
+    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
+  ): { fileName: string; position: number } | undefined;
+
+  /**
    * 取得符號在檔案中的位置
    * @param symbol TypeScript 符號
    * @param sourceFile 來源檔案
@@ -114,6 +141,16 @@ export class LanguageServiceManager implements ILanguageServiceManager {
   private _files: Map<string, FileInfo> = new Map();
   /** 此實例是否已建立並計入 activeLanguageServiceCount */
   private _ownsLanguageService = false;
+  /** 專案檔內容快照（見 setProjectSources） */
+  private _projectSources: ReadonlyMap<string, string> | null = null;
+  /** tsconfig paths（見 setPathMappings） */
+  private _pathMappings: Readonly<Record<string, readonly string[]>> | null = null;
+  /** tsconfig baseUrl（見 setBaseUrl） */
+  private _baseUrl: string | null = null;
+  /** 快照內各檔所在的所有祖先目錄（供 host.directoryExists） */
+  private _projectDirectories: Set<string> = new Set();
+  /** 快照檔版本：同路徑內容變更時遞增，避免 DocumentRegistry 沿用舊 SourceFile */
+  private _projectSourceVersions: Map<string, { content: string; version: number }> = new Map();
   private compilerOptions: ts.CompilerOptions;
   /**
    * Language Service 模組解析基準目錄。
@@ -136,6 +173,121 @@ export class LanguageServiceManager implements ILanguageServiceManager {
 
   get files(): ReadonlyMap<string, FileInfo> {
     return this._files;
+  }
+
+  setProjectSources(sources: ReadonlyMap<string, string>): void {
+    if (this._projectSources === sources) {
+      return;
+    }
+    this._projectSources = sources;
+    this._projectDirectories = new Set();
+    for (const [fileName, content] of sources) {
+      const previous = this._projectSourceVersions.get(fileName);
+      if (!previous || previous.content !== content) {
+        this._projectSourceVersions.set(fileName, { content, version: previous ? previous.version + 1 : 0 });
+      }
+      let dir = path.dirname(fileName);
+      while (!this._projectDirectories.has(dir)) {
+        this._projectDirectories.add(dir);
+        const parent = path.dirname(dir);
+        if (parent === dir) { break; }
+        dir = parent;
+      }
+    }
+  }
+
+  setPathMappings(pathMappings: Readonly<Record<string, readonly string[]>>): void {
+    this._pathMappings = pathMappings;
+  }
+
+  setBaseUrl(baseUrl: string): void {
+    this._baseUrl = path.resolve(baseUrl);
+  }
+
+  /** 裸 specifier 在 baseUrl 下是否對應到已知專案檔（node_modules 套件不會命中） */
+  private mapsToProjectFileUnderBaseUrl(specifier: string): boolean {
+    if (!this._baseUrl) {
+      return false;
+    }
+    const base = path.resolve(this._baseUrl, specifier);
+    const stripped = stripSourceFileExtension(base);
+    const prefixes = [stripped + '.', path.join(base, 'index.')];
+    for (const known of [...this._files.keys(), ...(this._projectSources?.keys() ?? [])]) {
+      if (known === base || prefixes.some(prefix => known.startsWith(prefix) && !known.slice(prefix.length).includes('/'))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  getUnresolvedProjectImports(sourceFile: ts.SourceFile): string[] {
+    const host = this._languageServiceHost;
+    if (!host) {
+      return [];
+    }
+    const options = host.getCompilationSettings();
+    const aliasPrefixes = Object.keys(this._pathMappings ?? {}).map(key => key.replace(/\*$/, ''));
+    const unresolved: string[] = [];
+    for (const statement of sourceFile.statements) {
+      const specifierNode = (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement))
+        ? statement.moduleSpecifier
+        : undefined;
+      if (!specifierNode || !ts.isStringLiteral(specifierNode)) {
+        continue;
+      }
+      const specifier = specifierNode.text;
+      const isProjectSpecifier = specifier.startsWith('.')
+        || aliasPrefixes.some(prefix => prefix !== '' && specifier.startsWith(prefix))
+        || this.mapsToProjectFileUnderBaseUrl(specifier);
+      if (!isProjectSpecifier) {
+        continue;
+      }
+      const resolved = ts.resolveModuleName(specifier, sourceFile.fileName, options, {
+        fileExists: (fileName) => host.fileExists(fileName),
+        readFile: (fileName) => host.readFile(fileName),
+        directoryExists: host.directoryExists,
+        getCurrentDirectory: () => host.getCurrentDirectory()
+      });
+      if (!resolved.resolvedModule) {
+        unresolved.push(specifier);
+      }
+    }
+    return unresolved;
+  }
+
+  getDefinitionAnchor(
+    symbol: TypeScriptSymbol,
+    getIdentifierFromSymbolNode: (node: ts.Node) => ts.Identifier | undefined
+  ): { fileName: string; position: number } | undefined {
+    const identifier = symbol.tsNode ? getIdentifierFromSymbolNode(symbol.tsNode) : undefined;
+    if (!identifier) {
+      return undefined;
+    }
+    const symbolSourceFile = identifier.getSourceFile();
+    const programSourceFile = this.getSourceFileFromFileName(symbolSourceFile.fileName);
+    // 偏移量只在內容一致時才有意義：程式內定義檔與符號 AST 來源分歧（快照過期）時不錨定
+    if (!programSourceFile || programSourceFile.text !== symbolSourceFile.text) {
+      return undefined;
+    }
+    return { fileName: programSourceFile.fileName, position: identifier.getStart(symbolSourceFile) };
+  }
+
+  /** Host 讀檔：已掛載檔 → 專案快照 → 磁碟 */
+  private readKnownFile(fileName: string): string | undefined {
+    const file = this._files.get(fileName);
+    if (file) {
+      return file.content;
+    }
+    const projectContent = this._projectSources?.get(fileName);
+    if (projectContent !== undefined) {
+      return projectContent;
+    }
+    try {
+      return ts.sys.readFile(fileName);
+    } catch {
+      // graceful-degradation: 外部 .d.ts 檔案讀取失敗時返回 undefined，Language Service 跳過該檔案
+      return undefined;
+    }
   }
 
   /**
@@ -214,23 +366,17 @@ export class LanguageServiceManager implements ILanguageServiceManager {
       },
       getScriptVersion: (fileName) => {
         const file = this._files.get(fileName);
-        return file ? String(file.version) : '0';
+        if (file) {
+          return String(file.version);
+        }
+        const projectVersion = this._projectSources?.has(fileName)
+          ? this._projectSourceVersions.get(fileName)
+          : undefined;
+        return projectVersion ? `project-${projectVersion.version}` : '0';
       },
       getScriptSnapshot: (fileName) => {
-        const file = this._files.get(fileName);
-        if (file) {
-          return ts.ScriptSnapshot.fromString(file.content);
-        }
-        // 嘗試讀取實際檔案
-        try {
-          const content = ts.sys.readFile(fileName);
-          if (content) {
-            return ts.ScriptSnapshot.fromString(content);
-          }
-        } catch {
-          // graceful-degradation: 外部 .d.ts 檔案讀取失敗時返回 undefined，Language Service 跳過該檔案
-        }
-        return undefined;
+        const content = this.readKnownFile(fileName);
+        return content ? ts.ScriptSnapshot.fromString(content) : undefined;
       },
       getCurrentDirectory: () => this._currentDirectory ?? path.dirname(path.resolve(sourceFile.fileName)),
       getCompilationSettings: () => ({
@@ -239,22 +385,24 @@ export class LanguageServiceManager implements ILanguageServiceManager {
         allowNonTsExtensions: true,
         noResolve: false,
         noLib: false,
-        lib: this.compilerOptions.lib || ['lib.es2020.d.ts']
+        lib: this.compilerOptions.lib || ['lib.es2020.d.ts'],
+        ...(this._pathMappings
+          ? { paths: this._pathMappings as ts.MapLike<string[]> }
+          : {}),
+        ...(this._baseUrl ? { baseUrl: this._baseUrl } : {})
       }),
       getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
       fileExists: (fileName) => {
-        return this._files.has(fileName) || (ts.sys.fileExists ? ts.sys.fileExists(fileName) : false);
+        return this._files.has(fileName)
+          || (this._projectSources?.has(fileName) ?? false)
+          || (ts.sys.fileExists ? ts.sys.fileExists(fileName) : false);
       },
-      readFile: (fileName) => {
-        const file = this._files.get(fileName);
-        if (file) {
-          return file.content;
-        }
-        return ts.sys.readFile ? ts.sys.readFile(fileName) : undefined;
-      },
+      readFile: (fileName) => this.readKnownFile(fileName),
       readDirectory: ts.sys.readDirectory ? ts.sys.readDirectory : () => [],
       getDirectories: ts.sys.getDirectories ? ts.sys.getDirectories : () => [],
-      directoryExists: ts.sys.directoryExists ? ts.sys.directoryExists : () => false,
+      // 相對 import 解析在父目錄「不存在」時不會查檔：快照（memfs）目錄須視為存在
+      directoryExists: (directoryName) => this._projectDirectories.has(path.resolve(directoryName))
+        || (ts.sys.directoryExists ? ts.sys.directoryExists(directoryName) : false),
       realpath: ts.sys.realpath ? ts.sys.realpath : (path) => path,
       getNewLine: () => '\n'
     };
@@ -748,6 +896,11 @@ export class LanguageServiceManager implements ILanguageServiceManager {
 
     // 清理檔案快取
     this._files.clear();
+    this._projectSources = null;
+    this._pathMappings = null;
+    this._baseUrl = null;
+    this._projectDirectories = new Set();
+    this._projectSourceVersions.clear();
   }
 }
 

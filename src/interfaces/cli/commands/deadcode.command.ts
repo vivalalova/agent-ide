@@ -24,6 +24,7 @@ import {
   createEmptyMutationPreviewInput,
   ensureDirectoryPath,
   outputMutationWithLegacyFields,
+  outputProgress,
   tryParseOutputFormat,
   executeMutationCommand
 } from '@interfaces/cli/command-utils.js';
@@ -101,9 +102,7 @@ async function handleDeadCodeCommand(
   const isJsonFormat = format === OutputFormat.Json;
   const willApply = options.apply === true && options.dryRun !== true;
 
-  if (!isJsonFormat) {
-    process.stderr.write(willApply ? '   檢測並刪除 Dead Code...\n' : '   檢測 Dead Code（預覽模式）...\n');
-  }
+  outputProgress(willApply ? '   檢測並刪除 Dead Code...' : '   檢測 Dead Code（預覽模式）...', format);
 
   // 與 rename/impact/move 對齊：相對 --path 一律 resolve 成絕對路徑（F27）
   const projectPath = path.resolve(options.path || process.cwd());
@@ -222,8 +221,8 @@ async function handleDeadCodeCommand(
     }
 
     // 4. 執行變更類命令統一流程
-    if (!isJsonFormat && willApply) {
-      process.stderr.write('   執行刪除...\n');
+    if (willApply) {
+      outputProgress('   執行刪除...', format);
     }
 
     // applied 僅在實際有變更且會寫入時為 true（preview / 零結果皆 false）

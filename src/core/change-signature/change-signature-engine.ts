@@ -35,6 +35,7 @@ import { createFunctionDeclarationLocator, type FunctionDeclarationLocator } fro
 import { createParameterReferenceScanner, type ParameterReferenceScanner } from './parameter-reference-scanner.js';
 import { createDefinitionUpdater, type DefinitionUpdater } from './definition-updater.js';
 import { createCallSiteBindingResolver, type CallSiteBindingResolver } from './call-site-binding-resolver.js';
+import { createMemberCallSiteScope, type MemberCallSiteScope } from './member-call-site-scope.js';
 
 /** tsconfig 路徑解析設定（pathAliases 期望已解析為絕對路徑，見 tsconfig-loader） */
 export interface ChangeSignaturePathConfig {
@@ -57,6 +58,7 @@ export class ChangeSignatureEngine {
   private readonly scanner: ParameterReferenceScanner;
   private readonly definitionUpdater: DefinitionUpdater;
   private readonly bindingResolver: CallSiteBindingResolver;
+  private readonly memberCallSiteScope: MemberCallSiteScope;
 
   constructor(
     private readonly parserRegistry: ParserRegistry,
@@ -87,6 +89,13 @@ export class ChangeSignatureEngine {
       this.fileUtils,
       this.pathUtils,
       this.symbolFinder
+    );
+    this.memberCallSiteScope = createMemberCallSiteScope(
+      this.fileUtils,
+      this.functionLocator,
+      this.bindingResolver,
+      this.symbolFinder,
+      this.pathUtils
     );
   }
 
@@ -207,6 +216,38 @@ export class ChangeSignatureEngine {
         : undefined;
       const isConstructorTarget = constructorClassName !== undefined;
       const searchName = constructorClassName ?? options.functionName;
+
+      // F1：成員方法目標（class method 含 static、object literal method）的呼叫點是
+      // `<receiver>.<method>(...)`，consumer 檔 import 的是 owner 而非方法名——下方以方法名
+      // 解析繫結只會涵蓋定義檔，跨檔呼叫點會被靜默漏改（定義改了、呼叫端沒動、success）。
+      // 以 owner 名找出引用 owner 的檔案（含子類、type-only import）掃方法呼叫點；方法呼叫點
+      // 重寫需 receiver 型別解析、不受支援 → 偵測到即整體拒絕，定義檔不動。
+      // 只有「不改寫就語意錯誤」的呼叫點才拒絕（見 filterCallSitesRequiringRewrite）；
+      // 無實質變更（如單參 reorder）映射為恆等，不會被擋，交由後續 no-op 流程。
+      if (!isConstructorTarget) {
+        const memberTarget = await this.memberCallSiteScope.resolveMemberTarget(originalSignature);
+        if (memberTarget) {
+          const memberMethodCallSites = await this.memberCallSiteScope.findMemberMethodCallSites(
+            memberTarget,
+            options.filePath,
+            options.functionName,
+            projectFiles
+          );
+          const sitesRequiringRewrite = this.filterCallSitesRequiringRewrite(
+            memberMethodCallSites,
+            originalSignature,
+            newSignature,
+            options.changes
+          );
+          if (sitesRequiringRewrite.length > 0) {
+            return this.createErrorResult(
+              ChangeSignatureErrorCode.MethodCallSiteUnsupported,
+              `偵測到 ${sitesRequiringRewrite.length} 個須改寫的方法呼叫點，方法呼叫點重寫不受支援（需 receiver 型別解析）：` +
+              `${this.formatCallSitePositions(sitesRequiringRewrite)}`
+            );
+          }
+        }
+      }
 
       // 限縮呼叫點掃描範圍：僅「語意上可能引用目標」的檔案。逐檔解析出目標符號的本地繫結
       // （named／alias／default import 的本地名、namespace import 的 receiver，以及遞迴 barrel
@@ -461,13 +502,63 @@ export class ChangeSignatureEngine {
    */
   private findSpreadCallSiteError(callSites: readonly CallSite[]): string | null {
     for (const callSite of callSites) {
-      const hasSpreadArgument = callSite.arguments.some(arg => arg.value.startsWith('...'));
-      if (hasSpreadArgument) {
+      if (this.hasSpreadArgument(callSite)) {
         return `呼叫點 ${callSite.functionName}(...) 於 ${callSite.location.filePath}:${callSite.location.range.start.line} 含 spread 引數，` +
           '無法靜態重新映射定位引數，change-signature 的新增/移除/重排參數操作已中止';
       }
     }
     return null;
+  }
+
+  private hasSpreadArgument(callSite: CallSite): boolean {
+    return callSite.arguments.some(arg => arg.value.startsWith('...'));
+  }
+
+  /**
+   * 篩出「不改寫就會語意錯誤」的呼叫點（方法呼叫點無法改寫，僅這些須 fast-fail）。
+   * 參數位置映射沿用 CallSiteUpdater.createParameterMapping（與實際改寫同一份計算）；
+   * 以呼叫點實際傳入的引數數量 n 判定：
+   * - 全域：add 帶與預設值不同的 --call-site-value（明確要求改呼叫點；無預設值的 add 經 validateChanges 後必帶 callSiteValue，落在此條）
+   * - 原始位置 i < n 的參數被 remove，或新位置 !== i（reorder／前方插入 add 造成位移）
+   * - 新增參數落在 newIndex < n（插在已傳引數之間）
+   * - 含 spread 引數（實際展開位置無法靜態決定，同 findSpreadCallSiteError）一律視為須改寫
+   * 反之（尾端 add 帶預設值、remove／reorder 只涉及呼叫端未傳到的位置）呼叫點不動仍語意正確。
+   */
+  private filterCallSitesRequiringRewrite(
+    callSites: readonly CallSite[],
+    originalSignature: FunctionSignature,
+    newSignature: FunctionSignature,
+    changes: readonly SignatureChange[]
+  ): CallSite[] {
+    const addRequiresCallSiteValue = changes.some(change =>
+      isAddParameterChange(change)
+      // CLI 未給 --call-site-value 時以 defaultValue 填 callSiteValue（parseAddParameter），
+      // 兩者相同＝呼叫端省略即等價，不算明確要求改呼叫點
+      && change.callSiteValue !== undefined
+      && change.callSiteValue !== change.defaultValue
+    );
+    if (addRequiresCallSiteValue) {
+      return [...callSites];
+    }
+
+    const mapping = this.callSiteUpdater.createParameterMapping(originalSignature, newSignature, changes);
+    const addedIndices = [...mapping.entries()]
+      .filter(([originalIndex]) => originalIndex < 0)
+      .map(([, info]) => info.newIndex);
+
+    return callSites.filter(site => {
+      if (this.hasSpreadArgument(site)) {
+        return true;
+      }
+      const passed = site.arguments.length;
+      for (let i = 0; i < Math.min(passed, originalSignature.parameters.length); i++) {
+        const info = mapping.get(i);
+        if (!info || info.newIndex !== i) {
+          return true;
+        }
+      }
+      return addedIndices.some(newIndex => newIndex < passed);
+    });
   }
 
   /**
