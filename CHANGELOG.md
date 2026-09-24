@@ -1,3 +1,7 @@
+## <small>0.13.9 (2026-09-24)</small>
+
+* fix: [audit-fix] 全專案對抗式稽核——修正重構命令靜默寫壞程式碼的多項缺陷 ([b12bb52](https://github.com/vivalalova/agent-ide/commit/b12bb52)), closes [#62](https://github.com/vivalalova/agent-ide/issues/62) [#63](https://github.com/vivalalova/agent-ide/issues/63) [#64](https://github.com/vivalalova/agent-ide/issues/64) [#65](https://github.com/vivalalova/agent-ide/issues/65) [#66](https://github.com/vivalalova/agent-ide/issues/66) [#67](https://github.com/vivalalova/agent-ide/issues/67)
+
 ## <small>0.13.8 (2026-08-15)</small>
 
 * fix: src/ 全面對抗式審計——26 項缺陷修復、deadcode import binding 回報、引擎/parser 職責拆分 (#61) ([81b8f15](https://github.com/vivalalova/agent-ide/commit/81b8f15)), closes [#61](https://github.com/vivalalova/agent-ide/issues/61) [#58](https://github.com/vivalalova/agent-ide/issues/58) [#private](https://github.com/vivalalova/agent-ide/issues/private) [#private](https://github.com/vivalalova/agent-ide/issues/private) [#61](https://github.com/vivalalova/agent-ide/issues/61)
